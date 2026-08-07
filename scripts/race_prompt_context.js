@@ -196,6 +196,7 @@ function buildHybridAverageBlock(race) {
   return [
     '【混血平均参考】',
     '- 以下是系统层面的平均参考值，仅供综合判断；不要用它覆盖各族原始特征。',
+    merged.hasUnknownRace ? '- 注意：该混血包含未收录种族，以下平均数值不完整，仅供粗略参考。' : '',
     `- 平均经期长度: ${formatCycleDays(merged.menstrualLengthRatio)}`,
     `- 平均妊娠长度: ${formatGestation(merged.gestationSpeciesSpeed)}`,
     `- 平均产后恢复时间: ${formatRecoveryDays(merged.recoveryDays)}`,
@@ -203,7 +204,7 @@ function buildHybridAverageBlock(race) {
     `- 平均受精难度: ${getImpregnationDifficultyText(merged.impregnationDifficulty)}`,
     `- 平均多产性参考: ${getProlificacyText(merged.orgasmOvulationAmount, merged.identicalProbability)}；额外排卵倾向 ${formatNumber(merged.orgasmOvulationAmount)}，同卵多胎概率 ${formatNumber(merged.identicalProbability)}%`,
     `- 平均性别比参考: ${getGenderRatioText(merged.genderRatio)}`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function buildRacePhysiologyLoreBlock(race) {
