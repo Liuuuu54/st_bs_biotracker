@@ -1,0 +1,175 @@
+// MVU 额外模型解析兼容门控测试：验证追踪请求在 MVU 变量更新结束前会被推迟。
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  __mvuGateStateForTest,
+  isMvuExtraAnalysisEnabled,
+  shouldWaitForMvuExtraAnalysis,
+} from '../scripts/tracker.js';
+
+const MVU_EXTRA_WAIT_GRACE_MS = 3000;
+
+function makeCtx(overrides = {}) {
+  return {
+    chatId: 'mvu-gate-chat',
+    chat: [
+      { id: 1, is_user: true, mes: '你好' },
+      { id: 2, is_user: false, name: '角色', mes: '你好呀' },
+    ],
+    extensionSettings: {},
+    ...overrides,
+  };
+}
+
+function makeSettings(overrides = {}) {
+  return { mvuExtraAnalysisCompat: true, ...overrides };
+}
+
+function makeMvuSettings(overrides = {}) {
+  return {
+    更新方式: '额外模型解析',
+    额外模型解析配置: { 启用自动请求: true },
+    ...overrides,
+  };
+}
+
+function resetGate() {
+  __mvuGateStateForTest.eventInstalled = false;
+  __mvuGateStateForTest.lastEndedKey = '';
+  __mvuGateStateForTest.lastEndedAt = 0;
+  __mvuGateStateForTest.pendingKey = '';
+  __mvuGateStateForTest.pendingSince = 0;
+  delete globalThis.Mvu;
+  delete globalThis.parent?.Mvu;
+}
+
+function setDuring(during) {
+  globalThis.Mvu = { isDuringExtraAnalysis: () => during };
+}
+
+test('未配置 MVU 时既不启用也不等待', () => {
+  resetGate();
+  const ctx = makeCtx();
+  assert.equal(isMvuExtraAnalysisEnabled(ctx, makeSettings()), false);
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
+});
+
+test('MVU 更新方式为随AI输出时不等待', () => {
+  resetGate();
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings({ 更新方式: '随AI输出' }) },
+  });
+  assert.equal(isMvuExtraAnalysisEnabled(ctx, makeSettings()), false);
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
+});
+
+test('关闭兼容开关后即使 MVU 配置了额外解析也不等待', () => {
+  resetGate();
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  assert.equal(isMvuExtraAnalysisEnabled(ctx, makeSettings({ mvuExtraAnalysisCompat: false })), false);
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings({ mvuExtraAnalysisCompat: false })), false);
+});
+
+test('额外模型解析未开启自动请求时视为不等待', () => {
+  resetGate();
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings({ 额外模型解析配置: { 启用自动请求: false } }) },
+  });
+  assert.equal(isMvuExtraAnalysisEnabled(ctx, makeSettings()), false);
+});
+
+test('旧版字段 自动触发额外模型解析=false 同样视为不等待', () => {
+  resetGate();
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: { 更新方式: '额外模型解析', 自动触发额外模型解析: false } },
+  });
+  assert.equal(isMvuExtraAnalysisEnabled(ctx, makeSettings()), false);
+});
+
+test('额外模型解析开启且正文出完时先等待（宽限期），MVU 未开始则等待', () => {
+  resetGate();
+  setDuring(false);
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  assert.equal(isMvuExtraAnalysisEnabled(ctx, settings), true);
+  // 第一次评估：MVU 可能还没收到消息，宽限期内应等待
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  // 宽限期未过仍等待
+  __mvuGateStateForTest.pendingSince = Date.now() - MVU_EXTRA_WAIT_GRACE_MS + 500;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+});
+
+test('MVU 正在解析中即使超过宽限期也持续等待', () => {
+  resetGate();
+  setDuring(true);
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  // 已等 10 秒仍处于解析中 → 继续等
+  __mvuGateStateForTest.pendingSince = Date.now() - 10000;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+});
+
+test('MVU 变量更新结束事件新鲜时放行', () => {
+  resetGate();
+  setDuring(false);
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  // 先进入等待
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  // 模拟 VARIABLE_UPDATE_ENDED 事件处理器写入
+  const roundKey = `${ctx.chatId}:${ctx.chat.length}:assistant:${ctx.chat[ctx.chat.length - 1].id}`;
+  __mvuGateStateForTest.lastEndedKey = roundKey;
+  __mvuGateStateForTest.lastEndedAt = Date.now();
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+});
+
+test('宽限期超时且 MVU 从未解析时放行', () => {
+  resetGate();
+  setDuring(false);
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  // 超过宽限期仍未开始解析（例如首楼 MVU 跳过）→ 放行
+  __mvuGateStateForTest.pendingSince = Date.now() - MVU_EXTRA_WAIT_GRACE_MS - 1000;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+});
+
+test('尾楼是用户消息（after_user 时机）时不等待', () => {
+  resetGate();
+  setDuring(true);
+  const ctx = makeCtx({
+    chat: [
+      { id: 1, is_user: true, mes: '你好' },
+      { id: 2, is_user: false, name: '角色', mes: '你好呀' },
+      { id: 3, is_user: true, mes: '再来一轮' },
+    ],
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
+});
+
+test('事件已结束但时间过久（上一轮残留）时重新走宽限期等待', () => {
+  resetGate();
+  setDuring(false);
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  const roundKey = `${ctx.chatId}:${ctx.chat.length}:assistant:${ctx.chat[ctx.chat.length - 1].id}`;
+  // 残留事件：30 秒前结束（模拟上一轮），不应直接放行
+  __mvuGateStateForTest.lastEndedKey = roundKey;
+  __mvuGateStateForTest.lastEndedAt = Date.now() - 30000;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+});

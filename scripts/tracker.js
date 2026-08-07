@@ -31,7 +31,7 @@ import {
 } from './state.js';
 import { getDerivedTypeMetabolismExemptions } from './race_config.js';
 import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js';
-import { canLoadHostWorldInfo, getHostAgentRunBarrier, getHostChat, getHostKind, loadHostWorldInfo, refreshHostChatView } from './host.js';
+import { canLoadHostWorldInfo, getHostAgentRunBarrier, getHostChat, getHostExtensionSettings, getHostKind, loadHostWorldInfo, refreshHostChatView } from './host.js';
 
 export const POLL_RUNTIME_KEY = '__bs_biotracker_poll__';
 export const RUN_RUNTIME_KEY = '__bs_biotracker_running__';
@@ -43,6 +43,28 @@ const AFTER_AI_SETTLE_MS = 1400;
 const MAINFLOW_CONTEXT_SNAPSHOT_KEY = '__bs_biotracker_mainflow_context_snapshot__';
 const DEBUG_LAST_TRACKER_REQUEST_KEY = '__bs_biotracker_debug_last_tracker_request__';
 const DEBUG_LAST_TRACKER_RESULT_KEY = '__bs_biotracker_debug_last_tracker_result__';
+
+// ---- MVU 额外模型解析兼容 ----
+// MVU 变量框架开启「额外模型解析」时，正文出完后会再调一次 API 更新变量；
+// 此时立刻发追踪请求会与 MVU 的更新请求重复消耗额度。
+// 检测到该模式时，把追踪请求推迟到本轮变量更新结束（或确认本轮不会解析）后再发送。
+const MVU_VARIABLE_UPDATE_ENDED_EVENT = 'mag_variable_update_ended';
+/** 等待 MVU 开始解析的宽限期：宽限期内未开始即视为本轮不会解析 */
+const MVU_EXTRA_WAIT_GRACE_MS = 3000;
+/** 单轮等待的异常保护上限 */
+const MVU_EXTRA_MAX_WAIT_MS = 120000;
+/** 变量更新结束事件超过该时长即视为上一轮残留，防止重掷/改写后误放行 */
+const MVU_EXTRA_ENDED_STALE_MS = 15000;
+
+const mvuGateState = {
+  eventInstalled: false,
+  lastEndedKey: '',
+  lastEndedAt: 0,
+  pendingKey: '',
+  pendingSince: 0,
+};
+// 仅测试用：允许用例直接读写门控状态
+export const __mvuGateStateForTest = mvuGateState;
 
 /** 心跳：每处理完一条消息就刷新，避免长队列被看门狗误判为卡死 */
 function markTrackerRunProgress() {
@@ -90,6 +112,82 @@ export function isFailedAutoRetryBlocked(ctx, chatState) {
   const failedSignature = String(chatState?.lastFailedSignature || '');
   if (!failedSignature) return false;
   return failedSignature === currentChatSignature;
+}
+
+function getMvuApi() {
+  // MVU 把全局对象挂到顶层 window（window.parent.Mvu / window.Mvu）
+  const mvu = globalThis.Mvu || globalThis.parent?.Mvu;
+  return mvu && typeof mvu === 'object' ? mvu : null;
+}
+
+export function getMvuSettings(ctx) {
+  const mvuSettings = getHostExtensionSettings(ctx)?.mvu_settings;
+  return mvuSettings && typeof mvuSettings === 'object' ? mvuSettings : null;
+}
+
+export function isMvuExtraAnalysisEnabled(ctx, settings) {
+  if (settings.mvuExtraAnalysisCompat === false) return false;
+  const mvuSettings = getMvuSettings(ctx);
+  if (!mvuSettings) return false;
+  if (mvuSettings.更新方式 !== '额外模型解析') return false;
+  // 旧版字段名为 自动触发额外模型解析，新版为 额外模型解析配置.启用自动请求
+  const autoRequest = mvuSettings.额外模型解析配置?.启用自动请求 ?? mvuSettings.自动触发额外模型解析;
+  return autoRequest !== false;
+}
+
+function getMvuRoundKey(ctx) {
+  const chat = getHostChat(ctx);
+  const last = chat[chat.length - 1];
+  if (!last) return '';
+  const lastId = last?.id !== undefined && last?.id !== null ? String(last.id) : '';
+  return `${getChatKey(ctx)}:${chat.length}:${last.is_user ? 'user' : 'assistant'}:${lastId}`;
+}
+
+function installMvuGateListener(ctx) {
+  if (mvuGateState.eventInstalled) return;
+  const handler = () => {
+    const key = getMvuRoundKey(ctx);
+    if (!key) return;
+    mvuGateState.lastEndedKey = key;
+    mvuGateState.lastEndedAt = Date.now();
+  };
+  let installed = false;
+  try {
+    // MVU 自身的 eventEmit/eventOn 走同一套全局事件通道，优先使用；拿不到时退回宿主 eventSource
+    if (typeof globalThis.eventOn === 'function') {
+      globalThis.eventOn(MVU_VARIABLE_UPDATE_ENDED_EVENT, handler);
+      installed = true;
+    } else if (ctx?.eventSource && typeof ctx.eventSource.on === 'function') {
+      ctx.eventSource.on(MVU_VARIABLE_UPDATE_ENDED_EVENT, handler);
+      installed = true;
+    }
+  } catch (error) {
+    console.warn('[BS BioTracker] 无法订阅 MVU 变量更新事件', error);
+  }
+  mvuGateState.eventInstalled = installed;
+}
+
+export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
+  if (!isMvuExtraAnalysisEnabled(ctx, settings)) return false;
+  const chat = getHostChat(ctx);
+  const last = chat[chat.length - 1];
+  // after_user 等时机下 MVU 的解析早已完成，无需等待
+  if (!last || last.is_user) return false;
+  installMvuGateListener(ctx);
+  const roundKey = getMvuRoundKey(ctx);
+  if (!roundKey) return false;
+  const mvu = getMvuApi();
+  const now = Date.now();
+  if (mvuGateState.pendingKey !== roundKey) {
+    mvuGateState.pendingKey = roundKey;
+    mvuGateState.pendingSince = now;
+  }
+  const during = typeof mvu?.isDuringExtraAnalysis === 'function' && mvu.isDuringExtraAnalysis() === true;
+  if (during) return now - mvuGateState.pendingSince < MVU_EXTRA_MAX_WAIT_MS;
+  // 本轮变量更新已结束（事件新鲜）→ 放行
+  if (mvuGateState.lastEndedKey === roundKey && now - mvuGateState.lastEndedAt < MVU_EXTRA_ENDED_STALE_MS) return false;
+  // 宽限期内继续等 MVU 开始解析；超时视为本轮不会解析
+  return now - mvuGateState.pendingSince < MVU_EXTRA_WAIT_GRACE_MS;
 }
 
 function normalizeWorldbookMode(value) {
@@ -1043,6 +1141,9 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   }
   if (reason === 'poll' && !hasPendingChatHistory(ctx, chatState)) {
     return { skipped: true, reason: 'no_pending_history' };
+  }
+  if (reason === 'poll' && shouldWaitForMvuExtraAnalysis(ctx, settings)) {
+    return { skipped: true, reason: 'waiting_mvu_extra_analysis' };
   }
   if (reason === 'poll' && isFailedAutoRetryBlocked(ctx, chatState)) {
     return { skipped: true, reason: 'failed_message_blocked' };
