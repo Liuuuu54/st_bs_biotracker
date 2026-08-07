@@ -35,11 +35,16 @@ function makeMvuSettings(overrides = {}) {
 }
 
 function resetGate() {
-  __mvuGateStateForTest.eventInstalled = false;
   __mvuGateStateForTest.lastEndedKey = '';
   __mvuGateStateForTest.lastEndedAt = 0;
   __mvuGateStateForTest.pendingKey = '';
   __mvuGateStateForTest.pendingSince = 0;
+  __mvuGateStateForTest.announced = false;
+  // fetchHooked/eventInstalled 不重置：钩子只装一次，避免嵌套包装
+  __mvuGateStateForTest.generateInFlight = 0;
+  __mvuGateStateForTest.lastGenerateStartedAt = 0;
+  __mvuGateStateForTest.sawGenerateThisRound = false;
+  __mvuGateStateForTest.everSawMvuSignal = false;
   delete globalThis.Mvu;
   delete globalThis.parent?.Mvu;
 }
@@ -205,4 +210,43 @@ test('额外模型解析但自动请求关闭 → 门控直接放行', () => {
     extensionSettings: { mvu_settings: makeMvuSettings({ 额外模型解析配置: { 启用自动请求: false } }) },
   });
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
+});
+
+test('TT 场景：读不到设置、无 Mvu，但有额外生成请求在飞行 → 等待', () => {
+  resetGate();
+  const ctx = makeCtx(); // 无 mvu_settings、无 Mvu 全局
+  const settings = makeSettings();
+  // 首次评估：未看到信号
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+  // MVU 的额外解析请求开始飞行（fetch 钩子观测到）
+  __mvuGateStateForTest.generateInFlight = 1;
+  __mvuGateStateForTest.lastGenerateStartedAt = Date.now();
+  __mvuGateStateForTest.sawGenerateThisRound = true;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+});
+
+test('生成请求结束后放行', () => {
+  resetGate();
+  const ctx = makeCtx();
+  const settings = makeSettings();
+  // 请求在飞行 → 等待
+  __mvuGateStateForTest.generateInFlight = 1;
+  __mvuGateStateForTest.sawGenerateThisRound = true;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  // 请求完成 → 放行（MVU 变量已更新）
+  __mvuGateStateForTest.generateInFlight = 0;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+});
+
+test('见过 MVU 信号后，无信号轮次走宽限期等待', () => {
+  resetGate();
+  const ctx = makeCtx();
+  const settings = makeSettings();
+  // 之前某轮见过生成请求（everSaw 为 true）
+  __mvuGateStateForTest.everSawMvuSignal = true;
+  // 本轮还没看到请求（MVU 可能还没开始）→ 宽限期内等待
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  // 超过宽限期仍未出现信号 → 放行
+  __mvuGateStateForTest.pendingSince = Date.now() - 5000;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
 });

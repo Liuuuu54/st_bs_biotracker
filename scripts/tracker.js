@@ -63,6 +63,12 @@ const mvuGateState = {
   pendingKey: '',
   pendingSince: 0,
   announced: false,
+  // fetch 钩子观测：正文之后出现的额外生成请求（MVU 额外模型解析的硬信号）
+  fetchHooked: false,
+  generateInFlight: 0,
+  lastGenerateStartedAt: 0,
+  sawGenerateThisRound: false,
+  everSawMvuSignal: false,
 };
 // 仅测试用：允许用例直接读写门控状态
 export const __mvuGateStateForTest = mvuGateState;
@@ -179,10 +185,46 @@ function installMvuGateListener(ctx) {
 
 function notifyMvuGateWaiting() {
   try {
-    globalThis.toastr?.info?.('本轮变量更新完成后再发送追踪请求', '[BS BioTracker] MVU 兼容');
+    globalThis.toastr?.info?.('检测到 MVU 额外模型解析请求，等待变量更新完成后再追踪', '[BS BioTracker] MVU 兼容');
   } catch {
     // 无 toastr 的环境静默即可
   }
+}
+
+function isGenerateFetchRequest(input) {
+  let url = '';
+  try {
+    if (typeof input === 'string') url = input;
+    else if (input && typeof input === 'object' && 'url' in input) url = String(input.url);
+    else if (input) url = String(input);
+  } catch {}
+  return /\/api\/backends\/chat-completions\/generate/.test(url);
+}
+
+/**
+ * 观测非本插件发出的生成请求（MVU 额外模型解析/其他扩展的二次调用）。
+ * 不依赖 MVU 的设置或全局对象——TT 下这些常常读不到，
+ * 但 MVU 的请求必然走页面里的 fetch，这是最可靠的运行时信号。
+ * 本插件自己的请求带 __bs_biotracker_async_request__ 标记，不计数。
+ */
+function installMvuFetchHook() {
+  if (mvuGateState.fetchHooked || typeof globalThis.fetch !== 'function') return;
+  const innerFetch = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = async (...args) => {
+    if (!globalThis.__bs_biotracker_async_request__ && isGenerateFetchRequest(args[0])) {
+      mvuGateState.generateInFlight += 1;
+      mvuGateState.lastGenerateStartedAt = Date.now();
+      mvuGateState.sawGenerateThisRound = true;
+      try {
+        return await innerFetch(...args);
+      } finally {
+        mvuGateState.generateInFlight -= 1;
+        if (mvuGateState.generateInFlight < 0) mvuGateState.generateInFlight = 0;
+      }
+    }
+    return innerFetch(...args);
+  };
+  mvuGateState.fetchHooked = true;
 }
 
 export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
@@ -191,6 +233,9 @@ export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
   const last = chat[chat.length - 1];
   // after_user 等时机下 MVU 的解析早已完成，无需等待
   if (!last || last.is_user) return false;
+
+  // fetch 钩子必须先装好：即使设置/Mvu 全局都读不到，也能靠生成请求观测
+  installMvuFetchHook();
 
   const mvuSettings = getMvuSettings(ctx);
   const method = mvuSettings?.更新方式;
@@ -203,8 +248,10 @@ export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
   }
   const mvu = getMvuApi();
   const mvuCapable = mvu && typeof mvu.isDuringExtraAnalysis === 'function';
-  // 设置读不到（TT 常见）且看不到 Mvu 全局 → 无从判断，保持原行为
-  if (!mvuCapable && method !== '额外模型解析') return false;
+  // 三种信号源全部不可用（fetch 被禁用、无 Mvu、设置读不到）→ 无从判断
+  if (!mvuGateState.fetchHooked && !mvuCapable && method !== '额外模型解析') return false;
+  if (mvuCapable) mvuGateState.everSawMvuSignal = true;
+  if (method === '额外模型解析') mvuGateState.everSawMvuSignal = true;
 
   installMvuGateListener(ctx);
   const roundKey = getMvuRoundKey(ctx);
@@ -214,17 +261,26 @@ export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
     mvuGateState.pendingKey = roundKey;
     mvuGateState.pendingSince = now;
     mvuGateState.announced = false;
+    mvuGateState.sawGenerateThisRound = false;
   }
-  // 设置明确是额外模型解析 → 每轮提示一次，肉眼可确认门控生效
-  if (method === '额外模型解析' && !mvuGateState.announced) {
-    mvuGateState.announced = true;
-    notifyMvuGateWaiting();
-  }
+
+  // 信号 1：MVU 全局 API 报告正在解析
   const during = mvuCapable && mvu.isDuringExtraAnalysis() === true;
-  if (during) return now - mvuGateState.pendingSince < MVU_EXTRA_MAX_WAIT_MS;
+  // 信号 2：正文之后仍有非本插件的生成请求在飞行（MVU 额外解析/重试等）
+  const generateActive = mvuGateState.generateInFlight > 0;
+  if (during || mvuGateState.sawGenerateThisRound) mvuGateState.everSawMvuSignal = true;
+
+  if (method === '额外模型解析' || (mvuGateState.sawGenerateThisRound && generateActive)) {
+    if (!mvuGateState.announced) {
+      mvuGateState.announced = true;
+      notifyMvuGateWaiting();
+    }
+  }
+  if (during || generateActive) return now - mvuGateState.pendingSince < MVU_EXTRA_MAX_WAIT_MS;
   // 本轮变量更新已结束（事件新鲜）→ 放行
   if (mvuGateState.lastEndedKey === roundKey && now - mvuGateState.lastEndedAt < MVU_EXTRA_ENDED_STALE_MS) return false;
-  // 宽限期内继续等 MVU 开始解析；超时视为本轮不会解析
+  // 从没见过任何 MVU 信号（非 MVU 卡）→ 不等待；见过 → 宽限期内等信号出现
+  if (!mvuGateState.everSawMvuSignal) return false;
   return now - mvuGateState.pendingSince < MVU_EXTRA_WAIT_GRACE_MS;
 }
 
