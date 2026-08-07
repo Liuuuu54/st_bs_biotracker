@@ -50,7 +50,7 @@ const DEBUG_LAST_TRACKER_RESULT_KEY = '__bs_biotracker_debug_last_tracker_result
 // 检测到该模式时，把追踪请求推迟到本轮变量更新结束（或确认本轮不会解析）后再发送。
 const MVU_VARIABLE_UPDATE_ENDED_EVENT = 'mag_variable_update_ended';
 /** 等待 MVU 开始解析的宽限期：宽限期内未开始即视为本轮不会解析 */
-const MVU_EXTRA_WAIT_GRACE_MS = 3000;
+const MVU_EXTRA_WAIT_GRACE_MS = 4000;
 /** 单轮等待的异常保护上限 */
 const MVU_EXTRA_MAX_WAIT_MS = 120000;
 /** 变量更新结束事件超过该时长即视为上一轮残留，防止重掷/改写后误放行 */
@@ -62,6 +62,7 @@ const mvuGateState = {
   lastEndedAt: 0,
   pendingKey: '',
   pendingSince: 0,
+  announced: false,
 };
 // 仅测试用：允许用例直接读写门控状态
 export const __mvuGateStateForTest = mvuGateState;
@@ -121,8 +122,17 @@ function getMvuApi() {
 }
 
 export function getMvuSettings(ctx) {
-  const mvuSettings = getHostExtensionSettings(ctx)?.mvu_settings;
-  return mvuSettings && typeof mvuSettings === 'object' ? mvuSettings : null;
+  // TT 的 ctx.extensionSettings 与 SillyTavern.extensionSettings 未必是同一对象，
+  // 多源读取，取第一个能用的
+  const candidates = [
+    getHostExtensionSettings(ctx)?.mvu_settings,
+    globalThis.SillyTavern?.extensionSettings?.mvu_settings,
+    globalThis.Luker?.getContext?.()?.extensionSettings?.mvu_settings,
+  ];
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object') return candidate;
+  }
+  return null;
 }
 
 export function isMvuExtraAnalysisEnabled(ctx, settings) {
@@ -167,22 +177,50 @@ function installMvuGateListener(ctx) {
   mvuGateState.eventInstalled = installed;
 }
 
+function notifyMvuGateWaiting() {
+  try {
+    globalThis.toastr?.info?.('本轮变量更新完成后再发送追踪请求', '[BS BioTracker] MVU 兼容');
+  } catch {
+    // 无 toastr 的环境静默即可
+  }
+}
+
 export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
-  if (!isMvuExtraAnalysisEnabled(ctx, settings)) return false;
+  if (settings.mvuExtraAnalysisCompat === false) return false;
   const chat = getHostChat(ctx);
   const last = chat[chat.length - 1];
   // after_user 等时机下 MVU 的解析早已完成，无需等待
   if (!last || last.is_user) return false;
+
+  const mvuSettings = getMvuSettings(ctx);
+  const method = mvuSettings?.更新方式;
+  // 能读到设置且明确是随AI输出 → 不需要等待
+  if (method === '随AI输出') return false;
+  // 能读到设置且明确是额外模型解析但未开启自动请求 → 本轮不会自动解析，直接放行
+  if (method === '额外模型解析') {
+    const autoRequest = mvuSettings?.额外模型解析配置?.启用自动请求 ?? mvuSettings?.自动触发额外模型解析;
+    if (autoRequest === false) return false;
+  }
+  const mvu = getMvuApi();
+  const mvuCapable = mvu && typeof mvu.isDuringExtraAnalysis === 'function';
+  // 设置读不到（TT 常见）且看不到 Mvu 全局 → 无从判断，保持原行为
+  if (!mvuCapable && method !== '额外模型解析') return false;
+
   installMvuGateListener(ctx);
   const roundKey = getMvuRoundKey(ctx);
   if (!roundKey) return false;
-  const mvu = getMvuApi();
   const now = Date.now();
   if (mvuGateState.pendingKey !== roundKey) {
     mvuGateState.pendingKey = roundKey;
     mvuGateState.pendingSince = now;
+    mvuGateState.announced = false;
   }
-  const during = typeof mvu?.isDuringExtraAnalysis === 'function' && mvu.isDuringExtraAnalysis() === true;
+  // 设置明确是额外模型解析 → 每轮提示一次，肉眼可确认门控生效
+  if (method === '额外模型解析' && !mvuGateState.announced) {
+    mvuGateState.announced = true;
+    notifyMvuGateWaiting();
+  }
+  const during = mvuCapable && mvu.isDuringExtraAnalysis() === true;
   if (during) return now - mvuGateState.pendingSince < MVU_EXTRA_MAX_WAIT_MS;
   // 本轮变量更新已结束（事件新鲜）→ 放行
   if (mvuGateState.lastEndedKey === roundKey && now - mvuGateState.lastEndedAt < MVU_EXTRA_ENDED_STALE_MS) return false;

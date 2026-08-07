@@ -173,3 +173,36 @@ test('事件已结束但时间过久（上一轮残留）时重新走宽限期�
   __mvuGateStateForTest.lastEndedAt = Date.now() - 30000;
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
 });
+
+test('TT 场景：读不到 MVU 设置但 Mvu 全局在解析中 → 等待', () => {
+  resetGate();
+  setDuring(true);
+  const ctx = makeCtx(); // 无 mvu_settings，模拟 TT 读不到设置
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), true);
+});
+
+test('TT 场景：读不到设置且 Mvu 未在解析 → 宽限期等待，超时放行', () => {
+  resetGate();
+  setDuring(false);
+  const ctx = makeCtx(); // 无 mvu_settings
+  const settings = makeSettings();
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  // 超过宽限期仍未开始解析 → 放行
+  __mvuGateStateForTest.pendingSince = Date.now() - 5000;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+});
+
+test('读不到设置且完全没有 Mvu 全局 → 不等待', () => {
+  resetGate();
+  const ctx = makeCtx();
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
+});
+
+test('额外模型解析但自动请求关闭 → 门控直接放行', () => {
+  resetGate();
+  setDuring(true); // 即使正处于解析中，自动关闭时也不该等待
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings({ 额外模型解析配置: { 启用自动请求: false } }) },
+  });
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
+});
