@@ -59,6 +59,7 @@ const MVU_EXTRA_ENDED_STALE_MS = 15000;
 const mvuGateState = {
   eventInstalled: false,
   lastEndedKey: '',
+  lastEndedContentKey: '',
   lastEndedAt: 0,
   pendingKey: '',
   pendingSince: 0,
@@ -159,12 +160,19 @@ function getMvuRoundKey(ctx) {
   return `${getChatKey(ctx)}:${chat.length}:${last.is_user ? 'user' : 'assistant'}:${lastId}`;
 }
 
+// 含内容签名的轮次指纹：同 id 被重掷/编辑后内容变化，指纹随之变化，
+// 防止上一轮的「变量更新结束」事件被误当作新轮次已完成
+function getMvuContentKey(ctx) {
+  return buildSignature(ctx, getHostChat(ctx).length);
+}
+
 function installMvuGateListener(ctx) {
   if (mvuGateState.eventInstalled) return;
   const handler = () => {
     const key = getMvuRoundKey(ctx);
     if (!key) return;
     mvuGateState.lastEndedKey = key;
+    mvuGateState.lastEndedContentKey = getMvuContentKey(ctx);
     mvuGateState.lastEndedAt = Date.now();
   };
   let installed = false;
@@ -234,7 +242,7 @@ export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
   // after_user 等时机下 MVU 的解析早已完成，无需等待
   if (!last || last.is_user) return false;
 
-  // fetch 钩子必须先装好：即使设置/Mvu 全局都读不到，也能靠生成请求观测
+  // fetch 钩子必须在首次评估前就装好：否则正文后第一时间启动的 MVU 请求会被漏观测
   installMvuFetchHook();
 
   const mvuSettings = getMvuSettings(ctx);
@@ -255,7 +263,8 @@ export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
 
   installMvuGateListener(ctx);
   const roundKey = getMvuRoundKey(ctx);
-  if (!roundKey) return false;
+  const contentKey = getMvuContentKey(ctx);
+  if (!roundKey || !contentKey) return false;
   const now = Date.now();
   if (mvuGateState.pendingKey !== roundKey) {
     mvuGateState.pendingKey = roundKey;
@@ -268,7 +277,9 @@ export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
   const during = mvuCapable && mvu.isDuringExtraAnalysis() === true;
   // 信号 2：正文之后仍有非本插件的生成请求在飞行（MVU 额外解析/重试等）
   const generateActive = mvuGateState.generateInFlight > 0;
-  if (during || mvuGateState.sawGenerateThisRound) mvuGateState.everSawMvuSignal = true;
+  // 生成请求只作为本轮「在飞」等待信号，不参与 everSawMvuSignal——
+  // 否则普通 ST 主流请求也会让设备被标记为「见过 MVU 信号」，导致每轮白等宽限
+  if (during) mvuGateState.everSawMvuSignal = true;
 
   if (method === '额外模型解析' || (mvuGateState.sawGenerateThisRound && generateActive)) {
     if (!mvuGateState.announced) {
@@ -277,8 +288,10 @@ export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
     }
   }
   if (during || generateActive) return now - mvuGateState.pendingSince < MVU_EXTRA_MAX_WAIT_MS;
-  // 本轮变量更新已结束（事件新鲜）→ 放行
-  if (mvuGateState.lastEndedKey === roundKey && now - mvuGateState.lastEndedAt < MVU_EXTRA_ENDED_STALE_MS) return false;
+  // 本轮变量更新已结束（事件新鲜且内容指纹一致）→ 放行
+  if (mvuGateState.lastEndedKey === roundKey
+    && mvuGateState.lastEndedContentKey === contentKey
+    && now - mvuGateState.lastEndedAt < MVU_EXTRA_ENDED_STALE_MS) return false;
   // 从没见过任何 MVU 信号（非 MVU 卡）→ 不等待；见过 → 宽限期内等信号出现
   if (!mvuGateState.everSawMvuSignal) return false;
   return now - mvuGateState.pendingSince < MVU_EXTRA_WAIT_GRACE_MS;
@@ -815,9 +828,12 @@ function mergeTrackerWorldbookLists(...lists) {
   return merged;
 }
 
-function getMainflowContextSnapshot() {
+function getMainflowContextSnapshot(ctx) {
   const snapshot = globalThis[MAINFLOW_CONTEXT_SNAPSHOT_KEY];
   if (!snapshot || typeof snapshot !== 'object') return null;
+  // 快照必须绑定当前聊天：切聊天后旧上下文的快照一律视为失效
+  const snapshotChatKey = String(snapshot.chatKey || '');
+  if (snapshotChatKey && snapshotChatKey !== getChatKey(ctx)) return null;
   const messages = Array.isArray(snapshot.messages)
     ? snapshot.messages
       .filter((message) => message && typeof message === 'object' && String(message.content || '').trim())
@@ -842,7 +858,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
   const existingState = chatState.characters || {};
   const recentMessages = buildRecentMessages(ctx, settings, endIndexExclusive);
   const useMainflowMode = normalizeWorldbookMode(settings?.trackerWorldbookMode) === 'mainflow';
-  let mainflowContextSnapshot = useMainflowMode ? getMainflowContextSnapshot() : null;
+  let mainflowContextSnapshot = useMainflowMode ? getMainflowContextSnapshot(ctx) : null;
   if (mainflowContextSnapshot && settings?.useStPresetForAsync) {
     mainflowContextSnapshot = {
       ...mainflowContextSnapshot,
@@ -1304,6 +1320,8 @@ export async function poll(ctx, deps) {
 
 export function resetPoller(ctx, deps) {
   if (globalThis[POLL_RUNTIME_KEY]) clearInterval(globalThis[POLL_RUNTIME_KEY]);
+  // 尽早安装 MVU 生成请求钩子，避免正文后第一时间启动的 MVU 请求漏观测
+  installMvuFetchHook();
   const settings = getSettings(ctx);
   globalThis[POLL_RUNTIME_KEY] = setInterval(() => {
     deps.updateClock(settings);

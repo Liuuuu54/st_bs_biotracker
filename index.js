@@ -1039,10 +1039,17 @@ function captureMainflowRequestBody(body, source = 'fetch') {
   if (!body || typeof body !== 'object') return;
   const messages = normalizeMainflowSnapshotMessages(body.messages);
   if (messages.length === 0) return;
+  // 记录快照所属聊天，读取侧按当前聊天校验，防止跨聊天复用旧上下文
+  let chatKey = '';
+  try {
+    const stCtx = getHostContext();
+    if (stCtx) chatKey = getChatKey(stCtx);
+  } catch {}
   globalThis[MAINFLOW_CONTEXT_SNAPSHOT_KEY] = {
     source,
     capturedAt: Date.now(),
     model: body.model ? String(body.model) : '',
+    chatKey,
     messages,
   };
   globalThis[DEBUG_LAST_MAINFLOW_SNAPSHOT_KEY] = globalThis[MAINFLOW_CONTEXT_SNAPSHOT_KEY];

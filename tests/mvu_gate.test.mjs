@@ -7,8 +7,9 @@ import {
   isMvuExtraAnalysisEnabled,
   shouldWaitForMvuExtraAnalysis,
 } from '../scripts/tracker.js';
+import { buildSignature } from '../scripts/state.js';
 
-const MVU_EXTRA_WAIT_GRACE_MS = 3000;
+const MVU_EXTRA_WAIT_GRACE_MS = 4000;
 
 function makeCtx(overrides = {}) {
   return {
@@ -36,6 +37,7 @@ function makeMvuSettings(overrides = {}) {
 
 function resetGate() {
   __mvuGateStateForTest.lastEndedKey = '';
+  __mvuGateStateForTest.lastEndedContentKey = '';
   __mvuGateStateForTest.lastEndedAt = 0;
   __mvuGateStateForTest.pendingKey = '';
   __mvuGateStateForTest.pendingSince = 0;
@@ -131,11 +133,30 @@ test('MVU 变量更新结束事件新鲜时放行', () => {
   const settings = makeSettings();
   // 先进入等待
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
-  // 模拟 VARIABLE_UPDATE_ENDED 事件处理器写入
+  // 模拟 VARIABLE_UPDATE_ENDED 事件处理器写入（含内容指纹）
   const roundKey = `${ctx.chatId}:${ctx.chat.length}:assistant:${ctx.chat[ctx.chat.length - 1].id}`;
+  const contentKey = buildSignature(ctx, ctx.chat.length);
   __mvuGateStateForTest.lastEndedKey = roundKey;
+  __mvuGateStateForTest.lastEndedContentKey = contentKey;
   __mvuGateStateForTest.lastEndedAt = Date.now();
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+});
+
+test('同一 id 被重掷/编辑（内容变化）后不再复用上一轮结束事件', () => {
+  resetGate();
+  setDuring(false);
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  // 上一轮结束事件：同 id 同长度，但内容指纹是旧内容
+  const roundKey = `${ctx.chatId}:${ctx.chat.length}:assistant:${ctx.chat[ctx.chat.length - 1].id}`;
+  __mvuGateStateForTest.lastEndedKey = roundKey;
+  __mvuGateStateForTest.lastEndedContentKey = `stale-content-fingerprint-${Date.now()}`;
+  __mvuGateStateForTest.lastEndedAt = Date.now();
+  // 内容指纹不一致 → 不视为已结束，继续等待
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
 });
 
 test('宽限期超时且 MVU 从未解析时放行', () => {
