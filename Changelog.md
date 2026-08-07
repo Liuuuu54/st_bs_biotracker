@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9.4-fix（本地改動，非作者發佈）
+
+### 修正
+
+- `bsAddSperm` 拒絕負數 amount：扣除精液一律走 `bsDrainSperm`，避免「扣精」被記成新性行為（重置最近性行為、破處）。
+- `bsChildbirth` 增加階段門禁：僅在著床後的妊娠／產程階段可調用，假孕期與非妊娠階段拒絕。
+- `bsAbortion` 拒絕無胎兒的假孕期：結束假孕請用 `bsSetMenstrualPhases`，不再被記成真實流產。
+- 性欲下降（負 delta）不再觸發泌乳：乳意只隨性欲上升增加。
+- `bsSetCharacterPresence` 必須顯式傳入 `isPresent`，缺省不再靜默視為在場。
+- 註冊路徑的 `sanitizeChildren` 保留 `providerSources` 與 `chimera`，多母源／嵌合孩子重新註冊後仍可搬移。
+- API 代理回退補上 5xx 與 429；v4 降級請求保留 `top_k`；直連遠端 `http://` 地址被拒絕（避免 API Key 明文傳輸）。
+
 ## v0.9.4
 
 ### 新增與調整

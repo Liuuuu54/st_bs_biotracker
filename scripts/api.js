@@ -100,11 +100,32 @@ function shouldUseHostProxy(url) {
   return isBrowserRuntime() && isCrossOriginUrl(url);
 }
 
+/**
+ * 直连会把 API Key 放进 Authorization 头；远程 http 端点属于明文传输，
+ * 仅放行 localhost 的 http（本地 Ollama/代理调试场景）。
+ */
+function assertSafeDirectApiBase(apiBase) {
+  try {
+    const url = new URL(apiBase);
+    if (url.protocol === 'http:'
+      && url.hostname !== 'localhost'
+      && url.hostname !== '127.0.0.1'
+      && url.hostname !== '::1') {
+      throw new Error('API Base URL 使用 http:// 时仅允许 localhost；远程地址请使用 https://，避免 API Key 明文传输。');
+    }
+  } catch (error) {
+    if (error instanceof TypeError) throw new Error('API Base URL 无法解析。');
+    throw error;
+  }
+}
+
 function shouldFallbackFromHostProxy(responseText, status) {
   return status === 401
     || status === 403
     || status === 404
     || status === 405
+    || status === 429
+    || (status >= 500 && status <= 599)
     || /cannot\s+post|not\s+found|no\s+route|ENOENT/i.test(String(responseText || ''));
 }
 
@@ -655,6 +676,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     globalThis.__bs_biotracker_async_request__ = true;
     const url = `${apiBase}/chat/completions`;
     const useHostProxy = shouldUseHostProxy(url);
+    if (!useHostProxy) assertSafeDirectApiBase(apiBase);
     let transport = useHostProxy ? 'host-proxy' : 'direct';
     let requestText = '';
     try {
@@ -744,6 +766,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
       model: body.model,
       temperature: body.temperature,
       top_p: body.top_p,
+      top_k: body.top_k,
       frequency_penalty: body.frequency_penalty,
       presence_penalty: body.presence_penalty,
       max_tokens: body.max_tokens,
@@ -798,6 +821,7 @@ export async function fetchModelList(settings) {
   let responseText = '';
   const url = `${apiBase}/models`;
   const useHostProxy = shouldUseHostProxy(url);
+  if (!useHostProxy) assertSafeDirectApiBase(apiBase);
   let transport = useHostProxy ? 'host-proxy' : 'direct';
   try {
     if (useHostProxy) {

@@ -1849,7 +1849,7 @@ function applyPassiveMetabolism(profile, tick) {
 }
 
 function applyMilkFromLibido(profile, changeValue) {
-  const delta = Math.abs(Number(changeValue) || 0);
+  const delta = Number(changeValue) || 0;
   if (delta <= 0) return;
   if (String(profile?.base?.stage || '') === '排卵期') {
     addMetabolismValue(profile, 'milk', delta * 0.05, 0, 150);
@@ -2981,6 +2981,11 @@ function applyAbortion(chatState, args) {
     return { applied: false, message: `bsAbortion skipped for ${female}: no conception state.` };
   }
 
+  // 假孕期无胎儿：结束假孕请走 bsSetMenstrualPhases，不算流产
+  if (stage === '假孕期' && fetuses.length === 0) {
+    return { applied: false, message: `bsAbortion skipped for ${female}: 假孕期无胎儿，请用 bsSetMenstrualPhases 结束假孕。` };
+  }
+
   if (immune.miscarriage && !force) {
     profile.notify = {
       ...notify,
@@ -3209,6 +3214,11 @@ function applyChildbirth(chatState, args) {
   const fetuses = Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : [];
   if (fetuses.length === 0) {
     return { applied: false, message: `bsChildbirth skipped for ${female}: no fetuses.` };
+  }
+  const childbirthStage = String(profile?.base?.stage || '');
+  const childbirthAllowedStages = ['孕早期', '孕中期', '孕晚期', '临产期', '产兆前驱', '第一产程', '第二产程', '第三产程'];
+  if (!childbirthAllowedStages.includes(childbirthStage)) {
+    return { applied: false, message: `bsChildbirth skipped for ${female}: stage ${childbirthStage || '(none)'} 不允许手术分娩（需已着床进入妊娠阶段）。` };
   }
 
   profile.__runtimeRef = next.runtime || {};
@@ -4131,8 +4141,9 @@ function applyDescription(chatState, args) {
 function applySetCharacterPresence(chatState, args) {
   const female = String(args?.female || '').trim();
   const character = chatState.characters?.[female];
-  const isPresent = args?.isPresent === undefined ? true : Boolean(args.isPresent);
   if (!female || !character) return { applied: false, message: `bsSetCharacterPresence skipped: unknown character ${female || '(empty)'}.` };
+  if (args?.isPresent === undefined) return { applied: false, message: `bsSetCharacterPresence skipped for ${female}: isPresent 必须显式传入 true/false。` };
+  const isPresent = Boolean(args.isPresent);
 
   const next = cloneValue(character);
   const profile = next.profile || {};
@@ -4405,6 +4416,7 @@ function applyAddSperm(chatState, args) {
   if (!female || !character) return { applied: false, message: `bsAddSperm skipped: unknown character ${female || '(empty)'}.` };
   if (!male) return { applied: false, message: 'bsAddSperm skipped: empty male.' };
   if (!Number.isFinite(amount) || amount === 0) return { applied: false, message: 'bsAddSperm skipped: invalid amount.' };
+  if (amount < 0) return { applied: false, message: 'bsAddSperm skipped: negative amount 请改用 bsDrainSperm 扣除精液。' };
 
   const next = cloneValue(character);
   const base = next.profile?.base || {};

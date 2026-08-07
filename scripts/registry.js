@@ -1029,6 +1029,17 @@ function sanitizeChildren(value) {
         name: item.name ?? item.babyName ?? null,
         fathers: item.fathers ?? null,
         provider: item.provider ?? null,
+        providerSources: Array.isArray(item.providerSources)
+          ? [...item.providerSources]
+          : (item.provider ? [String(item.provider).trim()] : undefined),
+        chimera: item.chimera && typeof item.chimera === 'object'
+          ? {
+            ...item.chimera,
+            fatherSources: Array.isArray(item.chimera.fatherSources) ? [...item.chimera.fatherSources] : item.chimera.fatherSources,
+            maternalSources: Array.isArray(item.chimera.maternalSources) ? [...item.chimera.maternalSources] : item.chimera.maternalSources,
+            genderSources: Array.isArray(item.chimera.genderSources) ? [...item.chimera.genderSources] : item.chimera.genderSources,
+          }
+          : undefined,
         gender: item.gender ?? null,
         race: parsed.race || null,
         derivedType: item.derivedType ?? parsed.derivedType ?? null,
