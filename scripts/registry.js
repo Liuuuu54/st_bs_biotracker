@@ -422,6 +422,8 @@ export function buildWardrobePrepSystemPrompt(settings, options = {}) {
   const userPrompt = String(options.wardrobePrepPrompt || settings?.wardrobePrepPrompt || '').trim();
   const mainCount = Math.max(1, Math.min(12, Math.floor(Number(options.wardrobePrepMainCount ?? settings?.wardrobePrepMainCount ?? 3) || 3)));
   const accessoryCount = Math.max(0, Math.min(12, Math.floor(Number(options.wardrobePrepAccessoryCount ?? settings?.wardrobePrepAccessoryCount ?? 3) || 0)));
+  // options.styleBookRaw：调用方已异步加载的世界书原始 JSON（浏览器 fetch / Node 读文件）
+  const styleBookBlock = options.includeStyleBook ? buildWardrobeStyleBookBlock(options.styleBookRaw) : '';
   return [
     '你是 AIRP 女性角色衣柜备装初始化器。',
     '你只为 payload.target_character 生成衣柜 JSON，不得新增其他角色。',
@@ -446,9 +448,96 @@ export function buildWardrobePrepSystemPrompt(settings, options = {}) {
     '配件中通常应包含 1-2 件 layer=inner 的贴身衣物（如内衣），其四维补正同样遵守 -3 到 3 的配件规则。',
     'outfit.mainItemId 必须是 wardrobe.items 或 outfit.temporaryItems 中 slot=main 的 id；若无法判断当前穿着，选择最日常的一件主件。',
     'outfit.accessoryItemIds 只能包含 slot=accessory 的 id；未知则空数组。',
+    ...(styleBookBlock ? [styleBookBlock] : []),
     '[用户额外备装提示]',
     userPrompt || '无',
   ].join('\n');
+}
+
+/**
+ * 读取内置服装风格世界书（assets/wardrobe-style-book.json），拼接除「服装描写强化」外的
+ * 性格穿搭风格条目，供备装生成参考。读取失败返回空串（不阻塞备装）。
+ */
+/** 惰性获取 Node require：浏览器 bundle 中动态 import 被 stub 成抛错函数，被调用方 catch 吞掉 */
+async function getNodeRequire() {
+  if (typeof require === 'function') return require;
+  try {
+    const nodeModule = await import('node:module');
+    return nodeModule.createRequire(import.meta.url);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 浏览器环境异步加载服装风格世界书内容（主模式用 import.meta.url 解析真实 assets 路径；
+ * bundle 模式由 _bundle/entry.js 的 fetch 补丁提供 JSON）。Node 环境直接读文件。
+ * 返回原始 JSON 文本或 null（失败静默降级，不阻塞备装）。
+ */
+export async function loadWardrobeStyleBook() {
+  try {
+    if (typeof window !== 'undefined' && typeof fetch === 'function') {
+      try {
+        const url = new URL('./assets/wardrobe-style-book.json', import.meta.url).href;
+        const response = await fetch(url);
+        if (response.ok) return await response.text();
+      } catch {}
+      return null;
+    }
+  } catch {}
+  try {
+    const nodeRequire = await getNodeRequire();
+    if (!nodeRequire) return null;
+    const fs = nodeRequire('node:fs');
+    const path = nodeRequire('node:path');
+    const scriptDir = path.dirname(nodeRequire('node:url').fileURLToPath(import.meta.url));
+    const candidates = [
+      path.join(scriptDir, '..', 'assets', 'wardrobe-style-book.json'),
+      path.join(process.cwd(), 'assets', 'wardrobe-style-book.json'),
+    ];
+    for (const candidate of candidates) {
+      try {
+        if (fs.existsSync(candidate)) return fs.readFileSync(candidate, 'utf8');
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * 把服装风格世界书原始 JSON 拼接成提示词块：只发送条目正文 content，
+ * 排除「服装描写强化」，skill 化触发提示（key/triggerWhen）与说明
+ * （comment 的 ACU_SKILL_META 元数据）一律不进入提示词。
+ */
+export function buildWardrobeStyleBookBlock(raw = null) {
+  try {
+    if (!raw) return '';
+    const data = JSON.parse(raw);
+    const entries = data?.entries && typeof data.entries === 'object' ? data.entries : {};
+    const blocks = Object.entries(entries)
+      .filter(([, entry]) => {
+        // 只按首行风格名判断：排除「服装描写强化」，其余性格风格条目保留
+        const commentFirstLine = String(entry?.comment || '').split('\n')[0].trim();
+        return commentFirstLine && !commentFirstLine.startsWith('服装描写强化');
+      })
+      .map(([, entry]) => {
+        // 只发送条目正文 content；表头仅取 comment 首行（风格名）
+        const label = String(entry?.comment || '').split('\n')[0].trim();
+        const content = String(entry?.content || entry?.entry || '').trim();
+        if (!content) return '';
+        return `【服装风格参考：${label}】\n${content}`;
+      })
+      .filter(Boolean);
+    if (blocks.length === 0) return '';
+    return [
+      '[服装风格世界书参考]',
+      '以下是可参考的性格穿搭风格条目。根据 payload.target_character 的角色卡、normalDescription 与已注册状态判断其气质，选择最匹配的 1-3 条作为衣柜风格基调；风格冲突时以角色设定为准。',
+      ...blocks,
+    ].join('\n');
+  } catch (error) {
+    console.warn('[BS BioTracker] failed to load wardrobe style book', error);
+    return '';
+  }
 }
 
 function sanitizeWardrobePrepResult(result) {
@@ -649,7 +738,10 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
   payload.wardrobe_prep_accessory_count = wardrobePrepAccessoryCount;
   payload.existing_wardrobe = chatState.characters[targetName]?.profile?.wardrobe || null;
   payload.existing_outfit = chatState.characters[targetName]?.profile?.outfit || null;
-  const systemPrompt = options.wardrobePrepSystemPrompt || buildWardrobePrepSystemPrompt(settings, { ...options, wardrobePrepPrompt, wardrobePrepMainCount, wardrobePrepAccessoryCount });
+  const includeStyleBook = options.includeStyleBook === true;
+  // 异步加载世界书（浏览器 fetch / Node 读文件），失败时 styleBookRaw 为 null → 块为空串，不阻塞备装
+  const styleBookRaw = includeStyleBook ? await loadWardrobeStyleBook() : null;
+  const systemPrompt = options.wardrobePrepSystemPrompt || buildWardrobePrepSystemPrompt(settings, { ...options, includeStyleBook, styleBookRaw, wardrobePrepPrompt, wardrobePrepMainCount, wardrobePrepAccessoryCount });
   const result = await callOpenAICompatible(settings, payload, systemPrompt);
   return sanitizeWardrobePrepResult(result);
 }

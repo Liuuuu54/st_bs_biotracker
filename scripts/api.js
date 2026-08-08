@@ -41,6 +41,39 @@ export function extractJson(text) {
   return null;
 }
 
+/**
+ * DeepSeek 系列模型对 response_format(json_object) 支持良好，且工具调用兼容层不稳定——
+ * 按用户需求：模型名只要包含 deepseek 或 ds（大小写不敏感）即判定为 DeepSeek 系，
+ * 公益站可能带各种前后缀（如 deepseek-v4-flash / deepseek-v4-pro），故用宽松子串匹配。
+ */
+export function isDeepSeekFamilyModel(model) {
+  const name = String(model || '').trim().toLowerCase();
+  return name.includes('deepseek') || name.includes('ds');
+}
+
+/**
+ * v4 兼容格式化输出是否启用：设置开启（formattedOutputV4 !== false）或模型为 DeepSeek 系（自动切换）。
+ */
+export function resolveFormattedOutputV4(settings, model) {
+  if (settings?.formattedOutputV4 !== false) return true;
+  return isDeepSeekFamilyModel(model);
+}
+
+/**
+ * MVU 式「格式化输出」提示词指令：v4 兼容模式下要求模型只输出符合 tool_calls 结构的 JSON 对象，
+ * 与 response_format(json_object) 双重约束，降低 DeepSeek 等模型掉格式概率。
+ */
+function buildFormattedOutputV4Instruction() {
+  return [
+    '【输出格式（强制）】',
+    '你处于格式化输出模式：不要输出 Markdown、不要输出 ```json 代码块、不要输出解释文字或任何对象之外的字符。',
+    '只输出一个可直接 JSON.parse 的 JSON 对象，结构为：',
+    '{"tool_calls": [{"name": "工具名", "arguments": {"参数名": "值"}}], "character_checks": [{"female": "角色名", "status": "no_change|updated|present|offscreen"}]}',
+    'arguments 必须是一个对象；工具名与参数必须来自 available_tools 与变量语义说明。',
+    'character_checks 必须对每名已追踪角色恰好输出一笔（即使无变化 status 也写 no_change）；无工具操作时输出 {"tool_calls": []}，但 character_checks 仍须完整。',
+  ].join('\n');
+}
+
 export function getApiBase(settings) {
   let apiBase = String(settings.apiUrl || '').trim().replace(/\/+$/, '');
   apiBase = apiBase.replace(/\/(chat\/completions|models)$/i, '');
@@ -949,11 +982,21 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   const presetEnvelope = shouldApplyAsyncPreset(settings)
     ? await buildPresetEnvelope(settings, safeSystemPrompt, payloadText)
     : null;
-  const effectiveMessages = presetEnvelope?.messages?.length ? presetEnvelope.messages : baseMessages;
+  let effectiveMessages = presetEnvelope?.messages?.length ? presetEnvelope.messages : baseMessages;
   const stPresetSampling = presetEnvelope?.sampling || {};
   const effectivePresetName = presetEnvelope?.presetName || '';
-  // 格式化输出(v4兼容)：仅 response_format.type = json_object（无 json_schema），可在设置关闭
-  const useFormattedOutputV4 = settings?.formattedOutputV4 !== false;
+  // 格式化输出(v4兼容)：response_format.type = json_object + 提示词内嵌输出结构指令。
+  // 模型为 DeepSeek 系时自动启用（用户需求），其余模型遵循设置开关。
+  // 注意：v4 指令只在 tracker 流程注入——registry/日记/备装/技能/繁育推演各自声明了
+  // 不同的 JSON 结构（profile/wardrobe/diary 等），注入 tool_calls 指令会压过它们的 schema。
+  const useFormattedOutputV4 = resolveFormattedOutputV4(settings, model);
+  const isTrackerFlow = !safePayload?.target_character;
+  if (useFormattedOutputV4 && isTrackerFlow && effectiveMessages[0]?.role === 'system') {
+    effectiveMessages = [
+      { role: 'system', content: `${effectiveMessages[0].content}\n\n${buildFormattedOutputV4Instruction()}` },
+      ...effectiveMessages.slice(1),
+    ];
+  }
   const body = {
     model,
     temperature: 0.2,

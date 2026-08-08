@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { applyToolCall } from '../scripts/tools.js';
-import { assertSafeDirectApiBase } from '../scripts/api.js';
+import { assertSafeDirectApiBase, isDeepSeekFamilyModel, resolveFormattedOutputV4 } from '../scripts/api.js';
+import { buildWardrobePrepSystemPrompt, buildWardrobeStyleBookBlock, loadWardrobeStyleBook } from '../scripts/registry.js';
 
 function makeCharacter(overrides = {}) {
   return {
@@ -111,4 +112,43 @@ test('assertSafeDirectApiBase：localhost/IPv6/https/相对路径放行', () => 
     assert.doesNotThrow(() => assertSafeDirectApiBase(base), `base=${base} 应放行`);
   }
   assert.throws(() => assertSafeDirectApiBase('http://'), /无法解析/);
+});
+
+test('DeepSeek 系模型自动启用 v4 兼容格式化输出（宽松子串匹配）', () => {
+  // 唯二官方模型 + 公益站带前后缀的变体
+  assert.equal(isDeepSeekFamilyModel('deepseek-v4-flash'), true);
+  assert.equal(isDeepSeekFamilyModel('deepseek-v4-pro'), true);
+  assert.equal(isDeepSeekFamilyModel('deepseek-chat'), true);
+  assert.equal(isDeepSeekFamilyModel('DeepSeek-R1'), true);
+  assert.equal(isDeepSeekFamilyModel('ds-chat'), true);
+  assert.equal(isDeepSeekFamilyModel('ds_v4-pro'), true);
+  assert.equal(isDeepSeekFamilyModel('xx-deepseek-xx'), true);
+  assert.equal(isDeepSeekFamilyModel('xxx-ds-xxx'), true);
+  // 普通模型不含 ds/deepseek
+  assert.equal(isDeepSeekFamilyModel('gpt-4o-mini'), false);
+  assert.equal(isDeepSeekFamilyModel('qwen2.5-coder'), false);
+  assert.equal(isDeepSeekFamilyModel('claude-sonnet-4'), false);
+  // 设置关闭时：DeepSeek 仍启用（自动切换），普通模型关闭则停用
+  assert.equal(resolveFormattedOutputV4({ formattedOutputV4: false }, 'deepseek-v4-flash'), true);
+  assert.equal(resolveFormattedOutputV4({ formattedOutputV4: false }, 'ds-chat'), true);
+  assert.equal(resolveFormattedOutputV4({ formattedOutputV4: false }, 'gpt-4o-mini'), false);
+  assert.equal(resolveFormattedOutputV4({}, 'any-model'), true);
+  assert.equal(resolveFormattedOutputV4({ formattedOutputV4: false }, ''), false);
+});
+
+test('备装风格世界书：排除服装描写强化，只发 content，其余 22 条并入提示词', async () => {
+  const raw = await loadWardrobeStyleBook();
+  assert.ok(raw && raw.length > 1000, '世界书文件应可加载');
+  const block = buildWardrobeStyleBookBlock(raw);
+  assert.ok(block.length > 1000, '风格参考块应有实际内容');
+  assert.equal(block.includes('服装描写强化'), false, '不得包含被排除的条目');
+  assert.equal((block.match(/【服装风格参考/g) || []).length, 22, '应包含 22 条风格条目');
+  // 只发 content：不得包含 skill 化元数据（ACU_SKILL_META / key / triggerWhen）
+  assert.equal(block.includes('ACU_SKILL_META'), false, '不得泄漏 ACU_SKILL_META 元数据');
+  assert.equal(block.includes('triggerWhen'), false, '不得发送 skill 触发提示');
+  const on = buildWardrobePrepSystemPrompt({}, { includeStyleBook: true, styleBookRaw: raw, wardrobePrepPrompt: '测试' });
+  assert.ok(on.includes('服装风格世界书参考'), '开启时提示词应含风格块');
+  assert.ok(on.includes('[用户额外备装提示]'), '用户提示段应保留');
+  const off = buildWardrobePrepSystemPrompt({}, { includeStyleBook: false });
+  assert.equal(off.includes('服装风格世界书参考'), false, '关闭时不应含风格块');
 });
