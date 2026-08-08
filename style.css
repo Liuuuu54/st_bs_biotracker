@@ -287,7 +287,7 @@
 #bs-biotracker-settings.theme-apple, .bs-bt-floating-sphere.theme-apple {
   --bsbt-pager-bg:
     linear-gradient(180deg, #e8e8ed 0%, #d1d1d6 50%, #e8e8ed 100%);
-  --bsbt-lcd-bg: rgba(245, 245, 247, 0.48);
+  --bsbt-lcd-bg: rgba(245, 245, 247, 0.14);
   --bsbt-lcd-text: #1c1c1e;
   --bsbt-border-color: #c6c6c8;
   --bsbt-font-main: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft JhengHei', sans-serif;
@@ -308,29 +308,36 @@
   --bsbt-home-tile-shadow: rgba(0, 0, 0, 0.08);
 }
 
-/* 外壳：钛金属质感 + 琪露诺冰蓝背景图（透过屏幕毛玻璃呈现模糊后的色彩） */
-/* 注意：`.bs-bt-device { background: var(--bsbt-pager-bg) }` 的简写在 622 行，
-   会覆盖 background-image，故此处用 !important 确保背景图生效 */
+/* 外壳：纯钛金属质感（贴图只出现在屏幕区域，见下方 screen-shell 规则） */
 #bs-biotracker-settings.theme-apple.bs-bt-device {
   background-color: #d1d1d6;
   background-image:
     linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 18%),
-    url('./assets/backgrounds/cirno-ice-blue.png') !important;
-  background-size: auto, cover !important;
-  background-position: 50% 0%, 50% 0% !important;
-  background-repeat: repeat, no-repeat !important;
+    linear-gradient(180deg, #e8e8ed 0%, #d1d1d6 50%, #e8e8ed 100%);
+}
+
+/* 背景图只挂在屏幕容器层：屏幕毛玻璃（backdrop-filter）模糊的正是这一层的图，
+   因此贴图仅在屏幕区域内可见、且呈磨砂质感；外壳（device）无图保持金属 */
+#bs-biotracker-settings.theme-apple .bs-bt-screen-shell {
+  background-image: url('./assets/backgrounds/cirno-ice-blue.png');
+  background-size: cover;
+  background-position: 50% 0%;
+  background-repeat: no-repeat;
+  border-radius: 22px;
+  overflow: hidden;
 }
 
 /* 平板取景下移：人物重心（头部约 y15-45%）不被屏幕内容遮挡，且上下留白均衡 */
-#bs-biotracker-settings.theme-apple.size-tablet.bs-bt-device {
-  background-position: 50% 0%, 50% 30% !important;
+#bs-biotracker-settings.theme-apple.size-tablet .bs-bt-screen-shell {
+  background-position: 50% 30%;
 }
 
-/* 玻璃屏幕：更透的 iOS 毛玻璃（blur 只给这一层） */
+/* 玻璃屏幕：iOS 毛玻璃（blur 只给这一层）——白蒙 0.14 + blur 28px + saturate 200%，
+   「透色不透形」：冰蓝背景真正透出呈磨砂，而非白雾 */
 #bs-biotracker-settings.theme-apple .bs-bt-screen {
-  background-color: rgba(245, 245, 247, 0.48);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background-color: rgba(245, 245, 247, 0.14);
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
   border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 22px;
   box-shadow:
@@ -339,7 +346,7 @@
     0 0 0 1px rgba(0, 0, 0, 0.05);
   /* 顶边高光：光打在玻璃材料上的效果 */
   border-top: 1px solid rgba(255, 255, 255, 0.85);
-  /* 背景图整体偏亮（高明度冰蓝）：给内容文字一层柔和白色投影，保证在亮玻璃上仍清晰 */
+  /* 背景图偏亮（高明度冰蓝）：内容文字加柔和白色投影保证可读 */
   text-shadow: 0 1px 2px rgba(255, 255, 255, 0.55);
 }
 
@@ -386,10 +393,10 @@
   border-radius: 8px;
 }
 
-/* 主页磁贴：iOS 主屏幕图标——大图标在上、小标签在下、柔圆角、无重边框 */
+/* 主页磁贴：iOS 主屏幕图标——白底提亮至 0.72 保证贴图透出下文字仍清晰 */
 #bs-biotracker-settings.theme-apple .bs-bt-home-tile {
   border: 0;
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.72);
   border-radius: 22px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   min-height: 92px;
