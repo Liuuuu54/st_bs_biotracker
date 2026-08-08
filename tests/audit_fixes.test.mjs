@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { applyToolCall } from '../scripts/tools.js';
-import { assertSafeDirectApiBase, isDeepSeekFamilyModel, resolveFormattedOutputV4 } from '../scripts/api.js';
+import { assertSafeDirectApiBase, isDeepSeekFamilyModel, shouldInjectV4Instruction, shouldUseResponseFormat } from '../scripts/api.js';
 import { buildWardrobePrepSystemPrompt, buildWardrobeStyleBookBlock, loadWardrobeStyleBook } from '../scripts/registry.js';
 
 function makeCharacter(overrides = {}) {
@@ -128,12 +128,19 @@ test('DeepSeek 系模型自动启用 v4 兼容格式化输出（宽松子串匹�
   assert.equal(isDeepSeekFamilyModel('gpt-4o-mini'), false);
   assert.equal(isDeepSeekFamilyModel('qwen2.5-coder'), false);
   assert.equal(isDeepSeekFamilyModel('claude-sonnet-4'), false);
-  // 设置关闭时：DeepSeek 仍启用（自动切换），普通模型关闭则停用
-  assert.equal(resolveFormattedOutputV4({ formattedOutputV4: false }, 'deepseek-v4-flash'), true);
-  assert.equal(resolveFormattedOutputV4({ formattedOutputV4: false }, 'ds-chat'), true);
-  assert.equal(resolveFormattedOutputV4({ formattedOutputV4: false }, 'gpt-4o-mini'), false);
-  assert.equal(resolveFormattedOutputV4({}, 'any-model'), true);
-  assert.equal(resolveFormattedOutputV4({ formattedOutputV4: false }, ''), false);
+  // 按钮开（默认）：所有模型都带 response_format；ds 系额外注入 v4 指令，普通模型不注入
+  assert.equal(shouldUseResponseFormat({}, 'gpt-4o-mini'), true);
+  assert.equal(shouldUseResponseFormat({}, 'deepseek-v4-flash'), true);
+  assert.equal(shouldInjectV4Instruction({}, 'deepseek-v4-flash'), true);
+  assert.equal(shouldInjectV4Instruction({}, 'ds-chat'), true);
+  assert.equal(shouldInjectV4Instruction({}, 'gpt-4o-mini'), false);
+  assert.equal(shouldInjectV4Instruction({}, 'qwen2.5-coder'), false);
+  // 按钮关闭：普通模型停用 response_format；ds 系仍自动启用 + 注入指令
+  assert.equal(shouldUseResponseFormat({ formattedOutputV4: false }, 'gpt-4o-mini'), false);
+  assert.equal(shouldUseResponseFormat({ formattedOutputV4: false }, 'deepseek-v4-flash'), true);
+  assert.equal(shouldInjectV4Instruction({ formattedOutputV4: false }, 'deepseek-v4-flash'), true);
+  assert.equal(shouldInjectV4Instruction({ formattedOutputV4: false }, 'gpt-4o-mini'), false);
+  assert.equal(shouldUseResponseFormat({ formattedOutputV4: false }, ''), false);
 });
 
 test('备装风格世界书：排除服装描写强化，只发 content，其余 22 条并入提示词', async () => {

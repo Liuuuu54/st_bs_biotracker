@@ -52,10 +52,19 @@ export function isDeepSeekFamilyModel(model) {
 }
 
 /**
- * v4 兼容格式化输出是否启用：设置开启（formattedOutputV4 !== false）或模型为 DeepSeek 系（自动切换）。
+ * 是否附加 response_format.json_object（普通格式化输出）：
+ * 按钮开启（formattedOutputV4 !== false）或模型为 DeepSeek 系（自动切换）。
  */
-export function resolveFormattedOutputV4(settings, model) {
+export function shouldUseResponseFormat(settings, model) {
   if (settings?.formattedOutputV4 !== false) return true;
+  return isDeepSeekFamilyModel(model);
+}
+
+/**
+ * 是否注入 v4 兼容提示词结构指令（完整 v4 兼容）：
+ * 仅 DeepSeek 系模型触发——普通模型按钮开启时只加 response_format，不注入指令。
+ */
+export function shouldInjectV4Instruction(settings, model) {
   return isDeepSeekFamilyModel(model);
 }
 
@@ -985,13 +994,14 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   let effectiveMessages = presetEnvelope?.messages?.length ? presetEnvelope.messages : baseMessages;
   const stPresetSampling = presetEnvelope?.sampling || {};
   const effectivePresetName = presetEnvelope?.presetName || '';
-  // 格式化输出(v4兼容)：response_format.type = json_object + 提示词内嵌输出结构指令。
-  // 模型为 DeepSeek 系时自动启用（用户需求），其余模型遵循设置开关。
-  // 注意：v4 指令只在 tracker 流程注入——registry/日记/备装/技能/繁育推演各自声明了
+  // 格式化输出：response_format.type = json_object 普通模式（按钮开启或 DeepSeek 系自动启用）。
+  // v4 兼容提示词结构指令仅 DeepSeek 系模型注入（按钮开时普通模型只有 response_format 不加指令）。
+  // 注意：指令只在 tracker 流程注入——registry/日记/备装/技能/繁育推演各自声明了
   // 不同的 JSON 结构（profile/wardrobe/diary 等），注入 tool_calls 指令会压过它们的 schema。
-  const useFormattedOutputV4 = resolveFormattedOutputV4(settings, model);
+  const useResponseFormat = shouldUseResponseFormat(settings, model);
+  const injectV4Instruction = shouldInjectV4Instruction(settings, model);
   const isTrackerFlow = !safePayload?.target_character;
-  if (useFormattedOutputV4 && isTrackerFlow && effectiveMessages[0]?.role === 'system') {
+  if (injectV4Instruction && isTrackerFlow && effectiveMessages[0]?.role === 'system') {
     effectiveMessages = [
       { role: 'system', content: `${effectiveMessages[0].content}\n\n${buildFormattedOutputV4Instruction()}` },
       ...effectiveMessages.slice(1),
@@ -1002,10 +1012,10 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
     temperature: 0.2,
     ...stPresetSampling,
     messages: effectiveMessages,
-    ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
+    ...(useResponseFormat ? { response_format: { type: 'json_object' } } : {}),
   };
   recordEffectiveRequestDebug(
-    `${safePayload?.target_character ? 'registry' : 'tracker'}${mainflowCopy.hasMainflowCopy ? '-mainflow-copy' : (safePayload?.resolved_worldbook_prompt ? '-mainflow-worldinfo' : '')}${useFormattedOutputV4 ? '' : '-no-response-format'}`,
+    `${safePayload?.target_character ? 'registry' : 'tracker'}${mainflowCopy.hasMainflowCopy ? '-mainflow-copy' : (safePayload?.resolved_worldbook_prompt ? '-mainflow-worldinfo' : '')}${useResponseFormat ? '' : '-no-response-format'}${injectV4Instruction ? '-v4-instruction' : ''}`,
     effectivePresetName,
     stPresetSampling,
     effectiveMessages,
@@ -1044,7 +1054,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
           { role: 'assistant', content: String(content || '') },
           { role: 'user', content: buildJsonRetryInstruction() },
         ],
-        ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
+        ...(useResponseFormat ? { response_format: { type: 'json_object' } } : {}),
       };
       const retryData = await requestChatCompletion(apiBase, settings, retryBody, runContext);
       const retryContent = retryData?.choices?.[0]?.message?.content || '';
