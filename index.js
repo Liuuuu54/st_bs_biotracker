@@ -1039,12 +1039,14 @@ function captureMainflowRequestBody(body, source = 'fetch') {
   if (!body || typeof body !== 'object') return;
   const messages = normalizeMainflowSnapshotMessages(body.messages);
   if (messages.length === 0) return;
-  // 记录快照所属聊天，读取侧按当前聊天校验，防止跨聊天复用旧上下文
+  // 记录快照所属聊天，读取侧按当前聊天校验，防止跨聊天复用旧上下文；
+  // 拿不到聊天绑定的快照不可信，直接不写
   let chatKey = '';
   try {
     const stCtx = getHostContext();
     if (stCtx) chatKey = getChatKey(stCtx);
   } catch {}
+  if (!chatKey) return;
   globalThis[MAINFLOW_CONTEXT_SNAPSHOT_KEY] = {
     source,
     capturedAt: Date.now(),

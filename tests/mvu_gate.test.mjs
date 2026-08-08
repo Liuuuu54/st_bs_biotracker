@@ -40,6 +40,7 @@ function resetGate() {
   __mvuGateStateForTest.lastEndedContentKey = '';
   __mvuGateStateForTest.lastEndedAt = 0;
   __mvuGateStateForTest.pendingKey = '';
+  __mvuGateStateForTest.pendingContentKey = '';
   __mvuGateStateForTest.pendingSince = 0;
   __mvuGateStateForTest.announced = false;
   // fetchHooked/eventInstalled 不重置：钩子只装一次，避免嵌套包装
@@ -159,6 +160,31 @@ test('同一 id 被重掷/编辑（内容变化）后不再复用上一轮结束
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
 });
 
+test('重掷/编辑后旧等待窗口过期也必须重新等待（pendingSince 重排）', () => {
+  resetGate();
+  setDuring(false);
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  // 先进入等待，随后旧窗口过期
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  __mvuGateStateForTest.pendingSince = Date.now() - 30000;
+  // 同 id 同长度、内容变化（模拟重掷）——新 ctx 的 contentKey 与旧轮不同
+  const changedCtx = makeCtx({
+    chat: [
+      { id: 1, is_user: true, mes: '你好' },
+      { id: 2, is_user: false, name: '角色', mes: '重掷后的新正文内容' },
+    ],
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  // 内容指纹变化 → 视为新轮次、重置等待窗口 → 即使旧窗口过期也不放行
+  assert.equal(shouldWaitForMvuExtraAnalysis(changedCtx, settings), true);
+  // 新窗口重新计时：未过期仍等待，过期后才放行
+  __mvuGateStateForTest.pendingSince = Date.now() - MVU_EXTRA_WAIT_GRACE_MS - 1000;
+  assert.equal(shouldWaitForMvuExtraAnalysis(changedCtx, settings), false);
+});
+
 test('宽限期超时且 MVU 从未解析时放行', () => {
   resetGate();
   setDuring(false);
@@ -207,7 +233,7 @@ test('TT 场景：读不到 MVU 设置但 Mvu 全局在解析中 → 等待', ()
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), true);
 });
 
-test('TT 场景：读不到设置且 Mvu 未在解析 → 宽限期等待，超时放行', () => {
+test('MVU 全局存在但未在解析（读不到设置）→ 宽限期等待，超时放行', () => {
   resetGate();
   setDuring(false);
   const ctx = makeCtx(); // 无 mvu_settings

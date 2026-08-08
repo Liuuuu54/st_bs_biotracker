@@ -62,6 +62,7 @@ const mvuGateState = {
   lastEndedContentKey: '',
   lastEndedAt: 0,
   pendingKey: '',
+  pendingContentKey: '',
   pendingSince: 0,
   announced: false,
   // fetch 钩子观测：正文之后出现的额外生成请求（MVU 额外模型解析的硬信号）
@@ -268,6 +269,14 @@ export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
   const now = Date.now();
   if (mvuGateState.pendingKey !== roundKey) {
     mvuGateState.pendingKey = roundKey;
+    mvuGateState.pendingContentKey = contentKey;
+    mvuGateState.pendingSince = now;
+    mvuGateState.announced = false;
+    mvuGateState.sawGenerateThisRound = false;
+  } else if (mvuGateState.pendingContentKey !== contentKey) {
+    // 同 id 消息被重掷/编辑：内容已变，视为新轮次，重新开启等待窗口，
+    // 避免旧 pendingSince 过期导致宽限路径立即放行
+    mvuGateState.pendingContentKey = contentKey;
     mvuGateState.pendingSince = now;
     mvuGateState.announced = false;
     mvuGateState.sawGenerateThisRound = false;
@@ -828,12 +837,12 @@ function mergeTrackerWorldbookLists(...lists) {
   return merged;
 }
 
-function getMainflowContextSnapshot(ctx) {
+export function getMainflowContextSnapshot(ctx) {
   const snapshot = globalThis[MAINFLOW_CONTEXT_SNAPSHOT_KEY];
   if (!snapshot || typeof snapshot !== 'object') return null;
-  // 快照必须绑定当前聊天：切聊天后旧上下文的快照一律视为失效
+  // 快照必须绑定当前聊天：无绑定（旧格式）或绑定不一致的快照一律视为失效
   const snapshotChatKey = String(snapshot.chatKey || '');
-  if (snapshotChatKey && snapshotChatKey !== getChatKey(ctx)) return null;
+  if (!snapshotChatKey || snapshotChatKey !== getChatKey(ctx)) return null;
   const messages = Array.isArray(snapshot.messages)
     ? snapshot.messages
       .filter((message) => message && typeof message === 'object' && String(message.content || '').trim())
