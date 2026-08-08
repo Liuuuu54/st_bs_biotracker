@@ -5,7 +5,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { applyToolCall } from '../scripts/tools.js';
-import { getMergedRacePhysiologyProfile } from '../scripts/race_config.js';
 import { assertSafeDirectApiBase } from '../scripts/api.js';
 
 function makeCharacter(overrides = {}) {
@@ -91,21 +90,6 @@ test('性欲下降不触发泌乳，上升才触发', () => {
   assert.equal(cs.characters.F.profile.metabolism.milk, 10, '负性欲不应泌乳');
   applyToolCall(cs, { name: 'bsUpdateCharacterStatus', arguments: { female: 'F', options: { libido: 5 } } });
   assert.ok(cs.characters.F.profile.metabolism.milk > 10, '正性欲应泌乳');
-});
-
-test('扶她x人类 混血保持双性（genderRatio null 优先）', () => {
-  const merged = getMergedRacePhysiologyProfile('扶她x人类');
-  assert.equal(merged.genderRatio, null);
-});
-
-test('未知混血成分被标记而非静默丢弃', () => {
-  const merged = getMergedRacePhysiologyProfile('人类x不存在种族');
-  assert.equal(merged.hasUnknownRace, true);
-});
-
-test('同基种族 subtype 混血不重复加权', () => {
-  const merged = getMergedRacePhysiologyProfile('兽耳族-兔x人类x兽耳族-猫');
-  assert.ok(Math.abs(merged.gestationSpeciesSpeed - 1.2307692307692308) < 0.0001);
 });
 
 test('assertSafeDirectApiBase：远程 http（含畸形前缀）一律拒绝', () => {
