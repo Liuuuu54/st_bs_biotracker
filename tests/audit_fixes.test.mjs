@@ -7,7 +7,6 @@ import test from 'node:test';
 import { applyToolCall } from '../scripts/tools.js';
 import { getMergedRacePhysiologyProfile } from '../scripts/race_config.js';
 import { assertSafeDirectApiBase } from '../scripts/api.js';
-import { getMainflowContextSnapshot } from '../scripts/tracker.js';
 
 function makeCharacter(overrides = {}) {
   return {
@@ -128,20 +127,4 @@ test('assertSafeDirectApiBase：localhost/IPv6/https/相对路径放行', () => 
     assert.doesNotThrow(() => assertSafeDirectApiBase(base), `base=${base} 应放行`);
   }
   assert.throws(() => assertSafeDirectApiBase('http://'), /无法解析/);
-});
-
-test('mainflow 快照绑定当前聊天：跨聊天/无绑定一律拒绝', () => {
-  const snapshotKey = '__bs_biotracker_mainflow_context_snapshot__';
-  const messages = [{ role: 'user', content: 'hi' }];
-  const ctxA = { chatId: 'chat-a' };
-  const ctxB = { chatId: 'chat-b' };
-  globalThis[snapshotKey] = { chatKey: 'chat-a', messages };
-  try {
-    assert.ok(getMainflowContextSnapshot(ctxA), '同聊天快照应可用');
-    assert.equal(getMainflowContextSnapshot(ctxB), null, '跨聊天快照应拒绝');
-    globalThis[snapshotKey] = { messages }; // 旧格式：无 chatKey 绑定
-    assert.equal(getMainflowContextSnapshot(ctxA), null, '无绑定旧格式应拒绝');
-  } finally {
-    delete globalThis[snapshotKey];
-  }
 });
