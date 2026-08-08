@@ -60,6 +60,7 @@ export const THEME_CONFIG = {
   eldritch: {},
   ink: {},
   constructivism: {},
+  apple: {},
 };
 
 export const DEFAULT_WARDROBE_PREP_PROMPT = [
@@ -124,6 +125,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   model: 'gpt-4.1-mini',
   modelOptions: [],
   formattedOutputV4: true,
+  mvuExtraAnalysisCompat: true,
   triggerTiming: 'after_ai',
   pollMs: 1800,
   apiTimeoutMs: 180000,

@@ -131,6 +131,7 @@
               <button type="button" class="bs-bt-theme-option" data-theme-option="eldritch">10. 克系 (Eldritch)</button>
               <button type="button" class="bs-bt-theme-option" data-theme-option="ink">11. 水墨 (Ink)</button>
               <button type="button" class="bs-bt-theme-option" data-theme-option="constructivism">12. 建构 (Construct)</button>
+              <button type="button" class="bs-bt-theme-option" data-theme-option="apple">13. 苹果 (Apple)</button>
             </div>
           </div>
         </section>
@@ -175,6 +176,14 @@
                 <span>格式化输出(v4兼容)</span>
               </label>
               <small>请求体附加 response_format.type = json_object，可减少掉格式；不支持该参数的渠道请关闭。</small>
+            </div>
+
+            <div class="settings_section">
+              <div class="bs-bt-setting-toggle-row">
+                <input id="bs-bt-mvu-extra-analysis-compat" type="checkbox" />
+                <label for="bs-bt-mvu-extra-analysis-compat">MVU 额外模型解析兼容(等待变量更新完成后再追踪)</label>
+              </div>
+              <small>检测到 MVU 变量框架开启「额外模型解析」时，延迟追踪请求到本轮变量更新结束后再发送，避免与 MVU 的更新请求重复消耗额度。</small>
             </div>
 
             <div class="settings_section">
