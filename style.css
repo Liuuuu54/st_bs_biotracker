@@ -417,6 +417,18 @@
   padding: 10px 14px;
 }
 
+/* 设置项下方的小字解释：宿主默认 small 是低对比灰，在半透明白玻璃上几乎不可读，
+   这里给足对比度与行高（iOS 设置辅助文字风格） */
+#bs-biotracker-settings.theme-apple small,
+#bs-biotracker-settings.theme-apple .settings_section small {
+  color: #6e6e73;
+  font-size: 11.5px;
+  line-height: 1.45;
+  display: block;
+  margin-top: 4px;
+  opacity: 1;
+}
+
 #bs-biotracker-settings.theme-apple .bs-bt-screen-content {
   padding: 14px;
 }
@@ -947,6 +959,17 @@
 #bs-biotracker-settings .settings_section {
   margin: 0;
   color: inherit;
+}
+
+/* 设置项下方的小字解释：宿主默认 small 是低对比灰，在浅色屏/毛玻璃上几乎不可读；
+   统一用辅助文字色（各主题经 --bsbt-off-text 自适应）保证可读性 */
+#bs-biotracker-settings .settings_section small {
+  color: var(--bsbt-off-text);
+  font-size: 11.5px;
+  line-height: 1.45;
+  display: block;
+  margin-top: 4px;
+  opacity: 0.95;
 }
 
 #bs-biotracker-settings .sysHR {
