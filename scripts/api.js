@@ -103,14 +103,17 @@ function shouldUseHostProxy(url) {
 /**
  * 直连会把 API Key 放进 Authorization 头；远程 http 端点属于明文传输，
  * 仅放行 localhost 的 http（本地 Ollama/代理调试场景）。
+ * 相对路径/无 scheme 的 apiBase 视为同源路径（浏览器自行解析），不在此列。
+ * 前缀判定须覆盖任何 http(s) scheme 形式（含 `http:`/`http:/` 这类少打斜杠的畸形串，
+ * WHATWG 会把它解析成远程主机，不能只认 `http://`）。
  */
-function assertSafeDirectApiBase(apiBase) {
+export function assertSafeDirectApiBase(apiBase) {
+  if (!/^https?:/i.test(String(apiBase || ''))) return;
   try {
     const url = new URL(apiBase);
-    if (url.protocol === 'http:'
-      && url.hostname !== 'localhost'
-      && url.hostname !== '127.0.0.1'
-      && url.hostname !== '::1') {
+    // WHATWG URL 对 IPv6 回环返回带方括号的 hostname（'[::1]'），须去掉再比较
+    const host = url.hostname.replace(/^\[|\]$/g, '');
+    if (url.protocol === 'http:' && !['localhost', '127.0.0.1', '::1'].includes(host)) {
       throw new Error('API Base URL 使用 http:// 时仅允许 localhost；远程地址请使用 https://，避免 API Key 明文传输。');
     }
   } catch (error) {
@@ -319,7 +322,7 @@ function isNonRetriableApiError(error) {
   if (isApiDeadlineError(error)) return true;
   const message = String(error?.message || error || '');
   // 配置/鉴权类错误重试无意义
-  return /请先填写|尚未配置|API URL 或模型名称|401|403|Unauthorized|invalid.?api.?key|Incorrect API key/i.test(message);
+  return /请先填写|尚未配置|API URL 或模型名称|无法解析|仅允许 localhost|401|403|Unauthorized|invalid.?api.?key|Incorrect API key/i.test(message);
 }
 
 /**
@@ -703,6 +706,8 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
         }
         if (proxyError || (!response.ok && shouldFallbackFromHostProxy(responseText, response.status))) {
           transport = proxyError ? 'direct-after-proxy-error' : `direct-after-proxy-${response.status}`;
+          // 回退直连同样会把 Key 放进 Authorization 头：远程 http 必须拒绝
+          assertSafeDirectApiBase(apiBase);
           ({ response, responseText } = await fetchText(url, {
             method: 'POST',
             headers: getAuthHeaders(settings),
@@ -834,6 +839,8 @@ export async function fetchModelList(settings) {
       }
       if (proxyError || (!response.ok && shouldFallbackFromHostProxy(responseText, response.status))) {
         transport = proxyError ? 'direct-after-proxy-error' : `direct-after-proxy-${response.status}`;
+        // 回退直连同样会带 Authorization 头：远程 http 必须拒绝
+        assertSafeDirectApiBase(apiBase);
         ({ response, responseText } = await fetchText(url, { method: 'GET', headers: getAuthHeaders(settings), timeoutMs: resolveModelListTimeoutMs(settings) }));
       }
     } else {

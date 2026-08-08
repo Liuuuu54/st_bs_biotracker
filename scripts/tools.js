@@ -341,7 +341,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddSperm',
-    description: '向单一角色体内加入或扣除精液，用于性交后留下受孕机会。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
+    description: '向单一角色体内加入精液，用于性交后留下受孕机会。amount 必须为正数；扣除/排出精液请用 bsDrainSperm。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
     input_schema: {
       type: 'object',
       properties: {
@@ -3216,9 +3216,9 @@ function applyChildbirth(chatState, args) {
     return { applied: false, message: `bsChildbirth skipped for ${female}: no fetuses.` };
   }
   const childbirthStage = String(profile?.base?.stage || '');
-  const childbirthAllowedStages = ['孕早期', '孕中期', '孕晚期', '临产期', '产兆前驱', '第一产程', '第二产程', '第三产程'];
+  const childbirthAllowedStages = ['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '产兆前驱', '第一产程', '第二产程', '第三产程'];
   if (!childbirthAllowedStages.includes(childbirthStage)) {
-    return { applied: false, message: `bsChildbirth skipped for ${female}: stage ${childbirthStage || '(none)'} 不允许手术分娩（需已着床进入妊娠阶段）。` };
+    return { applied: false, message: `bsChildbirth skipped for ${female}: stage ${childbirthStage || '(none)'} 不允许手术分娩（需已着床进入妊娠阶段；假孕期/未着床请先推进剧情）。` };
   }
 
   profile.__runtimeRef = next.runtime || {};
