@@ -283,58 +283,68 @@
   --bsbt-home-tile-shadow: rgba(20, 20, 20, 0.36);
 }
 
-/* ===== 苹果（Apple）主题：iPhone 玻璃后壳 + 磨砂玻璃屏幕 ===== */
+/* ===== 苹果（Apple）主题 v2：iPhone 钛金属机身 + iOS 毛玻璃 ===== */
 #bs-biotracker-settings.theme-apple, .bs-bt-floating-sphere.theme-apple {
   --bsbt-pager-bg:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 42%),
-    linear-gradient(160deg, #f5f5f7 0%, #e8e8ed 48%, #d9d9de 100%);
-  --bsbt-lcd-bg: rgba(250, 250, 252, 0.8);
-  --bsbt-lcd-text: #1d1d1f;
-  --bsbt-border-color: #d2d2d7;
+    linear-gradient(180deg, #e8e8ed 0%, #d1d1d6 50%, #e8e8ed 100%);
+  --bsbt-lcd-bg: rgba(245, 245, 247, 0.62);
+  --bsbt-lcd-text: #1c1c1e;
+  --bsbt-border-color: #c6c6c8;
   --bsbt-font-main: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft JhengHei', sans-serif;
-  --bsbt-btn-grad-1: #f5f5f7;
-  --bsbt-btn-grad-2: #e8e8ed;
-  --bsbt-btn-text: #1d1d1f;
-  --bsbt-off-bg: #d9d9de;
-  --bsbt-off-text: #6e6e73;
-  --bsbt-case-radius: 44px;
+  --bsbt-btn-grad-1: #f2f2f7;
+  --bsbt-btn-grad-2: #e5e5ea;
+  --bsbt-btn-text: #1c1c1e;
+  --bsbt-off-bg: #d1d1d6;
+  --bsbt-off-text: #8e8e93;
+  --bsbt-case-radius: 48px;
   --bsbt-case-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.12),
-    0 12px 32px rgba(0, 0, 0, 0.18),
-    inset 0 1px 1px rgba(255, 255, 255, 0.7);
-  --bsbt-case-border: 3px solid rgba(255, 255, 255, 0.55);
-  --bsbt-home-tile-bg: rgba(255, 255, 255, 0.45);
-  --bsbt-home-tile-glow: rgba(255, 255, 255, 0.65);
-  --bsbt-home-tile-shadow: rgba(0, 0, 0, 0.14);
+    0 25px 60px rgba(0, 0, 0, 0.25),
+    0 8px 20px rgba(0, 0, 0, 0.12),
+    inset 0 1px 1px rgba(255, 255, 255, 0.8),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  --bsbt-case-border: 1px solid rgba(0, 0, 0, 0.06);
+  --bsbt-home-tile-bg: rgba(255, 255, 255, 0.55);
+  --bsbt-home-tile-glow: rgba(0, 122, 255, 0.14);
+  --bsbt-home-tile-shadow: rgba(0, 0, 0, 0.08);
 }
 
-/* 玻璃屏幕本体：blur 只给这一层（子元素零 backdrop-filter，避免逐元素合成层） */
+/* 外壳钛金属质感：轴向渐变 + 顶部白色高光带（光打在金属上）+ 柔和外阴影 */
+#bs-biotracker-settings.theme-apple {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 18%),
+    linear-gradient(180deg, #e8e8ed 0%, #d1d1d6 50%, #e8e8ed 100%);
+}
+
+/* 玻璃屏幕：更透的 iOS 毛玻璃（blur 只给这一层） */
 #bs-biotracker-settings.theme-apple .bs-bt-screen {
-  background-color: rgba(250, 250, 252, 0.8);
+  background-color: rgba(245, 245, 247, 0.62);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 22px;
   box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.85),
-    0 0 0 1px rgba(0, 0, 0, 0.06);
+    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.03),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
   /* 顶边高光：光打在玻璃材料上的效果 */
-  border-top: 1px solid rgba(255, 255, 255, 0.9);
+  border-top: 1px solid rgba(255, 255, 255, 0.85);
 }
 
-/* 玻璃屏没有复古扫描线 */
+/* 玻璃屏无扫描线 */
 #bs-biotracker-settings.theme-apple .bs-bt-screen::after {
-  background: linear-gradient(rgba(29, 29, 31, 0.02) 50%, rgba(255, 255, 255, 0.05) 50%);
-  opacity: 0.18;
+  background: none;
+  opacity: 0;
 }
 
 #bs-biotracker-settings.theme-apple .bs-bt-brand {
-  color: #86868b;
+  color: #6e6e73;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.02em;
+  text-shadow: none;
+  font-size: 12px;
 }
 
-/* 卡片/按钮/输入控件：半透明白底 + 带色相浅灰描边，不重复 backdrop-filter */
+/* 卡片/按钮/输入控件：iOS 控件质感——细边框、统一圆角、无重阴影 */
 #bs-biotracker-settings.theme-apple .bs-bt-menu-card,
 #bs-biotracker-settings.theme-apple .bs-bt-size-option,
 #bs-biotracker-settings.theme-apple .bs-bt-theme-option,
@@ -346,55 +356,72 @@
 #bs-biotracker-settings.theme-apple input[type='password'],
 #bs-biotracker-settings.theme-apple input[type='number'],
 #bs-biotracker-settings.theme-apple .menu_button {
-  border-color: rgba(0, 0, 0, 0.1);
-  background: rgba(255, 255, 255, 0.55);
+  border: 0.5px solid #c6c6c8;
+  background: rgba(255, 255, 255, 0.75);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   border-radius: 10px;
+  min-height: 40px;
 }
 
 #bs-biotracker-settings.theme-apple .bs-bt-size-option.is-active,
 #bs-biotracker-settings.theme-apple .bs-bt-theme-option.is-active {
-  background: rgba(0, 122, 255, 0.16);
-  color: #0066cc;
-  font-weight: 600;
-  border-color: rgba(0, 122, 255, 0.45);
-  box-shadow: inset 0 0 0 1px rgba(0, 122, 255, 0.2);
+  background: #007aff;
+  color: #ffffff;
+  font-weight: 700;
+  border-color: #007aff;
+  box-shadow: none;
+  border-radius: 8px;
 }
 
-/* 主页磁贴：毛玻璃小片，选中/hover 苹果蓝 */
+/* 主页磁贴：iOS 主屏幕图标——大图标在上、小标签在下、柔圆角、无重边框 */
 #bs-biotracker-settings.theme-apple .bs-bt-home-tile {
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  border: 0;
   background: rgba(255, 255, 255, 0.5);
-  border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  border-radius: 22px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  min-height: 92px;
+  gap: 8px;
 }
 
 #bs-biotracker-settings.theme-apple .bs-bt-home-tile:hover,
 #bs-biotracker-settings.theme-apple .bs-bt-home-tile:focus-visible {
-  background: rgba(255, 255, 255, 0.75);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.09);
+}
+
+#bs-biotracker-settings.theme-apple .bs-bt-home-tile__icon {
+  width: 30px;
+  height: 30px;
+  background-color: #007aff;
 }
 
 #bs-biotracker-settings.theme-apple .bs-bt-home-tile__label {
-  color: #1d1d1f;
+  color: #1c1c1e;
+  font-size: 11.5px;
+  font-weight: 500;
   letter-spacing: -0.01em;
 }
 
 #bs-biotracker-settings.theme-apple .bs-bt-physical-button,
 #bs-biotracker-settings.theme-apple .bs-bt-physical-button-off {
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  border: 0.5px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-/* 屏幕头部状态行：细分割线用带色相浅灰（坑 8），不显白 */
+/* 屏幕头部状态行：iOS 状态栏风格 */
 #bs-biotracker-settings.theme-apple .bs-bt-screen-header {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  color: #86868b;
+  border-bottom: 0.5px solid rgba(60, 60, 67, 0.18);
+  color: #8e8e93;
   font-size: 12px;
   font-weight: 500;
+  padding: 10px 14px;
 }
 
-/* 硬件装饰（金属角/螺丝）对玻璃后壳不适用 → 保持隐藏 */
+#bs-biotracker-settings.theme-apple .bs-bt-screen-content {
+  padding: 14px;
+}
+
+/* 硬件装饰（金属角/螺丝）对玻璃机身不适用 → 保持隐藏 */
 
 /* 兜底 1：不支持 backdrop-filter 的浏览器 → 提实浅背景，保证可读（坑 6/10） */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
