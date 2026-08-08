@@ -307,7 +307,7 @@ function buildPregnancyShiftBlock(characterState) {
   if (!motherRace || !motherProfile) return '';
 
   let totalWeight = 0;
-  let gestationAccumulator = 0;
+  let gestationDaysAccumulator = 0;
   let birthAccumulator = 0;
   let toleranceAccumulator = 0;
   let recoveryAccumulator = 0;
@@ -316,17 +316,21 @@ function buildPregnancyShiftBlock(characterState) {
     const weight = Math.max(0.33, Math.min(3.0, Number(fetus?.weight) || 1.0));
     const raceProfile = getMergedRacePhysiologyProfile(fetus?.race) || {};
     totalWeight += weight;
-    gestationAccumulator += weight * Math.max(0.1, Math.min(20, Number(raceProfile?.gestationSpeciesSpeed) || 1.0));
-    birthAccumulator += weight * Math.max(0.1, Math.min(100, Number(raceProfile?.birthDifficulty) || 1.0));
+    // 与工具侧保持一致：妊娠取「天数平均」（调和），不按胎重——胎儿 weight 只影响自己的发育天数
+    const fetusGestationSpeed = Math.max(0.1, Math.min(20, Number(raceProfile?.gestationSpeciesSpeed) || 1.0));
+    gestationDaysAccumulator += 280 / fetusGestationSpeed;
+    // 出生难度在工具侧也不按胎重，直接平均
+    birthAccumulator += Math.max(0.1, Math.min(100, Number(raceProfile?.birthDifficulty) || 1.0));
     toleranceAccumulator += weight * Math.max(0.1, Math.min(100, Number(raceProfile?.breedTolerance) || 1.0));
     recoveryAccumulator += weight * getEmbryoRecoveryCoefficient(fetus?.embryoType);
   }
 
-  const safeTotalWeight = Math.max(totalWeight, 0.5);
-  const averageGestation = gestationAccumulator / safeTotalWeight;
-  const averageBirth = birthAccumulator / safeTotalWeight;
-  const averageTolerance = toleranceAccumulator / safeTotalWeight;
-  const averageRecoveryCoefficient = recoveryAccumulator / safeTotalWeight;
+  const fetusCount = Math.max(1, fetuses.length);
+  const averageGestationDays = gestationDaysAccumulator / fetusCount;
+  const averageGestation = 280 / Math.max(averageGestationDays, 1);
+  const averageBirth = birthAccumulator / fetusCount;
+  const averageTolerance = toleranceAccumulator / Math.max(totalWeight, 0.33);
+  const averageRecoveryCoefficient = recoveryAccumulator / Math.max(totalWeight, 0.33);
   const fetusCountModifier = 1 + ((fetuses.length - 1) * 0.08);
   const toleranceCountModifier = Math.max(0.6, 1 - ((fetuses.length - 1) * 0.04));
 
@@ -338,6 +342,7 @@ function buildPregnancyShiftBlock(characterState) {
   const shiftedGestationSpeciesSpeed = Math.max(0.1, Math.min(20, baseGestationSpeciesSpeed * averageGestation));
   const shiftedBirthDifficulty = Math.max(0.1, Math.min(100, baseBirthDifficulty * averageBirth * fetusCountModifier));
   const shiftedBreedTolerance = Math.max(0.1, Math.min(100, baseBreedTolerance * averageTolerance * toleranceCountModifier));
+  // 与工具侧一致：恢复天数按「胚胎类型恢复系数 × (280/妊娠速度) × (分娩难度/承载耐受)」计算
   const shiftedRecoveryDays = Math.max(
     1,
     Math.round(Math.max(0.1, Math.min(2.0, averageRecoveryCoefficient)) * (280 / shiftedGestationSpeciesSpeed) * (shiftedBirthDifficulty / Math.max(shiftedBreedTolerance, 0.1))),
