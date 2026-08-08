@@ -175,7 +175,7 @@
                 <input id="bs-bt-formatted-output-v4" type="checkbox" />
                 <span>格式化输出(v4兼容)</span>
               </label>
-              <small>请求体附加 response_format.type = json_object，可减少掉格式；不支持该参数的渠道请关闭。</small>
+              <small>请求体附加 response_format.type = json_object + 提示词内嵌输出结构指令，可减少掉格式；模型名含 ds/deepseek 的渠道自动启用（不受本开关控制），其余模型可在此关闭。若渠道不支持 response_format 且使用 ds/deepseek 系模型，请更换模型名或渠道。</small>
             </div>
 
             <div class="settings_section">
@@ -371,6 +371,15 @@
               <div class="settings_section">
                 <label for="bs-bt-wardrobe-prep-prompt">额外备装提示</label>
                 <textarea id="bs-bt-wardrobe-prep-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="可写角色偏好、禁忌、职业/场景、常穿颜色、是否需要孕期可扩容衣物等。"></textarea>
+              </div>
+
+              <div class="settings_section">
+                <label style="display:flex;align-items:center;gap:8px;">
+                  <input id="bs-bt-wardrobe-prep-style-book" type="checkbox" />
+                  <span>参考服装风格世界书</span>
+                </label>
+                <small>开启后，将内置服装风格世界书中除「服装描写强化」外的条目（天然呆/傲娇/地雷系等性格穿搭方案）一并并入备装提示词，供模型参考生成符合角色气质的衣柜。</small>
+                <small style="color:#c94f00;font-weight:600;">⚠️ 该世界书约 22 个风格条目，开启后提示词将显著变长，预计每轮额外消耗约 2 万 token（CJK 内容约 3 万字符），请确认额度后开启。</small>
               </div>
 
               <div class="settings_section bs-bt-action-row">

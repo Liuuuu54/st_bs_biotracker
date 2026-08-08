@@ -659,9 +659,10 @@ async function runWardrobePrepInference(ctx) {
   const wardrobePrepPrompt = String(document.getElementById('bs-bt-wardrobe-prep-prompt')?.value || settings.wardrobePrepPrompt || '').trim();
   const wardrobePrepMainCount = Math.max(1, Math.min(12, Math.floor(Number(document.getElementById('bs-bt-wardrobe-prep-main-count')?.value || settings.wardrobePrepMainCount || 3))));
   const wardrobePrepAccessoryCount = Math.max(0, Math.min(12, Math.floor(Number(document.getElementById('bs-bt-wardrobe-prep-accessory-count')?.value || settings.wardrobePrepAccessoryCount || 3))));
+  const includeStyleBook = document.getElementById('bs-bt-wardrobe-prep-style-book')?.checked ?? settings.wardrobePrepStyleBook === true;
   beginRegistryOperation('wardrobe', `正在为 ${targetName} 生成衣柜 JSON...`);
   try {
-    const result = await runRegistryWardrobeInference(ctx, { ...values, customNotes: '', skillPrompt: '', targetName, wardrobePrepPrompt, wardrobePrepMainCount, wardrobePrepAccessoryCount });
+    const result = await runRegistryWardrobeInference(ctx, { ...values, customNotes: '', skillPrompt: '', targetName, wardrobePrepPrompt, wardrobePrepMainCount, wardrobePrepAccessoryCount, includeStyleBook });
     const editor = document.getElementById('bs-bt-wardrobe-prep-json');
     if (editor) editor.value = JSON.stringify(result, null, 2);
     setWardrobePrepStatus('备装生成完成。可以手动微调 JSON，再套用备装。');
@@ -1039,10 +1040,19 @@ function captureMainflowRequestBody(body, source = 'fetch') {
   if (!body || typeof body !== 'object') return;
   const messages = normalizeMainflowSnapshotMessages(body.messages);
   if (messages.length === 0) return;
+  // 记录快照所属聊天，读取侧按当前聊天校验，防止跨聊天复用旧上下文；
+  // 拿不到聊天绑定的快照不可信，直接不写
+  let chatKey = '';
+  try {
+    const stCtx = getHostContext();
+    if (stCtx) chatKey = getChatKey(stCtx);
+  } catch {}
+  if (!chatKey) return;
   globalThis[MAINFLOW_CONTEXT_SNAPSHOT_KEY] = {
     source,
     capturedAt: Date.now(),
     model: body.model ? String(body.model) : '',
+    chatKey,
     messages,
   };
   globalThis[DEBUG_LAST_MAINFLOW_SNAPSHOT_KEY] = globalThis[MAINFLOW_CONTEXT_SNAPSHOT_KEY];
@@ -1076,7 +1086,7 @@ function installMainflowRequestCapture() {
   const originalFetch = globalThis.fetch.bind(globalThis);
   globalThis[ORIGINAL_FETCH_KEY] = originalFetch;
   globalThis.fetch = async (...args) => {
-    if (!globalThis.__bs_biotracker_async_request__) {
+    if (!globalThis.__bs_biotracker_async_request__ && !isMvuExtraAnalysisInFlight()) {
       try {
         const body = parseFetchBodyFromInit(args[1]) || await parseFetchBodyFromRequest(args[0]);
         captureMainflowRequestBody(body, 'fetch');
@@ -1087,6 +1097,17 @@ function installMainflowRequestCapture() {
     return originalFetch(...args);
   };
   globalThis[FETCH_CAPTURE_READY_KEY] = true;
+}
+
+// MVU 额外模型解析的请求也会走 fetch，且发生在正文出完、追踪延迟之后；
+// 若让它覆盖主流 request 快照，mainflow 模式的追踪上下文会被 MVU 的更新提示词污染。
+function isMvuExtraAnalysisInFlight() {
+  try {
+    const mvu = globalThis.Mvu || globalThis.parent?.Mvu;
+    return typeof mvu?.isDuringExtraAnalysis === 'function' && mvu.isDuringExtraAnalysis() === true;
+  } catch {
+    return false;
+  }
 }
 
 // skill 化条目的 comment 可能带多行 meta，入名单前统一清洗成单行标题
@@ -5270,6 +5291,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-api-key', settings.apiKey);
   setValue('bs-bt-model', settings.model);
   setValue('bs-bt-formatted-output-v4', settings.formattedOutputV4 !== false);
+  setValue('bs-bt-mvu-extra-analysis-compat', settings.mvuExtraAnalysisCompat !== false);
   setValue('bs-bt-trigger', settings.triggerTiming);
   setValue('bs-bt-poll-ms', settings.pollMs);
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
@@ -5289,6 +5311,8 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-wardrobe-prep-prompt', settings.wardrobePrepPrompt);
   setValue('bs-bt-wardrobe-prep-main-count', settings.wardrobePrepMainCount);
   setValue('bs-bt-wardrobe-prep-accessory-count', settings.wardrobePrepAccessoryCount);
+  const styleBookToggle = document.getElementById('bs-bt-wardrobe-prep-style-book');
+  if (styleBookToggle) styleBookToggle.checked = settings.wardrobePrepStyleBook === true;
   populateModelList(settings);
   setConnectStatus(settings.modelOptions.length > 0 ? `已缓存 ${settings.modelOptions.length} 个模型` : '尚未连接');
   syncRegisterPageOnOpen(ctx);
@@ -5848,6 +5872,8 @@ function readSettingsFromForm(ctx) {
   settings.model = String(getValue('bs-bt-model')).trim();
   const formattedOutputToggle = document.getElementById('bs-bt-formatted-output-v4');
   if (formattedOutputToggle) settings.formattedOutputV4 = Boolean(formattedOutputToggle.checked);
+  const mvuCompatToggle = document.getElementById('bs-bt-mvu-extra-analysis-compat');
+  if (mvuCompatToggle) settings.mvuExtraAnalysisCompat = Boolean(mvuCompatToggle.checked);
   settings.triggerTiming = String(getValue('bs-bt-trigger')).trim() || 'after_ai';
   settings.pollMs = Math.max(800, Number(getValue('bs-bt-poll-ms')) || 1800);
   const rawApiTimeoutSec = String(getValue('bs-bt-api-timeout-sec')).trim();
@@ -5864,6 +5890,8 @@ function readSettingsFromForm(ctx) {
   settings.wardrobePrepPrompt = String(getValue('bs-bt-wardrobe-prep-prompt')).trim();
   settings.wardrobePrepMainCount = Math.max(1, Math.min(12, Math.floor(Number(getValue('bs-bt-wardrobe-prep-main-count')) || 3)));
   settings.wardrobePrepAccessoryCount = Math.max(0, Math.min(12, Math.floor(Number(getValue('bs-bt-wardrobe-prep-accessory-count')) || 0)));
+  const styleBookToggle = document.getElementById('bs-bt-wardrobe-prep-style-book');
+  if (styleBookToggle) settings.wardrobePrepStyleBook = Boolean(styleBookToggle.checked);
   settings.targetNames = String(getValue('bs-bt-targets')).trim();
   settings.trackerWorldbookMode = normalizeWorldbookMode(getValue('bs-bt-tracker-worldbook-mode'));
   const filterNames = String(getValue('bs-bt-worldbook-filter-input')).trim();
