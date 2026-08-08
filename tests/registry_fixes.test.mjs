@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
 import * as state from '../scripts/state.js';
+import * as registry from '../scripts/registry.js';
 import {
   applyRegistrySkillSetup,
   buildBreedingInferenceSystemPrompt,
@@ -172,4 +173,56 @@ test('registry target resolves ST user aliases to the current user name', () => 
     assert.equal(resolveRegistryTargetName(ctx, alias), '沈祁苓', `${alias} 应解析为当前 user 名`);
   }
   assert.equal(resolveRegistryTargetName(ctx, '陆素素'), '陆素素', '普通角色名不应变化');
+});
+
+test('hybrid fetus race survives registration without being re-mixed (P0 regression)', () => {
+  // 回归锚点：模型把完整胎儿种族（父×母）写进 race、未提供 fatherRace 时，
+  // normalize 不得再用母系二次混血（曾产出「兽耳族-猫又x蜥蜴人x人类」）。
+  const { applyRegistryResult } = registry;
+  const chatState = state.createEmptyChatState();
+  const result = {
+    name: '孕母',
+    profile: {
+      base: { race: '人类' },
+      pregnant: {
+        pregnantDays: 140,
+        fetusesCount: 1,
+        fetuses: [{ fathers: '父', provider: null, race: '兽耳族-猫又x蜥蜴人', gender: '女', embryoType: '胎生' }],
+      },
+      bio: {},
+      immune: {},
+      experience: {},
+      descriptions: {},
+      metabolism: { excretion: 10, hunger: 10, sleep: 10, milk: 10, odor: 10, companionship: 10 },
+    },
+  };
+  applyRegistryResult(chatState, result);
+  const fetus = chatState.characters['孕母'].profile.pregnant.fetuses[0];
+  assert.equal(fetus.race, '兽耳族-猫又x蜥蜴人', '未提供 fatherRace 时 race 应原样保留，不得二次混血');
+  assert.equal(fetus.fatherRace, null, '未显式提供父系时 fatherRace 应为空');
+});
+
+test('explicit fatherRace is honored and mixed against the mother (P0 companion)', () => {
+  const { applyRegistryResult } = registry;
+  const chatState = state.createEmptyChatState();
+  const result = {
+    name: '孕母',
+    profile: {
+      base: { race: '人类' },
+      pregnant: {
+        pregnantDays: 140,
+        fetusesCount: 1,
+        fetuses: [{ fathers: '父', provider: null, race: '人类x精灵', fatherRace: '精灵', gender: '女', embryoType: '胎生' }],
+      },
+      bio: {},
+      immune: {},
+      experience: {},
+      descriptions: {},
+      metabolism: { excretion: 10, hunger: 10, sleep: 10, milk: 10, odor: 10, companionship: 10 },
+    },
+  };
+  applyRegistryResult(chatState, result);
+  const fetus = chatState.characters['孕母'].profile.pregnant.fetuses[0];
+  assert.equal(fetus.race, '精灵x人类', '显式 fatherRace 应重算为 父系x母系');
+  assert.equal(fetus.fatherRace, '精灵');
 });

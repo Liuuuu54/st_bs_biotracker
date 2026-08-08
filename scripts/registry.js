@@ -1076,11 +1076,17 @@ function sanitizePregnant(value) {
       .filter((item) => item && typeof item === 'object')
       .map((item) => {
         const parsed = parseRaceDescriptor(item.race);
+        const parsedFetusRace = parsed.race || null;
+        // race 字段 = 胎儿完整种族（父×母，或纯种），模型按提示词示例填写，normalize 不会再二次混血。
+        // fatherRace 是可选显式字段：仅当模型显式提供父系时才保留；缺失时置 null，normalize 将信任 race 原样。
+        const explicitFatherRace = item.fatherRace !== undefined && item.fatherRace !== null
+          ? parseRaceDescriptor(item.fatherRace).race || null
+          : null;
         return {
           fathers: item.fathers ?? null,
           provider: item.provider ?? null,
-          race: parsed.race || null,
-          fatherRace: parsed.race || null,
+          race: parsedFetusRace,
+          fatherRace: explicitFatherRace,
           fatherDerivedType: item.fatherDerivedType ?? parsed.derivedType ?? null,
           gender: item.gender ?? null,
           embryoType: item.embryoType ?? null,
@@ -1158,8 +1164,13 @@ function normalizeRegisteredPregnancy(profile) {
   const motherRace = parseRaceDescriptor(profile?.base?.race || '人类').race || '人类';
 
   pregnant.fetuses = fetuses.map((fetus) => {
-    const fatherRace = parseRaceDescriptor(fetus?.fatherRace || fetus?.race || motherRace).race || motherRace;
-    const fetusRace = deriveRegisteredFetusRace(motherRace, fatherRace);
+    // race 已是模型给出的胎儿完整种族：仅当显式提供 fatherRace 时才按「父系×母系」重算；
+    // fatherRace 缺失时信任 race 原样，避免把已完整的混血种族再二次混入母系。
+    const explicitFatherRace = parseRaceDescriptor(fetus?.fatherRace || '').race || null;
+    const fatherRace = explicitFatherRace || null;
+    const fetusRace = explicitFatherRace
+      ? (explicitFatherRace === motherRace ? motherRace : deriveRegisteredFetusRace(motherRace, explicitFatherRace))
+      : (fetus?.race ? parseRaceDescriptor(fetus.race).race : motherRace);
     return {
       ...fetus,
       race: fetusRace,

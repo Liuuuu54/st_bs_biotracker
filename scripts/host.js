@@ -124,18 +124,25 @@ export async function refreshHostChatView(ctx, options = {}) {
   const requiredStartIndex = Math.max(0, afterIndex - contextSize);
   const minimumTailSize = Math.max(contextSize, totalCount - requiredStartIndex);
   const handle = api.current.handle();
+  const startChatId = getHostChatId(ctx);
   let page = await handle.history.tail({ limit: Math.min(TAURI_HISTORY_PAGE_SIZE, Math.max(1, minimumTailSize)) });
   const messages = new Array(totalCount);
   assignHistoryPage(messages, page);
 
   while (page?.hasMoreBefore && Number(page.startIndex) > requiredStartIndex) {
+    // 分页期间宿主可能被切走：若当前聊天已变，直接放弃本次结果
     page = await handle.history.before(page, { limit: TAURI_HISTORY_PAGE_SIZE });
     assignHistoryPage(messages, page);
+    if (getHostChatId(ctx) !== startChatId) break;
   }
+
+  // 中途切换聊天 → 旧数据不写缓存，通知调用方本轮作废重试
+  const endChatId = getHostChatId(ctx);
+  if (endChatId !== startChatId) return refreshHostChatView(ctx, options);
 
   HOST_CHAT_VIEW_CACHE.set(ctx, {
     absolute: true,
-    chatId: getHostChatId(ctx),
+    chatId: startChatId,
     messages,
     loadedStartIndex: Math.max(0, Number(page?.startIndex) || 0),
     totalCount,
