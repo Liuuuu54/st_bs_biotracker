@@ -312,6 +312,7 @@
 /* 注意：`.bs-bt-device { background: var(--bsbt-pager-bg) }` 的简写在 622 行，
    会覆盖 background-image，故此处用 !important 确保背景图生效 */
 #bs-biotracker-settings.theme-apple.bs-bt-device {
+  background-color: #d1d1d6;
   background-image:
     linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 18%),
     url('./assets/backgrounds/cirno-ice-blue.png') !important;
