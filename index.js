@@ -1787,6 +1787,27 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * toastr 安全包装：ST 自带 toastr 以 .html() 插入消息，角色名/技能名/工具返回 message
+ * 等用户可控文本未转义时存在 DOM XSS（恶意角色卡名可触发，安全审查 P2）。
+ * 包装四个方法把消息经 escapeHtml 转义，一次性覆盖全部调用点。
+ */
+function installSafeToastr() {
+  try {
+    const toastr = globalThis.toastr;
+    if (!toastr || globalThis.__bs_biotracker_toastr_safe__) return;
+    globalThis.__bs_biotracker_toastr_safe__ = true;
+    for (const method of ['success', 'error', 'warning', 'info']) {
+      const original = toastr[method];
+      if (typeof original !== 'function') continue;
+      toastr[method] = (message, title, options) =>
+        original.call(toastr, escapeHtml(message), title ? escapeHtml(title) : title, options);
+    }
+  } catch {
+    // 无 toastr 或包装失败时静默降级（不转义比崩溃好）
+  }
+}
+
 function formatIntegerDisplay(value, fallback = '未知') {
   const next = Number(value);
   if (!Number.isFinite(next)) return fallback;
@@ -7313,6 +7334,7 @@ async function bootstrap() {
   globalThis[BOOTSTRAP_RUNTIME_KEY] = true;
   try {
     await ensureChatStateHydrated(ctx);
+    installSafeToastr();
     installMainflowRequestCapture();
     await ensureModal(ctx);
     await registerMenuItem(ctx);
