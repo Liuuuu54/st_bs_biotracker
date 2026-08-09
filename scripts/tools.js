@@ -3874,7 +3874,14 @@ function applyPassedTime(chatState, args) {
   const week = clampNumber(args?.week, 0, 5200, 0);
   const month = clampNumber(args?.month, 0, 1200, 0);
   const year = clampNumber(args?.year, 0, 200, 0);
-  const totalMinutes = minute + (hour * 60) + (day * 24 * 60) + (week * 7 * 24 * 60) + (month * 30 * 24 * 60) + (year * 365 * 24 * 60);
+  let totalMinutes = minute + (hour * 60) + (day * 24 * 60) + (week * 7 * 24 * 60) + (month * 30 * 24 * 60) + (year * 365 * 24 * 60);
+  // 总量上限：各分量独立 clamp 后合计可达 2.6e8 分钟，妊娠代谢循环
+  // rounds=ceil(drain)×ceil(deltaDays) 会到 ~1e9 轮冻结 UI（安全审查 P1 实测）。
+  // 单次推进封顶一年（365 天）已远超任何剧情场景，阻断总量放大。
+  const MAX_TOTAL_MINUTES = 60 * 24 * 365;
+  if (totalMinutes > MAX_TOTAL_MINUTES) {
+    totalMinutes = MAX_TOTAL_MINUTES;
+  }
   if (totalMinutes <= 0) return { applied: false, message: 'bsPassedTime skipped: no positive duration.' };
 
   for (const name of Object.keys(chatState.characters || {})) {

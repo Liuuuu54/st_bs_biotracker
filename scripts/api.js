@@ -721,7 +721,9 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     globalThis.__bs_biotracker_async_request__ = true;
     const url = `${apiBase}/chat/completions`;
     const useHostProxy = shouldUseHostProxy(url);
-    if (!useHostProxy) assertSafeDirectApiBase(apiBase);
+    // 无条件校验 http 明文：代理路径同样把 key 交给 ST 后端（proxy_password/custom_include_headers），
+    // 远程 http 一律拒绝——不校验会在代理转发段以明文发往远程主机（安全审查 P2）。
+    assertSafeDirectApiBase(apiBase);
     let transport = useHostProxy ? 'host-proxy' : 'direct';
     let requestText = '';
     try {
@@ -868,7 +870,8 @@ export async function fetchModelList(settings) {
   let responseText = '';
   const url = `${apiBase}/models`;
   const useHostProxy = shouldUseHostProxy(url);
-  if (!useHostProxy) assertSafeDirectApiBase(apiBase);
+  // 无条件校验 http 明文（代理与直连同标准），见 postBody 注释
+  assertSafeDirectApiBase(apiBase);
   let transport = useHostProxy ? 'host-proxy' : 'direct';
   try {
     if (useHostProxy) {

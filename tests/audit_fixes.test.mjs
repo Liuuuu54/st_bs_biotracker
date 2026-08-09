@@ -159,3 +159,45 @@ test('备装风格世界书：排除服装描写强化，只发 content，其余
   const off = buildWardrobePrepSystemPrompt({}, { includeStyleBook: false });
   assert.equal(off.includes('服装风格世界书参考'), false, '关闭时不应含风格块');
 });
+
+test('bsPassedTime 极端时间总量被 cap（防 CPU 冻结，安全审查 P1）', () => {
+  const cs = makeChatState(makeCharacter({
+    base: { stage: '产后恢复', days: 1, race: '人类', vitality: 200, vitalityLevel: 4, psyStressLevel: 4, libido: 20, uterinePressure: 0 },
+  }));
+  const start = Date.now();
+  // 各分量独立 clamp 后合计本可到 2.6e8 分钟（约 1e9 轮妊娠代谢循环），应被总量 cap 到一年内
+  const result = applyToolCall(cs, {
+    name: 'bsPassedTime',
+    arguments: { year: 200, month: 1200, week: 5200, day: 36500 },
+  });
+  const elapsed = Date.now() - start;
+  assert.equal(result.applied, true);
+  assert.ok(elapsed < 2000, `极端时间应快速返回（实际 ${elapsed}ms），不得冻结 UI`);
+  assert.ok(cs.minutesPassed <= 60 * 24 * 365, `累积时间不应超过一年 cap（实际 ${cs.minutesPassed}）`);
+});
+
+test('characters 用 null-proto：__proto__ 角色名不污染原型（安全审查 P2）', async () => {
+  const { createEmptyChatState, getChatState } = await import('../scripts/state.js');
+  const { applyToolCall } = await import('../scripts/tools.js');
+  // 新状态 null-proto
+  const cs = createEmptyChatState();
+  assert.equal(Object.getPrototypeOf(cs.characters), null, '新状态 characters 应为 null-proto');
+  cs.characters['__proto__'] = { evil: true };
+  assert.equal(Object.getPrototypeOf(cs.characters), null, '写 __proto__ 键后原型仍为 null');
+  assert.equal({}.evil, undefined, '全局 Object.prototype 未被污染');
+  // 工具调用传 __proto__ 应被拒绝
+  const cs2 = createEmptyChatState();
+  const result = applyToolCall(cs2, { name: 'bsSetCharacterPresence', arguments: { female: '__proto__', isPresent: true } });
+  assert.equal(result.applied, false, '工具调用 __proto__ 应被拒绝');
+  assert.equal(Object.getPrototypeOf(cs2.characters), null, '工具调用后原型仍为 null');
+  // 存量迁移：普通对象 + 被污染键 → getChatState 重建为 null-proto 并丢弃污染
+  const settings = { chatStates: {} };
+  const oldState = { characters: { A: { name: 'A' } } };
+  oldState.characters['__proto__'] = { evil: true };
+  settings.chatStates['c'] = oldState;
+  const ctx = { chatId: 'c' };
+  const st = getChatState(ctx, settings);
+  assert.equal(Object.getPrototypeOf(st.characters), null, '存量 characters 应迁移为 null-proto');
+  assert.equal(st.characters.A?.name, 'A', '存量合法角色应保留');
+  assert.equal('evil' in st.characters, false, '污染键应被丢弃');
+});

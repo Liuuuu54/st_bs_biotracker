@@ -932,7 +932,8 @@ export function createEmptyChatState() {
     minutesPassed: 0,
     skillCatalog: [],
     nextSkillId: 1,
-    characters: {},
+    // null-proto：角色名直接作键，`__proto__`/`constructor` 键不会触发原型污染（安全审查 P2）
+    characters: Object.create(null),
     lastRawResult: null,
     lastOperationLogs: [],
     snapshots: [],
@@ -1184,6 +1185,20 @@ export function getChatState(ctx, settings) {
   if (!settings.chatStates[chatKey]) settings.chatStates[chatKey] = createEmptyChatState();
   const chatState = settings.chatStates[chatKey];
   let shouldSave = false;
+  // 存量状态迁移：早期 characters 是普通 {}，`__proto__` 键可污染原型（安全审查 P2）——
+  // 读取时重建为 null-proto（丢弃被污染的 prototype 键），新写入一律走 null-proto。
+  const rawCharacters = chatState.characters;
+  if (!rawCharacters || typeof rawCharacters !== 'object') {
+    chatState.characters = Object.create(null);
+    shouldSave = true;
+  } else if (Object.getPrototypeOf(rawCharacters) !== null) {
+    const migrated = Object.create(null);
+    for (const key of Object.keys(rawCharacters)) {
+      migrated[key] = rawCharacters[key];
+    }
+    chatState.characters = migrated;
+    shouldSave = true;
+  }
   const normalizedSkillCatalog = normalizeSkillCatalog(chatState.skillCatalog);
   if (JSON.stringify(chatState.skillCatalog || []) !== JSON.stringify(normalizedSkillCatalog)) shouldSave = true;
   chatState.skillCatalog = normalizedSkillCatalog;
