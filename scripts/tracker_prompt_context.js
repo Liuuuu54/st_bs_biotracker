@@ -347,7 +347,18 @@ export function buildMainFlowStatePrompt(payload = {}) {
     '状态为只读；若剧情没有明确触发变化，不要编造与之冲突的生理、心理或关系变化。',
     '',
     '[当前已注册角色状态]',
-    JSON.stringify(existingState),
+    serializeStateForPrompt(existingState),
     '</bs_biotracker>',
   ].join('\n');
+}
+
+/**
+ * 状态 JSON 注入防线：序列化后转义 `</` 与换行——角色卡/注册内容（描述、日记、
+ * 种族名等）可能含 `</bs_biotracker>` 或伪指令段，若不转义可提前闭合包裹标签
+ * 向主线 LLM 注入任意指令（安全审查 P1，实测可达主模型）。
+ */
+function serializeStateForPrompt(state) {
+  return JSON.stringify(state)
+    .replace(/<\//g, '<\\/')
+    .replace(/\r?\n/g, '\\n');
 }
