@@ -211,16 +211,58 @@ function isGenerateFetchRequest(input) {
 }
 
 /**
+ * 从 fetch 参数解析请求体（init.body 字符串 JSON）。
+ * Request 对象（.json()）是异步的，钩子里同步判断拿不到，保守返回 null——
+ * 拿不到 body 时不判定为 MVU 请求（宁可漏判也不误判普通卡）。
+ */
+function parseFetchBody(init) {
+  try {
+    const raw = init?.body;
+    if (typeof raw === 'string') {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * 判断该生成请求是否是 MVU 额外模型解析（而非 ST 主线生成）：
+ * 只有请求体带 MVU 特征才计为 MVU 信号——否则普通 ST 卡的主线生成请求
+ * 会被误判为「MVU 额外解析」而弹出等待提示并延迟追踪（用户实测误报）。
+ * MVU 特征（invoke_extra_model.ts 实证）：`遵循<must>指令`（硬编码 user_input，
+ * 以消息 content 进入 messages）、`<UpdateVariable>`（extra_model_task.txt 字面标签）、
+ * `json_patch`（v4 格式化输出 task）。不用 `<must>` 单标签/自造词——普通卡
+ * 系统提示词也可能含 `<must>...` 标签，会误判。
+ */
+export function isMvuExtraAnalysisRequest(input, init) {
+  if (!isGenerateFetchRequest(input)) return false;
+  const body = parseFetchBody(init);
+  if (!body || typeof body !== 'object') return false;
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const textParts = [
+    body.user_input,
+    ...messages.map((message) => {
+      const content = message?.content;
+      return typeof content === 'string' ? content : '';
+    }),
+  ].filter(Boolean).join('\n');
+  return /遵循<must>指令|<UpdateVariable>|json_patch/i.test(textParts);
+}
+
+/**
  * 观测非本插件发出的生成请求（MVU 额外模型解析/其他扩展的二次调用）。
  * 不依赖 MVU 的设置或全局对象——TT 下这些常常读不到，
  * 但 MVU 的请求必然走页面里的 fetch，这是最可靠的运行时信号。
  * 本插件自己的请求带 __bs_biotracker_async_request__ 标记，不计数。
  */
-function installMvuFetchHook() {
+export function installMvuFetchHook() {
   if (mvuGateState.fetchHooked || typeof globalThis.fetch !== 'function') return;
   const innerFetch = globalThis.fetch.bind(globalThis);
   globalThis.fetch = async (...args) => {
-    if (!globalThis.__bs_biotracker_async_request__ && isGenerateFetchRequest(args[0])) {
+    // 只观测「确实带 MVU 特征」的额外解析请求——普通 ST 主线生成请求
+    // 也走同一 generate 端点，若不加特征过滤会把无 MVU 卡误判为 MVU 环境
+    if (!globalThis.__bs_biotracker_async_request__ && isMvuExtraAnalysisRequest(args[0], args[1])) {
       mvuGateState.generateInFlight += 1;
       mvuGateState.lastGenerateStartedAt = Date.now();
       mvuGateState.sawGenerateThisRound = true;

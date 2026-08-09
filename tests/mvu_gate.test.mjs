@@ -5,7 +5,9 @@ import test from 'node:test';
 import {
   __mvuGateStateForTest,
   getMainflowContextSnapshot,
+  installMvuFetchHook,
   isMvuExtraAnalysisEnabled,
+  isMvuExtraAnalysisRequest,
   shouldWaitForMvuExtraAnalysis,
 } from '../scripts/tracker.js';
 import { buildSignature } from '../scripts/state.js';
@@ -260,7 +262,7 @@ test('额外模型解析但自动请求关闭 → 门控直接放行', () => {
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
 });
 
-test('TT 场景：读不到设置、无 Mvu，但有额外生成请求在飞行 → 等待', () => {
+test('TT 场景：读不到设置、无 Mvu，但确认是 MVU 额外解析请求在飞行 → 等待', () => {
   resetGate();
   const ctx = makeCtx(); // 无 mvu_settings、无 Mvu 全局
   const settings = makeSettings();
@@ -271,6 +273,105 @@ test('TT 场景：读不到设置、无 Mvu，但有额外生成请求在飞行 
   __mvuGateStateForTest.lastGenerateStartedAt = Date.now();
   __mvuGateStateForTest.sawGenerateThisRound = true;
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+});
+
+test('fetch 钩子只认 MVU 特征请求：普通 ST 主线生成不触发（误报回归）', () => {
+  resetGate();
+  const mvuUrl = 'https://host/api/backends/chat-completions/generate';
+  // 真实 ST body 结构（openai.js 实证）：无顶层 user_input，
+  // 「遵循<must>指令」作为用户消息 content 进入 messages，task 在 system 里
+  const mvuBody = {
+    messages: [
+      { role: 'system', content: '你是 MVU 变量框架。\n必须用 <UpdateVariable> 标签更新变量。' },
+      { role: 'user', content: '遵循<must>指令' },
+    ],
+  };
+  assert.equal(isMvuExtraAnalysisRequest(mvuUrl, { body: JSON.stringify(mvuBody) }), true, 'MVU 特征请求应识别（messages 路径）');
+  // v4 格式化输出模式：task 含 json_patch
+  const mvuV4Body = {
+    messages: [
+      { role: 'system', content: 'Return only a JSON object: {"analysis":"...","json_patch":[...]}' },
+      { role: 'user', content: '遵循<must>指令' },
+    ],
+  };
+  assert.equal(isMvuExtraAnalysisRequest(mvuUrl, { body: JSON.stringify(mvuV4Body) }), true, 'v4 json_patch 模式应识别');
+  // 普通 ST 主线生成：messages 是普通对话，无 MVU 特征
+  const normalBody = {
+    messages: [
+      { role: 'system', content: '你是角色。请用中文回复。' },
+      { role: 'user', content: '你好' },
+      { role: 'assistant', content: '你好呀' },
+    ],
+  };
+  assert.equal(isMvuExtraAnalysisRequest(mvuUrl, { body: JSON.stringify(normalBody) }), false, '普通主线请求不应误判为 MVU');
+  // 普通卡系统提示词含 <must> 单标签（非 MVU 卡常见）→ 不应误判（特征须是完整 MVU 短语）
+  const mustTagBody = {
+    messages: [
+      { role: 'system', content: '<must>必须用中文回复</must>' },
+      { role: 'user', content: '你好' },
+    ],
+  };
+  assert.equal(isMvuExtraAnalysisRequest(mvuUrl, { body: JSON.stringify(mustTagBody) }), false, '含 <must> 单标签的普通卡不应误判');
+  // 非 generate 端点
+  assert.equal(isMvuExtraAnalysisRequest('https://host/api/models', { body: JSON.stringify(mvuBody) }), false, '非 generate 端点不算');
+  // Request 对象（拿不到 body）→ 保守不判（宁可漏判不误报）
+  assert.equal(isMvuExtraAnalysisRequest(mvuUrl, {}), false, '无 body 时不应误判');
+});
+
+test('端到端：普通卡主线生成经过真实 fetch 钩子不进入等待（用户误报场景）', async () => {
+  resetGate();
+  // 重置 fetchHooked 以便重新安装真实钩子
+  __mvuGateStateForTest.fetchHooked = false;
+  const originalFetch = globalThis.fetch;
+  let innerCalled = 0;
+  globalThis.fetch = async (...args) => {
+    innerCalled += 1;
+    return { ok: true, status: 200, text: async () => '{}' };
+  };
+  try {
+    installMvuFetchHook();
+    assert.equal(__mvuGateStateForTest.fetchHooked, true, '钩子应已安装');
+    const mvuUrl = 'https://host/api/backends/chat-completions/generate';
+    // 普通主线生成请求经过包装后的 fetch → 不应计为 MVU 信号
+    await globalThis.fetch(mvuUrl, {
+      body: JSON.stringify({ messages: [{ role: 'user', content: '普通对话' }] }),
+    });
+    assert.equal(innerCalled, 1, '请求应转发给原 fetch');
+    assert.equal(__mvuGateStateForTest.generateInFlight, 0, '普通请求不应计 in-flight');
+    assert.equal(__mvuGateStateForTest.sawGenerateThisRound, false, '普通请求不应置信号');
+    const ctx = makeCtx();
+    assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false, '普通卡主线生成后不应等待');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('端到端：MVU 额外解析请求经过真实 fetch 钩子触发等待', async () => {
+  resetGate();
+  __mvuGateStateForTest.fetchHooked = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    return { ok: true, status: 200, text: async () => '{}' };
+  };
+  try {
+    installMvuFetchHook();
+    const mvuUrl = 'https://host/api/backends/chat-completions/generate';
+    // MVU 额外解析请求经过包装后的 fetch → 应计为信号
+    const pending = globalThis.fetch(mvuUrl, {
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: 'MVU <UpdateVariable> 更新指令' },
+          { role: 'user', content: '遵循<must>指令' },
+        ],
+      }),
+    });
+    assert.equal(__mvuGateStateForTest.generateInFlight, 1, 'MVU 请求应计 in-flight');
+    assert.equal(__mvuGateStateForTest.sawGenerateThisRound, true, 'MVU 请求应置信号');
+    await pending;
+    assert.equal(__mvuGateStateForTest.generateInFlight, 0, '请求完成后 in-flight 归零');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('生成请求结束后放行', () => {
