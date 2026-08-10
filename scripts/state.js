@@ -137,6 +137,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   wardrobePrepPrompt: '',
   wardrobePrepMainCount: 3,
   wardrobePrepAccessoryCount: 3,
+  wardrobePrepStyleBook: false,
   targetNames: '',
   trackerWorldbookMode: 'exclude',
   trackerWorldbookExcludeNames: '',
@@ -930,7 +931,8 @@ export function createEmptyChatState() {
     minutesPassed: 0,
     skillCatalog: [],
     nextSkillId: 1,
-    characters: {},
+    // null-proto：角色名直接作键，`__proto__`/`constructor` 键不会触发原型污染（安全审查 P2）
+    characters: Object.create(null),
     lastRawResult: null,
     lastOperationLogs: [],
     snapshots: [],
@@ -1059,18 +1061,24 @@ export function getSettings(ctx) {
   const settings = root[MODULE_NAME];
   const useHostChatStore = ['tauritavern', 'luker'].includes(getHostKind());
   if (useHostChatStore) {
-    const descriptor = Object.getOwnPropertyDescriptor(settings, 'chatStates');
-    const runtimeChatStates = descriptor && descriptor.enumerable === false && settings.chatStates && typeof settings.chatStates === 'object'
-      ? settings.chatStates
-      : {};
-    if (descriptor) delete settings.chatStates;
-    Object.defineProperty(settings, 'chatStates', {
-      value: runtimeChatStates,
-      writable: true,
-      configurable: true,
-      enumerable: false,
-    });
-    if (!descriptor || descriptor.enumerable !== false) shouldSave = true;
+    // TT/Luker 下 chatStates 与宿主 sidecar 绑定，属性描述符可能特殊（旧数据/宿主注入），
+    // 重定义失败不应拖垮整个设置读写——否则「点击主题没反应」（安全审查后防御加固）。
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(settings, 'chatStates');
+      const runtimeChatStates = descriptor && descriptor.enumerable === false && settings.chatStates && typeof settings.chatStates === 'object'
+        ? settings.chatStates
+        : {};
+      if (descriptor) delete settings.chatStates;
+      Object.defineProperty(settings, 'chatStates', {
+        value: runtimeChatStates,
+        writable: true,
+        configurable: true,
+        enumerable: false,
+      });
+      if (!descriptor || descriptor.enumerable !== false) shouldSave = true;
+    } catch (error) {
+      console.warn('[BS BioTracker] unable to normalize chatStates for host store, continuing', error);
+    }
   }
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     if (useHostChatStore && key === 'chatStates') continue;
@@ -1182,6 +1190,20 @@ export function getChatState(ctx, settings) {
   if (!settings.chatStates[chatKey]) settings.chatStates[chatKey] = createEmptyChatState();
   const chatState = settings.chatStates[chatKey];
   let shouldSave = false;
+  // 存量状态迁移：早期 characters 是普通 {}，`__proto__` 键可污染原型（安全审查 P2）——
+  // 读取时重建为 null-proto（丢弃被污染的 prototype 键），新写入一律走 null-proto。
+  const rawCharacters = chatState.characters;
+  if (!rawCharacters || typeof rawCharacters !== 'object') {
+    chatState.characters = Object.create(null);
+    shouldSave = true;
+  } else if (Object.getPrototypeOf(rawCharacters) !== null) {
+    const migrated = Object.create(null);
+    for (const key of Object.keys(rawCharacters)) {
+      migrated[key] = rawCharacters[key];
+    }
+    chatState.characters = migrated;
+    shouldSave = true;
+  }
   const normalizedSkillCatalog = normalizeSkillCatalog(chatState.skillCatalog);
   if (JSON.stringify(chatState.skillCatalog || []) !== JSON.stringify(normalizedSkillCatalog)) shouldSave = true;
   chatState.skillCatalog = normalizedSkillCatalog;

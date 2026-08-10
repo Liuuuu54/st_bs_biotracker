@@ -6440,10 +6440,27 @@ async function ensureModal(ctx) {
   );
   document.querySelectorAll('#bs-biotracker-settings [data-theme-option]').forEach((node) =>
     node.addEventListener('click', () => {
-      const settings = getSettings(ctx);
-      settings.theme = node.dataset.themeOption || 'retro';
-      saveSettings(ctx);
-      applyTheme(settings);
+      const nextTheme = node.dataset.themeOption || 'retro';
+      // TT 下 host context 偶发未就绪/设置读取异常——分步容错：
+      // 主题切换是纯 UI 操作，不该因设置读写失败而整个失效（「点击没反应」）。
+      let settings = null;
+      try {
+        settings = getSettings(ctx);
+      } catch (error) {
+        console.error('[BS BioTracker] getSettings failed on theme switch, applying default', error);
+      }
+      if (settings) {
+        settings.theme = nextTheme;
+        try {
+          saveSettings(ctx);
+        } catch (error) {
+          console.error('[BS BioTracker] saveSettings failed on theme switch', error);
+        }
+        applyTheme(settings);
+      } else {
+        // 读不到设置时退化为仅切 CSS 类（不持久化）
+        applyTheme({ theme: nextTheme, deviceSize: 'phone', fontSize: 'standard' });
+      }
       setView('theme');
     }),
   );
