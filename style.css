@@ -474,6 +474,7 @@
 #bs-biotracker-settings.theme-apple .bs-bt-physical-button:hover,
 #bs-biotracker-settings.theme-apple .bs-bt-physical-button:focus-visible {
   background: rgba(120, 120, 128, 0.12);
+  filter: none; /* 重置基础层 hover brightness(1.05)，避免与自定义背景叠加 */
 }
 
 /* 屏幕头部状态行：iOS 状态栏风格 */
