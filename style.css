@@ -287,7 +287,7 @@
 #bs-biotracker-settings.theme-apple, .bs-bt-floating-sphere.theme-apple {
   --bsbt-pager-bg:
     linear-gradient(180deg, #e8e8ed 0%, #d1d1d6 50%, #e8e8ed 100%);
-  --bsbt-lcd-bg: rgba(245, 245, 247, 0.14);
+  --bsbt-lcd-bg: rgba(245, 245, 247, 0.78);
   --bsbt-lcd-text: #1c1c1e;
   --bsbt-border-color: #c6c6c8;
   --bsbt-font-main: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft JhengHei', sans-serif;
@@ -354,7 +354,7 @@
   background-size: cover;
   background-position: 50% 0%;
   background-repeat: no-repeat;
-  filter: blur(48px) saturate(200%);
+  filter: blur(48px) saturate(175%);
   transform: scale(1.5); /* 放大防 blur(48px) 边缘露底色（需 ≥1.3，理想 1.5） */
   pointer-events: none;
 }
@@ -362,12 +362,14 @@
 /* 白蒙层：半透明白盖在图层上、内容下，柔化过曝的冰蓝 */
 /* 注意：必须显式 opacity:1——基础扫描线规则给 ::after 设了 opacity:0.2，
    不重置会把白蒙稀释 7 倍形同虚设 */
+/* 0.78 = iOS Translucent Material 表面不透明度平衡点（kimi 实测审查）：
+   0.14 太薄会让壁纸/聊天内容从玻璃下透上来与前景文字打架 */
 #bs-biotracker-settings.theme-apple .bs-bt-screen::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: rgba(245, 245, 247, 0.14);
+  background: rgba(245, 245, 247, 0.78);
   opacity: 1;
   pointer-events: none;
 }
@@ -408,12 +410,23 @@
 
 #bs-biotracker-settings.theme-apple .bs-bt-size-option.is-active,
 #bs-biotracker-settings.theme-apple .bs-bt-theme-option.is-active {
-  background: #007aff;
+  background: rgba(0, 122, 255, 0.92);
   color: #ffffff;
   font-weight: 700;
-  border-color: #007aff;
-  box-shadow: none;
+  border-color: rgba(0, 122, 255, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
   border-radius: 8px;
+}
+
+/* 主题列表分隔线：苹果感 = 极浅实色融进材料，不要深灰粗线（kimi 实测审查） */
+#bs-biotracker-settings.theme-apple .bs-bt-theme-option {
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.75);
+}
+#bs-biotracker-settings.theme-apple .bs-bt-theme-option:last-child {
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.08);
 }
 
 /* 主页磁贴：iOS 主屏幕图标——白底提亮至 0.72 保证贴图透出下文字仍清晰 */
@@ -447,17 +460,38 @@
 
 #bs-biotracker-settings.theme-apple .bs-bt-physical-button,
 #bs-biotracker-settings.theme-apple .bs-bt-physical-button-off {
-  border: 0.5px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  /* 玻璃 tab bar 风格：图标直接放在半透明材料上，无独立白色药丸背景（kimi 实测审查） */
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+  color: #1d1d1f;
+}
+#bs-biotracker-settings.theme-apple .bs-bt-physical-button:active {
+  transform: none;
+  box-shadow: none;
+}
+#bs-biotracker-settings.theme-apple .bs-bt-physical-button:hover,
+#bs-biotracker-settings.theme-apple .bs-bt-physical-button:focus-visible {
+  background: rgba(120, 120, 128, 0.12);
 }
 
 /* 屏幕头部状态行：iOS 状态栏风格 */
+/* 材料连续性：同一块玻璃上文字只靠透明度分层，不引入青色/杂色（kimi 实测审查） */
 #bs-biotracker-settings.theme-apple .bs-bt-screen-header {
   border-bottom: 0.5px solid rgba(60, 60, 67, 0.18);
-  color: #8e8e93;
+  color: #6e6e73;
   font-size: 12px;
   font-weight: 500;
   padding: 10px 14px;
+}
+#bs-biotracker-settings.theme-apple .bs-bt-screen-header #bs-bt-time,
+#bs-biotracker-settings.theme-apple .bs-bt-screen-header #bs-bt-title {
+  color: #6e6e73;
+}
+#bs-biotracker-settings.theme-apple .bs-bt-screen-header #bs-bt-title {
+  color: rgba(29, 29, 31, 0.5);
+  font-weight: 600;
 }
 
 /* 设置项下方的小字解释：宿主默认 small 是低对比灰，在半透明白玻璃上几乎不可读，
