@@ -1,1 +1,0 @@
-.[] | .number as $n | .head.ref as $r | .title as $t | "PR#" + ($n|tostring) + " [" + $r + "] " + $t
