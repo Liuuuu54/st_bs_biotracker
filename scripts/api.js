@@ -150,18 +150,81 @@ function shouldUseHostProxy(url) {
  * WHATWG 会把它解析成远程主机，不能只认 `http://`）。
  */
 export function assertSafeDirectApiBase(apiBase) {
-  if (!/^https?:/i.test(String(apiBase || ''))) return;
+  const raw = String(apiBase || '').trim();
+  if (!raw) return;
+  // 非 http(s) scheme（file://、gopher://、ftp://、javascript: 等）一律拒绝——
+  // 直连时浏览器可能拦截，但 host-proxy 路径会把 URL 交给 ST 后端服务端 fetch，
+  // 成为 SSRF 放大器（网络面审查 P2）。
+  if (!/^https?:/i.test(raw)) {
+    // 相对路径/无 scheme（'api/v1'、'api.example.com:8080'、'localhost:8000'）
+    // 视为同源/回环路径，放行；显式 scheme（file://、gopher://、ftp://、javascript:、
+    // data: 等）一律拒绝——直连时浏览器可能拦截，但 host-proxy 路径会把 URL 交给
+    // ST 后端服务端 fetch，成为 SSRF 放大器（网络面审查 P2）。
+    const schemeMatch = raw.match(/^([a-z][a-z0-9+.-]*):/i);
+    if (schemeMatch) {
+      const scheme = schemeMatch[1].toLowerCase();
+      const rest = raw.slice(schemeMatch[0].length);
+      // 'localhost:8000' / 'api.example.com:8080' = 无 scheme 的 host:port，放行
+      const isPortOnly = /^\d+$/.test(rest);
+      const isDangerousScheme = ['file', 'gopher', 'ftp', 'javascript', 'data', 'vbscript', 'jar', 'ws', 'wss'].includes(scheme);
+      if (!isPortOnly && isDangerousScheme) {
+        throw new Error('API Base URL 仅支持 http:// 或 https://，其他协议一律拒绝。');
+      }
+    }
+    return;
+  }
   try {
-    const url = new URL(apiBase);
+    const url = new URL(raw);
     // WHATWG URL 对 IPv6 回环返回带方括号的 hostname（'[::1]'），须去掉再比较
     const host = url.hostname.replace(/^\[|\]$/g, '');
     if (url.protocol === 'http:' && !['localhost', '127.0.0.1', '::1'].includes(host)) {
       throw new Error('API Base URL 使用 http:// 时仅允许 localhost；远程地址请使用 https://，避免 API Key 明文传输。');
     }
+    // 解析后 IP 复核：私网/环回/链路本地/保留地址在代理路径会被 ST 后端放大成
+    // SSRF（如 169.254.169.254 云元数据、10.x 内网、0.0.0.0）——即使 scheme 是 https。
+    const numericHost = host.replace(/^::ffff:/, '').toLowerCase();
+    if (isPrivateNetworkHost(numericHost) && !['localhost', '127.0.0.1', '::1'].includes(numericHost)) {
+      throw new Error('API Base URL 指向私网/环回/链路本地地址，代理路径存在 SSRF 风险，请使用公网 https 地址。');
+    }
   } catch (error) {
     if (error instanceof TypeError) throw new Error('API Base URL 无法解析。');
     throw error;
   }
+}
+
+/**
+ * 错误文本脱敏：API 响应体可能回显 Authorization/key/token 等敏感字段，
+ * 拼入错误消息（toastr/UI 可见）前剥离（网络面审查 P3）。
+ */
+function sanitizeErrorText(text) {
+  return String(text || '')
+    .replace(/("?(?:authorization|api[-_]?key|proxy[-_]?password|token)"?\s*[:=]\s*")[^"]{4,}(")/gi, '$1***$2')
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]{8,}/gi, '$1***')
+    .slice(0, 300);
+}
+
+/** 判定主机是否为私网/环回/链路本地/保留 IP（用于代理路径 SSRF 防护）。 */
+function isPrivateNetworkHost(host) {
+  if (!/^[\d.]+$/.test(host) && !/^[0-9a-f:]+$/i.test(host)) return false; // 域名放行（DNS rebinding 由解析后复核兜底不了时依赖宿主）
+  if (host.includes(':')) {
+    // IPv6：环回 ::1、链路本地 fe80::/10、唯一本地 fc00::/7、保留 ::/128
+    if (host === '::1' || host === '::') return true;
+    const first = host.split(':')[0].toLowerCase();
+    if (first === 'fe80' || first === 'feb0' || first === 'fe90' || first === 'fea0' || first === 'feb1' || first === 'feb2' || first === 'feb3' || first === 'feb4' || first === 'feb5' || first === 'feb6' || first === 'feb7' || first === 'feb8' || first === 'feb9' || first === 'feba' || first === 'febb' || first === 'febc' || first === 'febd' || first === 'febe' || first === 'febf') return true;
+    if (first === 'fc' || first === 'fd') return true;
+    return false;
+  }
+  const parts = host.split('.').map((n) => Number(n));
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = parts;
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 0) return true;
+  if (a >= 224) return true; // 组播/保留
+  return false;
 }
 
 function shouldFallbackFromHostProxy(responseText, status) {
@@ -707,6 +770,9 @@ function buildPresetSamplingBodyFromPreset(preset) {
 
 async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   const logApiDebug = (phase, details = {}) => {
+    // 默认关闭：全量 request/response（含聊天/角色态）只会在显式开启调试时落 console，
+    // 避免无条件泄露（网络面审查 P3）。开启：控制台执行 globalThis.__bs_biotracker_debug_api__ = true
+    if (!globalThis.__bs_biotracker_debug_api__) return;
     try {
       const label = `[BS BioTracker][API debug] ${phase}`;
       if (typeof console.groupCollapsed === 'function') console.groupCollapsed(label);
@@ -771,16 +837,19 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
           deadlineMs: runContext.deadlineMs || 0,
         }));
       }
-      globalThis[DEBUG_LAST_API_RESPONSE_KEY] = {
-        capturedAt: Date.now(),
-        attempt,
-        transport,
-        url: transport === 'host-proxy' ? '/api/backends/chat-completions/generate' : url,
-        status: response.status,
-        ok: response.ok,
-        responseText,
-        requestText,
-      };
+      // 调试快照同样默认关闭（网络面审查 P3），避免无门控暂存完整请求/响应于 globalThis
+      if (globalThis.__bs_biotracker_debug_api__) {
+        globalThis[DEBUG_LAST_API_RESPONSE_KEY] = {
+          capturedAt: Date.now(),
+          attempt,
+          transport,
+          url: transport === 'host-proxy' ? '/api/backends/chat-completions/generate' : url,
+          status: response.status,
+          ok: response.ok,
+          responseText,
+          requestText,
+        };
+      }
       logApiDebug(`response:${attempt}`, {
         transport,
         url: transport === 'host-proxy' ? '/api/backends/chat-completions/generate' : url,
@@ -841,7 +910,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(`API ${response.status}: ${errorText.slice(0, 300)}`);
+    throw new Error(`API ${response.status}: ${sanitizeErrorText(errorText)}`);
   }
   try {
     return JSON.parse(responseText);
@@ -895,13 +964,13 @@ export async function fetchModelList(settings) {
     throw new Error(`模型列表连接失败（${transport}）。请检查 Base URL / API Key；也可手动填写模型名称后直接使用追踪/注册。原始错误: ${String(error?.message || error)}`);
   }
   if (!response.ok) {
-    throw new Error(`模型列表请求失败 ${response.status}（${transport}）: ${responseText.slice(0, 240)}。如果此 API 不支持 /models，可手动填写模型名称。`);
+    throw new Error(`模型列表请求失败 ${response.status}（${transport}）: ${sanitizeErrorText(responseText)}。如果此 API 不支持 /models，可手动填写模型名称。`);
   }
   let data;
   try {
     data = JSON.parse(responseText);
   } catch {
-    throw new Error(`模型列表响应不是 JSON（${transport}）: ${responseText.slice(0, 180)}`);
+    throw new Error(`模型列表响应不是 JSON（${transport}）: ${sanitizeErrorText(responseText)}`);
   }
   if (data && typeof data === 'object' && data.data == null && data.models == null && data.response) {
     try {

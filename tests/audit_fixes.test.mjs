@@ -99,6 +99,21 @@ test('assertSafeDirectApiBase：远程 http（含畸形前缀）一律拒绝', (
   }
 });
 
+test('assertSafeDirectApiBase：非 http(s) scheme 与私网地址拒绝（网络面审查 P2）', () => {
+  for (const base of [
+    'file:///etc/passwd',
+    'gopher://example.com',
+    'ftp://example.com',
+    'javascript:alert(1)',
+    'https://169.254.169.254/latest/meta-data',
+    'https://10.0.0.5/v1',
+    'https://192.168.1.1/v1',
+    'http://0.0.0.0:11434',
+  ]) {
+    assert.throws(() => assertSafeDirectApiBase(base), /拒绝|私网|环回|链路本地|仅允许 localhost/, `base=${base} 应被拒绝`);
+  }
+});
+
 test('assertSafeDirectApiBase：localhost/IPv6/https/相对路径放行', () => {
   for (const base of [
     'http://localhost:11434',
