@@ -1021,7 +1021,9 @@ function syncWorldbookFilterInput(ctx) {
 }
 
 function trimMainflowSnapshotContent(content) {
-  return String(content || '');
+  // 单条消息内容上限：防快照无限膨胀占用 globalThis（同页脚本可读，网络面审查 P3）。
+  // 主线 prompt 单条消息极少超过 4k 字符，截断不影响 tracker 引用主要上下文。
+  return String(content || '').slice(0, 4000);
 }
 
 function normalizeMainflowSnapshotMessages(messages) {
