@@ -16,6 +16,9 @@ afterEach(() => {
     if (value === undefined) delete globalThis[key];
     else globalThis[key] = value;
   });
+  // 宿主代理鉴权失败会整个 session 停用代理（见 disableHostProxyForSession），
+  // 用例之间必须重置，否则前一个 403 案例会让后续案例直接跳过代理
+  delete globalThis.__bs_biotracker_host_proxy_disabled__;
 });
 
 function installBrowserHost(fetchImpl) {

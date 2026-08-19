@@ -195,7 +195,26 @@ function sanitizeErrorText(text) {
     .slice(0, 300);
 }
 
+const HOST_PROXY_DISABLED_KEY = '__bs_biotracker_host_proxy_disabled__';
+
+/**
+ * 宿主代理鉴权失败（401/403）通常是 CSRF token 对不上，重整页面前不会自己好。
+ * 每次请求都先撞一次代理只会在 ST 后端刷出一整串 ForbiddenError，而实际流量
+ * 早就靠直连成功了——使用者看不到异常，伺服器 log 却被灌爆。
+ * 撞到一次就整个 session 停用代理，直接走直连。
+ */
+function disableHostProxyForSession(status, responseText) {
+  if (globalThis[HOST_PROXY_DISABLED_KEY]) return;
+  globalThis[HOST_PROXY_DISABLED_KEY] = true;
+  const isCsrf = /csrf/i.test(String(responseText || ''));
+  console.warn(
+    `[BS BioTracker] 宿主代理返回 ${status}${isCsrf ? '（CSRF token 无效）' : ''}，本次工作阶段改走直连。`
+    + (isCsrf ? ' 硬重整页面（Ctrl+Shift+R）可恢复代理；在此之前不会再打代理，避免 ST 后端持续记录 ForbiddenError。' : ''),
+  );
+}
+
 function shouldUseHostProxy(url) {
+  if (globalThis[HOST_PROXY_DISABLED_KEY]) return false;
   return isBrowserRuntime() && isCrossOriginUrl(url);
 }
 
@@ -789,6 +808,9 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
         }
         if (proxyError || (!response.ok && shouldFallbackFromHostProxy(responseText, response.status))) {
           transport = proxyError ? 'direct-after-proxy-error' : `direct-after-proxy-${response.status}`;
+          if (!proxyError && (response.status === 401 || response.status === 403)) {
+            disableHostProxyForSession(response.status, responseText);
+          }
           ({ response, responseText } = await fetchText(url, {
             method: 'POST',
             headers: getAuthHeaders(settings),
@@ -922,6 +944,9 @@ export async function fetchModelList(settings) {
       }
       if (proxyError || (!response.ok && shouldFallbackFromHostProxy(responseText, response.status))) {
         transport = proxyError ? 'direct-after-proxy-error' : `direct-after-proxy-${response.status}`;
+        if (!proxyError && (response.status === 401 || response.status === 403)) {
+          disableHostProxyForSession(response.status, responseText);
+        }
         ({ response, responseText } = await fetchText(url, { method: 'GET', headers: getAuthHeaders(settings), timeoutMs: resolveModelListTimeoutMs(settings) }));
       }
     } else {
