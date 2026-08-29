@@ -223,30 +223,6 @@
             </div>
 
             <div class="settings_section">
-              <label for="bs-bt-context-tag-extra">酒馆上下文标签清洗：额外移除标签</label>
-              <input id="bs-bt-context-tag-extra" class="text_pole" type="text" placeholder="例如：roleplay_guidelines,thinking,status" />
-              <small>逗号分隔标签名，不要写尖括号。</small>
-            </div>
-
-            <div class="settings_section">
-              <label for="bs-bt-recent-message-regex-filter">酒馆上下文正则过滤（第二层，可留空）</label>
-              <input id="bs-bt-recent-message-regex-filter" class="text_pole" type="text" placeholder="例如：&lt;world_info&gt;[\\s\\S]*?&lt;\\/world_info&gt;" />
-            </div>
-
-            <div class="settings_section">
-              <label for="bs-bt-recent-message-regex-mode">上下文正则过滤模式</label>
-              <select id="bs-bt-recent-message-regex-mode" class="text_pole">
-                <option value="exclude">排除匹配文本 (Exclude)</option>
-                <option value="extract">仅提取匹配文本 (Extract)</option>
-              </select>
-            </div>
-
-            <div class="settings_section">
-              <label for="bs-bt-tracker-token-budget">追踪提示词注意力预算（估算 token，仅作为左上角电池的插件请求体积警示，不限制發送）</label>
-              <input id="bs-bt-tracker-token-budget" class="text_pole" type="number" min="500" max="100000" step="100" />
-            </div>
-
-            <div class="settings_section">
               <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-require-full-description-updates" type="checkbox" />
                 <label for="bs-bt-require-full-description-updates">bsSetDescription 完整更新模式(仅为LLM提示词要求，不保證成效)</label>

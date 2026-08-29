@@ -5318,10 +5318,6 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-poll-ms', settings.pollMs);
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
   setValue('bs-bt-context-size', settings.contextSize);
-  setValue('bs-bt-context-tag-keep', settings.contextTagKeepTags ?? 'content');
-  setValue('bs-bt-context-tag-extra', settings.contextTagExtraTags ?? '');
-  setValue('bs-bt-recent-message-regex-filter', settings.recentMessageRegexFilter || '');
-  setValue('bs-bt-recent-message-regex-mode', settings.recentMessageRegexMode || 'exclude');
   const memorySource = normalizeMemorySource(settings.memorySource);
   document.querySelectorAll('[data-memory-source]').forEach((node) => {
     node.checked = node.dataset.memorySource === memorySource;
@@ -5914,10 +5910,6 @@ function readSettingsFromForm(ctx) {
     ? 180000
     : (apiTimeoutSec <= 0 ? 0 : Math.max(1, Math.min(1800, Math.floor(apiTimeoutSec))) * 1000);
   settings.contextSize = Math.max(2, Number(getValue('bs-bt-context-size')) || 12);
-  settings.contextTagKeepTags = String(getValue('bs-bt-context-tag-keep') || 'content').trim();
-  settings.contextTagExtraTags = String(getValue('bs-bt-context-tag-extra') || '').trim();
-  settings.recentMessageRegexFilter = String(getValue('bs-bt-recent-message-regex-filter') || '').trim();
-  settings.recentMessageRegexMode = getValue('bs-bt-recent-message-regex-mode') || 'exclude';
   const selectedMemorySource = document.querySelector('[data-memory-source]:checked')?.dataset.memorySource;
   settings.memorySource = normalizeMemorySource(selectedMemorySource || settings.memorySource);
   settings.animaRecallCount = Math.max(1, Math.min(50, Math.floor(Number(getValue('bs-bt-anima-recall-count')) || 20)));
