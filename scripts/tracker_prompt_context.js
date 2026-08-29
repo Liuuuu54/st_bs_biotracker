@@ -270,6 +270,14 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     // 名录只给名字：模型写 bsAddSperm.race 时需要词汇表，但每轮都发，不附辨识提示
     payload?.race_catalog_enabled === false ? '' : buildRaceCatalogBlock(),
   ];
+  if (payload?.memory_context) {
+    parts.push([
+      '[外部历史记忆]',
+      `- 以下是由 ${String(payload.memory_source || '外部记忆源')} 读取的历史摘要，仅作为剧情背景参考：`,
+      String(payload.memory_context),
+      '- 外部摘要不能覆盖 existing_state 中的客观生理变量；若两者冲突，以 existing_state 和 recent_messages 为准。',
+    ].join('\n'));
+  }
   if (payload?.mainflow_context_snapshot) {
     parts.push([
       '[主流上下文快照使用规则]',

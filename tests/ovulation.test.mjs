@@ -68,3 +68,30 @@ test('高潮诱发排卵排出的卵不会被自然排卵覆盖', () => {
   // applyToolCall 内部会 clone 后写回，必须重新取引用
   assert.equal(chatState.characters.F.profile.base.eggs, 17, '自然排卵应叠加而不是封顶覆盖');
 });
+
+test('成熟卵子遇到精液时立即尝试受精，之后排出精液不影响胚胎', () => {
+  const chatState = makeChatState();
+  chatState.characters.F.profile.base.eggs = 1;
+  const originalRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    applyToolCall(chatState, {
+      name: 'bsAddSperm',
+      arguments: { female: 'F', male: 'A', race: '人类', amount: 30 },
+    });
+  } finally {
+    Math.random = originalRandom;
+  }
+
+  const profile = chatState.characters.F.profile;
+  assert.equal(profile.pregnant.fetuses.length, 1, '精液进入时应立即生成待着床胚胎');
+  assert.equal(profile.base.eggs, 0, '受精成功应消耗一枚成熟卵子');
+
+  applyToolCall(chatState, {
+    name: 'bsDrainSperm',
+    arguments: { female: 'F', amount: 30 },
+  });
+  const afterDrain = chatState.characters.F.profile;
+  assert.equal(afterDrain.base.sperms.length, 0, '排出残留精液不应撤销已经发生的受精');
+  assert.equal(afterDrain.pregnant.fetuses.length, 1);
+});

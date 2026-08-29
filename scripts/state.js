@@ -33,6 +33,7 @@ import {
   saveHostSettings,
   scheduleHostChatStateSave,
 } from './host.js';
+import { normalizeMemorySource } from './memory_sources.js';
 
 export const MODULE_NAME = 'bs_biotracker';
 const MAX_CHAT_STATE_SNAPSHOTS = 24;
@@ -152,6 +153,14 @@ export const DEFAULT_SETTINGS = Object.freeze({
   racePhysiologyOverrides: {},
   derivedTypeOverrides: {},
   chatStates: {},
+  memorySource: 'internal',
+  animaRecallCount: 20,
+  // Follow ST-SevenDaysCal's context contract: preserve narrative wrapped in
+  // <content>, but remove tag blocks (thinking/status/widgets/etc.) by default.
+  contextTagKeepTags: 'content',
+  contextTagExtraTags: '',
+  recentMessageRegexFilter: '',
+  recentMessageRegexMode: 'exclude',
 });
 
 const VITALITY_CAPS = Object.freeze({
@@ -1063,6 +1072,8 @@ export function getSettings(ctx) {
   let shouldSave = false;
   if (!root[MODULE_NAME]) root[MODULE_NAME] = cloneValue(DEFAULT_SETTINGS);
   const settings = root[MODULE_NAME];
+  settings.memorySource = normalizeMemorySource(settings.memorySource);
+  settings.animaRecallCount = Math.max(1, Math.min(50, Math.floor(Number(settings.animaRecallCount) || 20)));
   const useHostChatStore = ['tauritavern', 'luker'].includes(getHostKind());
   if (useHostChatStore) {
     // TT/Luker 下 chatStates 与宿主 sidecar 绑定，属性描述符可能特殊（旧数据/宿主注入）。
@@ -1663,16 +1674,108 @@ export function resolveRegisteredCharacterName(chatState, targetName, options = 
   }
   return '';
 }
+export function filterMessageTextByRegex(text, patternStr, mode = 'exclude') {
+  if (!patternStr || !text) return text;
+  try {
+    const regex = new RegExp(patternStr, 'gi');
+    if (mode === 'exclude') {
+      return text.replace(regex, '').trim();
+    } else if (mode === 'extract') {
+      const matches = [...text.matchAll(regex)];
+      if (matches.length > 0) {
+        // 如果有捕获组且捕获到了内容，优先取第一个捕获组，否则取整段匹配
+        return matches.map((m) => m[1] !== undefined ? m[1] : m[0]).join('\n').trim();
+      }
+      return ''; // 未匹配到任何内容，说明要完全剔除
+    }
+  } catch (error) {
+    console.warn('[BS BioTracker] Recent message filter regex invalid:', patternStr, error);
+  }
+  return text;
+}
+
+function normalizeContextTagNames(value) {
+  return String(value || '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter((name) => /^[\p{L}][\p{L}\p{N}_-]*~?$/u.test(name) && !/~~|~.+/.test(name));
+}
+
+function escapeContextTagName(name) {
+  return String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Strip ST/XML-style wrapper blocks from every host-context source before it
+ * reaches the tracker. This mirrors ST-SevenDaysCal's stripTags behavior:
+ * `<content>` keeps its inner prose, while reasoning/status/widget blocks and
+ * generic HTML/XML markup are removed along with their contents.
+ */
+export function stripTavernContextTags(value, options = {}) {
+  if (!value) return '';
+  const keep = normalizeContextTagNames(options.keepTags ?? 'content');
+  const extra = normalizeContextTagNames(options.extraTags ?? '');
+  let text = String(value).replace(/<!--[\s\S]*?-->/g, '');
+  const keepStash = [];
+
+  for (const name of keep) {
+    const escapedName = escapeContextTagName(name);
+    const pattern = new RegExp(`<${escapedName}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${escapedName}\\s*>`, 'gi');
+    text = text.replace(pattern, (_match, inner) => {
+      keepStash.push(inner);
+      return ` BSBT_KEEP_${keepStash.length - 1} `;
+    });
+  }
+
+  for (const name of extra) {
+    const escapedName = escapeContextTagName(name);
+    const pattern = new RegExp(`<${escapedName}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${escapedName}\\s*>`, 'gi');
+    let previous;
+    do {
+      previous = text;
+      text = text.replace(pattern, '');
+    } while (text !== previous);
+  }
+
+  const pairedTags = /<([a-zA-Z][\w-]*)(?:\s[^>]*)?>[\s\S]*?<\/\1\s*>/g;
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(pairedTags, '');
+  } while (text !== previous);
+  text = text.replace(/<\/?[a-zA-Z][\w-]*(?:\s[^>]*)?\/?>/g, '');
+  text = text.replace(/ BSBT_KEEP_(\d+) /g, (_match, index) => keepStash[Number(index)] ?? '');
+
+  // A preserved <content> block can itself contain a noisy tag. Clean that
+  // inner markup without applying the keep rule again.
+  do {
+    previous = text;
+    text = text.replace(pairedTags, '');
+  } while (text !== previous);
+  return text.replace(/<\/?[a-zA-Z][\w-]*(?:\s[^>]*)?\/?>/g, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+export function sanitizeTavernContextText(value, settings = null) {
+  const stripped = stripTavernContextTags(value, {
+    keepTags: settings?.contextTagKeepTags,
+    extraTags: settings?.contextTagExtraTags,
+  });
+  const pattern = String(settings?.recentMessageRegexFilter || '').trim();
+  return pattern ? filterMessageTextByRegex(stripped, pattern, settings?.recentMessageRegexMode || 'exclude') : stripped;
+}
 
 export function buildRecentMessages(ctx, settings, endIndexExclusive = null) {
   const count = Math.max(2, Number(settings.contextSize) || 12);
   const chat = getHostChat(ctx);
   const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length;
-  return chat.slice(Math.max(0, end - count), end).map((message) => ({
-    name: message.name || (message.is_user ? ctx.name1 : ctx.name2) || '',
-    role: message.is_user ? 'user' : 'assistant',
-    text: String(message.mes || ''),
-  }));
+  return chat.slice(Math.max(0, end - count), end).map((message) => {
+    const cleanText = sanitizeTavernContextText(message.mes || '', settings);
+    return {
+      name: message.name || (message.is_user ? ctx.name1 : ctx.name2) || '',
+      role: message.is_user ? 'user' : 'assistant',
+      text: cleanText,
+    };
+  });
 }
 
 export function buildMessageSignature(ctx, message) {

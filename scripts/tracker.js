@@ -20,6 +20,7 @@ import {
   getSettings,
   getLatestMatchingSnapshot,
   getWorldbookEntryDisplayName,
+  sanitizeTavernContextText,
   hydrateChatStateFromHost,
   loadCharacterAdditionalWorldBooks,
   loadGlobalWorldBook,
@@ -31,6 +32,7 @@ import {
 } from './state.js';
 import { getDerivedTypeMetabolismExemptions } from './race_config.js';
 import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js';
+import { readMemorySource } from './memory_sources.js';
 import { canLoadHostWorldInfo, getHostAgentRunBarrier, getHostChat, getHostExtensionSettings, getHostKind, loadHostWorldInfo, refreshHostChatView } from './host.js';
 
 export const POLL_RUNTIME_KEY = '__bs_biotracker_poll__';
@@ -765,6 +767,42 @@ function buildWorldbookActivationText(recentMessages = []) {
     .toLowerCase();
 }
 
+/**
+ * The regex setting used to be applied only to chat[].mes.  Character-card
+ * fields, worldbook content, and a captured ST mainflow are also host context
+ * sent to the tracker, so they must pass through the same cleaning boundary.
+ */
+function cleanHostContextText(value, settings = null) {
+  return sanitizeTavernContextText(value, settings);
+}
+
+function cleanCharacterCardContext(card, settings = null) {
+  if (!card || typeof card !== 'object') return card;
+  return {
+    ...card,
+    // Names remain identifiers. Cleaning only the contextual prose avoids an
+    // extract-mode rule accidentally turning a character name into an empty string.
+    description: cleanHostContextText(card.description, settings),
+    personality: cleanHostContextText(card.personality, settings),
+    scenario: cleanHostContextText(card.scenario, settings),
+    first_mes: cleanHostContextText(card.first_mes, settings),
+    mes_example: cleanHostContextText(card.mes_example, settings),
+  };
+}
+
+function projectWorldbookEntryForTracker(entry, settings = null) {
+  if (!entry || typeof entry !== 'object') return null;
+  const content = cleanHostContextText(entry.content ?? entry.text ?? entry.value ?? '', settings);
+  if (!content) return null;
+  // Worldbook activation fields (constant, depth, recursion, probability,
+  // match*, etc.) are ST runtime configuration, not story context. Send only
+  // the readable title and cleaned prose to the tracker.
+  return {
+    name: getWorldbookEntryDisplayName(entry),
+    content,
+  };
+}
+
 function getWorldbookEntryActivationMode(entry) {
   const mode = String(entry?.activationMode || '').trim().toLowerCase();
   if (mode) return mode;
@@ -824,19 +862,25 @@ function filterTrackerWorldbookEntries(value, excludedNames, settings = null, re
   };
 
   if (Array.isArray(value.entries)) {
+    const entries = value.entries
+      .filter(keepEntry)
+      .map((entry) => projectWorldbookEntryForTracker(entry, settings))
+      .filter(Boolean);
     return {
-      ...value,
-      entries: value.entries.filter(keepEntry),
+      name: String(value.name || globalBookName || '').trim(),
+      entries,
     };
   }
 
   if (value.entries && typeof value.entries === 'object') {
-    const filteredEntries = Object.fromEntries(
-      Object.entries(value.entries).filter(([, entry]) => keepEntry(entry)),
-    );
+    const entries = Object.entries(value.entries)
+      Object.entries(value.entries)
+      .filter(([, entry]) => keepEntry(entry))
+      .map(([, entry]) => projectWorldbookEntryForTracker(entry, settings))
+      .filter(Boolean);
     return {
-      ...value,
-      entries: filteredEntries,
+      name: String(value.name || globalBookName || '').trim(),
+      entries,
     };
   }
 
@@ -894,7 +938,7 @@ function mergeTrackerWorldbookLists(...lists) {
   return merged;
 }
 
-export function getMainflowContextSnapshot(ctx) {
+export function getMainflowContextSnapshot(ctx, settings = null) {
   const snapshot = globalThis[MAINFLOW_CONTEXT_SNAPSHOT_KEY];
   if (!snapshot || typeof snapshot !== 'object') return null;
   // 快照必须绑定当前聊天：无绑定（旧格式）或绑定不一致的快照一律视为失效
@@ -905,9 +949,10 @@ export function getMainflowContextSnapshot(ctx) {
       .filter((message) => message && typeof message === 'object' && String(message.content || '').trim())
       .map((message) => ({
         role: String(message.role || 'user'),
-        content: String(message.content || ''),
+        content: cleanHostContextText(message.content || '', settings),
         name: message.name ? String(message.name) : undefined,
       }))
+      .filter((message) => message.content.trim())
     : [];
   if (messages.length === 0) return null;
   return {
@@ -919,12 +964,12 @@ export function getMainflowContextSnapshot(ctx) {
 }
 
 export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexExclusive = null) {
-  const currentCharacter = getCharacterCard(ctx);
+  const currentCharacter = cleanCharacterCardContext(getCharacterCard(ctx), settings);
   const chatState = getChatState(ctx, settings);
   const existingState = chatState.characters || {};
   const recentMessages = buildRecentMessages(ctx, settings, endIndexExclusive);
   const useMainflowMode = normalizeWorldbookMode(settings?.trackerWorldbookMode) === 'mainflow';
-  let mainflowContextSnapshot = useMainflowMode ? getMainflowContextSnapshot(ctx) : null;
+  let mainflowContextSnapshot = useMainflowMode ? getMainflowContextSnapshot(ctx, settings) : null;
   if (mainflowContextSnapshot && settings?.useStPresetForAsync) {
     mainflowContextSnapshot = {
       ...mainflowContextSnapshot,
@@ -1214,6 +1259,17 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   showTrackerBusyToast();
 
   const payload = buildTrackerPayload(ctx, settings, reason, messageIndex + 1);
+  const memoryResult = await readMemorySource({
+    ctx,
+    source: settings.memorySource,
+    recentMessages: payload.recent_messages,
+    databaseWorldbookName: settings.databaseWorldbookName,
+    animaRecallCount: settings.animaRecallCount,
+  });
+  if (memoryResult.text) {
+    payload.memory_source = memoryResult.source;
+    payload.memory_context = memoryResult.text;
+  }
   if (payload.mainflow_context_snapshot) {
     payload.character_worldbook_name = null;
   } else if (!payload.character_worldbook && !payload.character_worldbook_name) {

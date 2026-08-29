@@ -217,6 +217,31 @@
             </div>
 
             <div class="settings_section">
+              <label for="bs-bt-context-tag-keep">酒馆上下文标签清洗：保留正文标签</label>
+              <input id="bs-bt-context-tag-keep" class="text_pole" type="text" placeholder="content（逗号分隔；仅保留标签内的正文）" />
+              <small>默认保留 &lt;content&gt; 内的正文；其余成对标签（思维链、状态栏、组件、HTML/XML）及其内容会自动移除，适用于角色卡、世界书和聊天楼层。</small>
+            </div>
+
+            <div class="settings_section">
+              <label for="bs-bt-context-tag-extra">酒馆上下文标签清洗：额外移除标签</label>
+              <input id="bs-bt-context-tag-extra" class="text_pole" type="text" placeholder="例如：roleplay_guidelines,thinking,status" />
+              <small>逗号分隔标签名，不要写尖括号。</small>
+            </div>
+
+            <div class="settings_section">
+              <label for="bs-bt-recent-message-regex-filter">酒馆上下文正则过滤（第二层，可留空）</label>
+              <input id="bs-bt-recent-message-regex-filter" class="text_pole" type="text" placeholder="例如：&lt;world_info&gt;[\\s\\S]*?&lt;\\/world_info&gt;" />
+            </div>
+
+            <div class="settings_section">
+              <label for="bs-bt-recent-message-regex-mode">上下文正则过滤模式</label>
+              <select id="bs-bt-recent-message-regex-mode" class="text_pole">
+                <option value="exclude">排除匹配文本 (Exclude)</option>
+                <option value="extract">仅提取匹配文本 (Extract)</option>
+              </select>
+            </div>
+
+            <div class="settings_section">
               <label for="bs-bt-tracker-token-budget">追踪提示词注意力预算（估算 token，仅作为左上角电池的插件请求体积警示，不限制發送）</label>
               <input id="bs-bt-tracker-token-budget" class="text_pole" type="number" min="500" max="100000" step="100" />
             </div>
@@ -238,6 +263,28 @@
             <div class="settings_section">
               <label for="bs-bt-diary-recent-limit">送入分析的单角色最近日记数（设 0 视为关闭日记系统）</label>
               <input id="bs-bt-diary-recent-limit" class="text_pole" type="number" min="0" max="20" step="1" />
+            </div>
+
+            <div class="settings_section">
+              <label>历史记忆来源（只能选择一种）</label>
+              <div class="bs-bt-setting-toggle-row">
+                <input id="bs-bt-memory-source-internal" type="checkbox" data-memory-source="internal" />
+                <label for="bs-bt-memory-source-internal">插件内置记忆</label>
+              </div>
+              <div class="bs-bt-setting-toggle-row">
+                <input id="bs-bt-memory-source-anima" type="checkbox" data-memory-source="anima" />
+                <label for="bs-bt-memory-source-anima">Anima</label>
+              </div>
+              <div class="bs-bt-setting-toggle-row">
+                <input id="bs-bt-memory-source-baibai" type="checkbox" data-memory-source="baibai" />
+                <label for="bs-bt-memory-source-baibai">柏宝书</label>
+              </div>
+              <div class="bs-bt-setting-toggle-row">
+                <input id="bs-bt-memory-source-database" type="checkbox" data-memory-source="database" />
+                <label for="bs-bt-memory-source-database">数据库纪要</label>
+              </div>
+              <input id="bs-bt-anima-recall-count" class="text_pole" type="number" min="1" max="50" step="1" placeholder="Anima 召回条数" />
+              <small id="bs-bt-memory-source-status">三种外部来源互斥，勾选后保存即可生效；数据库会自动读取当前角色主世界书。</small>
             </div>
 
             <div class="settings_section flex-container gap8">

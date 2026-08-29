@@ -48,6 +48,7 @@ import { buildMainFlowPrompt, resetPoller, runTracker } from './scripts/tracker.
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
+import { normalizeMemorySource, readMemorySource } from './scripts/memory_sources.js';
 import { appendSkillHistory, getTalentLabel, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL } from './scripts/skill_config.js';
 import {
   canLoadHostWorldInfo,
@@ -5275,6 +5276,27 @@ function getLastPagerView() {
   return 'home';
 }
 
+async function refreshMemorySourceStatus(ctx) {
+  const status = document.getElementById('bs-bt-memory-source-status');
+  if (!status) return;
+  const source = normalizeMemorySource(getSettings(ctx).memorySource);
+  if (source === 'internal') {
+    status.textContent = '当前使用：插件内置记忆。';
+    return;
+  }
+  status.textContent = '正在读取记忆源…';
+  const result = await readMemorySource({ ctx, source, animaRecallCount: getSettings(ctx).animaRecallCount });
+  if (normalizeMemorySource(getSettings(ctx).memorySource) !== source) return;
+  const sourceName = result.sourceName || ({ anima: '当前聊天绑定世界书', baibai: '柏宝书', database: '当前角色主世界书' }[source] || source);
+  if (result.error) {
+    status.textContent = `读取失败：${sourceName}`;
+    return;
+  }
+  status.textContent = result.text
+    ? `已读取：${sourceName}（${source === 'anima' ? 'Anima 摘要' : source === 'database' ? '数据库纪要' : '历史记忆'}）`
+    : `已连接：${sourceName}，但没有可用记忆内容`;
+}
+
 function applySettingsToForm(ctx) {
   const settings = getSettings(ctx);
   syncRacePhysiologyOverrides(settings);
@@ -5296,6 +5318,15 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-poll-ms', settings.pollMs);
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
   setValue('bs-bt-context-size', settings.contextSize);
+  setValue('bs-bt-context-tag-keep', settings.contextTagKeepTags ?? 'content');
+  setValue('bs-bt-context-tag-extra', settings.contextTagExtraTags ?? '');
+  setValue('bs-bt-recent-message-regex-filter', settings.recentMessageRegexFilter || '');
+  setValue('bs-bt-recent-message-regex-mode', settings.recentMessageRegexMode || 'exclude');
+  const memorySource = normalizeMemorySource(settings.memorySource);
+  document.querySelectorAll('[data-memory-source]').forEach((node) => {
+    node.checked = node.dataset.memorySource === memorySource;
+  });
+  setValue('bs-bt-anima-recall-count', settings.animaRecallCount);
   setValue('bs-bt-tracker-token-budget', settings.trackerTokenBudget);
   setValue('bs-bt-require-full-description-updates', settings.requireFullDescriptionUpdates);
   setValue('bs-bt-luker-multi-agent-manual-only', settings.lukerMultiAgentManualOnly);
@@ -5327,6 +5358,7 @@ function applySettingsToForm(ctx) {
   renderRegisterChildSourceOptions(ctx);
   syncTrackerPresetSelectionUi(ctx);
   setView(getLastPagerView());
+  void refreshMemorySourceStatus(ctx);
 }
 
 const trackerDeps = { renderStatusPanel, updateClock };
@@ -5882,6 +5914,13 @@ function readSettingsFromForm(ctx) {
     ? 180000
     : (apiTimeoutSec <= 0 ? 0 : Math.max(1, Math.min(1800, Math.floor(apiTimeoutSec))) * 1000);
   settings.contextSize = Math.max(2, Number(getValue('bs-bt-context-size')) || 12);
+  settings.contextTagKeepTags = String(getValue('bs-bt-context-tag-keep') || 'content').trim();
+  settings.contextTagExtraTags = String(getValue('bs-bt-context-tag-extra') || '').trim();
+  settings.recentMessageRegexFilter = String(getValue('bs-bt-recent-message-regex-filter') || '').trim();
+  settings.recentMessageRegexMode = getValue('bs-bt-recent-message-regex-mode') || 'exclude';
+  const selectedMemorySource = document.querySelector('[data-memory-source]:checked')?.dataset.memorySource;
+  settings.memorySource = normalizeMemorySource(selectedMemorySource || settings.memorySource);
+  settings.animaRecallCount = Math.max(1, Math.min(50, Math.floor(Number(getValue('bs-bt-anima-recall-count')) || 20)));
   settings.trackerTokenBudget = Math.max(500, Math.min(100000, Math.floor(Number(getValue('bs-bt-tracker-token-budget')) || 4096)));
   settings.requireFullDescriptionUpdates = Boolean(document.getElementById('bs-bt-require-full-description-updates')?.checked);
   settings.lukerMultiAgentManualOnly = Boolean(document.getElementById('bs-bt-luker-multi-agent-manual-only')?.checked);
@@ -6209,12 +6248,26 @@ async function ensureModal(ctx) {
   let modal = document.getElementById(MODAL_ID);
   if (modal) return modal;
   const settingsUrl = new URL('./settings.html', import.meta.url);
-  const html = await fetch(settingsUrl).then((response) => response.text());
+  settingsUrl.searchParams.set('v', '0.9.6');
+  const html = await fetch(settingsUrl, { cache: 'no-store' }).then((response) => response.text());
+  const memorySourceMarkup = `
+            <div class="settings_section">
+              <label>历史记忆来源（只能选择一种）</label>
+              <div class="bs-bt-setting-toggle-row"><input id="bs-bt-memory-source-internal" type="checkbox" data-memory-source="internal" /><label for="bs-bt-memory-source-internal">插件内置记忆</label></div>
+              <div class="bs-bt-setting-toggle-row"><input id="bs-bt-memory-source-anima" type="checkbox" data-memory-source="anima" /><label for="bs-bt-memory-source-anima">Anima</label></div>
+              <div class="bs-bt-setting-toggle-row"><input id="bs-bt-memory-source-baibai" type="checkbox" data-memory-source="baibai" /><label for="bs-bt-memory-source-baibai">柏宝书</label></div>
+              <div class="bs-bt-setting-toggle-row"><input id="bs-bt-memory-source-database" type="checkbox" data-memory-source="database" /><label for="bs-bt-memory-source-database">数据库纪要</label></div>
+              <input id="bs-bt-anima-recall-count" class="text_pole" type="number" min="1" max="50" step="1" placeholder="Anima 召回条数" />
+              <small id="bs-bt-memory-source-status">三种外部来源互斥，勾选后保存即可生效；数据库会自动读取当前角色主世界书。</small>
+            </div>`;
+  const settingsHtml = html.includes('bs-bt-memory-source-internal')
+    ? html
+    : html.replace(/(\s*<div class="settings_section flex-container gap8">\s*<button id="bs-bt-save")/, `${memorySourceMarkup}$1`);
   modal = document.createElement('div');
   modal.id = MODAL_ID;
   modal.className = 'bs-bt-modal';
   modal.setAttribute('aria-hidden', 'true');
-  modal.innerHTML = `<div class="bs-bt-modal__backdrop"></div><div class="bs-bt-modal__dialog" role="dialog" aria-modal="false"><div class="bs-bt-modal__body">${html}</div></div>`;
+  modal.innerHTML = `<div class="bs-bt-modal__backdrop"></div><div class="bs-bt-modal__dialog" role="dialog" aria-modal="false"><div class="bs-bt-modal__body">${settingsHtml}</div></div>`;
   document.body.appendChild(modal);
   applySettingsToForm(ctx);
   document.querySelector('#bs-biotracker-settings .bs-bt-brand')?.classList.add('bs-bt-drag-handle');
@@ -6497,6 +6550,21 @@ async function ensureModal(ctx) {
     } catch (error) {
       console.error('[BS BioTracker] refreshWorldbookFilterPage after mode change failed', error);
     }
+  });
+  document.querySelectorAll('#bs-biotracker-settings [data-memory-source]').forEach((node) => {
+    node.addEventListener('change', () => {
+      if (node.checked) {
+        document.querySelectorAll('#bs-biotracker-settings [data-memory-source]').forEach((other) => {
+          if (other !== node) other.checked = false;
+        });
+      } else if (!document.querySelector('#bs-biotracker-settings [data-memory-source]:checked')) {
+        node.checked = true;
+      }
+      const selected = document.querySelector('#bs-biotracker-settings [data-memory-source]:checked')?.dataset.memorySource;
+      getSettings(ctx).memorySource = normalizeMemorySource(selected);
+      saveSettings(ctx);
+      void refreshMemorySourceStatus(ctx);
+    });
   });
   document.getElementById('bs-bt-worldbook-filter-input')?.addEventListener('change', async (event) => {
     const names = parseWorldbookExcludeNamesInput(String(event.target?.value || ''));

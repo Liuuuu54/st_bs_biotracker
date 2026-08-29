@@ -341,7 +341,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddSperm',
-    description: '向单一角色体内加入精液，用于性交后留下受孕机会。amount 必须为正数；扣除/排出精液请用 bsDrainSperm。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
+    description: '向单一角色体内加入精液，用于性交后留下受孕机会；若当前已有成熟卵子，加入时会立即进行一次受精判定，成功后即使随后排出精液也不影响待着床胚胎。amount 必须为正数；扣除/排出精液请用 bsDrainSperm。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
     input_schema: {
       type: 'object',
       properties: {
@@ -1420,6 +1420,34 @@ function processSpermLifecycle(profile, stage, tick) {
       value: Math.max(0, clampNumber(item?.value, 0, 999999, 0) - (tick.deltaDays * 10)),
     }))
     .filter((item) => item.value > 0);
+}
+
+function tryConceiveOnSpermEntry(profile, sperm, amount) {
+  const base = profile.base || {};
+  const stage = String(base.stage || '');
+  if (![...MENSTRUAL_STAGES, '产后恢复'].includes(stage)) return false;
+
+  const eggs = clampNumber(base.eggs, 0, 99, 0);
+  if (eggs <= 0 || !sperm || clampNumber(amount, 0, 999999, 0) <= 0) return false;
+
+  const femaleDifficulty = clampNumber(profile?.bio?.impregnationDifficulty, 0.1, 100, 1.0);
+  const maleDifficulty = clampNumber(getMergedRacePhysiologyProfile(sperm?.race)?.impregnationDifficulty, 0.1, 100, 1.0);
+  const isSameRace = isSameRaceGroup(profile?.base?.race, sperm?.race);
+  let effectiveDifficulty = isSameRace ? femaleDifficulty : (femaleDifficulty + maleDifficulty);
+  const femaleEmbryoType = deriveFetusEmbryoType(profile?.base?.race);
+  const maleEmbryoType = deriveFetusEmbryoType(sperm?.race);
+  if (femaleEmbryoType !== maleEmbryoType) effectiveDifficulty *= 1.5;
+
+  const chance = Math.max(0.001, Math.min(0.8, (6 * 0.5) / effectiveDifficulty));
+  if (Math.random() > chance) return false;
+
+  const pregnant = profile.pregnant || {};
+  pregnant.fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  pregnant.fetuses.push(createSimpleFetus(profile, sperm, stage));
+  pregnant.fetusesCount = pregnant.fetuses.length;
+  profile.pregnant = pregnant;
+  base.eggs = eggs - 1;
+  return true;
 }
 
 function processSimpleConception(profile, tick, notify, name) {
@@ -4470,6 +4498,13 @@ function applyAddSperm(chatState, args) {
   next.profile.experience = experience;
   if (amount > 0) {
     applyOdorGain(next.profile, Math.min(18, 4 + Math.log10(Math.max(1, amount)) * 4));
+  }
+  const enteredSperm = { male, race, derivedType: maleDerivedType, value: amount };
+  if (tryConceiveOnSpermEntry(next.profile, enteredSperm, amount)) {
+    next.profile.notify = {
+      ...(next.profile.notify || {}),
+      secondly: `${female}受精成功`,
+    };
   }
   chatState.characters[female] = next;
   return { applied: true, message: `bsAddSperm applied to ${female}.` };

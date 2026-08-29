@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
-import { callOpenAICompatible, fetchModelList, isApiDeadlineError, isApiTimeoutError, resolveApiTimeoutMs, resolveOverallDeadlineMs } from '../scripts/api.js';
+import { buildPayloadWithMainflowCopy, callOpenAICompatible, fetchModelList, isApiDeadlineError, isApiTimeoutError, resolveApiTimeoutMs, resolveOverallDeadlineMs } from '../scripts/api.js';
 
 const ORIGINAL_GLOBALS = {
   fetch: globalThis.fetch,
@@ -44,6 +44,26 @@ function jsonResponse(data, status = 200) {
     },
   };
 }
+
+test('mainflow copy keeps ordinary recent chat floors alongside resolved context', () => {
+  const result = buildPayloadWithMainflowCopy({
+    mainflow_context_snapshot: {
+      source: 'st_request',
+      messages: [{ role: 'system', content: '已解析的酒馆上下文。' }],
+    },
+    recent_messages: [
+      { role: 'user', name: '用户', text: '我们先进屋。' },
+      { role: 'assistant', name: '角色', text: '她收起伞，跟着走进屋内。' },
+    ],
+  }, { contextSize: 10 });
+
+  assert.equal(result.hasMainflowCopy, true);
+  assert.deepEqual(result.payload.recent_messages.map((message) => message.text), [
+    '我们先进屋。',
+    '她收起伞，跟着走进屋内。',
+  ]);
+  assert.equal(result.payload.mainflow_snapshot_meta.stripped_recent_messages, 0);
+});
 
 test('fetchModelList uses the SillyTavern backend proxy for a cross-origin API', async () => {
   const calls = [];

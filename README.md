@@ -12,6 +12,7 @@ v0.9.5
 - 單角色追蹤面板：用概覽、描述、妊娠、經歷、調試頁面查看單一角色。
 - 時間流逝：手動推進年、月、週、天、時、分，讓所有已注册角色同步演進。
 - Worldbook 條目排除：可排除不想送進 tracker 分析的世界書條目。
+- 外部歷史記憶：可在 SYSTEM 頁選擇插件內置記憶、Anima、柏寶書或数据库纪要；三種外部來源互斥，資料只作 tracker 的背景上下文。
 - 種族百科：內建多種繁殖型態與種族資料，方便注册時查閱。
 - 技能與天賦：每個聊天有獨立的技能圖鑑；技能 ID 單調遞增且刪除後不回收，圖鑑會跟隨聊天快照保存與恢復。LLM 可先登記名稱與描述，再依故事事件讓角色覺醒及鍛鍊技能；覺醒／升等會寫入最近 100 筆成長歷史並顯示提醒。角色天賦對所有 LLM 工具只讀，只能由使用者在外部介面調整。孕中期至第一產程的技能鍛鍊會依各胎親和度自動形成胎兒天賦，並保留到孩子紀錄供日後注册時載入。
 - 主題介面：目前內建 `retro`、`cultivation`、`fantasy`、`cyber-egypt`、`wasteland`、`sakura`、`holo`、`gothic`、`steampunk`、`eldritch`、`ink`、`constructivism` 十二種風格。
@@ -63,6 +64,9 @@ v0.9.5
   - `after_user`：使用者送出後分析
 - `pollMs`：輪詢間隔，預設 `1800ms`
 - `contextSize`：送入分析的近期訊息數，預設 `10`
+- `memorySource`：歷史記憶來源，可選 `internal`、`anima`、`baibai`、`database`；預設 `internal`
+- `database` 來源會自動讀取當前角色主世界書中的数据库纪要，无需手动指定世界书
+- `animaRecallCount`：Anima 召回摘要分片數，範圍 `1-50`
 - `useStPresetForAsync`：啟用後會盡量套用目前 SillyTavern 預設中的參數
 
 ## 注意事項

@@ -549,11 +549,15 @@ function shouldKeepMainflowChatMessage(content) {
 
 function filterRecentMessagesForMainflowCopy(recentMessages, settings = null) {
   const originalMessages = Array.isArray(recentMessages) ? recentMessages : [];
-  const filteredMessages = originalMessages.filter((message) => {
-    if (!message || typeof message !== 'object') return false;
-    if (message.role === 'user') return true;
-    return shouldKeepMainflowChatMessage(message.text || message.content || '');
-  });
+  // `recent_messages` is the actual chat-floor context assembled by tracker.
+  // The mainflow snapshot is only an extra copy of ST's resolved prompt; its
+  // heuristic is suitable for that opaque prompt, but must never discard
+  // ordinary short assistant replies from the real recent chat.
+  const filteredMessages = originalMessages.filter((message) => (
+    message
+    && typeof message === 'object'
+    && String(message.text ?? message.content ?? '').trim()
+  ));
   const trimmedMessages = filteredMessages.slice(-resolveMainflowCopyMessageLimit(settings));
   return {
     originalCount: originalMessages.length,
@@ -568,7 +572,7 @@ function resolveMainflowCopyMessageLimit(settings) {
   return Math.max(2, Number(settings?.contextSize) || 12);
 }
 
-function buildPayloadWithMainflowCopy(payload, settings = null) {
+export function buildPayloadWithMainflowCopy(payload, settings = null) {
   if (!payload || typeof payload !== 'object') {
     return { payload, hasMainflowCopy: false, messageCount: 0 };
   }
