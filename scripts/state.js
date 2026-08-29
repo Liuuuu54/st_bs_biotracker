@@ -132,8 +132,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   pollMs: 1800,
   apiTimeoutMs: 180000,
   contextSize: 12,
-  contextRegexEnabled: false,
-  contextRegexRules: [],
   trackerTokenBudget: 4096,
   requireFullDescriptionUpdates: false,
   lukerMultiAgentManualOnly: true,
@@ -1674,14 +1672,6 @@ export function resolveRegisteredCharacterName(chatState, targetName, options = 
 }
 
 
-/**
- * Strip ST/XML-style wrapper blocks from every host-context source before it
- * reaches the tracker. This mirrors ST-SevenDaysCal's stripTags behavior:
- * `<content>` keeps its inner prose, while reasoning/status/widget blocks and
- * generic HTML/XML markup are removed along with their contents.
- */
-
-
 
 export function buildRecentMessages(ctx, settings, endIndexExclusive = null) {
   const count = Math.max(2, Number(settings.contextSize) || 12);
@@ -1693,82 +1683,8 @@ export function buildRecentMessages(ctx, settings, endIndexExclusive = null) {
   return chat.slice(Math.max(0, end - count), end).map((message) => ({
     name: message.name || (message.is_user ? ctx.name1 : ctx.name2) || '',
     role: message.is_user ? 'user' : 'assistant',
-    text: cleanContextText(
-      String(message.mes || ''),
-      settings,
-    ),
+    text: String(message.mes || ''),
   }));
-}
-
-function parseContextRegexRule(rule) {
-  if (!rule || typeof rule !== 'object') {
-    return null;
-  }
-
-  const pattern = String(rule.pattern || '').trim();
-
-  if (!pattern) {
-    return null;
-  }
-
-  try {
-    const regex = new RegExp(
-      pattern.startsWith('/') && pattern.lastIndexOf('/') > 0
-        ? pattern.slice(1, pattern.lastIndexOf('/'))
-        : pattern,
-      pattern.startsWith('/') && pattern.lastIndexOf('/') > 0
-        ? pattern.slice(pattern.lastIndexOf('/') + 1)
-        : ''
-    );
-
-    return {
-      regex,
-      mode: rule.mode === 'extract' ? 'extract' : 'exclude',
-    };
-  } catch (error) {
-    console.warn(
-      '[BS BioTracker] 无效的上下文正则：',
-      pattern,
-      error,
-    );
-
-    return null;
-  }
-}
-
-export function cleanContextText(text, settings) {
-  let result = String(text ?? '');
-
-  if (settings?.contextRegexEnabled !== true) {
-    return result;
-  }
-
-  const rules = Array.isArray(settings.contextRegexRules)
-    ? settings.contextRegexRules
-    : [];
-
-  for (const rule of rules) {
-    const parsed = parseContextRegexRule(rule);
-
-    if (!parsed) {
-      continue;
-    }
-
-    if (parsed.mode === 'exclude') {
-      result = result.replace(parsed.regex, '');
-      continue;
-    }
-
-    if (parsed.mode === 'extract') {
-      const matches = [...result.matchAll(parsed.regex)];
-
-      result = matches
-        .map((match) => match[0])
-        .join('\n');
-    }
-  }
-
-  return result;
 }
 
 export function buildMessageSignature(ctx, message) {

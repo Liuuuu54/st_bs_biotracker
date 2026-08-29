@@ -216,44 +216,6 @@
               <input id="bs-bt-context-size" class="text_pole" type="number" min="2" step="1" />
             </div>
 
-            <div class="settings_section bs-bt-context-regex-section">
-            <div class="bs-bt-setting-toggle-row">
-              <input id="bs-bt-context-regex-enabled" type="checkbox" />
-              <label for="bs-bt-context-regex-enabled">启用上下文正则清洗</label>
-            </div>
-
-            <small>
-              对送入 BioTracker 的上下文进行清洗，不会修改酒馆原始聊天记录。
-              多条规则按照列表顺序依次执行。
-            </small>
-
-            <div class="bs-bt-context-regex-help">
-              <div><strong>排除：</strong>删除正则匹配到的内容。</div>
-              <div><strong>提取：</strong>只保留正则匹配到的内容。</div>
-              <div>正则请填写完整 JavaScript 正则，例如：<code>/&lt;think&gt;[\s\S]*?&lt;\/think&gt;/gi</code></div>
-            </div>
-
-            <div
-              id="bs-bt-context-regex-list"
-              class="bs-bt-context-regex-list"
-            ></div>
-
-            <div class="bs-bt-action-row">
-              <button
-                id="bs-bt-context-regex-add"
-                class="menu_button"
-                type="button"
-              >
-                ＋ 添加正则规则
-              </button>
-            </div>
-
-            <div
-              id="bs-bt-context-regex-status"
-              class="bs-bt-inline-status"
-            ></div>
-          </div>
-
             <div class="settings_section">
               <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-require-full-description-updates" type="checkbox" />
