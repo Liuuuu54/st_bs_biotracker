@@ -20,7 +20,6 @@ import {
   getSettings,
   getLatestMatchingSnapshot,
   getWorldbookEntryDisplayName,
-  sanitizeTavernContextText,
   hydrateChatStateFromHost,
   loadCharacterAdditionalWorldBooks,
   loadGlobalWorldBook,
@@ -767,32 +766,9 @@ function buildWorldbookActivationText(recentMessages = []) {
     .toLowerCase();
 }
 
-/**
- * The regex setting used to be applied only to chat[].mes.  Character-card
- * fields, worldbook content, and a captured ST mainflow are also host context
- * sent to the tracker, so they must pass through the same cleaning boundary.
- */
-function cleanHostContextText(value, settings = null) {
-  return sanitizeTavernContextText(value, settings);
-}
-
-function cleanCharacterCardContext(card, settings = null) {
-  if (!card || typeof card !== 'object') return card;
-  return {
-    ...card,
-    // Names remain identifiers. Cleaning only the contextual prose avoids an
-    // extract-mode rule accidentally turning a character name into an empty string.
-    description: cleanHostContextText(card.description, settings),
-    personality: cleanHostContextText(card.personality, settings),
-    scenario: cleanHostContextText(card.scenario, settings),
-    first_mes: cleanHostContextText(card.first_mes, settings),
-    mes_example: cleanHostContextText(card.mes_example, settings),
-  };
-}
-
-function projectWorldbookEntryForTracker(entry, settings = null) {
+function projectWorldbookEntryForTracker(entry) {
   if (!entry || typeof entry !== 'object') return null;
-  const content = cleanHostContextText(entry.content ?? entry.text ?? entry.value ?? '', settings);
+  const content = entry.content ?? entry.text ?? entry.value ?? '';
   if (!content) return null;
   // Worldbook activation fields (constant, depth, recursion, probability,
   // match*, etc.) are ST runtime configuration, not story context. Send only
@@ -864,7 +840,7 @@ function filterTrackerWorldbookEntries(value, excludedNames, settings = null, re
   if (Array.isArray(value.entries)) {
     const entries = value.entries
       .filter(keepEntry)
-      .map((entry) => projectWorldbookEntryForTracker(entry, settings))
+      .map((entry) => projectWorldbookEntryForTracker(entry))
       .filter(Boolean);
     return {
       name: String(value.name || globalBookName || '').trim(),
@@ -874,9 +850,8 @@ function filterTrackerWorldbookEntries(value, excludedNames, settings = null, re
 
   if (value.entries && typeof value.entries === 'object') {
     const entries = Object.entries(value.entries)
-      Object.entries(value.entries)
       .filter(([, entry]) => keepEntry(entry))
-      .map(([, entry]) => projectWorldbookEntryForTracker(entry, settings))
+      .map(([, entry]) => projectWorldbookEntryForTracker(entry))
       .filter(Boolean);
     return {
       name: String(value.name || globalBookName || '').trim(),
@@ -949,7 +924,7 @@ export function getMainflowContextSnapshot(ctx, settings = null) {
       .filter((message) => message && typeof message === 'object' && String(message.content || '').trim())
       .map((message) => ({
         role: String(message.role || 'user'),
-        content: cleanHostContextText(message.content || '', settings),
+        content: message.content || '',
         name: message.name ? String(message.name) : undefined,
       }))
       .filter((message) => message.content.trim())
@@ -964,7 +939,7 @@ export function getMainflowContextSnapshot(ctx, settings = null) {
 }
 
 export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexExclusive = null) {
-  const currentCharacter = cleanCharacterCardContext(getCharacterCard(ctx), settings);
+  const currentCharacter = getCharacterCard(ctx);
   const chatState = getChatState(ctx, settings);
   const existingState = chatState.characters || {};
   const recentMessages = buildRecentMessages(ctx, settings, endIndexExclusive);

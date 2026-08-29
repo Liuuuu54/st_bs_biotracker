@@ -90,13 +90,13 @@ function makeContext() {
   return ctx;
 }
 
-test('tracker regex cleaning covers character cards and worldbook prose, not only chat messages', () => {
+test('tracker payload preserves host context text without regex or tag cleaning', () => {
   const ctx = makeContext();
   ctx.characterId = 0;
   ctx.characters = [{
     name: '艾拉',
-    description: '<roleplay_guidelines>remove this</roleplay_guidelines>保留角色资料',
-    personality: '冷静<hidden>remove this too</hidden>可靠',
+    description: '<roleplay_guidelines>keep this</roleplay_guidelines>保留角色资料',
+    personality: '冷静<hidden>keep this too</hidden>可靠',
     scenario: '客厅',
     first_mes: '<hidden>开场格式</hidden>你好',
     mes_example: '示例',
@@ -104,18 +104,21 @@ test('tracker regex cleaning covers character cards and worldbook prose, not onl
       entries: [{ comment: '条目名称', content: '<hidden>世界书格式</hidden>保留世界书正文' }],
     },
   }];
-  const settings = state.getSettings(ctx);
-  settings.recentMessageRegexFilter = '<(?:roleplay_guidelines|hidden)>[\\s\\S]*?<\\/(?:roleplay_guidelines|hidden)>';
-  settings.recentMessageRegexMode = 'exclude';
 
-  const payload = buildTrackerPayload(ctx, settings);
+  const payload = buildTrackerPayload(ctx, state.getSettings(ctx));
 
-  assert.equal(payload.current_character.description, '保留角色资料');
-  assert.equal(payload.character_description, '保留角色资料', 'duplicate description uses the same cleaned value');
-  assert.equal(payload.current_character.personality, '冷静可靠');
-  assert.equal(payload.current_character.first_mes, '你好');
-  assert.equal(payload.current_character.worldBook.entries[0].content, '保留世界书正文');
-  assert.equal(payload.current_character.worldBook.entries[0].comment, '条目名称', 'worldbook labels remain usable');
+  assert.equal(
+    payload.current_character.description,
+    '<roleplay_guidelines>keep this</roleplay_guidelines>保留角色资料',
+  );
+  assert.equal(payload.character_description, payload.current_character.description);
+  assert.equal(payload.current_character.personality, '冷静<hidden>keep this too</hidden>可靠');
+  assert.equal(payload.current_character.first_mes, '<hidden>开场格式</hidden>你好');
+  assert.equal(
+    payload.current_character.worldBook.entries[0].content,
+    '<hidden>世界书格式</hidden>保留世界书正文',
+  );
+  assert.equal(payload.current_character.worldBook.entries[0].comment, undefined);
 });
 
 test('tracker payload sends slim wardrobe outside the wear-fit window with parts/layer intact', () => {

@@ -416,24 +416,6 @@ test('mainflow 快照绑定当前聊天：跨聊天/无绑定一律拒绝', () =
   }
 });
 
-test('mainflow 快照也沿用酒馆上下文正则清洗', () => {
-  const snapshotKey = '__bs_biotracker_mainflow_context_snapshot__';
-  const ctx = { chatId: 'chat-a' };
-  globalThis[snapshotKey] = {
-    chatKey: 'chat-a',
-    messages: [{ role: 'user', content: '<hidden>格式块</hidden>保留上下文' }],
-  };
-  try {
-    const snapshot = getMainflowContextSnapshot(ctx, {
-      recentMessageRegexFilter: '<hidden>[\\s\\S]*?<\\/hidden>',
-      recentMessageRegexMode: 'exclude',
-    });
-    assert.equal(snapshot.messages[0].content, '保留上下文');
-  } finally {
-    delete globalThis[snapshotKey];
-  }
-});
-
 test('mainflow 状态 JSON 转义闭合标签与换行（安全审查 P1 注入防线）', async () => {
   const { buildMainFlowStatePrompt } = await import('../scripts/tracker_prompt_context.js');
   const prompt = buildMainFlowStatePrompt({
