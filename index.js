@@ -5297,6 +5297,145 @@ async function refreshMemorySourceStatus(ctx) {
     : `已连接：${sourceName}，但没有可用记忆内容`;
 }
 
+function renderContextRegexRules(ctx) {
+  const container = document.getElementById('bs-bt-context-regex-list');
+  if (!container) return;
+
+  const settings = getSettings(ctx);
+
+  if (!Array.isArray(settings.contextRegexRules)) {
+    settings.contextRegexRules = [];
+  }
+
+  const rules = settings.contextRegexRules;
+
+  if (rules.length === 0) {
+    container.innerHTML = `
+      <div class="bs-bt-track-description-empty">
+        尚未添加上下文正则规则。
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = rules.map((rule, index) => {
+    const pattern = String(rule?.pattern || '');
+    const mode = rule?.mode === 'extract' ? 'extract' : 'exclude';
+
+    return `
+      <div
+        class="bs-bt-context-regex-rule"
+        data-context-regex-index="${index}"
+      >
+        <div class="bs-bt-context-regex-rule-header">
+          <strong>规则 ${index + 1}</strong>
+
+          <button
+            type="button"
+            class="menu_button"
+            data-context-regex-delete="${index}"
+          >
+            删除
+          </button>
+        </div>
+
+        <textarea
+          class="text_pole bs-bt-textarea bs-bt-context-regex-pattern"
+          data-context-regex-pattern="${index}"
+          rows="3"
+          spellcheck="false"
+          placeholder="/<think>[\\s\\S]*?<\\/think>/gi"
+        >${escapeHtml(pattern)}</textarea>
+
+        <div class="bs-bt-context-regex-mode">
+          <label>
+            <input
+              type="radio"
+              name="bs-bt-context-regex-mode-${index}"
+              value="exclude"
+              data-context-regex-mode="${index}"
+              ${mode === 'exclude' ? 'checked' : ''}
+            />
+            排除
+          </label>
+
+          <label>
+            <input
+              type="radio"
+              name="bs-bt-context-regex-mode-${index}"
+              value="extract"
+              data-context-regex-mode="${index}"
+              ${mode === 'extract' ? 'checked' : ''}
+            />
+            提取
+          </label>
+        </div>
+
+        <div class="bs-bt-context-regex-order">
+          <button
+            type="button"
+            class="menu_button"
+            data-context-regex-up="${index}"
+            ${index === 0 ? 'disabled' : ''}
+          >
+            ↑ 上移
+          </button>
+
+          <button
+            type="button"
+            class="menu_button"
+            data-context-regex-down="${index}"
+            ${index === rules.length - 1 ? 'disabled' : ''}
+          >
+            ↓ 下移
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function readContextRegexRulesFromForm(ctx) {
+  const settings = getSettings(ctx);
+
+  if (!Array.isArray(settings.contextRegexRules)) {
+    settings.contextRegexRules = [];
+  }
+
+  const container = document.getElementById('bs-bt-context-regex-list');
+
+  if (!container) {
+    return settings.contextRegexRules;
+  }
+
+  const rules = Array.from(
+    container.querySelectorAll('[data-context-regex-index]')
+  ).map((element) => {
+    const index = Number(
+      element.getAttribute('data-context-regex-index')
+    );
+
+    const pattern = String(
+      element.querySelector('[data-context-regex-pattern]')?.value || ''
+    );
+
+    const mode = element.querySelector(
+      `[data-context-regex-mode="${index}"]:checked`
+    )?.value === 'extract'
+      ? 'extract'
+      : 'exclude';
+
+    return {
+      pattern,
+      mode,
+    };
+  });
+
+  settings.contextRegexRules = rules;
+
+  return rules;
+}
+
 function applySettingsToForm(ctx) {
   const settings = getSettings(ctx);
   syncRacePhysiologyOverrides(settings);
@@ -5318,7 +5457,20 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-poll-ms', settings.pollMs);
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
   setValue('bs-bt-context-size', settings.contextSize);
+
+  setValue(
+    'bs-bt-context-regex-enabled',
+    settings.contextRegexEnabled === true,
+  );
+
+  if (!Array.isArray(settings.contextRegexRules)) {
+    settings.contextRegexRules = [];
+  }
+
+  renderContextRegexRules(ctx);
+
   const memorySource = normalizeMemorySource(settings.memorySource);
+
   document.querySelectorAll('[data-memory-source]').forEach((node) => {
     node.checked = node.dataset.memorySource === memorySource;
   });
@@ -5910,6 +6062,11 @@ function readSettingsFromForm(ctx) {
     ? 180000
     : (apiTimeoutSec <= 0 ? 0 : Math.max(1, Math.min(1800, Math.floor(apiTimeoutSec))) * 1000);
   settings.contextSize = Math.max(2, Number(getValue('bs-bt-context-size')) || 12);
+  settings.contextRegexEnabled = Boolean(
+  document.getElementById('bs-bt-context-regex-enabled')?.checked
+);
+
+readContextRegexRulesFromForm(ctx);
   const selectedMemorySource = document.querySelector('[data-memory-source]:checked')?.dataset.memorySource;
   settings.memorySource = normalizeMemorySource(selectedMemorySource || settings.memorySource);
   settings.animaRecallCount = Math.max(1, Math.min(50, Math.floor(Number(getValue('bs-bt-anima-recall-count')) || 20)));
@@ -6503,9 +6660,177 @@ async function ensureModal(ctx) {
       setView('theme');
     }),
   );
+
+  document.getElementById('bs-bt-context-regex-add')?.addEventListener('click', () => {
+  const settings = getSettings(ctx);
+
+  if (!Array.isArray(settings.contextRegexRules)) {
+    settings.contextRegexRules = [];
+  }
+
+  settings.contextRegexRules.push({
+    pattern: '',
+    mode: 'exclude',
+  });
+
+  saveSettings(ctx);
+  renderContextRegexRules(ctx);
+});
+
+document.getElementById('bs-bt-context-regex-list')?.addEventListener('click', (event) => {
+  const target = event.target;
+
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  const settings = getSettings(ctx);
+
+  if (!Array.isArray(settings.contextRegexRules)) {
+    settings.contextRegexRules = [];
+  }
+
+  const deleteButton = target.closest('[data-context-regex-delete]');
+
+  if (deleteButton) {
+    const index = Number(
+      deleteButton.getAttribute('data-context-regex-delete')
+    );
+
+    if (!Number.isInteger(index)) {
+      return;
+    }
+
+    settings.contextRegexRules.splice(index, 1);
+
+    saveSettings(ctx);
+    renderContextRegexRules(ctx);
+    return;
+  }
+
+  const upButton = target.closest('[data-context-regex-up]');
+
+  if (upButton) {
+    const index = Number(
+      upButton.getAttribute('data-context-regex-up')
+    );
+
+    if (
+      !Number.isInteger(index) ||
+      index <= 0 ||
+      index >= settings.contextRegexRules.length
+    ) {
+      return;
+    }
+
+    [
+      settings.contextRegexRules[index - 1],
+      settings.contextRegexRules[index],
+    ] = [
+      settings.contextRegexRules[index],
+      settings.contextRegexRules[index - 1],
+    ];
+
+    saveSettings(ctx);
+    renderContextRegexRules(ctx);
+    return;
+  }
+
+  const downButton = target.closest('[data-context-regex-down]');
+
+  if (downButton) {
+    const index = Number(
+      downButton.getAttribute('data-context-regex-down')
+    );
+
+    if (
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= settings.contextRegexRules.length - 1
+    ) {
+      return;
+    }
+
+    [
+      settings.contextRegexRules[index],
+      settings.contextRegexRules[index + 1],
+    ] = [
+      settings.contextRegexRules[index + 1],
+      settings.contextRegexRules[index],
+    ];
+
+    saveSettings(ctx);
+    renderContextRegexRules(ctx);
+  }
+});
+
+document.getElementById('bs-bt-context-regex-list')?.addEventListener('change', (event) => {
+  const target = event.target;
+
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  const settings = getSettings(ctx);
+
+  if (!Array.isArray(settings.contextRegexRules)) {
+    settings.contextRegexRules = [];
+  }
+
+  const patternInput = target.closest('[data-context-regex-pattern]');
+
+  if (patternInput) {
+    const index = Number(
+      patternInput.getAttribute('data-context-regex-pattern')
+    );
+
+    if (
+      Number.isInteger(index) &&
+      settings.contextRegexRules[index]
+    ) {
+      settings.contextRegexRules[index].pattern =
+        String(patternInput.value || '');
+
+      saveSettings(ctx);
+    }
+
+    return;
+  }
+
+  const modeInput = target.closest('[data-context-regex-mode]');
+
+  if (modeInput) {
+    const index = Number(
+      modeInput.getAttribute('data-context-regex-mode')
+    );
+
+    if (
+      Number.isInteger(index) &&
+      settings.contextRegexRules[index]
+    ) {
+      settings.contextRegexRules[index].mode =
+        modeInput.value === 'extract'
+          ? 'extract'
+          : 'exclude';
+
+      saveSettings(ctx);
+    }
+  }
+});
+
+
   document.getElementById('bs-bt-system-button')?.addEventListener('click', () => setView('system'));
   document.getElementById('bs-bt-home-button')?.addEventListener('click', () => setView('home'));
   document.getElementById('bs-bt-track-back')?.addEventListener('click', () => setView('track-list'));
+  document.getElementById('bs-bt-context-regex-enabled')?.addEventListener('change', () => {
+  const settings = getSettings(ctx);
+
+  settings.contextRegexEnabled = Boolean(
+    document.getElementById('bs-bt-context-regex-enabled')?.checked
+  );
+
+  saveSettings(ctx);
+});
   document.getElementById('bs-bt-model-list')?.addEventListener('change', (event) => {
     const nextModel = String(event.target?.value || '').trim();
     if (!nextModel) return;
