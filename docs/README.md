@@ -23,6 +23,11 @@
    - 解析衣柜四维属性与穿着状态对妊娠阻塞/扩容的影响。
    - 细化心智状态（mens 生理常规 / preg 妊娠）的阶段行为与晋升突破限制。
 
+5. [SillyTavern 宿主集成与接口说明 (sillytavern_integration.md)](sillytavern_integration.md)
+   - 梳理插件与酒馆（SillyTavern/TauriTavern/Luker）的挂载方式与环境感知。
+   - 整理插件从酒馆中提取的具体数据（如上下文、角色、世界书、接口配置）以及对应的功能支持。
+   - 细化插件所订阅的酒馆事件监听机制。
+
 ---
 
 ## 快速入口
