@@ -5333,11 +5333,11 @@ function renderHistoryRegexRules(rules = []) {
       </select>
       <input class="text_pole" type="text" data-history-regex-input spellcheck="false"
         value="${escapeHtml(rule.regex || '')}" placeholder="/<content>(.*?)<\\/content>/gs" aria-label="规则 ${index + 1} 正则" />
-      <div class="flex-container gap4">
+      <div class="bs-bt-history-regex-move-col">
         <button type="button" class="menu_button bs-bt-history-regex-move" data-history-regex-up title="上移"${index === 0 ? ' disabled' : ''}>↑</button>
         <button type="button" class="menu_button bs-bt-history-regex-move" data-history-regex-down title="下移"${index === normalized.length - 1 ? ' disabled' : ''}>↓</button>
       </div>
-      <div class="flex-container gap4">
+      <div class="bs-bt-history-regex-delete-col">
         <button type="button" class="menu_button bs-bt-history-regex-delete" data-history-regex-delete title="删除">×</button>
       </div>
     </div>

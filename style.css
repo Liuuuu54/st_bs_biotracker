@@ -3920,9 +3920,10 @@
 }
 .bs-bt-history-regex-row {
   display: grid;
-  grid-template-columns: 24px 74px minmax(0, 1fr) 52px 28px;
+  grid-template-columns: 24px 74px minmax(0, 1fr) 28px 28px;
   gap: 6px;
   align-items: center;
+  height: 36px;
 }
 .bs-bt-history-regex-checkbox {
   margin: 0;
@@ -3932,15 +3933,59 @@
 }
 .bs-bt-history-regex-select {
   padding: 2px 4px;
+  height: 36px !important;
+  box-sizing: border-box !important;
 }
 
 .bs-bt-history-regex-row .text_pole {
   min-width: 0;
+  height: 36px !important;
+  box-sizing: border-box !important;
+  padding: 6px 10px !important;
 }
-.bs-bt-history-regex-move,
+.bs-bt-history-regex-move-col {
+  display: flex;
+  flex-direction: column;
+  height: 36px;
+  justify-content: flex-start;
+  gap: 0px !important;
+}
+.bs-bt-history-regex-delete-col {
+  display: flex;
+  align-items: center;
+  height: 36px;
+}
+.bs-bt-history-regex-move {
+  min-width: 0;
+  min-height: 0 !important;
+  height: 18px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  line-height: 1;
+  border-radius: 4px 4px 0 0;
+  box-sizing: border-box !important;
+}
+.bs-bt-history-regex-move + .bs-bt-history-regex-move {
+  border-radius: 0 0 4px 4px;
+  border-top: none !important;
+}
 .bs-bt-history-regex-delete {
   min-width: 0;
-  padding: 4px 6px;
+  min-height: 0 !important;
+  height: 36px !important;
+  width: 100%;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  border-radius: 4px;
+  box-sizing: border-box !important;
 }
 .bs-bt-history-regex-actions {
   display: flex;
