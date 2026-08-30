@@ -216,6 +216,22 @@
               <input id="bs-bt-context-size" class="text_pole" type="number" min="2" step="1" />
             </div>
 
+            <details class="settings_section bs-bt-history-regex-settings" id="bs-bt-history-regex-panel">
+              <summary class="bs-bt-history-regex-summary">历史消息正则处理（提取 / 排除）</summary>
+              <small>按楼层逐条处理；每个楼层都会从上到下执行规则，全部楼层处理完成后才合并。提取规则有捕获组时取第一个有内容的捕获组；没有捕获组则取完整匹配。支持 /.../flags 或直接填写正则。</small>
+              <div id="bs-bt-history-regex-list" class="bs-bt-history-regex-list"></div>
+              <div class="bs-bt-history-regex-preview-range flex-container gap8">
+                <label>预览开始楼层 <input id="bs-bt-history-regex-preview-start" class="text_pole" type="number" min="1" step="1" placeholder="留空=最近 N 楼" /></label>
+                <label>结束楼层 <input id="bs-bt-history-regex-preview-end" class="text_pole" type="number" min="1" step="1" placeholder="留空=自动" /></label>
+              </div>
+              <div class="bs-bt-history-regex-actions">
+                <button id="bs-bt-history-regex-add" class="menu_button" type="button">新增规则</button>
+                <button id="bs-bt-history-regex-preview" class="menu_button" type="button">预览当前楼层提取结果</button>
+              </div>
+              <small id="bs-bt-history-regex-status" class="bs-bt-history-regex-status"></small>
+              <div id="bs-bt-history-regex-preview-output" class="bs-bt-history-regex-preview" hidden></div>
+            </details>
+
             <div class="settings_section">
               <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-require-full-description-updates" type="checkbox" />

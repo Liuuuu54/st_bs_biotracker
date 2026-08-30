@@ -34,6 +34,8 @@ import {
   scheduleHostChatStateSave,
 } from './host.js';
 import { normalizeMemorySource } from './memory_sources.js';
+import { processHistoryText } from './history_regex.js';
+import { normalizeHistoryRegexRules } from './history_regex.js';
 
 export const MODULE_NAME = 'bs_biotracker';
 const MAX_CHAT_STATE_SNAPSHOTS = 24;
@@ -132,6 +134,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   pollMs: 1800,
   apiTimeoutMs: 180000,
   contextSize: 12,
+  historyRegexRules: [],
   trackerTokenBudget: 4096,
   requireFullDescriptionUpdates: false,
   lukerMultiAgentManualOnly: true,
@@ -1068,6 +1071,11 @@ export function getSettings(ctx) {
   let shouldSave = false;
   if (!root[MODULE_NAME]) root[MODULE_NAME] = cloneValue(DEFAULT_SETTINGS);
   const settings = root[MODULE_NAME];
+  const normalizedHistoryRegexRules = normalizeHistoryRegexRules(settings.historyRegexRules);
+  if (JSON.stringify(normalizedHistoryRegexRules) !== JSON.stringify(settings.historyRegexRules)) {
+    settings.historyRegexRules = normalizedHistoryRegexRules;
+    shouldSave = true;
+  }
   settings.memorySource = normalizeMemorySource(settings.memorySource);
   settings.animaRecallCount = Math.max(1, Math.min(50, Math.floor(Number(settings.animaRecallCount) || 20)));
   const useHostChatStore = ['tauritavern', 'luker'].includes(getHostKind());
@@ -1680,11 +1688,15 @@ export function buildRecentMessages(ctx, settings, endIndexExclusive = null) {
     ? Math.max(0, Math.min(chat.length, endIndexExclusive))
     : chat.length;
 
-  return chat.slice(Math.max(0, end - count), end).map((message) => ({
-    name: message.name || (message.is_user ? ctx.name1 : ctx.name2) || '',
-    role: message.is_user ? 'user' : 'assistant',
-    text: String(message.mes || ''),
-  }));
+  return chat.slice(Math.max(0, end - count), end).map((message) => {
+    const rawText = String(message?.mes || '');
+    const processed = processHistoryText(rawText, settings?.historyRegexRules || []);
+    return {
+      name: message.name || (message.is_user ? ctx.name1 : ctx.name2) || '',
+      role: message.is_user ? 'user' : 'assistant',
+      text: processed.text,
+    };
+  });
 }
 
 export function buildMessageSignature(ctx, message) {

@@ -3899,3 +3899,85 @@
 #bs-biotracker-settings .bs-bt-track-section--wardrobe-description .bs-bt-track-meta-label {
   font-weight: 700;
 }
+
+
+/* History regex pipeline */
+.bs-bt-history-regex-settings {
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,.15));
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.bs-bt-history-regex-summary {
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+}
+.bs-bt-history-regex-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.bs-bt-history-regex-row {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) 72px 34px;
+  gap: 6px;
+  align-items: center;
+}
+.bs-bt-history-regex-row .text_pole {
+  min-width: 0;
+}
+.bs-bt-history-regex-move,
+.bs-bt-history-regex-delete {
+  min-width: 0;
+  padding: 4px 6px;
+}
+.bs-bt-history-regex-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.bs-bt-history-regex-status {
+  display: block;
+  margin-top: 6px;
+  white-space: pre-wrap;
+}
+.bs-bt-history-regex-preview {
+  margin-top: 10px;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,.15));
+  border-radius: 6px;
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bs-bt-history-regex-preview-floor {
+  margin: 0 0 10px;
+}
+.bs-bt-history-regex-preview-floor:last-child {
+  margin-bottom: 0;
+}
+.bs-bt-history-regex-preview-floor-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+@media (max-width: 620px) {
+  .bs-bt-history-regex-row {
+    grid-template-columns: 74px minmax(0, 1fr) 66px 30px;
+  }
+}
+
+.bs-bt-history-regex-preview-range {
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.bs-bt-history-regex-preview-range label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bs-bt-history-regex-preview-range .text_pole {
+  width: 110px;
+}

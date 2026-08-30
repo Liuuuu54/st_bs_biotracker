@@ -49,6 +49,7 @@ import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
 import { normalizeMemorySource, readMemorySource } from './scripts/memory_sources.js';
+import { normalizeHistoryRegexRules, processHistoryMessages } from './scripts/history_regex.js';
 import { appendSkillHistory, getTalentLabel, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL } from './scripts/skill_config.js';
 import {
   canLoadHostWorldInfo,
@@ -5297,6 +5298,107 @@ async function refreshMemorySourceStatus(ctx) {
     : `已连接：${sourceName}，但没有可用记忆内容`;
 }
 
+
+function getHistoryRegexRulesFromForm() {
+  const rows = Array.from(document.querySelectorAll('#bs-bt-history-regex-list [data-history-regex-row]'));
+  return rows.map((row) => ({
+    id: String(row.getAttribute('data-history-regex-row') || ''),
+    mode: row.querySelector('[data-history-regex-mode]')?.value === 'exclude' ? 'exclude' : 'extract',
+    regex: String(row.querySelector('[data-history-regex-input]')?.value || ''),
+    enabled: row.querySelector('[data-history-regex-enabled]')?.checked !== false,
+  }));
+}
+
+function setHistoryRegexStatus(message = '', isError = false) {
+  const node = document.getElementById('bs-bt-history-regex-status');
+  if (!node) return;
+  node.textContent = String(message || '');
+  node.dataset.state = isError ? 'error' : 'normal';
+}
+
+function renderHistoryRegexRules(rules = []) {
+  const container = document.getElementById('bs-bt-history-regex-list');
+  if (!container) return;
+  const normalized = normalizeHistoryRegexRules(rules);
+  if (normalized.length === 0) {
+    container.innerHTML = '<div class="bs-bt-track-description-empty">暂无正则规则。没有规则时，历史消息保持原样进入下一步。</div>';
+    return;
+  }
+  container.innerHTML = normalized.map((rule, index) => `
+    <div class="bs-bt-history-regex-row" data-history-regex-row="${escapeHtml(rule.id || `rule-${index}`)}">
+      <select class="text_pole" data-history-regex-mode aria-label="规则 ${index + 1} 类型">
+        <option value="extract"${rule.mode === 'extract' ? ' selected' : ''}>提取</option>
+        <option value="exclude"${rule.mode === 'exclude' ? ' selected' : ''}>排除</option>
+      </select>
+      <input class="text_pole" type="text" data-history-regex-input spellcheck="false"
+        value="${escapeHtml(rule.regex || '')}" placeholder="/<content>(.*?)<\\/content>/gs" aria-label="规则 ${index + 1} 正则" />
+      <div class="flex-container gap4">
+        <button type="button" class="menu_button bs-bt-history-regex-move" data-history-regex-up title="上移"${index === 0 ? ' disabled' : ''}>↑</button>
+        <button type="button" class="menu_button bs-bt-history-regex-move" data-history-regex-down title="下移"${index === normalized.length - 1 ? ' disabled' : ''}>↓</button>
+      </div>
+      <div class="flex-container gap4">
+        <button type="button" class="menu_button bs-bt-history-regex-delete" data-history-regex-delete title="删除">×</button>
+      </div>
+      <label class="bs-bt-setting-toggle-row" style="grid-column:2 / -1;">
+        <input type="checkbox" data-history-regex-enabled${rule.enabled !== false ? ' checked' : ''} />
+        <span>启用此规则</span>
+      </label>
+    </div>
+  `).join('');
+}
+
+function previewHistoryRegex(ctx) {
+  const settings = getSettings(ctx);
+  const rules = getHistoryRegexRulesFromForm();
+  const container = document.getElementById('bs-bt-history-regex-preview-output');
+  if (!container) return;
+
+  const rawStart = Number(document.getElementById('bs-bt-history-regex-preview-start')?.value);
+  const rawEnd = Number(document.getElementById('bs-bt-history-regex-preview-end')?.value);
+  const chat = getHostChat(ctx);
+  if (!chat.length) {
+    container.hidden = false;
+    container.innerHTML = '<div>当前聊天没有可预览的历史消息。</div>';
+    return;
+  }
+
+  let start;
+  let end;
+  if (Number.isInteger(rawStart) && rawStart >= 1) {
+    start = Math.min(chat.length, rawStart - 1);
+    end = Number.isInteger(rawEnd) && rawEnd >= rawStart
+      ? Math.min(chat.length, rawEnd)
+      : Math.min(chat.length, start + Math.max(2, Number(settings.contextSize) || 12));
+  } else {
+    end = chat.length;
+    start = Math.max(0, end - Math.max(2, Number(settings.contextSize) || 12));
+  }
+
+  const selected = chat.slice(start, end).map((message, offset) => ({
+    ...message,
+    __historyRegexFloor: start + offset + 1,
+  }));
+  const result = processHistoryMessages(selected, rules);
+  const invalidRules = result.errors
+    .map((error) => `规则 ${error.index + 1}：${error.error}`)
+    .filter((value, index, list) => list.indexOf(value) === index);
+
+  container.hidden = false;
+  container.innerHTML = result.messages.map((message) => `
+    <div class="bs-bt-history-regex-preview-floor">
+      <div class="bs-bt-history-regex-preview-floor-title">楼层 ${message.__historyRegexFloor}</div>
+      <div>${escapeHtml(message.text || '') || '<span style="opacity:.6;">（处理结果为空）</span>'}</div>
+    </div>
+  `).join('') || '<div>选定范围没有消息。</div>';
+
+  if (invalidRules.length) {
+    setHistoryRegexStatus(`预览完成，但有规则无法解析：\n${invalidRules.join('\n')}`, true);
+  } else {
+    const rangeText = `${start + 1}～${end}（共 ${Math.max(0, end - start)} 楼）`;
+    setHistoryRegexStatus(`预览完成：${rangeText}。预览只使用当前面板内容，不会修改原始楼层。`);
+  }
+}
+
 function applySettingsToForm(ctx) {
   const settings = getSettings(ctx);
   syncRacePhysiologyOverrides(settings);
@@ -5318,6 +5420,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-poll-ms', settings.pollMs);
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
   setValue('bs-bt-context-size', settings.contextSize);
+  renderHistoryRegexRules(settings.historyRegexRules);
   const memorySource = normalizeMemorySource(settings.memorySource);
   document.querySelectorAll('[data-memory-source]').forEach((node) => {
     node.checked = node.dataset.memorySource === memorySource;
@@ -5910,6 +6013,7 @@ function readSettingsFromForm(ctx) {
     ? 180000
     : (apiTimeoutSec <= 0 ? 0 : Math.max(1, Math.min(1800, Math.floor(apiTimeoutSec))) * 1000);
   settings.contextSize = Math.max(2, Number(getValue('bs-bt-context-size')) || 12);
+  settings.historyRegexRules = normalizeHistoryRegexRules(getHistoryRegexRulesFromForm());
   const selectedMemorySource = document.querySelector('[data-memory-source]:checked')?.dataset.memorySource;
   settings.memorySource = normalizeMemorySource(selectedMemorySource || settings.memorySource);
   settings.animaRecallCount = Math.max(1, Math.min(50, Math.floor(Number(getValue('bs-bt-anima-recall-count')) || 20)));
@@ -6240,7 +6344,7 @@ async function ensureModal(ctx) {
   let modal = document.getElementById(MODAL_ID);
   if (modal) return modal;
   const settingsUrl = new URL('./settings.html', import.meta.url);
-  settingsUrl.searchParams.set('v', '0.9.6');
+  settingsUrl.searchParams.set('v', '0.9.7');
   const html = await fetch(settingsUrl, { cache: 'no-store' }).then((response) => response.text());
   const memorySourceMarkup = `
             <div class="settings_section">
@@ -6645,6 +6749,43 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-save')?.addEventListener('click', () => {
     readSettingsFromForm(ctx);
     globalThis.toastr?.success?.('[BS BioTracker] 设置已保存');
+  });
+  document.getElementById('bs-bt-history-regex-add')?.addEventListener('click', () => {
+    const rules = getHistoryRegexRulesFromForm();
+    rules.push({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      mode: 'extract',
+      regex: '',
+      enabled: true,
+    });
+    renderHistoryRegexRules(rules);
+    setHistoryRegexStatus('已新增一条规则。填写完成后点击“设置已保存”保存。');
+  });
+  document.getElementById('bs-bt-history-regex-list')?.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const row = target.closest('[data-history-regex-row]');
+    if (!row) return;
+    const rows = getHistoryRegexRulesFromForm();
+    const index = rows.findIndex((rule) => rule.id === row.getAttribute('data-history-regex-row'));
+    if (index < 0) return;
+    if (target.closest('[data-history-regex-delete]')) {
+      rows.splice(index, 1);
+      renderHistoryRegexRules(rows);
+      return;
+    }
+    if (target.closest('[data-history-regex-up]') && index > 0) {
+      [rows[index - 1], rows[index]] = [rows[index], rows[index - 1]];
+      renderHistoryRegexRules(rows);
+      return;
+    }
+    if (target.closest('[data-history-regex-down]') && index < rows.length - 1) {
+      [rows[index + 1], rows[index]] = [rows[index], rows[index + 1]];
+      renderHistoryRegexRules(rows);
+    }
+  });
+  document.getElementById('bs-bt-history-regex-preview')?.addEventListener('click', () => {
+    previewHistoryRegex(ctx);
   });
   document.getElementById('bs-bt-worldbook-clear-all')?.addEventListener('click', async () => {
     try {
