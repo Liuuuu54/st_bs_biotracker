@@ -5326,7 +5326,8 @@ function renderHistoryRegexRules(rules = []) {
   }
   container.innerHTML = normalized.map((rule, index) => `
     <div class="bs-bt-history-regex-row" data-history-regex-row="${escapeHtml(rule.id || `rule-${index}`)}">
-      <select class="text_pole" data-history-regex-mode aria-label="规则 ${index + 1} 类型">
+      <input type="checkbox" class="bs-bt-history-regex-checkbox" data-history-regex-enabled${rule.enabled !== false ? ' checked' : ''} aria-label="启用" />
+      <select class="text_pole bs-bt-history-regex-select" data-history-regex-mode aria-label="规则 ${index + 1} 类型">
         <option value="extract"${rule.mode === 'extract' ? ' selected' : ''}>提取</option>
         <option value="exclude"${rule.mode === 'exclude' ? ' selected' : ''}>排除</option>
       </select>
@@ -5339,64 +5340,8 @@ function renderHistoryRegexRules(rules = []) {
       <div class="flex-container gap4">
         <button type="button" class="menu_button bs-bt-history-regex-delete" data-history-regex-delete title="删除">×</button>
       </div>
-      <label class="bs-bt-setting-toggle-row" style="grid-column:2 / -1;">
-        <input type="checkbox" data-history-regex-enabled${rule.enabled !== false ? ' checked' : ''} />
-        <span>启用此规则</span>
-      </label>
     </div>
   `).join('');
-}
-
-function previewHistoryRegex(ctx) {
-  const settings = getSettings(ctx);
-  const rules = getHistoryRegexRulesFromForm();
-  const container = document.getElementById('bs-bt-history-regex-preview-output');
-  if (!container) return;
-
-  const rawStart = Number(document.getElementById('bs-bt-history-regex-preview-start')?.value);
-  const rawEnd = Number(document.getElementById('bs-bt-history-regex-preview-end')?.value);
-  const chat = getHostChat(ctx);
-  if (!chat.length) {
-    container.hidden = false;
-    container.innerHTML = '<div>当前聊天没有可预览的历史消息。</div>';
-    return;
-  }
-
-  let start;
-  let end;
-  if (Number.isInteger(rawStart) && rawStart >= 1) {
-    start = Math.min(chat.length, rawStart - 1);
-    end = Number.isInteger(rawEnd) && rawEnd >= rawStart
-      ? Math.min(chat.length, rawEnd)
-      : Math.min(chat.length, start + Math.max(2, Number(settings.contextSize) || 12));
-  } else {
-    end = chat.length;
-    start = Math.max(0, end - Math.max(2, Number(settings.contextSize) || 12));
-  }
-
-  const selected = chat.slice(start, end).map((message, offset) => ({
-    ...message,
-    __historyRegexFloor: start + offset + 1,
-  }));
-  const result = processHistoryMessages(selected, rules);
-  const invalidRules = result.errors
-    .map((error) => `规则 ${error.index + 1}：${error.error}`)
-    .filter((value, index, list) => list.indexOf(value) === index);
-
-  container.hidden = false;
-  container.innerHTML = result.messages.map((message) => `
-    <div class="bs-bt-history-regex-preview-floor">
-      <div class="bs-bt-history-regex-preview-floor-title">楼层 ${message.__historyRegexFloor}</div>
-      <div>${escapeHtml(message.text || '') || '<span style="opacity:.6;">（处理结果为空）</span>'}</div>
-    </div>
-  `).join('') || '<div>选定范围没有消息。</div>';
-
-  if (invalidRules.length) {
-    setHistoryRegexStatus(`预览完成，但有规则无法解析：\n${invalidRules.join('\n')}`, true);
-  } else {
-    const rangeText = `${start + 1}～${end}（共 ${Math.max(0, end - start)} 楼）`;
-    setHistoryRegexStatus(`预览完成：${rangeText}。预览只使用当前面板内容，不会修改原始楼层。`);
-  }
 }
 
 function applySettingsToForm(ctx) {
@@ -6783,9 +6728,6 @@ async function ensureModal(ctx) {
       [rows[index + 1], rows[index]] = [rows[index], rows[index + 1]];
       renderHistoryRegexRules(rows);
     }
-  });
-  document.getElementById('bs-bt-history-regex-preview')?.addEventListener('click', () => {
-    previewHistoryRegex(ctx);
   });
   document.getElementById('bs-bt-worldbook-clear-all')?.addEventListener('click', async () => {
     try {

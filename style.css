@@ -3920,10 +3920,20 @@
 }
 .bs-bt-history-regex-row {
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr) 72px 34px;
+  grid-template-columns: 24px 74px minmax(0, 1fr) 52px 28px;
   gap: 6px;
   align-items: center;
 }
+.bs-bt-history-regex-checkbox {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.bs-bt-history-regex-select {
+  padding: 2px 4px;
+}
+
 .bs-bt-history-regex-row .text_pole {
   min-width: 0;
 }
@@ -3965,7 +3975,7 @@
 }
 @media (max-width: 620px) {
   .bs-bt-history-regex-row {
-    grid-template-columns: 74px minmax(0, 1fr) 66px 30px;
+    grid-template-columns: 20px 66px minmax(0, 1fr) 46px 24px;
   }
 }
 
