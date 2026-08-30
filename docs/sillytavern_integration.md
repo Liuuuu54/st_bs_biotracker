@@ -114,6 +114,7 @@
   - **Payload**：
     - `model`：在 SYSTEM 设置页所填写的模型名称。
     - `messages`：包含组装好的 Tracker 引导 System Prompt、当前角色的 `existing_state` JSON 状态文本、近期对话上下文（`contextSize` 楼层数）、以及通过外部记忆源检索出的长记忆。
+      > **注意**：从安全与隐私角度出发，为了**禁止记忆（外部历史记忆源摘要）泄露到主线 user 消息或在直接通信 Payload 中过度传输**，Payload 的 `safePayload` 会显式删除 `memory_context`（外部记忆上下文文本）与 `memory_source`（记忆源标识）这两个可能包含敏感历史总结的字段。
     - `response_format`：设置为 `{"type": "json_object"}` 限制输出格式。
     - 推理参数：`temperature`、`top_p`、`frequency_penalty` 等。
 - **作用**：向大模型发送上下文让其解析剧情，并返回符合格式的调度指令 `tool_calls`。

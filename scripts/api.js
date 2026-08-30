@@ -1046,6 +1046,10 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   const resolvedPayload = await buildResolvedAsyncPayload(payload, stCtx, settings);
   const mainflowCopy = buildPayloadWithMainflowCopy(resolvedPayload, settings);
   const safePayload = sanitizeTransportValue(mainflowCopy.payload);
+  //=========禁止记忆传入user==========
+  delete safePayload.memory_context
+  delete safePayload.memory_source
+  //=========禁止记忆传入user==========
   const safeSystemPrompt = sanitizeTransportString(resolveWithStMacros(systemPrompt || DEFAULT_SYSTEM_PROMPT, stCtx));
   const baseMessages = [
     { role: 'system', content: safeSystemPrompt },
