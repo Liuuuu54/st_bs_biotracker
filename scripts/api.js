@@ -1,8 +1,9 @@
-import { DEFAULT_SYSTEM_PROMPT } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat } from './state.js';
 import {
   getHostChat,
   getHostChatCompletionSettings,
   getHostContext,
+  getHostKind,
   getHostPreset,
   getHostPresetManager,
   getHostWorldInfoPrompt,
@@ -74,14 +75,61 @@ function buildFormattedOutputV4Instruction() {
 
 export function getApiBase(settings) {
   let apiBase = String(settings.apiUrl || '').trim().replace(/\/+$/, '');
-  apiBase = apiBase.replace(/\/(chat\/completions|models)$/i, '');
+  apiBase = apiBase.replace(/\/(chat\/completions|models|responses|messages|interactions)$/i, '');
   return apiBase.replace(/\/+$/, '');
 }
 
 export function getAuthHeaders(settings) {
   const headers = { 'Content-Type': 'application/json' };
-  if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
+  const key = settings.apiKey ? String(settings.apiKey) : '';
+  const format = normalizeApiFormat(settings?.apiFormat);
+  if (format === API_FORMATS.CLAUDE_MESSAGES) {
+    if (!headers['anthropic-version']) headers['anthropic-version'] = '2023-06-01';
+    if (key) {
+      headers.Authorization = `Bearer ${key}`;
+      headers['x-api-key'] = key;
+    }
+  } else if (format === API_FORMATS.GEMINI_INTERACTIONS) {
+    // Google AI 认证走 x-goog-api-key（TauriTavern apply_gemini_auth 同规则）
+    if (key) headers['x-goog-api-key'] = key;
+  } else if (key) {
+    headers.Authorization = `Bearer ${key}`;
+  }
   return headers;
+}
+
+export function getApiFormatPreview(settings) {
+  const apiBase = getApiBase(settings) || '<Base URL>';
+  return getApiUrlForFormat(apiBase, settings?.apiFormat);
+}
+
+/**
+ * 宿主代理对非 OpenAI 兼容格式的支持：
+ * TauriTavern 后端读取 payload.custom_api_format，按 openai_responses.rs / claude
+ * builder 在服务端翻译 messages → /responses | /messages 上游请求；
+ * 原版 SillyTavern 后端不理解 custom_api_format，非 compat 格式改走 /proxy/ 透传
+ * 或浏览器直连（见 postBody 的传输选择）。
+ */
+function hostSupportsFormatAwareProxy() {
+  try {
+    return getHostKind() === 'tauritavern';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 把最近一次真实请求打到 UI（连接状态栏），TT 桌面端没有控制台也能看到端点与状态码。
+ */
+function traceRequestToUi(method, url, status, transport = '') {
+  if (typeof document === 'undefined') return;
+  try {
+    const node = document.getElementById('bs-bt-connect-status');
+    if (!node) return;
+    const suffix = status ? ` → HTTP ${status}` : '';
+    const via = transport ? `（${transport}）` : '';
+    node.textContent = `最近请求：${method} ${url}${suffix}${via}`;
+  } catch {}
 }
 
 function isBrowserRuntime() {
@@ -118,12 +166,28 @@ function getHostProxyHeaders(extraHeaders = {}) {
 
 function buildHostProxyConfig(apiBase, settings) {
   const apiKey = String(settings?.apiKey || '');
+  const format = normalizeApiFormat(settings?.apiFormat);
+  let customIncludeHeaders = '';
+  if (apiKey) {
+    if (format === API_FORMATS.GEMINI_INTERACTIONS) {
+      // Google AI 认 x-goog-api-key；Authorization: Bearer 会被当成 OAuth 而 401
+      customIncludeHeaders = `x-goog-api-key: ${apiKey}`;
+    } else if (format === API_FORMATS.CLAUDE_MESSAGES) {
+      customIncludeHeaders = [
+        `Authorization: Bearer ${apiKey}`,
+        `x-api-key: ${apiKey}`,
+        'anthropic-version: 2023-06-01',
+      ].join('\n');
+    } else {
+      customIncludeHeaders = `Authorization: Bearer ${apiKey}`;
+    }
+  }
   return {
     chat_completion_source: 'custom',
     custom_url: apiBase,
     reverse_proxy: apiBase,
     proxy_password: apiKey,
-    custom_include_headers: apiKey ? `Authorization: Bearer ${apiKey}` : '',
+    custom_include_headers: customIncludeHeaders,
   };
 }
 
@@ -349,7 +413,8 @@ async function requestHostProxyModelList(apiBase, settings) {
   });
 }
 
-async function requestHostProxyChatCompletion(apiBase, settings, requestBody, runContext = {}) {
+async function requestHostProxyChatCompletion(apiBase, settings, requestBody, runContext = {}, apiFormat = API_FORMATS.OPENAI_COMPAT) {
+  const formatAware = apiFormat && apiFormat !== API_FORMATS.OPENAI_COMPAT;
   const proxyBody = {
     messages: requestBody.messages,
     model: requestBody.model,
@@ -360,7 +425,8 @@ async function requestHostProxyChatCompletion(apiBase, settings, requestBody, ru
     presence_penalty: requestBody.presence_penalty,
     max_tokens: requestBody.max_tokens,
     seed: requestBody.seed,
-    response_format: requestBody.response_format,
+    // 非 compat 格式交给宿主后端按 custom_api_format 翻译；response_format 不在其中
+    ...(formatAware ? { custom_api_format: apiFormat } : { response_format: requestBody.response_format }),
     stream: false,
     ...buildHostProxyConfig(apiBase, settings),
   };
@@ -760,11 +826,189 @@ function buildPresetSamplingBodyFromPreset(preset) {
   return body;
 }
 
+function buildResponsesInput(messages) {
+  return (Array.isArray(messages) ? messages : []).map((m) => {
+    const role = String(m?.role || 'user').toLowerCase();
+    const content = String(m?.content ?? '');
+    if (role === 'system') return { role: 'developer', content };
+    if (role === 'developer') return { role: 'developer', content };
+    if (role === 'assistant') return { role: 'assistant', content };
+    return { role: 'user', content };
+  });
+}
+
+function extractResponsesText(data) {
+  if (!data || typeof data !== 'object') return '';
+  if (typeof data.output_text === 'string' && data.output_text.trim()) return data.output_text;
+  const output = Array.isArray(data.output) ? data.output : [];
+  for (const item of output) {
+    if (!item || typeof item !== 'object') continue;
+    if (item.type === 'message' && item.role === 'assistant') {
+      const content = Array.isArray(item.content) ? item.content : [];
+      for (const part of content) {
+        if (part?.type === 'output_text' && typeof part.text === 'string') return part.text;
+        if (typeof part?.text === 'string') return part.text;
+      }
+    }
+  }
+  if (typeof data?.choices?.[0]?.message?.content === 'string') return data.choices[0].message.content;
+  return '';
+}
+
+function buildClaudeMessagesBody(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  let system = '';
+  const claudeMessages = [];
+  for (const m of messages) {
+    const role = String(m?.role || '').toLowerCase();
+    const content = String(m?.content ?? '');
+    if (role === 'system') {
+      system = system ? `${system}\n\n${content}` : content;
+    } else if (role === 'assistant') {
+      claudeMessages.push({ role: 'assistant', content });
+    } else {
+      claudeMessages.push({ role: 'user', content });
+    }
+  }
+  const out = {
+    model: body.model,
+    max_tokens: body.max_tokens || body.max_completion_tokens || 4096,
+    messages: claudeMessages,
+  };
+  if (system) out.system = system;
+  if (body.temperature !== undefined) out.temperature = body.temperature;
+  if (body.top_p !== undefined) out.top_p = body.top_p;
+  if (body.top_k !== undefined) out.top_k = body.top_k;
+  return out;
+}
+
+function extractClaudeText(data) {
+  if (!data || typeof data !== 'object') return '';
+  if (typeof data?.content === 'string') return data.content;
+  const content = Array.isArray(data.content) ? data.content : [];
+  for (const part of content) {
+    if (part?.type === 'text' && typeof part.text === 'string') return part.text;
+    if (typeof part?.text === 'string') return part.text;
+  }
+  if (typeof data?.choices?.[0]?.message?.content === 'string') return data.choices[0].message.content;
+  return '';
+}
+
+function normalizeResponsesData(data) {
+  const text = extractResponsesText(data);
+  return { choices: [{ message: { content: text } }] };
+}
+
+function normalizeClaudeData(data) {
+  const text = extractClaudeText(data);
+  return { choices: [{ message: { content: text } }] };
+}
+
+/**
+ * Gemini Interactions API 请求体（参照 TauriTavern gemini_interactions.rs）：
+ * messages → steps（user_input / model_output + text block），system 合并为
+ * system_instruction，采样参数进 generation_config。插件只发纯文本，不涉及
+ * tool / 媒体 block；response_format 仅在有 json_schema 时才会出现，这里省略。
+ */
+function buildGeminiInteractionsBody(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const systemParts = [];
+  const steps = [];
+  for (const m of messages) {
+    const role = String(m?.role || '').toLowerCase();
+    const text = String(m?.content ?? '');
+    if (role === 'system' || role === 'developer') {
+      if (text.trim()) systemParts.push(text.trim());
+    } else if (role === 'assistant') {
+      if (text.trim()) steps.push({ type: 'model_output', content: [{ type: 'text', text }] });
+    } else {
+      steps.push({ type: 'user_input', content: [{ type: 'text', text }] });
+    }
+  }
+  const request = {
+    model: body.model,
+    input: steps,
+    stream: false,
+    store: false,
+  };
+  if (systemParts.length) request.system_instruction = systemParts.join('\n\n');
+  const generationConfig = {};
+  if (Number.isFinite(body.temperature)) generationConfig.temperature = body.temperature;
+  if (Number.isFinite(body.top_p)) generationConfig.top_p = body.top_p;
+  if (Number.isFinite(body.top_k) && body.top_k > 0) generationConfig.top_k = Math.floor(body.top_k);
+  const maxTokens = Number.isFinite(body.max_tokens) ? body.max_tokens : body.max_completion_tokens;
+  if (Number.isFinite(maxTokens) && maxTokens > 0) generationConfig.max_output_tokens = Math.floor(maxTokens);
+  if (Object.keys(generationConfig).length) request.generation_config = generationConfig;
+  return request;
+}
+
+/**
+ * 非流式 Interactions 回覆。
+ * 直连 / ST /proxy 拿到原生 {status, steps}；TT 格式感知代理会先正规化成
+ * OpenAI {choices:[{message:{content}}]}（见 normalize_gemini_interactions_response），
+ * 那种回包没有 steps，必须走 choices 回退，否则内容会被读成空字符串。
+ */
+function extractGeminiInteractionsText(data) {
+  if (!data || typeof data !== 'object') return '';
+  if (typeof data?.choices?.[0]?.message?.content === 'string') {
+    return data.choices[0].message.content;
+  }
+  const status = String(data.status || '');
+  if (status === 'failed') {
+    throw new Error(`Gemini Interactions 回传失败：${String(data?.error?.message || 'unknown error')}`);
+  }
+  if (status && status !== 'completed' && status !== 'requires_action' && status !== 'incomplete') {
+    throw new Error(`Gemini Interactions 未正常完成（status: ${status}）`);
+  }
+  const steps = Array.isArray(data.steps) ? data.steps : [];
+  let text = '';
+  for (const step of steps) {
+    if (step?.type !== 'model_output') continue;
+    const content = Array.isArray(step.content) ? step.content : [];
+    for (const block of content) {
+      if (block?.type === 'text' && typeof block.text === 'string') text += block.text;
+    }
+  }
+  if (!text) {
+    throw new Error(`Gemini Interactions 回覆没有可消费的文本（status: ${status || 'unknown'}）`);
+  }
+  return text;
+}
+
+function normalizeGeminiInteractionsData(data) {
+  return { choices: [{ message: { content: extractGeminiInteractionsText(data) } }] };
+}
+
+/** 直连时按格式转换请求体；宿主代理走格式感知翻译时用不到（后端自己转）。 */
+function buildDirectPayload(fmt, requestBody) {
+  if (fmt === API_FORMATS.OPENAI_RESPONSES) {
+    const input = buildResponsesInput(requestBody.messages);
+    const payload = {
+      model: requestBody.model,
+      input,
+      store: false,
+      temperature: requestBody.temperature,
+      top_p: requestBody.top_p,
+      seed: requestBody.seed,
+    };
+    if (requestBody.max_tokens) payload.max_output_tokens = requestBody.max_tokens;
+    if (requestBody.max_completion_tokens) payload.max_output_tokens = requestBody.max_completion_tokens;
+    if (requestBody.response_format?.type === 'json_object') {
+      payload.text = { format: { type: 'json_object' } };
+    }
+    return payload;
+  }
+  if (fmt === API_FORMATS.CLAUDE_MESSAGES) {
+    return buildClaudeMessagesBody(requestBody);
+  }
+  if (fmt === API_FORMATS.GEMINI_INTERACTIONS) {
+    return buildGeminiInteractionsBody(requestBody);
+  }
+  return requestBody;
+}
+
 async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   const logApiDebug = (phase, details = {}) => {
-    // 默认关闭：完整 request/response 含聊天内容，同页任何脚本（其他扩展、角色卡的
-    // TH 脚本经 window.parent）都读得到。排查时在控制台执行：
-    //   globalThis.__bs_biotracker_debug_api__ = true
     if (!globalThis.__bs_biotracker_debug_api__) return;
     try {
       const label = `[BS BioTracker][API debug] ${phase}`;
@@ -778,40 +1022,80 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   const postBody = async (requestBody, attempt = 'primary') => {
     const previousAsyncFlag = globalThis.__bs_biotracker_async_request__;
     globalThis.__bs_biotracker_async_request__ = true;
-    const url = `${apiBase}/chat/completions`;
-    // 代理路径同样把 key 交给 ST 后端转发，所以无条件校验，不只校验直连
+    const fmt = normalizeApiFormat(settings?.apiFormat);
+    const upstreamUrl = getApiUrlForFormat(apiBase, fmt);
+    const isCompat = fmt === API_FORMATS.OPENAI_COMPAT;
+    // TT 后端按 custom_api_format 在服务端翻译；原版 ST 后端不认得这个字段
+    const formatAwareProxy = !isCompat && hostSupportsFormatAwareProxy();
+    // ST/Luker 的 /proxy/<url> 透传代理：服务端原样转发绕开 CORS（需 config.yaml 开启 enableCorsProxy，未开启返回 404）
+    const transparentProxyUrl = !isCompat && !formatAwareProxy && isBrowserRuntime() && isCrossOriginUrl(upstreamUrl)
+      ? `/proxy/${upstreamUrl}`
+      : null;
+    const canUseHostProxy = shouldUseHostProxy(upstreamUrl) && (isCompat || formatAwareProxy);
+    let transport = canUseHostProxy
+      ? (formatAwareProxy ? 'host-proxy-formatted' : 'host-proxy')
+      : (transparentProxyUrl ? 'host-proxy-transparent' : 'direct');
+    let url = canUseHostProxy ? '/api/backends/chat-completions/generate' : (transparentProxyUrl || upstreamUrl);
+    const payloadForTransport = canUseHostProxy ? requestBody : buildDirectPayload(fmt, requestBody);
     assertSafeDirectApiBase(apiBase);
-    const useHostProxy = shouldUseHostProxy(url);
-    let transport = useHostProxy ? 'host-proxy' : 'direct';
     let requestText = '';
     try {
-      requestText = JSON.stringify(requestBody);
+      requestText = JSON.stringify(payloadForTransport);
       logApiDebug(`request:${attempt}`, {
         transport,
-        url: useHostProxy ? '/api/backends/chat-completions/generate' : url,
+        url,
         apiBase,
-        requestBody,
+        format: fmt,
+        requestBody: payloadForTransport,
         requestText,
         requestTextLength: requestText.length,
       });
       let response;
       let responseText;
-      if (useHostProxy) {
+      if (canUseHostProxy) {
         let proxyError = null;
         try {
-          ({ response, responseText } = await requestHostProxyChatCompletion(apiBase, settings, requestBody, runContext));
+          ({ response, responseText } = await requestHostProxyChatCompletion(apiBase, settings, requestBody, runContext, fmt));
         } catch (error) {
           proxyError = error;
           logApiDebug(`proxy_error:${attempt}`, { proxyError: error });
-          // 代理已经等满超时（或整轮时限已到），直连只会再卡一次同样的时长
           if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
         }
         if (proxyError || (!response.ok && shouldFallbackFromHostProxy(responseText, response.status))) {
           transport = proxyError ? 'direct-after-proxy-error' : `direct-after-proxy-${response.status}`;
+          url = upstreamUrl;
           if (!proxyError && (response.status === 401 || response.status === 403)) {
             disableHostProxyForSession(response.status, responseText);
           }
-          ({ response, responseText } = await fetchText(url, {
+          ({ response, responseText } = await fetchText(upstreamUrl, {
+            method: 'POST',
+            headers: getAuthHeaders(settings),
+            body: requestText,
+            timeoutMs: resolveApiTimeoutMs(settings),
+            externalSignal: runContext.signal || null,
+            deadlineMs: runContext.deadlineMs || 0,
+          }));
+        }
+      } else if (transparentProxyUrl) {
+        let proxyError = null;
+        try {
+          ({ response, responseText } = await fetchText(transparentProxyUrl, {
+            method: 'POST',
+            headers: getHostProxyHeaders(getAuthHeaders(settings)),
+            body: requestText,
+            timeoutMs: resolveApiTimeoutMs(settings),
+            externalSignal: runContext.signal || null,
+            deadlineMs: runContext.deadlineMs || 0,
+          }));
+        } catch (error) {
+          proxyError = error;
+          logApiDebug(`transparent_proxy_error:${attempt}`, { proxyError: error });
+          if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
+        }
+        if (proxyError || (!response.ok && shouldFallbackFromHostProxy(responseText, response.status))) {
+          transport = proxyError ? 'direct-after-proxy-error' : `direct-after-proxy-${response.status}`;
+          url = upstreamUrl;
+          ({ response, responseText } = await fetchText(upstreamUrl, {
             method: 'POST',
             headers: getAuthHeaders(settings),
             body: requestText,
@@ -821,7 +1105,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
           }));
         }
       } else {
-        ({ response, responseText } = await fetchText(url, {
+        ({ response, responseText } = await fetchText(upstreamUrl, {
           method: 'POST',
           headers: getAuthHeaders(settings),
           body: requestText,
@@ -830,13 +1114,14 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
           deadlineMs: runContext.deadlineMs || 0,
         }));
       }
-      // 调试快照同样默认关闭，避免无条件把完整请求/响应暂存在 globalThis
+      traceRequestToUi('POST', upstreamUrl, response.status, transport);
       if (globalThis.__bs_biotracker_debug_api__) {
         globalThis[DEBUG_LAST_API_RESPONSE_KEY] = {
           capturedAt: Date.now(),
           attempt,
           transport,
-          url: transport === 'host-proxy' ? '/api/backends/chat-completions/generate' : url,
+          format: fmt,
+          url,
           status: response.status,
           ok: response.ok,
           responseText,
@@ -845,23 +1130,24 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
       }
       logApiDebug(`response:${attempt}`, {
         transport,
-        url: transport === 'host-proxy' ? '/api/backends/chat-completions/generate' : url,
+        url,
         status: response.status,
         ok: response.ok,
         responseText,
         requestText,
       });
-      return { response, responseText, requestText };
+      return { response, responseText, requestText, format: fmt };
     } catch (error) {
+      traceRequestToUi('POST', upstreamUrl, 0, transport);
       logApiDebug(`error:${attempt}`, {
         transport,
         url,
-        requestBody,
+        requestBody: payloadForTransport,
         requestText,
         error,
       });
       if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
-      throw new Error(`无法连接到 API。请检查 Base URL、API Key、服务是否启动；浏览器环境会优先通过酒馆后端代理。原始错误: ${String(error?.message || error)}`);
+      throw new Error(`无法连接到 API。请检查 Base URL、API Key、服务是否启动；浏览器环境会优先通过酒馆后端代理。若使用原版 SillyTavern 且渠道不允许浏览器直连（CORS 拦截），可在 config.yaml 设置 corsProxy.enabled: true 后重启，让酒馆服务器代为转发。原始错误: ${String(error?.message || error)}`);
     } finally {
       globalThis.__bs_biotracker_async_request__ = previousAsyncFlag;
     }
@@ -871,8 +1157,12 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   let response = result.response;
   let responseText = result.responseText;
   let errorText = response.ok ? '' : responseText;
+  const isResponses = result.format === API_FORMATS.OPENAI_RESPONSES;
+  const isClaude = result.format === API_FORMATS.CLAUDE_MESSAGES;
+  const isGemini = result.format === API_FORMATS.GEMINI_INTERACTIONS;
+  const isNonCompatFormat = isResponses || isClaude || isGemini;
 
-  if (!response.ok && response.status === 400 && body.response_format) {
+  if (!response.ok && response.status === 400 && body.response_format && !isNonCompatFormat) {
     const fallbackBody = {
       model: body.model,
       temperature: body.temperature,
@@ -890,7 +1180,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   }
 
   const invalidArgument = response.status === 400 && /invalid argument|badRequest/i.test(errorText);
-  if (!response.ok && invalidArgument) {
+  if (!response.ok && invalidArgument && !isNonCompatFormat) {
     const minimalBody = {
       model: body.model,
       messages: body.messages,
@@ -902,10 +1192,14 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(`API ${response.status}: ${sanitizeErrorText(errorText)}`);
+    throw new Error(`API ${response.status}［实际请求: ${getApiUrlForFormat(apiBase, result.format)}］: ${sanitizeErrorText(errorText)}`);
   }
   try {
-    return JSON.parse(responseText);
+    const parsed = JSON.parse(responseText);
+    if (isResponses) return normalizeResponsesData(parsed);
+    if (isClaude) return normalizeClaudeData(parsed);
+    if (isGemini) return normalizeGeminiInteractionsData(parsed);
+    return parsed;
   } catch (error) {
     logApiDebug('parse_error', {
       status: response.status,
@@ -952,7 +1246,9 @@ export async function fetchModelList(settings) {
     } else {
       ({ response, responseText } = await fetchText(url, { method: 'GET', headers: getAuthHeaders(settings), timeoutMs: resolveModelListTimeoutMs(settings) }));
     }
+    traceRequestToUi('GET', url, response?.status, transport);
   } catch (error) {
+    traceRequestToUi('GET', url, 0, transport);
     throw new Error(`模型列表连接失败（${transport}）。请检查 Base URL / API Key；也可手动填写模型名称后直接使用追踪/注册。原始错误: ${String(error?.message || error)}`);
   }
   if (!response.ok) {
