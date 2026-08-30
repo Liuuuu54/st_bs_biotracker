@@ -166,18 +166,35 @@ export function applyRegexRule(text, rule) {
 export function processHistoryText(text, rules = []) {
   let current = String(text ?? '');
   const errors = [];
+  const extractedParts = [];
+  let hasExtractRule = false;
 
   for (const [index, rule] of (Array.isArray(rules) ? rules : []).entries()) {
     if (rule?.enabled === false) continue;
+    const mode = String(rule?.mode || '').trim().toLowerCase() === 'exclude' ? 'exclude' : 'extract';
+    if (mode === 'extract') {
+      hasExtractRule = true;
+    }
     const result = applyRegexRule(current, rule);
     if (result.error) {
       errors.push({ index, error: result.error, pattern: result.pattern, flags: result.flags });
       continue;
     }
-    current = result.text;
+    if (mode === 'exclude') {
+      current = result.text;
+    } else {
+      if (result.matched) {
+        extractedParts.push(result.text);
+      }
+    }
   }
 
-  return { text: current, errors };
+  let finalText = current;
+  if (hasExtractRule) {
+    finalText = extractedParts.join('\n');
+  }
+
+  return { text: finalText, errors };
 }
 
 export function processHistoryMessages(messages, rules = []) {
