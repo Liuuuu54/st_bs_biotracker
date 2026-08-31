@@ -227,7 +227,7 @@ test('bsAddSperm reads paternal derivedType from the race descriptor, not the ma
 
   applyToolCall(chatState, {
     name: 'bsAddSperm',
-    arguments: { female: '孕母', male: '同名父亲', race: '[魔女]人类X精灵', amount: 100 },
+    arguments: { female: '孕母', male: '同名父亲', race: '[魔女]人类X精灵', amount: 100, ejaculatedInside: true, protected: false },
   });
 
   const sperm = chatState.characters['孕母'].profile.base.sperms[0];

@@ -59,6 +59,7 @@ function collectEmbryoTypesFromCharacterState(target, characterState) {
   const children = Array.isArray(profile.children) ? profile.children : [];
   addEmbryoTypeFromRace(target, base.race);
   for (const sperm of (Array.isArray(base.sperms) ? base.sperms : [])) addEmbryoTypeFromRace(target, sperm?.race);
+  for (const candidate of (Array.isArray(base.conceptionCandidates) ? base.conceptionCandidates : [])) addEmbryoTypeFromRace(target, candidate?.race);
   for (const fetus of (Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [])) {
     addEmbryoTypeFromRace(target, fetus?.race);
     addEmbryoTypeFromRace(target, fetus?.fatherRace);

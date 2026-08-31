@@ -337,6 +337,91 @@ test('manual analysis always sends the current tail even when it already has a s
   assert.equal(result.triggeredCount, 1);
 });
 
+test('manual replay uses the previous floor as baseline and replaces the current floor snapshot', async () => {
+  const ctx = makeCtx([
+    { is_user: false, name: 'Alice', mes: 'floor 36' },
+    { is_user: false, name: 'Alice', mes: 'floor 38' },
+    { is_user: false, name: 'Alice', mes: 'floor 40' },
+  ]);
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  settings.apiUrl = 'https://example.test/v1';
+  settings.model = 'test-model';
+  const chatState = state.getChatState(ctx, settings);
+  chatState.characters.F = state.createDefaultFemaleState('F');
+  chatState.characters.F.initialized = true;
+
+  chatState.characters.F.profile.base.sperms = [{ male: 'A', race: '人类', value: 10 }];
+  state.recordChatStateSnapshot(ctx, chatState, { messageCount: 1, reason: 'tracker' });
+  chatState.characters.F.profile.base.sperms = [{ male: 'A', race: '人类', value: 20 }];
+  state.recordChatStateSnapshot(ctx, chatState, { messageCount: 2, reason: 'tracker' });
+  chatState.characters.F.profile.base.sperms = [{ male: 'A', race: '人类', value: 30 }];
+  state.recordChatStateSnapshot(ctx, chatState, { messageCount: 3, reason: 'tracker' });
+  assert.equal(state.getLatestMatchingSnapshotBefore(ctx, chatState, 3)?.messageCount, 2);
+
+  globalThis.fetch = async () => jsonResponse({
+    choices: [{ message: { content: JSON.stringify({
+      tool_calls: [{
+        name: 'bsAddSperm',
+        arguments: { female: 'F', male: 'A', race: '人类', amount: 5, ejaculatedInside: true, protected: false },
+      }],
+    }) } }],
+  });
+
+  await runTracker(ctx, makeDeps(), 'manual');
+
+  assert.deepEqual(chatState.characters.F.profile.base.sperms, [{ male: 'A', race: '人类', value: 25, derivedType: null }]);
+  assert.equal(chatState.snapshots.filter((snapshot) => snapshot.messageCount === 3).length, 1);
+  assert.equal(chatState.snapshots.some((snapshot) => snapshot.messageCount > 3), false);
+});
+
+test('manual analysis of an unprocessed current floor uses the previous BS snapshot as baseline', async () => {
+  const ctx = makeCtx([
+    { is_user: false, name: 'Alice', mes: 'floor 38' },
+    { is_user: false, name: 'Alice', mes: 'floor 40' },
+  ]);
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  settings.apiUrl = 'https://example.test/v1';
+  settings.model = 'test-model';
+  const chatState = state.getChatState(ctx, settings);
+  chatState.characters.F = { ...state.createDefaultFemaleState('F'), initialized: true };
+  chatState.characters.F.profile.base.sperms = [{ male: 'A', race: '人类', value: 18 }];
+  state.recordChatStateSnapshot(ctx, chatState, { messageCount: 1, reason: 'tracker' });
+  assert.equal(state.getLatestMatchingSnapshotBefore(ctx, chatState, 2)?.messageCount, 1);
+
+  globalThis.fetch = async () => jsonResponse({ choices: [{ message: { content: JSON.stringify({ tool_calls: [] }) } }] });
+
+  await runTracker(ctx, makeDeps(), 'manual');
+
+  assert.equal(chatState.snapshots.filter((snapshot) => snapshot.messageCount === 2).length, 1);
+});
+
+test('failed manual replay keeps the previous current-floor snapshot', async () => {
+  const ctx = makeCtx([
+    { is_user: false, name: 'Alice', mes: 'floor 38' },
+    { is_user: false, name: 'Alice', mes: 'floor 40' },
+  ]);
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  settings.apiUrl = 'https://example.test/v1';
+  settings.model = 'test-model';
+  const chatState = state.getChatState(ctx, settings);
+  chatState.characters.F = { ...state.createDefaultFemaleState('F'), initialized: true };
+  chatState.characters.F.profile.base.sperms = [{ male: 'A', race: '人类', value: 20 }];
+  state.recordChatStateSnapshot(ctx, chatState, { messageCount: 1, reason: 'tracker' });
+  chatState.characters.F.profile.base.sperms = [{ male: 'A', race: '人类', value: 30 }];
+  state.recordChatStateSnapshot(ctx, chatState, { messageCount: 2, reason: 'tracker' });
+
+  globalThis.fetch = async () => { throw new Error('temporary API failure'); };
+  await assert.rejects(runTracker(ctx, makeDeps(), 'manual'), /temporary API failure/);
+
+  assert.equal(chatState.snapshots.filter((snapshot) => snapshot.messageCount === 2).length, 1);
+  const current = state.getLatestMatchingSnapshot(ctx, chatState, 2);
+  state.restoreChatStateFromSnapshot(chatState, current);
+  assert.equal(chatState.characters.F.profile.base.sperms[0]?.value, 30);
+});
+
 test('legacy operations with function-style calls apply a presence update', async () => {
   const ctx = makeCtx([{ is_user: false, name: 'Alice', mes: '艾拉回到队伍身边。' }]);
   globalThis.SillyTavern = { getContext: () => ctx };

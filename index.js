@@ -45,7 +45,7 @@ import {
   PREGNANCY_STAGES,
 } from './scripts/stage_config.js';
 import { buildMainFlowPrompt, resetPoller, runTracker } from './scripts/tracker.js';
-import { applyToolCall } from './scripts/tools.js';
+import { applyToolCall, syncManualMenstrualStageTransition } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
 import { normalizeMemorySource, readMemorySource } from './scripts/memory_sources.js';
@@ -3031,6 +3031,7 @@ function buildTrackCharacterViewModel(character) {
       fertilizationDays: Number(base.fertilizationDays) || 0,
       totalSperm,
       sperms: Array.isArray(base.sperms) ? base.sperms : [],
+      conceptionCandidates: Array.isArray(base.conceptionCandidates) ? base.conceptionCandidates : [],
       pregnantDays: Number(pregnant.pregnantDays) || 0,
       effectivePregnantDays: Number(pregnant.effectivePregnantDays) || 0,
       laborHours: Number(pregnant.laborHours) || 0,
@@ -3328,6 +3329,18 @@ function renderTrackPregnancy(viewModel) {
         </div>`,
       '当前无精液残留',
       'sperms',
+      { badge: fertilityBadge },
+    )}
+    ${renderCardCarouselSection(
+      '本周期受精竞争',
+      data.conceptionCandidates,
+      (item, index) => `<div class="bs-bt-track-card">
+          <div class="bs-bt-track-card-title">来源 ${index + 1}</div>
+          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">对象</span><span class="bs-bt-track-list-value">${escapeHtml(item?.male || '未知')}</span></div>
+          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">竞争权重</span><span class="bs-bt-track-list-value">${Math.round(Number(item?.competitionWeight) || 0)}</span></div>
+        </div>`,
+      '本周期暂无受精竞争来源',
+      'conceptionCandidates',
       { badge: fertilityBadge },
     )}
     ${data.showPregnantFields
@@ -4837,7 +4850,7 @@ function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function validateManualCharacterState(next, currentName) {
+function validateManualCharacterState(next, currentName, currentCharacter = null) {
   const errors = [];
   if (!isPlainObject(next)) errors.push('顶层必须是 JSON 对象。');
   if (!errors.length && String(next.name || '').trim() !== currentName) errors.push('不能在这里修改角色 name；请保持与当前选中角色一致。');
@@ -4895,6 +4908,7 @@ function validateManualCharacterState(next, currentName) {
   if (Array.isArray(normalized.profile?.pregnant?.fetuses)) {
     normalized.profile.pregnant.fetusesCount = normalized.profile.pregnant.fetuses.length;
   }
+  syncManualMenstrualStageTransition(normalized, currentCharacter?.profile?.base?.stage);
   return { ok: true, value: normalized };
 }
 
@@ -4915,7 +4929,10 @@ function applyFullStateManualEdit(ctx) {
     return;
   }
 
-  const result = validateManualCharacterState(parsed, selectedFullStateName);
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const currentCharacter = chatState.characters?.[selectedFullStateName];
+  const result = validateManualCharacterState(parsed, selectedFullStateName, currentCharacter);
   if (!result.ok) {
     const message = `无法应用修改：\n${result.errors.map((item) => `- ${item}`).join('\n')}`;
     setFullStateEditStatus(message, 'error');
@@ -4923,8 +4940,6 @@ function applyFullStateManualEdit(ctx) {
     return;
   }
 
-  const settings = getSettings(ctx);
-  const chatState = getChatState(ctx, settings);
   if (!chatState.characters?.[selectedFullStateName]) {
     globalThis.toastr?.warning?.(`[BS BioTracker] 找不到角色 ${selectedFullStateName}`);
     renderFullStatePage(ctx);

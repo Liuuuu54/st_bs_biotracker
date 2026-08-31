@@ -19,6 +19,8 @@ import {
   getRegisteredTargetNames,
   getSettings,
   getLatestMatchingSnapshot,
+  prepareChatStateForReplay,
+  restoreChatStateAfterReplayFailure,
   getWorldbookEntryDisplayName,
   hydrateChatStateFromHost,
   loadCharacterAdditionalWorldBooks,
@@ -1087,9 +1089,13 @@ function reconcileChatStateSnapshots(ctx, chatState, settings) {
 }
 
 function prepareManualReplay(ctx, chatState, chatLength) {
-  // 手动分析始终重跑当前尾楼；reconcile 只负责先恢复尾删后的基准状态。
-  reconcileChatStateSnapshots(ctx, chatState, { contextSize: DEFAULT_SETTINGS.contextSize });
-  return { nextMessageIndex: Math.max(0, chatLength - 1) };
+  // 手动分析始终重跑当前尾楼；基线必须是当前楼之前的快照，不能包含旧结果。
+  const replayBase = prepareChatStateForReplay(ctx, chatState, chatLength);
+  if (!replayBase) {
+    // 没有前置快照时，沿用删除/改写对账后的恢复策略。
+    reconcileChatStateSnapshots(ctx, chatState, { contextSize: DEFAULT_SETTINGS.contextSize });
+  }
+  return { nextMessageIndex: Math.max(0, chatLength - 1), replayBase };
 }
 
 function hasPendingChatHistory(ctx, chatState) {
@@ -1310,7 +1316,12 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   chatState.lastProcessedSignature = attemptedSignature;
   chatState.lastFailedSignature = '';
   chatState.lastFailedChatSignature = '';
-  recordChatStateSnapshot(ctx, chatState, { messageCount: messageIndex + 1, reason: 'tracker', bindToMessage: true });
+  recordChatStateSnapshot(ctx, chatState, {
+    messageCount: messageIndex + 1,
+    reason: 'tracker',
+    bindToMessage: true,
+    replaceMessageCount: reason === 'manual',
+  });
   saveSettings(ctx);
   return { discarded: false, triggered: true };
 }
@@ -1410,9 +1421,11 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   const runToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   globalThis[RUN_RUNTIME_KEY] = runToken;
   markTrackerRunProgress();
+  let replayContext = null;
   try {
-    const { nextMessageIndex } =
+    const { nextMessageIndex, replayBase } =
       reason === 'manual' ? prepareManualReplay(ctx, chatState, chat.length) : reconcileChatStateSnapshots(ctx, chatState, settings);
+    replayContext = replayBase ? { ...replayBase, targetMessageCount: chat.length } : null;
     let processedCount = 0;
     let triggeredCount = 0;
     let discarded = false;
@@ -1444,6 +1457,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   } catch (error) {
     console.error('[BS BioTracker] runTracker failed', error);
     recordTrackerResultDebug(null, error);
+    if (reason === 'manual') restoreChatStateAfterReplayFailure(chatState, replayContext);
     chatState.lastFailedSignature = chatState.lastAttemptedSignature || buildSignature(ctx, chat.length);
     // 记下失败当下「整段对话」的签名：只要对话没变，自动重试就该被挡住。
     // 失败可能发生在回放的中间楼，只比对尾楼会让轮询无限重发。

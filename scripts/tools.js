@@ -341,7 +341,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddSperm',
-    description: '向单一角色体内加入精液，用于性交后留下受孕机会；若当前已有成熟卵子，加入时会立即进行一次受精判定，成功后即使随后排出精液也不影响待着床胚胎。amount 必须为正数；扣除/排出精液请用 bsDrainSperm。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
+    description: '仅在人物 male 明确射精并射入人物 female 体内，且全程没有使用安全套等有效保护措施时，登记体内精液来源和受孕机会。仅插入、摩擦、体外射精、未射精、射在体外或使用任何有效保护措施都不得调用；此时不要更新精液。ejaculatedInside 与 protected 必须根据剧情明确填写，不能猜测。amount 必须为正数；扣除/排出精液请用 bsDrainSperm。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
     input_schema: {
       type: 'object',
       properties: {
@@ -349,8 +349,10 @@ export const TOOL_DEFINITIONS = Object.freeze([
         male: { type: 'string' },
         race: { type: 'string' },
         amount: { type: 'number' },
+        ejaculatedInside: { type: 'boolean' },
+        protected: { type: 'boolean' },
       },
-      required: ['female', 'male', 'race', 'amount'],
+      required: ['female', 'male', 'race', 'amount', 'ejaculatedInside', 'protected'],
       additionalProperties: false,
     },
   },
@@ -1422,32 +1424,109 @@ function processSpermLifecycle(profile, stage, tick) {
     .filter((item) => item.value > 0);
 }
 
-function tryConceiveOnSpermEntry(profile, sperm, amount) {
+function getConceptionCandidates(profile) {
+  return (Array.isArray(profile?.base?.conceptionCandidates) ? profile.base.conceptionCandidates : [])
+    .map((candidate) => ({
+      male: String(candidate?.male || '').trim(),
+      race: String(candidate?.race || '人类').trim() || '人类',
+      derivedType: candidate?.derivedType ? String(candidate.derivedType).trim() : null,
+      competitionWeight: clampNumber(candidate?.competitionWeight, 0, 9999, 0),
+    }))
+    .filter((candidate) => candidate.male && candidate.competitionWeight > 0);
+}
+
+function syncConceptionCandidatesFromSperms(base) {
+  const candidates = Array.isArray(base.conceptionCandidates)
+    ? base.conceptionCandidates.map((item) => ({ ...item }))
+    : [];
+  const candidateByMale = new Map(candidates.map((item) => [String(item?.male || ''), item]));
+
+  for (const sperm of (Array.isArray(base.sperms) ? base.sperms : [])) {
+    const male = String(sperm?.male || '').trim();
+    const value = clampNumber(sperm?.value, 0, 9999, 0);
+    if (!male || value <= 0) continue;
+    const candidate = candidateByMale.get(male);
+    if (candidate) continue;
+    const raceDescriptor = parseRaceDescriptor(sperm?.race || '人类');
+    candidates.push({
+      male,
+      race: raceDescriptor.race || '人类',
+      derivedType: raceDescriptor.derivedType || sperm?.derivedType || null,
+      competitionWeight: value,
+    });
+    candidateByMale.set(male, candidates[candidates.length - 1]);
+  }
+
+  base.conceptionCandidates = candidates.filter((item) => clampNumber(item?.competitionWeight, 0, 9999, 0) > 0);
+}
+
+export function syncManualMenstrualStageTransition(character, previousStage = '') {
+  const profile = character?.profile || {};
   const base = profile.base || {};
-  const stage = String(base.stage || '');
-  if (![...MENSTRUAL_STAGES, '产后恢复'].includes(stage)) return false;
+  const nextStage = String(base.stage || '');
+  if (nextStage !== '排卵期' || String(previousStage || '') === nextStage) return character;
 
-  const eggs = clampNumber(base.eggs, 0, 99, 0);
-  if (eggs <= 0 || !sperm || clampNumber(amount, 0, 999999, 0) <= 0) return false;
+  syncConceptionCandidatesFromSperms(base);
+  profile.cooldown = {
+    ...(profile.cooldown || {}),
+    naturalOvulationUsed: false,
+    naturalConceptionResolved: false,
+  };
+  profile.base = base;
+  character.profile = profile;
+  return character;
+}
 
+function pickConceptionCandidate(profile, candidates) {
+  const weighted = candidates.map((candidate) => ({
+    candidate,
+    weight: candidate.competitionWeight * getConceptionWeightRatio(profile, candidate),
+  })).filter((entry) => entry.weight > 0);
+  const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  if (total <= 0) return null;
+  let cursor = Math.random() * total;
+  for (const entry of weighted) {
+    cursor -= entry.weight;
+    if (cursor <= 0) return entry.candidate;
+  }
+  return weighted[weighted.length - 1]?.candidate || null;
+}
+
+function resolveNaturalConception(profile, stage, eggs) {
+  const candidates = getConceptionCandidates(profile);
   const femaleDifficulty = clampNumber(profile?.bio?.impregnationDifficulty, 0.1, 100, 1.0);
-  const maleDifficulty = clampNumber(getMergedRacePhysiologyProfile(sperm?.race)?.impregnationDifficulty, 0.1, 100, 1.0);
-  const isSameRace = isSameRaceGroup(profile?.base?.race, sperm?.race);
-  let effectiveDifficulty = isSameRace ? femaleDifficulty : (femaleDifficulty + maleDifficulty);
-  const femaleEmbryoType = deriveFetusEmbryoType(profile?.base?.race);
-  const maleEmbryoType = deriveFetusEmbryoType(sperm?.race);
-  if (femaleEmbryoType !== maleEmbryoType) effectiveDifficulty *= 1.5;
-
-  const chance = Math.max(0.001, Math.min(0.8, (6 * 0.5) / effectiveDifficulty));
-  if (Math.random() > chance) return false;
-
   const pregnant = profile.pregnant || {};
   pregnant.fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  pregnant.fetuses.push(createSimpleFetus(profile, sperm, stage));
+  let resolvedCount = 0;
+
+  while (eggs > 0) {
+    if (candidates.length > 0) {
+      const chanceEntries = candidates.map((candidate) => {
+        const maleDifficulty = clampNumber(getMergedRacePhysiologyProfile(candidate.race)?.impregnationDifficulty, 0.1, 100, 1.0);
+        const isSameRace = isSameRaceGroup(profile?.base?.race, candidate.race);
+        let effectiveDifficulty = isSameRace ? femaleDifficulty : (femaleDifficulty + maleDifficulty);
+        if (deriveFetusEmbryoType(profile?.base?.race) !== deriveFetusEmbryoType(candidate.race)) effectiveDifficulty *= 1.5;
+        return { candidate, effectiveDifficulty };
+      });
+      // 每颗卵先独立判定受精，再从候选快照中选择父源；权重不参与受精概率。
+      const effectiveDifficulty = chanceEntries.reduce((sum, entry) => sum + entry.effectiveDifficulty, 0) / chanceEntries.length;
+      const fertilizationChance = Math.max(0.001, Math.min(0.8, (6 * 0.5) / effectiveDifficulty));
+      if (Math.random() <= fertilizationChance) {
+        const father = pickConceptionCandidate(profile, candidates);
+        if (father) {
+          pregnant.fetuses.push(createSimpleFetus(profile, father, stage));
+          resolvedCount += 1;
+        }
+      }
+    }
+    eggs -= 1;
+  }
   pregnant.fetusesCount = pregnant.fetuses.length;
   profile.pregnant = pregnant;
-  base.eggs = eggs - 1;
-  return true;
+  profile.base.eggs = 0;
+  profile.base.conceptionCandidates = [];
+  profile.cooldown = { ...(profile.cooldown || {}), naturalConceptionResolved: true };
+  return resolvedCount;
 }
 
 function processSimpleConception(profile, tick, notify, name) {
@@ -1473,38 +1552,10 @@ function processSimpleConception(profile, tick, notify, name) {
       base.eggs = Math.max(0, clampNumber(base.eggs, 0, 99, 0) - fullDays);
     }
 
-    const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
-    const availableSperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
-    let eggs = clampNumber(base.eggs, 0, 99, 0);
-    const femaleDifficulty = clampNumber(profile?.bio?.impregnationDifficulty, 0.1, 100, 1.0);
-
-    while (eggs > 0 && availableSperms.length > 0) {
-      const totalSperm = availableSperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
-      let winner = null;
-      for (const sperm of availableSperms) {
-        const share = totalSperm > 0 ? clampNumber(sperm?.value, 0, 999999, 0) / totalSperm : 0;
-        const maleDifficulty = clampNumber(getMergedRacePhysiologyProfile(sperm?.race)?.impregnationDifficulty, 0.1, 100, 1.0);
-        const isSameRace = isSameRaceGroup(profile?.base?.race, sperm?.race);
-        let effectiveDifficulty = isSameRace ? femaleDifficulty : (femaleDifficulty + maleDifficulty);
-        const femaleEmbryoType = deriveFetusEmbryoType(profile?.base?.race);
-        const maleEmbryoType = deriveFetusEmbryoType(sperm?.race);
-        if (femaleEmbryoType !== maleEmbryoType) effectiveDifficulty *= 1.5;
-        const spermBaseChance = Math.max(0.001, Math.min(0.8, (deltaDays * 12 * 0.5) / effectiveDifficulty));
-        const spermChance = Math.max(0.001, Math.min(0.8, spermBaseChance * share));
-        if (Math.random() <= spermChance) {
-          winner = sperm;
-          break;
-        }
-      }
-      if (winner) {
-        pregnant.fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-        pregnant.fetuses.push(createSimpleFetus(profile, winner, stage));
-        notify.secondly = `${name}受精成功`;
-        eggs -= 1;
-      }
-      break;
+    if (stage === '排卵期' && fullDays > 0 && !(profile.cooldown || {}).naturalConceptionResolved) {
+      const resolvedCount = resolveNaturalConception(profile, stage, clampNumber(base.eggs, 0, 99, 0));
+      if (resolvedCount > 0) notify.secondly = `${name}受精成功`;
     }
-    base.eggs = eggs;
   }
 
   const hasPreimplantationEmbryos = !isPregnancyStage(stage)
@@ -1533,6 +1584,7 @@ function processSimpleConception(profile, tick, notify, name) {
         base.stage = '孕早期';
         base.days = 0;
         base.fertilizationDays = 0;
+        base.conceptionCandidates = [];
         pregnant.pregnantDays = obstetricPregnantDays;
         pregnant.effectivePregnantDays = obstetricPregnantDays * gestationSpeed;
         pregnant.amnionDurability = 100;
@@ -2359,6 +2411,7 @@ function clearPregnancyState(profile) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   base.fertilizationDays = 0;
+  base.conceptionCandidates = [];
   base.uterinePressure = 0;
   pregnant.pregnantDays = 0;
   pregnant.effectivePregnantDays = 0;
@@ -3710,6 +3763,10 @@ function applyTimeToCharacter(character, tick) {
     days = advanced.days;
     stageChanged = advanced.changed;
     enteredFollicular = advanced.enteredFollicular;
+    if (enteredFollicular) {
+      base.conceptionCandidates = [];
+      profile.cooldown = { ...(profile.cooldown || {}), naturalConceptionResolved: false };
+    }
     if (stageChanged && shouldEnterPseudoPregnancy(profile, oldStage, stage)) {
       stage = '假孕期';
       days = 0;
@@ -3870,6 +3927,9 @@ function applyTimeToCharacter(character, tick) {
     ...cooldown,
     orgasmOvulationUsed: shouldResetOrgasmOvulation(stage) ? false : Boolean(cooldown.orgasmOvulationUsed),
     naturalOvulationUsed: shouldResetNaturalOvulation(stage) ? false : Boolean((profile.cooldown || cooldown).naturalOvulationUsed),
+    naturalConceptionResolved: stage === '排卵期'
+      ? Boolean((profile.cooldown || cooldown).naturalConceptionResolved)
+      : (enteredFollicular ? false : Boolean((profile.cooldown || cooldown).naturalConceptionResolved)),
     pregnancyPressureWarning: shouldKeepPregnancyPressureWarning(profile) ? Boolean((profile.cooldown || cooldown).pregnancyPressureWarning) : false,
     psychologyUpdateUsed: tick.passedHours > 0 ? false : Boolean(cooldown.psychologyUpdateUsed),
     maternalFetalInteractionUsed: tick.passedHours > 0 ? false : Boolean(cooldown.maternalFetalInteractionUsed),
@@ -4470,6 +4530,9 @@ function applyAddSperm(chatState, args) {
   const character = chatState.characters?.[female];
   if (!female || !character) return { applied: false, message: `bsAddSperm skipped: unknown character ${female || '(empty)'}.` };
   if (!male) return { applied: false, message: 'bsAddSperm skipped: empty male.' };
+  if (args?.ejaculatedInside !== true || args?.protected !== false) {
+    return { applied: false, message: 'bsAddSperm skipped: 只有明确射入体内且未使用保护措施时才可登记精液；请勿把插入或非体内射精当作精液进入。' };
+  }
   if (!Number.isFinite(amount) || amount === 0) return { applied: false, message: 'bsAddSperm skipped: invalid amount.' };
   if (amount < 0) return { applied: false, message: 'bsAddSperm skipped: negative amount 请改用 bsDrainSperm 扣除精液。' };
 
@@ -4486,6 +4549,19 @@ function applyAddSperm(chatState, args) {
     sperms.push({ male, race, derivedType: maleDerivedType, value: amount });
   }
   base.sperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
+  const stage = String(base.stage || '');
+  if (MENSTRUAL_STAGES.includes(stage) && !next.profile?.cooldown?.naturalConceptionResolved) {
+    const candidates = Array.isArray(base.conceptionCandidates)
+      ? base.conceptionCandidates.map((item) => ({ ...item }))
+      : [];
+    const candidate = candidates.find((item) => String(item?.male || '') === male);
+    if (candidate) {
+      candidate.competitionWeight = clampNumber(candidate.competitionWeight, 0, 9999, 0) + amount;
+    } else {
+      candidates.push({ male, race, derivedType: maleDerivedType, competitionWeight: amount });
+    }
+    base.conceptionCandidates = candidates.filter((item) => clampNumber(item?.competitionWeight, 0, 9999, 0) > 0);
+  }
   base.latestSexDays = 0;
   next.profile.base = base;
   const experience = {
@@ -4498,13 +4574,6 @@ function applyAddSperm(chatState, args) {
   next.profile.experience = experience;
   if (amount > 0) {
     applyOdorGain(next.profile, Math.min(18, 4 + Math.log10(Math.max(1, amount)) * 4));
-  }
-  const enteredSperm = { male, race, derivedType: maleDerivedType, value: amount };
-  if (tryConceiveOnSpermEntry(next.profile, enteredSperm, amount)) {
-    next.profile.notify = {
-      ...(next.profile.notify || {}),
-      secondly: `${female}受精成功`,
-    };
   }
   chatState.characters[female] = next;
   return { applied: true, message: `bsAddSperm applied to ${female}.` };
@@ -4582,20 +4651,28 @@ function applySetMenstrualPhases(chatState, args) {
   base.days = 0;
   profile.base = base;
   if (stage === '卵泡期') {
+    base.conceptionCandidates = [];
+    profile.cooldown = {
+      ...cooldown,
+      naturalConceptionResolved: false,
+    };
     const metabolism = profile.metabolism || {};
     metabolism.milk = 0;
     profile.metabolism = metabolism;
   }
   if (stage === '排卵期') {
+    syncConceptionCandidatesFromSperms(base);
     profile.cooldown = {
       ...cooldown,
       orgasmOvulationUsed: false,
+      naturalConceptionResolved: false,
     };
   } else {
     profile.cooldown = {
       ...cooldown,
       orgasmOvulationUsed: shouldResetOrgasmOvulation(stage) ? false : Boolean(cooldown.orgasmOvulationUsed),
       naturalOvulationUsed: false,
+      naturalConceptionResolved: stage === '卵泡期' ? false : Boolean(cooldown.naturalConceptionResolved),
     };
   }
 

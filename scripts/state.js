@@ -656,6 +656,23 @@ function sanitizeSpermList(value) {
   return result;
 }
 
+function sanitizeConceptionCandidateList(value) {
+  if (!Array.isArray(value)) return null;
+  const seen = new Set();
+  const result = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const male = sanitizeString(item.male);
+    const race = sanitizeString(item.race);
+    const derivedType = sanitizeString(item.derivedType);
+    const competitionWeight = sanitizeNumber(item.competitionWeight, { min: 0, max: 9999 });
+    if (!male || !race || competitionWeight === null || competitionWeight <= 0 || seen.has(male)) continue;
+    seen.add(male);
+    result.push({ male, race, derivedType: derivedType ?? null, competitionWeight });
+  }
+  return result;
+}
+
 function sanitizeFetusList(value) {
   if (!Array.isArray(value)) return null;
   return value
@@ -746,9 +763,10 @@ function sanitizeChildrenList(value) {
 
 function sanitizeProfilePatch(profilePatch) {
   if (!profilePatch || typeof profilePatch !== 'object' || Array.isArray(profilePatch)) return null;
-  const cooldown = sanitizeObjectPatch(profilePatch.cooldown, ['orgasmOvulationUsed', 'naturalOvulationUsed', 'pregnancyPressureWarning', 'psychologyUpdateUsed', 'maternalFetalInteractionUsed'], {
+  const cooldown = sanitizeObjectPatch(profilePatch.cooldown, ['orgasmOvulationUsed', 'naturalOvulationUsed', 'naturalConceptionResolved', 'pregnancyPressureWarning', 'psychologyUpdateUsed', 'maternalFetalInteractionUsed'], {
     orgasmOvulationUsed: (value) => Boolean(value),
     naturalOvulationUsed: (value) => Boolean(value),
+    naturalConceptionResolved: (value) => Boolean(value),
     pregnancyPressureWarning: (value) => Boolean(value),
     psychologyUpdateUsed: (value) => Boolean(value),
     maternalFetalInteractionUsed: (value) => Boolean(value),
@@ -765,6 +783,7 @@ function sanitizeProfilePatch(profilePatch) {
       'race',
       'derivedType',
       'sperms',
+      'conceptionCandidates',
       'eggs',
       'libido',
       'uterinePressure',
@@ -783,6 +802,7 @@ function sanitizeProfilePatch(profilePatch) {
       race: sanitizeString,
       derivedType: sanitizeString,
       sperms: sanitizeSpermList,
+      conceptionCandidates: sanitizeConceptionCandidateList,
       eggs: (value) => sanitizeInteger(value, { min: 0, max: 999 }),
       libido: (value) => sanitizeInteger(value, { min: 0, max: 150 }),
       uterinePressure: (value) => sanitizeInteger(value, { min: 0, max: 150 }),
@@ -963,6 +983,7 @@ export function createDefaultFemaleState(name = '') {
       cooldown: {
         orgasmOvulationUsed: false,
         naturalOvulationUsed: false,
+        naturalConceptionResolved: false,
         pregnancyPressureWarning: false,
         psychologyUpdateUsed: false,
         maternalFetalInteractionUsed: false,
@@ -977,6 +998,7 @@ export function createDefaultFemaleState(name = '') {
         race: '人类',
         derivedType: null,
         sperms: [],
+        conceptionCandidates: [],
         eggs: 0,
         libido: 0,
         uterinePressure: 0,
@@ -1796,6 +1818,7 @@ function createSnapshotCharacterBaseline(name = '') {
       cooldown: {
         orgasmOvulationUsed: false,
         naturalOvulationUsed: false,
+        naturalConceptionResolved: false,
         pregnancyPressureWarning: false,
         psychologyUpdateUsed: false,
         maternalFetalInteractionUsed: false,
@@ -1810,6 +1833,7 @@ function createSnapshotCharacterBaseline(name = '') {
         race: '人类',
         derivedType: null,
         sperms: [],
+        conceptionCandidates: [],
         eggs: 0,
         libido: 0,
         uterinePressure: 0,
@@ -2421,11 +2445,62 @@ export function restoreChatStateFromSnapshot(chatState, snapshot) {
   chatState.lastOperationLogs = Array.isArray(payload.lastOperationLogs) ? payload.lastOperationLogs : [];
 }
 
+export function prepareChatStateForReplay(ctx, chatState, messageCount) {
+  const targetCount = Number.isInteger(messageCount) ? Math.max(0, messageCount) : 0;
+  if (targetCount <= 0 || !Array.isArray(chatState?.snapshots)) return null;
+
+  // 重分析某楼时，该楼旧快照已经包含了上次分析的结果，不能把它当作本轮基线。
+  // 先找目标楼之前最近的有效快照，再裁掉目标楼及其之后的快照，保持 patch 链完整。
+  const baseSnapshot = getLatestMatchingSnapshotBefore(ctx, chatState, targetCount);
+  if (!baseSnapshot) return null;
+
+  const previousSnapshots = cloneValue(chatState.snapshots);
+  restoreChatStateFromSnapshot(chatState, baseSnapshot);
+  chatState.snapshots = chatState.snapshots.filter((snapshot) => Number(snapshot?.messageCount) < targetCount);
+  trimChatStateSnapshots(chatState);
+  markRestoredSnapshot(chatState, baseSnapshot);
+  return { baseMessageCount: baseSnapshot.messageCount, previousSnapshots };
+}
+
+/**
+ * 返回目标消息数之前最近的 BS 插件快照。
+ *
+ * `getLatestMatchingSnapshot()` 的默认查询允许命中当前尾楼；手动重分析时
+ * 当前尾楼可能已经保存过本轮结果，必须明确排除它，避免把工具调用再次叠加。
+ */
+export function getLatestMatchingSnapshotBefore(ctx, chatState, messageCount) {
+  compactChatStateSnapshots(chatState);
+  const targetCount = Number.isInteger(messageCount) ? Math.max(0, messageCount) : 0;
+  if (targetCount <= 1) return null;
+  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
+  for (let index = snapshots.length - 1; index >= 0; index -= 1) {
+    const snapshot = snapshots[index];
+    const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0;
+    if (count <= 0 || count >= targetCount) continue;
+    if (!isSnapshotBoundaryIntact(ctx, snapshot, count)) continue;
+    return snapshot;
+  }
+  return null;
+}
+
+export function restoreChatStateAfterReplayFailure(chatState, replayContext) {
+  if (!Array.isArray(replayContext?.previousSnapshots)) return false;
+  chatState.snapshots = replayContext.previousSnapshots;
+  const failedFloor = chatState.snapshots.findLast?.(
+    (snapshot) => Number(snapshot?.messageCount) === Number(replayContext.targetMessageCount),
+  );
+  if (failedFloor) restoreChatStateFromSnapshot(chatState, failedFloor);
+  return true;
+}
+
 export function recordChatStateSnapshot(ctx, chatState, options = {}) {
   if (!Array.isArray(chatState.snapshots)) chatState.snapshots = [];
   const messageCount = Number.isInteger(options.messageCount)
     ? Math.max(0, options.messageCount)
     : getHostChat(ctx).length;
+  if (options.replaceMessageCount === true) {
+    chatState.snapshots = chatState.snapshots.filter((snapshot) => Number(snapshot?.messageCount) < messageCount);
+  }
   const snapshot = createStoredSnapshotState(
     chatState.snapshots,
     exportChatStateSnapshotPayload(chatState),
