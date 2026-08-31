@@ -30,6 +30,10 @@ function buildSpermSeparationGuard(payload = {}) {
     '- recent_messages 中已经出现在既有状态之前的性交/射精，只是历史记录，不得因为再次看到文字就重复调用 bsAddSperm。',
     '- 只有 recent_messages 明确出现了相对于现有状态基线的全新、未登记的体内射精事件，才可调用 bsAddSperm；否则不要用它“修正”两个数值。',
     '- bsDrainSperm 只能改变 sperms[*].value，不得改变 conceptionCandidates[*].competitionWeight。',
+    '- recent_messages 明确发生完整洗澡、淋浴、清洗身体等清洁行为，并且该角色存在 sperms 时，必须调用 bsCleanSperm。',
+    '- 如果剧情明确描述通过擦拭/清洁已经将残留精液清除，也必须调用 bsCleanSperm；不要让 AI 自己计算清洁后的 amount。',
+    '- bsCleanSperm 只清除 sperms；清空 sperms 不代表本周期自然受精竞争资格失效，绝对不能删除、修改或重算 conceptionCandidates。',
+    '- 普通换衣、上厕所、排尿、排便等行为不能自动触发 bsCleanSperm，除非剧情明确说明进行了相关清洁并清除了残留。',
     '- 一次真正新发生且符合条件的 bsAddSperm 会同时增加两套状态；刚建立时数值可以相等，但这不构成等式关系。',
   ]
   const existingState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {}
@@ -71,7 +75,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- sperms[*].male: 精液来源对象名称。',
   '- sperms[*].race: 该来源的父方种族字符串，已去除 [derived] 前缀；只描述当前残留精液。',
   '- sperms[*].derivedType: 该来源的父方衍生类型；没有则为 null。',
-  '- sperms[*].value: 当前体内残留量，洗澡/排精可清除，也会随精液生命周期衰减。',
+  '- sperms[*].value: 当前体内残留量，完整洗澡、淋浴、清洗身体或明确擦拭清除时使用 bsCleanSperm 直接清空，也会随精液生命周期衰减。',
   '- bsAddSperm 的 female 是精液进入体内的人物2，male 是射精的人物1；只有 recent_messages 明确写出人物1射精并射入人物2体内，且没有使用安全套、避孕套或其他有效保护措施，才允许调用。',
   '- 仅插入、性交但未射精、射在体外、拔出后射精、使用安全套/避孕套或其他有效保护措施，都不得调用 bsAddSperm；不要因为发生性行为就更新 sperms。',
   '- 调用 bsAddSperm 时必须传 ejaculatedInside: true 和 protected: false；amount 表示本次实际射入量，必须根据剧情实际情况填写，不得固定填 5 或其他凭空猜测的小数值；若射精位置或保护措施不明确，保持不调用，不得猜测。',

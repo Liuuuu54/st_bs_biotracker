@@ -383,6 +383,18 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
+    name: 'bsCleanSperm',
+    description: '清洁行为已经将单一角色当前残留精液完全清除；只清空 sperms，不修改 conceptionCandidates 或其他生理变量。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        female: { type: 'string' },
+      },
+      required: ['female'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'bsExcreteMetabolism',
     description: '缓解角色的生理需求。普通种族用于处理泄意、饿意、困意、乳意、臭意与伴意；其中 excretion（泄意）同时包含排尿与排便需求。乳意在普通周期表示乳房胀敏，在妊娠、假孕或产后恢复则可表示乳胀与泌乳需求；性欲波动会自然产生乳意，不由伴意解除额外转化。进食缓解 hunger 会增加 excretion 与少量 sleep，睡眠缓解 sleep 会增加少量 hunger，高 odor 会降低 companionship 的社交缓解效果。带 derivedType 的角色以 flux 进行极性解放，并处理未抵免需求；要解放 flux 时请传 flux，或不传 options 使用默认释放量。pregnant.blockage 会降低排解效果，pregnant.acceleration 会加快累积并让刚缓解的对应需求较快回升，pregnant.expansion 会使对应需求容量由 150 扩为 200。',
     input_schema: {
@@ -4619,6 +4631,19 @@ function applyDrainSperm(chatState, args) {
   return { applied: true, message: `bsDrainSperm applied to ${female}.` };
 }
 
+function applyCleanSperm(chatState, args) {
+  const female = String(args?.female || '').trim();
+  const character = chatState.characters?.[female];
+  if (!female || !character) return { applied: false, message: `bsCleanSperm skipped: unknown character ${female || '(empty)'}.` };
+
+  const next = cloneValue(character);
+  const base = next.profile?.base || {};
+  base.sperms = [];
+  next.profile.base = base;
+  chatState.characters[female] = next;
+  return { applied: true, message: `bsCleanSperm cleared all sperm for ${female}.` };
+}
+
 function applySetMenstrualPhases(chatState, args) {
   const female = String(args?.female || '').trim();
   const stage = String(args?.stage || '').trim();
@@ -5044,6 +5069,7 @@ export function applyToolCall(chatState, call, options = {}) {
   if (name === 'bsUpdatePsychology') return applyUpdatePsychology(chatState, args);
   if (name === 'bsAddSperm') return applyAddSperm(chatState, args, options);
   if (name === 'bsDrainSperm') return applyDrainSperm(chatState, args);
+  if (name === 'bsCleanSperm') return applyCleanSperm(chatState, args);
   if (name === 'bsSetMenstrualPhases') return applySetMenstrualPhases(chatState, args);
   if (name === 'bsExcreteMetabolism') return applyExcreteMetabolism(chatState, args);
   if (name === 'bsAbortion') return applyAbortion(chatState, args);
