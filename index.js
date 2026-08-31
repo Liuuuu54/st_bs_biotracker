@@ -2983,7 +2983,6 @@ function buildTrackCharacterViewModel(character) {
       requiredExp: Math.abs(Number(talent?.level)) >= TALENT_MAX_LEVEL ? 0 : requiredExp(Math.max(1, Math.abs(Number(talent?.level) || 0))),
     };
   };
-  const diaryEnabled = Math.max(0, Math.min(20, Math.floor(Number(runtimeSettings?.diaryRecentLimit) || 0))) > 0;
   const profile = character?.profile || {};
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
@@ -3081,7 +3080,6 @@ function buildTrackCharacterViewModel(character) {
       })),
     },
     diary: {
-      enabled: diaryEnabled,
       entries: Array.isArray(profile.diary) ? profile.diary : [],
     },
     outfit: outfitView,
@@ -3535,11 +3533,10 @@ function renderTrackExperience(viewModel) {
 }
 
 function renderTrackDiary(viewModel) {
-  const diaryEnabled = viewModel.diary?.enabled !== false;
   const entries = Array.isArray(viewModel.diary?.entries) ? viewModel.diary.entries : [];
   return `
     ${viewModel.description?.psychology ? renderTrackPsychology(viewModel) : ''}
-    ${diaryEnabled ? renderCardCarouselSection(
+    ${renderCardCarouselSection(
       '日记',
       entries,
       (item, index) => `<div class="bs-bt-track-card">
@@ -3548,7 +3545,7 @@ function renderTrackDiary(viewModel) {
       </div>`,
       '当前无日记记录',
       'diary',
-    ) : ''}
+    )}
   `;
 }
 
@@ -7090,6 +7087,8 @@ async function ensureModal(ctx) {
       } else if (result?.skipped && result.reason === 'no_registered_targets') {
         globalThis.toastr?.warning?.('[BS BioTracker] 尚无已注册角色，无法发送追踪请求');
       }
+    } catch (error) {
+      console.error('[BS BioTracker] manual tracker failed', error);
     } finally {
       button.disabled = false;
       button.textContent = '立即分析当前对话';

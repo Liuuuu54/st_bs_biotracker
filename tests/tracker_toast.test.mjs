@@ -105,3 +105,22 @@ test('触发时机不符的楼层不计入实际触发数', async () => {
     assert.equal(result.triggeredCount, 0, '不符触发时机的楼层不该计入实际触发');
   }
 });
+
+test('tracker request failures show an error toast instead of a completion toast', async () => {
+  const { ctx } = setupChat([{ is_user: false, name: 'Alice', mes: 'ai reply' }]);
+  const calls = installToastrSpy();
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 403,
+    async text() { return 'Forbidden'; },
+  });
+
+  await assert.rejects(
+    runTracker(ctx, makeDeps(), 'manual'),
+    /API 403/,
+  );
+
+  const shown = calls.filter(([kind]) => kind !== 'clear');
+  assert.equal(shown.some(([kind, message]) => kind === 'success' && /追踪完成/.test(message)), false);
+  assert.equal(shown.some(([kind, message]) => kind === 'error' && /API 403/.test(message)), true);
+});

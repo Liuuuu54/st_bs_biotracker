@@ -82,6 +82,15 @@
    - 使用自定义的深度 Diff 算法：检测对象增删、数组追加（用特殊符号表示，如 `__bs_bt_array_append__`），删除项用 `__bs_bt_deleted__` 标记。
    - 这避免了全量保存造成的空间膨胀，在保存时进行差分，而在载入时执行 `restoreChatStateFromSnapshot` 进行完整还原。
 
+### 3.1 楼层 Checkpoint 与 Swipe 隔离
+
+每次成功的状态快照还会绑定到对应的 `ctx.chat[messageCount - 1].extra.bs_biotracker_checkpoint`。
+Checkpoint 只保存快照记录及其楼层签名，不写入 `message.mes`，因此不会进入模型上下文；写入时仅合并插件自己的字段，保留其他扩展的 `extra` 数据。
+
+在 SillyTavern 支持 Swipe 的消息上，同一份 Checkpoint 会同步写入当前 `swipe_info[swipe_id].extra`。读取时使用当前消息的 `extra`，由宿主在切换 Swipe 时同步对应槽位，从而避免不同候选回复共用状态。
+
+Tracker 的手动、轮询入口都会先对账：校验 Checkpoint 的版本、楼层边界签名和内外层元数据；尾部删除后，超出当前聊天长度的快照被丢弃，最近仍存在且签名匹配的快照用于恢复完整 state，再从该楼继续分析。损坏或不完整的 Checkpoint 会被忽略，不覆盖已有 sidecar 状态。快照仍受最近 24 条保留上限和原有 Full/Patch 压缩策略约束。
+
 ---
 
 ## 4. 工具调度 (Tool Calls) 与闭环

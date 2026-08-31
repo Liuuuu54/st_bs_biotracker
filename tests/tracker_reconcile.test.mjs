@@ -248,6 +248,95 @@ test('boundary signatures survive snapshot repacking', () => {
   );
 });
 
+test('state checkpoints merge into message and current swipe extras', () => {
+  const ctx = makeCtx([
+    { is_user: false, name: 'Alice', mes: 'first', extra: { otherExtension: { keep: true } } },
+    {
+      is_user: false,
+      name: 'Alice',
+      mes: 'second',
+      swipe_id: 1,
+      swipe_info: [{ extra: { old: true } }, { extra: { swipeExtension: 'keep' } }],
+    },
+  ]);
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const chatState = state.createEmptyChatState();
+  chatState.characters.Alice = state.createDefaultFemaleState('Alice');
+
+  const snapshot = state.recordChatStateSnapshot(ctx, chatState, { messageCount: 2, reason: 'tracker' });
+  const checkpoint = ctx.chat[1].extra?.[state.CHAT_CHECKPOINT_KEY];
+  assert.equal(checkpoint?.messageCount, 2);
+  assert.deepEqual(ctx.chat[0].extra, { otherExtension: { keep: true } });
+  assert.deepEqual(ctx.chat[1].swipe_info[1].extra.swipeExtension, 'keep');
+  assert.deepEqual(ctx.chat[1].swipe_info[1].extra[state.CHAT_CHECKPOINT_KEY], checkpoint);
+  assert.equal(snapshot.snapshotMode, 'full');
+});
+
+test('tail deletion restores the latest surviving floor checkpoint and drops deleted snapshots', () => {
+  const ctx = makeCtx([
+    { is_user: false, name: 'Alice', mes: 'first' },
+    { is_user: false, name: 'Alice', mes: 'second' },
+    { is_user: false, name: 'Alice', mes: 'deleted tail' },
+  ]);
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const chatState = state.createEmptyChatState();
+  chatState.characters.Alice = state.createDefaultFemaleState('Alice');
+  chatState.characters.Alice.profile.base.days = 2;
+  state.recordChatStateSnapshot(ctx, chatState, { messageCount: 2, reason: 'tracker' });
+  chatState.characters.Alice.profile.base.days = 3;
+  state.recordChatStateSnapshot(ctx, chatState, { messageCount: 3, reason: 'tracker' });
+
+  ctx.chat.pop();
+  assert.equal(state.reconcileMessageCheckpoints(ctx, chatState), true);
+  const surviving = state.getLatestMatchingSnapshot(ctx, chatState);
+  assert.equal(surviving?.messageCount, 2);
+  state.restoreChatStateFromSnapshot(chatState, surviving);
+  assert.equal(chatState.characters.Alice.profile.base.days, 2);
+  assert.equal(chatState.snapshots.some((item) => item.messageCount > 2), false);
+});
+
+test('malformed floor checkpoint is ignored without replacing valid sidecar state', () => {
+  const ctx = makeCtx([{ is_user: false, name: 'Alice', mes: 'only', extra: {
+    [state.CHAT_CHECKPOINT_KEY]: { version: 1, messageCount: 1, snapshot: 'not-an-object' },
+  } }]);
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const chatState = state.createEmptyChatState();
+  chatState.characters.Alice = state.createDefaultFemaleState('Alice');
+  chatState.characters.Alice.profile.base.days = 7;
+  assert.equal(state.reconcileMessageCheckpoints(ctx, chatState), false);
+  assert.equal(chatState.characters.Alice.profile.base.days, 7);
+  assert.equal(chatState.snapshots.length, 0);
+});
+
+test('manual analysis always sends the current tail even when it already has a snapshot', async () => {
+  const ctx = makeCtx([
+    { is_user: false, name: 'Alice', mes: 'first' },
+    { is_user: false, name: 'Alice', mes: 'current tail' },
+  ]);
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  settings.apiUrl = 'https://example.test/v1';
+  settings.model = 'test-model';
+  const chatState = state.getChatState(ctx, settings);
+  chatState.characters['艾拉'] = {
+    ...state.createDefaultFemaleState('艾拉'),
+    initialized: true,
+  };
+  state.recordChatStateSnapshot(ctx, chatState, { messageCount: 2, reason: 'tracker' });
+
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify({ tool_calls: [] }) } }] });
+  };
+
+  const result = await runTracker(ctx, makeDeps(), 'manual');
+  assert.deepEqual(result, { skipped: false, processedCount: 1, triggeredCount: 1, toolCalls: [] });
+  assert.equal(requests, 1);
+  assert.equal(result.skipped, false);
+  assert.equal(result.triggeredCount, 1);
+});
+
 test('legacy operations with function-style calls apply a presence update', async () => {
   const ctx = makeCtx([{ is_user: false, name: 'Alice', mes: '艾拉回到队伍身边。' }]);
   globalThis.SillyTavern = { getContext: () => ctx };

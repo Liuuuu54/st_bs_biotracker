@@ -24,6 +24,7 @@ import {
   loadCharacterAdditionalWorldBooks,
   loadGlobalWorldBook,
   recordChatStateSnapshot,
+  reconcileMessageCheckpoints,
   restoreChatStateFromSnapshot,
   saveSettings,
   shouldTriggerForMessage,
@@ -1086,15 +1087,9 @@ function reconcileChatStateSnapshots(ctx, chatState, settings) {
 }
 
 function prepareManualReplay(ctx, chatState, chatLength) {
-  if (chatLength <= 0) {
-    return { nextMessageIndex: 0 };
-  }
-  const replayStart = Math.max(0, chatLength - 1);
-  const baseSnapshot = replayStart > 0 ? getLatestMatchingSnapshot(ctx, chatState, replayStart) : null;
-  if (baseSnapshot) {
-    restoreChatStateFromSnapshot(chatState, baseSnapshot);
-  }
-  return { nextMessageIndex: replayStart };
+  // 手动分析始终重跑当前尾楼；reconcile 只负责先恢复尾删后的基准状态。
+  reconcileChatStateSnapshots(ctx, chatState, { contextSize: DEFAULT_SETTINGS.contextSize });
+  return { nextMessageIndex: Math.max(0, chatLength - 1) };
 }
 
 function hasPendingChatHistory(ctx, chatState) {
@@ -1315,7 +1310,7 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   chatState.lastProcessedSignature = attemptedSignature;
   chatState.lastFailedSignature = '';
   chatState.lastFailedChatSignature = '';
-  recordChatStateSnapshot(ctx, chatState, { messageCount: messageIndex + 1, reason: 'tracker' });
+  recordChatStateSnapshot(ctx, chatState, { messageCount: messageIndex + 1, reason: 'tracker', bindToMessage: true });
   saveSettings(ctx);
   return { discarded: false, triggered: true };
 }
@@ -1328,6 +1323,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     contextSize: settings.contextSize,
   });
   const chatState = getChatState(ctx, settings);
+  reconcileMessageCheckpoints(ctx, chatState);
   const registeredTargets = getRegisteredTargetNames(ctx, settings, chatState);
   const chat = getHostChat(ctx);
   const lastMessage = chat[chat.length - 1];
@@ -1459,7 +1455,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     chatState.lastOperationLogs = [];
     saveSettings(ctx);
     deps.renderStatusPanel(ctx);
-    globalThis.toastr?.error?.(String(error?.message || error), '[BS BioTracker]');
+    globalThis.toastr?.error?.(`追踪失败：${String(error?.message || error)}`, '[BS BioTracker]');
     throw error;
   } finally {
     // 中途放弃（对话被改动）与失败路径都会走到这里，常驻提示不能留在屏幕上

@@ -39,6 +39,7 @@ import { normalizeHistoryRegexRules } from './history_regex.js';
 
 export const MODULE_NAME = 'bs_biotracker';
 const MAX_CHAT_STATE_SNAPSHOTS = 24;
+export const CHAT_CHECKPOINT_KEY = 'bs_biotracker_checkpoint';
 const MAX_RAW_RESULT_TEXT_LENGTH = 600;
 const MAX_SNAPSHOT_DEBUG_ITEMS = 24;
 const MIN_CHAT_INHERIT_MESSAGE_COUNT = 2;
@@ -48,6 +49,8 @@ const SNAPSHOT_PATCH_SIZE_RATIO = 0.85;
 const SNAPSHOT_DELETE_SENTINEL_KEY = '__bs_bt_deleted__';
 const SNAPSHOT_ARRAY_APPEND_KEY = '__bs_bt_array_append__';
 const RESTORED_SNAPSHOT_RUNTIME_KEY = Symbol('bsBtRestoredSnapshotKey');
+const CHECKPOINT_SAVE_DEBOUNCE_MS = 200;
+let checkpointSaveTimer = null;
 let worldInfoModulePromise = null;
 
 export const THEME_CONFIG = {
@@ -2305,6 +2308,101 @@ function markRestoredSnapshot(chatState, snapshot) {
   });
 }
 
+function scheduleChatCheckpointSave(ctx) {
+  if (typeof ctx?.saveChatDebounced === 'function') {
+    ctx.saveChatDebounced();
+    return;
+  }
+  if (typeof ctx?.saveChat !== 'function' || checkpointSaveTimer !== null) return;
+  checkpointSaveTimer = setTimeout(() => {
+    checkpointSaveTimer = null;
+    try { ctx.saveChat(); } catch (error) { console.warn('[BS BioTracker] unable to save chat checkpoint', error); }
+  }, CHECKPOINT_SAVE_DEBOUNCE_MS);
+}
+
+function getCurrentSwipeExtra(message) {
+  const swipeId = Number(message?.swipe_id);
+  if (!Number.isInteger(swipeId) || swipeId < 0 || !Array.isArray(message?.swipe_info)) return null;
+  return message.swipe_info[swipeId]?.extra && typeof message.swipe_info[swipeId].extra === 'object'
+    ? message.swipe_info[swipeId].extra
+    : null;
+}
+
+function writeMessageCheckpoint(ctx, snapshot) {
+  const chat = getHostChat(ctx);
+  const count = Number(snapshot?.messageCount);
+  const message = Number.isInteger(count) && count > 0 ? chat[count - 1] : null;
+  if (!message || typeof message !== 'object') return false;
+  const checkpoint = {
+    version: 1,
+    messageCount: count,
+    messageDigest: String(snapshot.messageDigest || ''),
+    boundarySignature: String(snapshot.boundarySignature || ''),
+    snapshot: cloneValue(snapshot),
+  };
+  // Merge only our namespace. SillyTavern and other extensions retain their fields.
+  if (!message.extra || typeof message.extra !== 'object') message.extra = {};
+  message.extra[CHAT_CHECKPOINT_KEY] = checkpoint;
+  const swipeExtra = getCurrentSwipeExtra(message);
+  if (swipeExtra) swipeExtra[CHAT_CHECKPOINT_KEY] = cloneValue(checkpoint);
+  scheduleChatCheckpointSave(ctx);
+  return true;
+}
+
+function readMessageCheckpoint(message) {
+  const direct = message?.extra?.[CHAT_CHECKPOINT_KEY];
+  if (direct && typeof direct === 'object') return direct;
+  const swipeExtra = getCurrentSwipeExtra(message);
+  return swipeExtra?.[CHAT_CHECKPOINT_KEY] && typeof swipeExtra[CHAT_CHECKPOINT_KEY] === 'object'
+    ? swipeExtra[CHAT_CHECKPOINT_KEY]
+    : null;
+}
+
+function isUsableMessageCheckpoint(ctx, message, checkpoint, index) {
+  if (!checkpoint || typeof checkpoint !== 'object' || checkpoint.version !== 1) return false;
+  const snapshot = checkpoint.snapshot;
+  if (!snapshot || typeof snapshot !== 'object') return false;
+  const count = Number(checkpoint.messageCount);
+  if (!Number.isInteger(count) || count !== index + 1) return false;
+  if (Number(snapshot.messageCount) !== count) return false;
+  if (String(checkpoint.messageDigest || '') !== String(snapshot.messageDigest || '')) return false;
+  if (String(checkpoint.boundarySignature || '') !== String(snapshot.boundarySignature || '')) return false;
+  const boundary = buildBoundaryMessageSignature(ctx, count);
+  if (boundary && String(snapshot.boundarySignature || '') && boundary !== String(snapshot.boundarySignature)) return false;
+  return message === getHostChat(ctx)[count - 1];
+}
+
+export function reconcileMessageCheckpoints(ctx, chatState) {
+  if (!Array.isArray(chatState?.snapshots)) return false;
+  const chat = getHostChat(ctx);
+  const boundSnapshots = new Map();
+  for (let index = 0; index < chat.length; index += 1) {
+    const checkpoint = readMessageCheckpoint(chat[index]);
+    const count = Number(checkpoint?.messageCount);
+    const snapshot = checkpoint?.snapshot;
+    if (Number.isInteger(count) && count > 0 && count <= chat.length && count === index + 1 && snapshot && isUsableMessageCheckpoint(ctx, chat[index], checkpoint, index)) {
+      boundSnapshots.set(count, snapshot);
+    }
+  }
+  let changed = false;
+  const existingKeys = new Set(chatState.snapshots.map(getSnapshotRuntimeKey));
+  for (const snapshot of boundSnapshots.values()) {
+    const key = getSnapshotRuntimeKey(snapshot);
+    if (!key || existingKeys.has(key)) continue;
+    chatState.snapshots.push(cloneValue(snapshot));
+    existingKeys.add(key);
+    changed = true;
+  }
+  const retained = chatState.snapshots.filter((snapshot) => Number(snapshot?.messageCount) <= chat.length);
+  if (retained.length !== chatState.snapshots.length) changed = true;
+  chatState.snapshots = retained;
+  if (changed) {
+    chatState.snapshots.sort((left, right) => Number(left?.messageCount || 0) - Number(right?.messageCount || 0) || Number(left?.createdAt || 0) - Number(right?.createdAt || 0));
+    trimChatStateSnapshots(chatState);
+  }
+  return changed;
+}
+
 export function restoreChatStateFromSnapshot(chatState, snapshot) {
   if (!snapshot) return;
   const snapshotIndex = findSnapshotIndex(chatState, snapshot);
@@ -2343,6 +2441,7 @@ export function recordChatStateSnapshot(ctx, chatState, options = {}) {
   chatState.snapshots.push(snapshot);
   trimChatStateSnapshots(chatState);
   markRestoredSnapshot(chatState, snapshot);
+  if (options.bindToMessage !== false) writeMessageCheckpoint(ctx, snapshot);
   return snapshot;
 }
 
