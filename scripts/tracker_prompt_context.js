@@ -71,7 +71,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- sperms[*].male: 精液来源对象名称。',
   '- sperms[*].race: 该来源的父方种族字符串，已去除 [derived] 前缀；只描述当前残留精液。',
   '- sperms[*].derivedType: 该来源的父方衍生类型；没有则为 null。',
-  '- sperms[*].value: 当前体内残留量，会随精液生命周期衰减或被洗澡/排精清除。',
+  '- sperms[*].value: 当前体内残留量，洗澡/排精可清除，也会随精液生命周期衰减。',
   '- bsAddSperm 的 female 是精液进入体内的人物2，male 是射精的人物1；只有 recent_messages 明确写出人物1射精并射入人物2体内，且没有使用安全套、避孕套或其他有效保护措施，才允许调用。',
   '- 仅插入、性交但未射精、射在体外、拔出后射精、使用安全套/避孕套或其他有效保护措施，都不得调用 bsAddSperm；不要因为发生性行为就更新 sperms。',
   '- 调用 bsAddSperm 时必须传 ejaculatedInside: true 和 protected: false；amount 表示本次实际射入量，必须根据剧情实际情况填写，不得固定填 5 或其他凭空猜测的小数值；若射精位置或保护措施不明确，保持不调用，不得猜测。',
