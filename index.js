@@ -66,6 +66,8 @@ import {
 import {
   createEmptyChatState,
   DEFAULT_SYSTEM_PROMPT,
+  getApiUrlForFormat,
+  normalizeApiFormat,
   getCharacterWorldBookName,
   getCharacterWorldBookNameViaSTscript,
   getActiveGlobalWorldBookNames,
@@ -5275,6 +5277,19 @@ function getLastPagerView() {
   return 'home';
 }
 
+function updateApiEndpointPreview() {
+  try {
+    const baseInput = document.getElementById('bs-bt-api-url');
+    const formatInput = document.getElementById('bs-bt-api-format');
+    const previewCode = document.getElementById('bs-bt-api-endpoint-preview-code');
+    if (!previewCode) return;
+    const rawBase = String(baseInput?.value || '').trim();
+    const fmt = normalizeApiFormat(formatInput?.value);
+    const base = rawBase.replace(/\/+$/, '').replace(/\/(chat\/completions|models|responses|messages|interactions)$/i, '').replace(/\/+$/, '') || '<Base URL>';
+    previewCode.textContent = getApiUrlForFormat(base, fmt);
+  } catch {}
+}
+
 function applySettingsToForm(ctx) {
   const settings = getSettings(ctx);
   syncRacePhysiologyOverrides(settings);
@@ -5287,8 +5302,10 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-enabled', settings.enabled);
   setValue('bs-bt-tracker-preset-list', settings.useStPresetForAsync ? CURRENT_PRESET_OPTION_VALUE : (settings.trackerPresetName || NO_PRESET_OPTION_VALUE));
   setValue('bs-bt-api-url', settings.apiUrl);
+  setValue('bs-bt-api-format', normalizeApiFormat(settings.apiFormat));
   setValue('bs-bt-api-key', settings.apiKey);
   setValue('bs-bt-model', settings.model);
+  updateApiEndpointPreview();
   setValue('bs-bt-formatted-output-v4', settings.formattedOutputV4 !== false);
   setValue('bs-bt-mvu-extra-analysis-compat', settings.mvuExtraAnalysisCompat !== false);
   setValue('bs-bt-race-catalog', settings.raceCatalogInPrompt !== false);
@@ -5866,6 +5883,7 @@ function readSettingsFromForm(ctx) {
     settings.trackerPresetName = normalizeTrackerPresetSelectionValue(trackerPresetSelectionValue);
   }
   settings.apiUrl = String(getValue('bs-bt-api-url')).trim();
+  settings.apiFormat = normalizeApiFormat(getValue('bs-bt-api-format'));
   settings.apiKey = String(getValue('bs-bt-api-key')).trim();
   settings.model = String(getValue('bs-bt-model')).trim();
   const formattedOutputToggle = document.getElementById('bs-bt-formatted-output-v4');
@@ -6466,6 +6484,16 @@ async function ensureModal(ctx) {
     if (!nextModel) return;
     const modelInput = document.getElementById('bs-bt-model');
     if (modelInput) modelInput.value = nextModel;
+  });
+  document.addEventListener('input', (event) => {
+    if (event.target?.id === 'bs-bt-api-url') updateApiEndpointPreview();
+  });
+  document.addEventListener('change', (event) => {
+    if (event.target?.id === 'bs-bt-api-format') {
+      updateApiEndpointPreview();
+      try { readSettingsFromForm(ctx); saveSettings(ctx); } catch {}
+      console.log('[BS BioTracker] apiFormat changed ->', normalizeApiFormat(event.target?.value));
+    }
   });
   document.getElementById('bs-bt-tracker-preset-list')?.addEventListener('change', async () => {
     readSettingsFromForm(ctx);

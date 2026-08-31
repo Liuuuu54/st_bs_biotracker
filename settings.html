@@ -145,6 +145,17 @@
             <div class="settings_section">
               <label for="bs-bt-api-url">OpenAI 兼容 API Base URL</label>
               <input id="bs-bt-api-url" class="text_pole" type="text" placeholder="https://api.example.com/v1" />
+              <small id="bs-bt-api-endpoint-preview" class="bs-bt-inline-status" style="display:block;margin-top:4px;opacity:0.85;">端点预览：<code id="bs-bt-api-endpoint-preview-code">—</code></small>
+            </div>
+
+            <div class="settings_section">
+              <label for="bs-bt-api-format">API 格式</label>
+              <select id="bs-bt-api-format" class="text_pole">
+                <option value="openai_compat">通用（兼容 OpenAI） /chat/completions</option>
+                <option value="openai_responses">自定义（兼容 OpenAI Responses） /responses</option>
+                <option value="claude_messages">自定义（兼容 Claude Messages） /messages</option>
+                <option value="gemini_interactions">自定义（兼容 Gemini Interactions） /interactions</option>
+              </select>
             </div>
 
             <div class="settings_section">

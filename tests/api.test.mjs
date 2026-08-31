@@ -256,3 +256,242 @@ test('the overall deadline terminates a run that keeps failing, without hanging 
   );
   assert.ok(calls > 0 && calls < 20, `请求次数应有界，实际 ${calls}`);
 });
+
+const RESPONSES_RESULT = {
+  output: [{
+    type: 'message',
+    role: 'assistant',
+    content: [{ type: 'output_text', text: JSON.stringify({ operations: [] }) }],
+  }],
+};
+
+test('openai_responses format on vanilla SillyTavern goes through the /proxy/ transparent proxy', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse(RESPONSES_RESULT);
+  });
+
+  const result = await callOpenAICompatible({
+    apiUrl: 'https://opencode.example.test/zen/go/v1',
+    apiKey: 'go-key',
+    model: 'muse-spark-1.2-contributor',
+    apiFormat: 'openai_responses',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, '/proxy/https://opencode.example.test/zen/go/v1/responses');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.model, 'muse-spark-1.2-contributor');
+  assert.equal(body.store, false);
+  assert.equal(Array.isArray(body.input), true);
+  assert.equal(body.input[0].role, 'developer');
+  assert.deepEqual(body.text, { format: { type: 'json_object' } });
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer go-key');
+  assert.equal(calls[0].options.headers['X-CSRF-Token'], 'test-csrf');
+});
+
+test('openai_responses format falls back to direct when the transparent proxy is disabled (404)', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    if (url.startsWith('/proxy/')) {
+      return {
+        ok: false,
+        status: 404,
+        async text() {
+          return 'CORS proxy is disabled. Enable it in config.yaml or use the --corsProxy flag.';
+        },
+      };
+    }
+    return jsonResponse(RESPONSES_RESULT);
+  });
+
+  const result = await callOpenAICompatible({
+    apiUrl: 'https://opencode.example.test/zen/go/v1',
+    apiKey: 'go-key',
+    model: 'muse-spark-1.2-contributor',
+    apiFormat: 'openai_responses',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.deepEqual(calls.map((call) => call.url), [
+    '/proxy/https://opencode.example.test/zen/go/v1/responses',
+    'https://opencode.example.test/zen/go/v1/responses',
+  ]);
+});
+
+test('openai_responses format on TauriTavern uses the format-aware host proxy', async () => {
+  const calls = [];
+  globalThis.__TAURITAVERN__ = {};
+  try {
+    installBrowserHost(async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify({ operations: [] }) } }] });
+    });
+
+    const result = await callOpenAICompatible({
+      apiUrl: 'https://opencode.example.test/zen/go/v1',
+      apiKey: 'go-key',
+      model: 'muse-spark-1.2-contributor',
+      apiFormat: 'openai_responses',
+    }, { recent_messages: [] }, 'Return JSON.');
+
+    assert.deepEqual(result, { operations: [] });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, '/api/backends/chat-completions/generate');
+    const body = JSON.parse(calls[0].options.body);
+    assert.equal(body.custom_api_format, 'openai_responses');
+    assert.equal(body.model, 'muse-spark-1.2-contributor');
+    assert.equal(Array.isArray(body.messages), true);
+  } finally {
+    delete globalThis.__TAURITAVERN__;
+  }
+});
+
+test('claude_messages format converts to Anthropic shape through the transparent proxy', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ content: [{ type: 'text', text: JSON.stringify({ operations: [] }) }] });
+  });
+
+  const result = await callOpenAICompatible({
+    apiUrl: 'https://opencode.example.test/zen/go/v1',
+    apiKey: 'go-key',
+    model: 'qwen3.8-max',
+    apiFormat: 'claude_messages',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.equal(calls[0].url, '/proxy/https://opencode.example.test/zen/go/v1/messages');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(typeof body.system, 'string');
+  assert.ok(body.max_tokens >= 1);
+  assert.equal(body.messages.every((m) => m.role === 'user' || m.role === 'assistant'), true);
+  assert.equal(calls[0].options.headers['x-api-key'], 'go-key');
+  assert.equal(calls[0].options.headers['anthropic-version'], '2023-06-01');
+});
+
+const GEMINI_RESULT = {
+  status: 'completed',
+  steps: [{
+    type: 'model_output',
+    content: [{ type: 'text', text: JSON.stringify({ operations: [] }) }],
+  }],
+};
+
+test('gemini_interactions format builds steps + system_instruction and injects /v1beta', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse(GEMINI_RESULT);
+  });
+
+  const result = await callOpenAICompatible({
+    // 裸主机名（无 /v1 或 /v1beta）：插件必须自动补 /v1beta，与 TauriTavern build_gemini_url 一致
+    apiUrl: 'https://generativelanguage.googleapis.com',
+    apiKey: 'goog-key',
+    model: 'gemini-2.5-pro',
+    apiFormat: 'gemini_interactions',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.equal(calls[0].url, '/proxy/https://generativelanguage.googleapis.com/v1beta/interactions');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.model, 'gemini-2.5-pro');
+  assert.equal(body.stream, false);
+  assert.equal(body.store, false);
+  assert.equal(typeof body.system_instruction, 'string');
+  assert.ok(body.system_instruction.length > 0);
+  assert.equal(Array.isArray(body.input), true);
+  assert.equal(body.input.every((s) => s.type === 'user_input' || s.type === 'model_output'), true);
+  assert.equal(body.input.some((s) => s.type === 'user_input'), true);
+  assert.ok(body.input.every((s) => Array.isArray(s.content) && s.content.every((b) => b.type === 'text')));
+  assert.equal(calls[0].options.headers['x-goog-api-key'], 'goog-key');
+  assert.equal(calls[0].options.headers.Authorization, undefined);
+});
+
+test('gemini_interactions keeps an explicit /v1beta base without double-prefixing', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse(GEMINI_RESULT);
+  });
+
+  await callOpenAICompatible({
+    apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    apiKey: 'goog-key',
+    model: 'gemini-2.5-pro',
+    apiFormat: 'gemini_interactions',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.equal(calls[0].url, '/proxy/https://generativelanguage.googleapis.com/v1beta/interactions');
+});
+
+test('gemini_interactions on TauriTavern accepts already-normalized OpenAI choices', async () => {
+  const calls = [];
+  globalThis.__TAURITAVERN__ = {};
+  try {
+    installBrowserHost(async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify({ operations: [] }) } }] });
+    });
+
+    const result = await callOpenAICompatible({
+      apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: 'goog-key',
+      model: 'gemini-2.5-pro',
+      apiFormat: 'gemini_interactions',
+    }, { recent_messages: [] }, 'Return JSON.');
+
+    assert.deepEqual(result, { operations: [] });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, '/api/backends/chat-completions/generate');
+    const body = JSON.parse(calls[0].options.body);
+    assert.equal(body.custom_api_format, 'gemini_interactions');
+    assert.equal(Array.isArray(body.messages), true);
+    assert.equal(body.custom_include_headers, 'x-goog-api-key: goog-key');
+    assert.doesNotMatch(body.custom_include_headers, /Authorization/);
+  } finally {
+    delete globalThis.__TAURITAVERN__;
+  }
+});
+
+test('gemini_interactions rejects a completed response with no model_output text', async () => {
+  installBrowserHost(async () => jsonResponse({
+    status: 'completed',
+    steps: [{ type: 'thought', signature: '' }],
+  }));
+
+  await assert.rejects(
+    callOpenAICompatible({
+      apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: 'goog-key',
+      model: 'gemini-2.5-pro',
+      apiFormat: 'gemini_interactions',
+      apiTimeoutMs: 1000,
+    }, { recent_messages: [] }, 'Return JSON.'),
+    (error) => /没有可消费的文本|总时限/.test(error.message),
+  );
+});
+
+test('gemini_interactions surfaces a failed status as a retriable error', async () => {
+  installBrowserHost(async () => jsonResponse({
+    status: 'failed',
+    error: { message: 'model overloaded' },
+  }));
+
+  await assert.rejects(
+    callOpenAICompatible({
+      apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: 'goog-key',
+      model: 'gemini-2.5-pro',
+      apiFormat: 'gemini_interactions',
+      apiTimeoutMs: 1000,
+    }, { recent_messages: [] }, 'Return JSON.'),
+    // failed 是可重试的上游错误：可能直接抛出，也可能在重试链里撞上总时限
+    (error) => /Gemini Interactions 回传失败|总时限/.test(error.message),
+  );
+});

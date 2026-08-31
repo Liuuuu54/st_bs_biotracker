@@ -111,6 +111,41 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '不要编造怀孕天数、胎数、流产、分娩或其他高影响事件。',
 ].join('\n');
 
+export const API_FORMATS = Object.freeze({
+  OPENAI_COMPAT: 'openai_compat',
+  CLAUDE_MESSAGES: 'claude_messages',
+  OPENAI_RESPONSES: 'openai_responses',
+  GEMINI_INTERACTIONS: 'gemini_interactions',
+});
+
+export function normalizeApiFormat(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === API_FORMATS.OPENAI_RESPONSES || raw === 'responses' || raw === 'openai_responses' || raw === 'custom_openai_responses') return API_FORMATS.OPENAI_RESPONSES;
+  if (raw === API_FORMATS.CLAUDE_MESSAGES || raw === 'claude' || raw === 'messages' || raw === 'claude_messages' || raw === 'custom_claude_messages' || raw === 'anthropic') return API_FORMATS.CLAUDE_MESSAGES;
+  if (raw === API_FORMATS.GEMINI_INTERACTIONS || raw === 'gemini' || raw === 'interactions' || raw === 'gemini_interactions') return API_FORMATS.GEMINI_INTERACTIONS;
+  return API_FORMATS.OPENAI_COMPAT;
+}
+
+export function getApiEndpointSuffix(format) {
+  switch (normalizeApiFormat(format)) {
+    case API_FORMATS.OPENAI_RESPONSES: return '/responses';
+    case API_FORMATS.CLAUDE_MESSAGES: return '/messages';
+    case API_FORMATS.GEMINI_INTERACTIONS: return '/interactions';
+    case API_FORMATS.OPENAI_COMPAT:
+    default: return '/chat/completions';
+  }
+}
+
+export function getApiUrlForFormat(apiBase, format) {
+  const base = String(apiBase || '').trim().replace(/\/+$/, '');
+  const fmt = normalizeApiFormat(format);
+  // Google AI 原生端点必须带 API 版本；base 已以 /v1 或 /v1beta 结尾时直接拼接（与 TauriTavern build_gemini_url 一致）
+  if (fmt === API_FORMATS.GEMINI_INTERACTIONS && !/\/(v1|v1beta)$/i.test(base)) {
+    return `${base}/v1beta/interactions`;
+  }
+  return `${base}${getApiEndpointSuffix(fmt)}`;
+}
+
 export const DEFAULT_SETTINGS = Object.freeze({
   theme: 'retro',
   deviceSize: 'phone',
@@ -121,6 +156,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   trackerPromptToggles: {},
   trackerPromptToggleOverrides: {},
   apiUrl: '',
+  apiFormat: API_FORMATS.OPENAI_COMPAT,
   apiKey: '',
   model: 'gpt-4.1-mini',
   modelOptions: [],
@@ -1157,6 +1193,11 @@ export function getSettings(ctx) {
     };
     if (JSON.stringify(mergedGuides) !== JSON.stringify(settings.registryDescriptionGuides)) shouldSave = true;
     settings.registryDescriptionGuides = mergedGuides;
+  }
+  const normalizedApiFormat = normalizeApiFormat(settings.apiFormat);
+  if (settings.apiFormat !== normalizedApiFormat) {
+    settings.apiFormat = normalizedApiFormat;
+    shouldSave = true;
   }
   if (shouldSave) saveHostSettings(ctx);
   return settings;
