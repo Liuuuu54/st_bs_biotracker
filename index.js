@@ -3337,7 +3337,7 @@ function renderTrackPregnancy(viewModel) {
       (item, index) => `<div class="bs-bt-track-card">
           <div class="bs-bt-track-card-title">来源 ${index + 1}</div>
           <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">对象</span><span class="bs-bt-track-list-value">${escapeHtml(item?.male || '未知')}</span></div>
-          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">竞争权重</span><span class="bs-bt-track-list-value">${Math.round(Number(item?.competitionWeight) || 0)}</span></div>
+          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">种族</span><span class="bs-bt-track-list-value">${escapeHtml(formatRaceLabel(item?.race, item?.derivedType))}</span></div>
         </div>`,
       '本周期暂无受精竞争来源',
       'conceptionCandidates',

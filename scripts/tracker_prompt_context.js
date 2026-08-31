@@ -1,29 +1,52 @@
-import { PSY_MENS_FIELDS, PSY_PREG_FIELDS } from './registry_psy_config.js';
-import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
-import { buildRaceCatalogBlock, buildRacePhysiologyPrompt } from './race_prompt_context.js';
-import { getDerivedTypeFluxProfile } from './race_config.js';
-import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js';
-
+import { PSY_MENS_FIELDS, PSY_PREG_FIELDS } from './registry_psy_config.js'
+import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js'
+import { buildRaceCatalogBlock, buildRacePhysiologyPrompt } from './race_prompt_context.js'
+import { getDerivedTypeFluxProfile } from './race_config.js'
+import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js'
 function collectRelevantFluxNames(payload = {}) {
-  const found = [];
-  const pushFluxName = (derivedType) => {
-    const fluxName = String(getDerivedTypeFluxProfile(derivedType)?.fluxName || '').trim();
-    if (fluxName && !found.includes(fluxName)) found.push(fluxName);
-  };
+  const found = []
+  const pushFluxName = derivedType => {
+    const fluxName = String(getDerivedTypeFluxProfile(derivedType)?.fluxName || '').trim()
+    if (fluxName && !found.includes(fluxName)) found.push(fluxName)
+  }
   if (payload?.existing_state && typeof payload.existing_state === 'object') {
     for (const item of Object.values(payload.existing_state)) {
-      const profile = item?.profile || {};
-      const base = profile.base || {};
-      const pregnant = profile.pregnant || {};
-      pushFluxName(base.derivedType);
-      for (const sperm of (Array.isArray(base.sperms) ? base.sperms : [])) pushFluxName(sperm?.derivedType);
-      for (const fetus of (Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [])) pushFluxName(fetus?.fatherDerivedType);
-      for (const child of (Array.isArray(profile.children) ? profile.children : [])) pushFluxName(child?.derivedType);
+      const profile = item?.profile || {}
+      const base = profile.base || {}
+      const pregnant = profile.pregnant || {}
+      pushFluxName(base.derivedType)
+      for (const sperm of Array.isArray(base.sperms) ? base.sperms : []) pushFluxName(sperm?.derivedType)
+      for (const fetus of Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []) pushFluxName(fetus?.fatherDerivedType)
+      for (const child of Array.isArray(profile.children) ? profile.children : []) pushFluxName(child?.derivedType)
     }
   }
-  return found;
+  return found
 }
-
+function buildSpermSeparationGuard(payload = {}) {
+  const lines = [
+    '[精液残留与本周期竞争权重：本轮最高优先级核对]',
+    '- existing_state 是插件当前已保存状态，不是待模型重新计算的草稿。',
+    '- sperms[*].value 与 conceptionCandidates[*].competitionWeight 必须分别读取；禁止用任一字段覆盖、校正、同步或反推另一个字段。',
+    '- recent_messages 中已经出现在既有状态之前的性交/射精，只是历史记录，不得因为再次看到文字就重复调用 bsAddSperm。',
+    '- 只有 recent_messages 明确出现了相对于现有状态基线的全新、未登记的体内射精事件，才可调用 bsAddSperm；否则不要用它“修正”两个数值。',
+    '- bsDrainSperm 只能改变 sperms[*].value，不得改变 conceptionCandidates[*].competitionWeight。',
+    '- 一次真正新发生且符合条件的 bsAddSperm 会同时增加两套状态；刚建立时数值可以相等，但这不构成等式关系。',
+  ]
+  const existingState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {}
+  for (const [name, item] of Object.entries(existingState)) {
+    const base = item?.profile?.base || {}
+    const sperms = Array.isArray(base.sperms) ? base.sperms : []
+    const candidates = Array.isArray(base.conceptionCandidates) ? base.conceptionCandidates : []
+    if (sperms.length === 0 && candidates.length === 0) continue
+    const residual = sperms.map(sperm => `${String(sperm?.male || '未知')}=${Number(sperm?.value) || 0}`).join('、') || '无'
+    const weights =
+      candidates.map(candidate => `${String(candidate?.male || '未知')}=${Number(candidate?.competitionWeight) || 0}`).join('、') || '无'
+    lines.push(
+      `- 当前实例「${String(item?.name || name)}」：残留量 sperms.value：${residual}；竞争权重 conceptionCandidates.competitionWeight：${weights}。这两组当前值已经分别保存，禁止互相改写。`,
+    )
+  }
+  return lines.join('\n')
+}
 export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '以下是角色状态变量的语义说明，供你理解 existing_state 中的字段，不是要求你原样输出这些字段。',
   '',
@@ -51,9 +74,12 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- sperms[*].value: 当前体内残留量，会随精液生命周期衰减或被洗澡/排精清除。',
   '- bsAddSperm 的 female 是精液进入体内的人物2，male 是射精的人物1；只有 recent_messages 明确写出人物1射精并射入人物2体内，且没有使用安全套、避孕套或其他有效保护措施，才允许调用。',
   '- 仅插入、性交但未射精、射在体外、拔出后射精、使用安全套/避孕套或其他有效保护措施，都不得调用 bsAddSperm；不要因为发生性行为就更新 sperms。',
-  '- 调用 bsAddSperm 时必须传 ejaculatedInside: true 和 protected: false；amount 表示本次实际射入量，必须按剧情填写，不能固定填 5 或其他凭空猜测的小数值；若射精位置或保护措施不明确，保持不调用，不得猜测。',
-  '- conceptionCandidates: 本周期已经获得排卵受精竞争资格的父源快照；与 sperms 完全独立，清空 sperms 不会删除这里的记录。',
-  '- conceptionCandidates[*] 保存 male、race、derivedType 和 competitionWeight；新的 bsAddSperm 会自动登记；排卵统一结算后清空。',
+  '- 调用 bsAddSperm 时必须传 ejaculatedInside: true 和 protected: false；amount 表示本次实际射入量，必须根据剧情实际情况填写，不得固定填 5 或其他凭空猜测的小数值；若射精位置或保护措施不明确，保持不调用，不得猜测。',
+  '- conceptionCandidates: 本自然受精周期的父源竞争记录。它表示“本周期哪些父源已经获得自然受精竞争资格”，与 sperms 完全独立。它不是当前体内精液残留列表，也不是 sperms 的另一种显示方式。',
+  '- conceptionCandidates[*].male: 本周期获得竞争资格的父源男性名称。',
+  '- conceptionCandidates[*].race: 建立该竞争记录时保存的父方种族快照，已去除 [derived] 前缀；后续即使 sperms 中该来源被清洗、衰减或挤出，该快照仍保持本周期记录。',
+  '- conceptionCandidates[*].derivedType: 建立该竞争记录时保存的父方衍生类型快照；没有则为 null。',
+  '- conceptionCandidates[*].competitionWeight: 本周期该父源的自然受精竞争权重。有效 bsAddSperm 会根据本次 amount 建立或增加该父源的 competitionWeight；同一男性在本周期再次有效射入时，会继续累加自己的竞争权重。competitionWeight 属于“本周期父源竞争系统”，不会随着 sperms[*].value 的生命周期衰减、洗澡、清洗、排精、月经或精液挤出而减少。',
   '- eggs: 当前可受精卵子数。',
   '- libido: 性欲。',
   '- uterinePressure: 宫压，越高越接近妊娠风险或分娩。',
@@ -204,8 +230,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- secondly: 次级事件提示，如风险、破水、分娩推进、母胎互动或胎儿自主活动；其中的母胎互动与胎动事件可自然融入当前叙事。',
   '- thirdly: 辅助建议提示，提醒是否该缓解生理需求、关注膜耐性、抵抗分娩等。',
   '',
-].join('\n');
-
+].join('\n')
 const TRACKER_DIARY_SECTION = [
   '[diary]',
   '- diary 是角色主观日记，保存为数组；existing_state 中只会发送最近几笔，前端完整变量仍会保留全量。',
@@ -215,53 +240,45 @@ const TRACKER_DIARY_SECTION = [
   '- 通常只有 bsPassedTime 跨日后才调用 bsWriteDiary，并优先写“昨日/前一日/上一天”的回顾。若剧情发生重大事件或 notify 提醒，也应写成事后补记的语气，不要像当下即时独白。',
   '- 角色不在场也可以写日记；可根据角色性格、处境与已知生活状态补足合理的日常幕外感受，但不要把未经剧情支持的重大事件写成既成事实，也不要用日记改写客观状态。',
   '',
-].join('\n');
-
+].join('\n')
 function buildTrackerMetabolismGuide(payload = null) {
-  const fluxNames = collectRelevantFluxNames(payload || {});
-  const diaryEnabled = payload?.diary_enabled !== false;
-  const wardrobeEnabled = payload?.wardrobe_enabled === true;
-  const breedingPsychologyEnabled = payload?.breeding_psychology_enabled === true;
-  let baseGuide = diaryEnabled
-    ? TRACKER_VARIABLE_GUIDE_PROMPT
-    : TRACKER_VARIABLE_GUIDE_PROMPT.replace(`${TRACKER_DIARY_SECTION}\n`, '');
+  const fluxNames = collectRelevantFluxNames(payload || {})
+  const diaryEnabled = payload?.diary_enabled !== false
+  const wardrobeEnabled = payload?.wardrobe_enabled === true
+  const breedingPsychologyEnabled = payload?.breeding_psychology_enabled === true
+  let baseGuide = diaryEnabled ? TRACKER_VARIABLE_GUIDE_PROMPT : TRACKER_VARIABLE_GUIDE_PROMPT.replace(`${TRACKER_DIARY_SECTION}\n`, '')
   if (!wardrobeEnabled) {
-    baseGuide = baseGuide.replace(/\n?\[wardrobe \/ outfit\][\s\S]*?\n\[descriptions\]/, '\n[descriptions]');
+    baseGuide = baseGuide.replace(/\n?\[wardrobe \/ outfit\][\s\S]*?\n\[descriptions\]/, '\n[descriptions]')
   }
   if (!breedingPsychologyEnabled) {
-    baseGuide = baseGuide
-      .replace('、psychology', '')
-      .replace(/\n?\[psychology\][\s\S]*?\n\[skills \/ talents\]/, '\n[skills / talents]');
+    baseGuide = baseGuide.replace('、psychology', '').replace(/\n?\[psychology\][\s\S]*?\n\[skills \/ talents\]/, '\n[skills / talents]')
   }
   return fluxNames.length > 0
     ? baseGuide.replace(
-      '- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值；被 pregnant.expansion 命中的方向可扩至 -200 或 200。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsExcreteMetabolism 进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。',
-      `- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值，被 pregnant.expansion 命中的方向可扩至 -200 或 200；在本轮相关衍生种族中，flux 分别表示：${fluxNames.join(' / ')}。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsExcreteMetabolism 进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。`,
-    )
-    : baseGuide;
+        '- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值；被 pregnant.expansion 命中的方向可扩至 -200 或 200。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsExcreteMetabolism 进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。',
+        `- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值，被 pregnant.expansion 命中的方向可扩至 -200 或 200；在本轮相关衍生种族中，flux 分别表示：${fluxNames.join(' / ')}。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsExcreteMetabolism 进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。`,
+      )
+    : baseGuide
 }
-
 // 妊娠相关阶段中 pregnantDescription 仍为空的在场角色：需要注入初始化规范，
 // 否则「不要新增描述子字段」规则会把空栏位永久锁死。
-const PREGNANT_DESCRIPTION_STAGES = new Set([...PREGNANCY_STAGES, '产兆前驱', ...LABOR_STAGES, '产后恢复', '假孕期']);
-
+const PREGNANT_DESCRIPTION_STAGES = new Set([...PREGNANCY_STAGES, '产兆前驱', ...LABOR_STAGES, '产后恢复', '假孕期'])
 function collectPregnantDescriptionInitNames(payload = {}) {
-  const names = [];
-  const existingState = payload?.existing_state;
-  if (!existingState || typeof existingState !== 'object') return names;
+  const names = []
+  const existingState = payload?.existing_state
+  if (!existingState || typeof existingState !== 'object') return names
   for (const [key, item] of Object.entries(existingState)) {
-    if (item?.offscreen === true) continue;
-    const stage = String(item?.profile?.base?.stage || '');
-    if (!PREGNANT_DESCRIPTION_STAGES.has(stage)) continue;
-    if (String(item?.profile?.descriptions?.pregnantDescription || '').trim()) continue;
-    names.push(String(item?.name || key));
+    if (item?.offscreen === true) continue
+    const stage = String(item?.profile?.base?.stage || '')
+    if (!PREGNANT_DESCRIPTION_STAGES.has(stage)) continue
+    if (String(item?.profile?.descriptions?.pregnantDescription || '').trim()) continue
+    names.push(String(item?.name || key))
   }
-  return names;
+  return names
 }
-
 export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = null, payload = null) {
-  const diaryEnabled = payload?.diary_enabled !== false;
-  const metabolismGuide = buildTrackerMetabolismGuide(payload);
+  const diaryEnabled = payload?.diary_enabled !== false
+  const metabolismGuide = buildTrackerMetabolismGuide(payload)
   const parts = [
     [
       '[bsPassedTime 强制规则]',
@@ -274,85 +291,92 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     metabolismGuide,
     // 名录只给名字：模型写 bsAddSperm.race 时需要词汇表，但每轮都发，不附辨识提示
     payload?.race_catalog_enabled === false ? '' : buildRaceCatalogBlock(),
-  ];
+  ]
+  parts.push(buildSpermSeparationGuard(payload || {}))
   if (payload?.memory_context) {
-    parts.push([
-      '[外部历史记忆]',
-      `- 以下是由 ${String(payload.memory_source || '外部记忆源')} 读取的历史摘要，仅作为剧情背景参考：`,
-      String(payload.memory_context),
-      '- 外部摘要不能覆盖 existing_state 中的客观生理变量；若两者冲突，以 existing_state 和 recent_messages 为准。',
-    ].join('\n'));
+    parts.push(
+      [
+        '[外部历史记忆]',
+        `- 以下是由 ${String(payload.memory_source || '外部记忆源')} 读取的历史摘要，仅作为剧情背景参考：`,
+        String(payload.memory_context),
+        '- 外部摘要不能覆盖 existing_state 中的客观生理变量；若两者冲突，以 existing_state 和 recent_messages 为准。',
+      ].join('\n'),
+    )
   }
   if (payload?.mainflow_context_snapshot) {
-    parts.push([
-      '[主流上下文快照使用规则]',
-      '- payload.mainflow_context_snapshot 是 ST 主流上一轮生成 request 中已经发送或准备发送给模型的上下文快照。',
-      '- 它仅用于补足本轮剧情、角色设定、已触发 worldinfo、模板注入、getwi/activewi 等主流背景。',
-      '- 不要模仿主流输出风格，不要续写剧情；你的任务仍是根据 recent_messages 与 existing_state 返回 JSON tool_calls 来更新变量。',
-      '- 若主流上下文快照与 tracker 工具调用规则、变量语义说明、existing_state 或 available_tools 冲突，必须以后者为准。',
-    ].join('\n'));
+    parts.push(
+      [
+        '[主流上下文快照使用规则]',
+        '- payload.mainflow_context_snapshot 是 ST 主流上一轮生成 request 中已经发送或准备发送给模型的上下文快照。',
+        '- 它仅用于补足本轮剧情、角色设定、已触发 worldinfo、模板注入、getwi/activewi 等主流背景。',
+        '- 不要模仿主流输出风格，不要续写剧情；你的任务仍是根据 recent_messages 与 existing_state 返回 JSON tool_calls 来更新变量。',
+        '- 若主流上下文快照与 tracker 工具调用规则、变量语义说明、existing_state 或 available_tools 冲突，必须以后者为准。',
+      ].join('\n'),
+    )
   }
   const priorityNames = Array.isArray(payload?.priority_character_names)
-    ? payload.priority_character_names.map((name) => String(name || '').trim()).filter(Boolean)
-    : [];
+    ? payload.priority_character_names.map(name => String(name || '').trim()).filter(Boolean)
+    : []
   if (priorityNames.length > 0) {
-    parts.push([
-      '[优先追踪角色]',
-      `- 本轮先检查：${priorityNames.join('、')}。`,
-      '- 这些名字是优先级，不是过滤器；其余已注册角色仍须依剧情和时间正常检查。',
-      '- 若剧情明确显示某角色进入当前场景、开始参与当前互动或重新同行，调用 bsSetCharacterPresence，参数必须为 {"female":"角色名","isPresent":true}；明确离开、失联或转为幕外时才传 false。不要以 isHere 作为参数名，也不要无依据切换。',
-    ].join('\n'));
+    parts.push(
+      [
+        '[优先追踪角色]',
+        `- 本轮先检查：${priorityNames.join('、')}。`,
+        '- 这些名字是优先级，不是过滤器；其余已注册角色仍须依剧情和时间正常检查。',
+        '- 若剧情明确显示某角色进入当前场景、开始参与当前互动或重新同行，调用 bsSetCharacterPresence，参数必须为 {"female":"角色名","isPresent":true}；明确离开、失联或转为幕外时才传 false。不要以 isHere 作为参数名，也不要无依据切换。',
+      ].join('\n'),
+    )
   }
-  const embryoTypeLorePrompt = buildEmbryoTypeLorePrompt(payload || {});
-  if (embryoTypeLorePrompt) parts.push(embryoTypeLorePrompt);
+  const embryoTypeLorePrompt = buildEmbryoTypeLorePrompt(payload || {})
+  if (embryoTypeLorePrompt) parts.push(embryoTypeLorePrompt)
   if (!diaryEnabled) {
-    parts.push('[diary]\n- diary 系统当前已关闭（settings.diaryRecentLimit = 0）。本轮不要参考 diary，也不要调用 bsWriteDiary。');
+    parts.push('[diary]\n- diary 系统当前已关闭（settings.diaryRecentLimit = 0）。本轮不要参考 diary，也不要调用 bsWriteDiary。')
   }
-  parts.push(payload?.require_full_description_updates === true
-    ? [
-      '[descriptions 完整更新模式：强制提示约束]',
-      '- 只要调用 bsSetDescription 更新 normalDescription 或 pregnantDescription，其对应字符串必须带回该角色该栏位所有既有子字段，不得只传部分字段。',
-      '- 即使字段内容未改变，也必须原样带回；先完整检查，再按既有字段顺序输出。此规则优先于节省 token 的考虑。',
-      '- 若因上下文缺失无法可靠填写某个字段，则不要调用该栏位的 bsSetDescription；不要编造内容或交出不完整更新。',
-    ].join('\n')
-    : [
-      '[descriptions 更新勤勉规则]',
-      '- 若调用 bsSetDescription，先逐字段检查；所有受本轮影响的既有字段必须一并更新。省略只允许用于已确认完全不变的字段。',
-    ].join('\n'));
-
-  const trackedNames = Array.isArray(payload?.tracked_females)
-    ? payload.tracked_females.map((name) => String(name || '').trim()).filter(Boolean)
-    : [];
+  parts.push(
+    payload?.require_full_description_updates === true
+      ? [
+          '[descriptions 完整更新模式：强制提示约束]',
+          '- 只要调用 bsSetDescription 更新 normalDescription 或 pregnantDescription，其对应字符串必须带回该角色该栏位所有既有子字段，不得只传部分字段。',
+          '- 即使字段内容未改变，也必须原样带回；先完整检查，再按既有字段顺序输出。此规则优先于节省 token 的考虑。',
+          '- 若因上下文缺失无法可靠填写某个字段，则不要调用该栏位的 bsSetDescription；不要编造内容或交出不完整更新。',
+        ].join('\n')
+      : [
+          '[descriptions 更新勤勉规则]',
+          '- 若调用 bsSetDescription，先逐字段检查；所有受本轮影响的既有字段必须一并更新。省略只允许用于已确认完全不变的字段。',
+        ].join('\n'),
+  )
+  const trackedNames = Array.isArray(payload?.tracked_females) ? payload.tracked_females.map(name => String(name || '').trim()).filter(Boolean) : []
   if (trackedNames.length > 0) {
-    parts.push([
-      '[逐角色检查清单]',
-      `- 本轮必须在 character_checks 中逐一列出：${trackedNames.join('、')}。每名恰好一笔。`,
-      '- status 只能是 no_change、updated、present 或 offscreen；清单只用于核对，任何实际状态变更仍必须同时用 tool_calls 调用对应工具。',
-    ].join('\n'));
+    parts.push(
+      [
+        '[逐角色检查清单]',
+        `- 本轮必须在 character_checks 中逐一列出：${trackedNames.join('、')}。每名恰好一笔。`,
+        '- status 只能是 no_change、updated、present 或 offscreen；清单只用于核对，任何实际状态变更仍必须同时用 tool_calls 调用对应工具。',
+      ].join('\n'),
+    )
   }
-
-  const pregnantInitNames = collectPregnantDescriptionInitNames(payload);
-  const pregnantGuide = String(descriptionGuides?.pregnantDescription || '').trim();
+  const pregnantInitNames = collectPregnantDescriptionInitNames(payload)
+  const pregnantGuide = String(descriptionGuides?.pregnantDescription || '').trim()
   if (pregnantInitNames.length > 0 && pregnantGuide) {
-    parts.push([
-      '[pregnantDescription 初始化]',
-      `- 角色 ${pregnantInitNames.join('、')} 已进入妊娠相关阶段，但 pregnantDescription 仍为空。`,
-      '- 这是「不要新增描述子字段」规则的唯一例外：请尽快用 bsSetDescription 按下方规范为该角色建立首批 pregnantDescription 子字段，只建立规范中列出的字段名。',
-      '- 格式仍为：字段名|描述内容;;字段名|描述内容;;，不可用自然段，不可省略字段名。',
-      '',
-      '【pregnantDescription 规范】',
-      pregnantGuide,
-    ].join('\n'));
+    parts.push(
+      [
+        '[pregnantDescription 初始化]',
+        `- 角色 ${pregnantInitNames.join('、')} 已进入妊娠相关阶段，但 pregnantDescription 仍为空。`,
+        '- 这是「不要新增描述子字段」规则的唯一例外：请尽快用 bsSetDescription 按下方规范为该角色建立首批 pregnantDescription 子字段，只建立规范中列出的字段名。',
+        '- 格式仍为：字段名|描述内容;;字段名|描述内容;;，不可用自然段，不可省略字段名。',
+        '',
+        '【pregnantDescription 规范】',
+        pregnantGuide,
+      ].join('\n'),
+    )
   }
-
-  return parts.filter(Boolean).join('\n\n');
+  return parts.filter(Boolean).join('\n\n')
 }
-
 export function buildMainFlowStatePrompt(payload = {}) {
-  const existingState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {};
-  const hasState = Object.keys(existingState).length > 0;
-  if (!hasState) return '';
-  const racePhysiologyPrompt = buildRacePhysiologyPrompt(payload || {});
+  const existingState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {}
+  const hasState = Object.keys(existingState).length > 0
+  if (!hasState) return ''
+  const racePhysiologyPrompt = buildRacePhysiologyPrompt(payload || {})
   return [
     racePhysiologyPrompt,
     '<bs_biotracker>',
@@ -364,16 +388,13 @@ export function buildMainFlowStatePrompt(payload = {}) {
     '[当前已注册角色状态]',
     serializeStateForPrompt(existingState),
     '</bs_biotracker>',
-  ].join('\n');
+  ].join('\n')
 }
-
 /**
  * 状态 JSON 注入防线：序列化后转义 `</` 与换行——角色卡/注册内容（描述、日记、
  * 种族名等）可能含 `</bs_biotracker>` 或伪指令段，若不转义可提前闭合包裹标签
  * 向主线 LLM 注入任意指令（安全审查 P1，实测可达主模型）。
  */
 function serializeStateForPrompt(state) {
-  return JSON.stringify(state)
-    .replace(/<\//g, '<\\/')
-    .replace(/\r?\n/g, '\\n');
+  return JSON.stringify(state).replace(/<\//g, '<\\/').replace(/\r?\n/g, '\\n')
 }

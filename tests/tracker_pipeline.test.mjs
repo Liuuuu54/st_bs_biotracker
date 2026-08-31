@@ -265,3 +265,18 @@ test('priority names focus the tracker without excluding other registered charac
   assert.match(prompt, /\[逐角色检查清单\]/);
   assert.match(prompt, /每名恰好一笔/);
 });
+
+test('tracker prompt keeps residual sperm and competition weight separate with current values', () => {
+  const ctx = makeContext();
+  const settings = state.getSettings(ctx);
+  const character = settings.chatStates[CHAT_KEY].characters['艾拉'];
+  character.profile.base.sperms = [{ male: '沈砚行', race: '人类', value: 15.583333333333332 }];
+  character.profile.base.conceptionCandidates = [{ male: '沈砚行', race: '人类', competitionWeight: 8.5 }];
+
+  const prompt = buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, buildTrackerPayload(ctx, settings));
+  assert.match(prompt, /\[精液残留与本周期竞争权重：本轮最高优先级核对\]/);
+  assert.match(prompt, /残留量 sperms\.value：沈砚行=15\.583333333333332/);
+  assert.match(prompt, /竞争权重 conceptionCandidates\.competitionWeight：沈砚行=8\.5/);
+  assert.match(prompt, /禁止互相改写/);
+  assert.match(prompt, /已经出现在既有状态之前的性交\/射精，只是历史记录/);
+});

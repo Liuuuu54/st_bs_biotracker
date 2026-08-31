@@ -64,6 +64,11 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /function renderFetalTalentDebugEditor\(/);
   assert.match(controller, /function renderTrackDebug\(viewModel, fetalTalentHtml = ''\)/);
   assert.match(controller, /胎儿自主活动调试[\s\S]*?\$\{fetalTalentHtml\}[\s\S]*?妊娠变速效果/);
+  const pregnancySection = controller.match(/function renderTrackPregnancy\(viewModel\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(pregnancySection, /'本周期受精竞争'/);
+  assert.match(pregnancySection, /item\?\.male/);
+  assert.match(pregnancySection, /种族[\s\S]*?formatRaceLabel\(item\?\.race, item\?\.derivedType\)/);
+  assert.doesNotMatch(pregnancySection, /竞争权重|competitionWeight/);
   assert.match(controller, /function applyFetalTalentDebugChange\(/);
   assert.match(controller, /data-fetal-talent-save/);
   assert.match(controller, /data-fetal-talent-delete/);
