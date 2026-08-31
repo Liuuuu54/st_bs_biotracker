@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { applyToolCall } from '../scripts/tools.js';
 
-function makeChatState({ menstrualLengthRatio = 1, orgasmOvulationAmount = 1 } = {}) {
+function makeChatState({ menstrualLengthRatio = 1, orgasmOvulationAmount = 1, withCandidate = false } = {}) {
   return {
     characters: {
       F: {
@@ -14,6 +14,7 @@ function makeChatState({ menstrualLengthRatio = 1, orgasmOvulationAmount = 1 } =
           base: {
             stage: '排卵期', days: 0, race: '人类', vitality: 100,
             vitalityLevel: 4, psyStressLevel: 4, libido: 20, uterinePressure: 0, eggs: 0,
+            conceptionCandidates: withCandidate ? [{ male: 'A', race: '人类', derivedType: null, competitionWeight: 20 }] : [],
           },
           bio: {
             menstrualLengthRatio,
@@ -32,7 +33,7 @@ function makeChatState({ menstrualLengthRatio = 1, orgasmOvulationAmount = 1 } =
 }
 
 function eggsAfterOneDay(options) {
-  const chatState = makeChatState(options);
+  const chatState = makeChatState({ ...options, withCandidate: true });
   applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 1 } });
   return chatState.characters.F.profile.base.eggs;
 }
@@ -50,7 +51,7 @@ test('总卵数 = 1 颗基础 + 额外排卵倾向，不随经期倍率变动', 
 
 test('超长周期在整个排卵窗口内只排一次', () => {
   // 经期倍率 13（约一年）→ 排卵期 26 天；旧算法会逐日累加到 26 颗
-  const chatState = makeChatState({ menstrualLengthRatio: 13, orgasmOvulationAmount: 1 });
+  const chatState = makeChatState({ menstrualLengthRatio: 13, orgasmOvulationAmount: 1, withCandidate: true });
   for (let i = 0; i < 10; i += 1) {
     applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 2 } });
   }
@@ -61,7 +62,7 @@ test('超长周期在整个排卵窗口内只排一次', () => {
 });
 
 test('高潮诱发排卵排出的卵不会被自然排卵覆盖', () => {
-  const chatState = makeChatState({ menstrualLengthRatio: 1, orgasmOvulationAmount: 8 });
+  const chatState = makeChatState({ menstrualLengthRatio: 1, orgasmOvulationAmount: 8, withCandidate: true });
   // 先手动堆上高潮诱发排卵的份额，再推进时间触发自然排卵
   chatState.characters.F.profile.base.eggs = 8;
   applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 1 } });

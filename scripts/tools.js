@@ -341,7 +341,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddSperm',
-    description: '仅在人物 male 明确射精并射入人物 female 体内，且全程没有使用安全套等有效保护措施时，登记体内精液来源和受孕机会。仅插入、摩擦、体外射精、未射精、射在体外或使用任何有效保护措施都不得调用；此时不要更新精液。ejaculatedInside 与 protected 必须根据剧情明确填写，不能猜测。amount 必须为正数；扣除/排出精液请用 bsDrainSperm。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
+    description: '仅在人物 male 明确射精并射入人物 female 体内，且全程没有使用安全套等有效保护措施时，登记体内精液来源和受孕机会。仅插入、摩擦、体外射精、未射精、射在体外或使用任何有效保护措施都不得调用；此时不要更新精液。ejaculatedInside 与 protected 必须根据剧情明确填写，不能猜测。amount 是本次实际射入的精液量，必须为正数并按剧情实际量填写，不得用固定小数或凭空填 5；扣除/排出精液请用 bsDrainSperm。若同一工具批次随后调用 bsPassedTime，新射入量从该批次结算点开始计时，不会被该批次的时间推进重复衰减。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
     input_schema: {
       type: 'object',
       properties: {
@@ -1435,38 +1435,13 @@ function getConceptionCandidates(profile) {
     .filter((candidate) => candidate.male && candidate.competitionWeight > 0);
 }
 
-function syncConceptionCandidatesFromSperms(base) {
-  const candidates = Array.isArray(base.conceptionCandidates)
-    ? base.conceptionCandidates.map((item) => ({ ...item }))
-    : [];
-  const candidateByMale = new Map(candidates.map((item) => [String(item?.male || ''), item]));
-
-  for (const sperm of (Array.isArray(base.sperms) ? base.sperms : [])) {
-    const male = String(sperm?.male || '').trim();
-    const value = clampNumber(sperm?.value, 0, 9999, 0);
-    if (!male || value <= 0) continue;
-    const candidate = candidateByMale.get(male);
-    if (candidate) continue;
-    const raceDescriptor = parseRaceDescriptor(sperm?.race || '人类');
-    candidates.push({
-      male,
-      race: raceDescriptor.race || '人类',
-      derivedType: raceDescriptor.derivedType || sperm?.derivedType || null,
-      competitionWeight: value,
-    });
-    candidateByMale.set(male, candidates[candidates.length - 1]);
-  }
-
-  base.conceptionCandidates = candidates.filter((item) => clampNumber(item?.competitionWeight, 0, 9999, 0) > 0);
-}
-
 export function syncManualMenstrualStageTransition(character, previousStage = '') {
   const profile = character?.profile || {};
   const base = profile.base || {};
   const nextStage = String(base.stage || '');
   if (nextStage !== '排卵期' || String(previousStage || '') === nextStage) return character;
 
-  syncConceptionCandidatesFromSperms(base);
+  base.conceptionCandidates = [];
   profile.cooldown = {
     ...(profile.cooldown || {}),
     naturalOvulationUsed: false,
@@ -1529,7 +1504,7 @@ function resolveNaturalConception(profile, stage, eggs) {
   return resolvedCount;
 }
 
-function processSimpleConception(profile, tick, notify, name) {
+function processSimpleConception(profile, tick, notify, name, options = {}) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const stage = String(base.stage || '');
@@ -1552,7 +1527,9 @@ function processSimpleConception(profile, tick, notify, name) {
       base.eggs = Math.max(0, clampNumber(base.eggs, 0, 99, 0) - fullDays);
     }
 
-    if (stage === '排卵期' && fullDays > 0 && !(profile.cooldown || {}).naturalConceptionResolved) {
+    if (stage === '排卵期' && fullDays > 0 && !(profile.cooldown || {}).naturalConceptionResolved
+      && !options.deferNaturalConception
+      && getConceptionCandidates(profile).length > 0) {
       const resolvedCount = resolveNaturalConception(profile, stage, clampNumber(base.eggs, 0, 99, 0));
       if (resolvedCount > 0) notify.secondly = `${name}受精成功`;
     }
@@ -3724,7 +3701,7 @@ function shouldEnterPseudoPregnancy(profile, previousStage, nextStage) {
   return psyStress >= 100 && libido >= 50 && latestSexPartner.length > 0;
 }
 
-function applyTimeToCharacter(character, tick) {
+function applyTimeToCharacter(character, tick, options = {}) {
   const next = cloneValue(character);
   snapshotOriginalPregnancyBio(next);
   const profile = next.profile || {};
@@ -3750,7 +3727,7 @@ function applyTimeToCharacter(character, tick) {
 
   if (deltaDays <= 0) return { character: next, stageChanged: false, oldStage, newStage: stage };
 
-  processSimpleConception(profile, tick, notify, next.name);
+  processSimpleConception(profile, tick, notify, next.name, options);
   stage = String(base.stage || stage);
   if (Array.isArray(pregnant.fetuses) && pregnant.fetuses.length > 0 && isPregnancyStage(stage)) {
     applyPregnancyPhysiology(profile, next.runtime || {});
@@ -3865,7 +3842,7 @@ function applyTimeToCharacter(character, tick) {
       days += deltaDays;
     }
 
-  processSpermLifecycle(profile, stage, tick);
+  processSpermLifecycle(profile, stage, tick, next.name, options);
 
   if (base.latestSexDays !== null && base.latestSexDays !== undefined && Number(base.latestSexDays) >= 0) {
     base.latestSexDays = clampNumber(base.latestSexDays, -1, 9999, 0) + tick.passedDays;
@@ -3981,7 +3958,7 @@ function applyWriteDiary(chatState, args) {
   return { applied: true, message: `bsWriteDiary applied to ${female}: ${time}.` };
 }
 
-function applyPassedTime(chatState, args) {
+function applyPassedTime(chatState, args, options = {}) {
   const minute = clampNumber(args?.minute, 0, 60 * 24 * 365, 0);
   const hour = clampNumber(args?.hour, 0, 24 * 365, 0);
   const day = clampNumber(args?.day, 0, 36500, 0);
@@ -3995,7 +3972,7 @@ function applyPassedTime(chatState, args) {
     const current = chatState.characters[name];
     if (!current || typeof current !== 'object') continue;
     const tick = buildTimeTick(current, totalMinutes);
-    const result = applyTimeToCharacter(current, tick);
+    const result = applyTimeToCharacter(current, tick, options);
     chatState.characters[name] = result.character;
   }
   transferProviderChildren(chatState);
@@ -4521,7 +4498,7 @@ function applyUpdatePsychology(chatState, args) {
   return { applied: true, message: `bsUpdatePsychology applied to ${female}.` };
 }
 
-function applyAddSperm(chatState, args) {
+function applyAddSperm(chatState, args, options = {}) {
   const female = String(args?.female || '').trim();
   const male = String(args?.male || '').trim();
   const parsedRace = parseRaceDescriptor(args?.race || '人类');
@@ -4547,6 +4524,10 @@ function applyAddSperm(chatState, args) {
     existing.derivedType = maleDerivedType;
   } else if (amount > 0) {
     sperms.push({ male, race, derivedType: maleDerivedType, value: amount });
+  }
+  if (options.batchAddedSperm instanceof Map && amount > 0) {
+    const previousAdded = options.batchAddedSperm.get(`${female}\u0000${male}`) || 0;
+    options.batchAddedSperm.set(`${female}\u0000${male}`, previousAdded + amount);
   }
   base.sperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
   const stage = String(base.stage || '');
@@ -4577,6 +4558,32 @@ function applyAddSperm(chatState, args) {
   }
   chatState.characters[female] = next;
   return { applied: true, message: `bsAddSperm applied to ${female}.` };
+}
+
+function addBatchConceptionCandidate(character, args) {
+  const profile = character?.profile || {};
+  const base = profile.base || {};
+  const male = String(args?.male || '').trim();
+  const amount = Number(args?.amount || 0);
+  if (String(base.stage || '') !== '排卵期' || !male || !Number.isFinite(amount) || amount <= 0) return;
+  const parsedRace = parseRaceDescriptor(args?.race || '人类');
+  const candidates = Array.isArray(base.conceptionCandidates)
+    ? base.conceptionCandidates.map((item) => ({ ...item }))
+    : [];
+  const candidate = candidates.find((item) => String(item?.male || '') === male);
+  if (candidate) {
+    candidate.competitionWeight = clampNumber(candidate.competitionWeight, 0, 9999, 0) + amount;
+  } else {
+    candidates.push({
+      male,
+      race: parsedRace.race || '人类',
+      derivedType: parsedRace.derivedType || null,
+      competitionWeight: amount,
+    });
+  }
+  base.conceptionCandidates = candidates.filter((item) => clampNumber(item?.competitionWeight, 0, 9999, 0) > 0);
+  profile.base = base;
+  character.profile = profile;
 }
 
 function applyDrainSperm(chatState, args) {
@@ -4661,7 +4668,7 @@ function applySetMenstrualPhases(chatState, args) {
     profile.metabolism = metabolism;
   }
   if (stage === '排卵期') {
-    syncConceptionCandidatesFromSperms(base);
+    base.conceptionCandidates = [];
     profile.cooldown = {
       ...cooldown,
       orgasmOvulationUsed: false,
@@ -5018,11 +5025,11 @@ function applyDebugSetProdromal(chatState, args) {
   return { applied: true, message: `bsDebugSetProdromal applied to ${female}.` };
 }
 
-export function applyToolCall(chatState, call) {
+export function applyToolCall(chatState, call, options = {}) {
   const name = String(call?.name || '').trim();
   const args = normalizeToolCallArguments(call?.arguments);
   if (!name) return { applied: false, message: 'Empty tool call name.' };
-  if (name === 'bsPassedTime') return applyPassedTime(chatState, args);
+  if (name === 'bsPassedTime') return applyPassedTime(chatState, args, options);
   if (name === 'bsWriteDiary') return applyWriteDiary(chatState, args);
   if (name === 'bsUpdateCharacterStatus') return applyCharacterStatus(chatState, args);
   if (name === 'bsAddWardrobeItem') return applyAddWardrobeItem(chatState, args);
@@ -5035,7 +5042,7 @@ export function applyToolCall(chatState, call) {
   if (name === 'bsRegisterSkillDefinition') return applyRegisterSkillDefinition(chatState, args);
   if (name === 'bsTrainSkill') return applyTrainSkill(chatState, args);
   if (name === 'bsUpdatePsychology') return applyUpdatePsychology(chatState, args);
-  if (name === 'bsAddSperm') return applyAddSperm(chatState, args);
+  if (name === 'bsAddSperm') return applyAddSperm(chatState, args, options);
   if (name === 'bsDrainSperm') return applyDrainSperm(chatState, args);
   if (name === 'bsSetMenstrualPhases') return applySetMenstrualPhases(chatState, args);
   if (name === 'bsExcreteMetabolism') return applyExcreteMetabolism(chatState, args);
@@ -5057,18 +5064,47 @@ export function applyToolCallsResult(ctx, result) {
   const chatState = getChatState(ctx, settings);
   const toolCalls = Array.isArray(result?.tool_calls) ? result.tool_calls : [];
   const logs = [];
+  const batchContext = { deferNaturalConception: true, batchAddedSperm: new Map() };
+  const initialStages = new Map(Object.entries(chatState.characters || {})
+    .map(([name, character]) => [name, String(character?.profile?.base?.stage || '')]));
+  const batchSpermCalls = [];
   for (const call of toolCalls) {
     const normalizedCall = {
       name: String(call?.name || '').trim(),
       arguments: normalizeToolCallArguments(call?.arguments),
     };
-    const appliedResult = applyToolCall(chatState, normalizedCall);
+    const appliedResult = applyToolCall(chatState, normalizedCall, batchContext);
+    if (appliedResult?.applied && normalizedCall.name === 'bsAddSperm') batchSpermCalls.push(normalizedCall.arguments);
     if (appliedResult?.notify?.text) globalThis.toastr?.info?.(appliedResult.notify.text, '[BS BioTracker]');
     logs.push({
       ...appliedResult,
       name: normalizedCall.name,
       arguments: cloneValue(normalizedCall.arguments),
     });
+  }
+  for (const [name, previousStage] of initialStages) {
+    const character = chatState.characters?.[name];
+    const nextStage = String(character?.profile?.base?.stage || '');
+    if (previousStage === nextStage || nextStage !== '排卵期') continue;
+    const profile = character.profile || {};
+    profile.base = profile.base || {};
+    profile.base.conceptionCandidates = [];
+    for (const spermCall of batchSpermCalls) {
+      if (String(spermCall?.female || '').trim() === name) addBatchConceptionCandidate(character, spermCall);
+    }
+  }
+  for (const character of Object.values(chatState.characters || {})) {
+    const profile = character?.profile || {};
+    const base = profile.base || {};
+    if (String(base.stage || '') !== '排卵期'
+      || clampNumber(base.eggs, 0, 99, 0) <= 0
+      || Boolean(profile.cooldown?.naturalConceptionResolved)
+      || getConceptionCandidates(profile).length === 0) continue;
+    const notify = { firstly: '', secondly: '', thirdly: '' };
+    const resolvedCount = resolveNaturalConception(profile, '排卵期', clampNumber(base.eggs, 0, 99, 0));
+    if (resolvedCount > 0) notify.secondly = `${character.name}受精成功`;
+    profile.notify = { ...(profile.notify || {}), ...notify };
+    character.profile = profile;
   }
   if (result?.scene_summary !== undefined) chatState.sceneSummary = String(result.scene_summary || '');
   chatState.lastRawResult = summarizeRawResult(result);

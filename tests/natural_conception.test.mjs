@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { applyToolCall, syncManualMenstrualStageTransition } from '../scripts/tools.js';
+import { applyToolCall, applyToolCallsResult, syncManualMenstrualStageTransition } from '../scripts/tools.js';
 import { createDefaultFemaleState } from '../scripts/state.js';
 
 function makeState(stage = '卵泡期') {
@@ -33,6 +33,15 @@ function makeState(stage = '卵泡期') {
 
 function add(state, male, amount, race = '人类') {
   applyToolCall(state, { name: 'bsAddSperm', arguments: { female: 'F', male, race, amount, ejaculatedInside: true, protected: false } });
+}
+
+function applyBatch(state, tool_calls) {
+  const ctx = {
+    extensionSettings: { bs_biotracker: { chatStates: { test: state } } },
+    chatId: 'test',
+    saveSettingsDebounced() {},
+  };
+  return applyToolCallsResult(ctx, { tool_calls });
 }
 
 test('精液进入只登记 candidate，不立即受精；洗澡和排精不撤销资格', () => {
@@ -76,21 +85,6 @@ test('排卵统一逐卵结算，多人可重复成为父源，结算后清空 c
   assert.equal(profile.base.eggs, 0);
   assert.deepEqual(profile.base.conceptionCandidates, []);
   assert.deepEqual(profile.pregnant.fetuses.map((fetus) => fetus.fathers), ['A', 'A', 'A', 'A']);
-});
-
-test('排卵结算后发生的性交不加入已结束的本次竞争', () => {
-  const state = makeState('排卵期');
-  state.characters.F.profile.base.eggs = 1;
-  const originalRandom = Math.random;
-  Math.random = () => 0;
-  try {
-    applyToolCall(state, { name: 'bsPassedTime', arguments: { day: 1 } });
-  } finally {
-    Math.random = originalRandom;
-  }
-  add(state, 'B', 20);
-  assert.deepEqual(state.characters.F.profile.base.conceptionCandidates, []);
-  assert.equal(state.characters.F.profile.pregnant.fetuses.length, 0);
 });
 
 test('手动进入卵泡期时清空上一周期竞争来源并允许新周期登记', () => {

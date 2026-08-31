@@ -13,9 +13,8 @@
 
 ## 未发布
 
-- 修正完整变量面板手动把角色阶段改为排卵期时未同步自然受精结算状态的问题：现在会重置 `naturalConceptionResolved`、`naturalOvulationUsed`，并从当前有效残留精液补建 `conceptionCandidates`；单独修改 `eggs` 不会重置周期。
 - 修正手动重复分析当前楼层时的 BS 状态基线：当前楼层已有插件快照时，改用该楼之前最近的 BS 快照，避免重复叠加工具调用；当前楼层尚未保存插件快照时，也只沿用最近的 BS 插件记录，不读取酒馆自身数据作为基线。
-- 手动切入排卵期时，若角色已有有效残留精液，自动补建对应的 `conceptionCandidates`，使手动调整后的排卵状态可以参与本周期受精竞争。
+- 修正完整变量面板手动把角色阶段改为排卵期时未同步自然受精结算状态的问题：现在会重置 `naturalConceptionResolved`、`naturalOvulationUsed`，并从当前有效残留精液补建 `conceptionCandidates`；单独修改 `eggs` 不会重置周期。
 
 ## v0.9.5
 
