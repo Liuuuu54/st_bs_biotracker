@@ -1,4 +1,4 @@
-import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
+import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js'
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -7,16 +7,16 @@ import {
   PSY_MENS_BOOL_FIELDS,
   PSY_PREG_FIELDS,
   PSY_PREG_BOOL_FIELDS,
-} from './registry_psy_config.js';
-import { LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
-import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
+} from './registry_psy_config.js'
+import { LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js'
+import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js'
 import {
   createDefaultWardrobeItem,
   normalizeTemporaryOutfitItems,
   normalizeWardrobeItem,
   normalizeWardrobeItemId,
   sanitizeWearState,
-} from './wardrobe_config.js';
+} from './wardrobe_config.js'
 import {
   canLoadHostWorldInfo,
   getHostChat,
@@ -32,27 +32,25 @@ import {
   resolveHostChatId,
   saveHostSettings,
   scheduleHostChatStateSave,
-} from './host.js';
-import { normalizeMemorySource } from './memory_sources.js';
-import { processHistoryText } from './history_regex.js';
-import { normalizeHistoryRegexRules } from './history_regex.js';
-
-export const MODULE_NAME = 'bs_biotracker';
-const MAX_CHAT_STATE_SNAPSHOTS = 24;
-export const CHAT_CHECKPOINT_KEY = 'bs_biotracker_checkpoint';
-const MAX_RAW_RESULT_TEXT_LENGTH = 600;
-const MAX_SNAPSHOT_DEBUG_ITEMS = 24;
-const MIN_CHAT_INHERIT_MESSAGE_COUNT = 2;
-const MESSAGE_DIGEST_SEED = 2166136261;
-const SNAPSHOT_FULL_INTERVAL = 8;
-const SNAPSHOT_PATCH_SIZE_RATIO = 0.85;
-const SNAPSHOT_DELETE_SENTINEL_KEY = '__bs_bt_deleted__';
-const SNAPSHOT_ARRAY_APPEND_KEY = '__bs_bt_array_append__';
-const RESTORED_SNAPSHOT_RUNTIME_KEY = Symbol('bsBtRestoredSnapshotKey');
-const CHECKPOINT_SAVE_DEBOUNCE_MS = 200;
-let checkpointSaveTimer = null;
-let worldInfoModulePromise = null;
-
+} from './host.js'
+import { normalizeMemorySource } from './memory_sources.js'
+import { processHistoryText } from './history_regex.js'
+import { normalizeHistoryRegexRules } from './history_regex.js'
+export const MODULE_NAME = 'bs_biotracker'
+const MAX_CHAT_STATE_SNAPSHOTS = 24
+export const CHAT_CHECKPOINT_KEY = 'bs_biotracker_checkpoint'
+const MAX_RAW_RESULT_TEXT_LENGTH = 600
+const MAX_SNAPSHOT_DEBUG_ITEMS = 24
+const MIN_CHAT_INHERIT_MESSAGE_COUNT = 2
+const MESSAGE_DIGEST_SEED = 2166136261
+const SNAPSHOT_FULL_INTERVAL = 8
+const SNAPSHOT_PATCH_SIZE_RATIO = 0.85
+const SNAPSHOT_DELETE_SENTINEL_KEY = '__bs_bt_deleted__'
+const SNAPSHOT_ARRAY_APPEND_KEY = '__bs_bt_array_append__'
+const RESTORED_SNAPSHOT_RUNTIME_KEY = Symbol('bsBtRestoredSnapshotKey')
+const CHECKPOINT_SAVE_DEBOUNCE_MS = 200
+let checkpointSaveTimer = null
+let worldInfoModulePromise = null
 export const THEME_CONFIG = {
   retro: {},
   cultivation: {},
@@ -66,8 +64,7 @@ export const THEME_CONFIG = {
   eldritch: {},
   ink: {},
   constructivism: {},
-};
-
+}
 export const DEFAULT_WARDROBE_PREP_PROMPT = [
   '请根据角色卡、世界书、最近对话、已注册状态与当前服装描述，为指定角色准备衣柜 JSON。',
   '默认生成 3 件 main 主件、3 件 accessory 配件；若用户在本提示中指定数量、风格、场景或禁忌，请优先遵守。',
@@ -81,9 +78,7 @@ export const DEFAULT_WARDROBE_PREP_PROMPT = [
   'id 必须使用整数；0 是系统保留默认主件，表示全裸，不要放入 wardrobe.items。长期衣柜 id 从 1 开始递增。',
   'outfit.mainItemId 请选择一件最符合当前叙事/注册描述的主件；outfit.accessoryItemIds 选择当前已穿戴配件，未知则空数组。',
   'temporaryItems 只用于病服、借装、旅馆睡衣等临时衣物；备装长期衣柜时通常输出空数组。',
-].join('\n');
-
-
+].join('\n')
 export const DEFAULT_SYSTEM_PROMPT = [
   '你是 AIRP 角色生理状态追踪器的工具调度器。',
   '工具参数中的 female 指「孕育者」——被追踪的承载方，不限定性别；扶她、孕夫、雄性孕育系（如海龙人）同样使用该字段。',
@@ -115,8 +110,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '流产用 bsAbortion；立即结束分娩用 bsChildbirth；角色在场状态变化用 bsSetCharacterPresence，参数必须为 female 和 isPresent（布尔值 true/false，不要使用 isHere）。角色明确回到当前场景、重新同行或参与当前互动时应设为 true；明确离开、失联或转为幕外时才设为 false。',
   '母胎互动用 bsMaternalFetalInteraction；每名角色在每个新小时内仅允许一次成功的母胎互动变化，重复调用会被跳过。direction=fetal 时须传 change，表示胎儿对母体的亲近或排斥并改变 affinity，不补充营养。direction=maternal 时不传 change，表示母体安抚胎儿，系统随机判定 affinity 变化；若成功且有待安抚不适，小幅变化补回 1 点营养，大幅变化补回 2 点营养。若处于产兆前驱则表示分娩抵抗。',
   '不要编造怀孕天数、胎数、流产、分娩或其他高影响事件。',
-].join('\n');
-
+].join('\n')
 export const DEFAULT_SETTINGS = Object.freeze({
   theme: 'retro',
   deviceSize: 'phone',
@@ -163,8 +157,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   animaRecallCount: 20,
   // Follow ST-SevenDaysCal's context contract: preserve narrative wrapped in
   // <content>, but remove tag blocks (thinking/status/widgets/etc.) by default.
-});
-
+})
 const VITALITY_CAPS = Object.freeze({
   1: 50,
   2: 75,
@@ -173,8 +166,7 @@ const VITALITY_CAPS = Object.freeze({
   5: 150,
   6: 175,
   7: 200,
-});
-
+})
 const PSY_STRESS_CAPS = Object.freeze({
   1: 20,
   2: 50,
@@ -183,81 +175,72 @@ const PSY_STRESS_CAPS = Object.freeze({
   5: 140,
   6: 170,
   7: 200,
-});
-
+})
 function clampLevel(value, fallback = 4) {
-  const next = Number(value);
-  if (!Number.isFinite(next)) return fallback;
-  return Math.max(1, Math.min(7, Math.round(next)));
+  const next = Number(value)
+  if (!Number.isFinite(next)) return fallback
+  return Math.max(1, Math.min(7, Math.round(next)))
 }
-
 function sanitizeInteger(value, { min = -999999, max = 999999 } = {}) {
-  const next = Number(value);
-  if (!Number.isFinite(next)) return null;
-  return Math.max(min, Math.min(max, Math.round(next)));
+  const next = Number(value)
+  if (!Number.isFinite(next)) return null
+  return Math.max(min, Math.min(max, Math.round(next)))
 }
-
 function sanitizeNumber(value, { min = -999999, max = 999999 } = {}) {
-  const next = Number(value);
-  if (!Number.isFinite(next)) return null;
-  return Math.max(min, Math.min(max, next));
+  const next = Number(value)
+  if (!Number.isFinite(next)) return null
+  return Math.max(min, Math.min(max, next))
 }
-
 function sanitizeString(value) {
-  if (value === null) return null;
-  if (value === undefined) return undefined;
-  return String(value);
+  if (value === null) return null
+  if (value === undefined) return undefined
+  return String(value)
 }
-
 function sanitizeStringList(value) {
-  if (!Array.isArray(value)) return null;
-  return value.map((item) => String(item ?? '')).filter(Boolean);
+  if (!Array.isArray(value)) return null
+  return value.map(item => String(item ?? '')).filter(Boolean)
 }
-
 function pickFirstString(obj, paths) {
   for (const path of paths) {
-    const keys = String(path || '').split('.');
-    let current = obj;
+    const keys = String(path || '').split('.')
+    let current = obj
     for (const key of keys) {
       if (!current || typeof current !== 'object') {
-        current = undefined;
-        break;
+        current = undefined
+        break
       }
-      current = current[key];
+      current = current[key]
     }
-    if (typeof current === 'string' && current.trim()) return current.trim();
+    if (typeof current === 'string' && current.trim()) return current.trim()
   }
-  return '';
+  return ''
 }
-
 function normalizePsychologyState(value) {
-  const stageProfiles = normalizePsychologyStageProfiles(value?.stageProfiles);
+  const stageProfiles = normalizePsychologyStageProfiles(value?.stageProfiles)
   return {
     mens: normalizePsychologyGroup(value?.mens, PSY_MENS_FIELDS, { booleanFields: PSY_MENS_BOOL_FIELDS, stageProfiles: stageProfiles.mens }),
     preg: normalizePsychologyGroup(value?.preg, PSY_PREG_FIELDS, { booleanFields: PSY_PREG_BOOL_FIELDS, stageProfiles: stageProfiles.preg }),
     stageProfiles,
-  };
-}
-
-function normalizeWardrobeState(value) {
-  const items = [];
-  for (const source of (Array.isArray(value?.items) ? value.items : [])) {
-    const item = normalizeWardrobeItem(source);
-    if (!item || items.some((existing) => existing.id === item.id)) continue;
-    items.push(item);
   }
-  if (!items.some((item) => item.id === 0)) items.unshift(createDefaultWardrobeItem());
-  return { enabled: Boolean(value?.enabled), items };
 }
-
+function normalizeWardrobeState(value) {
+  const items = []
+  for (const source of Array.isArray(value?.items) ? value.items : []) {
+    const item = normalizeWardrobeItem(source)
+    if (!item || items.some(existing => existing.id === item.id)) continue
+    items.push(item)
+  }
+  if (!items.some(item => item.id === 0)) items.unshift(createDefaultWardrobeItem())
+  return { enabled: Boolean(value?.enabled), items }
+}
 function normalizePregFitState(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const normalizeGap = (gapValue) => {
-    const next = Number(gapValue);
-    if (!Number.isFinite(next)) return 0;
-    return Math.max(-20, Math.min(20, next));
-  };
-  const gapSource = value.gap && typeof value.gap === 'object' ? value.gap : {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const normalizeGap = gapValue => {
+    const next = Number(gapValue)
+    if (!Number.isFinite(next)) return 0
+    return Math.max(-20, Math.min(20, next))
+  }
+  const gapSource = value.gap && typeof value.gap === 'object' ? value.gap : {}
   return {
     pregWearPressure: Math.max(0, Math.min(10, Number(value.pregWearPressure) || 0)),
     gap: {
@@ -266,434 +249,420 @@ function normalizePregFitState(value) {
       capacity: normalizeGap(gapSource.capacity),
       convenience: normalizeGap(gapSource.convenience),
     },
-  };
+  }
 }
-
 function normalizeOutfitState(value, wardrobe) {
-  const wardrobeItems = Array.isArray(wardrobe?.items) ? wardrobe.items : [];
-  const temporaryItems = normalizeTemporaryOutfitItems(value?.temporaryItems);
-  const availableItems = [...wardrobeItems, ...temporaryItems];
-  const hasItem = (id, slot = '') => availableItems.some((item) => item.id === id && (!slot || item.slot === slot));
-  const requestedMainId = normalizeWardrobeItemId(value?.mainItemId, 0);
-  const mainItemId = hasItem(requestedMainId, 'main') ? requestedMainId : 0;
+  const wardrobeItems = Array.isArray(wardrobe?.items) ? wardrobe.items : []
+  const temporaryItems = normalizeTemporaryOutfitItems(value?.temporaryItems)
+  const availableItems = [...wardrobeItems, ...temporaryItems]
+  const hasItem = (id, slot = '') => availableItems.some(item => item.id === id && (!slot || item.slot === slot))
+  const requestedMainId = normalizeWardrobeItemId(value?.mainItemId, 0)
+  const mainItemId = hasItem(requestedMainId, 'main') ? requestedMainId : 0
   const accessoryItemIds = Array.isArray(value?.accessoryItemIds)
     ? value.accessoryItemIds
-      .map((item) => normalizeWardrobeItemId(item))
-      .filter((id, index, list) => id !== null && list.indexOf(id) === index && hasItem(id, 'accessory'))
-    : [];
+        .map(item => normalizeWardrobeItemId(item))
+        .filter((id, index, list) => id !== null && list.indexOf(id) === index && hasItem(id, 'accessory'))
+    : []
   return {
     mainItemId,
     accessoryItemIds,
     temporaryItems,
     wearState: sanitizeWearState(value?.wearState),
     pregFit: normalizePregFitState(value?.pregFit),
-  };
+  }
 }
-
 // v0.8.5 起衣着状态由 outfit.wearState 与 currentWearText 承担；
 // 旧版备装写入的两个描述子字段会与机械穿着脱节，载入时一次性剥离。
 const REMOVED_OUTFIT_DESCRIPTION_FIELD_NAMES = new Set([
-  '衣着动态', '衣着動態', '衣著动态', '衣著動態',
-  '衣着自评', '衣著自評', '衣着自評', '衣著自评', '服装自评', '服裝自評',
-]);
-
+  '衣着动态',
+  '衣着動態',
+  '衣著动态',
+  '衣著動態',
+  '衣着自评',
+  '衣著自評',
+  '衣着自評',
+  '衣著自评',
+  '服装自评',
+  '服裝自評',
+])
 function stripRemovedOutfitDescriptionFields(text) {
-  const source = String(text || '');
-  if (!source.includes('|')) return source;
-  const entries = source.split(';;').filter((entry) => entry.trim());
-  const kept = entries.filter((entry) => {
-    const separatorIndex = entry.indexOf('|');
-    const name = separatorIndex >= 0 ? entry.slice(0, separatorIndex).trim() : '';
-    return !REMOVED_OUTFIT_DESCRIPTION_FIELD_NAMES.has(name);
-  });
-  if (kept.length === entries.length) return source;
-  return kept.length > 0 ? `${kept.join(';;')};;` : '';
+  const source = String(text || '')
+  if (!source.includes('|')) return source
+  const entries = source.split(';;').filter(entry => entry.trim())
+  const kept = entries.filter(entry => {
+    const separatorIndex = entry.indexOf('|')
+    const name = separatorIndex >= 0 ? entry.slice(0, separatorIndex).trim() : ''
+    return !REMOVED_OUTFIT_DESCRIPTION_FIELD_NAMES.has(name)
+  })
+  if (kept.length === entries.length) return source
+  return kept.length > 0 ? `${kept.join(';;')};;` : ''
 }
-
 export function normalizeCharacterPsychologyState(characterState) {
-  if (!characterState || typeof characterState !== 'object') return characterState;
-  if (!characterState.profile || typeof characterState.profile !== 'object') return characterState;
-  characterState.profile.psychology = normalizePsychologyState(characterState.profile.psychology);
-  characterState.profile.skills = normalizeSkillList(characterState.profile.skills);
-  characterState.profile.talents = normalizeTalentList(characterState.profile.talents);
-  characterState.profile.skillHistory = normalizeSkillHistory(characterState.profile.skillHistory);
-  if (characterState.profile.childSource && typeof characterState.profile.childSource === 'object' && !Array.isArray(characterState.profile.childSource)) {
-    const motherName = String(characterState.profile.childSource.motherName || '').trim();
-    const childIndex = Number(characterState.profile.childSource.childIndex);
+  if (!characterState || typeof characterState !== 'object') return characterState
+  if (!characterState.profile || typeof characterState.profile !== 'object') return characterState
+  characterState.profile.psychology = normalizePsychologyState(characterState.profile.psychology)
+  characterState.profile.skills = normalizeSkillList(characterState.profile.skills)
+  characterState.profile.talents = normalizeTalentList(characterState.profile.talents)
+  characterState.profile.skillHistory = normalizeSkillHistory(characterState.profile.skillHistory)
+  if (
+    characterState.profile.childSource &&
+    typeof characterState.profile.childSource === 'object' &&
+    !Array.isArray(characterState.profile.childSource)
+  ) {
+    const motherName = String(characterState.profile.childSource.motherName || '').trim()
+    const childIndex = Number(characterState.profile.childSource.childIndex)
     if (motherName && Number.isInteger(childIndex) && childIndex >= 0) {
       const normalizedChildSource = {
         motherName,
         childIndex,
-      };
-      if (Array.isArray(characterState.profile.childSource.inheritedTalents)) {
-        normalizedChildSource.inheritedTalents = normalizeTalentList(characterState.profile.childSource.inheritedTalents);
       }
-      characterState.profile.childSource = normalizedChildSource;
+      if (Array.isArray(characterState.profile.childSource.inheritedTalents)) {
+        normalizedChildSource.inheritedTalents = normalizeTalentList(characterState.profile.childSource.inheritedTalents)
+      }
+      characterState.profile.childSource = normalizedChildSource
     } else {
-      delete characterState.profile.childSource;
+      delete characterState.profile.childSource
     }
   }
   if (Array.isArray(characterState.profile.children)) {
-    characterState.profile.children = characterState.profile.children.map((child) => {
-      const next = { ...child, talents: normalizeTalentList(child?.talents ?? child?.inheritedTalents) };
-      delete next.inheritedTalents;
-      return next;
-    });
+    characterState.profile.children = characterState.profile.children.map(child => {
+      const next = { ...child, talents: normalizeTalentList(child?.talents ?? child?.inheritedTalents) }
+      delete next.inheritedTalents
+      return next
+    })
   }
   if (Array.isArray(characterState.profile.pregnant?.fetuses)) {
-    characterState.profile.pregnant.fetuses = characterState.profile.pregnant.fetuses.map((fetus) => {
-      const next = { ...fetus, talents: normalizeTalentList(fetus?.talents ?? fetus?.inheritedTalents) };
-      delete next.inheritedTalents;
-      return next;
-    });
+    characterState.profile.pregnant.fetuses = characterState.profile.pregnant.fetuses.map(fetus => {
+      const next = { ...fetus, talents: normalizeTalentList(fetus?.talents ?? fetus?.inheritedTalents) }
+      delete next.inheritedTalents
+      return next
+    })
   }
   if (characterState.profile.wardrobe?.enabled) {
-    characterState.profile.wardrobe = normalizeWardrobeState(characterState.profile.wardrobe);
-    characterState.profile.outfit = normalizeOutfitState(characterState.profile.outfit, characterState.profile.wardrobe);
+    characterState.profile.wardrobe = normalizeWardrobeState(characterState.profile.wardrobe)
+    characterState.profile.outfit = normalizeOutfitState(characterState.profile.outfit, characterState.profile.wardrobe)
   } else {
-    delete characterState.profile.wardrobe;
-    delete characterState.profile.outfit;
+    delete characterState.profile.wardrobe
+    delete characterState.profile.outfit
   }
-  const descriptions = characterState.profile.descriptions;
+  const descriptions = characterState.profile.descriptions
   if (descriptions && typeof descriptions === 'object' && !Array.isArray(descriptions)) {
     for (const key of ['normalDescription', 'pregnantDescription']) {
       if (typeof descriptions[key] === 'string' && descriptions[key]) {
-        descriptions[key] = stripRemovedOutfitDescriptionFields(descriptions[key]);
+        descriptions[key] = stripRemovedOutfitDescriptionFields(descriptions[key])
       }
     }
   }
-  const metabolism = characterState.profile.metabolism;
+  const metabolism = characterState.profile.metabolism
   if (metabolism && typeof metabolism === 'object' && !Array.isArray(metabolism)) {
     if (metabolism.excretion === undefined && (metabolism.urine !== undefined || metabolism.stool !== undefined)) {
-      metabolism.excretion = sanitizeNumber((Number(metabolism.urine) || 0) + (Number(metabolism.stool) || 0), { min: 0, max: 150 }) ?? 0;
+      metabolism.excretion = sanitizeNumber((Number(metabolism.urine) || 0) + (Number(metabolism.stool) || 0), { min: 0, max: 150 }) ?? 0
     }
-    if (metabolism.companionship === undefined) metabolism.companionship = 0;
-    delete metabolism.urine;
-    delete metabolism.stool;
+    if (metabolism.companionship === undefined) metabolism.companionship = 0
+    delete metabolism.urine
+    delete metabolism.stool
   }
-  const pregnant = characterState.profile.pregnant;
+  const pregnant = characterState.profile.pregnant
   if (pregnant && pregnant.acceleration === undefined) {
-    pregnant.acceleration = null;
+    pregnant.acceleration = null
   }
   if (pregnant && pregnant.expansion === undefined) {
-    pregnant.expansion = null;
+    pregnant.expansion = null
   }
   if (pregnant && pregnant.symptomReliefPending === undefined) {
-    pregnant.symptomReliefPending = characterState.profile.cooldown?.pregnancySymptomActive ? 1 : 0;
+    pregnant.symptomReliefPending = characterState.profile.cooldown?.pregnancySymptomActive ? 1 : 0
   }
-  if (pregnant?.blockage?.key === 'stool') pregnant.blockage.key = 'excretion';
+  if (pregnant?.blockage?.key === 'stool') pregnant.blockage.key = 'excretion'
   if (pregnant?.blockage?.key === 'urine') {
     if (!pregnant.acceleration) {
-      pregnant.acceleration = { ...pregnant.blockage, key: 'excretion' };
+      pregnant.acceleration = { ...pregnant.blockage, key: 'excretion' }
     }
-    pregnant.blockage = null;
+    pregnant.blockage = null
   }
-  if (
-    pregnant?.blockage?.key
-    && pregnant.blockage.key === pregnant.acceleration?.key
-  ) {
-    pregnant.acceleration = null;
+  if (pregnant?.blockage?.key && pregnant.blockage.key === pregnant.acceleration?.key) {
+    pregnant.acceleration = null
   }
-  if (
-    pregnant?.expansion?.key
-    && (pregnant.expansion.key === pregnant.blockage?.key || pregnant.expansion.key === pregnant.acceleration?.key)
-  ) {
-    pregnant.expansion = null;
+  if (pregnant?.expansion?.key && (pregnant.expansion.key === pregnant.blockage?.key || pregnant.expansion.key === pregnant.acceleration?.key)) {
+    pregnant.expansion = null
   }
   if (metabolism && typeof metabolism === 'object' && !Array.isArray(metabolism)) {
-    const expansionKey = String(pregnant?.expansion?.key || '');
+    const expansionKey = String(pregnant?.expansion?.key || '')
     for (const key of ['excretion', 'hunger', 'sleep', 'milk', 'odor', 'companionship']) {
-      if (metabolism[key] === undefined) continue;
-      metabolism[key] = sanitizeNumber(metabolism[key], { min: 0, max: expansionKey === key ? 200 : 150 }) ?? 0;
+      if (metabolism[key] === undefined) continue
+      metabolism[key] = sanitizeNumber(metabolism[key], { min: 0, max: expansionKey === key ? 200 : 150 }) ?? 0
     }
     if (metabolism.flux !== undefined) {
-      const flux = Number(metabolism.flux) || 0;
-      const expandedFlux = (flux > 0 && expansionKey === 'fluxPositive') || (flux < 0 && expansionKey === 'fluxNegative');
-      metabolism.flux = sanitizeNumber(flux, { min: expandedFlux ? -200 : -150, max: expandedFlux ? 200 : 150 }) ?? 0;
+      const flux = Number(metabolism.flux) || 0
+      const expandedFlux = (flux > 0 && expansionKey === 'fluxPositive') || (flux < 0 && expansionKey === 'fluxNegative')
+      metabolism.flux = sanitizeNumber(flux, { min: expandedFlux ? -200 : -150, max: expandedFlux ? 200 : 150 }) ?? 0
     }
   }
   if (characterState.profile.cooldown && typeof characterState.profile.cooldown === 'object') {
-    delete characterState.profile.cooldown.laborResistanceUsed;
-    delete characterState.profile.cooldown.pregnancySymptomActive;
+    delete characterState.profile.cooldown.laborResistanceUsed
+    delete characterState.profile.cooldown.pregnancySymptomActive
   }
-  return characterState;
+  return characterState
 }
-
 function sanitizeObjectPatch(value, allowedFields, sanitizerMap = {}) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const result = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const result = {}
   for (const field of allowedFields) {
-    if (value[field] === undefined) continue;
-    const sanitizer = sanitizerMap[field];
-    const next = sanitizer ? sanitizer(value[field]) : value[field];
-    if (next !== undefined) result[field] = next;
+    if (value[field] === undefined) continue
+    const sanitizer = sanitizerMap[field]
+    const next = sanitizer ? sanitizer(value[field]) : value[field]
+    if (next !== undefined) result[field] = next
   }
-  return Object.keys(result).length > 0 ? result : null;
+  return Object.keys(result).length > 0 ? result : null
 }
-
 function sanitizePregnancyBlockage(value) {
-  if (value === null) return null;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const key = String(value.key || '').trim();
-  if (!key) return null;
+  if (value === null) return null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const key = String(value.key || '').trim()
+  if (!key) return null
   return {
     key,
-    severity: sanitizeNumber(value.severity, { min: 0, max: 0.90 }) ?? 0,
-  };
+    severity: sanitizeNumber(value.severity, { min: 0, max: 0.9 }) ?? 0,
+  }
 }
-
 export function getVitalityInitByLevel(level) {
-  return VITALITY_CAPS[clampLevel(level)] || VITALITY_CAPS[4];
+  return VITALITY_CAPS[clampLevel(level)] || VITALITY_CAPS[4]
 }
-
 export function getPsyStressInitByLevel(level) {
-  return Math.floor((PSY_STRESS_CAPS[clampLevel(level)] || PSY_STRESS_CAPS[4]) / 2);
+  return Math.floor((PSY_STRESS_CAPS[clampLevel(level)] || PSY_STRESS_CAPS[4]) / 2)
 }
-
 function randomInt(min, max) {
-  const nextMin = Math.ceil(min);
-  const nextMax = Math.floor(max);
-  return Math.floor(Math.random() * (nextMax - nextMin + 1)) + nextMin;
+  const nextMin = Math.ceil(min)
+  const nextMax = Math.floor(max)
+  return Math.floor(Math.random() * (nextMax - nextMin + 1)) + nextMin
 }
-
 export function deriveMenstrualStageState() {
-  const stage = MENSTRUAL_STAGES[randomInt(0, MENSTRUAL_STAGES.length - 1)];
-  const days = randomInt(0, MENSTRUAL_STAGE_DAYS[stage]);
-  return { stage, days };
+  const stage = MENSTRUAL_STAGES[randomInt(0, MENSTRUAL_STAGES.length - 1)]
+  const days = randomInt(0, MENSTRUAL_STAGE_DAYS[stage])
+  return { stage, days }
 }
-
 export function derivePregnancyStageState(pregnantDays, gestationSpeed = 1) {
-  const actualPregnantDays = Math.max(0, Number(pregnantDays) || 0);
-  const speed = Math.max(0.1, Number(gestationSpeed) || 1);
-  const stageNames = ['孕早期', '孕中期', '孕晚期', '临产期'];
-  let totalPregnancyDays = 0;
-  for (const stageName of stageNames) totalPregnancyDays += PREGNANCY_STAGE_DAYS[stageName] / speed;
-
+  const actualPregnantDays = Math.max(0, Number(pregnantDays) || 0)
+  const speed = Math.max(0.1, Number(gestationSpeed) || 1)
+  const stageNames = ['孕早期', '孕中期', '孕晚期', '临产期']
+  let totalPregnancyDays = 0
+  for (const stageName of stageNames) totalPregnancyDays += PREGNANCY_STAGE_DAYS[stageName] / speed
   if (actualPregnantDays > totalPregnancyDays) {
     return {
       stage: '逾期',
       days: actualPregnantDays - totalPregnancyDays,
-    };
-  }
-
-  let stage = '孕早期';
-  let baseDays = 0;
-  let currentStageDays = 0;
-  for (const stageName of stageNames) {
-    const stageLimit = PREGNANCY_STAGE_DAYS[stageName] / speed;
-    const nextBaseDays = baseDays + stageLimit;
-    if (actualPregnantDays >= baseDays && actualPregnantDays <= baseDays + stageLimit) {
-      stage = stageName;
-      currentStageDays = actualPregnantDays - baseDays;
-      break;
     }
-    baseDays = nextBaseDays;
   }
-  return { stage, days: currentStageDays };
+  let stage = '孕早期'
+  let baseDays = 0
+  let currentStageDays = 0
+  for (const stageName of stageNames) {
+    const stageLimit = PREGNANCY_STAGE_DAYS[stageName] / speed
+    const nextBaseDays = baseDays + stageLimit
+    if (actualPregnantDays >= baseDays && actualPregnantDays <= baseDays + stageLimit) {
+      stage = stageName
+      currentStageDays = actualPregnantDays - baseDays
+      break
+    }
+    baseDays = nextBaseDays
+  }
+  return { stage, days: currentStageDays }
 }
-
+/**
+ * 妊娠速度语义：
+ *
+ * gestationSpeciesSpeed：
+ * - 种族基础妊娠速度。
+ * - 来源于种族/生理设定。
+ * - 不允许为 0，最小值为 0.1。
+ *
+ * gestationModifierMultiplier：
+ * - 当前妊娠速度动态倍率。
+ * - 允许为 0。
+ * - 0 表示冻结有效妊娠发育进度，而不是停止现实时间或整个妊娠状态。
+ *
+ * gestationEffectiveSpeed：
+ * - 最终有效妊娠速度。
+ * - 通常由 gestationSpeciesSpeed × gestationModifierMultiplier 得到。
+ * - 允许为 0；0 表示当前有效妊娠发育处于冻结状态。
+ *
+ * 注意：
+ * 不同于 gestationModifierMultiplier，gestationEffectiveSpeed
+ * 是计算结果/兼容旧状态的字段，不应被视为独立的第三套妊娠速度规则。
+ */
 export function getGestationSpeciesSpeed(profile) {
-  const baseSpeed = Number(profile?.bio?.gestationSpeciesSpeed);
-  if (Number.isFinite(baseSpeed) && baseSpeed > 0) return Math.max(0.1, Math.min(20, baseSpeed));
-  return 1;
+  const baseSpeed = Number(profile?.bio?.gestationSpeciesSpeed)
+  if (Number.isFinite(baseSpeed) && baseSpeed > 0) return Math.max(0.1, Math.min(20, baseSpeed))
+  return 1
 }
-
 export function getGestationModifierMultiplier(profile) {
-  const multiplier = Number(profile?.bio?.gestationModifierMultiplier);
-  if (Number.isFinite(multiplier) && multiplier >= 0) return Math.max(0, Math.min(20, multiplier));
-  return 1;
+  const multiplier = Number(profile?.bio?.gestationModifierMultiplier)
+  if (Number.isFinite(multiplier) && multiplier >= 0) return Math.max(0, Math.min(20, multiplier))
+  return 1
 }
-
 export function getGestationEffectiveSpeed(profile) {
-  const hasSpeciesSpeed = Number.isFinite(Number(profile?.bio?.gestationSpeciesSpeed));
-  const hasModifierMultiplier = Number.isFinite(Number(profile?.bio?.gestationModifierMultiplier));
+  const hasSpeciesSpeed = Number.isFinite(Number(profile?.bio?.gestationSpeciesSpeed))
+  const hasModifierMultiplier = Number.isFinite(Number(profile?.bio?.gestationModifierMultiplier))
   if (hasSpeciesSpeed || hasModifierMultiplier) {
-    return Math.max(0, Math.min(20, getGestationSpeciesSpeed(profile) * getGestationModifierMultiplier(profile)));
+    return Math.max(0, Math.min(20, getGestationSpeciesSpeed(profile) * getGestationModifierMultiplier(profile)))
   }
-  const effectiveSpeed = Number(profile?.bio?.gestationEffectiveSpeed);
-  if (Number.isFinite(effectiveSpeed) && effectiveSpeed >= 0) return Math.max(0, Math.min(20, effectiveSpeed));
-  return 1;
+  const effectiveSpeed = Number(profile?.bio?.gestationEffectiveSpeed)
+  if (Number.isFinite(effectiveSpeed) && effectiveSpeed >= 0) return Math.max(0, Math.min(20, effectiveSpeed))
+  return 1
 }
-
 export function syncCharacterStageFromProfile(characterState) {
-  const next = characterState;
-  const profile = next?.profile || {};
-  const base = profile.base || {};
-  const pregnant = profile.pregnant || {};
-  const bio = profile.bio || {};
-  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  const currentStage = String(base.stage || '');
-
+  const next = characterState
+  const profile = next?.profile || {}
+  const base = profile.base || {}
+  const pregnant = profile.pregnant || {}
+  const bio = profile.bio || {}
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []
+  const currentStage = String(base.stage || '')
   if (fetuses.length > 0) {
-    const pregnantDays = Math.max(0, Number(pregnant.pregnantDays) || 0);
-    const effectivePregnantDays = Math.max(0, Number(pregnant.effectivePregnantDays) || 0);
+    const pregnantDays = Math.max(0, Number(pregnant.pregnantDays) || 0)
+    const effectivePregnantDays = Math.max(0, Number(pregnant.effectivePregnantDays) || 0)
     // 刚移入／刚受精时 fertilizationDays 可以正好是 0；只要产科孕日仍为 0，就尚未着床。
     if (pregnantDays <= 0 && effectivePregnantDays <= 0) {
-      const fallbackStage = PREGNANCY_STAGES.includes(currentStage) ? '排卵期' : currentStage;
+      const fallbackStage = PREGNANCY_STAGES.includes(currentStage) ? '排卵期' : currentStage
       next.profile.base = {
         ...base,
         stage: fallbackStage || '排卵期',
         days: Math.max(0, Number(base.days) || 0),
-      };
-      return next;
+      }
+      return next
     }
-
     if (currentStage === '产兆前驱' || LABOR_STAGES.includes(currentStage)) {
       next.profile.base = {
         ...base,
         days: Math.max(0, Number(base.days) || 0),
-      };
-      return next;
+      }
+      return next
     }
-
-    const derived = derivePregnancyStageState(pregnant.effectivePregnantDays, 1);
+    const derived = derivePregnancyStageState(pregnant.effectivePregnantDays, 1)
     next.profile.base = {
       ...base,
       stage: derived.stage,
       days: derived.days,
-    };
-    return next;
+    }
+    return next
   }
-
   if (
-    MENSTRUAL_STAGES.includes(currentStage)
-    || currentStage === '假孕期'
-    || currentStage === '产兆前驱'
-    || currentStage === '产后恢复'
-    || LABOR_STAGES.includes(currentStage)
-    || currentStage === '无经期'
-    || currentStage === '未激活'
+    MENSTRUAL_STAGES.includes(currentStage) ||
+    currentStage === '假孕期' ||
+    currentStage === '产兆前驱' ||
+    currentStage === '产后恢复' ||
+    LABOR_STAGES.includes(currentStage) ||
+    currentStage === '无经期' ||
+    currentStage === '未激活'
   ) {
     next.profile.base = {
       ...base,
       days: Math.max(0, Number(base.days) || 0),
-    };
-    return next;
+    }
+    return next
   }
-
-  const derived = deriveMenstrualStageState();
+  const derived = deriveMenstrualStageState()
   next.profile.base = {
     ...base,
     stage: derived.stage,
     days: derived.days,
-  };
-  return next;
+  }
+  return next
 }
-
 export function getContextSafe() {
-  return getHostContext();
+  return getHostContext()
 }
-
 export function cloneValue(value) {
-  if (typeof globalThis.structuredClone === 'function') return globalThis.structuredClone(value);
-  return JSON.parse(JSON.stringify(value));
+  if (typeof globalThis.structuredClone === 'function') return globalThis.structuredClone(value)
+  return JSON.parse(JSON.stringify(value))
 }
-
 function isPlainObject(value) {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
-
 function createSnapshotDeleteSentinel() {
-  return { [SNAPSHOT_DELETE_SENTINEL_KEY]: true };
+  return { [SNAPSHOT_DELETE_SENTINEL_KEY]: true }
 }
-
 function isSnapshotDeleteSentinel(value) {
-  return isPlainObject(value) && value[SNAPSHOT_DELETE_SENTINEL_KEY] === true;
+  return isPlainObject(value) && value[SNAPSHOT_DELETE_SENTINEL_KEY] === true
 }
-
 function createSnapshotArrayAppendPatch(previousList, nextList) {
-  if (!Array.isArray(previousList) || !Array.isArray(nextList)) return null;
-  if (nextList.length <= previousList.length) return null;
+  if (!Array.isArray(previousList) || !Array.isArray(nextList)) return null
+  if (nextList.length <= previousList.length) return null
   for (let index = 0; index < previousList.length; index += 1) {
-    if (!areSnapshotArrayItemsEqual(previousList[index], nextList[index])) return null;
+    if (!areSnapshotArrayItemsEqual(previousList[index], nextList[index])) return null
   }
   return {
     [SNAPSHOT_ARRAY_APPEND_KEY]: true,
     length: previousList.length,
     items: cloneValue(nextList.slice(previousList.length)),
-  };
-}
-
-function isSnapshotArrayAppendPatch(value) {
-  return isPlainObject(value)
-    && value[SNAPSHOT_ARRAY_APPEND_KEY] === true
-    && Number.isInteger(value.length)
-    && Array.isArray(value.items);
-}
-
-function applySnapshotArrayAppendPatch(previousValue, patch) {
-  const base = Array.isArray(previousValue) ? cloneValue(previousValue).slice(0, Math.max(0, patch.length)) : [];
-  return base.concat(cloneValue(patch.items));
-}
-
-function areSnapshotArrayItemsEqual(left, right) {
-  if (left === right) return true;
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function areSnapshotArraysEqual(left, right) {
-  if (!Array.isArray(left) || !Array.isArray(right)) return false;
-  if (left.length !== right.length) return false;
-  for (let index = 0; index < left.length; index += 1) {
-    if (!areSnapshotArrayItemsEqual(left[index], right[index])) return false;
   }
-  return true;
 }
-
+function isSnapshotArrayAppendPatch(value) {
+  return isPlainObject(value) && value[SNAPSHOT_ARRAY_APPEND_KEY] === true && Number.isInteger(value.length) && Array.isArray(value.items)
+}
+function applySnapshotArrayAppendPatch(previousValue, patch) {
+  const base = Array.isArray(previousValue) ? cloneValue(previousValue).slice(0, Math.max(0, patch.length)) : []
+  return base.concat(cloneValue(patch.items))
+}
+function areSnapshotArrayItemsEqual(left, right) {
+  if (left === right) return true
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+function areSnapshotArraysEqual(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    if (!areSnapshotArrayItemsEqual(left[index], right[index])) return false
+  }
+  return true
+}
 function sanitizeSpermList(value) {
-  if (!Array.isArray(value)) return null;
+  if (!Array.isArray(value)) return null
   const result = value
-    .filter((item) => item && typeof item === 'object')
-    .map((item) => {
+    .filter(item => item && typeof item === 'object')
+    .map(item => {
       const next = {
         male: sanitizeString(item.male) ?? null,
         race: sanitizeString(item.race) ?? null,
         derivedType: sanitizeString(item.derivedType) ?? null,
         value: sanitizeInteger(item.value, { min: 0, max: 9999 }) ?? 0,
-      };
-      return next;
-    });
-  return result;
-}
-
-function sanitizeConceptionCandidateList(value) {
-  if (!Array.isArray(value)) return null;
-  const seen = new Set();
-  const result = [];
-  for (const item of value) {
-    if (!item || typeof item !== 'object') continue;
-    const male = sanitizeString(item.male);
-    const race = sanitizeString(item.race);
-    const derivedType = sanitizeString(item.derivedType);
-    const competitionWeight = sanitizeNumber(item.competitionWeight, { min: 0, max: 9999 });
-    if (!male || !race || competitionWeight === null || competitionWeight <= 0 || seen.has(male)) continue;
-    seen.add(male);
-    result.push({ male, race, derivedType: derivedType ?? null, competitionWeight });
-  }
-  return result;
-}
-
-function sanitizeFetusList(value) {
-  if (!Array.isArray(value)) return null;
-  return value
-    .filter((item) => item && typeof item === 'object')
-    .map((item) => {
-      const fetus = {};
-      const stringFields = ['fathers', 'provider', 'race', 'fatherRace', 'gender', 'embryoType', 'fatherDerivedType'];
-      for (const field of stringFields) {
-        const next = sanitizeString(item[field]);
-        if (next !== undefined) fetus[field] = next;
       }
-      const embryoId = sanitizeInteger(item.embryoId, { min: 1, max: 999999 });
-      if (embryoId !== null) fetus.embryoId = embryoId;
+      return next
+    })
+  return result
+}
+function sanitizeConceptionCandidateList(value) {
+  if (!Array.isArray(value)) return null
+  const seen = new Set()
+  const result = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const male = sanitizeString(item.male)
+    const race = sanitizeString(item.race)
+    const derivedType = sanitizeString(item.derivedType)
+    const competitionWeight = sanitizeNumber(item.competitionWeight, { min: 0, max: 9999 })
+    if (!male || !race || competitionWeight === null || competitionWeight <= 0 || seen.has(male)) continue
+    seen.add(male)
+    result.push({ male, race, derivedType: derivedType ?? null, competitionWeight })
+  }
+  return result
+}
+function sanitizeFetusList(value) {
+  if (!Array.isArray(value)) return null
+  return value
+    .filter(item => item && typeof item === 'object')
+    .map(item => {
+      const fetus = {}
+      const stringFields = ['fathers', 'provider', 'race', 'fatherRace', 'gender', 'embryoType', 'fatherDerivedType']
+      for (const field of stringFields) {
+        const next = sanitizeString(item[field])
+        if (next !== undefined) fetus[field] = next
+      }
+      const embryoId = sanitizeInteger(item.embryoId, { min: 1, max: 999999 })
+      if (embryoId !== null) fetus.embryoId = embryoId
       fetus.fusionCheckedWith = Array.isArray(item.fusionCheckedWith)
-        ? [...new Set(item.fusionCheckedWith
-          .map((value) => sanitizeInteger(value, { min: 1, max: 999999 }))
-          .filter((value) => value !== null))]
-        : [];
-      fetus.providerSources = Array.isArray(item.providerSources)
-        ? [...new Set(item.providerSources.map(sanitizeString).filter(Boolean))]
-        : [];
+        ? [...new Set(item.fusionCheckedWith.map(value => sanitizeInteger(value, { min: 1, max: 999999 })).filter(value => value !== null))]
+        : []
+      fetus.providerSources = Array.isArray(item.providerSources) ? [...new Set(item.providerSources.map(sanitizeString).filter(Boolean))] : []
       if (item.chimera && typeof item.chimera === 'object' && !Array.isArray(item.chimera)) {
         fetus.chimera = {
           sourceCount: sanitizeInteger(item.chimera.sourceCount, { min: 2, max: 50 }) ?? 2,
@@ -703,53 +672,47 @@ function sanitizeFetusList(value) {
           maternalSources: Array.isArray(item.chimera.maternalSources)
             ? [...new Set(item.chimera.maternalSources.map(sanitizeString).filter(Boolean))]
             : [],
-          genderSources: Array.isArray(item.chimera.genderSources)
-            ? item.chimera.genderSources.map(sanitizeString).filter(Boolean)
-            : [],
-        };
+          genderSources: Array.isArray(item.chimera.genderSources) ? item.chimera.genderSources.map(sanitizeString).filter(Boolean) : [],
+        }
       }
       const numberFields = {
         weight: { min: 0.33, max: 3.0 },
         tendencyAngle: { min: 0, max: 360 },
         affinity: { min: -50, max: 50 },
         maternalDerivedTypeProgress: { min: -100, max: 100 },
-      };
-      for (const [field, rule] of Object.entries(numberFields)) {
-        if (item[field] === undefined) continue;
-        const next = sanitizeNumber(item[field], rule);
-        if (next !== null) fetus[field] = next;
       }
-      fetus.talents = normalizeTalentList(item.talents ?? item.inheritedTalents);
-      return fetus;
-    });
+      for (const [field, rule] of Object.entries(numberFields)) {
+        if (item[field] === undefined) continue
+        const next = sanitizeNumber(item[field], rule)
+        if (next !== null) fetus[field] = next
+      }
+      fetus.talents = normalizeTalentList(item.talents ?? item.inheritedTalents)
+      return fetus
+    })
 }
-
 function sanitizeChildrenList(value) {
-  if (!Array.isArray(value)) return null;
+  if (!Array.isArray(value)) return null
   return value
-    .filter((item) => item && typeof item === 'object')
-    .map((item) => ({
+    .filter(item => item && typeof item === 'object')
+    .map(item => ({
       name: sanitizeString(item.name) ?? null,
       fathers: sanitizeString(item.fathers) ?? null,
       // 代孕／寄生的归属标记；沿用 fetus 的同名语义
       provider: sanitizeString(item.provider) ?? null,
-      providerSources: Array.isArray(item.providerSources)
-        ? [...new Set(item.providerSources.map(sanitizeString).filter(Boolean))]
-        : [],
-      chimera: item.chimera && typeof item.chimera === 'object' && !Array.isArray(item.chimera)
-        ? {
-          sourceCount: sanitizeInteger(item.chimera.sourceCount, { min: 2, max: 50 }) ?? 2,
-          fatherSources: Array.isArray(item.chimera.fatherSources)
-            ? [...new Set(item.chimera.fatherSources.map(sanitizeString).filter(Boolean))]
-            : [],
-          maternalSources: Array.isArray(item.chimera.maternalSources)
-            ? [...new Set(item.chimera.maternalSources.map(sanitizeString).filter(Boolean))]
-            : [],
-          genderSources: Array.isArray(item.chimera.genderSources)
-            ? item.chimera.genderSources.map(sanitizeString).filter(Boolean)
-            : [],
-        }
-        : null,
+      providerSources: Array.isArray(item.providerSources) ? [...new Set(item.providerSources.map(sanitizeString).filter(Boolean))] : [],
+      chimera:
+        item.chimera && typeof item.chimera === 'object' && !Array.isArray(item.chimera)
+          ? {
+              sourceCount: sanitizeInteger(item.chimera.sourceCount, { min: 2, max: 50 }) ?? 2,
+              fatherSources: Array.isArray(item.chimera.fatherSources)
+                ? [...new Set(item.chimera.fatherSources.map(sanitizeString).filter(Boolean))]
+                : [],
+              maternalSources: Array.isArray(item.chimera.maternalSources)
+                ? [...new Set(item.chimera.maternalSources.map(sanitizeString).filter(Boolean))]
+                : [],
+              genderSources: Array.isArray(item.chimera.genderSources) ? item.chimera.genderSources.map(sanitizeString).filter(Boolean) : [],
+            }
+          : null,
       gender: sanitizeString(item.gender) ?? null,
       race: sanitizeString(item.race) ?? null,
       derivedType: sanitizeString(item.derivedType) ?? null,
@@ -758,19 +721,29 @@ function sanitizeChildrenList(value) {
       birthAffinity: sanitizeNumber(item.birthAffinity, { min: -50, max: 50 }) ?? null,
       registeredAs: sanitizeString(item.registeredAs) ?? null,
       talents: normalizeTalentList(item.talents ?? item.inheritedTalents),
-    }));
+    }))
 }
-
 function sanitizeProfilePatch(profilePatch) {
-  if (!profilePatch || typeof profilePatch !== 'object' || Array.isArray(profilePatch)) return null;
-  const cooldown = sanitizeObjectPatch(profilePatch.cooldown, ['orgasmOvulationUsed', 'naturalOvulationUsed', 'naturalConceptionResolved', 'pregnancyPressureWarning', 'psychologyUpdateUsed', 'maternalFetalInteractionUsed'], {
-    orgasmOvulationUsed: (value) => Boolean(value),
-    naturalOvulationUsed: (value) => Boolean(value),
-    naturalConceptionResolved: (value) => Boolean(value),
-    pregnancyPressureWarning: (value) => Boolean(value),
-    psychologyUpdateUsed: (value) => Boolean(value),
-    maternalFetalInteractionUsed: (value) => Boolean(value),
-  });
+  if (!profilePatch || typeof profilePatch !== 'object' || Array.isArray(profilePatch)) return null
+  const cooldown = sanitizeObjectPatch(
+    profilePatch.cooldown,
+    [
+      'orgasmOvulationUsed',
+      'naturalOvulationUsed',
+      'naturalConceptionResolved',
+      'pregnancyPressureWarning',
+      'psychologyUpdateUsed',
+      'maternalFetalInteractionUsed',
+    ],
+    {
+      orgasmOvulationUsed: value => Boolean(value),
+      naturalOvulationUsed: value => Boolean(value),
+      naturalConceptionResolved: value => Boolean(value),
+      pregnancyPressureWarning: value => Boolean(value),
+      psychologyUpdateUsed: value => Boolean(value),
+      maternalFetalInteractionUsed: value => Boolean(value),
+    },
+  )
   const base = sanitizeObjectPatch(
     profilePatch.base,
     [
@@ -793,49 +766,68 @@ function sanitizeProfilePatch(profilePatch) {
       'psyStressLevel',
     ],
     {
-      isHere: (value) => Boolean(value),
-      days: (value) => sanitizeNumber(value, { min: 0, max: 9999 }),
-      fertilizationDays: (value) => sanitizeNumber(value, { min: 0, max: 9999 }),
-      latestSexDays: (value) => sanitizeInteger(value, { min: -1, max: 9999 }),
-      age: (value) => sanitizeNumber(value, { min: 0, max: 9999 }),
+      isHere: value => Boolean(value),
+      days: value => sanitizeNumber(value, { min: 0, max: 9999 }),
+      fertilizationDays: value => sanitizeNumber(value, { min: 0, max: 9999 }),
+      latestSexDays: value => sanitizeInteger(value, { min: -1, max: 9999 }),
+      age: value => sanitizeNumber(value, { min: 0, max: 9999 }),
       stage: sanitizeString,
       race: sanitizeString,
       derivedType: sanitizeString,
       sperms: sanitizeSpermList,
       conceptionCandidates: sanitizeConceptionCandidateList,
-      eggs: (value) => sanitizeInteger(value, { min: 0, max: 999 }),
-      libido: (value) => sanitizeInteger(value, { min: 0, max: 150 }),
-      uterinePressure: (value) => sanitizeInteger(value, { min: 0, max: 150 }),
-      vitality: (value) => sanitizeInteger(value, { min: 0, max: 200 }),
-      psyStress: (value) => sanitizeInteger(value, { min: 0, max: 200 }),
-      vitalityLevel: (value) => clampLevel(value),
-      psyStressLevel: (value) => clampLevel(value),
+      eggs: value => sanitizeInteger(value, { min: 0, max: 999 }),
+      libido: value => sanitizeInteger(value, { min: 0, max: 150 }),
+      uterinePressure: value => sanitizeInteger(value, { min: 0, max: 150 }),
+      vitality: value => sanitizeInteger(value, { min: 0, max: 200 }),
+      psyStress: value => sanitizeInteger(value, { min: 0, max: 200 }),
+      vitalityLevel: value => clampLevel(value),
+      psyStressLevel: value => clampLevel(value),
     },
-  );
+  )
   const pregnant = sanitizeObjectPatch(
     profilePatch.pregnant,
-    ['pregnantDays', 'effectivePregnantDays', 'laborHours', 'effectiveLaborHours', 'laborPhase', 'laborFetusIndex', 'laborPain', 'prodromalOriginStage', 'prodromalRemainingHours', 'prodromalDelayProgressHours', 'fetusesCount', 'fetalEnergyDrain', 'nutrition', 'symptomReliefPending', 'blockage', 'acceleration', 'expansion', 'fetuses'],
+    [
+      'pregnantDays',
+      'effectivePregnantDays',
+      'laborHours',
+      'effectiveLaborHours',
+      'laborPhase',
+      'laborFetusIndex',
+      'laborPain',
+      'prodromalOriginStage',
+      'prodromalRemainingHours',
+      'prodromalDelayProgressHours',
+      'fetusesCount',
+      'fetalEnergyDrain',
+      'nutrition',
+      'symptomReliefPending',
+      'blockage',
+      'acceleration',
+      'expansion',
+      'fetuses',
+    ],
     {
-      pregnantDays: (value) => sanitizeNumber(value, { min: 0, max: 9999 }),
-      effectivePregnantDays: (value) => sanitizeNumber(value, { min: 0, max: 9999 }),
-      laborHours: (value) => sanitizeNumber(value, { min: 0, max: 9999 }),
-      effectiveLaborHours: (value) => sanitizeNumber(value, { min: 0, max: 9999 }),
+      pregnantDays: value => sanitizeNumber(value, { min: 0, max: 9999 }),
+      effectivePregnantDays: value => sanitizeNumber(value, { min: 0, max: 9999 }),
+      laborHours: value => sanitizeNumber(value, { min: 0, max: 9999 }),
+      effectiveLaborHours: value => sanitizeNumber(value, { min: 0, max: 9999 }),
       laborPhase: sanitizeString,
-      laborFetusIndex: (value) => sanitizeInteger(value, { min: 0, max: 99 }),
-      laborPain: (value) => sanitizeNumber(value, { min: 0, max: 10 }),
+      laborFetusIndex: value => sanitizeInteger(value, { min: 0, max: 99 }),
+      laborPain: value => sanitizeNumber(value, { min: 0, max: 10 }),
       prodromalOriginStage: sanitizeString,
-      prodromalRemainingHours: (value) => sanitizeNumber(value, { min: 0, max: 9999 }),
-      prodromalDelayProgressHours: (value) => sanitizeNumber(value, { min: 0, max: 9999 }),
-      fetusesCount: (value) => sanitizeInteger(value, { min: 0, max: 99 }),
-      fetalEnergyDrain: (value) => sanitizeNumber(value, { min: 0, max: 9999 }),
-      nutrition: (value) => sanitizeNumber(value, { min: -999, max: 999 }),
-      symptomReliefPending: (value) => sanitizeInteger(value, { min: 0, max: 999 }),
+      prodromalRemainingHours: value => sanitizeNumber(value, { min: 0, max: 9999 }),
+      prodromalDelayProgressHours: value => sanitizeNumber(value, { min: 0, max: 9999 }),
+      fetusesCount: value => sanitizeInteger(value, { min: 0, max: 99 }),
+      fetalEnergyDrain: value => sanitizeNumber(value, { min: 0, max: 9999 }),
+      nutrition: value => sanitizeNumber(value, { min: -999, max: 999 }),
+      symptomReliefPending: value => sanitizeInteger(value, { min: 0, max: 999 }),
       blockage: sanitizePregnancyBlockage,
       acceleration: sanitizePregnancyBlockage,
       expansion: sanitizePregnancyBlockage,
       fetuses: sanitizeFetusList,
     },
-  );
+  )
   const experience = sanitizeObjectPatch(
     profilePatch.experience,
     [
@@ -853,16 +845,16 @@ function sanitizeProfilePatch(profilePatch) {
       latestSexPartner: sanitizeString,
       emotionalMate: sanitizeString,
       marriageMate: sanitizeString,
-      pregnantExperience: (value) => sanitizeInteger(value, { min: 0, max: 999 }),
-      naturalBirthExperience: (value) => sanitizeInteger(value, { min: 0, max: 999 }),
-      surgicalBirthExperience: (value) => sanitizeInteger(value, { min: 0, max: 999 }),
-      miscarriageExperience: (value) => sanitizeInteger(value, { min: 0, max: 999 }),
+      pregnantExperience: value => sanitizeInteger(value, { min: 0, max: 999 }),
+      naturalBirthExperience: value => sanitizeInteger(value, { min: 0, max: 999 }),
+      surgicalBirthExperience: value => sanitizeInteger(value, { min: 0, max: 999 }),
+      miscarriageExperience: value => sanitizeInteger(value, { min: 0, max: 999 }),
     },
-  );
-  const children = sanitizeChildrenList(profilePatch.children);
-  const skills = normalizeSkillList(profilePatch.skills);
-  const talents = normalizeTalentList(profilePatch.talents);
-  const skillHistory = normalizeSkillHistory(profilePatch.skillHistory);
+  )
+  const children = sanitizeChildrenList(profilePatch.children)
+  const skills = normalizeSkillList(profilePatch.skills)
+  const talents = normalizeTalentList(profilePatch.talents)
+  const skillHistory = normalizeSkillHistory(profilePatch.skillHistory)
   const bio = sanitizeObjectPatch(
     profilePatch.bio,
     [
@@ -880,78 +872,77 @@ function sanitizeProfilePatch(profilePatch) {
       'recoveryDays',
     ],
     {
-      menstrualLengthRatio: (value) => sanitizeNumber(value, { min: 0.1, max: 20 }),
-      gestationSpeciesSpeed: (value) => sanitizeNumber(value, { min: 0.1, max: 20 }),
-      gestationEffectiveSpeed: (value) => sanitizeNumber(value, { min: 0.1, max: 20 }),
-      gestationModifierMultiplier: (value) => sanitizeNumber(value, { min: 0, max: 20 }),
+      menstrualLengthRatio: value => sanitizeNumber(value, { min: 0.1, max: 20 }),
+      gestationSpeciesSpeed: value => sanitizeNumber(value, { min: 0.1, max: 20 }),
+      gestationEffectiveSpeed: value => sanitizeNumber(value, { min: 0.1, max: 20 }),
+      gestationModifierMultiplier: value => sanitizeNumber(value, { min: 0, max: 20 }),
       gestationModifierName: sanitizeString,
       gestationModifierDescription: sanitizeString,
-      birthDifficulty: (value) => sanitizeNumber(value, { min: 0, max: 100 }),
-      breedTolerance: (value) => sanitizeNumber(value, { min: 0, max: 100 }),
-      impregnationDifficulty: (value) => sanitizeNumber(value, { min: 0, max: 100 }),
-      orgasmOvulationAmount: (value) => sanitizeInteger(value, { min: 0, max: 100 }),
-      identicalProbability: (value) => sanitizeNumber(value, { min: 0, max: 100 }),
-      recoveryDays: (value) => sanitizeInteger(value, { min: 0, max: 9999 }),
+      birthDifficulty: value => sanitizeNumber(value, { min: 0, max: 100 }),
+      breedTolerance: value => sanitizeNumber(value, { min: 0, max: 100 }),
+      impregnationDifficulty: value => sanitizeNumber(value, { min: 0, max: 100 }),
+      orgasmOvulationAmount: value => sanitizeInteger(value, { min: 0, max: 100 }),
+      identicalProbability: value => sanitizeNumber(value, { min: 0, max: 100 }),
+      recoveryDays: value => sanitizeInteger(value, { min: 0, max: 9999 }),
     },
-  );
+  )
   const mens = normalizePsychologyGroup(profilePatch.psychology?.mens, PSY_MENS_FIELDS, {
     includeDefaults: false,
     booleanFields: PSY_MENS_BOOL_FIELDS,
-  });
+  })
   const pregPsy = normalizePsychologyGroup(profilePatch.psychology?.preg, PSY_PREG_FIELDS, {
     includeDefaults: false,
     booleanFields: PSY_PREG_BOOL_FIELDS,
-  });
+  })
   const metabolism = sanitizeObjectPatch(profilePatch.metabolism, ['excretion', 'hunger', 'sleep', 'flux', 'milk', 'odor', 'companionship'], {
-    excretion: (value) => sanitizeInteger(value, { min: 0, max: 200 }),
-    hunger: (value) => sanitizeInteger(value, { min: 0, max: 200 }),
-    sleep: (value) => sanitizeInteger(value, { min: 0, max: 200 }),
-    flux: (value) => sanitizeInteger(value, { min: -200, max: 200 }),
-    milk: (value) => sanitizeInteger(value, { min: 0, max: 200 }),
-    odor: (value) => sanitizeInteger(value, { min: 0, max: 200 }),
-    companionship: (value) => sanitizeInteger(value, { min: 0, max: 200 }),
-  });
+    excretion: value => sanitizeInteger(value, { min: 0, max: 200 }),
+    hunger: value => sanitizeInteger(value, { min: 0, max: 200 }),
+    sleep: value => sanitizeInteger(value, { min: 0, max: 200 }),
+    flux: value => sanitizeInteger(value, { min: -200, max: 200 }),
+    milk: value => sanitizeInteger(value, { min: 0, max: 200 }),
+    odor: value => sanitizeInteger(value, { min: 0, max: 200 }),
+    companionship: value => sanitizeInteger(value, { min: 0, max: 200 }),
+  })
   const descriptions = sanitizeObjectPatch(profilePatch.descriptions, ['normalDescription', 'pregnantDescription'], {
     normalDescription: sanitizeString,
     pregnantDescription: sanitizeString,
-  });
+  })
   const notify = sanitizeObjectPatch(profilePatch.notify, ['firstly', 'secondly', 'thirdly'], {
     firstly: sanitizeString,
     secondly: sanitizeString,
     thirdly: sanitizeString,
-  });
+  })
   const immune = sanitizeObjectPatch(profilePatch.immune, ['metabolism', 'miscarriage', 'realisticLabor'], {
-    metabolism: (value) => Boolean(value),
-    miscarriage: (value) => Boolean(value),
-    realisticLabor: (value) => Boolean(value),
-  });
-  const result = {};
-  if (cooldown) result.cooldown = cooldown;
-  if (base) result.base = base;
+    metabolism: value => Boolean(value),
+    miscarriage: value => Boolean(value),
+    realisticLabor: value => Boolean(value),
+  })
+  const result = {}
+  if (cooldown) result.cooldown = cooldown
+  if (base) result.base = base
   if (pregnant) {
-    if (pregnant.fetuses && pregnant.fetusesCount === undefined) pregnant.fetusesCount = pregnant.fetuses.length;
-    result.pregnant = pregnant;
+    if (pregnant.fetuses && pregnant.fetusesCount === undefined) pregnant.fetusesCount = pregnant.fetuses.length
+    result.pregnant = pregnant
   }
-  if (experience) result.experience = experience;
-  if (children) result.children = children;
-  if (profilePatch.skills !== undefined) result.skills = skills;
-  if (profilePatch.talents !== undefined) result.talents = talents;
-  if (profilePatch.skillHistory !== undefined) result.skillHistory = skillHistory;
-  if (bio) result.bio = bio;
-  if (mens || pregPsy) result.psychology = {};
-  if (mens) result.psychology.mens = mens;
-  if (pregPsy) result.psychology.preg = pregPsy;
-  if (metabolism) result.metabolism = metabolism;
-  if (profilePatch.wardrobe) result.wardrobe = normalizeWardrobeState(profilePatch.wardrobe);
+  if (experience) result.experience = experience
+  if (children) result.children = children
+  if (profilePatch.skills !== undefined) result.skills = skills
+  if (profilePatch.talents !== undefined) result.talents = talents
+  if (profilePatch.skillHistory !== undefined) result.skillHistory = skillHistory
+  if (bio) result.bio = bio
+  if (mens || pregPsy) result.psychology = {}
+  if (mens) result.psychology.mens = mens
+  if (pregPsy) result.psychology.preg = pregPsy
+  if (metabolism) result.metabolism = metabolism
+  if (profilePatch.wardrobe) result.wardrobe = normalizeWardrobeState(profilePatch.wardrobe)
   if (profilePatch.outfit && (result.wardrobe?.enabled || profilePatch.wardrobe?.enabled)) {
-    result.outfit = normalizeOutfitState(profilePatch.outfit, result.wardrobe || profilePatch.wardrobe);
+    result.outfit = normalizeOutfitState(profilePatch.outfit, result.wardrobe || profilePatch.wardrobe)
   }
-  if (descriptions) result.descriptions = descriptions;
-  if (notify) result.notify = notify;
-  if (immune) result.immune = immune;
-  return Object.keys(result).length > 0 ? result : null;
+  if (descriptions) result.descriptions = descriptions
+  if (notify) result.notify = notify
+  if (immune) result.immune = immune
+  return Object.keys(result).length > 0 ? result : null
 }
-
 export function createEmptyChatState() {
   return {
     lastAttemptedSignature: '',
@@ -970,12 +961,11 @@ export function createEmptyChatState() {
     lastRawResult: null,
     lastOperationLogs: [],
     snapshots: [],
-  };
+  }
 }
-
 export function createDefaultFemaleState(name = '') {
-  const vitalityLevel = 4;
-  const psyStressLevel = 4;
+  const vitalityLevel = 4
+  const psyStressLevel = 4
   const character = {
     name: String(name || '').trim(),
     initialized: false,
@@ -1086,289 +1076,289 @@ export function createDefaultFemaleState(name = '') {
         realisticLabor: false,
       },
     },
-  };
-  return syncCharacterStageFromProfile(normalizeCharacterPsychologyState(character));
-}
-
-export function getSettings(ctx) {
-  const root = getHostExtensionSettings(ctx);
-  if (!root) throw new Error('[BS BioTracker] host extension settings are unavailable');
-  let shouldSave = false;
-  if (!root[MODULE_NAME]) root[MODULE_NAME] = cloneValue(DEFAULT_SETTINGS);
-  const settings = root[MODULE_NAME];
-  const normalizedHistoryRegexRules = normalizeHistoryRegexRules(settings.historyRegexRules);
-  if (JSON.stringify(normalizedHistoryRegexRules) !== JSON.stringify(settings.historyRegexRules)) {
-    settings.historyRegexRules = normalizedHistoryRegexRules;
-    shouldSave = true;
   }
-  settings.memorySource = normalizeMemorySource(settings.memorySource);
-  settings.animaRecallCount = Math.max(1, Math.min(50, Math.floor(Number(settings.animaRecallCount) || 20)));
-  const useHostChatStore = ['tauritavern', 'luker'].includes(getHostKind());
+  return syncCharacterStageFromProfile(normalizeCharacterPsychologyState(character))
+}
+export function getSettings(ctx) {
+  const root = getHostExtensionSettings(ctx)
+  if (!root) throw new Error('[BS BioTracker] host extension settings are unavailable')
+  let shouldSave = false
+  if (!root[MODULE_NAME]) root[MODULE_NAME] = cloneValue(DEFAULT_SETTINGS)
+  const settings = root[MODULE_NAME]
+  const normalizedHistoryRegexRules = normalizeHistoryRegexRules(settings.historyRegexRules)
+  if (JSON.stringify(normalizedHistoryRegexRules) !== JSON.stringify(settings.historyRegexRules)) {
+    settings.historyRegexRules = normalizedHistoryRegexRules
+    shouldSave = true
+  }
+  settings.memorySource = normalizeMemorySource(settings.memorySource)
+  settings.animaRecallCount = Math.max(1, Math.min(50, Math.floor(Number(settings.animaRecallCount) || 20)))
+  const useHostChatStore = ['tauritavern', 'luker'].includes(getHostKind())
   if (useHostChatStore) {
     // TT/Luker 下 chatStates 与宿主 sidecar 绑定，属性描述符可能特殊（旧数据/宿主注入）。
     // 重定义失败不该拖垮整个设置读取——否则连主题切换这种纯 UI 操作都会「点了没反应」。
     try {
-      const descriptor = Object.getOwnPropertyDescriptor(settings, 'chatStates');
-      const runtimeChatStates = descriptor && descriptor.enumerable === false && settings.chatStates && typeof settings.chatStates === 'object'
-        ? settings.chatStates
-        : {};
-      if (descriptor) delete settings.chatStates;
+      const descriptor = Object.getOwnPropertyDescriptor(settings, 'chatStates')
+      const runtimeChatStates =
+        descriptor && descriptor.enumerable === false && settings.chatStates && typeof settings.chatStates === 'object' ? settings.chatStates : {}
+      if (descriptor) delete settings.chatStates
       Object.defineProperty(settings, 'chatStates', {
         value: runtimeChatStates,
         writable: true,
         configurable: true,
         enumerable: false,
-      });
-      if (!descriptor || descriptor.enumerable !== false) shouldSave = true;
+      })
+      if (!descriptor || descriptor.enumerable !== false) shouldSave = true
     } catch (error) {
-      console.warn('[BS BioTracker] unable to normalize chatStates for host store, continuing', error);
+      console.warn('[BS BioTracker] unable to normalize chatStates for host store, continuing', error)
     }
   }
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-    if (useHostChatStore && key === 'chatStates') continue;
+    if (useHostChatStore && key === 'chatStates') continue
     if (settings[key] === undefined) {
-      settings[key] = cloneValue(value);
-      shouldSave = true;
+      settings[key] = cloneValue(value)
+      shouldSave = true
     }
   }
   if (!settings.chatStates || typeof settings.chatStates !== 'object') {
-    settings.chatStates = {};
-    shouldSave = true;
+    settings.chatStates = {}
+    shouldSave = true
   }
   if (!Array.isArray(settings.modelOptions)) {
-    settings.modelOptions = [];
-    shouldSave = true;
+    settings.modelOptions = []
+    shouldSave = true
   }
   if (!String(settings.diaryWritingPrompt || '').trim()) {
-    settings.diaryWritingPrompt = DEFAULT_DIARY_WRITING_PROMPT;
-    shouldSave = true;
+    settings.diaryWritingPrompt = DEFAULT_DIARY_WRITING_PROMPT
+    shouldSave = true
   }
-  const rawWardrobePrepMainCount = Number(settings.wardrobePrepMainCount);
-  const wardrobePrepMainCount = Math.max(1, Math.min(12, Math.floor(Number.isFinite(rawWardrobePrepMainCount) ? rawWardrobePrepMainCount : DEFAULT_SETTINGS.wardrobePrepMainCount)));
+  const rawWardrobePrepMainCount = Number(settings.wardrobePrepMainCount)
+  const wardrobePrepMainCount = Math.max(
+    1,
+    Math.min(12, Math.floor(Number.isFinite(rawWardrobePrepMainCount) ? rawWardrobePrepMainCount : DEFAULT_SETTINGS.wardrobePrepMainCount)),
+  )
   if (settings.wardrobePrepMainCount !== wardrobePrepMainCount) {
-    settings.wardrobePrepMainCount = wardrobePrepMainCount;
-    shouldSave = true;
+    settings.wardrobePrepMainCount = wardrobePrepMainCount
+    shouldSave = true
   }
-  const rawWardrobePrepAccessoryCount = Number(settings.wardrobePrepAccessoryCount);
-  const wardrobePrepAccessoryCount = Math.max(0, Math.min(12, Math.floor(Number.isFinite(rawWardrobePrepAccessoryCount) ? rawWardrobePrepAccessoryCount : DEFAULT_SETTINGS.wardrobePrepAccessoryCount)));
+  const rawWardrobePrepAccessoryCount = Number(settings.wardrobePrepAccessoryCount)
+  const wardrobePrepAccessoryCount = Math.max(
+    0,
+    Math.min(
+      12,
+      Math.floor(Number.isFinite(rawWardrobePrepAccessoryCount) ? rawWardrobePrepAccessoryCount : DEFAULT_SETTINGS.wardrobePrepAccessoryCount),
+    ),
+  )
   if (settings.wardrobePrepAccessoryCount !== wardrobePrepAccessoryCount) {
-    settings.wardrobePrepAccessoryCount = wardrobePrepAccessoryCount;
-    shouldSave = true;
+    settings.wardrobePrepAccessoryCount = wardrobePrepAccessoryCount
+    shouldSave = true
   }
-  const rawDiaryRecentLimit = Number(settings.diaryRecentLimit);
-  const diaryRecentLimit = Math.max(0, Math.min(20, Math.floor(Number.isFinite(rawDiaryRecentLimit) ? rawDiaryRecentLimit : DEFAULT_SETTINGS.diaryRecentLimit)));
+  const rawDiaryRecentLimit = Number(settings.diaryRecentLimit)
+  const diaryRecentLimit = Math.max(
+    0,
+    Math.min(20, Math.floor(Number.isFinite(rawDiaryRecentLimit) ? rawDiaryRecentLimit : DEFAULT_SETTINGS.diaryRecentLimit)),
+  )
   if (settings.diaryRecentLimit !== diaryRecentLimit) {
-    settings.diaryRecentLimit = diaryRecentLimit;
-    shouldSave = true;
+    settings.diaryRecentLimit = diaryRecentLimit
+    shouldSave = true
   }
-  const rawApiTimeoutMs = Number(settings.apiTimeoutMs);
+  const rawApiTimeoutMs = Number(settings.apiTimeoutMs)
   const apiTimeoutMs = !Number.isFinite(rawApiTimeoutMs)
     ? DEFAULT_SETTINGS.apiTimeoutMs
-    : (rawApiTimeoutMs <= 0 ? 0 : Math.max(1000, Math.min(1800000, Math.floor(rawApiTimeoutMs))));
+    : rawApiTimeoutMs <= 0
+      ? 0
+      : Math.max(1000, Math.min(1800000, Math.floor(rawApiTimeoutMs)))
   if (settings.apiTimeoutMs !== apiTimeoutMs) {
-    settings.apiTimeoutMs = apiTimeoutMs;
-    shouldSave = true;
+    settings.apiTimeoutMs = apiTimeoutMs
+    shouldSave = true
   }
-  const rawTrackerTokenBudget = Number(settings.trackerTokenBudget);
-  const trackerTokenBudget = Math.max(500, Math.min(100000, Math.floor(Number.isFinite(rawTrackerTokenBudget) ? rawTrackerTokenBudget : DEFAULT_SETTINGS.trackerTokenBudget)));
+  const rawTrackerTokenBudget = Number(settings.trackerTokenBudget)
+  const trackerTokenBudget = Math.max(
+    500,
+    Math.min(100000, Math.floor(Number.isFinite(rawTrackerTokenBudget) ? rawTrackerTokenBudget : DEFAULT_SETTINGS.trackerTokenBudget)),
+  )
   if (settings.trackerTokenBudget !== trackerTokenBudget) {
-    settings.trackerTokenBudget = trackerTokenBudget;
-    shouldSave = true;
+    settings.trackerTokenBudget = trackerTokenBudget
+    shouldSave = true
   }
-  const requireFullDescriptionUpdates = settings.requireFullDescriptionUpdates === true;
+  const requireFullDescriptionUpdates = settings.requireFullDescriptionUpdates === true
   if (settings.requireFullDescriptionUpdates !== requireFullDescriptionUpdates) {
-    settings.requireFullDescriptionUpdates = requireFullDescriptionUpdates;
-    shouldSave = true;
+    settings.requireFullDescriptionUpdates = requireFullDescriptionUpdates
+    shouldSave = true
   }
-  const lukerMultiAgentManualOnly = settings.lukerMultiAgentManualOnly !== false;
+  const lukerMultiAgentManualOnly = settings.lukerMultiAgentManualOnly !== false
   if (settings.lukerMultiAgentManualOnly !== lukerMultiAgentManualOnly) {
-    settings.lukerMultiAgentManualOnly = lukerMultiAgentManualOnly;
-    shouldSave = true;
+    settings.lukerMultiAgentManualOnly = lukerMultiAgentManualOnly
+    shouldSave = true
   }
   if (!settings.registryDescriptionGuides || typeof settings.registryDescriptionGuides !== 'object') {
-    settings.registryDescriptionGuides = cloneValue(DEFAULT_REGISTRY_DESCRIPTION_GUIDES);
-    shouldSave = true;
+    settings.registryDescriptionGuides = cloneValue(DEFAULT_REGISTRY_DESCRIPTION_GUIDES)
+    shouldSave = true
   } else {
-    const existingGuides = { ...settings.registryDescriptionGuides };
-    delete existingGuides['close' + 'upDescription'];
+    const existingGuides = { ...settings.registryDescriptionGuides }
+    delete existingGuides['close' + 'upDescription']
     const mergedGuides = {
       ...cloneValue(DEFAULT_REGISTRY_DESCRIPTION_GUIDES),
       ...existingGuides,
-    };
-    if (JSON.stringify(mergedGuides) !== JSON.stringify(settings.registryDescriptionGuides)) shouldSave = true;
-    settings.registryDescriptionGuides = mergedGuides;
+    }
+    if (JSON.stringify(mergedGuides) !== JSON.stringify(settings.registryDescriptionGuides)) shouldSave = true
+    settings.registryDescriptionGuides = mergedGuides
   }
-  if (shouldSave) saveHostSettings(ctx);
-  return settings;
+  if (shouldSave) saveHostSettings(ctx)
+  return settings
 }
-
 export function saveSettings(ctx) {
-  saveHostSettings(ctx);
-  const root = getHostExtensionSettings(ctx);
-  const chatState = root?.[MODULE_NAME]?.chatStates?.[getChatKey(ctx)];
-  if (chatState) scheduleHostChatStateSave(ctx, chatState);
+  saveHostSettings(ctx)
+  const root = getHostExtensionSettings(ctx)
+  const chatState = root?.[MODULE_NAME]?.chatStates?.[getChatKey(ctx)]
+  if (chatState) scheduleHostChatStateSave(ctx, chatState)
 }
-
 export async function hydrateChatStateFromHost(ctx, settings) {
-  if (!settings?.chatStates || typeof settings.chatStates !== 'object') return false;
-  const initialKey = await resolveHostChatId(ctx);
-  const localState = settings.chatStates[initialKey];
-  if (localState && !isChatStateEffectivelyEmpty(localState)) return false;
-  const storedState = await loadHostChatState(ctx);
-  if (!storedState || isChatStateEffectivelyEmpty(storedState)) return false;
+  if (!settings?.chatStates || typeof settings.chatStates !== 'object') return false
+  const initialKey = await resolveHostChatId(ctx)
+  const localState = settings.chatStates[initialKey]
+  if (localState && !isChatStateEffectivelyEmpty(localState)) return false
+  const storedState = await loadHostChatState(ctx)
+  if (!storedState || isChatStateEffectivelyEmpty(storedState)) return false
   // 载入过程本身可能才等到宿主句柄就绪，这时稳定 id 才算得出来。
   // 必须用最终的 key 落盘：否则资料会留在 fallback key 下，
   // 而面板之后是用稳定 id 去读的，等于载入了却还是显示「没有注册角色」。
-  const chatKey = await resolveHostChatId(ctx);
-  settings.chatStates[chatKey] = storedState;
-  saveHostSettings(ctx);
-  return true;
+  const chatKey = await resolveHostChatId(ctx)
+  settings.chatStates[chatKey] = storedState
+  saveHostSettings(ctx)
+  return true
 }
-
 export function getChatKey(ctx) {
-  return getHostChatId(ctx);
+  return getHostChatId(ctx)
 }
-
 export function getChatState(ctx, settings) {
-  const chatKey = getChatKey(ctx);
-  if (!settings.chatStates[chatKey]) settings.chatStates[chatKey] = createEmptyChatState();
-  const chatState = settings.chatStates[chatKey];
-  let shouldSave = false;
+  const chatKey = getChatKey(ctx)
+  if (!settings.chatStates[chatKey]) settings.chatStates[chatKey] = createEmptyChatState()
+  const chatState = settings.chatStates[chatKey]
+  let shouldSave = false
   // 存量状态迁移：早期 characters 是普通 {}，读取时重建为 null-proto
-  const rawCharacters = chatState.characters;
+  const rawCharacters = chatState.characters
   if (!rawCharacters || typeof rawCharacters !== 'object') {
-    chatState.characters = Object.create(null);
-    shouldSave = true;
+    chatState.characters = Object.create(null)
+    shouldSave = true
   } else if (Object.getPrototypeOf(rawCharacters) !== null) {
-    const migrated = Object.create(null);
+    const migrated = Object.create(null)
     for (const key of Object.keys(rawCharacters)) {
-      migrated[key] = rawCharacters[key];
+      migrated[key] = rawCharacters[key]
     }
-    chatState.characters = migrated;
-    shouldSave = true;
+    chatState.characters = migrated
+    shouldSave = true
   }
-  const normalizedSkillCatalog = normalizeSkillCatalog(chatState.skillCatalog);
-  if (JSON.stringify(chatState.skillCatalog || []) !== JSON.stringify(normalizedSkillCatalog)) shouldSave = true;
-  chatState.skillCatalog = normalizedSkillCatalog;
-  const normalizedNextSkillId = normalizeNextSkillId(chatState.skillCatalog, chatState.nextSkillId);
-  if (chatState.nextSkillId !== normalizedNextSkillId) shouldSave = true;
-  chatState.nextSkillId = normalizedNextSkillId;
-  if (!Array.isArray(chatState.snapshots)) chatState.snapshots = [];
-  if (!Array.isArray(chatState.lastOperationLogs)) chatState.lastOperationLogs = [];
-  const sanitizedCurrentPayload = sanitizeSnapshotPayload(chatState);
+  const normalizedSkillCatalog = normalizeSkillCatalog(chatState.skillCatalog)
+  if (JSON.stringify(chatState.skillCatalog || []) !== JSON.stringify(normalizedSkillCatalog)) shouldSave = true
+  chatState.skillCatalog = normalizedSkillCatalog
+  const normalizedNextSkillId = normalizeNextSkillId(chatState.skillCatalog, chatState.nextSkillId)
+  if (chatState.nextSkillId !== normalizedNextSkillId) shouldSave = true
+  chatState.nextSkillId = normalizedNextSkillId
+  if (!Array.isArray(chatState.snapshots)) chatState.snapshots = []
+  if (!Array.isArray(chatState.lastOperationLogs)) chatState.lastOperationLogs = []
+  const sanitizedCurrentPayload = sanitizeSnapshotPayload(chatState)
   if (
-    chatState.lastAttemptedSignature !== sanitizedCurrentPayload.lastAttemptedSignature
-    || chatState.lastProcessedSignature !== sanitizedCurrentPayload.lastProcessedSignature
-    || JSON.stringify(chatState.lastRawResult || null) !== JSON.stringify(sanitizedCurrentPayload.lastRawResult || null)
-    || JSON.stringify(chatState.lastOperationLogs || []) !== JSON.stringify(sanitizedCurrentPayload.lastOperationLogs || [])
+    chatState.lastAttemptedSignature !== sanitizedCurrentPayload.lastAttemptedSignature ||
+    chatState.lastProcessedSignature !== sanitizedCurrentPayload.lastProcessedSignature ||
+    JSON.stringify(chatState.lastRawResult || null) !== JSON.stringify(sanitizedCurrentPayload.lastRawResult || null) ||
+    JSON.stringify(chatState.lastOperationLogs || []) !== JSON.stringify(sanitizedCurrentPayload.lastOperationLogs || [])
   ) {
-    chatState.lastAttemptedSignature = sanitizedCurrentPayload.lastAttemptedSignature;
-    chatState.lastProcessedSignature = sanitizedCurrentPayload.lastProcessedSignature;
-    chatState.lastRawResult = sanitizedCurrentPayload.lastRawResult;
-    chatState.lastOperationLogs = sanitizedCurrentPayload.lastOperationLogs;
-    shouldSave = true;
+    chatState.lastAttemptedSignature = sanitizedCurrentPayload.lastAttemptedSignature
+    chatState.lastProcessedSignature = sanitizedCurrentPayload.lastProcessedSignature
+    chatState.lastRawResult = sanitizedCurrentPayload.lastRawResult
+    chatState.lastOperationLogs = sanitizedCurrentPayload.lastOperationLogs
+    shouldSave = true
   }
-  if (compactChatStateSnapshots(chatState)) shouldSave = true;
+  if (compactChatStateSnapshots(chatState)) shouldSave = true
   if (chatState.snapshots.length > MAX_CHAT_STATE_SNAPSHOTS) {
-    trimChatStateSnapshots(chatState);
-    shouldSave = true;
+    trimChatStateSnapshots(chatState)
+    shouldSave = true
   }
-  if (needsRepackChatStateSnapshots(chatState) && repackChatStateSnapshots(chatState)) shouldSave = true;
-  if (shouldSave) saveSettings(ctx);
-  const canRestoreSnapshot = getHostKind() !== 'tauritavern' || hasAbsoluteHostChatView(ctx);
-  const latestSnapshot = canRestoreSnapshot ? getLatestMatchingSnapshot(ctx, chatState) : null;
+  if (needsRepackChatStateSnapshots(chatState) && repackChatStateSnapshots(chatState)) shouldSave = true
+  if (shouldSave) saveSettings(ctx)
+  const canRestoreSnapshot = getHostKind() !== 'tauritavern' || hasAbsoluteHostChatView(ctx)
+  const latestSnapshot = canRestoreSnapshot ? getLatestMatchingSnapshot(ctx, chatState) : null
   if (latestSnapshot) {
-    const latestSnapshotKey = getSnapshotRuntimeKey(latestSnapshot);
+    const latestSnapshotKey = getSnapshotRuntimeKey(latestSnapshot)
     if (chatState[RESTORED_SNAPSHOT_RUNTIME_KEY] !== latestSnapshotKey) {
-      restoreChatStateFromSnapshot(chatState, latestSnapshot);
-      markRestoredSnapshot(chatState, latestSnapshot);
+      restoreChatStateFromSnapshot(chatState, latestSnapshot)
+      markRestoredSnapshot(chatState, latestSnapshot)
     }
   }
-  const characters = chatState.characters;
+  const characters = chatState.characters
   if (characters && typeof characters === 'object') {
     for (const item of Object.values(characters)) {
-      normalizeCharacterPsychologyState(item);
-      if (item?.profile && !Array.isArray(item.profile.diary)) item.profile.diary = [];
+      normalizeCharacterPsychologyState(item)
+      if (item?.profile && !Array.isArray(item.profile.diary)) item.profile.diary = []
     }
   }
-  return chatState;
+  return chatState
 }
-
 export function isChatStateEffectivelyEmpty(chatState) {
-  if (!chatState || typeof chatState !== 'object') return true;
-  const hasCharacters = Object.keys(chatState.characters || {}).length > 0;
-  const hasSkillCatalog = Array.isArray(chatState.skillCatalog) && chatState.skillCatalog.length > 0;
-  const hasConsumedSkillIds = Number(chatState.nextSkillId) > 1;
-  const hasSnapshots = Array.isArray(chatState.snapshots) && chatState.snapshots.length > 0;
-  const hasSceneSummary = Boolean(String(chatState.sceneSummary || '').trim());
-  const hasMinutesPassed = Number(chatState.minutesPassed) > 0;
-  return !(hasCharacters || hasSkillCatalog || hasConsumedSkillIds || hasSnapshots || hasSceneSummary || hasMinutesPassed);
+  if (!chatState || typeof chatState !== 'object') return true
+  const hasCharacters = Object.keys(chatState.characters || {}).length > 0
+  const hasSkillCatalog = Array.isArray(chatState.skillCatalog) && chatState.skillCatalog.length > 0
+  const hasConsumedSkillIds = Number(chatState.nextSkillId) > 1
+  const hasSnapshots = Array.isArray(chatState.snapshots) && chatState.snapshots.length > 0
+  const hasSceneSummary = Boolean(String(chatState.sceneSummary || '').trim())
+  const hasMinutesPassed = Number(chatState.minutesPassed) > 0
+  return !(hasCharacters || hasSkillCatalog || hasConsumedSkillIds || hasSnapshots || hasSceneSummary || hasMinutesPassed)
 }
-
 export function inheritChatStateFromMatchingChat(ctx, settings) {
-  const chatKey = getChatKey(ctx);
-  const currentChat = getHostChat(ctx);
-  if (!chatKey || currentChat.length === 0) return { inherited: false, reason: 'empty_chat' };
-  if (currentChat.length < MIN_CHAT_INHERIT_MESSAGE_COUNT) return { inherited: false, reason: 'chat_too_short' };
-
-  if (!settings.chatStates || typeof settings.chatStates !== 'object') settings.chatStates = {};
-  if (!settings.chatStates[chatKey]) settings.chatStates[chatKey] = createEmptyChatState();
-  const currentState = settings.chatStates[chatKey];
-  if (!isChatStateEffectivelyEmpty(currentState)) return { inherited: false, reason: 'state_exists' };
-
-  const currentMessageCount = currentChat.length;
-  const digestCache = new Map();
-  const getDigestForCount = (count) => {
-    if (!digestCache.has(count)) digestCache.set(count, buildMessageDigest(ctx, count));
-    return digestCache.get(count);
-  };
-  let bestMatch = null;
-
+  const chatKey = getChatKey(ctx)
+  const currentChat = getHostChat(ctx)
+  if (!chatKey || currentChat.length === 0) return { inherited: false, reason: 'empty_chat' }
+  if (currentChat.length < MIN_CHAT_INHERIT_MESSAGE_COUNT) return { inherited: false, reason: 'chat_too_short' }
+  if (!settings.chatStates || typeof settings.chatStates !== 'object') settings.chatStates = {}
+  if (!settings.chatStates[chatKey]) settings.chatStates[chatKey] = createEmptyChatState()
+  const currentState = settings.chatStates[chatKey]
+  if (!isChatStateEffectivelyEmpty(currentState)) return { inherited: false, reason: 'state_exists' }
+  const currentMessageCount = currentChat.length
+  const digestCache = new Map()
+  const getDigestForCount = count => {
+    if (!digestCache.has(count)) digestCache.set(count, buildMessageDigest(ctx, count))
+    return digestCache.get(count)
+  }
+  let bestMatch = null
   for (const [candidateKey, candidateState] of Object.entries(settings.chatStates)) {
-    if (candidateKey === chatKey || !candidateState || typeof candidateState !== 'object') continue;
-    compactChatStateSnapshots(candidateState);
-    const candidateSnapshots = Array.isArray(candidateState.snapshots) ? candidateState.snapshots : [];
+    if (candidateKey === chatKey || !candidateState || typeof candidateState !== 'object') continue
+    compactChatStateSnapshots(candidateState)
+    const candidateSnapshots = Array.isArray(candidateState.snapshots) ? candidateState.snapshots : []
     for (const snapshot of candidateSnapshots) {
-      const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0;
-      if (count <= 0 || count !== currentMessageCount) continue;
-      if (String(snapshot?.messageDigest || '') !== getDigestForCount(count)) continue;
+      const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0
+      if (count <= 0 || count !== currentMessageCount) continue
+      if (String(snapshot?.messageDigest || '') !== getDigestForCount(count)) continue
       if (!bestMatch || count > bestMatch.count || (count === bestMatch.count && (snapshot.createdAt || 0) > (bestMatch.snapshot?.createdAt || 0))) {
-        bestMatch = { candidateKey, candidateState, snapshot, count };
+        bestMatch = { candidateKey, candidateState, snapshot, count }
       }
     }
   }
-
-  if (!bestMatch?.snapshot) return { inherited: false, reason: 'no_matching_snapshot' };
-
+  if (!bestMatch?.snapshot) return { inherited: false, reason: 'no_matching_snapshot' }
   const inheritedSnapshots = (Array.isArray(bestMatch.candidateState.snapshots) ? bestMatch.candidateState.snapshots : [])
-    .filter((snapshot) => {
-      const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0;
-      if (count <= 0 || count > currentMessageCount) return false;
-      return String(snapshot?.messageDigest || '') === getDigestForCount(count);
+    .filter(snapshot => {
+      const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0
+      if (count <= 0 || count > currentMessageCount) return false
+      return String(snapshot?.messageDigest || '') === getDigestForCount(count)
     })
-    .map((snapshot) => cloneValue(snapshot));
-
-  currentState.snapshots = inheritedSnapshots;
-  trimChatStateSnapshots(currentState);
-  restoreChatStateFromSnapshot(currentState, bestMatch.snapshot);
-
+    .map(snapshot => cloneValue(snapshot))
+  currentState.snapshots = inheritedSnapshots
+  trimChatStateSnapshots(currentState)
+  restoreChatStateFromSnapshot(currentState, bestMatch.snapshot)
   return {
     inherited: true,
     fromChatKey: bestMatch.candidateKey,
     messageCount: bestMatch.count,
-  };
+  }
 }
-
 function hasWorldBookEntries(value) {
-  if (!value || typeof value !== 'object') return false;
-  if (Array.isArray(value)) return value.length > 0;
-  if (Array.isArray(value.entries)) return value.entries.length > 0;
-  return Boolean(value.entries && typeof value.entries === 'object' && Object.keys(value.entries).length > 0);
+  if (!value || typeof value !== 'object') return false
+  if (Array.isArray(value)) return value.length > 0
+  if (Array.isArray(value.entries)) return value.entries.length > 0
+  return Boolean(value.entries && typeof value.entries === 'object' && Object.keys(value.entries).length > 0)
 }
-
 export function getCharacterCard(ctx) {
-  const card = getResolvedCharacter(ctx)?.card;
-  if (!card) return {};
+  const card = getResolvedCharacter(ctx)?.card
+  if (!card) return {}
   return {
     name: card.name || '',
     description: card.description || '',
@@ -1377,12 +1367,11 @@ export function getCharacterCard(ctx) {
     first_mes: card.first_mes || '',
     mes_example: card.mes_example || '',
     worldBook: hasWorldBookEntries(card.worldBook) ? card.worldBook : null,
-  };
+  }
 }
-
 export function getCharacterWorldBookName(ctx) {
-  const card = getResolvedCharacter(ctx)?.card;
-  if (!card || typeof card !== 'object') return '';
+  const card = getResolvedCharacter(ctx)?.card
+  if (!card || typeof card !== 'object') return ''
   return pickFirstString(card, [
     'data.extensions.world',
     'data.extensions.worldbook',
@@ -1391,381 +1380,354 @@ export function getCharacterWorldBookName(ctx) {
     'world',
     'character_book',
     'worldBook.name',
-  ]);
+  ])
 }
-
 /**
  * 清洗世界书条目显示名。
  * 数据库 skill 化后 comment 常变成「条目名\n\n<!-- ACU_SKILL_META_START ... -->」；
  * 若直接用整段 comment，排除名单按行拆分会把名字拆碎，导致勾选后匹配失败。
  */
 export function sanitizeWorldbookEntryDisplayName(value) {
-  let text = String(value ?? '');
-  if (!text) return '';
-  text = text.replace(/<!--[\s\S]*?-->/g, ' ');
-  text = text.replace(/ACU_SKILL_META_(?:START|END)/gi, ' ');
+  let text = String(value ?? '')
+  if (!text) return ''
+  text = text.replace(/<!--[\s\S]*?-->/g, ' ')
+  text = text.replace(/ACU_SKILL_META_(?:START|END)/gi, ' ')
   const firstLine = text
     .split(/\r?\n+/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-  return String(firstLine || '').trim();
+    .map(line => line.trim())
+    .find(line => line.length > 0)
+  return String(firstLine || '').trim()
 }
-
 export function getWorldbookEntryDisplayName(entry) {
-  if (entry == null) return '';
+  if (entry == null) return ''
   if (typeof entry === 'string' || typeof entry === 'number') {
-    return sanitizeWorldbookEntryDisplayName(entry);
+    return sanitizeWorldbookEntryDisplayName(entry)
   }
-  if (typeof entry !== 'object') return '';
-  const raw = entry.name || entry.comment || entry.title || entry.displayName || entry.uid || '';
-  return sanitizeWorldbookEntryDisplayName(raw);
+  if (typeof entry !== 'object') return ''
+  const raw = entry.name || entry.comment || entry.title || entry.displayName || entry.uid || ''
+  return sanitizeWorldbookEntryDisplayName(raw)
 }
-
 /** 排除/白名单匹配：完整「书名 :: 条目名」或裸条目名任一命中即可 */
 export function worldbookSelectionMatches(selectedSet, selectionName, entryName = '') {
-  if (!selectedSet || typeof selectedSet.has !== 'function') return false;
-  const full = String(selectionName || '').trim();
-  const bare = String(entryName || '').trim();
-  if (full && selectedSet.has(full)) return true;
-  if (bare && selectedSet.has(bare)) return true;
+  if (!selectedSet || typeof selectedSet.has !== 'function') return false
+  const full = String(selectionName || '').trim()
+  const bare = String(entryName || '').trim()
+  if (full && selectedSet.has(full)) return true
+  if (bare && selectedSet.has(bare)) return true
   if (full.includes(' :: ')) {
-    const onlyEntry = full.split(' :: ').slice(1).join(' :: ').trim();
-    if (onlyEntry && selectedSet.has(onlyEntry)) return true;
+    const onlyEntry = full.split(' :: ').slice(1).join(' :: ').trim()
+    if (onlyEntry && selectedSet.has(onlyEntry)) return true
   }
-  return false;
+  return false
 }
-
 export function getCharacterAvatarBaseName(ctx) {
-  const card = getResolvedCharacter(ctx)?.card;
-  if (!card || typeof card !== 'object') return '';
-  const avatar = pickFirstString(card, ['avatar', 'data.avatar', 'img', 'filename']);
-  if (avatar) return avatar.replace(/\.[^/.]+$/, '').trim();
-  return String(card.name || '').trim();
+  const card = getResolvedCharacter(ctx)?.card
+  if (!card || typeof card !== 'object') return ''
+  const avatar = pickFirstString(card, ['avatar', 'data.avatar', 'img', 'filename'])
+  if (avatar) return avatar.replace(/\.[^/.]+$/, '').trim()
+  return String(card.name || '').trim()
 }
-
 export function getResolvedCharacter(ctx) {
-  const characters = getHostCharacters(ctx);
-  const directId = Number.isInteger(ctx?.characterId) ? ctx.characterId : null;
+  const characters = getHostCharacters(ctx)
+  const directId = Number.isInteger(ctx?.characterId) ? ctx.characterId : null
   if (directId !== null && characters[directId]) {
-    return { id: directId, card: characters[directId], source: 'characterId' };
+    return { id: directId, card: characters[directId], source: 'characterId' }
   }
-
   const assistantMessages = getHostChat(ctx)
-    .filter((message) => message && !message.is_user && !message.is_system)
+    .filter(message => message && !message.is_user && !message.is_system)
     .slice()
-    .reverse();
-  const preferredNames = [];
+    .reverse()
+  const preferredNames = []
   for (const message of assistantMessages) {
-    const name = String(message?.name || '').trim();
-    if (name && !preferredNames.includes(name)) preferredNames.push(name);
+    const name = String(message?.name || '').trim()
+    if (name && !preferredNames.includes(name)) preferredNames.push(name)
   }
-  const fallbackName = String(ctx?.name2 || '').trim();
-  if (fallbackName && !preferredNames.includes(fallbackName)) preferredNames.push(fallbackName);
-
+  const fallbackName = String(ctx?.name2 || '').trim()
+  if (fallbackName && !preferredNames.includes(fallbackName)) preferredNames.push(fallbackName)
   for (const targetName of preferredNames) {
-    const matchedId = characters.findIndex((item) => String(item?.name || '').trim() === targetName);
+    const matchedId = characters.findIndex(item => String(item?.name || '').trim() === targetName)
     if (matchedId >= 0) {
-      return { id: matchedId, card: characters[matchedId], source: 'chatName' };
+      return { id: matchedId, card: characters[matchedId], source: 'chatName' }
     }
   }
-  return { id: null, card: null, source: 'none' };
+  return { id: null, card: null, source: 'none' }
 }
-
 export async function getCharacterWorldBookNameViaSTscript() {
-  if (typeof globalThis.STscript !== 'function') return '';
+  if (typeof globalThis.STscript !== 'function') return ''
   try {
-    const result = await globalThis.STscript('/getcharbook');
-    const name = String(result?.pipe ?? result ?? '').trim();
-    return name;
+    const result = await globalThis.STscript('/getcharbook')
+    const name = String(result?.pipe ?? result ?? '').trim()
+    return name
   } catch (error) {
-    console.warn('[BS BioTracker] /getcharbook failed', error);
-    return '';
+    console.warn('[BS BioTracker] /getcharbook failed', error)
+    return ''
   }
 }
-
 async function getWorldInfoModule() {
-  if (globalThis.__bsBtWorldInfoModuleOverride__ !== undefined) return globalThis.__bsBtWorldInfoModuleOverride__;
+  if (globalThis.__bsBtWorldInfoModuleOverride__ !== undefined) return globalThis.__bsBtWorldInfoModuleOverride__
   if (!worldInfoModulePromise) {
-    const moduleUrl = new URL('../../../../world-info.js', import.meta.url).href;
-    worldInfoModulePromise = import(moduleUrl).catch((error) => {
-      console.warn('[BS BioTracker] import world-info module failed', error);
-      return null;
-    });
+    const moduleUrl = new URL('../../../../world-info.js', import.meta.url).href
+    worldInfoModulePromise = import(moduleUrl).catch(error => {
+      console.warn('[BS BioTracker] import world-info module failed', error)
+      return null
+    })
   }
-  return worldInfoModulePromise;
+  return worldInfoModulePromise
 }
-
 function pushWorldBookNames(target, list) {
   for (const item of Array.isArray(list) ? list : []) {
-    const name = String(item || '').trim();
-    if (name && !target.includes(name)) target.push(name);
+    const name = String(item || '').trim()
+    if (name && !target.includes(name)) target.push(name)
   }
 }
-
 /** 世界书设置对象的候选来源：正规扩展与酒馆助手 iframe 注入环境的布局都覆盖 */
 function collectWorldInfoRoots(worldInfoModule = null) {
-  const roots = [];
-  const pushRoot = (root) => {
-    if (root && typeof root === 'object' && !roots.includes(root)) roots.push(root);
-  };
-  pushRoot(worldInfoModule?.world_info);
-  try { pushRoot(globalThis.world_info); } catch {}
-  try { pushRoot(globalThis.world_info_settings?.world_info); } catch {}
-  try { pushRoot(globalThis.power_user?.world_info); } catch {}
+  const roots = []
+  const pushRoot = root => {
+    if (root && typeof root === 'object' && !roots.includes(root)) roots.push(root)
+  }
+  pushRoot(worldInfoModule?.world_info)
   try {
-    const ctx = getHostContext();
-    pushRoot(ctx?.world_info);
-    pushRoot(ctx?.worldInfoSettings?.world_info);
+    pushRoot(globalThis.world_info)
   } catch {}
   try {
-    const parentWin = globalThis.parent && globalThis.parent !== globalThis ? globalThis.parent : null;
+    pushRoot(globalThis.world_info_settings?.world_info)
+  } catch {}
+  try {
+    pushRoot(globalThis.power_user?.world_info)
+  } catch {}
+  try {
+    const ctx = getHostContext()
+    pushRoot(ctx?.world_info)
+    pushRoot(ctx?.worldInfoSettings?.world_info)
+  } catch {}
+  try {
+    const parentWin = globalThis.parent && globalThis.parent !== globalThis ? globalThis.parent : null
     if (parentWin) {
-      pushRoot(parentWin.world_info);
-      pushRoot(parentWin.world_info_settings?.world_info);
+      pushRoot(parentWin.world_info)
+      pushRoot(parentWin.world_info_settings?.world_info)
     }
   } catch {}
-  return roots;
+  return roots
 }
-
 export async function getActiveGlobalWorldBookNames() {
-  const names = [];
-
+  const names = []
   // 1) 经典 ST：world-info.js 模组的 selected_world_info（酒馆助手 iframe 注入时常 import 失败）
-  const worldInfoModule = await getWorldInfoModule();
-  pushWorldBookNames(names, worldInfoModule?.selected_world_info);
-
+  const worldInfoModule = await getWorldInfoModule()
+  pushWorldBookNames(names, worldInfoModule?.selected_world_info)
   // 2) 运行时全局
-  try { pushWorldBookNames(names, globalThis.selected_world_info); } catch {}
-
+  try {
+    pushWorldBookNames(names, globalThis.selected_world_info)
+  } catch {}
   // 3) world_info.globalSelect（ST/TT 设置里的启用全域书）
   for (const root of collectWorldInfoRoots(worldInfoModule)) {
-    pushWorldBookNames(names, root?.globalSelect);
+    pushWorldBookNames(names, root?.globalSelect)
   }
-
   // 4) 页面上的全域世界书多选框（若存在）
   try {
-    const select = document.querySelector?.('#world_info');
+    const select = document.querySelector?.('#world_info')
     if (select?.selectedOptions) {
-      pushWorldBookNames(names, Array.from(select.selectedOptions).map((option) => option.textContent || option.label || option.value));
+      pushWorldBookNames(
+        names,
+        Array.from(select.selectedOptions).map(option => option.textContent || option.label || option.value),
+      )
     }
   } catch {}
-
   // 5) 酒馆助手 API
   for (const fn of [globalThis.getLorebookSettings, globalThis.TavernHelper?.getLorebookSettings]) {
-    if (typeof fn !== 'function') continue;
+    if (typeof fn !== 'function') continue
     try {
-      const lorebookSettings = await Promise.resolve(fn());
-      pushWorldBookNames(names, lorebookSettings?.selected_global_lorebooks);
-      pushWorldBookNames(names, lorebookSettings?.selected_world_info);
+      const lorebookSettings = await Promise.resolve(fn())
+      pushWorldBookNames(names, lorebookSettings?.selected_global_lorebooks)
+      pushWorldBookNames(names, lorebookSettings?.selected_world_info)
     } catch {}
   }
-
-  return names;
+  return names
 }
-
 function matchCharLoreEntry(entry, avatarBaseName, cardName) {
-  if (!entry || typeof entry !== 'object') return false;
-  const entryName = String(entry.name || '').trim();
-  if (!entryName) return false;
-  const entryBaseName = entryName.replace(/\.[^/.]+$/, '');
-  if (avatarBaseName && (entryName === avatarBaseName || entryBaseName === avatarBaseName)) return true;
-  if (cardName && (entryName === cardName || entryBaseName === cardName)) return true;
-  return false;
+  if (!entry || typeof entry !== 'object') return false
+  const entryName = String(entry.name || '').trim()
+  if (!entryName) return false
+  const entryBaseName = entryName.replace(/\.[^/.]+$/, '')
+  if (avatarBaseName && (entryName === avatarBaseName || entryBaseName === avatarBaseName)) return true
+  if (cardName && (entryName === cardName || entryBaseName === cardName)) return true
+  return false
 }
-
 /**
  * 角色附加知识书（charLore / extraBooks）名称列表。
  * 与主世界书 data.extensions.world 分开存储，旧版只读主书会漏掉。
  */
 export async function getCharacterAdditionalWorldBookNames(ctx) {
-  const names = [];
-
+  const names = []
   // 1) 酒馆助手 API（iframe 注入环境；可能为 async）
   for (const fn of [globalThis.getCharLorebooks, globalThis.TavernHelper?.getCharLorebooks]) {
-    if (typeof fn !== 'function') continue;
+    if (typeof fn !== 'function') continue
     try {
-      const books = await Promise.resolve(fn({ type: 'all' }));
+      const books = await Promise.resolve(fn({ type: 'all' }))
       if (books && typeof books === 'object') {
-        pushWorldBookNames(names, books.additional);
-        pushWorldBookNames(names, books.extraBooks);
+        pushWorldBookNames(names, books.additional)
+        pushWorldBookNames(names, books.extraBooks)
       }
     } catch {}
   }
-
   // 2) world_info.charLore（world-info 模组与各运行时全局）
-  const worldInfoModule = await getWorldInfoModule();
-  const avatarBaseName = getCharacterAvatarBaseName(ctx);
-  const cardName = String(getResolvedCharacter(ctx)?.card?.name || '').trim();
+  const worldInfoModule = await getWorldInfoModule()
+  const avatarBaseName = getCharacterAvatarBaseName(ctx)
+  const cardName = String(getResolvedCharacter(ctx)?.card?.name || '').trim()
   for (const root of collectWorldInfoRoots(worldInfoModule)) {
-    if (!Array.isArray(root?.charLore)) continue;
-    const entry = root.charLore.find((item) => matchCharLoreEntry(item, avatarBaseName, cardName));
-    if (entry) pushWorldBookNames(names, entry.extraBooks);
+    if (!Array.isArray(root?.charLore)) continue
+    const entry = root.charLore.find(item => matchCharLoreEntry(item, avatarBaseName, cardName))
+    if (entry) pushWorldBookNames(names, entry.extraBooks)
   }
-
   // 主世界书名不要混进附加列表
-  const primary = String(getCharacterWorldBookName(ctx) || '').trim();
-  return names.filter((name) => name && name !== primary);
+  const primary = String(getCharacterWorldBookName(ctx) || '').trim()
+  return names.filter(name => name && name !== primary)
 }
-
 /**
  * 加载角色附加知识书，返回带 source 标记的书列表。
  * filterBook 由调用方注入，避免 state ↔ registry/tracker 循环依赖。
  */
 export async function loadCharacterAdditionalWorldBooks(ctx, { loadBook, filterBook, recentMessages = [] } = {}) {
-  const names = await getCharacterAdditionalWorldBookNames(ctx);
-  if (!names.length) return [];
-  const load = typeof loadBook === 'function' ? loadBook : async (name) => loadGlobalWorldBook(ctx, name);
-  const books = await Promise.all(names.map(async (name) => {
-    try {
-      let worldBook = await load(name);
-      if (!worldBook) return null;
-      if (typeof filterBook === 'function') worldBook = filterBook(worldBook, name, recentMessages);
-      if (!worldBook) return null;
-      const hasEntries = (Array.isArray(worldBook.entries) && worldBook.entries.length > 0)
-        || (worldBook.entries && typeof worldBook.entries === 'object' && Object.keys(worldBook.entries).length > 0);
-      if (!hasEntries) return null;
-      return { ...worldBook, name, source: 'character_additional' };
-    } catch (error) {
-      console.warn(`[BS BioTracker] load character additional worldbook "${name}" failed`, error);
-      return null;
-    }
-  }));
-  return books.filter(Boolean);
+  const names = await getCharacterAdditionalWorldBookNames(ctx)
+  if (!names.length) return []
+  const load = typeof loadBook === 'function' ? loadBook : async name => loadGlobalWorldBook(ctx, name)
+  const books = await Promise.all(
+    names.map(async name => {
+      try {
+        let worldBook = await load(name)
+        if (!worldBook) return null
+        if (typeof filterBook === 'function') worldBook = filterBook(worldBook, name, recentMessages)
+        if (!worldBook) return null
+        const hasEntries =
+          (Array.isArray(worldBook.entries) && worldBook.entries.length > 0) ||
+          (worldBook.entries && typeof worldBook.entries === 'object' && Object.keys(worldBook.entries).length > 0)
+        if (!hasEntries) return null
+        return { ...worldBook, name, source: 'character_additional' }
+      } catch (error) {
+        console.warn(`[BS BioTracker] load character additional worldbook "${name}" failed`, error)
+        return null
+      }
+    }),
+  )
+  return books.filter(Boolean)
 }
-
 export async function loadGlobalWorldBook(ctx, name) {
-  const normalizedName = String(name || '').trim();
-  if (!normalizedName) return null;
+  const normalizedName = String(name || '').trim()
+  if (!normalizedName) return null
   if (canLoadHostWorldInfo(ctx)) {
     try {
-      return await loadHostWorldInfo(ctx, normalizedName);
+      return await loadHostWorldInfo(ctx, normalizedName)
     } catch (error) {
-      console.warn(`[BS BioTracker] load active global worldbook "${normalizedName}" failed`, error);
+      console.warn(`[BS BioTracker] load active global worldbook "${normalizedName}" failed`, error)
     }
   }
   try {
-    const worldBook = await getHostWorldBook(normalizedName, 'global');
-    if (worldBook) return worldBook;
+    const worldBook = await getHostWorldBook(normalizedName, 'global')
+    if (worldBook) return worldBook
   } catch (error) {
-    console.warn(`[BS BioTracker] host get active global worldbook "${normalizedName}" failed`, error);
+    console.warn(`[BS BioTracker] host get active global worldbook "${normalizedName}" failed`, error)
   }
   // 附加知识书有时只能按 character scope 取到
   try {
-    const worldBook = await getHostWorldBook(normalizedName, 'character');
-    if (worldBook) return worldBook;
+    const worldBook = await getHostWorldBook(normalizedName, 'character')
+    if (worldBook) return worldBook
   } catch {}
-  return null;
+  return null
 }
-
 export function getTargetNames(ctx, settings) {
   const names = String(settings.targetNames || '')
     .split(/[\n,，]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return [...new Set(names)];
+    .map(item => item.trim())
+    .filter(Boolean)
+  return [...new Set(names)]
 }
-
 export function getRegisteredTargetNames(ctx, settings, chatState = null) {
-  const state = chatState || getChatState(ctx, settings);
+  const state = chatState || getChatState(ctx, settings)
   return Object.entries(state?.characters || {})
     .filter(([, item]) => item?.initialized)
-    .map(([name]) => name);
+    .map(([name]) => name)
 }
-
 /**
  * 追踪重点是提示模型优先检查的角色，不是过滤器；未点名的已注册角色仍会同步推进。
  */
 export function getPriorityCharacterNames(ctx, settings, chatState = null) {
-  const state = chatState || getChatState(ctx, settings);
-  const targetNames = getTargetNames(ctx, settings);
-  if (targetNames.length === 0) return [];
-  return targetNames
-    .map((name) => resolveRegisteredCharacterName(state, name))
-    .filter((name, index, list) => name && list.indexOf(name) === index);
+  const state = chatState || getChatState(ctx, settings)
+  const targetNames = getTargetNames(ctx, settings)
+  if (targetNames.length === 0) return []
+  return targetNames.map(name => resolveRegisteredCharacterName(state, name)).filter((name, index, list) => name && list.indexOf(name) === index)
 }
-
 function normalizeCharacterLookupName(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase()
 }
-
 export function resolveRegisteredCharacterName(chatState, targetName, options = {}) {
-  const requireInitialized = options.requireInitialized !== false;
-  const rawName = String(targetName || '').trim();
-  if (!rawName) return '';
-  const characters = chatState?.characters && typeof chatState.characters === 'object' ? chatState.characters : {};
-  const isUsable = (entry) => entry && (!requireInitialized || entry.initialized === true);
-  if (isUsable(characters[rawName])) return rawName;
-  const normalized = normalizeCharacterLookupName(rawName);
+  const requireInitialized = options.requireInitialized !== false
+  const rawName = String(targetName || '').trim()
+  if (!rawName) return ''
+  const characters = chatState?.characters && typeof chatState.characters === 'object' ? chatState.characters : {}
+  const isUsable = entry => entry && (!requireInitialized || entry.initialized === true)
+  if (isUsable(characters[rawName])) return rawName
+  const normalized = normalizeCharacterLookupName(rawName)
   for (const [name, entry] of Object.entries(characters)) {
-    if (!isUsable(entry)) continue;
-    if (normalizeCharacterLookupName(name) === normalized) return name;
-    if (normalizeCharacterLookupName(entry?.name) === normalized) return name;
+    if (!isUsable(entry)) continue
+    if (normalizeCharacterLookupName(name) === normalized) return name
+    if (normalizeCharacterLookupName(entry?.name) === normalized) return name
   }
-  return '';
+  return ''
 }
-
-
-
 export function buildRecentMessages(ctx, settings, endIndexExclusive = null) {
-  const count = Math.max(2, Number(settings.contextSize) || 12);
-  const chat = getHostChat(ctx);
-  const end = Number.isInteger(endIndexExclusive)
-    ? Math.max(0, Math.min(chat.length, endIndexExclusive))
-    : chat.length;
-
-  return chat.slice(Math.max(0, end - count), end).map((message) => {
-    const rawText = String(message?.mes || '');
-    const processed = processHistoryText(rawText, settings?.historyRegexRules || []);
+  const count = Math.max(2, Number(settings.contextSize) || 12)
+  const chat = getHostChat(ctx)
+  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length
+  return chat.slice(Math.max(0, end - count), end).map(message => {
+    const rawText = String(message?.mes || '')
+    const processed = processHistoryText(rawText, settings?.historyRegexRules || [])
     return {
       name: message.name || (message.is_user ? ctx.name1 : ctx.name2) || '',
       role: message.is_user ? 'user' : 'assistant',
       text: processed.text,
-    };
-  });
+    }
+  })
 }
-
 export function buildMessageSignature(ctx, message) {
-  if (!message) return '';
+  if (!message) return ''
   return [
     message.is_user ? 'user' : 'assistant',
     String(message.name || (message.is_user ? ctx.name1 : ctx.name2) || ''),
     String(message.mes || ''),
-  ].join('|');
+  ].join('|')
 }
-
 function hashStringFNV1a(value, seed = MESSAGE_DIGEST_SEED) {
-  let hash = seed >>> 0;
-  const text = String(value || '');
+  let hash = seed >>> 0
+  const text = String(value || '')
   for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619) >>> 0;
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 16777619) >>> 0
   }
-  return hash >>> 0;
+  return hash >>> 0
 }
-
 function foldMessageSignatureDigest(seed, signature) {
-  let hash = seed >>> 0;
-  hash ^= hashStringFNV1a(signature, MESSAGE_DIGEST_SEED);
-  hash = Math.imul(hash, 16777619) >>> 0;
-  return hash >>> 0;
+  let hash = seed >>> 0
+  hash ^= hashStringFNV1a(signature, MESSAGE_DIGEST_SEED)
+  hash = Math.imul(hash, 16777619) >>> 0
+  return hash >>> 0
 }
-
 export function buildMessageSignatures(ctx, endIndexExclusive = null) {
-  const chat = getHostChat(ctx);
-  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length;
-  return chat.slice(0, end).map((message) => buildMessageSignature(ctx, message));
+  const chat = getHostChat(ctx)
+  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length
+  return chat.slice(0, end).map(message => buildMessageSignature(ctx, message))
 }
-
 export function buildMessageDigest(ctx, endIndexExclusive = null) {
-  const chat = getHostChat(ctx);
-  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length;
-  let hash = MESSAGE_DIGEST_SEED;
+  const chat = getHostChat(ctx)
+  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length
+  let hash = MESSAGE_DIGEST_SEED
   for (let index = 0; index < end; index += 1) {
-    hash = foldMessageSignatureDigest(hash, buildMessageSignature(ctx, chat[index]));
+    hash = foldMessageSignatureDigest(hash, buildMessageSignature(ctx, chat[index]))
   }
-  return hash.toString(16).padStart(8, '0');
+  return hash.toString(16).padStart(8, '0')
 }
-
 /**
  * 快照涵盖到的最后一则讯息的签名（杂凑过，避免快照膨胀）。
  *
@@ -1774,15 +1736,14 @@ export function buildMessageDigest(ctx, endIndexExclusive = null) {
  * 边界这一则才是决定快照有效性的关键，而且通常就在已载入范围内。
  */
 export function buildBoundaryMessageSignature(ctx, messageCount) {
-  const chat = getHostChat(ctx);
-  const index = Math.floor(Number(messageCount) || 0) - 1;
-  if (index < 0 || index >= chat.length) return '';
-  const message = chat[index];
+  const chat = getHostChat(ctx)
+  const index = Math.floor(Number(messageCount) || 0) - 1
+  if (index < 0 || index >= chat.length) return ''
+  const message = chat[index]
   // 稀疏视图未载入处取不到讯息，回传空字串代表「无从比对」
-  if (!message) return '';
-  return hashStringFNV1a(buildMessageSignature(ctx, message)).toString(16).padStart(8, '0');
+  if (!message) return ''
+  return hashStringFNV1a(buildMessageSignature(ctx, message)).toString(16).padStart(8, '0')
 }
-
 /**
  * 快照的边界讯息是否仍与当前聊天一致。
  *
@@ -1793,23 +1754,21 @@ export function buildBoundaryMessageSignature(ctx, messageCount) {
  * 这时维持原本只比 messageCount 的行为——宁可放行，也不要误判为失效而触发不必要的整段回放。
  */
 function isSnapshotBoundaryIntact(ctx, snapshot, messageCount) {
-  const recorded = String(snapshot?.boundarySignature || '');
-  if (!recorded) return true;
-  const current = buildBoundaryMessageSignature(ctx, messageCount);
-  if (!current) return true;
-  return recorded === current;
+  const recorded = String(snapshot?.boundarySignature || '')
+  if (!recorded) return true
+  const current = buildBoundaryMessageSignature(ctx, messageCount)
+  if (!current) return true
+  return recorded === current
 }
-
 function buildMessageDigestFromSignatures(signatures, endIndexExclusive = null) {
-  const list = Array.isArray(signatures) ? signatures : [];
-  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(list.length, endIndexExclusive)) : list.length;
-  let hash = MESSAGE_DIGEST_SEED;
+  const list = Array.isArray(signatures) ? signatures : []
+  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(list.length, endIndexExclusive)) : list.length
+  let hash = MESSAGE_DIGEST_SEED
   for (let index = 0; index < end; index += 1) {
-    hash = foldMessageSignatureDigest(hash, list[index]);
+    hash = foldMessageSignatureDigest(hash, list[index])
   }
-  return hash.toString(16).padStart(8, '0');
+  return hash.toString(16).padStart(8, '0')
 }
-
 function createSnapshotCharacterBaseline(name = '') {
   return {
     name: String(name || '').trim(),
@@ -1921,72 +1880,64 @@ function createSnapshotCharacterBaseline(name = '') {
         realisticLabor: false,
       },
     },
-  };
+  }
 }
-
 function compactSnapshotRecord(value) {
-  if (!isPlainObject(value)) return value;
-  const result = {};
+  if (!isPlainObject(value)) return value
+  const result = {}
   for (const [key, entry] of Object.entries(value)) {
-    if (entry === undefined || entry === null || entry === '') continue;
-    result[key] = entry;
+    if (entry === undefined || entry === null || entry === '') continue
+    result[key] = entry
   }
-  return result;
+  return result
 }
-
 function compactSnapshotArrayEntries(list) {
-  if (!Array.isArray(list)) return [];
-  return list
-    .filter((item) => item && typeof item === 'object')
-    .map((item) => compactSnapshotRecord(item));
+  if (!Array.isArray(list)) return []
+  return list.filter(item => item && typeof item === 'object').map(item => compactSnapshotRecord(item))
 }
-
 function normalizeCharacterForSnapshot(character, name = '') {
-  const next = cloneValue(character || {});
-  next.name = String(next.name || name || '').trim();
-  next.initialized = Boolean(next.initialized);
-  next.profile = next.profile && typeof next.profile === 'object' ? next.profile : {};
-  next.profile.psychology = normalizePsychologyState(next.profile.psychology);
-  next.profile.base = next.profile.base && typeof next.profile.base === 'object' ? next.profile.base : {};
-  next.profile.pregnant = next.profile.pregnant && typeof next.profile.pregnant === 'object' ? next.profile.pregnant : {};
-  next.profile.children = compactSnapshotArrayEntries(next.profile.children);
-  next.profile.diary = compactSnapshotArrayEntries(next.profile.diary);
-  next.profile.pregnant.fetuses = compactSnapshotArrayEntries(next.profile.pregnant.fetuses);
-  next.profile.base.sperms = compactSnapshotArrayEntries(next.profile.base.sperms);
-  next.profile.descriptions = compactSnapshotRecord(next.profile.descriptions || {});
-  next.profile.notify = compactSnapshotRecord(next.profile.notify || {});
-  delete next.updatedAt;
-  delete next.runtime;
-  return next;
+  const next = cloneValue(character || {})
+  next.name = String(next.name || name || '').trim()
+  next.initialized = Boolean(next.initialized)
+  next.profile = next.profile && typeof next.profile === 'object' ? next.profile : {}
+  next.profile.psychology = normalizePsychologyState(next.profile.psychology)
+  next.profile.base = next.profile.base && typeof next.profile.base === 'object' ? next.profile.base : {}
+  next.profile.pregnant = next.profile.pregnant && typeof next.profile.pregnant === 'object' ? next.profile.pregnant : {}
+  next.profile.children = compactSnapshotArrayEntries(next.profile.children)
+  next.profile.diary = compactSnapshotArrayEntries(next.profile.diary)
+  next.profile.pregnant.fetuses = compactSnapshotArrayEntries(next.profile.pregnant.fetuses)
+  next.profile.base.sperms = compactSnapshotArrayEntries(next.profile.base.sperms)
+  next.profile.descriptions = compactSnapshotRecord(next.profile.descriptions || {})
+  next.profile.notify = compactSnapshotRecord(next.profile.notify || {})
+  delete next.updatedAt
+  delete next.runtime
+  return next
 }
-
 function packSnapshotCharacters(characters) {
-  const source = characters && typeof characters === 'object' ? characters : {};
-  const packed = {};
+  const source = characters && typeof characters === 'object' ? characters : {}
+  const packed = {}
   for (const [name, item] of Object.entries(source)) {
-    const normalized = normalizeCharacterForSnapshot(item, name);
-    const baseline = createSnapshotCharacterBaseline(normalized.name || name);
-    const patch = buildStateDeltaPatch(baseline, normalized);
-    packed[name] = patch && typeof patch === 'object' ? patch : {};
+    const normalized = normalizeCharacterForSnapshot(item, name)
+    const baseline = createSnapshotCharacterBaseline(normalized.name || name)
+    const patch = buildStateDeltaPatch(baseline, normalized)
+    packed[name] = patch && typeof patch === 'object' ? patch : {}
   }
-  return packed;
+  return packed
 }
-
 function unpackSnapshotCharacters(characters, format = '') {
-  if (!characters || typeof characters !== 'object') return {};
-  const unpacked = {};
+  if (!characters || typeof characters !== 'object') return {}
+  const unpacked = {}
   for (const [name, item] of Object.entries(characters)) {
     if (format === 'default_delta_v1') {
-      const baseline = createSnapshotCharacterBaseline(name);
-      const restored = applyStateDeltaPatch(baseline, item && typeof item === 'object' ? item : {});
-      unpacked[name] = normalizeCharacterPsychologyState(restored);
-      continue;
+      const baseline = createSnapshotCharacterBaseline(name)
+      const restored = applyStateDeltaPatch(baseline, item && typeof item === 'object' ? item : {})
+      unpacked[name] = normalizeCharacterPsychologyState(restored)
+      continue
     }
-    unpacked[name] = normalizeCharacterPsychologyState(cloneValue(item));
+    unpacked[name] = normalizeCharacterPsychologyState(cloneValue(item))
   }
-  return unpacked;
+  return unpacked
 }
-
 function exportChatStateSnapshotPayload(chatState) {
   return {
     snapshotSchema: 'packed_v2',
@@ -2001,176 +1952,164 @@ function exportChatStateSnapshotPayload(chatState) {
     characters: packSnapshotCharacters(chatState.characters),
     lastRawResult: summarizeRawResult(chatState.lastRawResult),
     lastOperationLogs: summarizeOperationLogs(chatState.lastOperationLogs),
-  };
+  }
 }
-
 function sanitizeStoredSignature(value) {
-  const text = String(value || '');
-  if (!text) return '';
-  if (text.length <= 120) return text;
-  return `hash:${hashStringFNV1a(text, MESSAGE_DIGEST_SEED).toString(16).padStart(8, '0')}`;
+  const text = String(value || '')
+  if (!text) return ''
+  if (text.length <= 120) return text
+  return `hash:${hashStringFNV1a(text, MESSAGE_DIGEST_SEED).toString(16).padStart(8, '0')}`
 }
-
 function normalizeSnapshotToolArguments(value) {
-  if (value === undefined) return undefined;
+  if (value === undefined) return undefined
   if (typeof value === 'string') {
     try {
-      const parsed = JSON.parse(value);
-      return parsed && typeof parsed === 'object' ? summarizeSnapshotDebugValue(parsed) : value.slice(0, MAX_RAW_RESULT_TEXT_LENGTH);
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' ? summarizeSnapshotDebugValue(parsed) : value.slice(0, MAX_RAW_RESULT_TEXT_LENGTH)
     } catch {
-      return value.slice(0, MAX_RAW_RESULT_TEXT_LENGTH);
+      return value.slice(0, MAX_RAW_RESULT_TEXT_LENGTH)
     }
   }
-  if (value && typeof value === 'object') return summarizeSnapshotDebugValue(value);
-  return value;
+  if (value && typeof value === 'object') return summarizeSnapshotDebugValue(value)
+  return value
 }
-
 function summarizeSnapshotDebugValue(value, depth = 0) {
-  if (typeof value === 'string') return value.slice(0, MAX_RAW_RESULT_TEXT_LENGTH);
-  if (!value || typeof value !== 'object') return value;
-  if (depth >= 8) return '[Object]';
-  if (Array.isArray(value)) return value.slice(0, MAX_SNAPSHOT_DEBUG_ITEMS).map((item) => summarizeSnapshotDebugValue(item, depth + 1));
-  const result = {};
+  if (typeof value === 'string') return value.slice(0, MAX_RAW_RESULT_TEXT_LENGTH)
+  if (!value || typeof value !== 'object') return value
+  if (depth >= 8) return '[Object]'
+  if (Array.isArray(value)) return value.slice(0, MAX_SNAPSHOT_DEBUG_ITEMS).map(item => summarizeSnapshotDebugValue(item, depth + 1))
+  const result = {}
   for (const [key, child] of Object.entries(value)) {
-    result[key] = summarizeSnapshotDebugValue(child, depth + 1);
+    result[key] = summarizeSnapshotDebugValue(child, depth + 1)
   }
-  return result;
+  return result
 }
-
 export function summarizeRawResult(value) {
-  if (!value || typeof value !== 'object') return null;
+  if (!value || typeof value !== 'object') return null
   const toolCalls = Array.isArray(value.tool_calls)
-    ? value.tool_calls.map((call) => {
-        const item = { name: String(call?.name || '') };
-        const args = normalizeSnapshotToolArguments(call?.arguments);
-        if (args !== undefined) item.arguments = args;
-        return item;
+    ? value.tool_calls.map(call => {
+        const item = { name: String(call?.name || '') }
+        const args = normalizeSnapshotToolArguments(call?.arguments)
+        if (args !== undefined) item.arguments = args
+        return item
       })
-    : [];
+    : []
   const characterChecks = Array.isArray(value.character_checks)
-    ? value.character_checks.slice(0, MAX_SNAPSHOT_DEBUG_ITEMS).map((check) => ({
+    ? value.character_checks.slice(0, MAX_SNAPSHOT_DEBUG_ITEMS).map(check => ({
         female: String(check?.female || ''),
         status: String(check?.status || ''),
       }))
-    : [];
-  const coverage = value.character_check_coverage && typeof value.character_check_coverage === 'object'
-    ? summarizeSnapshotDebugValue(value.character_check_coverage)
-    : undefined;
-  const message = typeof value.message === 'string' ? value.message.slice(0, MAX_RAW_RESULT_TEXT_LENGTH) : undefined;
-  const error = typeof value.error === 'string' ? value.error.slice(0, MAX_RAW_RESULT_TEXT_LENGTH) : undefined;
-  const result = {};
-  if (message) result.message = message;
-  if (error) result.error = error;
-  if (toolCalls.length > 0) result.tool_calls = toolCalls;
-  if (characterChecks.length > 0) result.character_checks = characterChecks;
-  if (coverage) result.character_check_coverage = coverage;
-  return Object.keys(result).length > 0 ? result : null;
+    : []
+  const coverage =
+    value.character_check_coverage && typeof value.character_check_coverage === 'object'
+      ? summarizeSnapshotDebugValue(value.character_check_coverage)
+      : undefined
+  const message = typeof value.message === 'string' ? value.message.slice(0, MAX_RAW_RESULT_TEXT_LENGTH) : undefined
+  const error = typeof value.error === 'string' ? value.error.slice(0, MAX_RAW_RESULT_TEXT_LENGTH) : undefined
+  const result = {}
+  if (message) result.message = message
+  if (error) result.error = error
+  if (toolCalls.length > 0) result.tool_calls = toolCalls
+  if (characterChecks.length > 0) result.character_checks = characterChecks
+  if (coverage) result.character_check_coverage = coverage
+  return Object.keys(result).length > 0 ? result : null
 }
-
 export function summarizeOperationLogs(value) {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, MAX_SNAPSHOT_DEBUG_ITEMS).map((item) => {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, MAX_SNAPSHOT_DEBUG_ITEMS).map(item => {
     const log = {
       name: String(item?.name || ''),
       applied: Boolean(item?.applied),
       message: String(item?.message || '').slice(0, MAX_RAW_RESULT_TEXT_LENGTH),
-    };
-    if (item?.notify && typeof item.notify === 'object') log.notify = summarizeSnapshotDebugValue(item.notify);
-    const args = normalizeSnapshotToolArguments(item?.arguments);
-    if (args !== undefined) log.arguments = args;
-    return log;
-  });
+    }
+    if (item?.notify && typeof item.notify === 'object') log.notify = summarizeSnapshotDebugValue(item.notify)
+    const args = normalizeSnapshotToolArguments(item?.arguments)
+    if (args !== undefined) log.arguments = args
+    return log
+  })
 }
-
 function sanitizeSnapshotPayload(payload) {
-  const next = cloneValue(payload || createEmptyChatState());
-  next.skillCatalog = normalizeSkillCatalog(next.skillCatalog);
-  next.nextSkillId = normalizeNextSkillId(next.skillCatalog, next.nextSkillId);
-  next.lastAttemptedSignature = sanitizeStoredSignature(next.lastAttemptedSignature);
-  next.lastProcessedSignature = sanitizeStoredSignature(next.lastProcessedSignature);
-  next.lastRawResult = summarizeRawResult(next.lastRawResult);
-  next.lastOperationLogs = summarizeOperationLogs(next.lastOperationLogs);
-  return next;
+  const next = cloneValue(payload || createEmptyChatState())
+  next.skillCatalog = normalizeSkillCatalog(next.skillCatalog)
+  next.nextSkillId = normalizeNextSkillId(next.skillCatalog, next.nextSkillId)
+  next.lastAttemptedSignature = sanitizeStoredSignature(next.lastAttemptedSignature)
+  next.lastProcessedSignature = sanitizeStoredSignature(next.lastProcessedSignature)
+  next.lastRawResult = summarizeRawResult(next.lastRawResult)
+  next.lastOperationLogs = summarizeOperationLogs(next.lastOperationLogs)
+  return next
 }
-
 function buildStateDeltaPatch(previousValue, nextValue) {
-  if (previousValue === nextValue) return undefined;
+  if (previousValue === nextValue) return undefined
   if (Array.isArray(previousValue) || Array.isArray(nextValue)) {
-    if (areSnapshotArraysEqual(previousValue, nextValue)) return undefined;
-    const appendPatch = createSnapshotArrayAppendPatch(previousValue, nextValue);
-    return appendPatch || cloneValue(nextValue);
+    if (areSnapshotArraysEqual(previousValue, nextValue)) return undefined
+    const appendPatch = createSnapshotArrayAppendPatch(previousValue, nextValue)
+    return appendPatch || cloneValue(nextValue)
   }
   if (!isPlainObject(previousValue) || !isPlainObject(nextValue)) {
-    return JSON.stringify(previousValue) === JSON.stringify(nextValue) ? undefined : cloneValue(nextValue);
+    return JSON.stringify(previousValue) === JSON.stringify(nextValue) ? undefined : cloneValue(nextValue)
   }
-
-  const patch = {};
-  let changed = false;
-  const keys = new Set([...Object.keys(previousValue), ...Object.keys(nextValue)]);
+  const patch = {}
+  let changed = false
+  const keys = new Set([...Object.keys(previousValue), ...Object.keys(nextValue)])
   for (const key of keys) {
     if (!Object.prototype.hasOwnProperty.call(nextValue, key)) {
-      patch[key] = createSnapshotDeleteSentinel();
-      changed = true;
-      continue;
+      patch[key] = createSnapshotDeleteSentinel()
+      changed = true
+      continue
     }
     if (!Object.prototype.hasOwnProperty.call(previousValue, key)) {
-      patch[key] = cloneValue(nextValue[key]);
-      changed = true;
-      continue;
+      patch[key] = cloneValue(nextValue[key])
+      changed = true
+      continue
     }
-    const childPatch = buildStateDeltaPatch(previousValue[key], nextValue[key]);
+    const childPatch = buildStateDeltaPatch(previousValue[key], nextValue[key])
     if (childPatch !== undefined) {
-      patch[key] = childPatch;
-      changed = true;
+      patch[key] = childPatch
+      changed = true
     }
   }
-  return changed ? patch : undefined;
+  return changed ? patch : undefined
 }
-
 function applyStateDeltaPatch(previousValue, deltaPatch) {
-  if (deltaPatch === undefined) return cloneValue(previousValue);
-  if (isSnapshotDeleteSentinel(deltaPatch)) return undefined;
-  if (isSnapshotArrayAppendPatch(deltaPatch)) return applySnapshotArrayAppendPatch(previousValue, deltaPatch);
-  if (Array.isArray(deltaPatch) || !isPlainObject(deltaPatch)) return cloneValue(deltaPatch);
-
-  const base = isPlainObject(previousValue) ? cloneValue(previousValue) : {};
+  if (deltaPatch === undefined) return cloneValue(previousValue)
+  if (isSnapshotDeleteSentinel(deltaPatch)) return undefined
+  if (isSnapshotArrayAppendPatch(deltaPatch)) return applySnapshotArrayAppendPatch(previousValue, deltaPatch)
+  if (Array.isArray(deltaPatch) || !isPlainObject(deltaPatch)) return cloneValue(deltaPatch)
+  const base = isPlainObject(previousValue) ? cloneValue(previousValue) : {}
   for (const [key, value] of Object.entries(deltaPatch)) {
     if (isSnapshotDeleteSentinel(value)) {
-      delete base[key];
-      continue;
+      delete base[key]
+      continue
     }
-    const nextValue = applyStateDeltaPatch(base[key], value);
-    if (nextValue === undefined) delete base[key];
-    else base[key] = nextValue;
+    const nextValue = applyStateDeltaPatch(base[key], value)
+    if (nextValue === undefined) delete base[key]
+    else base[key] = nextValue
   }
-  return base;
+  return base
 }
-
 function getSerializedSize(value) {
   try {
-    return JSON.stringify(value).length;
+    return JSON.stringify(value).length
   } catch {
-    return Number.MAX_SAFE_INTEGER;
+    return Number.MAX_SAFE_INTEGER
   }
 }
-
 function shouldStoreFullSnapshot(snapshotIndex, fullPayload, deltaPatch) {
-  if (snapshotIndex <= 0) return true;
-  if (snapshotIndex % SNAPSHOT_FULL_INTERVAL === 0) return true;
-  if (deltaPatch === undefined) return false;
-  const fullSize = getSerializedSize(fullPayload);
-  const patchSize = getSerializedSize(deltaPatch);
-  if (!Number.isFinite(fullSize) || fullSize <= 0) return true;
-  return patchSize >= Math.floor(fullSize * SNAPSHOT_PATCH_SIZE_RATIO);
+  if (snapshotIndex <= 0) return true
+  if (snapshotIndex % SNAPSHOT_FULL_INTERVAL === 0) return true
+  if (deltaPatch === undefined) return false
+  const fullSize = getSerializedSize(fullPayload)
+  const patchSize = getSerializedSize(deltaPatch)
+  if (!Number.isFinite(fullSize) || fullSize <= 0) return true
+  return patchSize >= Math.floor(fullSize * SNAPSHOT_PATCH_SIZE_RATIO)
 }
-
 function trimChatStateSnapshots(chatState) {
-  if (!Array.isArray(chatState?.snapshots)) return;
-  if (chatState.snapshots.length <= MAX_CHAT_STATE_SNAPSHOTS) return;
-  compactChatStateSnapshots(chatState);
-  const startIndex = chatState.snapshots.length - MAX_CHAT_STATE_SNAPSHOTS;
-  const materializedFirstPayload = materializeSnapshotPayloadAt(chatState.snapshots, startIndex);
-  chatState.snapshots = chatState.snapshots.slice(startIndex);
+  if (!Array.isArray(chatState?.snapshots)) return
+  if (chatState.snapshots.length <= MAX_CHAT_STATE_SNAPSHOTS) return
+  compactChatStateSnapshots(chatState)
+  const startIndex = chatState.snapshots.length - MAX_CHAT_STATE_SNAPSHOTS
+  const materializedFirstPayload = materializeSnapshotPayloadAt(chatState.snapshots, startIndex)
+  chatState.snapshots = chatState.snapshots.slice(startIndex)
   if (chatState.snapshots[0]) {
     chatState.snapshots[0] = {
       messageCount: Number.isInteger(chatState.snapshots[0].messageCount) ? chatState.snapshots[0].messageCount : 0,
@@ -2180,288 +2119,281 @@ function trimChatStateSnapshots(chatState) {
       createdAt: Number(chatState.snapshots[0].createdAt || Date.now()),
       snapshotMode: 'full',
       stateSnapshot: materializedFirstPayload,
-    };
+    }
   }
 }
-
 function findSnapshotIndex(chatState, snapshot) {
-  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
-  if (!snapshot || typeof snapshot !== 'object') return -1;
-  const directIndex = snapshots.indexOf(snapshot);
-  if (directIndex >= 0) return directIndex;
-  return snapshots.findIndex((item) =>
-    item
-    && item.createdAt === snapshot.createdAt
-    && item.messageCount === snapshot.messageCount
-    && item.reason === snapshot.reason
-    && String(item.messageDigest || '') === String(snapshot.messageDigest || ''));
+  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : []
+  if (!snapshot || typeof snapshot !== 'object') return -1
+  const directIndex = snapshots.indexOf(snapshot)
+  if (directIndex >= 0) return directIndex
+  return snapshots.findIndex(
+    item =>
+      item &&
+      item.createdAt === snapshot.createdAt &&
+      item.messageCount === snapshot.messageCount &&
+      item.reason === snapshot.reason &&
+      String(item.messageDigest || '') === String(snapshot.messageDigest || ''),
+  )
 }
-
 function materializeSnapshotPayloadAt(snapshots, index, cache = new Map()) {
-  if (!Array.isArray(snapshots) || index < 0 || index >= snapshots.length) return createEmptyChatState();
-  if (cache.has(index)) return cloneValue(cache.get(index));
-
-  const snapshot = snapshots[index];
-  let payload;
+  if (!Array.isArray(snapshots) || index < 0 || index >= snapshots.length) return createEmptyChatState()
+  if (cache.has(index)) return cloneValue(cache.get(index))
+  const snapshot = snapshots[index]
+  let payload
   if (snapshot?.snapshotMode === 'patch') {
-    const previousPayload = materializeSnapshotPayloadAt(snapshots, index - 1, cache);
-    payload = applyStateDeltaPatch(previousPayload, snapshot.stateDelta || {});
+    const previousPayload = materializeSnapshotPayloadAt(snapshots, index - 1, cache)
+    payload = applyStateDeltaPatch(previousPayload, snapshot.stateDelta || {})
   } else {
-    payload = snapshot?.stateSnapshot ? cloneValue(snapshot.stateSnapshot) : createEmptyChatState();
+    payload = snapshot?.stateSnapshot ? cloneValue(snapshot.stateSnapshot) : createEmptyChatState()
   }
-
-  cache.set(index, cloneValue(payload));
-  return payload;
+  cache.set(index, cloneValue(payload))
+  return payload
 }
-
 function createStoredSnapshotState(snapshots, payload, metadata = {}, cache = new Map()) {
-  const snapshotIndex = Array.isArray(snapshots) ? snapshots.length : 0;
-  const normalizedPayload = sanitizeSnapshotPayload(payload);
-  const previousPayload = snapshotIndex > 0 ? materializeSnapshotPayloadAt(snapshots, snapshotIndex - 1, cache) : null;
-  const deltaPatch = previousPayload ? buildStateDeltaPatch(previousPayload, normalizedPayload) : undefined;
+  const snapshotIndex = Array.isArray(snapshots) ? snapshots.length : 0
+  const normalizedPayload = sanitizeSnapshotPayload(payload)
+  const previousPayload = snapshotIndex > 0 ? materializeSnapshotPayloadAt(snapshots, snapshotIndex - 1, cache) : null
+  const deltaPatch = previousPayload ? buildStateDeltaPatch(previousPayload, normalizedPayload) : undefined
   const baseRecord = {
     messageCount: Number.isInteger(metadata.messageCount) ? Math.max(0, metadata.messageCount) : 0,
     messageDigest: String(metadata.messageDigest || ''),
     boundarySignature: String(metadata.boundarySignature || ''),
     reason: String(metadata.reason || 'state'),
     createdAt: Number(metadata.createdAt || Date.now()),
-  };
-
+  }
   if (shouldStoreFullSnapshot(snapshotIndex, normalizedPayload, deltaPatch)) {
     return {
       ...baseRecord,
       snapshotMode: 'full',
       stateSnapshot: normalizedPayload,
-    };
+    }
   }
-
   return {
     ...baseRecord,
     snapshotMode: 'patch',
     stateDelta: deltaPatch || {},
-  };
+  }
 }
-
 function compactChatStateSnapshots(chatState) {
-  if (!Array.isArray(chatState?.snapshots)) return false;
-  let changed = false;
+  if (!Array.isArray(chatState?.snapshots)) return false
+  let changed = false
   for (const snapshot of chatState.snapshots) {
-    if (!snapshot || typeof snapshot !== 'object') continue;
+    if (!snapshot || typeof snapshot !== 'object') continue
     if (!Number.isInteger(snapshot.messageCount)) {
-      snapshot.messageCount = Array.isArray(snapshot.messageSignatures) ? snapshot.messageSignatures.length : 0;
-      changed = true;
+      snapshot.messageCount = Array.isArray(snapshot.messageSignatures) ? snapshot.messageSignatures.length : 0
+      changed = true
     }
     if (!snapshot.messageDigest && Array.isArray(snapshot.messageSignatures)) {
-      snapshot.messageDigest = buildMessageDigestFromSignatures(snapshot.messageSignatures, snapshot.messageCount);
-      changed = true;
+      snapshot.messageDigest = buildMessageDigestFromSignatures(snapshot.messageSignatures, snapshot.messageCount)
+      changed = true
     }
     if (!snapshot.snapshotMode) {
-      snapshot.snapshotMode = snapshot.stateDelta ? 'patch' : 'full';
-      changed = true;
+      snapshot.snapshotMode = snapshot.stateDelta ? 'patch' : 'full'
+      changed = true
     }
     if (Array.isArray(snapshot.messageSignatures)) {
-      delete snapshot.messageSignatures;
-      changed = true;
+      delete snapshot.messageSignatures
+      changed = true
     }
   }
-  return changed;
+  return changed
 }
-
 function needsRepackChatStateSnapshots(chatState) {
-  if (!Array.isArray(chatState?.snapshots) || chatState.snapshots.length === 0) return false;
-  return chatState.snapshots.some((snapshot) => {
-    if (!snapshot || typeof snapshot !== 'object') return false;
-    if (!snapshot.snapshotMode) return true;
-    if (Array.isArray(snapshot.messageSignatures)) return true;
-    return false;
-  });
+  if (!Array.isArray(chatState?.snapshots) || chatState.snapshots.length === 0) return false
+  return chatState.snapshots.some(snapshot => {
+    if (!snapshot || typeof snapshot !== 'object') return false
+    if (!snapshot.snapshotMode) return true
+    if (Array.isArray(snapshot.messageSignatures)) return true
+    return false
+  })
 }
-
 function repackChatStateSnapshots(chatState) {
-  if (!Array.isArray(chatState?.snapshots) || chatState.snapshots.length === 0) return false;
-  compactChatStateSnapshots(chatState);
-
-  const originalSnapshots = chatState.snapshots;
-  const sourceCache = new Map();
-  const repackedSnapshots = [];
-  const repackedCache = new Map();
-  let changed = false;
-
+  if (!Array.isArray(chatState?.snapshots) || chatState.snapshots.length === 0) return false
+  compactChatStateSnapshots(chatState)
+  const originalSnapshots = chatState.snapshots
+  const sourceCache = new Map()
+  const repackedSnapshots = []
+  const repackedCache = new Map()
+  let changed = false
   for (let index = 0; index < originalSnapshots.length; index += 1) {
-    const snapshot = originalSnapshots[index];
-    const payload = materializeSnapshotPayloadAt(originalSnapshots, index, sourceCache);
-    const stored = createStoredSnapshotState(repackedSnapshots, payload, {
-      messageCount: snapshot?.messageCount,
-      messageDigest: snapshot?.messageDigest,
-      boundarySignature: snapshot?.boundarySignature,
-      reason: snapshot?.reason,
-      createdAt: snapshot?.createdAt,
-    }, repackedCache);
-    repackedSnapshots.push(stored);
-    repackedCache.set(repackedSnapshots.length - 1, cloneValue(payload));
-
+    const snapshot = originalSnapshots[index]
+    const payload = materializeSnapshotPayloadAt(originalSnapshots, index, sourceCache)
+    const stored = createStoredSnapshotState(
+      repackedSnapshots,
+      payload,
+      {
+        messageCount: snapshot?.messageCount,
+        messageDigest: snapshot?.messageDigest,
+        boundarySignature: snapshot?.boundarySignature,
+        reason: snapshot?.reason,
+        createdAt: snapshot?.createdAt,
+      },
+      repackedCache,
+    )
+    repackedSnapshots.push(stored)
+    repackedCache.set(repackedSnapshots.length - 1, cloneValue(payload))
     if (
-      stored.snapshotMode !== snapshot?.snapshotMode
-      || JSON.stringify(stored.stateSnapshot ?? stored.stateDelta ?? null) !== JSON.stringify(snapshot?.stateSnapshot ?? snapshot?.stateDelta ?? null)
+      stored.snapshotMode !== snapshot?.snapshotMode ||
+      JSON.stringify(stored.stateSnapshot ?? stored.stateDelta ?? null) !== JSON.stringify(snapshot?.stateSnapshot ?? snapshot?.stateDelta ?? null)
     ) {
-      changed = true;
+      changed = true
     }
   }
-
-  if (changed) chatState.snapshots = repackedSnapshots;
-  return changed;
+  if (changed) chatState.snapshots = repackedSnapshots
+  return changed
 }
-
 function getSnapshotRuntimeKey(snapshot) {
-  if (!snapshot || typeof snapshot !== 'object') return '';
+  if (!snapshot || typeof snapshot !== 'object') return ''
   return [
     Number.isInteger(snapshot.messageCount) ? snapshot.messageCount : 0,
     String(snapshot.messageDigest || ''),
     String(snapshot.reason || ''),
     Number(snapshot.createdAt || 0),
-  ].join('|');
+  ].join('|')
 }
-
 function markRestoredSnapshot(chatState, snapshot) {
-  if (!chatState || typeof chatState !== 'object') return;
+  if (!chatState || typeof chatState !== 'object') return
   Object.defineProperty(chatState, RESTORED_SNAPSHOT_RUNTIME_KEY, {
     value: getSnapshotRuntimeKey(snapshot),
     configurable: true,
     enumerable: false,
     writable: true,
-  });
+  })
 }
-
 function scheduleChatCheckpointSave(ctx) {
   if (typeof ctx?.saveChatDebounced === 'function') {
-    ctx.saveChatDebounced();
-    return;
+    ctx.saveChatDebounced()
+    return
   }
-  if (typeof ctx?.saveChat !== 'function' || checkpointSaveTimer !== null) return;
+  if (typeof ctx?.saveChat !== 'function' || checkpointSaveTimer !== null) return
   checkpointSaveTimer = setTimeout(() => {
-    checkpointSaveTimer = null;
-    try { ctx.saveChat(); } catch (error) { console.warn('[BS BioTracker] unable to save chat checkpoint', error); }
-  }, CHECKPOINT_SAVE_DEBOUNCE_MS);
+    checkpointSaveTimer = null
+    try {
+      ctx.saveChat()
+    } catch (error) {
+      console.warn('[BS BioTracker] unable to save chat checkpoint', error)
+    }
+  }, CHECKPOINT_SAVE_DEBOUNCE_MS)
 }
-
 function getCurrentSwipeExtra(message) {
-  const swipeId = Number(message?.swipe_id);
-  if (!Number.isInteger(swipeId) || swipeId < 0 || !Array.isArray(message?.swipe_info)) return null;
-  return message.swipe_info[swipeId]?.extra && typeof message.swipe_info[swipeId].extra === 'object'
-    ? message.swipe_info[swipeId].extra
-    : null;
+  const swipeId = Number(message?.swipe_id)
+  if (!Number.isInteger(swipeId) || swipeId < 0 || !Array.isArray(message?.swipe_info)) return null
+  return message.swipe_info[swipeId]?.extra && typeof message.swipe_info[swipeId].extra === 'object' ? message.swipe_info[swipeId].extra : null
 }
-
 function writeMessageCheckpoint(ctx, snapshot) {
-  const chat = getHostChat(ctx);
-  const count = Number(snapshot?.messageCount);
-  const message = Number.isInteger(count) && count > 0 ? chat[count - 1] : null;
-  if (!message || typeof message !== 'object') return false;
+  const chat = getHostChat(ctx)
+  const count = Number(snapshot?.messageCount)
+  const message = Number.isInteger(count) && count > 0 ? chat[count - 1] : null
+  if (!message || typeof message !== 'object') return false
   const checkpoint = {
     version: 1,
     messageCount: count,
     messageDigest: String(snapshot.messageDigest || ''),
     boundarySignature: String(snapshot.boundarySignature || ''),
     snapshot: cloneValue(snapshot),
-  };
+  }
   // Merge only our namespace. SillyTavern and other extensions retain their fields.
-  if (!message.extra || typeof message.extra !== 'object') message.extra = {};
-  message.extra[CHAT_CHECKPOINT_KEY] = checkpoint;
-  const swipeExtra = getCurrentSwipeExtra(message);
-  if (swipeExtra) swipeExtra[CHAT_CHECKPOINT_KEY] = cloneValue(checkpoint);
-  scheduleChatCheckpointSave(ctx);
-  return true;
+  if (!message.extra || typeof message.extra !== 'object') message.extra = {}
+  message.extra[CHAT_CHECKPOINT_KEY] = checkpoint
+  const swipeExtra = getCurrentSwipeExtra(message)
+  if (swipeExtra) swipeExtra[CHAT_CHECKPOINT_KEY] = cloneValue(checkpoint)
+  scheduleChatCheckpointSave(ctx)
+  return true
 }
-
 function readMessageCheckpoint(message) {
-  const direct = message?.extra?.[CHAT_CHECKPOINT_KEY];
-  if (direct && typeof direct === 'object') return direct;
-  const swipeExtra = getCurrentSwipeExtra(message);
-  return swipeExtra?.[CHAT_CHECKPOINT_KEY] && typeof swipeExtra[CHAT_CHECKPOINT_KEY] === 'object'
-    ? swipeExtra[CHAT_CHECKPOINT_KEY]
-    : null;
+  const direct = message?.extra?.[CHAT_CHECKPOINT_KEY]
+  if (direct && typeof direct === 'object') return direct
+  const swipeExtra = getCurrentSwipeExtra(message)
+  return swipeExtra?.[CHAT_CHECKPOINT_KEY] && typeof swipeExtra[CHAT_CHECKPOINT_KEY] === 'object' ? swipeExtra[CHAT_CHECKPOINT_KEY] : null
 }
-
 function isUsableMessageCheckpoint(ctx, message, checkpoint, index) {
-  if (!checkpoint || typeof checkpoint !== 'object' || checkpoint.version !== 1) return false;
-  const snapshot = checkpoint.snapshot;
-  if (!snapshot || typeof snapshot !== 'object') return false;
-  const count = Number(checkpoint.messageCount);
-  if (!Number.isInteger(count) || count !== index + 1) return false;
-  if (Number(snapshot.messageCount) !== count) return false;
-  if (String(checkpoint.messageDigest || '') !== String(snapshot.messageDigest || '')) return false;
-  if (String(checkpoint.boundarySignature || '') !== String(snapshot.boundarySignature || '')) return false;
-  const boundary = buildBoundaryMessageSignature(ctx, count);
-  if (boundary && String(snapshot.boundarySignature || '') && boundary !== String(snapshot.boundarySignature)) return false;
-  return message === getHostChat(ctx)[count - 1];
+  if (!checkpoint || typeof checkpoint !== 'object' || checkpoint.version !== 1) return false
+  const snapshot = checkpoint.snapshot
+  if (!snapshot || typeof snapshot !== 'object') return false
+  const count = Number(checkpoint.messageCount)
+  if (!Number.isInteger(count) || count !== index + 1) return false
+  if (Number(snapshot.messageCount) !== count) return false
+  if (String(checkpoint.messageDigest || '') !== String(snapshot.messageDigest || '')) return false
+  if (String(checkpoint.boundarySignature || '') !== String(snapshot.boundarySignature || '')) return false
+  const boundary = buildBoundaryMessageSignature(ctx, count)
+  if (boundary && String(snapshot.boundarySignature || '') && boundary !== String(snapshot.boundarySignature)) return false
+  return message === getHostChat(ctx)[count - 1]
 }
-
 export function reconcileMessageCheckpoints(ctx, chatState) {
-  if (!Array.isArray(chatState?.snapshots)) return false;
-  const chat = getHostChat(ctx);
-  const boundSnapshots = new Map();
+  if (!Array.isArray(chatState?.snapshots)) return false
+  const chat = getHostChat(ctx)
+  const boundSnapshots = new Map()
   for (let index = 0; index < chat.length; index += 1) {
-    const checkpoint = readMessageCheckpoint(chat[index]);
-    const count = Number(checkpoint?.messageCount);
-    const snapshot = checkpoint?.snapshot;
-    if (Number.isInteger(count) && count > 0 && count <= chat.length && count === index + 1 && snapshot && isUsableMessageCheckpoint(ctx, chat[index], checkpoint, index)) {
-      boundSnapshots.set(count, snapshot);
+    const checkpoint = readMessageCheckpoint(chat[index])
+    const count = Number(checkpoint?.messageCount)
+    const snapshot = checkpoint?.snapshot
+    if (
+      Number.isInteger(count) &&
+      count > 0 &&
+      count <= chat.length &&
+      count === index + 1 &&
+      snapshot &&
+      isUsableMessageCheckpoint(ctx, chat[index], checkpoint, index)
+    ) {
+      boundSnapshots.set(count, snapshot)
     }
   }
-  let changed = false;
-  const existingKeys = new Set(chatState.snapshots.map(getSnapshotRuntimeKey));
+  let changed = false
+  const existingKeys = new Set(chatState.snapshots.map(getSnapshotRuntimeKey))
   for (const snapshot of boundSnapshots.values()) {
-    const key = getSnapshotRuntimeKey(snapshot);
-    if (!key || existingKeys.has(key)) continue;
-    chatState.snapshots.push(cloneValue(snapshot));
-    existingKeys.add(key);
-    changed = true;
+    const key = getSnapshotRuntimeKey(snapshot)
+    if (!key || existingKeys.has(key)) continue
+    chatState.snapshots.push(cloneValue(snapshot))
+    existingKeys.add(key)
+    changed = true
   }
-  const retained = chatState.snapshots.filter((snapshot) => Number(snapshot?.messageCount) <= chat.length);
-  if (retained.length !== chatState.snapshots.length) changed = true;
-  chatState.snapshots = retained;
+  const retained = chatState.snapshots.filter(snapshot => Number(snapshot?.messageCount) <= chat.length)
+  if (retained.length !== chatState.snapshots.length) changed = true
+  chatState.snapshots = retained
   if (changed) {
-    chatState.snapshots.sort((left, right) => Number(left?.messageCount || 0) - Number(right?.messageCount || 0) || Number(left?.createdAt || 0) - Number(right?.createdAt || 0));
-    trimChatStateSnapshots(chatState);
+    chatState.snapshots.sort(
+      (left, right) =>
+        Number(left?.messageCount || 0) - Number(right?.messageCount || 0) || Number(left?.createdAt || 0) - Number(right?.createdAt || 0),
+    )
+    trimChatStateSnapshots(chatState)
   }
-  return changed;
+  return changed
 }
-
 export function restoreChatStateFromSnapshot(chatState, snapshot) {
-  if (!snapshot) return;
-  const snapshotIndex = findSnapshotIndex(chatState, snapshot);
-  const payload = snapshotIndex >= 0
-    ? materializeSnapshotPayloadAt(chatState.snapshots, snapshotIndex)
-    : (snapshot?.stateSnapshot ? cloneValue(snapshot.stateSnapshot) : createEmptyChatState());
-  chatState.lastAttemptedSignature = payload.lastAttemptedSignature || '';
-  chatState.lastProcessedSignature = payload.lastProcessedSignature || '';
-  chatState.lastRunAt = payload.lastRunAt || 0;
-  chatState.sceneSummary = payload.sceneSummary || '';
-  chatState.minutesPassed = payload.minutesPassed || 0;
-  if (payload.skillCatalog !== undefined) chatState.skillCatalog = normalizeSkillCatalog(payload.skillCatalog);
-  if (payload.nextSkillId !== undefined) chatState.nextSkillId = normalizeNextSkillId(chatState.skillCatalog, payload.nextSkillId);
-  chatState.characters = unpackSnapshotCharacters(payload.characters, payload.charactersFormat || '');
-  chatState.lastRawResult = payload.lastRawResult || null;
-  chatState.lastOperationLogs = Array.isArray(payload.lastOperationLogs) ? payload.lastOperationLogs : [];
+  if (!snapshot) return
+  const snapshotIndex = findSnapshotIndex(chatState, snapshot)
+  const payload =
+    snapshotIndex >= 0
+      ? materializeSnapshotPayloadAt(chatState.snapshots, snapshotIndex)
+      : snapshot?.stateSnapshot
+        ? cloneValue(snapshot.stateSnapshot)
+        : createEmptyChatState()
+  chatState.lastAttemptedSignature = payload.lastAttemptedSignature || ''
+  chatState.lastProcessedSignature = payload.lastProcessedSignature || ''
+  chatState.lastRunAt = payload.lastRunAt || 0
+  chatState.sceneSummary = payload.sceneSummary || ''
+  chatState.minutesPassed = payload.minutesPassed || 0
+  if (payload.skillCatalog !== undefined) chatState.skillCatalog = normalizeSkillCatalog(payload.skillCatalog)
+  if (payload.nextSkillId !== undefined) chatState.nextSkillId = normalizeNextSkillId(chatState.skillCatalog, payload.nextSkillId)
+  chatState.characters = unpackSnapshotCharacters(payload.characters, payload.charactersFormat || '')
+  chatState.lastRawResult = payload.lastRawResult || null
+  chatState.lastOperationLogs = Array.isArray(payload.lastOperationLogs) ? payload.lastOperationLogs : []
 }
-
 export function prepareChatStateForReplay(ctx, chatState, messageCount) {
-  const targetCount = Number.isInteger(messageCount) ? Math.max(0, messageCount) : 0;
-  if (targetCount <= 0 || !Array.isArray(chatState?.snapshots)) return null;
-
+  const targetCount = Number.isInteger(messageCount) ? Math.max(0, messageCount) : 0
+  if (targetCount <= 0 || !Array.isArray(chatState?.snapshots)) return null
   // 重分析某楼时，该楼旧快照已经包含了上次分析的结果，不能把它当作本轮基线。
   // 先找目标楼之前最近的有效快照，再裁掉目标楼及其之后的快照，保持 patch 链完整。
-  const baseSnapshot = getLatestMatchingSnapshotBefore(ctx, chatState, targetCount);
-  if (!baseSnapshot) return null;
-
-  const previousSnapshots = cloneValue(chatState.snapshots);
-  restoreChatStateFromSnapshot(chatState, baseSnapshot);
-  chatState.snapshots = chatState.snapshots.filter((snapshot) => Number(snapshot?.messageCount) < targetCount);
-  trimChatStateSnapshots(chatState);
-  markRestoredSnapshot(chatState, baseSnapshot);
-  return { baseMessageCount: baseSnapshot.messageCount, previousSnapshots };
+  const baseSnapshot = getLatestMatchingSnapshotBefore(ctx, chatState, targetCount)
+  if (!baseSnapshot) return null
+  const previousSnapshots = cloneValue(chatState.snapshots)
+  restoreChatStateFromSnapshot(chatState, baseSnapshot)
+  chatState.snapshots = chatState.snapshots.filter(snapshot => Number(snapshot?.messageCount) < targetCount)
+  trimChatStateSnapshots(chatState)
+  markRestoredSnapshot(chatState, baseSnapshot)
+  return { baseMessageCount: baseSnapshot.messageCount, previousSnapshots }
 }
-
 /**
  * 返回目标消息数之前最近的 BS 插件快照。
  *
@@ -2469,85 +2401,71 @@ export function prepareChatStateForReplay(ctx, chatState, messageCount) {
  * 当前尾楼可能已经保存过本轮结果，必须明确排除它，避免把工具调用再次叠加。
  */
 export function getLatestMatchingSnapshotBefore(ctx, chatState, messageCount) {
-  compactChatStateSnapshots(chatState);
-  const targetCount = Number.isInteger(messageCount) ? Math.max(0, messageCount) : 0;
-  if (targetCount <= 1) return null;
-  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
+  compactChatStateSnapshots(chatState)
+  const targetCount = Number.isInteger(messageCount) ? Math.max(0, messageCount) : 0
+  if (targetCount <= 1) return null
+  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : []
   for (let index = snapshots.length - 1; index >= 0; index -= 1) {
-    const snapshot = snapshots[index];
-    const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0;
-    if (count <= 0 || count >= targetCount) continue;
-    if (!isSnapshotBoundaryIntact(ctx, snapshot, count)) continue;
-    return snapshot;
+    const snapshot = snapshots[index]
+    const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0
+    if (count <= 0 || count >= targetCount) continue
+    if (!isSnapshotBoundaryIntact(ctx, snapshot, count)) continue
+    return snapshot
   }
-  return null;
+  return null
 }
-
 export function restoreChatStateAfterReplayFailure(chatState, replayContext) {
-  if (!Array.isArray(replayContext?.previousSnapshots)) return false;
-  chatState.snapshots = replayContext.previousSnapshots;
-  const failedFloor = chatState.snapshots.findLast?.(
-    (snapshot) => Number(snapshot?.messageCount) === Number(replayContext.targetMessageCount),
-  );
-  if (failedFloor) restoreChatStateFromSnapshot(chatState, failedFloor);
-  return true;
+  if (!Array.isArray(replayContext?.previousSnapshots)) return false
+  chatState.snapshots = replayContext.previousSnapshots
+  const failedFloor = chatState.snapshots.findLast?.(snapshot => Number(snapshot?.messageCount) === Number(replayContext.targetMessageCount))
+  if (failedFloor) restoreChatStateFromSnapshot(chatState, failedFloor)
+  return true
 }
-
 export function recordChatStateSnapshot(ctx, chatState, options = {}) {
-  if (!Array.isArray(chatState.snapshots)) chatState.snapshots = [];
-  const messageCount = Number.isInteger(options.messageCount)
-    ? Math.max(0, options.messageCount)
-    : getHostChat(ctx).length;
+  if (!Array.isArray(chatState.snapshots)) chatState.snapshots = []
+  const messageCount = Number.isInteger(options.messageCount) ? Math.max(0, options.messageCount) : getHostChat(ctx).length
   if (options.replaceMessageCount === true) {
-    chatState.snapshots = chatState.snapshots.filter((snapshot) => Number(snapshot?.messageCount) < messageCount);
+    chatState.snapshots = chatState.snapshots.filter(snapshot => Number(snapshot?.messageCount) < messageCount)
   }
-  const snapshot = createStoredSnapshotState(
-    chatState.snapshots,
-    exportChatStateSnapshotPayload(chatState),
-    {
-      messageCount,
-      messageDigest: hasAbsoluteHostChatView(ctx) ? '' : buildMessageDigest(ctx, messageCount),
-      // 前缀 digest 在 TT 稀疏视图下无法计算，边界签名两种宿主都能用
-      boundarySignature: buildBoundaryMessageSignature(ctx, messageCount),
-      reason: String(options.reason || 'state'),
-      createdAt: Date.now(),
-    },
-  );
-  chatState.snapshots.push(snapshot);
-  trimChatStateSnapshots(chatState);
-  markRestoredSnapshot(chatState, snapshot);
-  if (options.bindToMessage !== false) writeMessageCheckpoint(ctx, snapshot);
-  return snapshot;
+  const snapshot = createStoredSnapshotState(chatState.snapshots, exportChatStateSnapshotPayload(chatState), {
+    messageCount,
+    messageDigest: hasAbsoluteHostChatView(ctx) ? '' : buildMessageDigest(ctx, messageCount),
+    // 前缀 digest 在 TT 稀疏视图下无法计算，边界签名两种宿主都能用
+    boundarySignature: buildBoundaryMessageSignature(ctx, messageCount),
+    reason: String(options.reason || 'state'),
+    createdAt: Date.now(),
+  })
+  chatState.snapshots.push(snapshot)
+  trimChatStateSnapshots(chatState)
+  markRestoredSnapshot(chatState, snapshot)
+  if (options.bindToMessage !== false) writeMessageCheckpoint(ctx, snapshot)
+  return snapshot
 }
-
 export function getLatestMatchingSnapshot(ctx, chatState, messageCount = null) {
-  compactChatStateSnapshots(chatState);
-  const chatLength = getHostChat(ctx).length;
-  const requestedCount = Number.isInteger(messageCount)
-    ? Math.max(0, Math.min(chatLength, messageCount))
-    : null;
-  const snapshots = Array.isArray(chatState.snapshots) ? chatState.snapshots : [];
+  compactChatStateSnapshots(chatState)
+  const chatLength = getHostChat(ctx).length
+  const requestedCount = Number.isInteger(messageCount) ? Math.max(0, Math.min(chatLength, messageCount)) : null
+  const snapshots = Array.isArray(chatState.snapshots) ? chatState.snapshots : []
   for (let index = snapshots.length - 1; index >= 0; index -= 1) {
-    const snapshot = snapshots[index];
-    const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0;
+    const snapshot = snapshots[index]
+    const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0
     if (requestedCount !== null) {
-      if (count !== requestedCount) continue;
+      if (count !== requestedCount) continue
     } else if (count > chatLength) {
-      continue;
+      continue
     }
     // 长度对上还不够：边界讯息被删除或改写时，这个快照的基准已经不成立
-    if (!isSnapshotBoundaryIntact(ctx, snapshot, count)) continue;
-    return snapshot;
+    if (!isSnapshotBoundaryIntact(ctx, snapshot, count)) continue
+    return snapshot
   }
-  return null;
+  return null
 }
-
 export function buildSignature(ctx, endIndexExclusive = null) {
-  const chat = getHostChat(ctx);
-  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length;
-  const last = chat[end - 1];
-  if (!last) return '';
-  const content = String(last.mes || '');
+  const chat = getHostChat(ctx)
+  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length
+  const last = chat[end - 1]
+  if (!last) return ''
+  const content = String(last.mes || '')
   return [
     getChatKey(ctx),
     end,
@@ -2555,41 +2473,43 @@ export function buildSignature(ctx, endIndexExclusive = null) {
     String(last.name || ''),
     content.length,
     hashStringFNV1a(content, MESSAGE_DIGEST_SEED).toString(16).padStart(8, '0'),
-  ].join('|');
+  ].join('|')
 }
-
 export function shouldTriggerForMessage(settings, lastMessage) {
-  if (!lastMessage) return false;
-  if (settings.triggerTiming === 'after_ai') return !lastMessage.is_user;
-  if (settings.triggerTiming === 'after_user') return !!lastMessage.is_user;
-  return false;
+  if (!lastMessage) return false
+  if (settings.triggerTiming === 'after_ai') return !lastMessage.is_user
+  if (settings.triggerTiming === 'after_user') return !!lastMessage.is_user
+  return false
 }
-
 export function formatStatusText(chatState) {
-  const lines = [];
-  if (chatState.sceneSummary) lines.push(`Scene: ${chatState.sceneSummary}`);
-  if (chatState.minutesPassed) lines.push(`Minutes passed: ${chatState.minutesPassed}`);
-  const characters = Object.values(chatState.characters || {});
-  if (characters.length === 0) lines.push('No character state yet.');
+  const lines = []
+  if (chatState.sceneSummary) lines.push(`Scene: ${chatState.sceneSummary}`)
+  if (chatState.minutesPassed) lines.push(`Minutes passed: ${chatState.minutesPassed}`)
+  const characters = Object.values(chatState.characters || {})
+  if (characters.length === 0) lines.push('No character state yet.')
   for (const item of characters) {
-    const profile = item?.profile || {};
-    const base = profile.base || {};
-    const pregnant = profile.pregnant || {};
-    const experience = profile.experience || {};
-    const psychology = profile.psychology || {};
-    lines.push('', `[${item.name}]`, `Initialized: ${item.initialized ? 'yes' : 'no'}`);
-    lines.push(`Base: ${JSON.stringify(base)}`);
-    lines.push(`Pregnant: ${JSON.stringify(pregnant)}`);
-    if (profile.notify && Object.values(profile.notify).some((value) => String(value || '').trim())) lines.push(`Notify: ${JSON.stringify(profile.notify)}`);
-    if (Array.isArray(profile.children) && profile.children.length > 0) lines.push(`Children: ${JSON.stringify(profile.children)}`);
-    if (Array.isArray(profile.diary) && profile.diary.length > 0) lines.push(`Diary: ${JSON.stringify(profile.diary)}`);
-    lines.push(`Experience: ${JSON.stringify(experience)}`);
-    if ((psychology.mens && Object.values(psychology.mens).some((value) => value !== null && value !== undefined)) || (psychology.preg && Object.values(psychology.preg).some((value) => value !== null && value !== undefined))) {
-      lines.push(`Psychology: ${JSON.stringify(psychology)}`);
+    const profile = item?.profile || {}
+    const base = profile.base || {}
+    const pregnant = profile.pregnant || {}
+    const experience = profile.experience || {}
+    const psychology = profile.psychology || {}
+    lines.push('', `[${item.name}]`, `Initialized: ${item.initialized ? 'yes' : 'no'}`)
+    lines.push(`Base: ${JSON.stringify(base)}`)
+    lines.push(`Pregnant: ${JSON.stringify(pregnant)}`)
+    if (profile.notify && Object.values(profile.notify).some(value => String(value || '').trim()))
+      lines.push(`Notify: ${JSON.stringify(profile.notify)}`)
+    if (Array.isArray(profile.children) && profile.children.length > 0) lines.push(`Children: ${JSON.stringify(profile.children)}`)
+    if (Array.isArray(profile.diary) && profile.diary.length > 0) lines.push(`Diary: ${JSON.stringify(profile.diary)}`)
+    lines.push(`Experience: ${JSON.stringify(experience)}`)
+    if (
+      (psychology.mens && Object.values(psychology.mens).some(value => value !== null && value !== undefined)) ||
+      (psychology.preg && Object.values(psychology.preg).some(value => value !== null && value !== undefined))
+    ) {
+      lines.push(`Psychology: ${JSON.stringify(psychology)}`)
     }
-    if (profile.descriptions && Object.values(profile.descriptions).some((value) => String(value || '').trim())) {
-      lines.push(`Descriptions: ${JSON.stringify(profile.descriptions)}`);
+    if (profile.descriptions && Object.values(profile.descriptions).some(value => String(value || '').trim())) {
+      lines.push(`Descriptions: ${JSON.stringify(profile.descriptions)}`)
     }
   }
-  return lines.join('\n').trim();
+  return lines.join('\n').trim()
 }
