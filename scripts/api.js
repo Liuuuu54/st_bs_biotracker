@@ -164,30 +164,44 @@ function getHostProxyHeaders(extraHeaders = {}) {
   return headers;
 }
 
+/**
+ * 上游识别用 User-Agent（仅注入后端代理路径，见 buildHostProxyConfig）：
+ * 不带版本避免与 manifest.json 漂移，仓库 URL 供提供商核对来源。
+ */
+const PLUGIN_USER_AGENT = 'BS-BioTracker (+https://github.com/Liuuuu54/st_bs_biotracker)';
+
 function buildHostProxyConfig(apiBase, settings) {
   const apiKey = String(settings?.apiKey || '');
   const format = normalizeApiFormat(settings?.apiFormat);
-  let customIncludeHeaders = '';
+  const headerLines = [];
   if (apiKey) {
     if (format === API_FORMATS.GEMINI_INTERACTIONS) {
       // Google AI 认 x-goog-api-key；Authorization: Bearer 会被当成 OAuth 而 401
-      customIncludeHeaders = `x-goog-api-key: ${apiKey}`;
+      headerLines.push(`x-goog-api-key: ${apiKey}`);
     } else if (format === API_FORMATS.CLAUDE_MESSAGES) {
-      customIncludeHeaders = [
+      headerLines.push(
         `Authorization: Bearer ${apiKey}`,
         `x-api-key: ${apiKey}`,
         'anthropic-version: 2023-06-01',
-      ].join('\n');
+      );
     } else {
-      customIncludeHeaders = `Authorization: Bearer ${apiKey}`;
+      headerLines.push(`Authorization: Bearer ${apiKey}`);
     }
+  }
+  // 原版 ST 后端用 node-fetch 发上游请求，默认 UA 是通用的 "node-fetch"；
+  // 部分提供商（如 OpenCode Go）拿 UA 做反欺诈信号，泛用 bot UA 可能被拦。
+  // custom_include_headers 会在 ST 后端合并进上游请求头（mergeObjectWithYaml），
+  // 足以覆盖默认值。TauriTavern 后端自带产品 UA（TauriTavern/<ver>）且
+  // additional headers 最后应用，注入这里会把产品 UA 顶掉，故 TT 跳过。
+  if (!hostSupportsFormatAwareProxy()) {
+    headerLines.push(`User-Agent: ${PLUGIN_USER_AGENT}`);
   }
   return {
     chat_completion_source: 'custom',
     custom_url: apiBase,
     reverse_proxy: apiBase,
     proxy_password: apiKey,
-    custom_include_headers: customIncludeHeaders,
+    custom_include_headers: headerLines.join('\n'),
   };
 }
 

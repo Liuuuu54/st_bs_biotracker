@@ -68,6 +68,11 @@ test('fetchModelList uses the SillyTavern backend proxy for a cross-origin API',
   assert.equal(body.custom_url, 'https://example-model-host.test/v1');
   assert.equal(body.reverse_proxy, 'https://example-model-host.test/v1');
   assert.equal(body.proxy_password, '');
+  // 无密钥时 ST 后端代理仍应带自定义 UA（node-fetch 默认 UA 的覆盖与密钥无关）
+  assert.equal(
+    body.custom_include_headers,
+    'User-Agent: BS-BioTracker (+https://github.com/Liuuuu54/st_bs_biotracker)',
+  );
 });
 
 test('callOpenAICompatible sends chat completions through the SillyTavern backend proxy', async () => {
@@ -92,7 +97,14 @@ test('callOpenAICompatible sends chat completions through the SillyTavern backen
   assert.equal(body.chat_completion_source, 'custom');
   assert.equal(body.custom_url, 'https://example-model-host.test/v1');
   assert.equal(body.proxy_password, 'secret-key');
-  assert.equal(body.custom_include_headers, 'Authorization: Bearer secret-key');
+  // ST 后端代理必须带自定义 UA（覆盖 node-fetch 默认），且不能破坏 Authorization 行
+  assert.deepEqual(
+    body.custom_include_headers.split('\n').sort(),
+    [
+      'Authorization: Bearer secret-key',
+      'User-Agent: BS-BioTracker (+https://github.com/Liuuuu54/st_bs_biotracker)',
+    ].sort(),
+  );
   assert.equal(body.model, 'grok-compatible');
   assert.equal(body.stream, false);
   assert.deepEqual(body.response_format, { type: 'json_object' });
