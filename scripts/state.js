@@ -761,6 +761,8 @@ function sanitizeChildrenList(value) {
       gender: sanitizeString(item.gender) ?? null,
       race: sanitizeString(item.race) ?? null,
       derivedType: sanitizeString(item.derivedType) ?? null,
+      fatherRace: sanitizeString(item.fatherRace) ?? null,
+      fatherDerivedType: sanitizeString(item.fatherDerivedType) ?? null,
       age: sanitizeNumber(item.age, { min: 0, max: 9999 }) ?? null,
       birthWeightRatio: sanitizeNumber(item.birthWeightRatio, { min: 0.33, max: 3.0 }) ?? null,
       birthAffinity: sanitizeNumber(item.birthAffinity, { min: -50, max: 50 }) ?? null,

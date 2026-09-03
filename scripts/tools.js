@@ -2387,6 +2387,9 @@ function appendChildrenFromFetuses(profile, fetuses) {
       chimera: fetus?.chimera ? cloneValue(fetus.chimera) : null,
       gender: String(fetus?.gender || '未知'),
       race: String(fetus?.race || '未知'),
+      // 父系种族在胎儿上本来就有，此前分娩时被丢掉，血缘图便无从得知路人父亲的血统
+      fatherRace: fetus?.fatherRace ? String(fetus.fatherRace) : null,
+      fatherDerivedType: fetus?.fatherDerivedType ? String(fetus.fatherDerivedType) : null,
       derivedType: childDerivedType,
       age: 0,
       birthWeightRatio: clampNumber(fetus?.weight, 0.33, 3.0, 1.0),

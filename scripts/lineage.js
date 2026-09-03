@@ -37,17 +37,20 @@ export function buildLineageGraph(chatState) {
   const characterNodeId = (name) => `char:${name}`;
   const unregisteredNodeId = (name) => `name:${name}`;
 
-  /** 解析一个亲代名字到节点；未注册的当叶节点 */
-  const resolveParent = (name) => {
+  /**
+   * 解析一个亲代名字到节点；未注册的当叶节点。
+   * race/derivedType 只在能明确对应时才补——嵌合体有多位父源时
+   * 那串合并种族对不回单一个人，宁可留空也不要标错血统。
+   */
+  const resolveParent = (name, traits = null) => {
     const value = String(name || '').trim();
     if (!value) return null;
-    if (isRegistered(value)) {
-      const id = characterNodeId(value);
-      if (!nodes.has(id)) nodes.set(id, { id, kind: 'character', name: value });
-      return id;
-    }
+    if (isRegistered(value)) return characterNodeId(value);
     const id = unregisteredNodeId(value);
     if (!nodes.has(id)) nodes.set(id, { id, kind: 'unregistered', name: value });
+    const node = nodes.get(id);
+    if (traits?.race && !node.race) node.race = traits.race;
+    if (traits?.derivedType && !node.derivedType) node.derivedType = traits.derivedType;
     return id;
   };
 
@@ -85,9 +88,10 @@ export function buildLineageGraph(chatState) {
           gender: child.gender ?? null,
         });
       }
+      // 合并到角色节点时不写 registeredAs——那会指向它自己。
+      // 「这个角色是在故事里被生下来的」判定 kind === 'character' 且有 childId 即可。
       const childNode = nodes.get(childNodeId);
       childNode.childId = child.id ?? null;
-      if (registeredAs) childNode.registeredAs = registeredAs;
 
       // 母系：provider 存在代表 owner 只是承载者，遗传母是 provider
       const providerInfo = firstSource(child.providerSources, child.provider);
@@ -104,7 +108,10 @@ export function buildLineageGraph(chatState) {
       // 父系：嵌合体优先读 fatherSources，否则拆 "A×B"，都只取首位
       const fatherInfo = firstSource(child.chimera?.fatherSources, child.fathers);
       if (fatherInfo.first && fatherInfo.first !== '未知') {
-        const from = resolveParent(fatherInfo.first);
+        const singleFather = fatherInfo.all.length <= 1;
+        const from = resolveParent(fatherInfo.first, singleFather
+          ? { race: child.fatherRace ?? null, derivedType: child.fatherDerivedType ?? null }
+          : null);
         if (from) edges.push({ from, to: childNodeId, type: 'father' });
       }
 

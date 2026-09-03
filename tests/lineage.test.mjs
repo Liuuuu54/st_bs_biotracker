@@ -104,3 +104,37 @@ test('空状态不会炸', () => {
   assert.deepEqual(buildLineageGraph(null), { nodes: [], edges: [] });
   assert.deepEqual(buildLineageGraph({}), { nodes: [], edges: [] });
 });
+
+test('未注册的父亲带上血统，且只在单一父源时才标', () => {
+  const graph = buildLineageGraph({
+    characters: {
+      艾拉: character('艾拉', [
+        { id: 'c1', name: '独子', fathers: '凯', fatherRace: '龙族', fatherDerivedType: '血族' },
+        {
+          id: 'c2', name: '融合儿', fathers: '甲×乙',
+          fatherRace: '龙族x人类',
+          chimera: { fatherSources: ['甲', '乙'] },
+        },
+      ]),
+    },
+  });
+  const kai = graph.nodes.find((node) => node.name === '凯');
+  assert.equal(kai.race, '龙族', '单一父源应带上血统');
+  assert.equal(kai.derivedType, '血族');
+  // 嵌合体的 fatherRace 是合并字串，对不回单一个人，宁可留空
+  const jia = graph.nodes.find((node) => node.name === '甲');
+  assert.equal(jia.race, undefined, '多父源时不该给首位父亲标上合并血统');
+});
+
+test('注册后的孩子节点不写指向自己的 registeredAs', () => {
+  const graph = buildLineageGraph({
+    characters: {
+      B: character('B', [{ id: 'c1', name: '重生儿', fathers: 'A', registeredAs: 'A+' }]),
+      'A+': character('A+'),
+      A: character('A'),
+    },
+  });
+  const node = graph.nodes.find((item) => item.id === 'char:A+');
+  assert.equal(node.registeredAs, undefined, 'registeredAs 会指向自己，是冗余');
+  assert.equal(node.childId, 'c1', '来自哪笔孩子记录仍要保留');
+});
