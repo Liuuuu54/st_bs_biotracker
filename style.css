@@ -4124,9 +4124,10 @@
 }
 
 .bs-bt-lineage__initial {
-  font-size: 1.2rem;
+  font-size: 0.95rem;
   font-weight: 700;
   line-height: 1;
+  letter-spacing: -0.02em;
 }
 
 .bs-bt-lineage__sex {
@@ -4269,6 +4270,9 @@
   .bs-bt-lineage__portrait {
     width: 54px;
     height: 54px;
+  }
+  .bs-bt-lineage__initial {
+    font-size: 1.08rem;
   }
   .bs-bt-lineage__detail {
     flex: 0 0 360px;

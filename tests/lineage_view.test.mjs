@@ -109,3 +109,21 @@ test('没有亲代的人各自成丛，不会被并成一家', () => {
   assert.ok(top.clusters.every((cluster) => cluster.nodes.length === 1));
   assert.ok(top.clusters.every((cluster) => cluster.parents.length === 0));
 });
+
+test('代孕的承载者不算遗传亲代，另外列出', () => {
+  const view = buildLineageView({
+    characters: {
+      琪拉: ch('琪拉'),
+      贝拉: ch('贝拉', [{ id: 's1', name: '寄养儿', provider: '琪拉', fathers: '凯' }]),
+      凯: ch('凯'),
+    },
+  }, '贝拉');
+  const child = view.nodes.find((node) => node.displayName === '寄养儿');
+  assert.deepEqual(child.geneticParents.map((p) => `${p.relation} ${p.name}`), ['母 琪拉', '父 凯']);
+  assert.deepEqual(child.carriers.map((p) => p.name), ['贝拉']);
+  // 亲代标注只挂遗传亲代，承载者不进族谱上的膠囊
+  const row = view.generations.find((item) => item.generation === 1);
+  assert.deepEqual(row.clusters[0].parents.map((p) => p.name), ['琪拉', '凯']);
+  const carrier = view.nodes.find((node) => node.isCenter);
+  assert.deepEqual(carrier.carriedChildren.map((p) => p.name), ['寄养儿']);
+});

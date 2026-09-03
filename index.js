@@ -3553,9 +3553,12 @@ function lineageDetailRows(node) {
     ['种族', node.raceLabel || '未知'],
     ['性别', node.gender || '—'],
     ['世代', node.generation === 0 ? '本人' : (node.generation < 0 ? `上${Math.abs(node.generation)}代` : `下${node.generation}代`)],
-    ['亲代', node.parents.map((item) => `${item.relation}：${item.name}`).join('、') || '无记录'],
+    ['亲代', node.geneticParents.map((item) => `${item.relation}：${item.name}`).join('、') || '无记录'],
     ['子代', node.children.map((item) => item.name).join('、') || '无记录'],
   ];
+  // 代孕分开列：承载者不是遗传亲代，混进亲代那行会让血统看起来多一个人
+  if (node.carriers.length > 0) rows.push(['孕育者', `${node.carriers.map((item) => item.name).join('、')}（代孕承载）`]);
+  if (node.carriedChildren.length > 0) rows.push(['代孕承载', node.carriedChildren.map((item) => item.name).join('、')]);
   if (node.kind === 'unregistered') rows.push(['状态', '未注册（仅作为亲代出现）']);
   // 只在亲代那行空着时才补这句：有亲代时它是废话，没亲代时它是唯一线索，
   // 说明这人确实在故事里出生过，只是上一代被深度截断或没登记。
@@ -3570,12 +3573,20 @@ function lineageDetailRows(node) {
     .join('');
 }
 
+/**
+ * 肖像牌上的字：没有头像素材，用名字压缩成两格。
+ * 只取一个字会撞——「祖母」与「祖父」都会变成「祖」，族谱上分不出谁是谁。
+ * 拉丁名取各段字首（John Smith → JS），其余（含中日韩）取前两个字。
+ */
 function lineageInitial(name) {
   const text = String(name || '').trim();
   if (!text) return '?';
-  // 取第一个「字」：中文一字即可，拉丁字母取首字母大写
-  const first = [...text][0];
-  return /[a-z]/i.test(first) ? first.toUpperCase() : first;
+  if (/^[a-z0-9][a-z0-9\s._'-]*$/i.test(text)) {
+    const words = text.split(/[\s._-]+/).filter(Boolean);
+    if (words.length > 1) return (words[0][0] + words[1][0]).toUpperCase();
+    return text.slice(0, 2).toUpperCase();
+  }
+  return [...text].slice(0, 2).join('');
 }
 
 const LINEAGE_SEX_GLYPHS = { 男: '♂', 女: '♀', 雄: '♂', 雌: '♀' };

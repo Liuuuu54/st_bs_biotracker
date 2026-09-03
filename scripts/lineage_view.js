@@ -30,19 +30,19 @@ function raceLabel(race, derivedType) {
 const EDGE_LABELS = { mother: '母', father: '父', carrier: '承载' };
 
 /**
- * 同一世代里把「亲代完全相同」的人聚成一丛，渲染层才画得出手足共用的连接线。
+ * 同一世代里把「遗传亲代完全相同」的人聚成一丛，渲染层才画得出手足共用的连接线。
  * 没有亲代的（图上被截断的祖先、手动注册的角色）各自成丛，不会被误并成一家。
  */
 function buildClusters(rowNodes) {
   const clusters = [];
   const byKey = new Map();
   for (const node of rowNodes) {
-    const key = node.parents.length > 0
-      ? node.parents.map((item) => `${item.relation}:${item.id}`).sort().join('|')
+    const key = node.geneticParents.length > 0
+      ? node.geneticParents.map((item) => `${item.relation}:${item.id}`).sort().join('|')
       : `solo:${node.id}`;
     let cluster = byKey.get(key);
     if (!cluster) {
-      cluster = { key, parents: node.parents, nodes: [] };
+      cluster = { key, parents: node.geneticParents, nodes: [] };
       byKey.set(key, cluster);
       clusters.push(cluster);
     }
@@ -86,13 +86,18 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
     const childrenOf = collapse(focused.edges
       .filter((edge) => edge.from === node.id)
       .map((edge) => ({ id: edge.to, name: nameOf(edge.to), relation: EDGE_LABELS[edge.type] || edge.type })));
+    // 承载者不是遗传亲代，不进族谱上的亲代标注，只在详情栏另列一行
+    const isGenetic = (item) => item.relations.some((relation) => relation === '母' || relation === '父');
     return {
       ...node,
       isCenter: node.id === centerId,
       displayName: node.name || '未命名',
       raceLabel: raceLabel(node.race, node.derivedType),
       parents,
+      geneticParents: parents.filter(isGenetic),
+      carriers: parents.filter((item) => !isGenetic(item)),
       children: childrenOf,
+      carriedChildren: childrenOf.filter((item) => !isGenetic(item)),
       // 未注册的路人不能点进详情，没有可展开的资料
       hasDetail: node.kind !== 'unregistered',
     };
