@@ -153,7 +153,8 @@ test('以角色为中心裁切并标上世代', () => {
   const byGeneration = (gen) => focused.nodes.filter((node) => node.generation === gen).map((node) => node.name).sort();
   assert.deepEqual(byGeneration(-2), ['祖父', '祖母'].sort());
   assert.deepEqual(byGeneration(-1), ['父', '母'].sort());
-  assert.deepEqual(byGeneration(0), ['我']);
+  // 配偶是「子」的共同亲代，会被补进同一世代（见下方的共同亲代测试）
+  assert.deepEqual(byGeneration(0), ['我', '配偶'].sort());
   assert.deepEqual(byGeneration(1), ['子']);
   // 范围外的边不该留下
   assert.ok(focused.edges.every((edge) => focused.nodes.some((node) => node.id === edge.from)));
@@ -187,4 +188,32 @@ test('自交时同一节点只占一个世代', () => {
 test('中心节点不存在时回传空图', () => {
   const graph = buildLineageGraph({ characters: { A: character('A') } });
   assert.deepEqual(focusLineage(graph, 'char:不存在'), { nodes: [], edges: [], centerId: 'char:不存在' });
+});
+
+test('往下裁切时补上共同亲代，孩子不会只剩一位亲代', () => {
+  const graph = buildLineageGraph({
+    characters: {
+      我: character('我', [{ id: 'k1', name: '长子', fathers: '配偶' }]),
+      配偶: character('配偶'),
+    },
+  });
+  const focused = focusLineage(graph, 'char:我', { up: 0, down: 1 });
+  const spouse = focused.nodes.find((node) => node.name === '配偶');
+  assert.ok(spouse, '共同亲代应被补进来');
+  assert.equal(spouse.generation, 0, '共同亲代与中心同世代');
+  const childEdges = focused.edges.filter((edge) => edge.to.startsWith('child:'));
+  assert.equal(childEdges.length, 2, '孩子应有母与父两条边');
+});
+
+test('补共同亲代只补一层，不会把祖辈整串拉进来', () => {
+  const graph = buildLineageGraph({
+    characters: {
+      我: character('我', [{ id: 'k1', name: '长子', fathers: '配偶' }]),
+      配偶: character('配偶'),
+      配偶之母: character('配偶之母', [{ id: 'k2', name: '配偶', registeredAs: '配偶' }]),
+    },
+  });
+  const focused = focusLineage(graph, 'char:我', { up: 0, down: 1 });
+  assert.equal(focused.nodes.some((node) => node.name === '配偶'), true);
+  assert.equal(focused.nodes.some((node) => node.name === '配偶之母'), false, '不该继续往上递归');
 });

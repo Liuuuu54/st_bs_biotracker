@@ -166,6 +166,17 @@ export function focusLineage(graph, centerId, { up = 2, down = 2 } = {}) {
   walk(-1, Math.max(0, up));
   walk(1, Math.max(0, down));
 
+  // 补上共同亲代：往下走只会捞到中心的后代，另一位亲代既不是中心的祖先
+  // 也不是后代，会整个缺席，族谱上看起来就像孩子只有一个亲代。
+  // 只补一层、不再往上递归，避免把整张图拉进来。
+  for (const [id, gen] of [...generation.entries()]) {
+    if (gen < 0) continue;
+    for (const edge of edges) {
+      if (edge.to !== id || generation.has(edge.from)) continue;
+      generation.set(edge.from, gen - 1);
+    }
+  }
+
   const nodes = [...generation.entries()]
     .filter(([id]) => allNodes.has(id))
     .map(([id, gen]) => ({ ...allNodes.get(id), generation: gen }))
