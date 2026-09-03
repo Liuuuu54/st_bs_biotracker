@@ -2795,6 +2795,40 @@ function renderWardrobeCharacterList(characters = []) {
   }).join('');
 }
 
+const PREGFIT_DIM_LABELS = { masking: '遮蔽', support: '承托', capacity: '余裕', convenience: '便利' };
+
+/**
+ * 孕期衣着压力：原本只是标题旁一个空心小药丸「孕衣压 3.3」，看不出量表范围，
+ * 也没把四维余裕（gap）显示出来——那才是叙事真正该抓的信号：哪一维已经撑不住了。
+ * pregWearPressure 0-10；gap = 该维度总值 - 压力，负值代表这件衣服在这个维度上已经压不住孕期变化。
+ */
+function renderPregFitGauge(pregFit) {
+  const pressure = Number(pregFit?.pregWearPressure);
+  if (!Number.isFinite(pressure)) return '';
+  const fillPct = Math.max(0, Math.min(100, (pressure / 10) * 100));
+  const gap = pregFit?.gap || {};
+  const dims = Object.keys(PREGFIT_DIM_LABELS).map((key) => {
+    const value = Number(gap[key]);
+    const safeValue = Number.isFinite(value) ? value : 0;
+    const isOverwhelmed = safeValue < 0;
+    const sign = safeValue > 0 ? '+' : '';
+    return `<span class="bs-bt-pregfit__dim${isOverwhelmed ? ' is-overwhelmed' : ''}">
+      <span class="bs-bt-pregfit__dim-label">${escapeHtml(PREGFIT_DIM_LABELS[key])}</span>
+      <span class="bs-bt-pregfit__dim-value">${sign}${escapeHtml(formatFixedDisplay(safeValue, 1))}</span>
+    </span>`;
+  }).join('');
+  return `
+    <div class="bs-bt-pregfit">
+      <div class="bs-bt-pregfit__head">
+        <span class="bs-bt-pregfit__label">孕期衣着压力</span>
+        <span class="bs-bt-pregfit__value">${escapeHtml(formatFixedDisplay(pressure, 1))}<span class="bs-bt-pregfit__scale">/10</span></span>
+      </div>
+      <div class="bs-bt-pregfit__bar"><div class="bs-bt-pregfit__bar-fill" style="width:${fillPct}%"></div></div>
+      <div class="bs-bt-pregfit__dims">${dims}</div>
+    </div>
+  `;
+}
+
 function renderWardrobeCharacterPage(character) {
   const profile = character?.profile || {};
   if (profile?.wardrobe?.enabled !== true) {
@@ -2806,8 +2840,7 @@ function renderWardrobeCharacterPage(character) {
     </div>`;
   }
   const outfit = buildOutfitView(profile);
-  const pressure = Number(outfit?.pregFit?.pregWearPressure);
-  const pressureTag = Number.isFinite(pressure) ? '<span class="bs-bt-wardrobe-pressure-tag">孕衣压 ' + escapeHtml(formatFixedDisplay(pressure, 1)) + '</span>' : '';
+  const pregFitHtml = renderPregFitGauge(outfit?.pregFit);
   const currentIds = new Set([outfit.main?.id, ...(outfit.accessories || []).map((item) => item.id)].filter((id) => id !== undefined && id !== null));
   const items = getWardrobeItems(profile).filter((item) => Number(item?.id) !== 0);
   const mainItems = items.filter((item) => item.slot !== 'accessory');
@@ -2825,9 +2858,10 @@ function renderWardrobeCharacterPage(character) {
       </div>
       <div class="bs-bt-wardrobe-page-title">${escapeHtml(character?.name || '未命名')}</div>
       <div class="bs-bt-wardrobe-current">
-        <div class="bs-bt-wardrobe-current-head"><div class="bs-bt-wardrobe-group-title">当前穿着</div>${pressureTag}</div>
+        <div class="bs-bt-wardrobe-current-head"><div class="bs-bt-wardrobe-group-title">当前穿着</div></div>
         <div class="bs-bt-wardrobe-summary"><b>主件</b>${escapeHtml(outfit.main?.name || '全裸')}</div>
         <div class="bs-bt-wardrobe-summary"><b>配件</b>${escapeHtml((outfit.accessories || []).length > 0 ? outfit.accessories.map((item) => item.name || item.id).join('、') : '无')}</div>
+        ${pregFitHtml}
         <div class="bs-bt-wardrobe-outfit-editor">
           <label>主件<select id="bs-bt-wardrobe-outfit-main" class="text_pole">
             <option value="0"${Number(outfit.main?.id) === 0 ? ' selected' : ''}>全裸</option>

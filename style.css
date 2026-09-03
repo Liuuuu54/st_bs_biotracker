@@ -3685,13 +3685,84 @@
   gap: 8px;
 }
 
-#bs-biotracker-settings .bs-bt-wardrobe-pressure-tag {
-  border: 1px solid color-mix(in srgb, var(--bsbt-lcd-text) 24%, transparent);
-  border-radius: 999px;
-  padding: 2px 7px;
-  font-size: 0.78em;
+/* ── 孕期衣着压力 ──────────────────────────────────────────
+   原本是标题旁一个空心药丸的裸数字，看不出量表范围也没有四维细节。
+   改成一条量表条（0-10）+ 四个余裕维度：负值代表该维度已被孕期变化压过，
+   借既有的产程危急色（玫红）标出来，不额外引入新色。 */
+#bs-biotracker-settings .bs-bt-pregfit {
+  border: 1px solid color-mix(in srgb, var(--bsbt-lcd-text) 20%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__label {
+  font-size: 0.82em;
   color: color-mix(in srgb, var(--bsbt-lcd-text) 78%, transparent);
-  white-space: nowrap;
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__value {
+  font-weight: 800;
+  font-size: 0.95em;
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__scale {
+  font-weight: 400;
+  font-size: 0.82em;
+  opacity: 0.6;
+  margin-left: 1px;
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__bar {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bsbt-lcd-text) 14%, transparent);
+  overflow: hidden;
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--bsbt-lcd-text) 62%, transparent);
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__dims {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__dim {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--bsbt-lcd-text) 18%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 0.74em;
+  color: color-mix(in srgb, var(--bsbt-lcd-text) 72%, transparent);
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__dim-label {
+  opacity: 0.75;
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__dim-value {
+  font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__dim.is-overwhelmed {
+  border-color: rgba(210, 30, 95, 0.5);
+  color: rgb(210, 30, 95);
+  background: rgba(242, 56, 120, 0.1);
 }
 
 #bs-biotracker-settings .bs-bt-wardrobe-summary {
