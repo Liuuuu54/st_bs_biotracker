@@ -3734,19 +3734,21 @@
   background: color-mix(in srgb, var(--bsbt-lcd-text) 62%, transparent);
 }
 
+/* 固定两栏：四个维度永远排成 2x2，不随可用宽度忽宽忽窄地重新断行 */
 #bs-biotracker-settings .bs-bt-pregfit__dims {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
 
 #bs-biotracker-settings .bs-bt-pregfit__dim {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 4px;
   border: 1px solid color-mix(in srgb, var(--bsbt-lcd-text) 18%, transparent);
   border-radius: 999px;
-  padding: 1px 7px;
+  padding: 1px 9px;
   font-size: 0.74em;
   color: color-mix(in srgb, var(--bsbt-lcd-text) 72%, transparent);
 }
