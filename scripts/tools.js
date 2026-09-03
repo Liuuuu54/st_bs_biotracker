@@ -341,7 +341,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddSperm',
-    description: '向单一角色体内加入精液，用于性交后留下受孕机会。amount 必须为正数；扣除/排出精液请用 bsDrainSperm。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
+    description: '向单一角色体内加入精液，用于性交后留下受孕机会。amount 必须为正数，建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；给过大的值会让正文连续多日描写残留。扣除/排出精液请用 bsDrainSperm。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
     input_schema: {
       type: 'object',
       properties: {
@@ -356,7 +356,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsDrainSperm',
-    description: '让角色主动排出体内部分或全部精液残留，按当前各来源比例一并减少。',
+    description: '让角色主动排出体内部分或全部精液残留，按当前各来源比例一并减少。用于角色主动清洗、灌洗或使用道具排出。注意：受精是在每次时间推进时用当下仍存在的精液判定，清空后这次性交不再有受孕机会——若剧情只是洗澡沐浴、角色并不打算避孕，不要调用本工具，残留本来就会自行衰减。',
     input_schema: {
       type: 'object',
       properties: {
