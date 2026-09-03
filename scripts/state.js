@@ -764,6 +764,7 @@ function sanitizeChildrenList(value) {
       age: sanitizeNumber(item.age, { min: 0, max: 9999 }) ?? null,
       birthWeightRatio: sanitizeNumber(item.birthWeightRatio, { min: 0.33, max: 3.0 }) ?? null,
       birthAffinity: sanitizeNumber(item.birthAffinity, { min: -50, max: 50 }) ?? null,
+      id: sanitizeString(item.id) ?? createChildId(),
       registeredAs: sanitizeString(item.registeredAs) ?? null,
       talents: normalizeTalentList(item.talents ?? item.inheritedTalents),
     }));
@@ -955,6 +956,15 @@ function sanitizeProfilePatch(profilePatch) {
   if (notify) result.notify = notify;
   if (immune) result.immune = immune;
   return Object.keys(result).length > 0 ? result : null;
+}
+
+/**
+ * 孩子记录的稳定标识。此前只能用「母亲名 + children 阵列索引」引用，
+ * 改名或搬移孩子都会让引用失联（搬移时得手动修正索引）。
+ * 有了 id，血缘关系图与注册来源都能靠它连线。
+ */
+export function createChildId() {
+  return `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export function createEmptyChatState() {
@@ -1247,6 +1257,17 @@ export function getChatState(ctx, settings) {
     }
     chatState.characters = migrated;
     shouldSave = true;
+  }
+  // 存量迁移：早期的孩子记录没有 id，补上后血缘引用才不依赖阵列索引
+  for (const character of Object.values(chatState.characters)) {
+    const children = character?.profile?.children;
+    if (!Array.isArray(children)) continue;
+    for (const child of children) {
+      if (child && typeof child === 'object' && !child.id) {
+        child.id = createChildId();
+        shouldSave = true;
+      }
+    }
   }
   const normalizedSkillCatalog = normalizeSkillCatalog(chatState.skillCatalog);
   if (JSON.stringify(chatState.skillCatalog || []) !== JSON.stringify(normalizedSkillCatalog)) shouldSave = true;

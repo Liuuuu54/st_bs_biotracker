@@ -36,6 +36,7 @@ import {
   getSettings,
   getWorldbookEntryDisplayName,
   loadCharacterAdditionalWorldBooks,
+  createChildId,
   loadGlobalWorldBook,
   normalizeCharacterPsychologyState,
   recordChatStateSnapshot,
@@ -1063,6 +1064,7 @@ function sanitizeChildren(value) {
         age: item.age ?? null,
         birthWeightRatio: Number.isFinite(Number(item.birthWeightRatio)) ? clampNumber(item.birthWeightRatio, 0.33, 3.0, 1.0) : null,
         birthAffinity: Number.isFinite(Number(item.birthAffinity)) ? clampNumber(item.birthAffinity, -50, 50, 0) : null,
+        id: item.id ?? createChildId(),
         registeredAs: item.registeredAs ?? null,
         talents: normalizeTalentList(item.talents ?? item.inheritedTalents),
       };

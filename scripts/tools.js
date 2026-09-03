@@ -1,5 +1,6 @@
 import {
   cloneValue,
+  createChildId,
   derivePregnancyStageState,
   getGestationEffectiveSpeed,
   getGestationSpeciesSpeed,
@@ -2378,6 +2379,7 @@ function appendChildrenFromFetuses(profile, fetuses) {
       ? null
       : String(fetus.provider).trim() || null;
     children.push({
+      id: createChildId(),
       name: null,
       fathers: String(fetus?.fathers || '未知'),
       provider,
