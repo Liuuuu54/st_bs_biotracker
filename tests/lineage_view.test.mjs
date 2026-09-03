@@ -84,3 +84,28 @@ test('自交与代孕的重复关系会合并，不会同一人列两次', () =>
     ['母:琪拉', '承载:艾拉', '父:凯'].sort(),
   );
 });
+
+test('同一代里亲代相同的手足聚成一丛，亲代不同的分开', () => {
+  const view = buildLineageView({
+    characters: {
+      我: ch('我', [
+        { id: 'a1', name: '长子', fathers: '甲' },
+        { id: 'a2', name: '次子', fathers: '甲' },
+        { id: 'b1', name: '三子', fathers: '乙' },
+      ]),
+    },
+  }, '我');
+  const row = view.generations.find((item) => item.generation === 1);
+  assert.deepEqual(
+    row.clusters.map((cluster) => cluster.nodes.map((node) => node.displayName)),
+    [['长子', '次子'], ['三子']],
+  );
+  assert.deepEqual(row.clusters[0].parents.map((p) => `${p.relation} ${p.name}`), ['母 我', '父 甲']);
+});
+
+test('没有亲代的人各自成丛，不会被并成一家', () => {
+  const view = buildLineageView(sample(), '我');
+  const top = view.generations[0];
+  assert.ok(top.clusters.every((cluster) => cluster.nodes.length === 1));
+  assert.ok(top.clusters.every((cluster) => cluster.parents.length === 0));
+});

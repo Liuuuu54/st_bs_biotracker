@@ -29,6 +29,28 @@ function raceLabel(race, derivedType) {
 
 const EDGE_LABELS = { mother: '母', father: '父', carrier: '承载' };
 
+/**
+ * 同一世代里把「亲代完全相同」的人聚成一丛，渲染层才画得出手足共用的连接线。
+ * 没有亲代的（图上被截断的祖先、手动注册的角色）各自成丛，不会被误并成一家。
+ */
+function buildClusters(rowNodes) {
+  const clusters = [];
+  const byKey = new Map();
+  for (const node of rowNodes) {
+    const key = node.parents.length > 0
+      ? node.parents.map((item) => `${item.relation}:${item.id}`).sort().join('|')
+      : `solo:${node.id}`;
+    let cluster = byKey.get(key);
+    if (!cluster) {
+      cluster = { key, parents: node.parents, nodes: [] };
+      byKey.set(key, cluster);
+      clusters.push(cluster);
+    }
+    cluster.nodes.push(node);
+  }
+  return clusters;
+}
+
 export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {}) {
   const graph = buildLineageGraph(chatState);
   const centerId = `char:${String(centerName || '').trim()}`;
@@ -78,11 +100,15 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
 
   const generations = [...new Set(nodes.map((node) => node.generation))]
     .sort((a, b) => a - b)
-    .map((generation) => ({
-      generation,
-      label: generationLabel(generation),
-      nodes: nodes.filter((node) => node.generation === generation),
-    }));
+    .map((generation) => {
+      const rowNodes = nodes.filter((node) => node.generation === generation);
+      return {
+        generation,
+        label: generationLabel(generation),
+        nodes: rowNodes,
+        clusters: buildClusters(rowNodes),
+      };
+    });
 
   return { centerId, centerName: String(centerName || ''), generations, nodes, empty: false };
 }

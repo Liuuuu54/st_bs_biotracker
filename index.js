@@ -3557,13 +3557,70 @@ function lineageDetailRows(node) {
     ['子代', node.children.map((item) => item.name).join('、') || '无记录'],
   ];
   if (node.kind === 'unregistered') rows.push(['状态', '未注册（仅作为亲代出现）']);
-  if (node.kind === 'character' && node.childId) rows.push(['出身', '在本故事中出生']);
+  // 只在亲代那行空着时才补这句：有亲代时它是废话，没亲代时它是唯一线索，
+  // 说明这人确实在故事里出生过，只是上一代被深度截断或没登记。
+  if (node.kind === 'character' && node.childId && node.parents.length === 0) {
+    rows.push(['出身', '在本故事中出生（上代未显示）']);
+  }
   if (Array.isArray(node.extraSources) && node.extraSources.length > 0) {
     rows.push(['其他来源', `${node.extraSources.join('、')}（嵌合体，仅首位连线）`]);
   }
   return rows
     .map(([label, value]) => `<div class="bs-bt-lineage__detail-row"><span class="bs-bt-lineage__detail-label">${escapeHtml(label)}</span><span class="bs-bt-lineage__detail-value">${escapeHtml(String(value))}</span></div>`)
     .join('');
+}
+
+function lineageInitial(name) {
+  const text = String(name || '').trim();
+  if (!text) return '?';
+  // 取第一个「字」：中文一字即可，拉丁字母取首字母大写
+  const first = [...text][0];
+  return /[a-z]/i.test(first) ? first.toUpperCase() : first;
+}
+
+const LINEAGE_SEX_GLYPHS = { 男: '♂', 女: '♀', 雄: '♂', 雌: '♀' };
+
+function lineageSexGlyph(node) {
+  const gender = String(node?.gender || '').trim();
+  if (!gender) return '';
+  for (const [key, glyph] of Object.entries(LINEAGE_SEX_GLYPHS)) {
+    if (gender.includes(key)) return glyph;
+  }
+  return '⚥';
+}
+
+function renderLineageCard(node) {
+  const sex = lineageSexGlyph(node);
+  const sub = node.raceLabel || (node.kind === 'unregistered' ? '未注册' : '—');
+  return `
+    <button type="button"
+      class="bs-bt-lineage__card${node.isCenter ? ' is-center' : ''}${node.kind === 'unregistered' ? ' is-ghost' : ''}"
+      data-lineage-node="${escapeHtml(node.id)}"
+      ${node.hasDetail ? '' : 'disabled'}>
+      <span class="bs-bt-lineage__portrait">
+        <span class="bs-bt-lineage__initial">${escapeHtml(lineageInitial(node.displayName))}</span>
+        ${sex ? `<span class="bs-bt-lineage__sex">${sex}</span>` : ''}
+      </span>
+      <span class="bs-bt-lineage__card-name">${escapeHtml(node.displayName)}</span>
+      <span class="bs-bt-lineage__card-sub">${escapeHtml(sub)}</span>
+      ${node.isCenter ? '<span class="bs-bt-lineage__badge">本人</span>' : ''}
+    </button>
+  `;
+}
+
+/** 一丛手足共用的亲代标注，兼作连接线的起点 */
+function renderLineageCluster(cluster) {
+  const caption = cluster.parents
+    .map((item) => `${item.relation} ${item.name}`)
+    .join(' × ');
+  return `
+    <div class="bs-bt-lineage__cluster">
+      ${caption ? `<div class="bs-bt-lineage__cluster-parents">${escapeHtml(caption)}</div>` : ''}
+      <div class="bs-bt-lineage__cluster-cards${caption ? ' has-link' : ''}">
+        ${cluster.nodes.map(renderLineageCard).join('')}
+      </div>
+    </div>
+  `;
 }
 
 function renderLineageChart(view) {
@@ -3573,17 +3630,11 @@ function renderLineageChart(view) {
   return view.generations
     .map((row) => `
       <div class="bs-bt-lineage__row">
-        <div class="bs-bt-lineage__row-label">${escapeHtml(row.label)}</div>
-        <div class="bs-bt-lineage__cells">
-          ${row.nodes.map((node) => `
-            <button type="button"
-              class="bs-bt-lineage__cell${node.isCenter ? ' is-center' : ''}"
-              data-lineage-node="${escapeHtml(node.id)}"
-              ${node.hasDetail ? '' : 'disabled'}>
-              <div class="bs-bt-lineage__cell-name">${escapeHtml(node.displayName)}</div>
-              <div class="bs-bt-lineage__cell-sub">${escapeHtml(node.raceLabel || (node.kind === 'unregistered' ? '未注册' : '—'))}</div>
-            </button>
-          `).join('')}
+        <div class="bs-bt-lineage__row-label"><span>${escapeHtml(row.label)}</span></div>
+        <div class="bs-bt-lineage__row-scroll">
+          <div class="bs-bt-lineage__clusters">
+            ${row.clusters.map(renderLineageCluster).join('')}
+          </div>
         </div>
       </div>
     `)
@@ -3656,6 +3707,8 @@ function openLineageWindow(ctx, centerName) {
   root.querySelector('.bs-bt-lineage__chart').innerHTML = renderLineageChart(view);
   root.classList.add('is-open');
   selectLineageNode(view.empty ? null : view.centerId);
+  // 窄屏上每一代各自横向卷动，中心角色常常落在画面外，开窗时先把他卷到视野中央
+  root.querySelector('.bs-bt-lineage__card.is-center')?.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
 
 function renderTrackDiary(viewModel) {

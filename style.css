@@ -3902,7 +3902,9 @@
 
 /* ── 血缘视窗 ──────────────────────────────────────────────
    独立全屏覆盖层，挂在 body 下（与浮球同样自带主题 class），
-   不放进面板内部以免被 modal 的 transform 困住 position: fixed。 */
+   不放进面板内部以免被 modal 的 transform 困住 position: fixed。
+   版面走「分代横排 + 手足成丛」：同一对亲代的孩子聚成一丛，
+   丛上方挂亲代标注，再用一条横杆与各自的竖线连到每张卡。 */
 .bs-bt-lineage {
   position: fixed;
   inset: 0;
@@ -3912,6 +3914,8 @@
   background: var(--bsbt-pager-bg);
   color: var(--bsbt-off-text);
   font-family: var(--bsbt-font-main);
+  --bsbt-lin-card: 116px;
+  --bsbt-lin-gap: 12px;
 }
 
 .bs-bt-lineage.is-open {
@@ -3968,83 +3972,230 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 12px 14px 16px;
+  padding: 14px 12px 20px;
 }
 
 .bs-bt-lineage__row {
-  margin-bottom: 14px;
+  margin-bottom: 22px;
 }
 
+/* 世代分隔线：标签居中，两侧拉细线，让每一代自成一层 */
 .bs-bt-lineage__row-label {
-  font-size: 0.72rem;
-  opacity: 0.7;
-  margin-bottom: 6px;
-  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  opacity: 0.62;
 }
 
-/* 同一世代横排；窄屏放不下就横向卷动，不硬挤 */
-.bs-bt-lineage__cells {
-  display: flex;
-  gap: 8px;
+.bs-bt-lineage__row-label::before,
+.bs-bt-lineage__row-label::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+/* 窄屏放不下就整列横向卷动；用 max-content + min-width 让内容少时仍居中 */
+.bs-bt-lineage__row-scroll {
   overflow-x: auto;
   padding-bottom: 4px;
 }
 
-.bs-bt-lineage__cell {
+.bs-bt-lineage__clusters {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 26px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.bs-bt-lineage__cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.bs-bt-lineage__cluster-parents {
+  position: relative;
+  margin-bottom: 16px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--bsbt-border-color);
+  background: var(--bsbt-off-bg);
+  font-size: 0.68rem;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+/* 亲代标注往下垂一段，接上手足横杆 */
+.bs-bt-lineage__cluster-parents::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 2px;
+  height: 16px;
+  background: currentColor;
+  opacity: 0.4;
+}
+
+.bs-bt-lineage__cluster-cards {
+  display: flex;
+  gap: var(--bsbt-lin-gap);
+  position: relative;
+}
+
+/* 手足横杆：两端各内缩半张卡宽，正好落在头尾两张卡的中线上；
+   只有一张卡时宽度归零，剩竖线一条。 */
+.bs-bt-lineage__cluster-cards.has-link {
+  padding-top: 16px;
+}
+
+.bs-bt-lineage__cluster-cards.has-link::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(var(--bsbt-lin-card) / 2);
+  right: calc(var(--bsbt-lin-card) / 2);
+  height: 2px;
+  background: currentColor;
+  opacity: 0.4;
+}
+
+.bs-bt-lineage__cluster-cards.has-link .bs-bt-lineage__card::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  width: 2px;
+  height: 16px;
+  background: currentColor;
+  opacity: 0.4;
+}
+
+.bs-bt-lineage__card {
+  position: relative;
   flex: 0 0 auto;
-  min-width: 116px;
-  max-width: 170px;
-  padding: 8px 10px;
-  border-radius: 10px;
+  width: var(--bsbt-lin-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 8px 10px;
+  border-radius: 14px;
   border: 1px solid var(--bsbt-border-color);
   background: var(--bsbt-off-bg);
   color: var(--bsbt-off-text);
-  text-align: left;
-  cursor: pointer;
   font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
 }
 
-.bs-bt-lineage__cell[disabled] {
+.bs-bt-lineage__card[disabled] {
   cursor: default;
-  opacity: 0.72;
 }
 
-.bs-bt-lineage__cell-name {
-  font-weight: 700;
-  font-size: 0.86rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.bs-bt-lineage__cell-sub {
-  font-size: 0.7rem;
-  opacity: 0.72;
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.bs-bt-lineage__cell.is-center {
-  border-color: var(--bsbt-off-text);
-  border-width: 2px;
-}
-
-/* 选取驱动的高亮：平常不画线，点某人才亮出他的亲代与子代，
-   否则分代横排上每条边都画会变成一团面条 */
-.bs-bt-lineage__cell.is-selected {
-  outline: 2px solid var(--bsbt-off-text);
-  outline-offset: 1px;
-}
-
-.bs-bt-lineage__cell.is-related {
+.bs-bt-lineage__card.is-ghost {
   border-style: dashed;
-  border-width: 2px;
 }
 
-.bs-bt-lineage.has-selection .bs-bt-lineage__cell:not(.is-selected):not(.is-related) {
-  opacity: 0.4;
+/* 没有头像素材，用姓名首字做纪念章式的肖像牌 */
+.bs-bt-lineage__portrait {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 2px solid var(--bsbt-border-color);
+  background: var(--bsbt-lcd-bg);
+  color: var(--bsbt-lcd-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.bs-bt-lineage__card.is-ghost .bs-bt-lineage__portrait {
+  opacity: 0.55;
+}
+
+.bs-bt-lineage__initial {
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.bs-bt-lineage__sex {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1px solid var(--bsbt-border-color);
+  background: var(--bsbt-off-bg);
+  color: var(--bsbt-off-text);
+  font-size: 0.66rem;
+  line-height: 15px;
+  text-align: center;
+}
+
+.bs-bt-lineage__card-name {
+  max-width: 100%;
+  font-weight: 700;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bs-bt-lineage__card-sub {
+  max-width: 100%;
+  font-size: 0.66rem;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bs-bt-lineage__badge {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--bsbt-border-color);
+  background: var(--bsbt-lcd-bg);
+  color: var(--bsbt-lcd-text);
+  font-size: 0.6rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.bs-bt-lineage__card.is-center {
+  border-color: var(--bsbt-lcd-bg);
+  border-width: 2px;
+  padding: 11px 7px 9px;
+}
+
+/* 选取驱动的高亮：平常不画跨代的边，点某人才亮出他的亲代与子代，
+   否则分代横排上每条边都画会变成一团面条 */
+.bs-bt-lineage__card.is-selected {
+  outline: 2px solid var(--bsbt-lcd-bg);
+  outline-offset: 2px;
+}
+
+.bs-bt-lineage__card.is-related {
+  border-color: var(--bsbt-lcd-bg);
+}
+
+.bs-bt-lineage.has-selection .bs-bt-lineage__card:not(.is-selected):not(.is-related) {
+  opacity: 0.38;
 }
 
 .bs-bt-lineage__detail {
@@ -4093,6 +4244,7 @@
   }
   .bs-bt-lineage__chart {
     flex: 1 1 auto;
+    padding: 18px 20px 24px;
   }
   .bs-bt-lineage__detail {
     flex: 0 0 300px;
@@ -4104,12 +4256,19 @@
 
 /* 桌机：给节点更多呼吸空间 */
 @media (min-width: 1200px) {
-  .bs-bt-lineage__chart {
-    padding: 18px 24px 24px;
+  .bs-bt-lineage {
+    --bsbt-lin-card: 138px;
+    --bsbt-lin-gap: 16px;
   }
-  .bs-bt-lineage__cell {
-    min-width: 140px;
-    max-width: 200px;
+  .bs-bt-lineage__chart {
+    padding: 22px 28px 28px;
+  }
+  .bs-bt-lineage__row {
+    margin-bottom: 28px;
+  }
+  .bs-bt-lineage__portrait {
+    width: 54px;
+    height: 54px;
   }
   .bs-bt-lineage__detail {
     flex: 0 0 360px;
