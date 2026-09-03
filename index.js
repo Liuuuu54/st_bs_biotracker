@@ -45,6 +45,7 @@ import {
   PREGNANCY_STAGES,
 } from './scripts/stage_config.js';
 import { buildMainFlowPrompt, resetPoller, runTracker } from './scripts/tracker.js';
+import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
@@ -3517,21 +3518,144 @@ function renderTrackExperience(viewModel) {
       </div>
     </div>
     ${renderTrackSkillSection(viewModel)}
-    ${renderCardCarouselSection(
-      '孩子记录',
-        viewModel.experience.children,
-        (item, index) => `<div class="bs-bt-track-card">
-          <div class="bs-bt-track-card-title">${escapeHtml(item?.name || `孩子 ${index + 1}`)}</div>
-          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">父方</span><span class="bs-bt-track-list-value">${escapeHtml(item?.fathers || '未知')}</span></div>
-          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">性别</span><span class="bs-bt-track-list-value">${escapeHtml(item?.gender || '未知')}</span></div>
-          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">种族</span><span class="bs-bt-track-list-value">${escapeHtml(formatRaceLabel(item?.race, item?.derivedType))}</span></div>
-          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">年龄</span><span class="bs-bt-track-list-value">${escapeHtml(formatIntegerDisplay(item?.age))}</span></div>
-          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">待注册天赋</span><span class="bs-bt-track-list-value">${escapeHtml((Array.isArray(item?.talents) ? item.talents : []).map((talent) => `${talent.name}：${talent.label}`).join('、') || '无')}</span></div>
-        </div>`,
-        '当前无孩子记录',
-      'children',
-    )}
+    ${renderTrackLineageEntry(viewModel)}
   `;
+}
+
+/**
+ * 经历页的子女入口：孩子卡原本整排铺在这里，资讯挤且看不出血缘。
+ * 改成一句摘要 + 一个按钮，详情与关系都进族谱视窗看。
+ */
+function renderTrackLineageEntry(viewModel) {
+  const children = Array.isArray(viewModel?.experience?.children) ? viewModel.experience.children : [];
+  const name = String(viewModel?.name || '').trim();
+  const summary = children.length > 0
+    ? `共 ${children.length} 名子女`
+    : '暂无子女记录';
+  return `
+    <div class="bs-bt-track-section">
+      <div class="bs-bt-track-section-title">血缘</div>
+      <div class="bs-bt-track-meta">
+        <div class="bs-bt-track-meta-row">
+          <span class="bs-bt-track-meta-label">${escapeHtml(summary)}</span>
+          <button type="button" class="menu_button bs-bt-lineage-open" data-lineage-center="${escapeHtml(name)}">族谱</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+const LINEAGE_ID = 'bs-bt-lineage';
+
+function lineageDetailRows(node) {
+  if (!node) return '';
+  const rows = [
+    ['种族', node.raceLabel || '未知'],
+    ['性别', node.gender || '—'],
+    ['世代', node.generation === 0 ? '本人' : (node.generation < 0 ? `上${Math.abs(node.generation)}代` : `下${node.generation}代`)],
+    ['亲代', node.parents.map((item) => `${item.relation}：${item.name}`).join('、') || '无记录'],
+    ['子代', node.children.map((item) => item.name).join('、') || '无记录'],
+  ];
+  if (node.kind === 'unregistered') rows.push(['状态', '未注册（仅作为亲代出现）']);
+  if (node.kind === 'character' && node.childId) rows.push(['出身', '在本故事中出生']);
+  if (Array.isArray(node.extraSources) && node.extraSources.length > 0) {
+    rows.push(['其他来源', `${node.extraSources.join('、')}（嵌合体，仅首位连线）`]);
+  }
+  return rows
+    .map(([label, value]) => `<div class="bs-bt-lineage__detail-row"><span class="bs-bt-lineage__detail-label">${escapeHtml(label)}</span><span class="bs-bt-lineage__detail-value">${escapeHtml(String(value))}</span></div>`)
+    .join('');
+}
+
+function renderLineageChart(view) {
+  if (view.empty) {
+    return `<div class="bs-bt-lineage__empty">找不到 ${escapeHtml(view.centerName)} 的血缘记录。</div>`;
+  }
+  return view.generations
+    .map((row) => `
+      <div class="bs-bt-lineage__row">
+        <div class="bs-bt-lineage__row-label">${escapeHtml(row.label)}</div>
+        <div class="bs-bt-lineage__cells">
+          ${row.nodes.map((node) => `
+            <button type="button"
+              class="bs-bt-lineage__cell${node.isCenter ? ' is-center' : ''}"
+              data-lineage-node="${escapeHtml(node.id)}"
+              ${node.hasDetail ? '' : 'disabled'}>
+              <div class="bs-bt-lineage__cell-name">${escapeHtml(node.displayName)}</div>
+              <div class="bs-bt-lineage__cell-sub">${escapeHtml(node.raceLabel || (node.kind === 'unregistered' ? '未注册' : '—'))}</div>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `)
+    .join('');
+}
+
+let lineageViewCache = null;
+
+function selectLineageNode(nodeId) {
+  const root = document.getElementById(LINEAGE_ID);
+  if (!root || !lineageViewCache) return;
+  const node = lineageViewCache.nodes.find((item) => item.id === nodeId) || null;
+  const related = new Set(node ? relatedNodeIds(lineageViewCache, nodeId) : []);
+  root.classList.toggle('has-selection', Boolean(node));
+  root.querySelectorAll('[data-lineage-node]').forEach((cell) => {
+    const id = cell.dataset.lineageNode;
+    cell.classList.toggle('is-selected', Boolean(node) && id === nodeId);
+    cell.classList.toggle('is-related', related.has(id));
+  });
+  const detail = root.querySelector('.bs-bt-lineage__detail');
+  if (!detail) return;
+  detail.innerHTML = node
+    ? `<div class="bs-bt-lineage__detail-title">${escapeHtml(node.displayName)}</div>${lineageDetailRows(node)}`
+    : '<div class="bs-bt-lineage__detail-title">选择一个人查看详情</div>';
+}
+
+function ensureLineageWindow(ctx) {
+  let root = document.getElementById(LINEAGE_ID);
+  if (root) return root;
+  root = document.createElement('div');
+  root.id = LINEAGE_ID;
+  // 与浮球同样自带主题 class：视窗挂在 body 下，拿不到面板作用域的主题变数
+  root.className = `bs-bt-lineage theme-${getSettings(ctx).theme || 'retro'}`;
+  root.innerHTML = `
+    <div class="bs-bt-lineage__head">
+      <div class="bs-bt-lineage__title"></div>
+      <div class="bs-bt-lineage__hint">点选查看关系</div>
+      <button type="button" class="bs-bt-lineage__close" aria-label="关闭">×</button>
+    </div>
+    <div class="bs-bt-lineage__body">
+      <div class="bs-bt-lineage__chart"></div>
+      <div class="bs-bt-lineage__detail"></div>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.querySelector('.bs-bt-lineage__close')?.addEventListener('click', () => closeLineageWindow());
+  root.querySelector('.bs-bt-lineage__chart')?.addEventListener('click', (event) => {
+    const cell = event.target?.closest?.('[data-lineage-node]');
+    if (!cell || cell.disabled) return;
+    selectLineageNode(cell.dataset.lineageNode);
+  });
+  return root;
+}
+
+function closeLineageWindow() {
+  const root = document.getElementById(LINEAGE_ID);
+  if (!root) return;
+  root.classList.remove('is-open', 'has-selection');
+  lineageViewCache = null;
+}
+
+function openLineageWindow(ctx, centerName) {
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const view = buildLineageView(chatState, centerName);
+  lineageViewCache = view;
+  const root = ensureLineageWindow(ctx);
+  root.className = `bs-bt-lineage theme-${settings.theme || 'retro'}`;
+  root.querySelector('.bs-bt-lineage__title').textContent = `${centerName} 的血缘`;
+  root.querySelector('.bs-bt-lineage__chart').innerHTML = renderLineageChart(view);
+  root.classList.add('is-open');
+  selectLineageNode(view.empty ? null : view.centerId);
 }
 
 function renderTrackDiary(viewModel) {
@@ -6484,6 +6608,14 @@ async function ensureModal(ctx) {
     if (!nextModel) return;
     const modelInput = document.getElementById('bs-bt-model');
     if (modelInput) modelInput.value = nextModel;
+  });
+  // 追踪页会整段重绘，族谱按钮用委派监听
+  document.addEventListener('click', (event) => {
+    const trigger = event.target?.closest?.('.bs-bt-lineage-open');
+    if (!trigger) return;
+    event.preventDefault();
+    const centerName = String(trigger.dataset.lineageCenter || '').trim();
+    if (centerName) openLineageWindow(ctx, centerName);
   });
   document.addEventListener('input', (event) => {
     if (event.target?.id === 'bs-bt-api-url') updateApiEndpointPreview();

@@ -19,7 +19,7 @@
   --bsbt-home-tile-shadow: rgba(0, 0, 0, 0.28);
 }
 
-#bs-biotracker-settings.theme-retro, .bs-bt-floating-sphere.theme-retro {
+#bs-biotracker-settings.theme-retro, .bs-bt-floating-sphere.theme-retro, .bs-bt-lineage.theme-retro {
   --bsbt-pager-bg: #2d3436;
   --bsbt-lcd-bg: #87a96b;
   --bsbt-lcd-text: #2d3436;
@@ -38,7 +38,7 @@
   --bsbt-home-tile-shadow: rgba(0, 0, 0, 0.28);
 }
 
-#bs-biotracker-settings.theme-cultivation, .bs-bt-floating-sphere.theme-cultivation {
+#bs-biotracker-settings.theme-cultivation, .bs-bt-floating-sphere.theme-cultivation, .bs-bt-lineage.theme-cultivation {
   --bsbt-pager-bg: linear-gradient(135deg, #1a3c34 0%, #2d5a4e 50%, #1a3c34 100%);
   --bsbt-lcd-bg: #e0f2f1;
   --bsbt-lcd-text: #004d40;
@@ -57,7 +57,7 @@
   --bsbt-home-tile-shadow: rgba(0, 50, 44, 0.35);
 }
 
-#bs-biotracker-settings.theme-fantasy, .bs-bt-floating-sphere.theme-fantasy {
+#bs-biotracker-settings.theme-fantasy, .bs-bt-floating-sphere.theme-fantasy, .bs-bt-lineage.theme-fantasy {
   --bsbt-pager-bg: #4e342e;
   --bsbt-lcd-bg: #f5e6c8;
   --bsbt-lcd-text: #3e2723;
@@ -76,7 +76,7 @@
   --bsbt-home-tile-shadow: rgba(31, 20, 17, 0.4);
 }
 
-#bs-biotracker-settings.theme-cyber-egypt, .bs-bt-floating-sphere.theme-cyber-egypt {
+#bs-biotracker-settings.theme-cyber-egypt, .bs-bt-floating-sphere.theme-cyber-egypt, .bs-bt-lineage.theme-cyber-egypt {
   --bsbt-pager-bg: linear-gradient(45deg, #d4af37, #f1c40f, #d4af37);
   --bsbt-lcd-bg: #00f2ff;
   --bsbt-lcd-text: #002b2b;
@@ -95,7 +95,7 @@
   --bsbt-home-tile-shadow: rgba(84, 67, 0, 0.38);
 }
 
-#bs-biotracker-settings.theme-wasteland, .bs-bt-floating-sphere.theme-wasteland {
+#bs-biotracker-settings.theme-wasteland, .bs-bt-floating-sphere.theme-wasteland, .bs-bt-lineage.theme-wasteland {
   --bsbt-pager-bg: #515c30;
   --bsbt-lcd-bg: #0d120a;
   --bsbt-lcd-text: #18ff62;
@@ -114,7 +114,7 @@
   --bsbt-home-tile-shadow: rgba(13, 18, 10, 0.55);
 }
 
-#bs-biotracker-settings.theme-sakura, .bs-bt-floating-sphere.theme-sakura {
+#bs-biotracker-settings.theme-sakura, .bs-bt-floating-sphere.theme-sakura, .bs-bt-lineage.theme-sakura {
   --bsbt-pager-bg: linear-gradient(to bottom, #ffffff, #f8bbd0);
   --bsbt-lcd-bg: #ffffff;
   --bsbt-lcd-text: #ff4081;
@@ -133,7 +133,7 @@
   --bsbt-home-tile-shadow: rgba(173, 20, 87, 0.18);
 }
 
-#bs-biotracker-settings.theme-holo, .bs-bt-floating-sphere.theme-holo {
+#bs-biotracker-settings.theme-holo, .bs-bt-floating-sphere.theme-holo, .bs-bt-lineage.theme-holo {
   --bsbt-pager-bg: rgba(2, 18, 36, 0.18);
   --bsbt-lcd-bg: rgba(3, 28, 52, 0.22);
   --bsbt-lcd-text: #8df7ff;
@@ -155,7 +155,7 @@
   --bsbt-home-tile-shadow: rgba(17, 197, 255, 0.22);
 }
 
-#bs-biotracker-settings.theme-gothic, .bs-bt-floating-sphere.theme-gothic {
+#bs-biotracker-settings.theme-gothic, .bs-bt-floating-sphere.theme-gothic, .bs-bt-lineage.theme-gothic {
   --bsbt-pager-bg:
     radial-gradient(circle at 50% 0%, rgba(137, 60, 76, 0.34), transparent 34%),
     linear-gradient(155deg, #22141f 0%, #110911 46%, #2b1119 100%);
@@ -180,7 +180,7 @@
   --bsbt-home-tile-shadow: rgba(8, 3, 8, 0.56);
 }
 
-#bs-biotracker-settings.theme-steampunk, .bs-bt-floating-sphere.theme-steampunk {
+#bs-biotracker-settings.theme-steampunk, .bs-bt-floating-sphere.theme-steampunk, .bs-bt-lineage.theme-steampunk {
   --bsbt-pager-bg:
     radial-gradient(circle at 12% 10%, rgba(209, 168, 90, 0.22), transparent 28%),
     radial-gradient(circle at 88% 90%, rgba(138, 75, 45, 0.22), transparent 26%),
@@ -206,7 +206,7 @@
   --bsbt-home-tile-shadow: rgba(42, 27, 18, 0.42);
 }
 
-#bs-biotracker-settings.theme-eldritch, .bs-bt-floating-sphere.theme-eldritch {
+#bs-biotracker-settings.theme-eldritch, .bs-bt-floating-sphere.theme-eldritch, .bs-bt-lineage.theme-eldritch {
   --bsbt-pager-bg:
     radial-gradient(circle at 16% 12%, rgba(91, 59, 115, 0.28), transparent 30%),
     radial-gradient(circle at 84% 86%, rgba(104, 214, 194, 0.16), transparent 28%),
@@ -232,7 +232,7 @@
   --bsbt-home-tile-shadow: rgba(3, 7, 6, 0.58);
 }
 
-#bs-biotracker-settings.theme-ink, .bs-bt-floating-sphere.theme-ink {
+#bs-biotracker-settings.theme-ink, .bs-bt-floating-sphere.theme-ink, .bs-bt-lineage.theme-ink {
   --bsbt-pager-bg:
     radial-gradient(ellipse at 50% 12%, rgba(31, 37, 34, 0.1), transparent 30%),
     linear-gradient(90deg, #c9b98f 0 5%, #f3ead8 5% 95%, #c9b98f 95% 100%);
@@ -256,7 +256,7 @@
   --bsbt-home-tile-shadow: rgba(31, 37, 34, 0.16);
 }
 
-#bs-biotracker-settings.theme-constructivism, .bs-bt-floating-sphere.theme-constructivism {
+#bs-biotracker-settings.theme-constructivism, .bs-bt-floating-sphere.theme-constructivism, .bs-bt-lineage.theme-constructivism {
   --bsbt-pager-bg:
     repeating-linear-gradient(90deg, rgba(236, 227, 207, 0.05) 0 1px, transparent 1px 10px),
     linear-gradient(135deg, rgba(182, 37, 37, 0.24) 0 17%, transparent 17%),
@@ -3898,4 +3898,220 @@
 
 #bs-biotracker-settings .bs-bt-track-section--wardrobe-description .bs-bt-track-meta-label {
   font-weight: 700;
+}
+
+/* ── 血缘视窗 ──────────────────────────────────────────────
+   独立全屏覆盖层，挂在 body 下（与浮球同样自带主题 class），
+   不放进面板内部以免被 modal 的 transform 困住 position: fixed。 */
+.bs-bt-lineage {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: none;
+  flex-direction: column;
+  background: var(--bsbt-pager-bg);
+  color: var(--bsbt-off-text);
+  font-family: var(--bsbt-font-main);
+}
+
+.bs-bt-lineage.is-open {
+  display: flex;
+}
+
+.bs-bt-lineage__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--bsbt-border-color);
+  background: var(--bsbt-lcd-bg);
+  color: var(--bsbt-lcd-text);
+  flex: 0 0 auto;
+}
+
+.bs-bt-lineage__title {
+  font-weight: 700;
+  font-size: 1rem;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bs-bt-lineage__hint {
+  font-size: 0.72rem;
+  opacity: 0.7;
+  flex: 0 0 auto;
+}
+
+.bs-bt-lineage__close {
+  flex: 0 0 auto;
+  min-width: 40px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--bsbt-border-color);
+  background: var(--bsbt-off-bg);
+  color: var(--bsbt-off-text);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+/* 主体：手机上图与详情上下堆叠，宽屏并排 */
+.bs-bt-lineage__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bs-bt-lineage__chart {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px 16px;
+}
+
+.bs-bt-lineage__row {
+  margin-bottom: 14px;
+}
+
+.bs-bt-lineage__row-label {
+  font-size: 0.72rem;
+  opacity: 0.7;
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+
+/* 同一世代横排；窄屏放不下就横向卷动，不硬挤 */
+.bs-bt-lineage__cells {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.bs-bt-lineage__cell {
+  flex: 0 0 auto;
+  min-width: 116px;
+  max-width: 170px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--bsbt-border-color);
+  background: var(--bsbt-off-bg);
+  color: var(--bsbt-off-text);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.bs-bt-lineage__cell[disabled] {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.bs-bt-lineage__cell-name {
+  font-weight: 700;
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bs-bt-lineage__cell-sub {
+  font-size: 0.7rem;
+  opacity: 0.72;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bs-bt-lineage__cell.is-center {
+  border-color: var(--bsbt-off-text);
+  border-width: 2px;
+}
+
+/* 选取驱动的高亮：平常不画线，点某人才亮出他的亲代与子代，
+   否则分代横排上每条边都画会变成一团面条 */
+.bs-bt-lineage__cell.is-selected {
+  outline: 2px solid var(--bsbt-off-text);
+  outline-offset: 1px;
+}
+
+.bs-bt-lineage__cell.is-related {
+  border-style: dashed;
+  border-width: 2px;
+}
+
+.bs-bt-lineage.has-selection .bs-bt-lineage__cell:not(.is-selected):not(.is-related) {
+  opacity: 0.4;
+}
+
+.bs-bt-lineage__detail {
+  flex: 0 0 auto;
+  max-height: 42%;
+  overflow: auto;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--bsbt-border-color);
+  background: var(--bsbt-lcd-bg);
+  color: var(--bsbt-lcd-text);
+}
+
+.bs-bt-lineage__detail-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.bs-bt-lineage__detail-row {
+  display: flex;
+  gap: 10px;
+  font-size: 0.78rem;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--bsbt-border-color);
+}
+
+.bs-bt-lineage__detail-label {
+  flex: 0 0 78px;
+  opacity: 0.7;
+}
+
+.bs-bt-lineage__detail-value {
+  flex: 1 1 auto;
+  word-break: break-word;
+}
+
+.bs-bt-lineage__empty {
+  padding: 24px 14px;
+  text-align: center;
+  opacity: 0.7;
+}
+
+/* 平板以上：图与详情并排，详情固定在右侧 */
+@media (min-width: 768px) {
+  .bs-bt-lineage__body {
+    flex-direction: row;
+  }
+  .bs-bt-lineage__chart {
+    flex: 1 1 auto;
+  }
+  .bs-bt-lineage__detail {
+    flex: 0 0 300px;
+    max-height: none;
+    border-top: 0;
+    border-left: 1px solid var(--bsbt-border-color);
+  }
+}
+
+/* 桌机：给节点更多呼吸空间 */
+@media (min-width: 1200px) {
+  .bs-bt-lineage__chart {
+    padding: 18px 24px 24px;
+  }
+  .bs-bt-lineage__cell {
+    min-width: 140px;
+    max-width: 200px;
+  }
+  .bs-bt-lineage__detail {
+    flex: 0 0 360px;
+  }
 }

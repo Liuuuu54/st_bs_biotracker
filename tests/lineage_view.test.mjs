@@ -54,3 +54,33 @@ test('中心角色不存在时回传空视图', () => {
   assert.equal(view.empty, true);
   assert.deepEqual(view.generations, []);
 });
+
+test('自交与代孕的重复关系会合并，不会同一人列两次', () => {
+  const view = buildLineageView({
+    characters: {
+      艾拉: ch('艾拉', [
+        // 自交：同一人既是母也是父，两条边
+        { id: 'c1', name: '孤生子', fathers: '艾拉' },
+        // 代孕：艾拉是承载者，遗传母是琪拉
+        { id: 'c2', name: '寄养儿', fathers: '凯', provider: '琪拉', providerSources: ['琪拉'] },
+      ]),
+      琪拉: ch('琪拉'),
+    },
+  }, '艾拉');
+
+  const center = view.nodes.find((node) => node.isCenter);
+  const soloEntries = center.children.filter((item) => item.name === '孤生子');
+  assert.equal(soloEntries.length, 1, '自交的孩子不该在子代清单里出现两次');
+  assert.equal(soloEntries[0].relation, '母·父', '两种关系应合并成一个标签');
+
+  const solo = view.nodes.find((node) => node.displayName === '孤生子');
+  assert.equal(solo.parents.length, 1);
+  assert.equal(solo.parents[0].relation, '母·父');
+
+  // 代孕仍要能分辨承载与遗传母
+  const foster = view.nodes.find((node) => node.displayName === '寄养儿');
+  assert.deepEqual(
+    foster.parents.map((item) => `${item.relation}:${item.name}`).sort(),
+    ['母:琪拉', '承载:艾拉', '父:凯'].sort(),
+  );
+});

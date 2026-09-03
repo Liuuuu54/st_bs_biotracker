@@ -40,13 +40,30 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
   const byId = new Map(focused.nodes.map((node) => [node.id, node]));
   const nameOf = (id) => byId.get(id)?.name || id;
 
+  /**
+   * 同一对关系可能有多条边——自交时同一人既是母也是父，代孕时承载者与遗传母
+   * 各有一条。按对方节点去重，关系标签合并成「母·父」，否则清单里会重复出现同一人。
+   */
+  const collapse = (list) => {
+    const merged = new Map();
+    for (const item of list) {
+      const existing = merged.get(item.id);
+      if (existing) {
+        if (!existing.relations.includes(item.relation)) existing.relations.push(item.relation);
+        continue;
+      }
+      merged.set(item.id, { id: item.id, name: item.name, relations: [item.relation] });
+    }
+    return [...merged.values()].map((item) => ({ ...item, relation: item.relations.join('·') }));
+  };
+
   const nodes = focused.nodes.map((node) => {
-    const parents = focused.edges
+    const parents = collapse(focused.edges
       .filter((edge) => edge.to === node.id)
-      .map((edge) => ({ id: edge.from, name: nameOf(edge.from), relation: EDGE_LABELS[edge.type] || edge.type }));
-    const childrenOf = focused.edges
+      .map((edge) => ({ id: edge.from, name: nameOf(edge.from), relation: EDGE_LABELS[edge.type] || edge.type })));
+    const childrenOf = collapse(focused.edges
       .filter((edge) => edge.from === node.id)
-      .map((edge) => ({ id: edge.to, name: nameOf(edge.to), relation: EDGE_LABELS[edge.type] || edge.type }));
+      .map((edge) => ({ id: edge.to, name: nameOf(edge.to), relation: EDGE_LABELS[edge.type] || edge.type })));
     return {
       ...node,
       isCenter: node.id === centerId,

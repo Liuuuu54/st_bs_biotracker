@@ -58,6 +58,16 @@
     ],
     nextSkillId: 6,
     characters: {
+      // 血缘视窗的取样：一次覆盖六种分支（一般生育／已注册的孩子／未注册路人父亲／
+      // 代孕／嵌合体多父源／自交），点经历页的「族谱」按钮即可看到
+      祖母: makeCharacter('祖母', {
+        profile: {
+          children: [
+            { id: 'g1', name: '艾拉', gender: '女', race: '精灵', fathers: '祖父', fatherRace: '精灵', age: 120, registeredAs: '艾拉', talents: [] },
+          ],
+        },
+      }),
+      长女: makeCharacter('长女', { profile: { children: [] } }),
       艾拉: makeCharacter('艾拉', {
         profile: {
           // 多项技能：验证「一次列出全部」的排版，其中 skillId 5 已满级走 MAX 分支
@@ -75,6 +85,18 @@
             { skillId: 3, level: 3, exp: 0 },
             { skillId: 4, level: 5, exp: 0 },
             { skillId: 5, level: -1, exp: 0 },
+          ],
+          children: [
+            // 一般生育 + 已注册成角色（节点会与「长女」合并）
+            { id: 'c1', name: '长女', gender: '女', race: '精灵x人类', fathers: '凯', fatherRace: '人类', age: 18, registeredAs: '长女', talents: [] },
+            // 未注册的路人父亲，带上血统
+            { id: 'c2', name: '次子', gender: '男', race: '精灵x龙族', fathers: '无名旅人', fatherRace: '龙族', fatherDerivedType: '血族', age: 6, talents: [] },
+            // 代孕：艾拉只是承载者，遗传母是琪拉
+            { id: 'c3', name: '寄养儿', gender: '女', race: '兽耳族', fathers: '凯', fatherRace: '人类', provider: '琪拉', providerSources: ['琪拉'], age: 3, talents: [] },
+            // 嵌合体：两位父源，只连首位，另一位在详情里标注
+            { id: 'c4', name: '融合儿', gender: '双', race: '精灵x龙族', fathers: '凯×无名旅人', fatherRace: '人类x龙族', chimera: { fatherSources: ['凯', '无名旅人'], maternalSources: ['艾拉'] }, age: 1, talents: [] },
+            // 自交：父方就是艾拉自己
+            { id: 'c5', name: '孤生子', gender: '女', race: '精灵', fathers: '艾拉', fatherRace: '精灵', age: 0, talents: [] },
           ],
           skillHistory: [{
             skillId: 1, fromLevel: 1, toLevel: 3, reason: '在连续实战中掌握了新的剑术节奏。', source: 'story', timestamp: Date.now() - 3600000,
