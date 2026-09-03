@@ -3211,6 +3211,7 @@ function renderCardCarouselSection(title, items, renderCard, emptyText, kind, op
           }
         </span>
       </div>
+      ${options.lead || ''}
       <div class="bs-bt-track-cards bs-bt-track-cards--single">${renderCard(currentItem, currentIndex)}</div>
     </div>
   `;
@@ -3288,6 +3289,65 @@ function renderTrackPsychology(viewModel) {
   `;
 }
 
+/**
+ * 精液来源的占比环：两个以上来源才画——只有一个来源时整圈都是他，看不出资讯。
+ *
+ * 画的是「残留量占总量的比例」，这正是引擎里的 share 项：受精判定时每个来源的
+ * 命中率会乘上自己的 share。但 share 不等于最终中奖率——同族／异族、胎生卵生
+ * 不同还会各自乘上难度系数，所以这里只标占比，不标机率。
+ *
+ * 不引入新色盘：12 套主题的配色差异太大，固定色系一定会跟某几套打架。
+ * 改用同一个 currentColor 的阶梯透明度加分隔缺口，任何主题下都读得出来。
+ */
+const SPERM_SHARE_STEPS = [1, 0.68, 0.46, 0.32, 0.22, 0.16];
+
+function renderSpermShareChart(sperms) {
+  const items = (Array.isArray(sperms) ? sperms : [])
+    .map((item) => ({ male: String(item?.male || '未知'), value: Math.max(0, Number(item?.value) || 0) }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
+  if (items.length < 2) return '';
+
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  if (total <= 0) return '';
+
+  const radius = 30;
+  const circumference = 2 * Math.PI * radius;
+  // 分隔缺口固定 2 单位；缺口总长不能吃掉整圈，来源多时按比例缩小
+  const gap = Math.min(2, circumference / (items.length * 6));
+  const drawable = circumference - gap * items.length;
+  let offset = 0;
+  const segments = items.map((item, index) => {
+    const length = (item.value / total) * drawable;
+    const dash = `${length.toFixed(2)} ${(circumference - length).toFixed(2)}`;
+    const seg = `<circle cx="40" cy="40" r="${radius}" fill="none" stroke="currentColor"
+      stroke-width="14" stroke-opacity="${SPERM_SHARE_STEPS[index % SPERM_SHARE_STEPS.length]}"
+      stroke-dasharray="${dash}" stroke-dashoffset="${(-offset).toFixed(2)}" />`;
+    offset += length + gap;
+    return seg;
+  }).join('');
+
+  const legend = items.map((item, index) => `
+    <div class="bs-bt-sperm-share__row">
+      <span class="bs-bt-sperm-share__swatch" style="opacity:${SPERM_SHARE_STEPS[index % SPERM_SHARE_STEPS.length]}"></span>
+      <span class="bs-bt-sperm-share__name">${escapeHtml(item.male)}</span>
+      <span class="bs-bt-sperm-share__pct">${Math.round((item.value / total) * 100)}%</span>
+      <span class="bs-bt-sperm-share__val">${Math.round(item.value)}</span>
+    </div>
+  `).join('');
+
+  return `
+    <div class="bs-bt-sperm-share">
+      <svg class="bs-bt-sperm-share__ring" viewBox="0 0 80 80" role="img" aria-label="精液来源占比">
+        <g transform="rotate(-90 40 40)">${segments}</g>
+        <text x="40" y="38" text-anchor="middle" class="bs-bt-sperm-share__total">${Math.round(total)}</text>
+        <text x="40" y="50" text-anchor="middle" class="bs-bt-sperm-share__unit">总残留</text>
+      </svg>
+      <div class="bs-bt-sperm-share__legend">${legend}</div>
+    </div>
+  `;
+}
+
 function renderTrackPregnancy(viewModel) {
   const data = viewModel.pregnancy;
   const gestationModifier = data.gestationModifier || {};
@@ -3331,7 +3391,7 @@ function renderTrackPregnancy(viewModel) {
         </div>`,
       '当前无精液残留',
       'sperms',
-      { badge: fertilityBadge },
+      { badge: fertilityBadge, lead: renderSpermShareChart(data.sperms) },
     )}
     ${data.showPregnantFields
       ? `${renderCardCarouselSection(

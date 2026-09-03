@@ -3900,6 +3900,75 @@
   font-weight: 700;
 }
 
+/* ── 精液来源占比环 ────────────────────────────────────────
+   同一个 currentColor 的阶梯透明度 + 分隔缺口，不引入新色盘，
+   12 套主题下都读得出来。 */
+#bs-biotracker-settings .bs-bt-sperm-share {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__ring {
+  flex: 0 0 auto;
+  width: 84px;
+  height: 84px;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__total {
+  font-size: 15px;
+  font-weight: 700;
+  fill: currentColor;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__unit {
+  font-size: 8px;
+  fill: currentColor;
+  opacity: 0.7;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__legend {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  padding: 2px 0;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__swatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__pct {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__val {
+  flex: 0 0 auto;
+  opacity: 0.65;
+  min-width: 26px;
+  text-align: right;
+}
+
 /* ── 血缘视窗 ──────────────────────────────────────────────
    独立全屏覆盖层，挂在 body 下（与浮球同样自带主题 class），
    不放进面板内部以免被 modal 的 transform 困住 position: fixed。

@@ -69,6 +69,15 @@
       }),
       长女: makeCharacter('长女', { profile: { children: [] } }),
       艾拉: makeCharacter('艾拉', {
+        // 三个精液来源、量差明显：验证「精液来源」的占比环（两个以上才画）
+        base: {
+          eggs: 2,
+          sperms: [
+            { male: '凯', race: '人类', derivedType: null, value: 24 },
+            { male: '无名旅人', race: '龙族', derivedType: '血族', value: 12 },
+            { male: '古龙', race: '龙族', derivedType: null, value: 5 },
+          ],
+        },
         profile: {
           // 多项技能：验证「一次列出全部」的排版，其中 skillId 5 已满级走 MAX 分支
           skills: [
