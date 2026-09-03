@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildLineageGraph } from '../scripts/lineage.js';
+import { buildLineageGraph, focusLineage } from '../scripts/lineage.js';
 
 function character(name, children = [], base = {}) {
   return { name, initialized: true, profile: { base: { race: '人类', ...base }, children } };
@@ -137,4 +137,54 @@ test('注册后的孩子节点不写指向自己的 registeredAs', () => {
   const node = graph.nodes.find((item) => item.id === 'char:A+');
   assert.equal(node.registeredAs, undefined, 'registeredAs 会指向自己，是冗余');
   assert.equal(node.childId, 'c1', '来自哪笔孩子记录仍要保留');
+});
+
+test('以角色为中心裁切并标上世代', () => {
+  const graph = buildLineageGraph({
+    characters: {
+      祖母: character('祖母', [{ id: 'k1', name: '母', fathers: '祖父', registeredAs: '母' }]),
+      母: character('母', [{ id: 'k2', name: '我', fathers: '父', registeredAs: '我' }]),
+      我: character('我', [{ id: 'k3', name: '子', fathers: '配偶' }]),
+      父: character('父'),
+      配偶: character('配偶'),
+    },
+  });
+  const focused = focusLineage(graph, 'char:我', { up: 2, down: 2 });
+  const byGeneration = (gen) => focused.nodes.filter((node) => node.generation === gen).map((node) => node.name).sort();
+  assert.deepEqual(byGeneration(-2), ['祖父', '祖母'].sort());
+  assert.deepEqual(byGeneration(-1), ['父', '母'].sort());
+  assert.deepEqual(byGeneration(0), ['我']);
+  assert.deepEqual(byGeneration(1), ['子']);
+  // 范围外的边不该留下
+  assert.ok(focused.edges.every((edge) => focused.nodes.some((node) => node.id === edge.from)));
+  assert.ok(focused.edges.every((edge) => focused.nodes.some((node) => node.id === edge.to)));
+});
+
+test('深度上限会截断更远的世代', () => {
+  const graph = buildLineageGraph({
+    characters: {
+      祖母: character('祖母', [{ id: 'k1', name: '母', fathers: '祖父', registeredAs: '母' }]),
+      母: character('母', [{ id: 'k2', name: '我', fathers: '父', registeredAs: '我' }]),
+      我: character('我'),
+      父: character('父'),
+    },
+  });
+  const shallow = focusLineage(graph, 'char:我', { up: 1, down: 0 });
+  assert.deepEqual(shallow.nodes.map((node) => node.name).sort(), ['我', '父', '母'].sort());
+  assert.equal(shallow.nodes.some((node) => node.name === '祖母'), false, '第二代祖先应被截断');
+});
+
+test('自交时同一节点只占一个世代', () => {
+  const graph = buildLineageGraph({
+    characters: { 苔妮: character('苔妮', [{ id: 'c1', name: '孢子', fathers: '苔妮' }]) },
+  });
+  const focused = focusLineage(graph, 'child:c1', { up: 2, down: 2 });
+  const mother = focused.nodes.filter((node) => node.name === '苔妮');
+  assert.equal(mother.length, 1, '同一个人不该重复出现');
+  assert.equal(mother[0].generation, -1);
+});
+
+test('中心节点不存在时回传空图', () => {
+  const graph = buildLineageGraph({ characters: { A: character('A') } });
+  assert.deepEqual(focusLineage(graph, 'char:不存在'), { nodes: [], edges: [], centerId: 'char:不存在' });
 });

@@ -127,3 +127,54 @@ export function buildLineageGraph(chatState) {
 
   return { nodes: [...nodes.values()], edges };
 }
+
+/**
+ * 以某个节点为中心裁切血缘图，并标上世代。
+ *
+ * 全图在手机上很快就糊了，实际想看的多半是「这孩子谁生的、跟谁有血缘」。
+ * 中心为第 0 代，祖先为负、后代为正，渲染层照 generation 分代横排即可。
+ *
+ * 近亲繁殖（自交、胎内回归）会让同一个人同时出现在两个世代距离上，
+ * 此处取最近的一条——分代横排只能给每人一列，取近的比取远的直观。
+ */
+export function focusLineage(graph, centerId, { up = 2, down = 2 } = {}) {
+  const allNodes = new Map((graph?.nodes || []).map((node) => [node.id, node]));
+  const edges = graph?.edges || [];
+  if (!allNodes.has(centerId)) return { nodes: [], edges: [], centerId };
+
+  const generation = new Map([[centerId, 0]]);
+
+  // 往上找亲代：边的 to 是当前节点
+  const walk = (direction, limit) => {
+    let frontier = [centerId];
+    for (let step = 1; step <= limit; step += 1) {
+      const next = [];
+      for (const id of frontier) {
+        for (const edge of edges) {
+          const isMatch = direction < 0 ? edge.to === id : edge.from === id;
+          if (!isMatch) continue;
+          const neighbour = direction < 0 ? edge.from : edge.to;
+          if (generation.has(neighbour)) continue;
+          generation.set(neighbour, direction * step);
+          next.push(neighbour);
+        }
+      }
+      if (next.length === 0) break;
+      frontier = next;
+    }
+  };
+  walk(-1, Math.max(0, up));
+  walk(1, Math.max(0, down));
+
+  const nodes = [...generation.entries()]
+    .filter(([id]) => allNodes.has(id))
+    .map(([id, gen]) => ({ ...allNodes.get(id), generation: gen }))
+    .sort((a, b) => a.generation - b.generation);
+
+  const kept = new Set(nodes.map((node) => node.id));
+  return {
+    centerId,
+    nodes,
+    edges: edges.filter((edge) => kept.has(edge.from) && kept.has(edge.to)),
+  };
+}
