@@ -256,6 +256,49 @@
   --bsbt-home-tile-shadow: rgba(31, 37, 34, 0.16);
 }
 
+/* ── iPhone 主题 ────────────────────────────────────────────
+   其余 12 套是固定美术风格，配色属于主题本身；这一套刻意留白，
+   强调色与字体交给使用者，用 :root 上的 --bsbt-user-* 覆写。
+   放在 :root 是因为面板、浮球、族谱视窗是三个独立挂载点，
+   写在 documentElement 上三边都继承得到，不必各自设一次。 */
+#bs-biotracker-settings.theme-iphone, .bs-bt-floating-sphere.theme-iphone, .bs-bt-lineage.theme-iphone {
+  --bsbt-accent: var(--bsbt-user-accent, #0a84ff);
+  --bsbt-pager-bg: #f2f2f7;
+  --bsbt-lcd-bg: #ffffff;
+  --bsbt-lcd-text: #1c1c1e;
+  --bsbt-border-color: rgba(60, 60, 67, 0.20);
+  --bsbt-font-main: var(--bsbt-user-font, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', system-ui, sans-serif);
+  --bsbt-btn-grad-1: #ffffff;
+  --bsbt-btn-grad-2: #f2f2f7;
+  --bsbt-btn-text: var(--bsbt-accent);
+  --bsbt-off-bg: #e5e5ea;
+  --bsbt-off-text: #1c1c1e;
+  --bsbt-case-radius: 44px;
+  --bsbt-case-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.16),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+  --bsbt-case-border: 1px solid rgba(0, 0, 0, 0.08);
+  --bsbt-home-tile-bg: #ffffff;
+  --bsbt-home-tile-glow: color-mix(in srgb, var(--bsbt-accent) 22%, transparent);
+  --bsbt-home-tile-shadow: rgba(0, 0, 0, 0.10);
+}
+
+:root[data-bsbt-iphone-base="dark"] #bs-biotracker-settings.theme-iphone,
+:root[data-bsbt-iphone-base="dark"] .bs-bt-floating-sphere.theme-iphone,
+:root[data-bsbt-iphone-base="dark"] .bs-bt-lineage.theme-iphone {
+  --bsbt-pager-bg: #000000;
+  --bsbt-lcd-bg: #1c1c1e;
+  --bsbt-lcd-text: #f2f2f7;
+  --bsbt-border-color: rgba(84, 84, 88, 0.68);
+  --bsbt-btn-grad-1: #2c2c2e;
+  --bsbt-btn-grad-2: #1c1c1e;
+  --bsbt-off-bg: #2c2c2e;
+  --bsbt-off-text: #f2f2f7;
+  --bsbt-case-border: 1px solid rgba(255, 255, 255, 0.10);
+  --bsbt-home-tile-bg: #1c1c1e;
+  --bsbt-home-tile-shadow: rgba(0, 0, 0, 0.6);
+}
+
 #bs-biotracker-settings.theme-constructivism, .bs-bt-floating-sphere.theme-constructivism, .bs-bt-lineage.theme-constructivism {
   --bsbt-pager-bg:
     repeating-linear-gradient(90deg, rgba(236, 227, 207, 0.05) 0 1px, transparent 1px 10px),
@@ -3747,8 +3790,13 @@
   color: color-mix(in srgb, var(--bsbt-lcd-text) 85%, transparent);
 }
 
+/* 压不住的那一维只加粗，不改字色。
+   固定玫红在 12 套主题上量过：最好的 sakura 5.13，最差的 retro 只有 1.93——
+   红配绿是「色相很跳但亮度几乎相同」的组合。而任何字色的对比度上限就是该主题
+   本文色本身（retro 4.78、sakura 3.33），换个红也救不了。
+   告警信号交给下面那条红色缺口——填色块头大，色相在那里才真的有用。 */
 #bs-biotracker-settings .bs-bt-pregfit__dim.is-short .bs-bt-pregfit__dim-value {
-  color: rgb(206, 40, 96);
+  font-weight: 800;
 }
 
 #bs-biotracker-settings .bs-bt-pregfit__track {
@@ -3766,12 +3814,20 @@
   background: color-mix(in srgb, var(--bsbt-lcd-text) 55%, transparent);
 }
 
-/* 顶不到刻线的那一段：直接把差额画出来，不用整格变红去喊 */
+/* 顶不到刻线的那一段：直接把差额画出来，不用整格变红去喊。
+   斜纹用本文色画——玫红底在 retro（对轨道 1.34）、ink（2.65）这类主题上几乎看不见，
+   靠纹路而不是靠色相，任何主题都分得出这一截和填满的部分不一样。 */
 #bs-biotracker-settings .bs-bt-pregfit__deficit {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: rgba(226, 52, 108, 0.62);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--bsbt-lcd-text) 62%, transparent) 0 2px,
+      transparent 2px 5px
+    ),
+    rgba(226, 52, 108, 0.62);
 }
 
 #bs-biotracker-settings .bs-bt-pregfit__tick {
@@ -3993,6 +4049,46 @@
 
 #bs-biotracker-settings .bs-bt-track-section--wardrobe-description .bs-bt-track-meta-label {
   font-weight: 700;
+}
+
+/* ── iPhone 主题的自订面板 ────────────────────────────────
+   只在选中「果机」主题时显示（applyTheme → syncIphonePanel 控制 hidden）。 */
+#bs-biotracker-settings .bs-bt-iphone-panel[hidden] {
+  display: none;
+}
+
+#bs-biotracker-settings .bs-bt-accent-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#bs-biotracker-settings .bs-bt-accent-swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--swatch);
+  cursor: pointer;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--bsbt-lcd-text) 25%, transparent);
+}
+
+#bs-biotracker-settings .bs-bt-accent-swatch.is-active {
+  border-color: var(--bsbt-lcd-text);
+  box-shadow: 0 0 0 1px var(--bsbt-lcd-bg);
+}
+
+#bs-biotracker-settings .bs-bt-accent-picker {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--bsbt-lcd-text) 30%, transparent);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
 }
 
 /* ── 胎儿标签 ──────────────────────────────────────────────

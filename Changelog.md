@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.9.7
+
+### 新增與調整
+
+- 新增第 13 套主題「果機 (iPhone)」：iOS 風格的淺／深色介面，圓角機身、系統字體、藍色強調色。
+- 「果機」主題附帶調色盤與字體自訂（主題頁選中該主題時才出現）：
+  - **外觀**：淺色／深色兩套底色。
+  - **強調色**：六個預設色塊（藍／綠／紅／橙／紫／青）＋自訂顏色選擇器，驅動按鈕文字與首頁磁貼光暈。
+  - **字體**：系統／圓體／襯線／等寬／手寫五組字體堆疊。只提供整組堆疊而不讓使用者直填 `font-family`——填錯會讓整個面板掉回預設字體，且中文字型必須留 fallback 才不會缺字。
+  - 只作用於「果機」主題。其餘 12 套的配色與字體是該美術風格的一部分，切換回去時自訂值會被清掉，不會污染。
+  - 自訂值寫在 `documentElement` 上（`--bsbt-user-accent`／`--bsbt-user-font`／`data-bsbt-iphone-base`）：面板、浮球、族譜視窗是三個獨立掛載點，寫在根節點靠繼承一次覆蓋到底。
+
+### 修正
+
+- 修正孕期衣著壓力的告警配色在多數主題下幾乎看不見。原本負值數字與缺口條都用固定玫紅，量測 12 套主題後發現數字對比最好的 sakura 只有 5.13、最差的 retro 只有 1.93——紅配綠是「色相很跳但亮度幾乎相同」的組合。改為：負值數字改用該主題本文色並加粗（對比度等同正文，retro 4.78、iPhone 深色 17.01），缺口條加上本文色的斜紋，靠紋路而非色相辨識（retro 下缺口條對軌道原本只有 1.34，幾乎與背景同亮度）。告警語義不變。
+
+### 維護
+
+- `index.js` 也掃過一次，移除 4 個無人呼叫的函式（43 行）：`getCharacterStateForDisplay`（顯示前剝掉抵免代謝欄位；`31ec03e` 讓角色變量可編輯後，顯示值就該是實際存的值，剝欄位反而擋編輯，呼叫點在那時被拿掉）、`renderCardList`（v0.1.1 改用 `renderCardCarouselSection` 卡片輪播後殘留）、`getWardrobeItemKind`、`getPromptDisplayMeta`。四個都在全庫僅出現一次。
+- 全模組掃過一次死碼，另外移除 7 個無人呼叫的函式（65 行）：`api.js` 的 `getApiFormatPreview`（設定頁的端點預覽是 `index.js` 的 `updateApiEndpointPreview` 讀即時表單值直接算的，這個讀存檔設定的版本從未被接上）與 `hasPresetToggleOverrides`；`race_config.js` 的 `getRacePhysiologyOverrides`（種族覆寫是單向流入模組的，沒有讀回需求）；`state.js` 的 `buildMessageSignatures`（`31ec03e` 改用 digest 後三個呼叫點全被刪掉，函式留了下來）與 `formatStatusText`；`tools.js` 的 `findWardrobeItem` 與 `getBaseRace`。七個都在全庫僅出現一次（就是自己的定義），行為無變化。`registry.js` 掃描結果為零，不需要清理。
+- 移除 `scripts/state.js` 裡一整組從未被呼叫的 profile 清洗函式（`sanitizeProfilePatch` 及其專屬的 `sanitizeFetusList`／`sanitizeChildrenList`／`sanitizeObjectPatch`／`sanitizePregnancyBlockage`／`sanitizeSpermList`／`sanitizeInteger`／`sanitizeString`／`sanitizeStringList`），共 342 行。這組是給「模型直接寫整包 profile」用的守門員，但工具面從來沒開過這種門——`git log -S` 顯示初始 commit 起就沒有任何呼叫者。真正在跑的是 `scripts/registry.js` 的 `sanitizeRegistryProfile`／`sanitizePregnant`，註冊流程才是唯一會吃模型自由生成 profile 的路徑。行為無變化。
+
 ## v0.9.6
 
 ### 新增與調整
@@ -9,9 +31,6 @@
   - 各格式的鑑權頭分開處理：Gemini 用 `x-goog-api-key`，Claude 併送 `x-api-key` 與 `anthropic-version`。
   - 感謝 @shuiyue-cmyk 貢獻（PR #4）。
 - 經宿主後端代理發出的上游請求改為帶擴展自己的 User-Agent。原版 SillyTavern 後端用 node-fetch，預設 UA 是泛用的 `node-fetch`，部分供應商拿 UA 做反欺詐信號會直接攔截。TauriTavern 自帶產品 UA 且順序在後，故略過不注入。感謝 @shuiyue-cmyk 貢獻（PR #6）。
-- `index.js` 也掃過一次，移除 4 個無人呼叫的函式（43 行）：`getCharacterStateForDisplay`（顯示前剝掉抵免代謝欄位；`31ec03e` 讓角色變量可編輯後，顯示值就該是實際存的值，剝欄位反而擋編輯，呼叫點在那時被拿掉）、`renderCardList`（v0.1.1 改用 `renderCardCarouselSection` 卡片輪播後殘留）、`getWardrobeItemKind`、`getPromptDisplayMeta`。四個都在全庫僅出現一次。
-- 全模組掃過一次死碼，另外移除 7 個無人呼叫的函式（65 行）：`api.js` 的 `getApiFormatPreview`（設定頁的端點預覽是 `index.js` 的 `updateApiEndpointPreview` 讀即時表單值直接算的，這個讀存檔設定的版本從未被接上）與 `hasPresetToggleOverrides`；`race_config.js` 的 `getRacePhysiologyOverrides`（種族覆寫是單向流入模組的，沒有讀回需求）；`state.js` 的 `buildMessageSignatures`（`31ec03e` 改用 digest 後三個呼叫點全被刪掉，函式留了下來）與 `formatStatusText`；`tools.js` 的 `findWardrobeItem` 與 `getBaseRace`。七個都在全庫僅出現一次（就是自己的定義），行為無變化。`registry.js` 掃描結果為零，不需要清理。
-- 移除 `scripts/state.js` 裡一整組從未被呼叫的 profile 清洗函式（`sanitizeProfilePatch` 及其專屬的 `sanitizeFetusList`／`sanitizeChildrenList`／`sanitizeObjectPatch`／`sanitizePregnancyBlockage`／`sanitizeSpermList`／`sanitizeInteger`／`sanitizeString`／`sanitizeStringList`），共 342 行。這組是給「模型直接寫整包 profile」用的守門員，但工具面從來沒開過這種門——`git log -S` 顯示初始 commit 起就沒有任何呼叫者。真正在跑的是 `scripts/registry.js` 的 `sanitizeRegistryProfile`／`sanitizePregnant`，註冊流程才是唯一會吃模型自由生成 profile 的路徑。行為無變化。
 - 新增胎兒標籤 `fetuses[*].tags`：標注這顆胎兒是怎麼來的（嵌合體／代孕／自交／同卵），介面上以小標籤顯示在胎兒卡頂端，沒有標籤時整列不出現。標籤在分娩時跟著孩子記錄一起留下。
   - 分兩類來源：能從既有欄位推導的（嵌合體、代孕、自交）不落盤，存量存檔不必遷移就能顯示，也不會出現「資料改了但標籤還留著舊的」；推導不出來的才寫進 `tags`。同卵分裂屬於後者——複製體與原胚在欄位上完全一樣，事後無從分辨，只能在分裂當下把整組打上標籤與共用的 `identicalGroup`。
   - 目錄已預留 `rebirth`／`superfetation`／`nested`／`androgenesis`／`gynogenesis`（胎內回歸／異期複孕／孕中孕／雄核發生／雌核發生），目前沒有任何流程會產生，等對應玩法實作時直接寫入 id 即可，不必再改資料結構。

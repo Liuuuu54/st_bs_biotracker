@@ -5508,6 +5508,62 @@ function updateClock(settings) {
   }
 }
 
+/**
+ * iPhone 主题的可自订字体。只给整组字体堆叠，不让使用者直接填 font-family——
+ * 填错会整个面板掉回预设字体，而且中文字型必须留 fallback 才不会缺字。
+ */
+const IPHONE_FONT_STACKS = {
+  system: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', system-ui, sans-serif",
+  rounded: "'SF Pro Rounded', 'Nunito', 'Quicksand', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif",
+  serif: "'Noto Serif TC', 'Songti TC', 'Source Han Serif TC', Georgia, serif",
+  mono: "'SF Mono', 'JetBrains Mono', 'Cascadia Code', Consolas, 'Noto Sans Mono CJK TC', monospace",
+  hand: "'LXGW WenKai TC', 'Klee One', 'Yuanti TC', cursive",
+};
+
+function normalizeIphoneAccent(value) {
+  const text = String(value || '').trim();
+  return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : '#0a84ff';
+}
+
+/**
+ * 三个挂载点（面板／浮球／族谱视窗）各自独立，所以自订值写在 documentElement 上，
+ * 靠继承一次覆盖到底，不必每个节点各设一遍。非 iphone 主题会清掉，避免残留。
+ */
+function applyIphoneCustomization(settings) {
+  const root = document.documentElement;
+  if (!root) return;
+  if (String(settings?.theme || '') !== 'iphone') {
+    root.removeAttribute('data-bsbt-iphone-base');
+    root.style.removeProperty('--bsbt-user-accent');
+    root.style.removeProperty('--bsbt-user-font');
+    return;
+  }
+  root.dataset.bsbtIphoneBase = String(settings?.iphoneBase || 'light') === 'dark' ? 'dark' : 'light';
+  root.style.setProperty('--bsbt-user-accent', normalizeIphoneAccent(settings?.iphoneAccent));
+  const fontKey = String(settings?.iphoneFont || 'system');
+  root.style.setProperty('--bsbt-user-font', IPHONE_FONT_STACKS[fontKey] || IPHONE_FONT_STACKS.system);
+}
+
+function syncIphonePanel(settings) {
+  const panel = document.getElementById('bs-bt-iphone-panel');
+  if (!panel) return;
+  const isIphone = String(settings?.theme || '') === 'iphone';
+  panel.hidden = !isIphone;
+  if (!isIphone) return;
+  const base = String(settings?.iphoneBase || 'light') === 'dark' ? 'dark' : 'light';
+  document.querySelectorAll('#bs-biotracker-settings [data-iphone-base-option]').forEach((node) => {
+    node.classList.toggle('is-active', String(node.dataset.iphoneBaseOption) === base);
+  });
+  const accent = normalizeIphoneAccent(settings?.iphoneAccent);
+  document.querySelectorAll('#bs-biotracker-settings [data-iphone-accent-option]').forEach((node) => {
+    node.classList.toggle('is-active', String(node.dataset.iphoneAccentOption).toLowerCase() === accent);
+  });
+  const accentInput = document.getElementById('bs-bt-iphone-accent');
+  if (accentInput) accentInput.value = accent;
+  const fontSelect = document.getElementById('bs-bt-iphone-font');
+  if (fontSelect) fontSelect.value = IPHONE_FONT_STACKS[String(settings?.iphoneFont || '')] ? String(settings.iphoneFont) : 'system';
+}
+
 function applyTheme(settings) {
   const root = document.getElementById(PANEL_ID);
   const sphere = document.getElementById('bs-bt-floating-sphere');
@@ -5529,6 +5585,8 @@ function applyTheme(settings) {
   document.querySelectorAll('#bs-biotracker-settings [data-font-size-option]').forEach((node) => {
     node.classList.toggle('is-active', String(node.dataset.fontSizeOption || 'standard') === fontSize);
   });
+  applyIphoneCustomization(settings);
+  syncIphonePanel(settings);
   const brand = document.getElementById('bs-bt-brand');
   if (brand) brand.textContent = 'Bastneth Pager';
   updateBatteryIndicator(settings);
@@ -6726,6 +6784,44 @@ async function ensureModal(ctx) {
       setView('theme');
     }),
   );
+  // iPhone 主题的三项自订：与主题切换同样容错，设置读写失败也要让 UI 先套用
+  const commitIphoneSetting = (mutate) => {
+    let settings = null;
+    try {
+      settings = getSettings(ctx);
+    } catch (error) {
+      console.error('[BS BioTracker] getSettings failed on iphone customization', error);
+      return;
+    }
+    mutate(settings);
+    try {
+      saveSettings(ctx);
+    } catch (error) {
+      console.error('[BS BioTracker] saveSettings failed on iphone customization', error);
+    }
+    applyTheme(settings);
+  };
+  document.querySelectorAll('#bs-biotracker-settings [data-iphone-base-option]').forEach((node) =>
+    node.addEventListener('click', () => {
+      const next = String(node.dataset.iphoneBaseOption) === 'dark' ? 'dark' : 'light';
+      commitIphoneSetting((settings) => { settings.iphoneBase = next; });
+    }),
+  );
+  document.querySelectorAll('#bs-biotracker-settings [data-iphone-accent-option]').forEach((node) =>
+    node.addEventListener('click', () => {
+      const next = normalizeIphoneAccent(node.dataset.iphoneAccentOption);
+      commitIphoneSetting((settings) => { settings.iphoneAccent = next; });
+    }),
+  );
+  document.getElementById('bs-bt-iphone-accent')?.addEventListener('input', (event) => {
+    const next = normalizeIphoneAccent(event.target?.value);
+    commitIphoneSetting((settings) => { settings.iphoneAccent = next; });
+  });
+  document.getElementById('bs-bt-iphone-font')?.addEventListener('change', (event) => {
+    const raw = String(event.target?.value || 'system');
+    const next = IPHONE_FONT_STACKS[raw] ? raw : 'system';
+    commitIphoneSetting((settings) => { settings.iphoneFont = next; });
+  });
   document.querySelectorAll('#bs-biotracker-settings [data-device-size-option]').forEach((node) =>
     node.addEventListener('click', () => {
       const settings = getSettings(ctx);

@@ -60,6 +60,7 @@ export const THEME_CONFIG = {
   eldritch: {},
   ink: {},
   constructivism: {},
+  iphone: {},
 };
 
 export const DEFAULT_WARDROBE_PREP_PROMPT = [
@@ -150,6 +151,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   theme: 'retro',
   deviceSize: 'phone',
   fontSize: 'standard',
+  // 只有 iphone 主题会读这三项：其余 12 套是固定美术风格，配色是主题本身的一部分
+  iphoneBase: 'light',
+  iphoneAccent: '#0a84ff',
+  iphoneFont: 'system',
   enabled: false,
   useStPresetForAsync: false,
   trackerPresetName: '',
