@@ -3647,6 +3647,7 @@ function lineageDetailRows(node) {
   const rows = [
     ['种族', node.raceLabel || '未知'],
     ['性别', node.gender || '—'],
+    ['年龄', node.ageLabel || '未知'],
     ['世代', node.generation === 0 ? '本人' : (node.generation < 0 ? `上${Math.abs(node.generation)}代` : `下${node.generation}代`)],
     ['亲代', node.geneticParents.map((item) => `${item.relation}：${item.name}`).join('、') || '无记录'],
     ['子代', node.children.map((item) => item.name).join('、') || '无记录'],
@@ -3709,6 +3710,7 @@ function renderLineageCard(node) {
       </span>
       <span class="bs-bt-lineage__card-name">${escapeHtml(node.displayName)}</span>
       <span class="bs-bt-lineage__card-sub">${escapeHtml(sub)}</span>
+      <span class="bs-bt-lineage__card-age">${escapeHtml(node.ageLabel || '')}</span>
       ${node.isCenter ? '<span class="bs-bt-lineage__badge">本人</span>' : ''}
     </button>
   `;

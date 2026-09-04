@@ -4494,6 +4494,22 @@
   white-space: nowrap;
 }
 
+/* 年龄独立一行，接在种族下面。未注册的路人没有年龄资料，
+   但这一行照样保留高度——否则同一排里有年龄和没年龄的卡片会高低不齐。
+   用 min-height 而不是给卡片写死高度：不必为每个断点各猜一个数字。 */
+.bs-bt-lineage__card-age {
+  min-height: 13px;
+  /* 明写行高：空的那一行若靠字体预设行高，会跟有字的差 1px */
+  line-height: 13px;
+  max-width: 100%;
+  font-size: 0.64rem;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .bs-bt-lineage__badge {
   position: absolute;
   top: -9px;

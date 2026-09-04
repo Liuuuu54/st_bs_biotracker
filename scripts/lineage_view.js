@@ -30,6 +30,16 @@ function raceLabel(race, derivedType) {
 const EDGE_LABELS = { mother: '母', father: '父', carrier: '承载' };
 
 /**
+ * 年龄取整数岁，与追踪页概览同一套算法——同一个角色在两个画面显示不同岁数
+ * 会被当成 bug。未注册的路人没有年龄资料，回空字串让渲染层整行略过。
+ */
+function ageLabel(age) {
+  const value = Number(age);
+  if (!Number.isFinite(value)) return '';
+  return `${Math.round(value)}岁`;
+}
+
+/**
  * 同一世代里把「遗传亲代完全相同」的人聚成一丛，渲染层才画得出手足共用的连接线。
  * 没有亲代的（图上被截断的祖先、手动注册的角色）各自成丛，不会被误并成一家。
  */
@@ -93,6 +103,7 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
       isCenter: node.id === centerId,
       displayName: node.name || '未命名',
       raceLabel: raceLabel(node.race, node.derivedType),
+      ageLabel: ageLabel(node.age),
       parents,
       geneticParents: parents.filter(isGenetic),
       carriers: parents.filter((item) => !isGenetic(item)),

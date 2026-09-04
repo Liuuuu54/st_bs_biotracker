@@ -63,6 +63,7 @@ export function buildLineageGraph(chatState) {
       name,
       race: profile.base?.race ?? null,
       derivedType: profile.base?.derivedType ?? null,
+      age: profile.base?.age ?? null,
     });
   }
 
@@ -86,6 +87,7 @@ export function buildLineageGraph(chatState) {
           race: child.race ?? null,
           derivedType: child.derivedType ?? null,
           gender: child.gender ?? null,
+          age: child.age ?? null,
         });
       }
       // 合并到角色节点时不写 registeredAs——那会指向它自己。

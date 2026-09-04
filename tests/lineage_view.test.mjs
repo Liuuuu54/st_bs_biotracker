@@ -127,3 +127,23 @@ test('代孕的承载者不算遗传亲代，另外列出', () => {
   const carrier = view.nodes.find((node) => node.isCenter);
   assert.deepEqual(carrier.carriedChildren.map((p) => p.name), ['寄养儿']);
 });
+
+test('节点带上整数岁的年龄标签，未注册的路人留空', () => {
+  const view = buildLineageView({
+    characters: {
+      艾拉: {
+        name: '艾拉', initialized: true,
+        profile: {
+          base: { race: '人类', age: 24.7 },
+          children: [{ id: 'k1', name: '幼子', fathers: '路人甲', age: 0.4 }],
+        },
+      },
+    },
+  }, '艾拉');
+  const center = view.nodes.find((node) => node.isCenter);
+  assert.equal(center.ageLabel, '25岁', '与追踪页概览同样取整');
+  const baby = view.nodes.find((node) => node.displayName === '幼子');
+  assert.equal(baby.ageLabel, '0岁');
+  const stranger = view.nodes.find((node) => node.displayName === '路人甲');
+  assert.equal(stranger.ageLabel, '', '未注册的路人没有年龄资料');
+});

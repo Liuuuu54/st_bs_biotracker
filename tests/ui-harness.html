@@ -61,13 +61,14 @@
       // 血缘视窗的取样：一次覆盖六种分支（一般生育／已注册的孩子／未注册路人父亲／
       // 代孕／嵌合体多父源／自交），点经历页的「族谱」按钮即可看到
       祖母: makeCharacter('祖母', {
+        base: { age: 48 },
         profile: {
           children: [
             { id: 'g1', name: '艾拉', gender: '女', race: '精灵', fathers: '祖父', fatherRace: '精灵', age: 120, registeredAs: '艾拉', talents: [] },
           ],
         },
       }),
-      长女: makeCharacter('长女', { profile: { children: [] } }),
+      长女: makeCharacter('长女', { base: { age: 18 }, profile: { children: [] } }),
       艾拉: makeCharacter('艾拉', {
         // 三个精液来源、量差明显：验证「精液来源」的占比环（两个以上才画）
         base: {
