@@ -5520,10 +5520,13 @@ const IPHONE_FONT_STACKS = {
   hand: "'LXGW WenKai TC', 'Klee One', 'Yuanti TC', cursive",
 };
 
-function normalizeIphoneAccent(value) {
+function normalizeHexColor(value, fallback) {
   const text = String(value || '').trim();
-  return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : '#0a84ff';
+  return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : fallback;
 }
+
+const normalizeIphoneAccent = (value) => normalizeHexColor(value, '#0a84ff');
+const normalizeIphoneCase = (value) => normalizeHexColor(value, '#c8c2b8');
 
 /**
  * 三个挂载点（面板／浮球／族谱视窗）各自独立，所以自订值写在 documentElement 上，
@@ -5535,11 +5538,13 @@ function applyIphoneCustomization(settings) {
   if (String(settings?.theme || '') !== 'iphone') {
     root.removeAttribute('data-bsbt-iphone-base');
     root.style.removeProperty('--bsbt-user-accent');
+    root.style.removeProperty('--bsbt-user-case');
     root.style.removeProperty('--bsbt-user-font');
     return;
   }
   root.dataset.bsbtIphoneBase = String(settings?.iphoneBase || 'light') === 'dark' ? 'dark' : 'light';
   root.style.setProperty('--bsbt-user-accent', normalizeIphoneAccent(settings?.iphoneAccent));
+  root.style.setProperty('--bsbt-user-case', normalizeIphoneCase(settings?.iphoneCase));
   const fontKey = String(settings?.iphoneFont || 'system');
   root.style.setProperty('--bsbt-user-font', IPHONE_FONT_STACKS[fontKey] || IPHONE_FONT_STACKS.system);
 }
@@ -5560,6 +5565,12 @@ function syncIphonePanel(settings) {
   });
   const accentInput = document.getElementById('bs-bt-iphone-accent');
   if (accentInput) accentInput.value = accent;
+  const caseColor = normalizeIphoneCase(settings?.iphoneCase);
+  document.querySelectorAll('#bs-biotracker-settings [data-iphone-case-option]').forEach((node) => {
+    node.classList.toggle('is-active', String(node.dataset.iphoneCaseOption).toLowerCase() === caseColor);
+  });
+  const caseInput = document.getElementById('bs-bt-iphone-case');
+  if (caseInput) caseInput.value = caseColor;
   const fontSelect = document.getElementById('bs-bt-iphone-font');
   if (fontSelect) fontSelect.value = IPHONE_FONT_STACKS[String(settings?.iphoneFont || '')] ? String(settings.iphoneFont) : 'system';
 }
@@ -6816,6 +6827,16 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-iphone-accent')?.addEventListener('input', (event) => {
     const next = normalizeIphoneAccent(event.target?.value);
     commitIphoneSetting((settings) => { settings.iphoneAccent = next; });
+  });
+  document.querySelectorAll('#bs-biotracker-settings [data-iphone-case-option]').forEach((node) =>
+    node.addEventListener('click', () => {
+      const next = normalizeIphoneCase(node.dataset.iphoneCaseOption);
+      commitIphoneSetting((settings) => { settings.iphoneCase = next; });
+    }),
+  );
+  document.getElementById('bs-bt-iphone-case')?.addEventListener('input', (event) => {
+    const next = normalizeIphoneCase(event.target?.value);
+    commitIphoneSetting((settings) => { settings.iphoneCase = next; });
   });
   document.getElementById('bs-bt-iphone-font')?.addEventListener('change', (event) => {
     const raw = String(event.target?.value || 'system');

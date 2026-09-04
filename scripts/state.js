@@ -154,6 +154,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // 只有 iphone 主题会读这三项：其余 12 套是固定美术风格，配色是主题本身的一部分
   iphoneBase: 'light',
   iphoneAccent: '#0a84ff',
+  iphoneCase: '#c8c2b8',
   iphoneFont: 'system',
   enabled: false,
   useStPresetForAsync: false,
