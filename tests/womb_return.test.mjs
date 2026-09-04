@@ -326,3 +326,62 @@ test('回归期的心理更新走 preg 组', () => {
   assert.equal(result.applied, false);
   assert.match(result.message, /preg/);
 });
+
+// ── 常态用法：user 被吞，或吞一个未注册的路人 ───────────────────
+test('回归者不必是已注册角色：user 被吞', () => {
+  const chatState = setup();
+  delete chatState.characters['琪拉'];
+  const result = call(chatState, 'bsWombReturn', { female: '艾拉', returner: '用户', hours: 6 });
+  assert.equal(result.applied, true, result.message);
+  const fetus = hostOf(chatState).pregnant.fetuses[0];
+  assert.equal(fetus.fathers, '用户');
+  assert.deepEqual(fetus.tags, ['rebirth']);
+  assert.equal(chatState.characters['用户'], undefined, '不该凭空注册出一个角色');
+});
+
+test('未注册的回归者可用 returnerRace 指定种族，含衍生类型', () => {
+  const chatState = setup({ base: { race: '人类' } });
+  delete chatState.characters['琪拉'];
+  call(chatState, 'bsWombReturn', {
+    female: '艾拉', returner: '无名旅人', returnerRace: '[血族]龙族', hours: 1,
+  });
+  const fetus = hostOf(chatState).pregnant.fetuses[0];
+  assert.equal(fetus.fatherRace, '龙族');
+  assert.equal(fetus.fatherDerivedType, '血族');
+  assert.match(fetus.race, /龙族/);
+});
+
+test('未注册且没给种族时，视同与承载者同族', () => {
+  const chatState = setup({ base: { race: '精灵' } });
+  delete chatState.characters['琪拉'];
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '路人', hours: 1 });
+  const fetus = hostOf(chatState).pregnant.fetuses[0];
+  assert.equal(fetus.fatherRace, '精灵');
+  assert.equal(fetus.race, '精灵');
+});
+
+test('returnerRace 优先于已注册角色自己的种族', () => {
+  const chatState = setup({ base: { race: '人类' } }, { base: { race: '龙族' } });
+  call(chatState, 'bsWombReturn', {
+    female: '艾拉', returner: '琪拉', returnerRace: '兽人', hours: 1,
+  });
+  assert.equal(hostOf(chatState).pregnant.fetuses[0].fatherRace, '兽人');
+});
+
+test('未注册的回归者没有冻结这回事，也没有天赋可继承', () => {
+  const chatState = setup();
+  delete chatState.characters['琪拉'];
+  const result = call(chatState, 'bsWombReturn', { female: '艾拉', returner: '用户', hours: 4 });
+  assert.match(result.message, /unregistered/);
+  assert.deepEqual(hostOf(chatState).pregnant.fetuses[0].talents, []);
+  // 回归失败时也不该因为找不到回归者而炸掉
+  const aborted = call(chatState, 'bsAbortion', { female: '艾拉' });
+  assert.equal(aborted.applied, true, aborted.message);
+  assert.equal(hostOf(chatState).base.stage, '卵泡期');
+});
+
+test('returner 为空仍要拒绝', () => {
+  const chatState = setup();
+  const result = call(chatState, 'bsWombReturn', { female: '艾拉', returner: '  ' });
+  assert.equal(result.applied, false);
+});

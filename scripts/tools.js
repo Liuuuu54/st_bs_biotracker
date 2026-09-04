@@ -445,21 +445,27 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsWombReturn',
-    description: '胎内回归：让一名已注册角色回到另一名角色的子宫内，成为其胎儿。'
-      + '只能在承载者处于月经阶段（卵泡期/排卵期/黄体期/月经期）或无经期时呼叫；子宫内已有胎儿或残留精液会被直接净空。'
-      + '呼叫后承载者进入「回归期」：衣着压力冲到上限，体内多出一胎且胎重为上限 3.0，'
-      + '并在 hours 小时内让压力与胎重线性回落到正常，随后自动转入孕早期，之后按一般妊娠推进。'
-      + 'hours 传 0 表示瞬间完成（角色对这段过程无知觉），会当场结算进孕早期。'
-      + '该胎的母方为承载者、父方为回归者，种族照常混血；回归者的天赋会传给这一胎，技能不传。'
-      + '回归者会被冻结：设为离场且停止一切阶段推进（她现在是一颗胎儿）。'
-      + '在回归期内流产／堕胎视为回归失败，回归者会被排出并自动恢复原状；一旦转入孕早期即告成立，此后流产不再让她复原。'
-      + '需要手动解除冻结时用 bsSetCharacterPresence 将她设回在场。'
-      + '不能让角色回归自己的子宫。',
+    description: '胎内回归：让 returner 这个人回到 female 的子宫内成为其胎儿，经过一段过渡后转为正常妊娠，出生时是全新个体（新的孩子记录，与原来那个人不是同一笔资料）。'
+      + 'returner 可以是任何人：user、未注册的路人、或已注册角色都行，不必事先注册。'
+      + '未注册的 returner 请一并给 returnerRace 说明其种族；已注册角色可省略，系统会读她自己的种族。'
+      + 'returnerRace 使用 [derivedType-装饰子项]race-装饰子项 格式，混血以 X 分隔；两者都缺时视同与承载者同族。'
+      + '\n呼叫条件：承载者必须处于月经阶段（卵泡期/排卵期/黄体期/月经期）或无经期；她自己正在别人体内、或已在回归期时不可呼叫。'
+      + 'returner 若是已注册角色且已经在别人体内，也不可再次回归。不能让角色回归自己的子宫。'
+      + '呼叫时承载者子宫内已有的胎儿、残留精液与卵子会被直接净空。'
+      + '\n呼叫后承载者进入「回归期」：衣着压力冲到上限 10，体内多出一胎且胎重为上限 3.0，'
+      + '两者在 hours 小时内线性回落到正常，随后自动转入孕早期第一天，之后按一般妊娠推进。'
+      + 'hours 是故事内经过的时间，必须是不小于 0 的数字，要靠 bsPassedTime 推进才会流逝；'
+      + '传 0 表示瞬间完成（角色对这段过程无知觉），会当场结算进孕早期。回归期中不能植入其他胚胎。'
+      + '\n该胎的母方为承载者、父方为 returner，种族照常混血，并带 rebirth 标签。'
+      + 'returner 若是已注册角色，她的天赋会传给这一胎（技能不传），并且会被冻结：设为离场且停止一切阶段推进（她现在是一颗胎儿），'
+      + '期间对她使用生理类工具一律无效；用 bsSetCharacterPresence 将她设回在场即可解除冻结。未注册的 returner 没有冻结这回事。'
+      + '\n在回归期内流产／堕胎视为回归失败，已注册的回归者会被排出并自动恢复原状；一旦转入孕早期即告成立，此后流产不再让她复原。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
         returner: { type: 'string' },
+        returnerRace: { type: 'string' },
         hours: { type: 'number' },
       },
       required: ['female', 'returner'],
@@ -736,10 +742,12 @@ function applyWombReturn(chatState, args) {
   if (!female || !character) {
     return { applied: false, message: `bsWombReturn skipped: unknown character ${female || '(empty)'}.` };
   }
-  const returner = chatState.characters?.[returnerName];
-  if (!returnerName || !returner) {
-    return { applied: false, message: `bsWombReturn skipped for ${female}: unknown returner ${returnerName || '(empty)'}.` };
+  if (!returnerName) {
+    return { applied: false, message: `bsWombReturn skipped for ${female}: returner 不可为空。` };
   }
+  // returner 不必是已注册角色。常态其实是 user 被吞、或吞一个路人——
+  // 两者都不在 characters 里；硬性要求注册会把最常见的用法挡在门外。
+  const returner = chatState.characters?.[returnerName] || null;
   // 钻进自己的子宫在物理上说不通，而且母父同一人会被标成自交
   if (returnerName === female) {
     return { applied: false, message: `bsWombReturn skipped for ${female}: 角色不能回归自己的子宫。` };
@@ -752,8 +760,8 @@ function applyWombReturn(chatState, args) {
       message: `bsWombReturn skipped for ${female}: 她本人正在 ${hostFrozenIn} 体内作为胎儿，不能同时作为承载者。`,
     };
   }
-  // 一个人不能同时是两个人肚子里的胎儿
-  const returnerFrozenIn = getWombReturnHost(returner);
+  // 一个人不能同时是两个人肚子里的胎儿（只有已注册角色才追踪得到这件事）
+  const returnerFrozenIn = returner ? getWombReturnHost(returner) : '';
   if (returnerFrozenIn) {
     return {
       applied: false,
@@ -785,12 +793,18 @@ function applyWombReturn(chatState, args) {
   pregnant.fetusesCount = 0;
   pregnant.fetalEnergyDrain = 0;
 
-  const returnerProfile = returner.profile || {};
+  const returnerProfile = returner?.profile || {};
   const returnerBase = returnerProfile.base || {};
   const motherRace = parseRaceDescriptor(base.race || '人类').race || '人类';
-  const fatherRace = parseRaceDescriptor(returnerBase.race || motherRace).race || motherRace;
+  // 种族来源依序：显式传入 > 已注册角色自己的种族 > 与承载者同族
+  const explicitRace = String(args?.returnerRace || '').trim();
+  const parsedReturner = explicitRace ? parseRaceDescriptor(explicitRace) : null;
+  const fatherRace = parsedReturner?.race
+    || parseRaceDescriptor(returnerBase.race || motherRace).race
+    || motherRace;
   const fetusRace = deriveFetusRace(motherRace, fatherRace);
-  const fatherDerivedType = returnerBase.derivedType ? String(returnerBase.derivedType) : null;
+  const fatherDerivedType = parsedReturner?.derivedType
+    || (returnerBase.derivedType ? String(returnerBase.derivedType) : null);
   const derivedSeed = getDerivedTypeSeed(base.derivedType ? String(base.derivedType) : null, fatherDerivedType);
 
   pregnant.fetuses = [{
@@ -842,16 +856,19 @@ function applyWombReturn(chatState, args) {
   profile.notify = notify;
   chatState.characters[female] = next;
 
-  // 回归者整个冻结：她现在是一颗胎儿
-  const frozen = cloneValue(returner);
-  frozen.profile = frozen.profile || {};
-  frozen.profile.base = { ...(frozen.profile.base || {}), isHere: false, wombReturnHost: female };
-  chatState.characters[returnerName] = frozen;
+  // 只有已注册角色需要冻结；未注册的 returner 本来就不在系统里跑
+  if (returner) {
+    const frozen = cloneValue(returner);
+    frozen.profile = frozen.profile || {};
+    frozen.profile.base = { ...(frozen.profile.base || {}), isHere: false, wombReturnHost: female };
+    chatState.characters[returnerName] = frozen;
+  }
 
   return {
     applied: true,
     message: `bsWombReturn applied: ${returnerName} returned into ${female}`
-      + `${hours > 0 ? ` for ${hours}h` : ' instantly'}; ${returnerName} frozen.`,
+      + `${hours > 0 ? ` for ${hours}h` : ' instantly'}`
+      + `${returner ? `; ${returnerName} frozen.` : '; returner is unregistered, nothing frozen.'}`,
   };
 }
 
