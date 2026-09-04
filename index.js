@@ -1834,24 +1834,6 @@ function formatRaceLabel(race, derivedType) {
   return cleanRace || cleanDerived || '未设定';
 }
 
-function getCharacterStateForDisplay(character) {
-  if (!character || typeof character !== 'object') return character;
-  const cloned = typeof globalThis.structuredClone === 'function'
-    ? globalThis.structuredClone(character)
-    : JSON.parse(JSON.stringify(character));
-  const derivedType = String(cloned?.profile?.base?.derivedType || '').trim();
-  const metabolism = cloned?.profile?.metabolism;
-  if (!metabolism || typeof metabolism !== 'object') return cloned;
-  if (derivedType) {
-    for (const key of getDerivedTypeMetabolismExemptions(derivedType)) {
-      delete metabolism[key];
-    }
-  } else {
-    delete metabolism.flux;
-  }
-  return cloned;
-}
-
 function cloneJsonValue(value) {
   return typeof globalThis.structuredClone === 'function'
     ? globalThis.structuredClone(value)
@@ -2725,10 +2707,6 @@ function renderWardrobeMetricMap(values = {}, labels = WARDROBE_DIMENSION_LABELS
   }).join('') + '</div>';
 }
 
-function getWardrobeItemKind(item = {}) {
-  return item.slot === 'accessory' ? '配件' : '主件';
-}
-
 function renderWardrobeItemRow(item = {}, options = {}) {
   return `
     <div class="bs-bt-wardrobe-row-wrap">
@@ -3214,13 +3192,6 @@ function renderProgressList(items) {
       </div>`;
     })
     .join('');
-}
-
-function renderCardList(items, renderCard, emptyText) {
-  if (!Array.isArray(items) || items.length === 0) {
-    return `<div class="bs-bt-track-card-empty">${escapeHtml(emptyText)}</div>`;
-  }
-  return `<div class="bs-bt-track-cards">${items.map((item, index) => renderCard(item, index)).join('')}</div>`;
 }
 
 function renderTrackTitle(title, badge = '') {
@@ -5905,20 +5876,6 @@ function normalizePromptListForDisplay(prompts, presetName) {
     })
     .filter(Boolean);
   return ordered;
-}
-
-function getPromptDisplayMeta(prompt) {
-  const isMarkerPrompt = !!prompt?.marker && Number(prompt?.injection_position) !== 1;
-  const isImportantPrompt = !prompt?.marker && !!prompt?.system_prompt && Number(prompt?.injection_position) !== 1 && !!prompt?.forbid_overrides;
-  const isSystemPrompt = !prompt?.marker && !!prompt?.system_prompt && Number(prompt?.injection_position) !== 1 && !prompt?.forbid_overrides;
-  const isUserPrompt = !prompt?.marker && !prompt?.system_prompt && Number(prompt?.injection_position) !== 1;
-  const isInjectionPrompt = Number(prompt?.injection_position) === 1;
-  if (isMarkerPrompt) return { icon: 'fa-thumb-tack', title: 'Marker' };
-  if (isImportantPrompt) return { icon: 'fa-star', title: 'Important Prompt' };
-  if (isSystemPrompt) return { icon: 'fa-square-poll-horizontal', title: 'Global Prompt' };
-  if (isUserPrompt) return { icon: 'fa-asterisk', title: 'Preset Prompt' };
-  if (isInjectionPrompt) return { icon: 'fa-syringe', title: 'In-Chat Injection' };
-  return { icon: 'fa-asterisk', title: 'Prompt' };
 }
 
 function getPromptTypeGlyph(prompt) {
