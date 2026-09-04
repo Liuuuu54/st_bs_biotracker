@@ -89,10 +89,10 @@ test('提示词只描述本轮出现过的标签', () => {
 
 test('预留标签已在目录中，往后写入即可显示', () => {
   const ids = FETUS_TAG_CATALOG.map((tag) => tag.id);
-  for (const reserved of ['womb_return', 'superfetation', 'nested', 'androgenesis', 'gynogenesis']) {
+  for (const reserved of ['rebirth', 'superfetation', 'nested', 'androgenesis', 'gynogenesis']) {
     assert.ok(ids.includes(reserved), `${reserved} 不在目录中`);
   }
-  assert.deepEqual(getFetusTagLabels(['nested', 'womb_return']), ['孕中孕', '胎内回归']);
+  assert.deepEqual(getFetusTagLabels(['nested', 'rebirth']), ['孕中孕', '胎内回归']);
 });
 
 // ── 落盘路径：白名单式清洗只要漏列新栏位，标签就会静默消失，整个机制等于没做

@@ -43,7 +43,7 @@ export const FETUS_TAG_CATALOG = [
   // ── 以下为预留：目前没有任何流程会产生，栏位与语义先定下来，
   //    等对应玩法实作时直接往 fetus.tags 里写 id 即可，不必再改资料结构。
   {
-    id: 'womb_return',
+    id: 'rebirth',
     label: '胎内回归',
     short: '一名已出生的角色重新回到子宫内成为胎儿；产出后是新的个体，与原角色在系统上不是同一笔资料。',
   },
