@@ -2798,24 +2798,38 @@ function renderWardrobeCharacterList(characters = []) {
 const PREGFIT_DIM_LABELS = { masking: '遮蔽', support: '承托', capacity: '余裕', convenience: '便利' };
 
 /**
- * 孕期衣着压力：原本只是标题旁一个空心小药丸「孕衣压 3.3」，看不出量表范围，
- * 也没把四维余裕（gap）显示出来——那才是叙事真正该抓的信号：哪一维已经撑不住了。
- * pregWearPressure 0-10；gap = 该维度总值 - 压力，负值代表这件衣服在这个维度上已经压不住孕期变化。
+ * 孕期衣着压力。四个维度画成共用同一条压力刻线的小量表：
+ * 长条是这套衣服在该维度的总值，刻线是当前孕期压力，条子没顶到刻线就是压不住，
+ * 差额直接用红色补在缺口上。这样「为什么这一维是负的」是看得出来的，
+ * 而不是丢四个各自独立的数字让人自己减。
+ *
+ * 总值不必另外存：gap = 总值 - 压力（tools.js refreshOutfitPregFit），
+ * 两者都被夹在 0-10，差值落在 -10~10，不会碰到 gap 自己的 -20/20 夹界，
+ * 所以 总值 = gap + 压力 可以精确还原。
  */
 function renderPregFitGauge(pregFit) {
   const pressure = Number(pregFit?.pregWearPressure);
   if (!Number.isFinite(pressure)) return '';
-  const fillPct = Math.max(0, Math.min(100, (pressure / 10) * 100));
+  const pct = (value) => Math.max(0, Math.min(100, (value / 10) * 100));
+  const pressurePct = pct(pressure);
   const gap = pregFit?.gap || {};
   const dims = Object.keys(PREGFIT_DIM_LABELS).map((key) => {
-    const value = Number(gap[key]);
-    const safeValue = Number.isFinite(value) ? value : 0;
-    const isOverwhelmed = safeValue < 0;
-    const sign = safeValue > 0 ? '+' : '';
-    return `<span class="bs-bt-pregfit__dim${isOverwhelmed ? ' is-overwhelmed' : ''}">
-      <span class="bs-bt-pregfit__dim-label">${escapeHtml(PREGFIT_DIM_LABELS[key])}</span>
-      <span class="bs-bt-pregfit__dim-value">${sign}${escapeHtml(formatFixedDisplay(safeValue, 1))}</span>
-    </span>`;
+    const rawGap = Number(gap[key]);
+    const safeGap = Number.isFinite(rawGap) ? rawGap : 0;
+    const total = Math.max(0, Math.min(10, safeGap + pressure));
+    const totalPct = pct(total);
+    const short = safeGap < 0;
+    return `<div class="bs-bt-pregfit__dim${short ? ' is-short' : ''}">
+      <div class="bs-bt-pregfit__dim-head">
+        <span class="bs-bt-pregfit__dim-label">${escapeHtml(PREGFIT_DIM_LABELS[key])}</span>
+        <span class="bs-bt-pregfit__dim-value">${safeGap > 0 ? '+' : ''}${escapeHtml(formatFixedDisplay(safeGap, 1))}</span>
+      </div>
+      <div class="bs-bt-pregfit__track">
+        <div class="bs-bt-pregfit__fill" style="width:${totalPct}%"></div>
+        ${short ? `<div class="bs-bt-pregfit__deficit" style="left:${totalPct}%;width:${Math.max(0, pressurePct - totalPct)}%"></div>` : ''}
+        <div class="bs-bt-pregfit__tick" style="left:${pressurePct}%"></div>
+      </div>
+    </div>`;
   }).join('');
   return `
     <div class="bs-bt-pregfit">
@@ -2823,8 +2837,8 @@ function renderPregFitGauge(pregFit) {
         <span class="bs-bt-pregfit__label">孕期衣着压力</span>
         <span class="bs-bt-pregfit__value">${escapeHtml(formatFixedDisplay(pressure, 1))}<span class="bs-bt-pregfit__scale">/10</span></span>
       </div>
-      <div class="bs-bt-pregfit__bar"><div class="bs-bt-pregfit__bar-fill" style="width:${fillPct}%"></div></div>
       <div class="bs-bt-pregfit__dims">${dims}</div>
+      <div class="bs-bt-pregfit__legend">竖线为当前压力，条子未及即为该维度压不住</div>
     </div>
   `;
 }
