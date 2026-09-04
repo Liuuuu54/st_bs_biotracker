@@ -249,3 +249,80 @@ test('已经进入妊娠之后流产，回归者不再复原', () => {
   assert.equal(returnerOf(chatState).base.isHere, false, '回归已成立，不再放人回来');
   assert.equal(returnerOf(chatState).base.wombReturnHost, '艾拉');
 });
+
+// ── 逻辑审计补上的回归测试 ─────────────────────────────────────
+test('同一个回归者不能同时在两个人体内', () => {
+  const chatState = setup();
+  chatState.characters['贝拉'] = makeChar('贝拉');
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 10 });
+  const result = call(chatState, 'bsWombReturn', { female: '贝拉', returner: '琪拉', hours: 10 });
+  assert.equal(result.applied, false);
+  assert.equal(chatState.characters['贝拉'].profile.pregnant.fetuses.length, 0);
+});
+
+test('自己是胎儿的人不能同时当承载者', () => {
+  const chatState = setup();
+  chatState.characters['贝拉'] = makeChar('贝拉');
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 10 });
+  // 琪拉现在是艾拉体内的胎儿；她的阶段永远不会推进，回归期会卡死在里面
+  const result = call(chatState, 'bsWombReturn', { female: '琪拉', returner: '贝拉', hours: 10 });
+  assert.equal(result.applied, false);
+  assert.equal(returnerOf(chatState).base.stage, '卵泡期');
+});
+
+test('承载者被注销后，冻结的回归者自动解冻', () => {
+  const chatState = setup();
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 10 });
+  delete chatState.characters['艾拉'];
+  call(chatState, 'bsPassedTime', { day: 1 });
+  assert.equal(returnerOf(chatState).base.wombReturnHost, undefined, '承载者不在了就不该继续冻着');
+  assert.equal(returnerOf(chatState).base.isHere, true);
+  assert.ok(returnerOf(chatState).base.days > 0, '解冻后应恢复推进');
+});
+
+test('回归期中不能植入其他胚胎', () => {
+  const chatState = setup();
+  chatState.characters['贝拉'] = makeChar('贝拉');
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 10 });
+  const result = call(chatState, 'bsImplantEmbryo', { female: '艾拉', provider: '贝拉', race: '人类' });
+  assert.equal(result.applied, false);
+  assert.equal(hostOf(chatState).pregnant.fetuses.length, 1);
+});
+
+test('冻结者不能被生理类工具改动', () => {
+  const chatState = setup();
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 10 });
+  for (const [tool, args] of [
+    ['bsSetMenstrualPhases', { stage: '排卵期' }],
+    ['bsAddSperm', { male: '凯', race: '人类', amount: 30 }],
+    ['bsChildbirth', {}],
+  ]) {
+    const result = call(chatState, tool, { female: '琪拉', ...args });
+    assert.equal(result.applied, false, `${tool} 不该对冻结者生效`);
+  }
+  assert.equal(returnerOf(chatState).base.stage, '卵泡期');
+  assert.deepEqual(returnerOf(chatState).base.sperms, []);
+});
+
+test('hours 传非数字或负数会被拒绝，不再静默当成瞬间完成', () => {
+  for (const bad of [-5, 'abc', NaN]) {
+    const chatState = setup();
+    const result = call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: bad });
+    assert.equal(result.applied, false, `hours=${bad} 应被拒绝`);
+    assert.equal(hostOf(chatState).base.stage, '卵泡期', '被拒绝时不该改动状态');
+  }
+});
+
+test('回归期的心理更新走 preg 组', () => {
+  const chatState = setup({
+    profile: {
+      // 有 stageProfiles 才算「已推演繁育心理」，否则会先被那道闸门挡下
+      psychology: { mens: { stance: 50 }, preg: { stance: 50 }, stageProfiles: { mens: {}, preg: {} } },
+    },
+  });
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 10 });
+  // 写 mens 会被拒绝（阶段期待 preg）——写进 mens 的资料会在转入妊娠满 7 天时被清空
+  const result = call(chatState, 'bsUpdatePsychology', { female: '艾拉', options: { mens: { stance: 2 } } });
+  assert.equal(result.applied, false);
+  assert.match(result.message, /preg/);
+});

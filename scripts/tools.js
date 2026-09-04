@@ -630,6 +630,29 @@ function canAcceptWombReturn(stage) {
   return MENSTRUAL_STAGES.includes(stage) || stage === '无经期';
 }
 
+/** 这个角色现在是别人肚子里的一颗胎儿 */
+function getWombReturnHost(character) {
+  return String(character?.profile?.base?.wombReturnHost || '').trim();
+}
+
+/**
+ * 被冻结的角色不得再被生理类工具改动。冻结原本只挡住 bsPassedTime，
+ * 但 bsSetMenstrualPhases 之类照样能改她的阶段——一颗胎儿被设成排卵期，
+ * 而且她的阶段永远不会再推进，等于把状态锁在一个假值上。
+ */
+const WOMB_FROZEN_BLOCKED_TOOLS = new Set([
+  'bsSetMenstrualPhases',
+  'bsAddSperm',
+  'bsDrainSperm',
+  'bsImplantEmbryo',
+  'bsAbortion',
+  'bsChildbirth',
+  'bsRuptureMembranes',
+  'bsMaternalFetalInteraction',
+  'bsExcreteMetabolism',
+  'bsUpdatePsychology',
+]);
+
 function wombReturnProgress(state) {
   const total = clampNumber(state?.totalHours, 0, 99999, 0);
   if (total <= 0) return 1;
@@ -721,6 +744,22 @@ function applyWombReturn(chatState, args) {
   if (returnerName === female) {
     return { applied: false, message: `bsWombReturn skipped for ${female}: 角色不能回归自己的子宫。` };
   }
+  // 承载者自己是别人肚子里的胎儿：她的阶段永远不会推进，回归期会卡死在里面
+  const hostFrozenIn = getWombReturnHost(character);
+  if (hostFrozenIn) {
+    return {
+      applied: false,
+      message: `bsWombReturn skipped for ${female}: 她本人正在 ${hostFrozenIn} 体内作为胎儿，不能同时作为承载者。`,
+    };
+  }
+  // 一个人不能同时是两个人肚子里的胎儿
+  const returnerFrozenIn = getWombReturnHost(returner);
+  if (returnerFrozenIn) {
+    return {
+      applied: false,
+      message: `bsWombReturn skipped for ${female}: ${returnerName} 已经在 ${returnerFrozenIn} 体内，不能重复回归。`,
+    };
+  }
   const stage = String(character?.profile?.base?.stage || '');
   if (stage === WOMB_RETURN_STAGE) {
     return { applied: false, message: `bsWombReturn skipped for ${female}: 已经在回归期，不能重复回归。` };
@@ -776,7 +815,13 @@ function applyWombReturn(chatState, args) {
   }];
   pregnant.fetusesCount = 1;
 
-  const hours = clampNumber(args?.hours, 0, 99999, 0);
+  // 不能静默把垃圾值当成 0：那会让「传错参数」变成「瞬间完成回归」，
+  // 与本档其他工具要求显式传值的做法一致
+  const rawHours = args?.hours === undefined || args?.hours === null ? 0 : Number(args.hours);
+  if (!Number.isFinite(rawHours) || rawHours < 0) {
+    return { applied: false, message: `bsWombReturn skipped for ${female}: hours 必须是不小于 0 的数字。` };
+  }
+  const hours = clampNumber(rawHours, 0, 99999, 0);
   pregnant.wombReturn = { returner: returnerName, totalHours: hours, remainingHours: hours };
   base.stage = WOMB_RETURN_STAGE;
   base.days = 0;
@@ -3359,6 +3404,9 @@ function applyAbortion(chatState, args) {
  * provider 只记录母源归属。单一母源出生后自动转交，多母源嵌合体留在孕母名下。
  */
 function applyImplantEmbryo(chatState, args) {
+  if (String(chatState.characters?.[String(args?.female || '').trim()]?.profile?.base?.stage || '') === WOMB_RETURN_STAGE) {
+    return { applied: false, message: 'bsImplantEmbryo skipped: 回归期中不能植入其他胚胎。' };
+  }
   const female = String(args?.female || '').trim();
   const character = chatState.characters?.[female];
   if (!female || !character) {
@@ -4198,9 +4246,19 @@ function applyPassedTime(chatState, args) {
     const current = chatState.characters[name];
     if (!current || typeof current !== 'object') continue;
     // 被吞进子宫的角色整个冻结：她现在是一颗胎儿，月经周期、代谢、受孕都不该继续跑
-    if (String(current?.profile?.base?.wombReturnHost || '').trim()) continue;
-    const tick = buildTimeTick(current, totalMinutes);
-    const result = applyTimeToCharacter(current, tick);
+    let subject = current;
+    const frozenHost = String(current?.profile?.base?.wombReturnHost || '').trim();
+    if (frozenHost) {
+      // 承载者已经不在了（被注销），再冻着就永远出不来，自动放人后照常推进
+      if (chatState.characters?.[frozenHost]) continue;
+      subject = cloneValue(current);
+      subject.profile = subject.profile || {};
+      const thawedBase = { ...(subject.profile.base || {}), isHere: true };
+      delete thawedBase.wombReturnHost;
+      subject.profile.base = thawedBase;
+    }
+    const tick = buildTimeTick(subject, totalMinutes);
+    const result = applyTimeToCharacter(subject, tick);
     chatState.characters[name] = result.character;
   }
   transferProviderChildren(chatState);
@@ -4663,7 +4721,10 @@ function applyUpdatePsychology(chatState, args) {
   const psychology = profile.psychology || {};
   const base = profile.base || {};
   const stage = String(base.stage || '');
-  const isPregnancySide = PREGNANCY_STAGES.includes(stage) || stage === '假孕期' || stage === '产兆前驱' || LABOR_STAGES.includes(stage);
+  // 回归期算妊娠侧：体感本来就是孕育状态，而且写进 mens 的资料会在转入妊娠满 7 天时
+  // 被 clearPsychologyTransitionState 清空（实测：孕 10 天后 mens.stance 变 undefined），
+  // 等于白写一场。
+  const isPregnancySide = PREGNANCY_STAGES.includes(stage) || stage === '假孕期' || stage === '产兆前驱' || stage === WOMB_RETURN_STAGE || LABOR_STAGES.includes(stage);
 
   const targetGroup = isPregnancySide ? 'preg' : 'mens';
   const sourcePatch = options[targetGroup];
@@ -5210,6 +5271,16 @@ export function applyToolCall(chatState, call) {
   const name = String(call?.name || '').trim();
   const args = normalizeToolCallArguments(call?.arguments);
   if (!name) return { applied: false, message: 'Empty tool call name.' };
+  if (WOMB_FROZEN_BLOCKED_TOOLS.has(name)) {
+    const target = String(args?.female || '').trim();
+    const host = getWombReturnHost(chatState.characters?.[target]);
+    if (host) {
+      return {
+        applied: false,
+        message: `${name} skipped for ${target}: 她正在 ${host} 体内作为胎儿，生理状态已冻结。`,
+      };
+    }
+  }
   if (name === 'bsPassedTime') return applyPassedTime(chatState, args);
   if (name === 'bsWriteDiary') return applyWriteDiary(chatState, args);
   if (name === 'bsUpdateCharacterStatus') return applyCharacterStatus(chatState, args);
