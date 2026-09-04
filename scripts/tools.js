@@ -521,11 +521,6 @@ function hasBreedingPsychology(profile) {
     && Object.keys(stageProfiles).length > 0);
 }
 
-function findWardrobeItem(profile, itemRef, slot = '') {
-  const wardrobe = ensureWardrobeState(profile);
-  return resolveWardrobeItemRef(wardrobe.items, itemRef, slot);
-}
-
 function getAvailableOutfitItems(profile) {
   const wardrobe = ensureWardrobeState(profile);
   const temporaryItems = Array.isArray(profile?.outfit?.temporaryItems)
@@ -672,10 +667,6 @@ function shuffleInPlace(list) {
     const swapIndex = randomInt(0, index);
     [list[index], list[swapIndex]] = [list[swapIndex], list[index]];
   }
-}
-
-function getBaseRace(race) {
-  return getBaseRaceName(race);
 }
 
 function getRaceComponents(race) {

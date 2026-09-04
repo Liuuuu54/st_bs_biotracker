@@ -98,11 +98,6 @@ export function getAuthHeaders(settings) {
   return headers;
 }
 
-export function getApiFormatPreview(settings) {
-  const apiBase = getApiBase(settings) || '<Base URL>';
-  return getApiUrlForFormat(apiBase, settings?.apiFormat);
-}
-
 /**
  * 宿主代理对非 OpenAI 兼容格式的支持：
  * TauriTavern 后端读取 payload.custom_api_format，按 openai_responses.rs / claude
@@ -1222,14 +1217,6 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     });
     throw error;
   }
-}
-
-function hasPresetToggleOverrides(settings) {
-  if (!shouldApplyAsyncPreset(settings)) return false;
-  const presetName = resolvePresetName(settings);
-  if (!presetName) return false;
-  const presetOverrides = settings?.trackerPromptToggleOverrides?.[presetName];
-  return !!presetOverrides && Object.keys(presetOverrides).length > 0;
 }
 
 export async function fetchModelList(settings) {

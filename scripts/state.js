@@ -1430,12 +1430,6 @@ function foldMessageSignatureDigest(seed, signature) {
   return hash >>> 0;
 }
 
-export function buildMessageSignatures(ctx, endIndexExclusive = null) {
-  const chat = getHostChat(ctx);
-  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length;
-  return chat.slice(0, end).map((message) => buildMessageSignature(ctx, message));
-}
-
 export function buildMessageDigest(ctx, endIndexExclusive = null) {
   const chat = getHostChat(ctx);
   const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length;
@@ -2094,33 +2088,4 @@ export function shouldTriggerForMessage(settings, lastMessage) {
   if (settings.triggerTiming === 'after_ai') return !lastMessage.is_user;
   if (settings.triggerTiming === 'after_user') return !!lastMessage.is_user;
   return false;
-}
-
-export function formatStatusText(chatState) {
-  const lines = [];
-  if (chatState.sceneSummary) lines.push(`Scene: ${chatState.sceneSummary}`);
-  if (chatState.minutesPassed) lines.push(`Minutes passed: ${chatState.minutesPassed}`);
-  const characters = Object.values(chatState.characters || {});
-  if (characters.length === 0) lines.push('No character state yet.');
-  for (const item of characters) {
-    const profile = item?.profile || {};
-    const base = profile.base || {};
-    const pregnant = profile.pregnant || {};
-    const experience = profile.experience || {};
-    const psychology = profile.psychology || {};
-    lines.push('', `[${item.name}]`, `Initialized: ${item.initialized ? 'yes' : 'no'}`);
-    lines.push(`Base: ${JSON.stringify(base)}`);
-    lines.push(`Pregnant: ${JSON.stringify(pregnant)}`);
-    if (profile.notify && Object.values(profile.notify).some((value) => String(value || '').trim())) lines.push(`Notify: ${JSON.stringify(profile.notify)}`);
-    if (Array.isArray(profile.children) && profile.children.length > 0) lines.push(`Children: ${JSON.stringify(profile.children)}`);
-    if (Array.isArray(profile.diary) && profile.diary.length > 0) lines.push(`Diary: ${JSON.stringify(profile.diary)}`);
-    lines.push(`Experience: ${JSON.stringify(experience)}`);
-    if ((psychology.mens && Object.values(psychology.mens).some((value) => value !== null && value !== undefined)) || (psychology.preg && Object.values(psychology.preg).some((value) => value !== null && value !== undefined))) {
-      lines.push(`Psychology: ${JSON.stringify(psychology)}`);
-    }
-    if (profile.descriptions && Object.values(profile.descriptions).some((value) => String(value || '').trim())) {
-      lines.push(`Descriptions: ${JSON.stringify(profile.descriptions)}`);
-    }
-  }
-  return lines.join('\n').trim();
 }

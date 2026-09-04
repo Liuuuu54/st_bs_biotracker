@@ -9,6 +9,7 @@
   - 各格式的鑑權頭分開處理：Gemini 用 `x-goog-api-key`，Claude 併送 `x-api-key` 與 `anthropic-version`。
   - 感謝 @shuiyue-cmyk 貢獻（PR #4）。
 - 經宿主後端代理發出的上游請求改為帶擴展自己的 User-Agent。原版 SillyTavern 後端用 node-fetch，預設 UA 是泛用的 `node-fetch`，部分供應商拿 UA 做反欺詐信號會直接攔截。TauriTavern 自帶產品 UA 且順序在後，故略過不注入。感謝 @shuiyue-cmyk 貢獻（PR #6）。
+- 全模組掃過一次死碼，另外移除 7 個無人呼叫的函式（65 行）：`api.js` 的 `getApiFormatPreview`（設定頁的端點預覽是 `index.js` 的 `updateApiEndpointPreview` 讀即時表單值直接算的，這個讀存檔設定的版本從未被接上）與 `hasPresetToggleOverrides`；`race_config.js` 的 `getRacePhysiologyOverrides`（種族覆寫是單向流入模組的，沒有讀回需求）；`state.js` 的 `buildMessageSignatures`（`31ec03e` 改用 digest 後三個呼叫點全被刪掉，函式留了下來）與 `formatStatusText`；`tools.js` 的 `findWardrobeItem` 與 `getBaseRace`。七個都在全庫僅出現一次（就是自己的定義），行為無變化。`registry.js` 掃描結果為零，不需要清理。
 - 移除 `scripts/state.js` 裡一整組從未被呼叫的 profile 清洗函式（`sanitizeProfilePatch` 及其專屬的 `sanitizeFetusList`／`sanitizeChildrenList`／`sanitizeObjectPatch`／`sanitizePregnancyBlockage`／`sanitizeSpermList`／`sanitizeInteger`／`sanitizeString`／`sanitizeStringList`），共 342 行。這組是給「模型直接寫整包 profile」用的守門員，但工具面從來沒開過這種門——`git log -S` 顯示初始 commit 起就沒有任何呼叫者。真正在跑的是 `scripts/registry.js` 的 `sanitizeRegistryProfile`／`sanitizePregnant`，註冊流程才是唯一會吃模型自由生成 profile 的路徑。行為無變化。
 - 新增胎兒標籤 `fetuses[*].tags`：標注這顆胎兒是怎麼來的（嵌合體／代孕／自交／同卵），介面上以小標籤顯示在胎兒卡頂端，沒有標籤時整列不出現。標籤在分娩時跟著孩子記錄一起留下。
   - 分兩類來源：能從既有欄位推導的（嵌合體、代孕、自交）不落盤，存量存檔不必遷移就能顯示，也不會出現「資料改了但標籤還留著舊的」；推導不出來的才寫進 `tags`。同卵分裂屬於後者——複製體與原胚在欄位上完全一樣，事後無從分辨，只能在分裂當下把整組打上標籤與共用的 `identicalGroup`。

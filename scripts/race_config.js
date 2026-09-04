@@ -1054,14 +1054,6 @@ export function setRacePhysiologyOverrides(overrides = {}) {
   customRacePhysiologyProfiles = Object.freeze(next);
 }
 
-export function getRacePhysiologyOverrides() {
-  const result = {};
-  for (const [race, profile] of Object.entries(customRacePhysiologyProfiles)) {
-    result[race] = { ...profile };
-  }
-  return result;
-}
-
 export function getRacePhysiologyOverride(race) {
   const key = String(race || '').trim();
   const profile = customRacePhysiologyProfiles[key];
