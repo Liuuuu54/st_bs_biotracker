@@ -554,6 +554,9 @@ export function syncCharacterStageFromProfile(characterState) {
     || LABOR_STAGES.includes(currentStage)
     || currentStage === '无经期'
     || currentStage === '未激活'
+    // 胎内回归的过渡阶段：不列进来会掉到下面的 deriveMenstrualStageState，
+    // 被重设成月经阶段，回归状态就此消失
+    || currentStage === '回归期'
   ) {
     next.profile.base = {
       ...base,
