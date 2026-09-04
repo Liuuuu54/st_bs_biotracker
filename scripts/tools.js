@@ -451,8 +451,9 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + '并在 hours 小时内让压力与胎重线性回落到正常，随后自动转入孕早期，之后按一般妊娠推进。'
       + 'hours 传 0 表示瞬间完成（角色对这段过程无知觉），会当场结算进孕早期。'
       + '该胎的母方为承载者、父方为回归者，种族照常混血；回归者的天赋会传给这一胎，技能不传。'
-      + '回归者会被冻结：设为离场且停止一切阶段推进（她现在是一颗胎儿），'
-      + '用 bsSetCharacterPresence 将她设回在场即可解除冻结。'
+      + '回归者会被冻结：设为离场且停止一切阶段推进（她现在是一颗胎儿）。'
+      + '在回归期内流产／堕胎视为回归失败，回归者会被排出并自动恢复原状；一旦转入孕早期即告成立，此后流产不再让她复原。'
+      + '需要手动解除冻结时用 bsSetCharacterPresence 将她设回在场。'
       + '不能让角色回归自己的子宫。',
     input_schema: {
       type: 'object',
@@ -617,6 +618,9 @@ const POSTPARTUM_START_WEAR_PRESSURE = 4;
  * 直接进孕早期的话，updateFetalEnergyDrain 会拿 3.0 的胎重去算供养力，
  * 变成一场怪物妊娠。
  */
+/** 已经警告过的未知阶段，避免每次推进都刷一次 console */
+const reportedUnknownStages = new Set();
+
 const WOMB_RETURN_STAGE = '回归期';
 const WOMB_RETURN_PEAK_PRESSURE = 10;
 const WOMB_RETURN_PEAK_WEIGHT = 3.0;
@@ -659,20 +663,20 @@ function finishWombReturn(profile, overflowDays, name, notify) {
   applyWombReturnWeight(profile);
   delete pregnant.wombReturn;
 
-  // 与正常着床同一套算法：孕龄从产科偏移起算，不能从 0 起算——
-  // syncCharacterStageFromProfile 会把「孕早期但孕龄 0」判定成尚未着床，
-  // 直接把阶段弹回排卵期，回归的结果就此消失。
+  // 孕早期第一天。不能从 0 起算——syncCharacterStageFromProfile 会把
+  // 「孕早期但孕龄 0」判定成尚未着床，直接把阶段弹回排卵期，回归结果就此消失。
+  // 也不套用正常受孕的产科偏移（约半个周期）：回归没有受精事件，
+  // 凭空多出两周孕龄会让它变成「孕早期第 14 天」，与「回归结束即第一天」矛盾。
   const carried = Math.max(0, Number(overflowDays) || 0);
   const speed = clampNumber(getGestationEffectiveSpeed(profile), 0, 20, 1);
-  const obstetricDays = getObstetricPregnancyOffsetDays(profile) + carried;
-  pregnant.pregnantDays = obstetricDays;
-  pregnant.effectivePregnantDays = obstetricDays * speed;
+  const startDays = 1 + carried;
+  pregnant.pregnantDays = startDays;
+  pregnant.effectivePregnantDays = startDays * speed;
   pregnant.amnionDurability = 100;
   pregnant.fetusesCount = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.length : 0;
   base.stage = '孕早期';
-  base.days = carried;
+  base.days = startDays;
   base.fertilizationDays = 0;
-  base.uterinePressure = clampNumber(base.uterinePressure, 0, 999, 0);
   profile.experience = {
     ...(profile.experience || {}),
     pregnantExperience: clampNumber(profile?.experience?.pregnantExperience, 0, 999, 0) + 1,
@@ -3295,10 +3299,34 @@ function applyAbortion(chatState, args) {
     }
   }
 
+  // 回归期中断＝回归失败：把回归者放回来。她还没真正成为胎儿，
+  // 此时不放，角色就会永远冻结在离场状态。进入妊娠之后才算成立，那时不再回复。
+  const interruptedReturner = stage === WOMB_RETURN_STAGE
+    ? String(pregnant.wombReturn?.returner || '').trim()
+    : '';
+  if (interruptedReturner && chatState.characters?.[interruptedReturner]) {
+    const restored = cloneValue(chatState.characters[interruptedReturner]);
+    restored.profile = restored.profile || {};
+    const restoredBase = { ...(restored.profile.base || {}), isHere: true };
+    delete restoredBase.wombReturnHost;
+    restored.profile.base = restoredBase;
+    chatState.characters[interruptedReturner] = restored;
+  }
+
   clearPregnancyState(profile);
   restorePregnancyPhysiology(profile, next.runtime || {});
 
-  if (MENSTRUAL_STAGES.includes(stage)) {
+  if (stage === WOMB_RETURN_STAGE) {
+    base.stage = '卵泡期';
+    base.days = 0;
+    profile.notify = {
+      ...notify,
+      firstly: `${female}进入了卵泡期`,
+      secondly: interruptedReturner
+        ? `${interruptedReturner}的胎内回归失败，被排出并恢复原状`
+        : `${female}的胎内回归失败`,
+    };
+  } else if (MENSTRUAL_STAGES.includes(stage)) {
     base.stage = '卵泡期';
     base.days = 0;
     profile.notify = {
@@ -4031,9 +4059,16 @@ function applyTimeToCharacter(character, tick) {
     stageChanged = stageChanged || laborChanged || stage !== oldStage;
   } else if (stage === '无经期' || stage === '未激活') {
     days += deltaDays;
-    } else {
-      days += deltaDays;
+  } else {
+    // 未知阶段。原本这里与上一分支完全相同，等于任何拼错或新加而忘了接上的
+    // 阶段都会静默地只累积天数、永远不推进，从外面完全看不出来。
+    // 行为保持不变（不能因为一个陌生字串就让整轮追踪抛错），但要留下痕迹。
+    days += deltaDays;
+    if (!reportedUnknownStages.has(stage)) {
+      reportedUnknownStages.add(stage);
+      console.warn(`[BS BioTracker] 未知阶段「${stage}」没有对应的推进分支，时间只会累积不会转期。`);
     }
+  }
 
   processSpermLifecycle(profile, stage, tick);
 

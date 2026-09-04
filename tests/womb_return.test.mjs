@@ -131,9 +131,9 @@ test('超出回归期的时间带进妊娠，不会凭空消失', () => {
   const profile = hostOf(chatState);
   assert.equal(profile.base.stage, '孕早期');
   // 26 小时里有 2 小时属于回归期，剩下 24 小时（1 天）算进妊娠。
-  // 孕龄基线是产科偏移（人类约 14 天），所以应是偏移 + 1
-  assert.ok(Math.abs(profile.pregnant.pregnantDays - 15) < 0.01,
-    `孕龄应约为 15 天（14 偏移 + 1），实际 ${profile.pregnant.pregnantDays}`);
+  // 回归结束即孕早期第一天，所以是 1 + 1
+  assert.ok(Math.abs(profile.pregnant.pregnantDays - 2) < 0.01,
+    `孕龄应约为 2 天（第一天 + 溢出 1 天），实际 ${profile.pregnant.pregnantDays}`);
 });
 
 test('子宫内已有的东西会被净空，不会留下野生胎', () => {
@@ -212,4 +212,40 @@ test('生下来是全新个体，孩子带 rebirth 标签与继承来的天赋',
   assert.equal(children[0].name, null, '未命名，所以不会变成自己生自己');
   assert.ok(children[0].id, '有独立的新 id');
   assert.equal(children[0].talents[0].skillId, 2, '继承来的天赋跟到孩子身上');
+});
+
+test('hours=0 落在孕早期第一天，不是产科偏移的第 14 天', () => {
+  const chatState = setup();
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 0 });
+  const profile = hostOf(chatState);
+  assert.equal(profile.base.stage, '孕早期');
+  assert.equal(profile.pregnant.pregnantDays, 1);
+  assert.equal(profile.base.days, 1);
+});
+
+test('回归期中流产＝回归失败，回归者被放回来', () => {
+  const chatState = setup();
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 24 });
+  assert.equal(returnerOf(chatState).base.isHere, false);
+
+  const result = call(chatState, 'bsAbortion', { female: '艾拉' });
+  assert.equal(result.applied, true, result.message);
+  assert.equal(returnerOf(chatState).base.isHere, true, '回归失败应恢复原状');
+  assert.equal(returnerOf(chatState).base.wombReturnHost, undefined);
+  assert.equal(hostOf(chatState).base.stage, '卵泡期');
+  assert.equal(hostOf(chatState).pregnant.fetuses.length, 0);
+
+  // 恢复后阶段推进也要跟着复原
+  call(chatState, 'bsPassedTime', { day: 1 });
+  assert.ok(returnerOf(chatState).base.days > 0);
+});
+
+test('已经进入妊娠之后流产，回归者不再复原', () => {
+  const chatState = setup();
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 0 });
+  assert.equal(hostOf(chatState).base.stage, '孕早期');
+
+  call(chatState, 'bsAbortion', { female: '艾拉' });
+  assert.equal(returnerOf(chatState).base.isHere, false, '回归已成立，不再放人回来');
+  assert.equal(returnerOf(chatState).base.wombReturnHost, '艾拉');
 });
