@@ -46,6 +46,7 @@ import {
 } from './scripts/stage_config.js';
 import { buildMainFlowPrompt, resetPoller, runTracker } from './scripts/tracker.js';
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
+import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
@@ -3093,6 +3094,8 @@ function buildTrackCharacterViewModel(character) {
       amnionDurability: Number(pregnant.amnionDurability) || 0,
       fetuses: Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((fetus) => ({
         ...fetus,
+        // 标签在这里解析：推导需要承载者名字，渲染层拿不到
+        tagLabels: getFetusTagLabels(deriveFetusTags(fetus, { carrierName: character?.name || '' })),
         talents: (Array.isArray(fetus?.talents) ? fetus.talents : []).map(enrichTalent),
       })) : [],
       pregnantBlocks: parseDescriptionBlocks(descriptions.pregnantDescription),
@@ -3396,6 +3399,14 @@ function renderSpermShareChart(sperms) {
   `;
 }
 
+/** 胎儿标签列：没有标签就整列不出现，一般妊娠不会多一行空的 */
+function renderFetusTagRow(fetus) {
+  const labels = Array.isArray(fetus?.tagLabels) ? fetus.tagLabels : [];
+  if (labels.length === 0) return '';
+  const chips = labels.map((label) => `<span class="bs-bt-fetus-tag">${escapeHtml(label)}</span>`).join('');
+  return `<div class="bs-bt-fetus-tags">${chips}</div>`;
+}
+
 function renderTrackPregnancy(viewModel) {
   const data = viewModel.pregnancy;
   const gestationModifier = data.gestationModifier || {};
@@ -3447,9 +3458,14 @@ function renderTrackPregnancy(viewModel) {
         data.fetuses,
         (item, index) => `<div class="bs-bt-track-card">
                 <div class="bs-bt-track-card-title">胎儿 ${index + 1}</div>
+                ${renderFetusTagRow(item)}
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">父方姓名</span><span class="bs-bt-track-list-value">${escapeHtml(item?.fathers || '未知')}</span></div>
                 ${item?.provider
-            ? `<div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">provider</span><span class="bs-bt-track-list-value">${escapeHtml(item.provider)}</span></div>`
+            ? `<div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">遗传母方</span><span class="bs-bt-track-list-value">${escapeHtml(item.provider)}</span></div>`
+            : ''
+          }
+                ${item?.chimera
+            ? `<div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">嵌合来源</span><span class="bs-bt-track-list-value">${escapeHtml(`${Number(item.chimera.sourceCount) || 2} 颗受精卵`)}</span></div>`
             : ''
           }
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">父方种族</span><span class="bs-bt-track-list-value">${escapeHtml(formatRaceLabel(item?.fatherRace, item?.fatherDerivedType))}</span></div>

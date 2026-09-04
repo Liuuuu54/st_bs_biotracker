@@ -2,7 +2,25 @@ import { PSY_MENS_FIELDS, PSY_PREG_FIELDS } from './registry_psy_config.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
 import { buildRaceCatalogBlock, buildRacePhysiologyPrompt } from './race_prompt_context.js';
 import { getDerivedTypeFluxProfile } from './race_config.js';
+import { deriveFetusTags, describeFetusTags } from './fetus_tags.js';
 import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js';
+
+/** 本轮 payload 里真的出现过的胎儿标签；没出现的标签不必浪费 token 去解释 */
+function collectRelevantFetusTags(payload = {}) {
+  const found = new Set();
+  const state = payload?.existing_state;
+  if (!state || typeof state !== 'object') return [];
+  for (const [name, item] of Object.entries(state)) {
+    const carrierName = item?.name || name;
+    const profile = item?.profile || {};
+    const fetuses = Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : [];
+    const children = Array.isArray(profile?.children) ? profile.children : [];
+    for (const record of [...fetuses, ...children]) {
+      for (const tag of deriveFetusTags(record, { carrierName })) found.add(tag);
+    }
+  }
+  return [...found];
+}
 
 function collectRelevantFluxNames(payload = {}) {
   const found = [];
@@ -79,6 +97,8 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].provider: 胚胎真正的归属方（代孕委托者、虫母等），自然受孕为 null。单一 provider 的孩子分娩后自动转交；多母源嵌合体以 × 显示并留在孕母名下。要建立外源受精卵请用 bsImplantEmbryo，不要自行编造。',
   '- fetuses[*].providerSources: 可接收孩子的母源名单。多于一位时孩子默认登记在孕母名下，之后可手动转移给其中一位。',
   '- fetuses[*].chimera: 受精卵早期融合的嵌合资料，包含来源数量、父源、母源与融合前性别。没有融合时不出现。',
+  '- fetuses[*].tags: 系统标注的胎儿来历标签（如 chimera/surrogacy/identical），由系统推导或在事件发生当下写入，只读，不要自行增删。本轮出现过的标签会在下方另行说明。',
+  '- fetuses[*].identicalGroup: 同卵分裂的组别编号；带同一编号且 tags 含 identical 的胎儿由同一颗受精卵分裂而来。没有分裂时不出现。',
   '- fetuses[*].fatherRace: 父方种族字符串，已去除 [derived] 前缀，用于理解父源与 fatherDerivedType。',
   '- fetuses[*].fatherDerivedType: 父方衍生类型；若没有则为 null。',
   '- fetuses[*].gender: 胎儿性别。',
@@ -227,6 +247,11 @@ function buildTrackerMetabolismGuide(payload = null) {
     baseGuide = baseGuide
       .replace('、psychology', '')
       .replace(/\n?\[psychology\][\s\S]*?\n\[skills \/ talents\]/, '\n[skills / talents]');
+  }
+  // 只解释本轮真的出现过的标签，与种族短叙述同规则：没用到就不占 token
+  const fetusTagLines = describeFetusTags(collectRelevantFetusTags(payload || {}));
+  if (fetusTagLines.length > 0) {
+    baseGuide += ['', '', '[本轮出现的胎儿标签]', ...fetusTagLines].join('\n');
   }
   return fluxNames.length > 0
     ? baseGuide.replace(

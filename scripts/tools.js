@@ -1,3 +1,4 @@
+import { sanitizeFetusTagList } from './fetus_tags.js';
 import {
   cloneValue,
   createChildId,
@@ -893,6 +894,8 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
   return {
     embryoId,
     fusionCheckedWith: [],
+    // 嵌合本身由 chimera 栏位推导，这里只承接两边已落盘的标签
+    tags: sanitizeFetusTagList([...(fetusA?.tags || []), ...(fetusB?.tags || [])]),
     fathers: fathers.join(' × ') || '未知',
     provider: providerSources.length === 0 ? null : providerSources.join(' × '),
     providerSources,
@@ -983,9 +986,16 @@ function applyIdenticalSplit(profile) {
         if (Math.random() < splitRate * splitRate * splitRate) targetCount = 4;
       }
     }
+    // 分裂发生时才标记：复制体在栏位上与原胚一模一样，事后无从分辨谁跟谁同卵，
+    // 只能在这一刻把整组打上 identical 与共用的 identicalGroup
+    if (targetCount > 1) {
+      baseFetus.identicalGroup = baseFetus.embryoId;
+      baseFetus.tags = sanitizeFetusTagList([...(baseFetus.tags || []), 'identical']);
+    }
     while (targetCount > 1) {
       const clone = cloneIdenticalFetus(baseFetus);
       clone.embryoId = nextId;
+      clone.identicalGroup = baseFetus.identicalGroup;
       nextId += 1;
       result.push(clone);
       targetCount -= 1;
@@ -1013,6 +1023,8 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
   return {
     embryoId: null,
     fusionCheckedWith: [],
+    // 嵌合／代孕／自交都能从既有栏位推导，不写进来；这里只留给推导不出来的标签
+    tags: [],
     fathers: String(sperm?.male || '未知'),
     // 自然受精恒为 null；代孕／注卵由植入工具指定归属
     provider: options.provider ? String(options.provider) : null,
@@ -2385,6 +2397,8 @@ function appendChildrenFromFetuses(profile, fetuses) {
       provider,
       providerSources: Array.isArray(fetus?.providerSources) ? [...fetus.providerSources] : [],
       chimera: fetus?.chimera ? cloneValue(fetus.chimera) : null,
+      tags: sanitizeFetusTagList(fetus?.tags),
+      identicalGroup: Number.isFinite(Number(fetus?.identicalGroup)) ? Number(fetus.identicalGroup) : null,
       gender: String(fetus?.gender || '未知'),
       race: String(fetus?.race || '未知'),
       // 父系种族在胎儿上本来就有，此前分娩时被丢掉，血缘图便无从得知路人父亲的血统

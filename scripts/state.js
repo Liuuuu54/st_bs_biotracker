@@ -1,3 +1,4 @@
+import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import {
   buildEmptyPsychologyGroup,
@@ -694,6 +695,10 @@ function sanitizeFetusList(value) {
       }
       const embryoId = sanitizeInteger(item.embryoId, { min: 1, max: 999999 });
       if (embryoId !== null) fetus.embryoId = embryoId;
+      // 白名单式清洗：新栏位不列进来就会被静默丢掉
+      fetus.tags = sanitizeFetusTagList(item.tags);
+      const identicalGroup = sanitizeInteger(item.identicalGroup, { min: 1, max: 999999 });
+      if (identicalGroup !== null) fetus.identicalGroup = identicalGroup;
       fetus.fusionCheckedWith = Array.isArray(item.fusionCheckedWith)
         ? [...new Set(item.fusionCheckedWith
           .map((value) => sanitizeInteger(value, { min: 1, max: 999999 }))
@@ -758,6 +763,8 @@ function sanitizeChildrenList(value) {
             : [],
         }
         : null,
+      tags: sanitizeFetusTagList(item.tags),
+      identicalGroup: sanitizeInteger(item.identicalGroup, { min: 1, max: 999999 }),
       gender: sanitizeString(item.gender) ?? null,
       race: sanitizeString(item.race) ?? null,
       derivedType: sanitizeString(item.derivedType) ?? null,

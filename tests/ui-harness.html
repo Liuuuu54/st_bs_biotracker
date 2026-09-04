@@ -131,9 +131,12 @@
             effectivePregnantDays: 152,
             amnionDurability: 82,
             // 双胎：一胎正亲和（擅长方向）、一胎负亲和（苦手方向），验证胎儿天赋显示
+            // 胎儿标签取样：代孕（推导）／嵌合（推导）／同卵一组两胎（落盘）
             fetuses: [
-              { fathers: '莱昂', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 1.05, tendencyAngle: 30, affinity: 60, talents: [{ skillId: 1, level: 2, exp: 40 }] },
-              { fathers: '莱昂', fatherRace: '人类', embryoType: '胎生', gender: '男', weight: 0.98, tendencyAngle: -20, affinity: -35, talents: [{ skillId: 2, level: -1, exp: -30 }] },
+              { embryoId: 1, fathers: '莱昂', fatherRace: '人类', provider: '艾拉', providerSources: ['艾拉'], embryoType: '胎生', gender: '女', weight: 1.05, tendencyAngle: 30, affinity: 60, talents: [{ skillId: 1, level: 2, exp: 40 }] },
+              { embryoId: 2, fathers: '莱昂 × 无名旅人', fatherRace: '人类x龙族', chimera: { sourceCount: 2, fatherSources: ['莱昂', '无名旅人'], maternalSources: ['琪拉'], genderSources: ['男', '女'] }, embryoType: '胎生', gender: '男', weight: 0.98, tendencyAngle: -20, affinity: -35, talents: [{ skillId: 2, level: -1, exp: -30 }] },
+              { embryoId: 3, fathers: '莱昂', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 1.0, tendencyAngle: 10, affinity: 20, tags: ['identical'], identicalGroup: 3, talents: [] },
+              { embryoId: 4, fathers: '莱昂', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 1.0, tendencyAngle: 15, affinity: 20, tags: ['identical'], identicalGroup: 3, talents: [] },
             ],
           },
         },

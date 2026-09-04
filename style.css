@@ -3995,6 +3995,25 @@
   font-weight: 700;
 }
 
+/* ── 胎儿标签 ──────────────────────────────────────────────
+   标注这颗胎儿是怎么来的（嵌合／代孕／自交／同卵…）。没有标签时整列不渲染。 */
+#bs-biotracker-settings .bs-bt-fetus-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-fetus-tag {
+  border: 1px solid color-mix(in srgb, var(--bsbt-lcd-text) 30%, transparent);
+  background: color-mix(in srgb, var(--bsbt-lcd-text) 9%, transparent);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.7em;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 /* ── 精液来源占比环 ────────────────────────────────────────
    同一个 currentColor 的阶梯透明度 + 分隔缺口，不引入新色盘，
    12 套主题下都读得出来。 */
