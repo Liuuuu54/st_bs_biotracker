@@ -107,14 +107,17 @@ export function buildLineageGraph(chatState) {
         edges.push({ from: characterNodeId(ownerName), to: childNodeId, type: 'mother' });
       }
 
-      // 父系：嵌合体优先读 fatherSources，否则拆 "A×B"，都只取首位
+      // 父系：嵌合体优先读 fatherSources，否则拆 "A×B"，都只取首位。
+      // 胎内回归的「父」其实是回到子宫里的那个人，与一般父系不是同一回事，
+      // 边型另外标出来，免得族谱上把一名女角色挂在「父」底下。
+      const isRebirth = Array.isArray(child.tags) && child.tags.includes('rebirth');
       const fatherInfo = firstSource(child.chimera?.fatherSources, child.fathers);
       if (fatherInfo.first && fatherInfo.first !== '未知') {
         const singleFather = fatherInfo.all.length <= 1;
         const from = resolveParent(fatherInfo.first, singleFather
           ? { race: child.fatherRace ?? null, derivedType: child.fatherDerivedType ?? null }
           : null);
-        if (from) edges.push({ from, to: childNodeId, type: 'father' });
+        if (from) edges.push({ from, to: childNodeId, type: isRebirth ? 'rebirth' : 'father' });
       }
 
       // 其余来源不连线，但保留下来供渲染层标注「另有 N 位来源」

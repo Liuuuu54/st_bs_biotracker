@@ -147,3 +147,51 @@ test('节点带上整数岁的年龄标签，未注册的路人留空', () => {
   const stranger = view.nodes.find((node) => node.displayName === '路人甲');
   assert.equal(stranger.ageLabel, '', '未注册的路人没有年龄资料');
 });
+
+test('胎内回归者标为「前身」而不是「父」，但仍算遗传亲代', () => {
+  const view = buildLineageView({
+    characters: {
+      艾拉: {
+        name: '艾拉', initialized: true,
+        profile: {
+          base: { race: '人类', age: 24 },
+          children: [{
+            id: 'r1', name: '重生子', fathers: '琪拉', fatherRace: '龙族',
+            race: '人类x龙族', age: 0, tags: ['rebirth'],
+          }],
+        },
+      },
+      琪拉: { name: '琪拉', initialized: true, profile: { base: { race: '龙族', age: 26 }, children: [] } },
+    },
+  }, '艾拉');
+
+  const child = view.nodes.find((node) => node.displayName === '重生子');
+  assert.deepEqual(
+    child.parents.map((p) => `${p.relation} ${p.name}`).sort(),
+    ['前身 琪拉', '母 艾拉'].sort(),
+  );
+  // 前身提供了父系血统，所以算遗传亲代——不能被当成代孕承载者那样排除在标注外
+  assert.deepEqual(
+    child.geneticParents.map((p) => p.name).sort(),
+    ['琪拉', '艾拉'].sort(),
+  );
+  assert.deepEqual(child.carriers, []);
+  const row = view.generations.find((item) => item.generation === 1);
+  assert.deepEqual(
+    row.clusters[0].parents.map((p) => `${p.relation} ${p.name}`).sort(),
+    ['前身 琪拉', '母 艾拉'].sort(),
+  );
+});
+
+test('一般孩子仍然标为「父」', () => {
+  const view = buildLineageView({
+    characters: {
+      艾拉: {
+        name: '艾拉', initialized: true,
+        profile: { base: { race: '人类' }, children: [{ id: 'n1', name: '长子', fathers: '凯' }] },
+      },
+    },
+  }, '艾拉');
+  const child = view.nodes.find((node) => node.displayName === '长子');
+  assert.ok(child.parents.some((p) => p.relation === '父' && p.name === '凯'));
+});

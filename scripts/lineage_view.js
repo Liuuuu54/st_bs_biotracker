@@ -27,7 +27,7 @@ function raceLabel(race, derivedType) {
   return derived ? `[${derived}]${base}` : base;
 }
 
-const EDGE_LABELS = { mother: '母', father: '父', carrier: '承载' };
+const EDGE_LABELS = { mother: '母', father: '父', carrier: '承载', rebirth: '前身' };
 
 /**
  * 年龄取整数岁，与追踪页概览同一套算法——同一个角色在两个画面显示不同岁数
@@ -96,8 +96,10 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
     const childrenOf = collapse(focused.edges
       .filter((edge) => edge.from === node.id)
       .map((edge) => ({ id: edge.to, name: nameOf(edge.to), relation: EDGE_LABELS[edge.type] || edge.type })));
-    // 承载者不是遗传亲代，不进族谱上的亲代标注，只在详情栏另列一行
-    const isGenetic = (item) => item.relations.some((relation) => relation === '母' || relation === '父');
+    // 承载者不是遗传亲代，不进族谱上的亲代标注，只在详情栏另列一行。
+    // 「前身」是胎内回归者：他确实提供了这一胎的父系血统，所以算遗传亲代，
+    // 只是标签不写「父」——那个位置上站的往往是女角色。
+    const isGenetic = (item) => item.relations.some((relation) => relation === '母' || relation === '父' || relation === '前身');
     return {
       ...node,
       isCenter: node.id === centerId,

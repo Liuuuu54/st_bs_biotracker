@@ -4060,13 +4060,14 @@ function applyTimeToCharacter(character, tick) {
   } else if (stage === '无经期' || stage === '未激活') {
     days += deltaDays;
   } else {
-    // 未知阶段。原本这里与上一分支完全相同，等于任何拼错或新加而忘了接上的
-    // 阶段都会静默地只累积天数、永远不推进，从外面完全看不出来。
-    // 行为保持不变（不能因为一个陌生字串就让整轮追踪抛错），但要留下痕迹。
+    // 未知阶段。这里不会让角色卡死——applyTimeToCharacter 结尾一定会过
+    // syncCharacterStageFromProfile，不在它保留清单里的阶段会被重设成月经阶段。
+    // 真正会卡住的是另一种组合：阶段已加进 state.js 的保留清单、却忘了在这里
+    // 加推进分支，那它就会被保留下来又永远不前进。警告是为了照出这一种。
     days += deltaDays;
     if (!reportedUnknownStages.has(stage)) {
       reportedUnknownStages.add(stage);
-      console.warn(`[BS BioTracker] 未知阶段「${stage}」没有对应的推进分支，时间只会累积不会转期。`);
+      console.warn(`[BS BioTracker] 阶段「${stage}」没有对应的推进分支；若它同时在 state.js 的保留清单内，将永远停在原地。`);
     }
   }
 
