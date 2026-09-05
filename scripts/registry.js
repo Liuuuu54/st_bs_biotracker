@@ -46,6 +46,7 @@ import {
   saveSettings,
   worldbookSelectionMatches,
 } from './state.js';
+import { sanitizeFetusTagList } from './fetus_tags.js';
 import { canLoadHostWorldInfo, getHostWorldBook, loadHostWorldInfo } from './host.js';
 import {
   normalizeNextSkillId,
@@ -851,6 +852,12 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- 不要填写 pregnant.effectivePregnantDays；系统会依据孕龄、角色种族妊娠速度与 bio.gestationModifierMultiplier 自动换算有效妊娠天数。',
     '- pregnant.fetusesCount: 这次怀孕的怀胎数',
     '- pregnant.fetuses: 每个胎儿包含 fathers、provider、race、gender、embryoType；也可填写 weight、tendencyAngle、affinity',
+    '- 胎儿可带 tags 标注特殊来历，只接受这几个：identical（同卵）、superfetation（异期复孕）、nested（孕中孕）、rebirth（胎内回归）。代孕不必标——给了 provider 就会自动识别。写不出对应支撑栏位的标签会被撤销，宁可不标也不要留一个指向虚空的关系。',
+    '- identical：同卵的几胎都标上即可，系统会自动把它们归为同一组；只标一胎会被撤销。',
+    '- superfetation：必须一并给 conceivedAtDays（这一胎受精时，母体已经怀了多少有效孕日），会被夹进这次妊娠的范围内。它比同腹其他胎儿晚受精、发育落后。',
+    '- nested：这一胎长在另一颗胎儿体内。除了 conceivedAtDays，还要给 nestedInIndex＝宿主在 fetuses 阵列里的下标（从 0 起算，不能指自己）。它的母亲是那颗胎儿，出生后承载者会同时生下女儿与外孙。',
+    '- rebirth：一名已出生的角色回到子宫里成为这一胎，fathers 写那个人的名字（可以是 user）。适合「开场就已经在角色子宫里」的设定。产出后是全新个体，与原来那个人不是同一笔资料。',
+    '- revealed：这一胎角色本人知不知道。省略时系统按孕龄自动判定（异期复孕进孕中期才知道、孕中孕要到孕晚期）；想让角色暂时不知情就明确给 false。',
     '- provider: 代孕母方、寄生等提供者名称，正常情况下为 null',
     '- weight: 胎儿体重/发育量倍率，范围 0.33-3.0；不确定可省略，系统会补 1.0',
     '- tendencyAngle: 胎位/趋向角度，范围 0-360；不确定可省略，系统会随机补值。角度映射必须固定为：0/360=正常头位/正位，180=完全臀位/倒位，90或270=横位；不要把 180 写成头位',
@@ -1115,6 +1122,13 @@ function sanitizePregnant(value) {
           weight: Number.isFinite(Number(item.weight)) ? clampNumber(item.weight, 0.33, 3.0, 1.0) : undefined,
           tendencyAngle: Number.isFinite(Number(item.tendencyAngle)) ? clampNumber(item.tendencyAngle, 0, 360, 0) : undefined,
           affinity: Number.isFinite(Number(item.affinity)) ? clampNumber(item.affinity, -50, 50, 0) : undefined,
+          // 特殊来历：让角色卡开场就能是同卵双胞胎、异期复孕、孕中孕或胎内回归。
+          // 只放行目录内的标签，支撑栏位在 normalizeRegisteredFetusTags 里对齐。
+          tags: sanitizeFetusTagList(item.tags),
+          conceivedAtDays: Number.isFinite(Number(item.conceivedAtDays)) ? Number(item.conceivedAtDays) : undefined,
+          identicalGroup: Number.isFinite(Number(item.identicalGroup)) ? Math.floor(Number(item.identicalGroup)) : undefined,
+          nestedInIndex: Number.isFinite(Number(item.nestedInIndex)) ? Math.floor(Number(item.nestedInIndex)) : undefined,
+          revealed: item.revealed === undefined ? undefined : Boolean(item.revealed),
           talents: normalizeTalentList(item.talents ?? item.inheritedTalents),
         };
       })
@@ -1178,6 +1192,82 @@ function deriveRegisteredFetusRace(motherRace, fatherRace) {
   return unique.join('x');
 }
 
+/**
+ * 把注册时给的特殊胎儿标签整理成自洽状态。
+ *
+ * 让模型直接写 tags 是有意的——「开场就已经在角色子宫里」这类设定没有别的表达方式。
+ * 代价是它可能写出自相矛盾的组合，所以这里逐项对齐：落单的同卵会被撤掉标签、
+ * 指不到宿主的孕中孕会被撤掉标签、异期复孕的受精点会被夹进合法范围。
+ * 宁可少一个标签，也不要留一个指向虚空的关系。
+ */
+function normalizeRegisteredFetusTags(pregnant) {
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  if (fetuses.length === 0) return;
+
+  fetuses.forEach((fetus, index) => {
+    if (!Number.isInteger(Number(fetus.embryoId)) || Number(fetus.embryoId) <= 0) fetus.embryoId = index + 1;
+    fetus.tags = sanitizeFetusTagList(fetus.tags);
+  });
+
+  // 孕中孕：模型给的是阵列索引（它写不出内部编号），换成宿主的 embryoId
+  for (const [index, fetus] of fetuses.entries()) {
+    const target = Number(fetus.nestedInIndex);
+    delete fetus.nestedInIndex;
+    const valid = Number.isInteger(target) && target >= 0 && target < fetuses.length && target !== index;
+    if (valid) fetus.nestedInEmbryoId = fetuses[target].embryoId;
+    if (!fetus.nestedInEmbryoId) fetus.tags = fetus.tags.filter((tag) => tag !== 'nested');
+  }
+  // 宿主自己也是被套的那颗时整条链不成立，一起撤掉
+  for (const fetus of fetuses) {
+    if (!fetus.nestedInEmbryoId) continue;
+    const host = fetuses.find((item) => item.embryoId === fetus.nestedInEmbryoId);
+    if (!host || host.nestedInEmbryoId) {
+      delete fetus.nestedInEmbryoId;
+      fetus.tags = fetus.tags.filter((tag) => tag !== 'nested');
+    }
+  }
+
+  // 同卵：标了却没给组别时自动分同一组；组内只有自己的撤掉标签
+  const lonely = fetuses.filter((fetus) => fetus.tags.includes('identical') && !fetus.identicalGroup);
+  if (lonely.length >= 2) for (const fetus of lonely) fetus.identicalGroup = lonely[0].embryoId;
+  for (const fetus of fetuses) {
+    const group = Number(fetus.identicalGroup);
+    const mates = group ? fetuses.filter((item) => Number(item.identicalGroup) === group) : [];
+    if (mates.length >= 2) {
+      if (!fetus.tags.includes('identical')) fetus.tags = sanitizeFetusTagList([...fetus.tags, 'identical']);
+    } else {
+      delete fetus.identicalGroup;
+      fetus.tags = fetus.tags.filter((tag) => tag !== 'identical');
+    }
+  }
+
+  // 异期复孕：受精点必须落在这次妊娠之内，且与标签互相对齐
+  const effectiveDays = Math.max(0, Number(pregnant.effectivePregnantDays) || 0);
+  for (const fetus of fetuses) {
+    const conceivedAt = Number(fetus.conceivedAtDays);
+    if (Number.isFinite(conceivedAt) && conceivedAt > 0) {
+      fetus.conceivedAtDays = Math.min(Math.max(conceivedAt, 0), Math.max(effectiveDays - 1, 0));
+      fetus.tags = sanitizeFetusTagList([...fetus.tags, 'superfetation']);
+    } else {
+      delete fetus.conceivedAtDays;
+      fetus.tags = fetus.tags.filter((tag) => tag !== 'superfetation' && tag !== 'nested');
+      delete fetus.nestedInEmbryoId;
+    }
+  }
+
+  // 模型没说藏不藏时，照运行期的规则判定：一般异期胎进孕中期揭晓，孕中孕要到孕晚期
+  for (const fetus of fetuses) {
+    if (!fetus.conceivedAtDays) { delete fetus.revealed; continue; }
+    if (fetus.revealed === undefined) {
+      const threshold = fetus.nestedInEmbryoId ? 189 : 84;
+      fetus.revealed = effectiveDays >= threshold;
+    }
+    if (!fetus.revealed) delete fetus.revealed;
+  }
+
+  for (const fetus of fetuses) if (fetus.tags.length === 0) delete fetus.tags;
+}
+
 function normalizeRegisteredPregnancy(profile) {
   const pregnant = profile.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((item) => ({ ...item })) : [];
@@ -1207,12 +1297,17 @@ function normalizeRegisteredPregnancy(profile) {
   const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0.1, 20, 1.0);
   pregnant.effectivePregnantDays = Math.max(1, pregnant.pregnantDays * gestationSpeed);
   pregnant.amnionDurability = 100;
+  // 必须排在 effectivePregnantDays 算出来之后：受精点要夹进这次妊娠的范围，
+  // 揭晓与否也要拿它跟门槛比
+  normalizeRegisteredFetusTags(pregnant);
 
   const bio = profile.bio || {};
   const motherBreedTolerance = clampNumber(bio.breedTolerance, 0.1, 100, 1.0);
   pregnant.fetalEnergyDrain = pregnant.fetuses.reduce((sum, fetus) => {
     const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
-    const ageInDays = pregnant.effectivePregnantDays * weight;
+    // 与运行期一致：异期胎用自己的孕龄，不按先来者的进度算负担
+    const ownAge = Math.max(0, pregnant.effectivePregnantDays - (Number(fetus?.conceivedAtDays) || 0));
+    const ageInDays = ownAge * weight;
     const fetalAgeWeeks = ageInDays / 7;
     const fetalLoad = fetalAgeWeeks / 40;
     return sum + (fetalLoad / motherBreedTolerance);

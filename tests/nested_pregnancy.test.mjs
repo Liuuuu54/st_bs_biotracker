@@ -197,3 +197,78 @@ test('出生后母亲解析成宿主孩子的稳定 id，血缘图上母亲是�
   );
   assert.deepEqual(nestedNode.carriers.map((c) => c.name), ['A'], '承载者另外列');
 });
+
+// ── 注册时也能设置特殊胎儿 ──────────────────────────────────────
+import { applyRegistryResult } from '../scripts/registry.js';
+
+const F = (over = {}) => ({ fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', ...over });
+function register(fetuses, pregnantDays = 200) {
+  const chatState = state.createEmptyChatState();
+  applyRegistryResult(chatState, {
+    name: 'A',
+    profile: {
+      base: { race: '人类', age: 24 },
+      pregnant: { pregnantDays, fetusesCount: fetuses.length, fetuses },
+    },
+  });
+  return chatState.characters['A'].profile.pregnant.fetuses;
+}
+
+test('注册：同卵只标 tags 也会被自动归组', () => {
+  const [a, b] = register([F({ tags: ['identical'] }), F({ tags: ['identical'] })]);
+  assert.deepEqual(a.tags, ['identical']);
+  assert.equal(a.identicalGroup, b.identicalGroup);
+  assert.ok(a.identicalGroup > 0);
+});
+
+test('注册：落单的同卵会被撤销，不留自相矛盾的标签', () => {
+  const [only] = register([F({ tags: ['identical'] })]);
+  assert.equal(only.tags, undefined);
+  assert.equal(only.identicalGroup, undefined);
+});
+
+test('注册：异期复孕带上受精点，并按孕龄自动判定揭晓', () => {
+  const [, late] = register([F(), F({ fathers: '乙', tags: ['superfetation'], conceivedAtDays: 60 })]);
+  assert.deepEqual(late.tags, ['superfetation']);
+  assert.equal(late.conceivedAtDays, 60);
+  assert.equal(late.revealed, true, '孕 200 天早过孕中期，该是已揭晓');
+
+  const [, early] = register([F(), F({ fathers: '乙', tags: ['superfetation'], conceivedAtDays: 30 })], 60);
+  assert.equal(early.revealed, undefined, '还没进孕中期就该藏着');
+});
+
+test('注册：受精点超出孕龄会被夹进范围', () => {
+  const [, late] = register([F(), F({ fathers: '乙', tags: ['superfetation'], conceivedAtDays: 9999 })], 100);
+  assert.ok(late.conceivedAtDays < 100, `应被夹住，实际 ${late.conceivedAtDays}`);
+});
+
+test('注册：孕中孕用阵列下标指宿主，会换成内部编号', () => {
+  const [host, inner] = register([
+    F({ weight: 1.6 }),
+    F({ fathers: '乙', tags: ['nested'], conceivedAtDays: 60, nestedInIndex: 0 }),
+  ]);
+  assert.equal(inner.nestedInEmbryoId, host.embryoId);
+  assert.deepEqual(inner.tags.sort(), ['nested', 'superfetation'].sort(), '孕中孕同时也是异期胎');
+  assert.equal(inner.nestedInIndex, undefined, '下标是输入用的，不该留在状态里');
+});
+
+test('注册：孕中孕指向自己时撤销标签，不留指向虚空的关系', () => {
+  const [, inner] = register([
+    F(),
+    F({ fathers: '乙', tags: ['nested'], conceivedAtDays: 60, nestedInIndex: 1 }),
+  ]);
+  assert.ok(!inner.tags.includes('nested'));
+  assert.equal(inner.nestedInEmbryoId, undefined);
+});
+
+test('注册：开场就在角色子宫里（胎内回归）', () => {
+  const [inner] = register([F({ fathers: '用户', tags: ['rebirth'] })]);
+  assert.deepEqual(inner.tags, ['rebirth']);
+  assert.equal(inner.fathers, '用户');
+  assert.deepEqual(deriveFetusTags(inner, { carrierName: 'A' }), ['rebirth']);
+});
+
+test('注册：目录外的标签一律丢弃', () => {
+  const [only] = register([F({ tags: ['identical', '我自己发明的标签'] })]);
+  assert.equal(only.tags, undefined, '落单同卵被撤销，自创标签也不该留下');
+});
