@@ -370,6 +370,12 @@ export function buildMainFlowStatePrompt(payload = {}) {
   const hasState = Object.keys(existingState).length > 0;
   if (!hasState) return '';
   const racePhysiologyPrompt = buildRacePhysiologyPrompt(payload || {});
+  // 特殊来历的胎儿只丢一串 tags 给主线模型，它无从判断该怎么写。
+  // 与种族短叙述同规则：只解释本轮真的出现过的标签，没出现就不占 token。
+  const fetusTagLines = describeFetusTags(collectRelevantFetusTags(payload || {}));
+  const fetusTagBlock = fetusTagLines.length > 0
+    ? ['', '[本轮出现的特殊胎儿来历]', ...fetusTagLines].join('\n')
+    : '';
   return [
     racePhysiologyPrompt,
     '<bs_biotracker>',
@@ -380,8 +386,9 @@ export function buildMainFlowStatePrompt(payload = {}) {
     '',
     '[当前已注册角色状态]',
     serializeStateForPrompt(existingState),
+    fetusTagBlock,
     '</bs_biotracker>',
-  ].join('\n');
+  ].filter((part) => part !== '').join('\n');
 }
 
 /**

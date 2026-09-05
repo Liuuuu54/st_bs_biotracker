@@ -169,3 +169,42 @@ test('分娩时标签跟着孩子记录一起留下来', () => {
     ['identical', 'selfing'].sort(),
   );
 });
+
+// ── 说明要送到写故事的主模型，不能只送给追踪器 ──────────────────
+import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+
+const payloadWith = (fetuses) => ({
+  existing_state: { A: { name: 'A', profile: { pregnant: { fetuses } } } },
+});
+
+test('特殊胎儿出现时，主线状态提示词会附上来历说明', () => {
+  const prompt = buildMainFlowStatePrompt(payloadWith([
+    { fathers: '甲', race: '人类' },
+    { fathers: '乙', race: '人类', conceivedAtDays: 60, revealed: true, nestedInEmbryoId: 1, tags: ['superfetation', 'nested'] },
+  ]));
+  assert.match(prompt, /本轮出现的特殊胎儿来历/);
+  assert.match(prompt, /superfetation/);
+  assert.match(prompt, /nested/);
+});
+
+test('只有普通胎儿时主线提示词不多带一段', () => {
+  const prompt = buildMainFlowStatePrompt(payloadWith([{ fathers: '甲', race: '人类' }]));
+  assert.ok(!prompt.includes('特殊胎儿来历'), '没用到的标签不该占 token');
+});
+
+test('追踪器系统提示词同样只在标签出现时才解释', () => {
+  const withTag = buildTrackerSystemPrompt('', null, payloadWith([
+    { fathers: '甲', conceivedAtDays: 60, revealed: true, tags: ['superfetation'] },
+  ]));
+  assert.match(withTag, /本轮出现的胎儿标签/);
+  const plain = buildTrackerSystemPrompt('', null, payloadWith([{ fathers: '甲' }]));
+  assert.ok(!plain.includes('本轮出现的胎儿标签'));
+});
+
+test('孕中孕的说明讲的是被套的那一颗，不是宿主', () => {
+  const [line] = describeFetusTags(['nested']);
+  // 曾经写反成「这名胎儿自身也怀有胎儿」——那是在描述宿主，
+  // 但标签是打在长在别人体内的那一颗上
+  assert.match(line, /长在另一颗胎儿的体内/);
+  assert.ok(!/自身也怀有胎儿/.test(line));
+});
