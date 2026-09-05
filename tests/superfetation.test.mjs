@@ -186,10 +186,11 @@ test('两胎一起生，异期标签跟到孩子身上', () => {
   for (let i = 0; i < 400 && P(chatState).base.stage !== '产后恢复'; i += 1) step(chatState);
   const children = P(chatState).children;
   assert.equal(children.length, 2, '必须一起生下来');
-  // 这里只能断言胎数。多胎分娩有一个既有缺陷：会把其中一胎的身分整个复制到另一胎，
-  // 连带覆盖父方与标签（普通双胞胎也会，与异期复孕无关，在 19acb35 上即可重现）。
-  // 那个修好之后，再把「父方分别是甲与乙、乙带 superfetation 标签」的断言补回来。
-  // 标签本身能存活分娩已由 fetus_tags.test.mjs 单独覆盖。
+  assert.deepEqual(children.map((c) => c.fathers).sort(), ['乙', '甲']);
+  const lateChild = children.find((c) => c.fathers === '乙');
+  assert.deepEqual(lateChild.tags, ['superfetation'], '标签要跟到孩子身上');
+  // 不断言出生体重差：长孕期的供养赤字会把两胎都压到 0.33 地板，初始差距被抹平。
+  // 受精当下的胎重折扣由上面「胎重按落后进度打折」那条直接验证。
 });
 
 test('只有待著床胚胎时不能分娩', () => {

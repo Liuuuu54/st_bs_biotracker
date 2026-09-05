@@ -1791,12 +1791,16 @@ function updateFetalPositions(profile, tick, female) {
             });
           }
         }
+        // 按身分移除，不能用收集当时的 index：每搬动一胎阵列就位移一次，
+        // 后面那些 entry.index 全部失效。用旧索引会删掉别人再把自己插回去，
+        // 结果是一胎被消灭、另一胎被复制两份（双胞胎的父方、种族、性别、标签
+        // 就此互相覆盖，连族谱一起错）。
         for (const entry of oblique) {
-          if (Math.random() < entry.rate) {
-            fetuses.splice(entry.index, 1);
-            const newIndex = randomInt(0, fetuses.length);
-            fetuses.splice(newIndex, 0, entry.fetus);
-          }
+          if (Math.random() >= entry.rate) continue;
+          const currentIndex = fetuses.indexOf(entry.fetus);
+          if (currentIndex < 0) continue;
+          fetuses.splice(currentIndex, 1);
+          fetuses.splice(randomInt(0, fetuses.length), 0, entry.fetus);
         }
       } else if (stage === '临产期') {
         const total = fetuses.reduce((sum, fetus) => sum + clampNumber(fetus?.weight, 0.33, 3.0, 1.0), 0);
