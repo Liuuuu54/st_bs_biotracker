@@ -265,6 +265,13 @@
   position: relative;
 }
 
+/* 萤幕预设是 content-box，12px 边框往外长，於是它比容器高 24px、还压在按键列上
+   （所有主题都有这个错位）。贝壳机要有一条乾净的铰链缝，所以这里改成 border-box：
+   萤幕边界与容器对齐，钻框用 inset: 0 就正好贴在边框上，上下壳也才切得开。 */
+#bs-biotracker-settings.theme-sakura .bs-bt-screen {
+  box-sizing: border-box;
+}
+
 /* 单颗钻的切面：同心的亮环比单一柔和高光更像水钻——
    珍珠是一个软光点，水钻是一圈圈硬边反光。中心受光点偏左上。 */
 #bs-biotracker-settings.theme-sakura {
@@ -291,7 +298,7 @@
 #bs-biotracker-settings.theme-sakura .bs-bt-screen-shell::before {
   content: '';
   position: absolute;
-  inset: -12px;
+  inset: 0;
   z-index: 2;
   pointer-events: none;
   border-radius: 20px;
@@ -304,6 +311,53 @@
     var(--bsbt-gem-small) repeat-x 6px calc(100% - 3px) / var(--bsbt-gem-b) var(--bsbt-gem-b),
     var(--bsbt-gem-small) repeat-y 3px 6px / var(--bsbt-gem-b) var(--bsbt-gem-b),
     var(--bsbt-gem-small) repeat-y calc(100% - 3px) 6px / var(--bsbt-gem-b) var(--bsbt-gem-b);
+}
+
+/* ── 樱花：贝壳机造型 ──────────────────────────────────────
+   真正的翻盖是「上半萤幕、下半键盘」，但那会把内容区从 351px 挤到 160px 左右，
+   为造型毁掉可用性。这里只做「暗示」：铰链缝压在萤幕结束、按键列开始那条现成的
+   分界上，上下壳给两种明度，两侧加铰链圆柱，三颗键改厚实键盘键。零萤幕成本。 */
+#bs-biotracker-settings.theme-sakura .bs-bt-physical-buttons {
+  position: relative;
+  z-index: 1;
+  /* 抵销机身 25px 内距，让下壳铺满整个宽度并接上机身底部的圆角 */
+  margin: 0 -25px -25px;
+  padding: 22px 25px 25px;
+  background: linear-gradient(to bottom, #f9a8c6, #f18cb4);
+  border-top: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 0 0 48px 48px;
+  box-shadow: inset 0 6px 10px -6px rgba(173, 20, 87, 0.35);
+}
+
+/* 铰链圆柱：卡在缝的两端，是最能读出「这东西会对折」的一笔 */
+#bs-biotracker-settings.theme-sakura .bs-bt-physical-buttons::before,
+#bs-biotracker-settings.theme-sakura .bs-bt-physical-buttons::after {
+  content: '';
+  position: absolute;
+  top: -7px;
+  width: 26px;
+  height: 13px;
+  border-radius: 7px;
+  background: linear-gradient(to bottom, #ffffff 0 38%, #f7a3c3 38% 62%, #dd6f9e 62% 100%);
+  box-shadow: 0 1px 2px rgba(173, 20, 87, 0.3);
+}
+
+#bs-biotracker-settings.theme-sakura .bs-bt-physical-buttons::before {
+  left: 12px;
+}
+
+#bs-biotracker-settings.theme-sakura .bs-bt-physical-buttons::after {
+  right: 12px;
+}
+
+/* 下壳上的键改成厚实的键盘键 */
+#bs-biotracker-settings.theme-sakura .bs-bt-physical-button,
+#bs-biotracker-settings.theme-sakura .bs-bt-physical-button-off {
+  border-radius: 999px;
+  box-shadow:
+    0 3px 0 #d4699a,
+    0 4px 6px rgba(173, 20, 87, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 /* ── iPhone 主题 ────────────────────────────────────────────
