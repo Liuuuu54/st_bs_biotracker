@@ -4739,21 +4739,55 @@
 .bs-bt-special-fetus[open] > summary {
   margin-bottom: 6px;
 }
-.bs-bt-special-fetus-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  margin: 8px 0;
-}
-.bs-bt-special-fetus-hints {
+
+/* 六项一律同一种版型：勾选列＋展开的设定区，免得硬套与提示两类长得不一样 */
+.bs-bt-special-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
+  flex-direction: column;
+  gap: 6px;
   margin: 8px 0;
 }
-.bs-bt-special-fetus-hints label {
-  display: inline-flex;
+.bs-bt-special-item {
+  border: 1px solid rgba(128, 128, 128, 0.28);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.bs-bt-special-item:has(.bs-bt-special-body:not([hidden]))  {
+  border-color: rgba(128, 128, 128, 0.55);
+}
+.bs-bt-special-head {
+  display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
   cursor: pointer;
+  margin: 0;
+}
+.bs-bt-special-name {
+  flex: 1 1 auto;
+}
+.bs-bt-special-mode {
+  flex: 0 0 auto;
+  font-size: 0.78em;
+  opacity: 0.75;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 7px;
+  line-height: 1.6;
+}
+.bs-bt-special-mode[data-mode="hard"] {
+  color: var(--bsbt-accent, #7ea6d8);
+}
+.bs-bt-special-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+  padding-left: 24px;
+}
+/* display:flex 会盖掉 [hidden] 的 display:none，必须自己关掉 */
+.bs-bt-special-body[hidden] {
+  display: none;
+}
+.bs-bt-special-body small {
+  opacity: 0.8;
 }

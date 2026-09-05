@@ -913,21 +913,36 @@ function renderRegisterChildSourceOptions(ctx) {
   syncRegisterChildSourceFields(ctx);
 }
 
+/** 「直接写入」那两项各自需要的名字，勾了就必须填 */
+const SPECIAL_FETUS_NAME_FIELDS = {
+  rebirth: { inputId: 'bs-bt-special-rebirth', label: '胎内回归', missing: '请填写回到子宫里的那个人' },
+  surrogacy: { inputId: 'bs-bt-special-surrogacy', label: '代孕／托卵', missing: '请填写提供卵的那个人' },
+};
+
 /**
  * 注册页「特殊胎儿来历」的勾选。
  *
- * 两个名字栏走硬套、四个勾选走提示词，差别在 registry.js 那侧处理；这里只负责收集。
- * 全空时回传 null，让注册路径跟以前完全一样，不多塞任何提示词。
+ * 每一项都是一个勾选盒；勾了「直接写入」的两项还要各自填一个名字，勾了「交给模型」的
+ * 四项只转成提示词。差别在 registry.js 那侧处理，这里只负责收集与检查必填。
+ * 一项都没勾时回传 null，让注册路径跟以前完全一样，不多塞任何提示词。
+ *
+ * @returns {{request: object|null, error: string}} error 非空时代表勾了却没填名字
  */
 function getSpecialFetusRequest() {
-  const rebirth = String(document.getElementById('bs-bt-special-rebirth')?.value || '').trim();
-  const surrogacy = String(document.getElementById('bs-bt-special-surrogacy')?.value || '').trim();
+  const checked = (key) => Boolean(document.querySelector(`[data-special-toggle="${key}"]`)?.checked);
+  const names = {};
+  for (const [key, field] of Object.entries(SPECIAL_FETUS_NAME_FIELDS)) {
+    if (!checked(key)) continue;
+    const value = String(document.getElementById(field.inputId)?.value || '').trim();
+    if (!value) return { request: null, error: `${field.label}：${field.missing}。` };
+    names[key] = value;
+  }
   const hints = Array.from(document.querySelectorAll('[data-special-hint]'))
     .filter((input) => input.checked)
     .map((input) => String(input.getAttribute('data-special-hint') || ''))
     .filter(Boolean);
-  if (!rebirth && !surrogacy && hints.length === 0) return null;
-  return { rebirth, surrogacy, hints };
+  if (!names.rebirth && !names.surrogacy && hints.length === 0) return { request: null, error: '' };
+  return { request: { rebirth: names.rebirth || '', surrogacy: names.surrogacy || '', hints }, error: '' };
 }
 
 /** 注册完成后回头看勾的特殊来历有没有真的落到胎儿身上，没有就回一句提醒 */
@@ -7283,6 +7298,16 @@ async function ensureModal(ctx) {
       globalThis.toastr?.error?.(message, '[BS BioTracker]');
     }
   });
+  // 勾了才展开该项的设定，收起来时六项就只是一份可读的清单
+  document.querySelector('.bs-bt-special-fetus')?.addEventListener('change', (event) => {
+    const toggle = event.target;
+    if (!(toggle instanceof HTMLInputElement)) return;
+    const key = String(toggle.getAttribute('data-special-toggle') || '');
+    if (!key) return;
+    const body = document.querySelector(`[data-special-body="${key}"]`);
+    if (body) body.hidden = !toggle.checked;
+    if (toggle.checked) body?.querySelector('input')?.focus();
+  });
   document.getElementById('bs-bt-register-run')?.addEventListener('click', async () => {
     // 注册没有节流会重复发送：小手机关掉再打开时按钮看似可点，实际上上一轮还在跑
     if (isRegistryOperationPending('register')) {
@@ -7290,6 +7315,12 @@ async function ensureModal(ctx) {
       return;
     }
     const { targetName, declaredRace, customNotes, sourceChild, specialFetus } = getRegisterFormValues();
+    if (specialFetus?.error) {
+      setRegisterStatus(specialFetus.error, true);
+      globalThis.toastr?.warning?.(specialFetus.error, '[BS BioTracker]');
+      return;
+    }
+    const specialFetusRequest = specialFetus?.request || null;
     if (!targetName) {
       setRegisterStatus('请先输入要注册的角色名。', true);
       globalThis.toastr?.warning?.('[BS BioTracker] 请先输入角色名');
@@ -7310,7 +7341,7 @@ async function ensureModal(ctx) {
       ? `正在使用繁育推演注册 ${targetName}...`
       : `正在注册 ${targetName}...`);
     try {
-      const character = await runRegistry(ctx, { targetName, customNotes, declaredRace, breedingInference, sourceChild, specialFetus });
+      const character = await runRegistry(ctx, { targetName, customNotes, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest });
       renderStatusPanel(ctx);
       renderFullStatePage(ctx);
       renderSkillCatalogPage(ctx);
@@ -7319,7 +7350,7 @@ async function ensureModal(ctx) {
       // 角色已经注册进去了，这份推演草稿才算用完，可以清空
       clearBreedingInferenceDraftFor(character.name);
       // 勾了特殊来历却没产生妊娠时要讲出来：默默当成功，玩家会以为设定生效了
-      const missingSpecial = describeMissingSpecialFetus(specialFetus, character);
+      const missingSpecial = describeMissingSpecialFetus(specialFetusRequest, character);
       setRegisterStatus([
         breedingInference
           ? `注册完成：${character.name}（已套用繁育推演）。可继续备装或写日记。`
