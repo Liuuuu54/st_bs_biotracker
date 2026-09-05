@@ -71,8 +71,6 @@ const mvuGateState = {
   pendingKey: '',
   pendingContentKey: '',
   pendingSince: 0,
-  // 提示只在每个聊天第一次真正等待时弹一次：逐轮提示在长对话里等同于噪音
-  announcedChatKey: '',
   // fetch 钩子观测：正文之后出现的额外生成请求（MVU 额外模型解析的硬信号）
   fetchHooked: false,
   generateInFlight: 0,
@@ -178,7 +176,7 @@ function getMvuContentKey(ctx) {
   return buildSignature(ctx, getHostChat(ctx).length);
 }
 
-function installMvuGateListener(ctx) {
+export function installMvuGateListener(ctx) {
   if (mvuGateState.eventInstalled) return;
   const handler = () => {
     const key = getMvuRoundKey(ctx);
@@ -202,17 +200,6 @@ function installMvuGateListener(ctx) {
     console.warn('[BS BioTracker] 无法订阅 MVU 变量更新事件', error);
   }
   mvuGateState.eventInstalled = installed;
-}
-
-function notifyMvuGateWaiting(ctx) {
-  const chatKey = getChatKey(ctx);
-  if (!chatKey || mvuGateState.announcedChatKey === chatKey) return;
-  mvuGateState.announcedChatKey = chatKey;
-  try {
-    globalThis.toastr?.info?.('检测到 MVU 额外模型解析请求，等待变量更新完成后再追踪', '[BS BioTracker] MVU 兼容');
-  } catch {
-    // 无 toastr 的环境静默即可
-  }
 }
 
 function isGenerateFetchRequest(input) {
@@ -331,36 +318,232 @@ export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
     mvuGateState.sawGenerateThisRound = false;
   } else if (mvuGateState.pendingContentKey !== contentKey) {
     // 同 id 消息被重掷/编辑：内容已变，视为新轮次，重新开启等待窗口，
-    // 避免旧 pendingSince 过期导致宽限路径立即放行
+    // 避免旧 pendingSince 过期导致宽限路径立即放行。
+    // 但正文替换的落库同样会改变内容指纹：它的戳记晚于等待起点时只更新指纹、
+    // 不重排等待起点，否则每次替换都会把宽限续满，MVU 结束后的追踪被越推越晚。
     mvuGateState.pendingContentKey = contentKey;
-    mvuGateState.pendingSince = now;
-    mvuGateState.sawGenerateThisRound = false;
+    if (!isReplacementAfter(mvuGateState.pendingSince, last)) {
+      mvuGateState.pendingSince = now;
+      mvuGateState.sawGenerateThisRound = false;
+    }
   }
 
   // 信号 1：MVU 全局 API 报告正在解析
   const during = mvuCapable && mvu.isDuringExtraAnalysis() === true;
-  // 信号 2：正文之后仍有非本插件的生成请求在飞行（MVU 额外解析/重试等）
-  const generateActive = mvuGateState.generateInFlight > 0;
+  // 信号 2：正文之后仍有非本插件的生成请求在飞行——仅作旧版 MVU（没有
+  // isDuringExtraAnalysis 全局）的兜底。请求特征会被误命中：数据库正文替换/
+  // 填表的请求体嵌着含 <UpdateVariable>、json_patch 字样的正文与提示词，全局
+  // 标志可得时不再采信它，否则兼容门控会串行等完数据库一整条后处理管线
+  // （TT 实测一分钟以上的延迟）。
+  const generateActive = !mvuCapable && mvuGateState.generateInFlight > 0;
   // 生成请求只作为本轮「在飞」等待信号，不参与 everSawMvuSignal——
   // 否则普通 ST 主流请求也会让设备被标记为「见过 MVU 信号」，导致每轮白等宽限
   if (during) mvuGateState.everSawMvuSignal = true;
 
-  const waiting = resolveMvuGateWaiting(roundKey, contentKey, now, during || generateActive);
-  // 提示只在真的推迟了追踪时才弹：先前无条件按「更新方式=额外模型解析」提示，
-  // 会在本轮解析早已结束、根本没等待的情况下也弹一次
-  if (waiting) notifyMvuGateWaiting(ctx);
+  // 结束事件与评估之间正文若被替换改写过（指纹对不上），只要替换戳晚于结束事件，
+  // 说明 MVU 的产物已落定、无需再等宽限——直接放行，在最终正文上只追一轮
+  const endedKeyMatch = mvuGateState.lastEndedKey === roundKey;
+  const replacementAfterEnd = endedKeyMatch && isReplacementAfter(mvuGateState.lastEndedAt, last);
+  const waiting = resolveMvuGateWaiting(roundKey, contentKey, now, during || generateActive, replacementAfterEnd);
+  // 等待全程静默：MVU 解析结束紧接着就是追踪提示，中间再弹一条等待提示纯属噪音；
+  // 排查时看 console 即可
+  if (waiting) console.debug('[BS BioTracker] MVU 額外解析尚未結束，本輪追蹤推遲');
   return waiting;
 }
 
-function resolveMvuGateWaiting(roundKey, contentKey, now, signalActive) {
+function resolveMvuGateWaiting(roundKey, contentKey, now, signalActive, replacementAfterEnd) {
   if (signalActive) return now - mvuGateState.pendingSince < MVU_EXTRA_MAX_WAIT_MS;
   // 本轮变量更新已结束（事件新鲜且内容指纹一致）→ 放行
   if (mvuGateState.lastEndedKey === roundKey
-    && mvuGateState.lastEndedContentKey === contentKey
-    && now - mvuGateState.lastEndedAt < MVU_EXTRA_ENDED_STALE_MS) return false;
+    && now - mvuGateState.lastEndedAt < MVU_EXTRA_ENDED_STALE_MS
+    && (mvuGateState.lastEndedContentKey === contentKey || replacementAfterEnd)) return false;
   // 从没见过任何 MVU 信号（非 MVU 卡）→ 不等待；见过 → 宽限期内等信号出现
   if (!mvuGateState.everSawMvuSignal) return false;
   return now - mvuGateState.pendingSince < MVU_EXTRA_WAIT_GRACE_MS;
+}
+
+// ---- 主生成忙碌闸门 / 静默正文替换吸收 ----
+// 「异步追踪 + MVU 额外模型解析 + 数据库正文替换」同时开启时，一轮回复会被追三遍：
+// 主生成没完就对着残缺正文抢发一轮（宿主串流期间按 chunk 往 mes 写半成品，
+// chunk 间隙一超过 settle 稳定窗就被判成「说完了」）、正文替换用
+// setChatMessages 原地静默改写同楼层 mes 又不发任何宿主事件，快照的边界签名
+// 失配被当成新内容又追一轮。对应两条规则：
+// 1. 轮询在「宿主主生成在飞」时不发追踪。判据只用两个权威信号源的并集：
+//    停止按钮 DOM 旗标（document.body.dataset.generating，ST/TT 同源，重掷/
+//    续写/群成员/借道 Generate 的生成都会点亮）与未闭合的 generation_started
+//    事件（带超时自愈）。不使用 ctx.streamingProcessor：插件持有的是加载时的
+//    一次性 getContext() 快照，该字段指望不上。也不把「带 MVU 特征的 fetch 在
+//    飞」当忙碌信号：正文替换与填表请求的 body 本就会嵌进含 <UpdateVariable>
+//    的正文，被特征命中，TT 实测会把整条数据库后处理排进追踪前面、拖出约两
+//    分钟延迟。MVU 额外模型解析的等待仍由既有兼容门控负责（TT 走带停止按钮的
+//    Generate 管线，dataset 信号同样会覆盖它这一程）；兼容开关语义原样不变。
+// 2. 正文替换会把毫秒时间戳 `_acu_last_optimized_at` 写进该楼层的 extra——
+//    shujuku 与 shujuku-rebuild 皆然，只有正文替换写它、随消息持久化、跨页面
+//    重载有效。楼层已有追踪回执、且该时间戳晚于回执时，正文差异就是替换改写：
+//    就地重锚签名、不重发请求（恒开、无提示）。手动编辑、重掷、续写、换楼层都
+//    不会盖出这个时间戳，照常走追踪路径；若宿主事件计数之类的内存态一律不作为
+//    判据（重载即归零，会把编辑后的合法改动误判成「无痕」而吞掉）。将来若出现
+//    不打此标记的其他静默写回者，宁可多追一轮也不漏，方向安全。
+
+const HOST_BUSY_STALE_MS_KEY = '__bs_biotracker_host_busy_stale_ms__';
+/** 两个数据库正文替换落库时在楼层 extra 上盖的毫秒时间戳（唯一写者） */
+const CONTENT_REPLACEMENT_MARK_KEY = '_acu_last_optimized_at';
+
+const hostRunState = {
+  listenersInstalled: false,
+  generationDepth: 0,
+  generationBusySince: 0,
+};
+export const __hostRunStateForTest = hostRunState;
+// 与 MVU 门控同法：挂到全局方便在真实宿主的 console 里排查触发问题
+globalThis.__bs_biotracker_debug_host_run__ = hostRunState;
+
+function resolveHostEventName(ctx, typeKey, fallback) {
+  const types = ctx?.eventTypes || ctx?.event_types;
+  const resolved = types?.[typeKey];
+  return typeof resolved === 'string' && resolved ? resolved : fallback;
+}
+
+function markHostGenerationStart() {
+  hostRunState.generationDepth += 1;
+  if (hostRunState.generationDepth === 1) hostRunState.generationBusySince = Date.now();
+}
+
+function markHostGenerationEnd() {
+  // 宿主 GENERATION_ENDED 只在停止按钮真的从显示转隐藏时发、嵌套不去重：一轮群里
+  // 连续生成可能 STARTED 多次、ENDED 一次。把 ended/stopped 当作「宿主自认生成
+  // 已全部结束」的权威信号直接清空深度（dataset 旗标仍是独立信号，真在飞时
+  // 不会假清空），否则计数只增不减会把追踪卡死到看门狗上限。
+  hostRunState.generationDepth = 0;
+  hostRunState.generationBusySince = 0;
+}
+
+export function installHostRunWatchers(ctx) {
+  if (hostRunState.listenersInstalled) return;
+  const source = ctx?.eventSource;
+  if (!source || typeof source.on !== 'function') return;
+  // 无论订到第几个都标记为已安装、不再重试：宿主 eventSource.on 实际不会抛，
+  // 万一抛了也只可能缺一腿，重复叠加监听反而会把深度计数订乱
+  hostRunState.listenersInstalled = true;
+  try {
+    source.on(resolveHostEventName(ctx, 'GENERATION_STARTED', 'generation_started'), markHostGenerationStart);
+    source.on(resolveHostEventName(ctx, 'GENERATION_STOPPED', 'generation_stopped'), markHostGenerationEnd);
+    source.on(resolveHostEventName(ctx, 'GENERATION_ENDED', 'generation_ended'), markHostGenerationEnd);
+  } catch (error) {
+    console.warn('[BS BioTracker] 無法訂閱宿主生成事件', error);
+  }
+}
+
+function hostDatasetGenerating() {
+  try {
+    return globalThis.document?.body?.dataset?.generating === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 宿主主生成是否仍在进行（不该发追踪）：停止按钮 DOM 旗标与未闭合的
+ * generation started 两源并集，任一即忙；事件源带超时自愈。
+ * 特意不含任何「插件级 fetch 观测」信号：数据库正文替换/填表的请求体常嵌着
+ * 含 <UpdateVariable> 的正文，会被 MVU 特征误命中，把它们当作忙碌会把追踪
+ * 排到整条数据库后处理之后（TT 实测拖出约两分钟的延迟）。MVU 额外模型解析
+ * 的等待由既有的兼容门控 shouldWaitForMvuExtraAnalysis 负责（TT 上它走带停止
+ * 按钮的 Generate 管线，dataset 信号同样会覆盖其在飞阶段），兼容开关语义不动。
+ */
+export function isHostGenerationBusy(ctx) {
+  if (hostDatasetGenerating()) return true;
+  if (hostRunState.generationDepth > 0) {
+    const staleMs = Number(globalThis[HOST_BUSY_STALE_MS_KEY]) || 600000;
+    if (Date.now() - hostRunState.generationBusySince > staleMs) {
+      // 漏收 ended（页面切换/宿主早隐藏停止按钮）时不能永久卡死追踪
+      hostRunState.generationDepth = 0;
+      hostRunState.generationBusySince = 0;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 楼层上正文替换盖的毫秒时间戳；没盖过返回 0。 */
+function readReplacementMarkMs(message) {
+  const raw = Number(message?.extra?.[CONTENT_REPLACEMENT_MARK_KEY]);
+  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
+function getFloorAnchorFields(message) {
+  return {
+    anchorVersion: 1,
+    // ST/TT 的消息对象没有 id 字段（只有 MVU 的 setChatMessages 形参叫 message_id，
+    // 且那是传参不是落库字段）：有就比对、没有就跳过该项，绝不能以它为必要条件
+    tailMessageId: message?.id === undefined || message?.id === null
+      ? (message?.message_id === undefined || message?.message_id === null ? '' : String(message.message_id))
+      : String(message.id),
+    tailSwipeId: message?.swipe_id === undefined || message?.swipe_id === null ? '' : String(message.swipe_id),
+    tailName: String(message?.name || ''),
+  };
+}
+
+function sameFloorIdentity(stamp, currentFloor) {
+  if (!currentFloor) return false;
+  // id 两边都有才比：都没有（ST/TT 真机常态）时不以此拒绝
+  const stampId = String(stamp?.tailMessageId || '');
+  const currentId = String(currentFloor.id ?? currentFloor.message_id ?? '');
+  if (stampId && currentId && stampId !== currentId) return false;
+  if (String(currentFloor.swipe_id ?? '') !== String(stamp?.tailSwipeId ?? '')) return false;
+  // 旧快照没有 tailName 时跳过该项（v1 锚点继续有效，不做版本迁移）
+  const stampName = String(stamp?.tailName || '');
+  if (stampName && String(currentFloor.name || '') !== stampName) return false;
+  return true;
+}
+
+/** 正文替换时间戳晚于锚点时刻 = 之后确有替换写回（跨重载有效，不依赖内存计数）。 */
+function isReplacementAfter(anchorAtMs, currentFloor) {
+  if (!anchorAtMs) return false;
+  return readReplacementMarkMs(currentFloor) > Number(anchorAtMs);
+}
+
+function findReplacementAnchorSnapshot(chatState, count) {
+  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
+  for (let index = snapshots.length - 1; index >= 0; index -= 1) {
+    const snapshot = snapshots[index];
+    const reason = String(snapshot?.reason || '');
+    if (reason !== 'tracker' && reason !== 'silent_replace') continue;
+    if (Number(snapshot?.messageCount) !== count) continue;
+    return snapshot;
+  }
+  return null;
+}
+
+/**
+ * 数据库正文替换的静默吸收：追踪回执所在楼层带着晚于回执的替换时间戳时，
+ * 就地重锚快照与 lastProcessedSignature，下一轮不再发出追踪请求。
+ * 返回 true = 本轮轮询已被吸收。恒生效、无开关、无提示。
+ */
+export function tryAdoptSilentTailReplacement(ctx, settings, chatState) {
+  const chat = getHostChat(ctx);
+  const count = chat.length;
+  if (count <= 0) return false;
+  const last = chat[count - 1];
+  if (!last || last.is_user) return false;
+  if (!readReplacementMarkMs(last)) return false;
+  const currentSignature = buildSignature(ctx, count);
+  if (currentSignature && currentSignature === String(chatState?.lastProcessedSignature || '')) return false;
+  const snapshot = findReplacementAnchorSnapshot(chatState, count);
+  if (!snapshot || Number(snapshot.anchorVersion) !== 1) return false;
+  if (!sameFloorIdentity(snapshot, last)) return false;
+  if (!isReplacementAfter(snapshot.createdAt, last)) return false;
+  if (isHostGenerationBusy(ctx)) return false;
+  recordChatStateSnapshot(ctx, chatState, {
+    messageCount: count,
+    reason: 'silent_replace',
+    ...getFloorAnchorFields(last),
+  });
+  chatState.lastProcessedSignature = currentSignature;
+  saveSettings(ctx);
+  console.debug('[BS BioTracker] 偵測到正文替換回寫（楼层带替换戳记且晚于追踪回执），已重新锚定，未重發請求');
+  return true;
 }
 
 function normalizeWorldbookMode(value) {
@@ -1246,6 +1429,10 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   const attemptedSignature = buildSignature(ctx, messageIndex + 1);
   chatState.lastAttemptedSignature = attemptedSignature;
   saveSettings(ctx);
+  // 记下发出请求那一刻楼层的样子与时刻：返回时正文若有变化，用它区分
+  // 「重掷/编辑/删楼的合法改动」与「正文替换的静默改写（带替换戳记）」
+  const preCallFloorStamp = getFloorAnchorFields(chat[messageIndex]);
+  const preCallAtMs = Date.now();
   const systemPrompt = buildTrackerSystemPrompt(settings.systemPrompt || DEFAULT_SYSTEM_PROMPT, settings.registryDescriptionGuides || null, payload);
   recordTrackerRequestDebug(systemPrompt, payload);
   const rawResult = await callOpenAICompatible(
@@ -1266,7 +1453,16 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   } catch (error) {
     console.warn('[BS BioTracker] 分析后刷新聊天视图失败，改用现有视图比对', error);
   }
-  if (buildSignature(ctx, messageIndex + 1) !== attemptedSignature) {
+  const postCallSignature = buildSignature(ctx, messageIndex + 1);
+  // 在飞期间正文被改写的三种可能按「楼层带晚于发出时刻的替换戳记」一笔判定：
+  // 命中即正文替换（分析对象仍是替换前正文，结果对剧情有效）——沿用结果、
+  // 就地重锚，不作废重跑；重掷/编辑/删楼不会盖出戳记，照旧作废整份结果。
+  const silentReplacementDuringRun = postCallSignature !== attemptedSignature
+    && getHostChat(ctx).length === messageIndex + 1
+    && sameFloorIdentity(preCallFloorStamp, getHostChat(ctx)[messageIndex])
+    && isReplacementAfter(preCallAtMs, getHostChat(ctx)[messageIndex])
+    && !isHostGenerationBusy(ctx);
+  if (postCallSignature !== attemptedSignature && !silentReplacementDuringRun) {
     console.warn('[BS BioTracker] 该消息在分析期间被修改或删除，本次结果已作废');
     chatState.lastRawResult = {
       message: '该消息在分析期间被修改或删除，本次结果已作废，未写入任何状态。',
@@ -1277,14 +1473,21 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
     saveSettings(ctx);
     return { discarded: true };
   }
+  if (silentReplacementDuringRun) {
+    console.debug('[BS BioTracker] 追踪进行期间正文被静默替换，沿用本次结果并改按替换后正文重新锚定');
+  }
 
   const result = normalizeTrackerResult(rawResult);
   result.character_check_coverage = buildCharacterCheckCoverage(payload.tracked_females, result.character_checks);
   applyToolCallsResult(ctx, result);
-  chatState.lastProcessedSignature = attemptedSignature;
+  chatState.lastProcessedSignature = silentReplacementDuringRun ? postCallSignature : attemptedSignature;
   chatState.lastFailedSignature = '';
   chatState.lastFailedChatSignature = '';
-  recordChatStateSnapshot(ctx, chatState, { messageCount: messageIndex + 1, reason: 'tracker' });
+  recordChatStateSnapshot(ctx, chatState, {
+    messageCount: messageIndex + 1,
+    reason: 'tracker',
+    ...getFloorAnchorFields(getHostChat(ctx)[messageIndex]),
+  });
   saveSettings(ctx);
   return { discarded: false, triggered: true };
 }
@@ -1345,6 +1548,10 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     deps.renderStatusPanel(ctx);
     return { skipped: true, reason: 'luker_multi_agent_manual' };
   }
+  if (reason === 'poll' && isHostGenerationBusy(ctx)) {
+    // 主连接没说完话就绝不追踪：从根上消灭「开始吐字时抢发一轮」
+    return { skipped: true, reason: 'host_generation_in_flight' };
+  }
   if (reason === 'poll') {
     const agentBarrier = await getHostAgentRunBarrier(ctx, lastMessage);
     if (agentBarrier.state === 'pending') {
@@ -1376,6 +1583,10 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   }
   if (reason === 'poll' && shouldWaitForMvuExtraAnalysis(ctx, settings)) {
     return { skipped: true, reason: 'waiting_mvu_extra_analysis' };
+  }
+  if (reason === 'poll' && tryAdoptSilentTailReplacement(ctx, settings, chatState)) {
+    // 正文替换的无痕改写：静默重锚，不发请求也不弹任何提示
+    return { skipped: true, reason: 'silent_tail_replacement' };
   }
   if (reason === 'poll' && isFailedAutoRetryBlocked(ctx, chatState)) {
     return { skipped: true, reason: 'failed_message_blocked' };
@@ -1451,6 +1662,11 @@ export function resetPoller(ctx, deps) {
   if (globalThis[POLL_RUNTIME_KEY]) clearInterval(globalThis[POLL_RUNTIME_KEY]);
   // 尽早安装 MVU 生成请求钩子，避免正文后第一时间启动的 MVU 请求漏观测
   installMvuFetchHook();
+  // 变量更新结束事件监听同样必须提前装：忙碌闸门会跳过解析期间的门控评估，
+  // 若等第一次评估才订事件，mag_variable_update_ended 早已错过、只能靠宽限干等
+  installMvuGateListener(ctx);
+  // 宿主 generation/编辑/swipe 事件监听同样只装一次：忙碌闸门与静默替换判定都靠它
+  installHostRunWatchers(ctx);
   const settings = getSettings(ctx);
   globalThis[POLL_RUNTIME_KEY] = setInterval(() => {
     deps.updateClock(settings);

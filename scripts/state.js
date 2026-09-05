@@ -1859,6 +1859,10 @@ function trimChatStateSnapshots(chatState) {
       boundarySignature: String(chatState.snapshots[0].boundarySignature || ''),
       reason: String(chatState.snapshots[0].reason || 'state'),
       createdAt: Number(chatState.snapshots[0].createdAt || Date.now()),
+      anchorVersion: Number(chatState.snapshots[0].anchorVersion) || 0,
+      tailMessageId: String(chatState.snapshots[0].tailMessageId || ''),
+      tailSwipeId: String(chatState.snapshots[0].tailSwipeId || ''),
+      tailName: String(chatState.snapshots[0].tailName || ''),
       snapshotMode: 'full',
       stateSnapshot: materializedFirstPayload,
     };
@@ -1906,6 +1910,12 @@ function createStoredSnapshotState(snapshots, payload, metadata = {}, cache = ne
     boundarySignature: String(metadata.boundarySignature || ''),
     reason: String(metadata.reason || 'state'),
     createdAt: Number(metadata.createdAt || Date.now()),
+    // 靜默正文替換識別錨點（anchorVersion 1）：記錄邊界樓層的身分。舊快照沒有
+    // 這些欄位（anchorVersion 0）→ 永遠走原本的判定，零回歸。
+    anchorVersion: Number(metadata.anchorVersion) || 0,
+    tailMessageId: metadata.tailMessageId === undefined || metadata.tailMessageId === null ? '' : String(metadata.tailMessageId),
+    tailSwipeId: metadata.tailSwipeId === undefined || metadata.tailSwipeId === null ? '' : String(metadata.tailSwipeId),
+    tailName: metadata.tailName === undefined || metadata.tailName === null ? '' : String(metadata.tailName),
   };
 
   if (shouldStoreFullSnapshot(snapshotIndex, normalizedPayload, deltaPatch)) {
@@ -1977,6 +1987,10 @@ function repackChatStateSnapshots(chatState) {
       boundarySignature: snapshot?.boundarySignature,
       reason: snapshot?.reason,
       createdAt: snapshot?.createdAt,
+      anchorVersion: snapshot?.anchorVersion,
+      tailMessageId: snapshot?.tailMessageId,
+      tailSwipeId: snapshot?.tailSwipeId,
+      tailName: snapshot?.tailName,
     }, repackedCache);
     repackedSnapshots.push(stored);
     repackedCache.set(repackedSnapshots.length - 1, cloneValue(payload));
@@ -2046,6 +2060,10 @@ export function recordChatStateSnapshot(ctx, chatState, options = {}) {
       boundarySignature: buildBoundaryMessageSignature(ctx, messageCount),
       reason: String(options.reason || 'state'),
       createdAt: Date.now(),
+      anchorVersion: options.anchorVersion,
+      tailMessageId: options.tailMessageId,
+      tailSwipeId: options.tailSwipeId,
+      tailName: options.tailName,
     },
   );
   chatState.snapshots.push(snapshot);
