@@ -47,6 +47,7 @@ import {
 import { buildMainFlowPrompt, resetPoller, runTracker } from './scripts/tracker.js';
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
+import { isFetusKnownToCharacter } from './scripts/tools.js';
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
@@ -3070,7 +3071,8 @@ function buildTrackCharacterViewModel(character) {
       prodromalRemainingHours: Number(pregnant.prodromalRemainingHours) || 0,
       prodromalDelayProgressHours: Number(pregnant.prodromalDelayProgressHours) || 0,
       amnionDurability: Number(pregnant.amnionDurability) || 0,
-      fetuses: Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((fetus) => ({
+      // 未揭晓的异期胎在追踪页也藏起来，与提示词一致；完整变量页仍看得到
+      fetuses: Array.isArray(pregnant.fetuses) ? pregnant.fetuses.filter(isFetusKnownToCharacter).map((fetus) => ({
         ...fetus,
         // 标签在这里解析：推导需要承载者名字，渲染层拿不到
         tagLabels: getFetusTagLabels(deriveFetusTags(fetus, { carrierName: character?.name || '' })),

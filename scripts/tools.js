@@ -1089,6 +1089,83 @@ function getConceptionWeight(stage, gender, weightRatio = 1.0) {
   return Math.max(0.33, Math.min(3.0, Number(baseWeight * fluctuation * sexMultiplier * weightRatio)));
 }
 
+/**
+ * 异期复孕：已在妊娠中再次受精，两胎孕龄不同步。
+ *
+ * 孕龄在这个引擎里是 pregnant.effectivePregnantDays 这一个共用数字（被引用 30 处，
+ * 驱动阶段、产程、代谢、逾期）。不去动它，改成每胎存一个「受精当下的共用时钟读数」，
+ * 该胎自己的年龄 = 共用时钟 − 该读数。阶段仍由共用时钟（＝最早那胎）驱动，
+ * 这也是对的：母体的身体状态取决于最成熟的那一胎。
+ *
+ * 有效孕日对所有物种都是 0-280 的同一把尺（累加时乘妊娠速度，阶段门槛用固定值），
+ * 所以下面这些天数不必再乘物种项。
+ */
+const SUPERFETATION_STAGE = '孕早期';
+const SUPERFETATION_FULL_TERM_DAYS = 280;
+/** 孕早期长度，也就是可以再受精的原始视窗 */
+const SUPERFETATION_RAW_WINDOW_DAYS = 84;
+/** 孕期受精的机率系数：正常受孕几乎是每天 80%，不压低的话异期会变成常态 */
+const SUPERFETATION_CHANCE_FACTOR = 0.10;
+/** 揭晓时机：妊娠期一半。在此之前模型与追踪页都看不到这一胎 */
+const SUPERFETATION_REVEAL_DAYS = 140;
+
+/**
+ * 受精视窗上限。不是整个孕早期——着床要花 getImplantationDays 个真实日，
+ * 视窗末尾受精的胚胎会来不及着床就撞上孕中期的强制清除，形成一段
+ * 「受精看似成功、实则注定作废」的死区。把视窗提前关闭，死区由构造上消失。
+ * 妊娠速度极快的物种可能算出负值，那就是该物种不可能异期复孕。
+ */
+function getSuperfetationWindowDays(profile) {
+  const speed = clampNumber(getGestationEffectiveSpeed(profile), 0.1, 20, 1);
+  return Math.max(0, SUPERFETATION_RAW_WINDOW_DAYS - (getImplantationDays(profile) * speed));
+}
+
+/** 这一胎自己的有效孕龄。既有胎儿没有 conceivedAtDays，视为 0 */
+function getFetusEffectiveAge(pregnant, fetus) {
+  const shared = clampNumber(pregnant?.effectivePregnantDays, 0, 9999, 0);
+  const conceivedAt = clampNumber(fetus?.conceivedAtDays, 0, 9999, 0);
+  return Math.max(0, shared - conceivedAt);
+}
+
+/**
+ * 已着床的胎儿。没有 pendingImplantation 旗标＝已着床，
+ * 所以存量存档不必迁移。随机挑胎、胎教、母胎互动都只能挑这些。
+ */
+/**
+ * 这一胎是否已经被角色本人知道。异期胎在揭晓（妊娠期一半）之前，
+ * 提示词投影与追踪页都看不到它——它在状态里照常存在、照常发育、照常吃供养力，
+ * 所以模型会看到「负担莫名偏高」，那是伏笔而不是穿帮。完整变量页仍然看得到。
+ */
+export function isFetusKnownToCharacter(fetus) {
+  if (!fetus || typeof fetus !== 'object') return false;
+  if (fetus.pendingImplantation) return false;
+  if (!fetus.conceivedAtDays) return true;
+  return Boolean(fetus.revealed);
+}
+
+function isImplantedFetus(fetus) {
+  return Boolean(fetus) && !fetus.pendingImplantation;
+}
+
+function getImplantedFetuses(profile) {
+  const fetuses = Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : [];
+  return fetuses.filter(isImplantedFetus);
+}
+
+/**
+ * 从已着床的胎儿里随机挑一个，回传它在原阵列里的索引；没有可挑的回 -1。
+ * 不能改成先过滤再挑——胎教与母胎互动最后都会 pregnant.fetuses = fetuses
+ * 整批写回，过滤过的阵列会把待著床的胚胎直接删掉。
+ */
+function pickImplantedFetusIndex(fetuses) {
+  const eligible = [];
+  for (let index = 0; index < fetuses.length; index += 1) {
+    if (isImplantedFetus(fetuses[index])) eligible.push(index);
+  }
+  if (eligible.length === 0) return -1;
+  return eligible[randomInt(0, eligible.length - 1)];
+}
+
 function getConceptionWeightRatio(profile, sperm) {
   const motherBreedTolerance = clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0);
   const fatherProfile = getMergedRacePhysiologyProfile(sperm?.race);
@@ -1281,7 +1358,8 @@ function applyChimeraFusion(profile, carrierName) {
   const fetuses = ensureEmbryoMetadata(pregnant);
   if (clampNumber(profile?.base?.fertilizationDays, 0, 9999, 0) <= 1 || fetuses.length < 2) return;
 
-  const candidates = fetuses.filter((fetus) => !fetus?.chimera);
+  // 待著床的异期胚胎不与已著床的胎儿配对：三个月大的胎儿与新受精卵融合说不通
+  const candidates = fetuses.filter((fetus) => !fetus?.chimera && !fetus?.pendingImplantation);
   const pairs = [];
   for (let left = 0; left < candidates.length; left += 1) {
     for (let right = left + 1; right < candidates.length; right += 1) {
@@ -1321,14 +1399,24 @@ function resolvePendingChimeraGenders(fetuses) {
   }
 }
 
-function applyIdenticalSplit(profile) {
+/**
+ * @param batch 只对这一批胚胎掷分裂骰；省略＝全部。
+ *   异期复孕时新胚胎著床会再跑一次这个函式，不限定批次的话，
+ *   已经三个月大的先来那胎会被重新掷一次分裂骰，可能凭空变成双胞胎。
+ */
+function applyIdenticalSplit(profile, batch = null) {
   const pregnant = profile.pregnant || {};
   const fetuses = ensureEmbryoMetadata(pregnant);
   if (fetuses.length === 0) return;
+  const targets = batch ? new Set(batch) : null;
 
   const result = [];
   let nextId = getNextEmbryoId(fetuses);
   for (const baseFetus of fetuses) {
+    if (targets && !targets.has(baseFetus)) {
+      result.push(baseFetus);
+      continue;
+    }
     result.push(baseFetus);
     const physiology = getMergedRacePhysiologyProfile(baseFetus?.race);
     const splitRate = clampNumber(
@@ -1406,7 +1494,10 @@ function updateFetalEnergyDrain(profile) {
   const motherBreedTolerance = clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0);
   profile.pregnant.fetalEnergyDrain = fetuses.reduce((sum, fetus) => {
     const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
-    const ageInDays = effectivePregnantDays * weight;
+    // 每胎用自己的孕龄：异期复孕时晚到那胎不该按先来者的进度计算负担。
+    // 既有胎儿没有 conceivedAtDays，算出来就是共用时钟，行为不变。
+    const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
+    const ageInDays = ownAge * weight;
     const fetalAgeWeeks = ageInDays / 7;
     const fetalLoad = fetalAgeWeeks / 40;
     const fetusEnergyDrain = fetalLoad / motherBreedTolerance;
@@ -1794,6 +1885,140 @@ function processSpermLifecycle(profile, stage, tick) {
     .filter((item) => item.value > 0);
 }
 
+/**
+ * 一次受精判定。回传剩余卵数。
+ * chanceFactor 供异期复孕压低机率；superfetation 时另外标记新胚胎。
+ */
+function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceFactor = 1, superfetation = false }) {
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
+  const availableSperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
+  let eggs = clampNumber(base.eggs, 0, 99, 0);
+  const femaleDifficulty = clampNumber(profile?.bio?.impregnationDifficulty, 0.1, 100, 1.0);
+
+  while (eggs > 0 && availableSperms.length > 0) {
+    const totalSperm = availableSperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
+    let winner = null;
+    for (const sperm of availableSperms) {
+      const share = totalSperm > 0 ? clampNumber(sperm?.value, 0, 999999, 0) / totalSperm : 0;
+      const maleDifficulty = clampNumber(getMergedRacePhysiologyProfile(sperm?.race)?.impregnationDifficulty, 0.1, 100, 1.0);
+      const isSameRace = isSameRaceGroup(profile?.base?.race, sperm?.race);
+      let effectiveDifficulty = isSameRace ? femaleDifficulty : (femaleDifficulty + maleDifficulty);
+      const femaleEmbryoType = deriveFetusEmbryoType(profile?.base?.race);
+      const maleEmbryoType = deriveFetusEmbryoType(sperm?.race);
+      if (femaleEmbryoType !== maleEmbryoType) effectiveDifficulty *= 1.5;
+      const spermBaseChance = Math.max(0.001, Math.min(0.8, (deltaDays * 12 * 0.5) / effectiveDifficulty));
+      const spermChance = Math.max(0, Math.min(0.8, spermBaseChance * share * chanceFactor));
+      if (spermChance > 0 && Math.random() <= spermChance) {
+        winner = sperm;
+        break;
+      }
+    }
+    if (winner) {
+      pregnant.fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+      const fetus = createSimpleFetus(profile, winner, stage);
+      if (superfetation) markSuperfetationFetus(profile, fetus);
+      pregnant.fetuses.push(fetus);
+      notify.secondly = superfetation ? `${name}在妊娠中再度受精` : `${name}受精成功`;
+      eggs -= 1;
+    }
+    break;
+  }
+  return eggs;
+}
+
+/**
+ * 把新胚胎标成异期胎：记下受精当下的共用时钟、标为待着床、按落后进度打胎重折扣。
+ *
+ * 胎重折扣取 (1 − 落后 / 280)²。平方是因为生长亏损是复利而不是等差：
+ * 线性版本在视窗上限只掉到 0.70，平方版本落到 0.49，符合「落后一整个孕早期
+ * 大约只有一半重」的直觉。这是乘在 getConceptionWeight 既有的四个乘数之上，
+ * 种族混血偏移（weightRatio）照常生效；两者都不利时会撞到 0.33 的地板。
+ */
+function markSuperfetationFetus(profile, fetus) {
+  const pregnant = profile.pregnant || {};
+  const conceivedAt = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+  const lag = Math.min(conceivedAt / SUPERFETATION_FULL_TERM_DAYS, 1);
+  fetus.conceivedAtDays = conceivedAt;
+  fetus.pendingImplantation = true;
+  fetus.tags = sanitizeFetusTagList([...(fetus.tags || []), 'superfetation']);
+  fetus.weight = clampNumber(fetus.weight * ((1 - lag) ** 2), 0.33, 3.0, 1.0);
+}
+
+/**
+ * 待着床的异期胚胎。刻意不重用一般的着床区块——那一段成功时会把阶段设成孕早期、
+ * 重设两个孕龄时钟、重置羊膜耐久、并多记一次怀孕经验，等于把先来那胎的妊娠整个洗掉；
+ * 失败时更会 pregnant.fetuses = [] 把既有胎儿一起清空。
+ *
+ * 这里只做属于新胚胎自己的事：倒数、着床成败、分裂与融合都只作用於本批。
+ */
+/**
+ * 异期胎的揭晓。在此之前它在状态里照常存在、照常发育，只是提示词投影与追踪页
+ * 都看不到它——角色本人还不知道自己怀了两胎。隐藏期间它仍然吃供养力，
+ * 所以模型会看到「负担莫名偏高」，那是伏笔而不是穿帮。
+ */
+function revealSuperfetationFetuses(profile, name, notify, { force = false } = {}) {
+  const pregnant = profile.pregnant || {};
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const shared = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+  if (!force && shared < SUPERFETATION_REVEAL_DAYS) return false;
+  let revealed = 0;
+  for (const fetus of fetuses) {
+    if (!fetus?.conceivedAtDays || fetus.revealed || fetus.pendingImplantation) continue;
+    fetus.revealed = true;
+    revealed += 1;
+  }
+  if (revealed > 0 && notify) {
+    notify.firstly = `${name}被检查出体内另有 ${revealed} 胎，孕龄与先来者并不一致`;
+  }
+  return revealed > 0;
+}
+
+function processSuperfetationImplantation(profile, tick, notify, name) {
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const stage = String(base.stage || '');
+  if (!isTruePregnancyStage(stage)) return;
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const pending = fetuses.filter((fetus) => fetus?.pendingImplantation);
+  if (pending.length === 0) return;
+
+  // 还没着床就撞上孕中期：一律清掉。着床太晚本来就该失败，
+  // 也顺带保证不会有未着床的胚胎活到分娩变成孩子。
+  if (stage !== SUPERFETATION_STAGE) {
+    pregnant.fetuses = fetuses.filter((fetus) => !fetus?.pendingImplantation);
+    pregnant.fetusesCount = pregnant.fetuses.length;
+    base.fertilizationDays = 0;
+    notify.secondly = `${name}体内新的受精卵未能著床`;
+    updateFetalEnergyDrain(profile);
+    return;
+  }
+
+  // 妊娠期间 base.fertilizationDays 是闲置的（一般着床区块两条分支都要求
+  // !isPregnancyStage），借来当这一批的倒数
+  base.fertilizationDays = clampNumber(base.fertilizationDays, 0, 9999, 0) + tick.deltaDays;
+  if (base.fertilizationDays < getImplantationDays(profile)) return;
+
+  const vitality = clampNumber(base.vitality, 0, 200, 100);
+  const implantationFailChance = vitality < 100 ? (100 - vitality) / 100 : 0;
+  base.fertilizationDays = 0;
+  if (Math.random() < implantationFailChance) {
+    // 只移除本批，先来那胎不受影响
+    pregnant.fetuses = fetuses.filter((fetus) => !fetus?.pendingImplantation);
+    pregnant.fetusesCount = pregnant.fetuses.length;
+    notify.secondly = `${name}体内新的受精卵著床失败`;
+    updateFetalEnergyDrain(profile);
+    return;
+  }
+
+  for (const fetus of pending) delete fetus.pendingImplantation;
+  applyIdenticalSplit(profile, pending);
+  resolvePendingChimeraGenders(pending);
+  pregnant.fetusesCount = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.length : 0;
+  updateFetalEnergyDrain(profile);
+}
+
 function processSimpleConception(profile, tick, notify, name) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
@@ -1817,39 +2042,24 @@ function processSimpleConception(profile, tick, notify, name) {
       base.eggs = Math.max(0, clampNumber(base.eggs, 0, 99, 0) - fullDays);
     }
 
-    const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
-    const availableSperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
-    let eggs = clampNumber(base.eggs, 0, 99, 0);
-    const femaleDifficulty = clampNumber(profile?.bio?.impregnationDifficulty, 0.1, 100, 1.0);
-
-    while (eggs > 0 && availableSperms.length > 0) {
-      const totalSperm = availableSperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
-      let winner = null;
-      for (const sperm of availableSperms) {
-        const share = totalSperm > 0 ? clampNumber(sperm?.value, 0, 999999, 0) / totalSperm : 0;
-        const maleDifficulty = clampNumber(getMergedRacePhysiologyProfile(sperm?.race)?.impregnationDifficulty, 0.1, 100, 1.0);
-        const isSameRace = isSameRaceGroup(profile?.base?.race, sperm?.race);
-        let effectiveDifficulty = isSameRace ? femaleDifficulty : (femaleDifficulty + maleDifficulty);
-        const femaleEmbryoType = deriveFetusEmbryoType(profile?.base?.race);
-        const maleEmbryoType = deriveFetusEmbryoType(sperm?.race);
-        if (femaleEmbryoType !== maleEmbryoType) effectiveDifficulty *= 1.5;
-        const spermBaseChance = Math.max(0.001, Math.min(0.8, (deltaDays * 12 * 0.5) / effectiveDifficulty));
-        const spermChance = Math.max(0.001, Math.min(0.8, spermBaseChance * share));
-        if (Math.random() <= spermChance) {
-          winner = sperm;
-          break;
-        }
-      }
-      if (winner) {
-        pregnant.fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-        pregnant.fetuses.push(createSimpleFetus(profile, winner, stage));
-        notify.secondly = `${name}受精成功`;
-        eggs -= 1;
-      }
-      break;
+    base.eggs = attemptFertilization(profile, { deltaDays, stage, name, notify });
+  } else if (stage === SUPERFETATION_STAGE) {
+    // 异期复孕。卵不是这里排的——高潮排卵本来就不挡妊娠，而孕期中卵子既不衰减
+    // 也不清除，所以「这个周期没用掉的排卵留到孕早期」是现成行为，不必新增。
+    // 这里只把受精那一步的闸门打开，并按进度压低机率：越晚越难，视窗末端归零。
+    const windowDays = getSuperfetationWindowDays(profile);
+    const conceivedAt = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+    if (windowDays > 0 && conceivedAt < windowDays) {
+      const decay = 1 - (conceivedAt / windowDays);
+      base.eggs = attemptFertilization(profile, {
+        deltaDays, stage, name, notify,
+        chanceFactor: SUPERFETATION_CHANCE_FACTOR * decay,
+        superfetation: true,
+      });
     }
-    base.eggs = eggs;
   }
+
+  processSuperfetationImplantation(profile, tick, notify, name);
 
   const hasPreimplantationEmbryos = !isPregnancyStage(stage)
     && Array.isArray(pregnant.fetuses)
@@ -2824,6 +3034,8 @@ function applyChildbirthInternal(profile, female, isNatural) {
   const pregnant = profile.pregnant || {};
   const base = profile.base || {};
   const notify = profile.notify || {};
+  // 生出来了就没有藏的余地
+  revealSuperfetationFetuses(profile, female, null, { force: true });
   const experience = profile.experience || {};
   const runtime = profile.__runtimeRef || null;
   const remainingFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((item) => ({ ...item })) : [];
@@ -3643,8 +3855,7 @@ function applyChildbirth(chatState, args) {
 
   const next = cloneValue(character);
   const profile = next.profile || {};
-  const fetuses = Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : [];
-  if (fetuses.length === 0) {
+  if (getImplantedFetuses(profile).length === 0) {
     return { applied: false, message: `bsChildbirth skipped for ${female}: no fetuses.` };
   }
   const childbirthStage = String(profile?.base?.stage || '');
@@ -3690,8 +3901,8 @@ function applyLaborResistance(profile, female) {
     if (passed) successCount += 1;
     else failureCount += 1;
 
-    if (fetuses.length > 0) {
-      const randomFetusIndex = randomInt(0, fetuses.length - 1);
+    const randomFetusIndex = pickImplantedFetusIndex(fetuses);
+    if (randomFetusIndex >= 0) {
       const fetus = fetuses[randomFetusIndex];
       const currentAngle = Number.isFinite(Number(fetus?.tendencyAngle))
         ? Number(fetus.tendencyAngle)
@@ -3827,7 +4038,8 @@ function applyMaternalFetalInteraction(chatState, args) {
 
   const cooldown = profile.cooldown || {};
   if (direction === 'maternal') {
-    const selectedIndex = randomInt(0, fetuses.length - 1);
+    const selectedIndex = pickImplantedFetusIndex(fetuses);
+    if (selectedIndex < 0) return { applied: false, message: 'bsMaternalFetalInteraction skipped: 没有已著床的胎儿。' };
     const selectedFetus = fetuses[selectedIndex];
     const maternalChangeKeys = Object.keys(changeMap);
     const maternalChange = maternalChangeKeys[randomInt(0, maternalChangeKeys.length - 1)];
@@ -3877,7 +4089,8 @@ function applyMaternalFetalInteraction(chatState, args) {
   if (changeValue === undefined) {
     return { applied: false, message: `bsMaternalFetalInteraction skipped for ${female}: direction=fetal requires a valid change.` };
   }
-  const selectedIndex = randomInt(0, fetuses.length - 1);
+  const selectedIndex = pickImplantedFetusIndex(fetuses);
+  if (selectedIndex < 0) return { applied: false, message: 'bsMaternalFetalInteraction skipped: 没有已著床的胎儿。' };
   const selectedFetus = fetuses[selectedIndex];
   const currentAffinity = clampNumber(selectedFetus?.affinity, -50, 50, 0);
   selectedFetus.affinity = clampNumber(currentAffinity + changeValue, -50, 50, 0);
@@ -4106,6 +4319,7 @@ function applyTimeToCharacter(character, tick) {
       applyWeeklyNutrition(profile);
     }
     updateDerivedTypeProgress(profile, tick);
+    revealSuperfetationFetuses(profile, next.name, notify);
     const derived = derivePregnancyStageState(pregnant.effectivePregnantDays, 1);
     stage = derived.stage;
     days = derived.days;
@@ -4756,8 +4970,8 @@ function applyTrainSkill(chatState, args) {
   if (skillExp > 0 && FETAL_TALENT_TRANSFER_STAGES.has(stage)) {
     const pregnant = profile.pregnant || {};
     const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((fetus) => ({ ...fetus })) : [];
-    if (fetuses.length > 0) {
-      inheritedFetusIndex = randomInt(0, fetuses.length - 1);
+    inheritedFetusIndex = pickImplantedFetusIndex(fetuses);
+    if (inheritedFetusIndex >= 0) {
       const selectedFetus = fetuses[inheritedFetusIndex];
       const affinity = clampNumber(selectedFetus?.affinity, -50, 50, 0);
       inheritedExp = Math.round(skillExp * (Math.abs(affinity) / 50)) * Math.sign(affinity);
