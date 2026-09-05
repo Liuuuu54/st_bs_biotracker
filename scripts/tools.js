@@ -1102,12 +1102,17 @@ function getConceptionWeight(stage, gender, weightRatio = 1.0) {
  */
 const SUPERFETATION_STAGE = '孕早期';
 const SUPERFETATION_FULL_TERM_DAYS = 280;
-/** 孕早期长度，也就是可以再受精的原始视窗 */
-const SUPERFETATION_RAW_WINDOW_DAYS = 84;
+/** 孕早期长度，也就是可以再受精的原始视窗。从阶段表推导，别再写死一次 */
+const SUPERFETATION_RAW_WINDOW_DAYS = Number(PREGNANCY_STAGE_DAYS['孕早期']) || 84;
 /** 孕期受精的机率系数：正常受孕几乎是每天 80%，不压低的话异期会变成常态 */
 const SUPERFETATION_CHANCE_FACTOR = 0.10;
-/** 揭晓时机：妊娠期一半。在此之前模型与追踪页都看不到这一胎 */
-const SUPERFETATION_REVEAL_DAYS = 140;
+/**
+ * 揭晓时机：孕中期一开始，也就是孕早期结束的那一刻。
+ * 在此之前模型与追踪页都看不到这一胎。
+ * 这同时也是待著床胚胎被清除的时点——到了孕中期，没著床的没了，
+ * 著床了的当场揭晓，不会有「已经存在却还藏着」的中间地带。
+ */
+const SUPERFETATION_REVEAL_DAYS = SUPERFETATION_RAW_WINDOW_DAYS;
 
 /**
  * 受精视窗上限。不是整个孕早期——着床要花 getImplantationDays 个真实日，

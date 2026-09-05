@@ -128,14 +128,20 @@ test('揭晓之前模型与追踪页都看不到这一胎', () => {
   assert.equal(isFetusKnownToCharacter(lateFetus({ pendingImplantation: true })), false);
 });
 
-test('妊娠期一半揭晓，可见胎数才增加', () => {
-  const chatState = one({ stage: '孕中期' }, {
-    pregnantDays: 135, effectivePregnantDays: 135, fetusesCount: 2,
-    fetuses: [fetus(), lateFetus({ revealed: undefined })],
+test('进入孕中期才揭晓，可见胎数同时增加', () => {
+  // 停在孕早期末尾，晚到那胎已经著床但还没揭晓
+  const chatState = one({ stage: '孕早期' }, {
+    pregnantDays: 78, effectivePregnantDays: 78, fetusesCount: 2,
+    fetuses: [fetus(), lateFetus({ conceivedAtDays: 30, revealed: undefined })],
   });
+  step(chatState);
+  assert.equal(P(chatState).base.stage, '孕早期', '还在孕早期');
+  assert.equal(lateOf(chatState).revealed, undefined, '孕早期内不该揭晓');
   assert.equal(P(chatState).pregnant.fetuses.filter(isFetusKnownToCharacter).length, 1, '揭晓前只看得到 1 胎');
-  while (P(chatState).pregnant.effectivePregnantDays < 141) step(chatState);
-  assert.equal(lateOf(chatState).revealed, true);
+
+  while (P(chatState).base.stage === '孕早期') step(chatState);
+  assert.equal(P(chatState).base.stage, '孕中期');
+  assert.equal(lateOf(chatState).revealed, true, '进入孕中期即揭晓');
   assert.equal(P(chatState).pregnant.fetuses.filter(isFetusKnownToCharacter).length, 2, '揭晓后胎数才增加');
 });
 
