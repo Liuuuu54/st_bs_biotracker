@@ -70,7 +70,8 @@ import {
 export const TOOL_DEFINITIONS = Object.freeze([
   {
     name: 'bsPassedTime',
-    description: '推进当前聊天中已注册角色的时间。会处理月经阶段、受精着床、孕期推进、产兆前驱、第一至第三产程、产后恢复，以及最近性行为计时。',
+    description: '推进当前聊天中所有已注册角色的时间（不是单一角色）。会处理月经阶段、受精着床、孕期推进、产兆前驱、第一至第三产程、产后恢复，以及最近性行为计时。'
+      + '各单位可同时给，会相加（如 day:1 与 hour:12 等于 1.5 天）。只能往前推：不给任何单位、或给负数都会被拒绝，时间无法倒退。',
     input_schema: {
       type: 'object',
       properties: {
@@ -100,7 +101,9 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsUpdateCharacterStatus',
-    description: '对单一角色的活力、情压、性欲、宫压做增减更新。会联动代谢累积、高潮排卵、羊膜耐久警告等状态。',
+    description: '对单一角色的活力、情压、性欲、宫压做增减更新。会联动代谢累积、高潮排卵、羊膜耐久警告等状态。'
+      + '四个数值传入的都是「变化量(delta)」而不是目标值：当前 vitality=80 传 -10 会变成 70，不是设为 -10。'
+      + '结果会被夹在该角色的上限内，上限随其 vitalityLevel／psyStressLevel 与妊娠状态而不同，可从 existing_state 的 *_interpret 与上限文字判断，不必自行计算。',
     input_schema: {
       type: 'object',
       properties: {
@@ -222,14 +225,16 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsSetCharacterPresence',
-    description: '设置角色是否在场。设为 false 后，tracker 默认不会再把该角色完整状态发送给 LLM，直到重新设为 true。',
+    description: '设置角色是否在场。设为 false 后，tracker 默认不会再把该角色完整状态发送给 LLM，直到重新设为 true。'
+      + 'isPresent 必须显式传 true 或 false，省略会被拒绝——默认成在场会让漏填变成静默改状态。'
+      + '若该角色正因胎内回归被冻结在别人体内，设为 true 会一并解除冻结、恢复其阶段推进。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
         isPresent: { type: 'boolean' },
       },
-      required: ['female'],
+      required: ['female', 'isPresent'],
       additionalProperties: false,
     },
   },
@@ -261,7 +266,9 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsNameChild',
-    description: '给单一角色已出生的某个孩子命名。只修改 children 指定索引的 name，不触发额外规则。',
+    description: '给单一角色已出生的某个孩子命名。只修改 children 指定索引的 name，不触发额外规则。'
+      + 'childIndex 从 0 起算，对应 existing_state 里 children 数组的下标；越界会被拒绝。'
+      + '注意介面与叙事惯常说的「第一个孩子」是 childIndex=0。',
     input_schema: {
       type: 'object',
       properties: {
@@ -372,7 +379,10 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsSetMenstrualPhases',
-    description: '直接设置月经相关阶段，用于催情、药物、外力或剧情推进。切到排卵期时会重新允许高潮排卵；假孕期可留精但不会排卵或受孕。不会覆盖正在进行的受精、真妊娠、产兆前驱或产程。',
+    description: '直接设置月经相关阶段，用于催情、药物、外力或剧情推进。'
+      + 'stage 只接受这几个值：卵泡期、排卵期、黄体期、月经期、产后恢复、假孕期；其他值（含妊娠阶段与回归期）一律拒绝，无法用本工具让角色怀孕或结束妊娠。'
+      + '切到排卵期时会重新允许高潮排卵；假孕期可留精但不会排卵或受孕。'
+      + '角色体内已有胎儿或受精进行中，或正处于真妊娠、回归期、产兆前驱、产程时，本工具会被拒绝，不会覆盖这些状态。',
     input_schema: {
       type: 'object',
       properties: {
@@ -410,7 +420,10 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAbortion',
-    description: '终止当前受精或妊娠状态。月经阶段且着床前视为避孕成功，其他阶段视为流产；可指定 fetusIndex 做减胎。若 miscarriage 保护开启，则需 force=true 才会生效。',
+    description: '终止当前受精或妊娠状态。月经阶段且着床前视为避孕成功，其他阶段视为流产。'
+      + '可指定 fetusIndex 做减胎（只拿掉那一胎，其余继续）；fetusIndex 从 0 起算，越界会被拒绝——'
+      + '系统通知与介面说的「第 2 胎」对应 fetusIndex=1，不要直接照抄那个序号。省略 fetusIndex 则终止整个妊娠。'
+      + '若 miscarriage 保护开启，则需 force=true 才会生效。',
     input_schema: {
       type: 'object',
       properties: {
@@ -488,7 +501,8 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsChildbirth',
-    description: '让角色立即结束分娩并进入产后恢复，并把剩余胎儿转为 children 记录。外部直接调用视为手术产；产程自然结束时则记为自然产。',
+    description: '让角色立即结束分娩并进入产后恢复，并把剩余胎儿转为 children 记录。外部直接调用视为手术产；产程自然结束时则记为自然产。'
+      + '只有角色已着床进入妊娠阶段（孕早期起，含产兆前驱与各产程）才能调用；月经阶段、着床前、回归期都会被拒绝，此时不得叙述成已经生产。',
     input_schema: {
       type: 'object',
       properties: {
