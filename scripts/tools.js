@@ -2,6 +2,7 @@ import { sanitizeFetusTagList } from './fetus_tags.js';
 import {
   cloneValue,
   createChildId,
+  getContextSafe,
   derivePregnancyStageState,
   getGestationEffectiveSpeed,
   getGestationSpeciesSpeed,
@@ -624,6 +625,55 @@ const POSTPARTUM_START_WEAR_PRESSURE = 4;
  * 直接进孕早期的话，updateFetalEnergyDrain 会拿 3.0 的胎重去算供养力，
  * 变成一场怪物妊娠。
  */
+/**
+ * 工具参数里的人名允许直接写 ST 的 user 宏。这些名字会原样存进 sperms[*].male、
+ * fetuses[*].fathers、children[*].fathers，最后成为血缘图上的节点 id——
+ * 不解析的话族谱上会冒出一个叫「{{user}}」的人，而且同一个人写法不同就变成两个节点。
+ *
+ * 刻意只认完整的 user 别名，不跑 substituteParams：那会把任何含大括号的名字一起改写，
+ * 风险大于收益。
+ */
+const ST_USER_NAME_ALIASES = new Set(['user', '{user}', '{{user}}', '<user>']);
+const PERSON_NAME_ARG_KEYS = ['female', 'male', 'provider', 'fathers', 'returner'];
+
+function resolveUserAliasName(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw || !ST_USER_NAME_ALIASES.has(raw.toLowerCase())) return null;
+  const userName = String(getContextSafe()?.name1 || '').trim();
+  return userName || null;
+}
+
+function resolvePersonNameField(value) {
+  if (typeof value !== 'string') return value;
+  const whole = resolveUserAliasName(value);
+  if (whole) return whole;
+  // 嵌合体的双父源写成 "A × B"。只按全角 × 拆——lineage 读取时也接受拉丁 x，
+  // 但拿它来改写会把 Max 这种名字切坏，宁可漏解析也不要毁掉名字。
+  if (!value.includes('×')) return value;
+  const parts = value.split('×');
+  let changed = false;
+  const next = parts.map((part) => {
+    const resolved = resolveUserAliasName(part);
+    if (resolved) { changed = true; return resolved; }
+    return part.trim();
+  });
+  return changed ? next.filter(Boolean).join(' × ') : value;
+}
+
+function resolvePersonNameArgs(args) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
+  let changed = false;
+  const next = { ...args };
+  for (const key of PERSON_NAME_ARG_KEYS) {
+    const resolved = resolvePersonNameField(next[key]);
+    if (resolved !== next[key]) {
+      next[key] = resolved;
+      changed = true;
+    }
+  }
+  return changed ? next : args;
+}
+
 /** 已经警告过的未知阶段，避免每次推进都刷一次 console */
 const reportedUnknownStages = new Set();
 
@@ -5286,7 +5336,7 @@ function applyDebugSetProdromal(chatState, args) {
 
 export function applyToolCall(chatState, call) {
   const name = String(call?.name || '').trim();
-  const args = normalizeToolCallArguments(call?.arguments);
+  const args = resolvePersonNameArgs(normalizeToolCallArguments(call?.arguments));
   if (!name) return { applied: false, message: 'Empty tool call name.' };
   if (WOMB_FROZEN_BLOCKED_TOOLS.has(name)) {
     const target = String(args?.female || '').trim();
