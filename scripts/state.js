@@ -167,7 +167,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   model: 'gpt-4.1-mini',
   modelOptions: [],
   formattedOutputV4: true,
-  mvuExtraAnalysisCompat: true,
   raceCatalogInPrompt: true,
   triggerTiming: 'after_ai',
   pollMs: 1800,

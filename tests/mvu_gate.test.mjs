@@ -28,7 +28,7 @@ function makeCtx(overrides = {}) {
 }
 
 function makeSettings(overrides = {}) {
-  return { mvuExtraAnalysisCompat: true, ...overrides };
+  return { ...overrides };
 }
 
 function makeMvuSettings(overrides = {}) {
@@ -75,13 +75,15 @@ test('MVU 更新方式为随AI输出时不等待', () => {
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
 });
 
-test('关闭兼容开关后即使 MVU 配置了额外解析也不等待', () => {
+test('兼容开关已移除：即使存档里残留关闭值，门控依然恒等待', () => {
   resetGate();
+  setDuring(false);
   const ctx = makeCtx({
     extensionSettings: { mvu_settings: makeMvuSettings() },
   });
-  assert.equal(isMvuExtraAnalysisEnabled(ctx, makeSettings({ mvuExtraAnalysisCompat: false })), false);
-  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings({ mvuExtraAnalysisCompat: false })), false);
+  // 旧存档的 mvuExtraAnalysisCompat: false 已不再被读取，恒开启
+  assert.equal(isMvuExtraAnalysisEnabled(ctx, makeSettings({ mvuExtraAnalysisCompat: false })), true);
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings({ mvuExtraAnalysisCompat: false })), true);
 });
 
 test('额外模型解析未开启自动请求时视为不等待', () => {

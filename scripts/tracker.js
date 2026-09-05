@@ -152,8 +152,7 @@ export function getMvuSettings(ctx) {
   return null;
 }
 
-export function isMvuExtraAnalysisEnabled(ctx, settings) {
-  if (settings.mvuExtraAnalysisCompat === false) return false;
+export function isMvuExtraAnalysisEnabled(ctx, _settings) {
   const mvuSettings = getMvuSettings(ctx);
   if (!mvuSettings) return false;
   if (mvuSettings.更新方式 !== '额外模型解析') return false;
@@ -280,8 +279,7 @@ export function installMvuFetchHook() {
   mvuGateState.fetchHooked = true;
 }
 
-export function shouldWaitForMvuExtraAnalysis(ctx, settings) {
-  if (settings.mvuExtraAnalysisCompat === false) return false;
+export function shouldWaitForMvuExtraAnalysis(ctx, _settings) {
   const chat = getHostChat(ctx);
   const last = chat[chat.length - 1];
   // after_user 等时机下 MVU 的解析早已完成，无需等待
