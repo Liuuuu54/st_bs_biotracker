@@ -853,6 +853,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- pregnant.fetusesCount: 这次怀孕的怀胎数',
     '- pregnant.fetuses: 每个胎儿包含 fathers、provider、race、gender、embryoType；也可填写 weight、tendencyAngle、affinity',
     '- 胎儿可带 tags 标注特殊来历，只接受这几个：identical（同卵）、superfetation（异期复孕）、nested（孕中孕）、rebirth（胎内回归）。代孕不必标——给了 provider 就会自动识别。写不出对应支撑栏位的标签会被撤销，宁可不标也不要留一个指向虚空的关系。',
+    '- 嵌合体不必标 tags——给了 chimera 就会自动识别。chimera = { sourceCount: 融合前的受精卵数, fatherSources: [父方名字…], maternalSources: [遗传母方名字…], genderSources: [各来源的性别…] }；父方与母方名字加起来不足两个会被撤销，因为那不成其为嵌合。',
     '- identical：同卵的几胎都标上即可，系统会自动把它们归为同一组；只标一胎会被撤销。',
     '- superfetation：必须一并给 conceivedAtDays（这一胎受精时，母体已经怀了多少有效孕日），会被夹进这次妊娠的范围内。它比同腹其他胎儿晚受精、发育落后。',
     '- nested：这一胎长在另一颗胎儿体内。除了 conceivedAtDays，还要给 nestedInIndex＝宿主在 fetuses 阵列里的下标（从 0 起算，不能指自己）。它的母亲是那颗胎儿，出生后承载者会同时生下女儿与外孙。',
@@ -1043,6 +1044,21 @@ function pickObjectFields(value, allowedFields) {
   return result;
 }
 
+/**
+ * 嵌合体的三组来源阵列。空的来源等于没有嵌合——只留一个来源的嵌合体是自相矛盾的，
+ * 与其留半套资料让族谱画出残缺的边，不如整个撤掉。
+ */
+function sanitizeChimera(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const list = (input) => (Array.isArray(input) ? input.map((item) => String(item || '').trim()).filter(Boolean) : []);
+  const fatherSources = list(value.fatherSources);
+  const maternalSources = list(value.maternalSources);
+  const genderSources = list(value.genderSources);
+  if (fatherSources.length + maternalSources.length < 2) return undefined;
+  const sourceCount = Math.max(2, Math.floor(Number(value.sourceCount)) || Math.max(fatherSources.length, maternalSources.length, 2));
+  return { sourceCount, fatherSources, maternalSources, genderSources };
+}
+
 function sanitizeChildren(value) {
   if (!Array.isArray(value)) return [];
   return value
@@ -1118,6 +1134,8 @@ function sanitizePregnant(value) {
           fatherDerivedType: item.fatherDerivedType ?? parsed.derivedType ?? null,
           gender: item.gender ?? null,
           embryoType: item.embryoType ?? null,
+          // 嵌合体：多套来源无法从别处推导，模型不给就等于没有这回事
+          chimera: sanitizeChimera(item.chimera),
           maternalDerivedTypeProgress: Number.isFinite(Number(item.maternalDerivedTypeProgress)) ? clampNumber(item.maternalDerivedTypeProgress, -100, 100, 0) : undefined,
           weight: Number.isFinite(Number(item.weight)) ? clampNumber(item.weight, 0.33, 3.0, 1.0) : undefined,
           tendencyAngle: Number.isFinite(Number(item.tendencyAngle)) ? clampNumber(item.tendencyAngle, 0, 360, 0) : undefined,
@@ -1190,6 +1208,68 @@ function deriveRegisteredFetusRace(motherRace, fatherRace) {
     if (!unique.includes(part)) unique.push(part);
   }
   return unique.join('x');
+}
+
+/**
+ * 玩家在注册页勾选的特殊胎儿来历。
+ *
+ * 分两条路走，因为这几种来历需要的资料量差很多：
+ * - 只需要一个名字的（胎内回归、代孕／托卵）走硬套：玩家填名字，程式直接写进结果，
+ *   不依赖模型愿不愿意照做。
+ * - 需要模型编出胎儿结构的（嵌合、同卵、异期复孕、孕中孕）走提示：勾了就往注册提示词里
+ *   加一段明确指示。玩家的勾选没办法凭空生出两个真实的血统来源，硬套只会造出假资料。
+ *
+ * 两条路最后都会流经 normalizeRegisteredFetusTags，所以不管走哪条都不会留下自相矛盾的状态。
+ */
+export const SPECIAL_FETUS_HINTS = {
+  chimera: '这次妊娠里要有一颗嵌合体胎儿：两颗以上的受精卵在著床前融合成一个个体。请给它 chimera = { sourceCount, fatherSources, maternalSources, genderSources }，来源名字要取自角色卡里真实存在的人，父方与母方名字合计至少两个。',
+  identical: '这次妊娠里要有一对同卵双胞胎：至少两颗胎儿都标上 tags: ["identical"]，两者的 fathers 与 race 必须一致。',
+  superfetation: '这次妊娠里要有一颗异期复孕的胎儿：它在母体已经怀孕之后才受精。给它 tags: ["superfetation"] 与 conceivedAtDays（受精当下母体已怀的有效孕日，必须小于目前孕龄），它比同腹其他胎儿发育落后。',
+  nested: '这次妊娠里要有一颗孕中孕的胎儿：它长在另一颗胎儿体内。给它 tags: ["nested"]、conceivedAtDays，以及 nestedInIndex＝宿主在 fetuses 阵列里的下标。宿主本身必须是一颗正常胎儿。',
+};
+
+/** 勾选转成追加给模型的指示；没勾任何一项时回传空字串 */
+export function buildSpecialFetusNotes(request) {
+  if (!request || typeof request !== 'object') return '';
+  const lines = [];
+  const rebirth = String(request.rebirth || '').trim();
+  if (rebirth) {
+    lines.push('这次妊娠里要有一颗胎内回归的胎儿：' + rebirth + ' 这个人已经回到子宫里成为其中一胎，请把这一胎的 fathers 写成「' + rebirth + '」并标上 tags: ["rebirth"]。');
+  }
+  const surrogacy = String(request.surrogacy || '').trim();
+  if (surrogacy) {
+    lines.push('这次妊娠是代孕／托卵：卵来自 ' + surrogacy + '，承载者只提供子宫、不是遗传母亲。请把这一胎的 provider 写成「' + surrogacy + '」。');
+  }
+  for (const key of Array.isArray(request.hints) ? request.hints : []) {
+    if (SPECIAL_FETUS_HINTS[key]) lines.push(SPECIAL_FETUS_HINTS[key]);
+  }
+  if (lines.length === 0) return '';
+  return ['【特殊胎儿来历】使用者已指定以下设定，请务必在 pregnant.fetuses 里实现：']
+    .concat(lines.map((line) => '- ' + line))
+    .join('\n');
+}
+
+/**
+ * 硬套只需要一个名字的两类来历。
+ *
+ * 只在模型真的产出了胎儿时才动手：没有妊娠却硬塞一胎，就得连孕龄、种族、胚胎型态一起编，
+ * 那已经不是「确保玩家的勾选生效」而是伪造资料了。产不出来时留给呼叫端提醒玩家。
+ */
+export function applyRequestedSpecialFetus(result, request) {
+  if (!request || typeof request !== 'object') return false;
+  const rebirth = String(request.rebirth || '').trim();
+  const surrogacy = String(request.surrogacy || '').trim();
+  if (!rebirth && !surrogacy) return false;
+  const fetuses = result?.profile?.pregnant?.fetuses;
+  if (!Array.isArray(fetuses)) return false;
+  const target = fetuses.find((item) => item && typeof item === 'object');
+  if (!target) return false;
+  if (rebirth) {
+    target.fathers = rebirth;
+    target.tags = sanitizeFetusTagList((Array.isArray(target.tags) ? target.tags : []).concat('rebirth'));
+  }
+  if (surrogacy) target.provider = surrogacy;
+  return true;
 }
 
 /**
@@ -1826,7 +1906,10 @@ export async function runRegistry(ctx, options = {}) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const targetName = resolveRegistryTargetName(ctx, options.targetName);
-  const customNotes = String(options.customNotes !== undefined ? options.customNotes : (settings.registryCustomNotes || '')).trim();
+  // 玩家勾的特殊来历分两半：需要模型编出胎儿结构的走提示词，只需要名字的在结果回来后硬套
+  const specialFetus = options.specialFetus || null;
+  const baseNotes = String(options.customNotes !== undefined ? options.customNotes : (settings.registryCustomNotes || '')).trim();
+  const customNotes = [baseNotes, buildSpecialFetusNotes(specialFetus)].filter(Boolean).join('\n\n');
   if (!targetName) throw new Error('runRegistry 需要 targetName');
   const requestedSource = options.sourceChild || null;
   const sourceChildContext = requestedSource ? resolveRegistryChildSource(chatState, requestedSource) : null;
@@ -1900,6 +1983,7 @@ export async function runRegistry(ctx, options = {}) {
     // payload 里同时有角色卡与 target_character，模型常把角色卡名当成 name 回传，
     // 于是角色被注册成卡片名而不是输入的名字（重新注册一次又「好了」，其实只是这次没抽到）。
     result.name = targetName;
+    applyRequestedSpecialFetus(result, specialFetus);
     recordRegistryResultDebug(result);
     let character = applyRegistryResult(chatState, result, { allowBreedingPsychology: includeBreedingPsychology });
     if (sourceChildContext) character = applyRegistryChildInheritance(chatState, targetName, requestedSource).character;

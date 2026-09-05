@@ -913,6 +913,46 @@ function renderRegisterChildSourceOptions(ctx) {
   syncRegisterChildSourceFields(ctx);
 }
 
+/**
+ * 注册页「特殊胎儿来历」的勾选。
+ *
+ * 两个名字栏走硬套、四个勾选走提示词，差别在 registry.js 那侧处理；这里只负责收集。
+ * 全空时回传 null，让注册路径跟以前完全一样，不多塞任何提示词。
+ */
+function getSpecialFetusRequest() {
+  const rebirth = String(document.getElementById('bs-bt-special-rebirth')?.value || '').trim();
+  const surrogacy = String(document.getElementById('bs-bt-special-surrogacy')?.value || '').trim();
+  const hints = Array.from(document.querySelectorAll('[data-special-hint]'))
+    .filter((input) => input.checked)
+    .map((input) => String(input.getAttribute('data-special-hint') || ''))
+    .filter(Boolean);
+  if (!rebirth && !surrogacy && hints.length === 0) return null;
+  return { rebirth, surrogacy, hints };
+}
+
+/** 注册完成后回头看勾的特殊来历有没有真的落到胎儿身上，没有就回一句提醒 */
+function describeMissingSpecialFetus(request, character) {
+  if (!request) return '';
+  const fetuses = character?.profile?.pregnant?.fetuses;
+  if (!Array.isArray(fetuses) || fetuses.length === 0) return '注意：本次注册没有产生妊娠，勾选的特殊胎儿来历未套用。';
+  const missing = [];
+  const has = (predicate) => fetuses.some(predicate);
+  if (request.rebirth && !has((item) => Array.isArray(item?.tags) && item.tags.includes('rebirth'))) missing.push('胎内回归');
+  if (request.surrogacy && !has((item) => String(item?.provider || '').trim())) missing.push('代孕／托卵');
+  const hintChecks = {
+    chimera: (item) => Boolean(item?.chimera),
+    identical: (item) => Array.isArray(item?.tags) && item.tags.includes('identical'),
+    superfetation: (item) => Array.isArray(item?.tags) && item.tags.includes('superfetation'),
+    nested: (item) => Array.isArray(item?.tags) && item.tags.includes('nested'),
+  };
+  const hintLabels = { chimera: '嵌合体', identical: '同卵双胞胎', superfetation: '异期复孕', nested: '孕中孕' };
+  for (const key of Array.isArray(request.hints) ? request.hints : []) {
+    if (hintChecks[key] && !has(hintChecks[key])) missing.push(hintLabels[key]);
+  }
+  if (missing.length === 0) return '';
+  return `注意：模型没有实现 ${missing.join('、')}，可重跑一次注册。`;
+}
+
 function getRegisterFormValues(ctx = getContextSafe()) {
   const sourceChildKey = String(document.getElementById('bs-bt-register-source')?.value || '');
   const rawTargetName = String(document.getElementById('bs-bt-register-name')?.value || '').trim();
@@ -921,6 +961,7 @@ function getRegisterFormValues(ctx = getContextSafe()) {
     rawTargetName,
     declaredRace: String(document.getElementById('bs-bt-register-race')?.value || '').trim(),
     customNotes: String(document.getElementById('bs-bt-register-custom-notes')?.value || '').trim(),
+    specialFetus: getSpecialFetusRequest(),
     breedingInferencePrompt: String(document.getElementById('bs-bt-breeding-inference-prompt')?.value || '').trim(),
     skillPrompt: String(document.getElementById('bs-bt-register-skill-prompt')?.value || '').trim(),
     sourceChildKey,
@@ -7248,7 +7289,7 @@ async function ensureModal(ctx) {
       globalThis.toastr?.info?.('[BS BioTracker] 注册请求正在进行中，请等待完成');
       return;
     }
-    const { targetName, declaredRace, customNotes, sourceChild } = getRegisterFormValues();
+    const { targetName, declaredRace, customNotes, sourceChild, specialFetus } = getRegisterFormValues();
     if (!targetName) {
       setRegisterStatus('请先输入要注册的角色名。', true);
       globalThis.toastr?.warning?.('[BS BioTracker] 请先输入角色名');
@@ -7269,7 +7310,7 @@ async function ensureModal(ctx) {
       ? `正在使用繁育推演注册 ${targetName}...`
       : `正在注册 ${targetName}...`);
     try {
-      const character = await runRegistry(ctx, { targetName, customNotes, declaredRace, breedingInference, sourceChild });
+      const character = await runRegistry(ctx, { targetName, customNotes, declaredRace, breedingInference, sourceChild, specialFetus });
       renderStatusPanel(ctx);
       renderFullStatePage(ctx);
       renderSkillCatalogPage(ctx);
@@ -7277,9 +7318,14 @@ async function ensureModal(ctx) {
       updateMainFlowPrompt(ctx);
       // 角色已经注册进去了，这份推演草稿才算用完，可以清空
       clearBreedingInferenceDraftFor(character.name);
-      setRegisterStatus(breedingInference
-        ? `注册完成：${character.name}（已套用繁育推演）。可继续备装或写日记。`
-        : `注册完成：${character.name}。可继续备装或写日记。`);
+      // 勾了特殊来历却没产生妊娠时要讲出来：默默当成功，玩家会以为设定生效了
+      const missingSpecial = describeMissingSpecialFetus(specialFetus, character);
+      setRegisterStatus([
+        breedingInference
+          ? `注册完成：${character.name}（已套用繁育推演）。可继续备装或写日记。`
+          : `注册完成：${character.name}。可继续备装或写日记。`,
+        missingSpecial,
+      ].filter(Boolean).join(' '));
       globalThis.toastr?.success?.(`[BS BioTracker] 已注册 ${character.name}`);
     } catch (error) {
       console.error('[BS BioTracker] runRegistry failed', error);

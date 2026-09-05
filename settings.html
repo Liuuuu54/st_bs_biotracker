@@ -401,6 +401,28 @@
                 <textarea id="bs-bt-registry-pregnant-description" class="text_pole bs-bt-textarea" rows="8"></textarea>
               </div>
 
+              <details class="settings_section bs-bt-special-fetus">
+                <summary>特殊胎儿来历（选填）</summary>
+                <small>只在这次注册确实会产生妊娠时才有意义。填了名字的两项由程式直接写入；其余四项会转成给模型的明确指示。</small>
+                <div class="bs-bt-special-fetus-grid">
+                  <label class="bs-bt-mini-field" for="bs-bt-special-rebirth">
+                    <span>胎内回归者</span>
+                    <input id="bs-bt-special-rebirth" class="text_pole" type="text" placeholder="回到子宫里的那个人（可填 user 名）" />
+                  </label>
+                  <label class="bs-bt-mini-field" for="bs-bt-special-surrogacy">
+                    <span>代孕／托卵的卵来源</span>
+                    <input id="bs-bt-special-surrogacy" class="text_pole" type="text" placeholder="提供卵的人；留空表示不是代孕" />
+                  </label>
+                </div>
+                <div class="bs-bt-special-fetus-hints">
+                  <label><input id="bs-bt-special-chimera" type="checkbox" data-special-hint="chimera" /><span>嵌合体</span></label>
+                  <label><input id="bs-bt-special-identical" type="checkbox" data-special-hint="identical" /><span>同卵双胞胎</span></label>
+                  <label><input id="bs-bt-special-superfetation" type="checkbox" data-special-hint="superfetation" /><span>异期复孕</span></label>
+                  <label><input id="bs-bt-special-nested" type="checkbox" data-special-hint="nested" /><span>孕中孕</span></label>
+                </div>
+                <small>这四项要靠模型编出胎儿结构（多套血统来源、宿主下标等），程式没办法凭空补齐，所以只能请它照做；若模型没照办，重跑一次注册即可。</small>
+              </details>
+
               <div class="settings_section bs-bt-action-row">
                 <button id="bs-bt-register-run" class="menu_button" type="button">注册当前角色</button>
               </div>

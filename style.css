@@ -4729,3 +4729,31 @@
     flex: 0 0 360px;
   }
 }
+
+/* 注册页的特殊胎儿来历：默认收合，因为注册不一定产生怀孕，多数时候用不到 */
+.bs-bt-special-fetus > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 0;
+}
+.bs-bt-special-fetus[open] > summary {
+  margin-bottom: 6px;
+}
+.bs-bt-special-fetus-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+.bs-bt-special-fetus-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px 0;
+}
+.bs-bt-special-fetus-hints label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
