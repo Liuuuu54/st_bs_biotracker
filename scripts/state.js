@@ -127,6 +127,16 @@ export function normalizeApiFormat(value) {
   return API_FORMATS.OPENAI_COMPAT;
 }
 
+// 思考强度（reasoning_effort）档位：'auto'（默认）与非法值都省略该参数、
+// 由服务端自定——即插件此前的原始行为，存量使用者零影响
+export const REASONING_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max', 'auto']);
+
+export function normalizeReasoningEffort(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (REASONING_EFFORTS.includes(raw)) return raw;
+  return 'auto';
+}
+
 export function getApiEndpointSuffix(format) {
   switch (normalizeApiFormat(format)) {
     case API_FORMATS.OPENAI_RESPONSES: return '/responses';
@@ -166,6 +176,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   apiKey: '',
   model: 'gpt-4.1-mini',
   modelOptions: [],
+  reasoningEffort: 'auto',
   formattedOutputV4: true,
   mvuExtraAnalysisCompat: true,
   raceCatalogInPrompt: true,
@@ -883,6 +894,11 @@ export function getSettings(ctx) {
   const normalizedApiFormat = normalizeApiFormat(settings.apiFormat);
   if (settings.apiFormat !== normalizedApiFormat) {
     settings.apiFormat = normalizedApiFormat;
+    shouldSave = true;
+  }
+  const normalizedReasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);
+  if (settings.reasoningEffort !== normalizedReasoningEffort) {
+    settings.reasoningEffort = normalizedReasoningEffort;
     shouldSave = true;
   }
   if (shouldSave) saveHostSettings(ctx);
