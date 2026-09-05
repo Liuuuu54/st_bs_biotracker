@@ -95,11 +95,18 @@ export function buildLineageGraph(chatState) {
       const childNode = nodes.get(childNodeId);
       childNode.childId = child.id ?? null;
 
-      // 母系：provider 存在代表 owner 只是承载者，遗传母是 provider
+      // 孕中孕：母亲是同胎次的另一个孩子（宿主胎儿），承载者只是承载。
+      // 这条边不能走名字——胎儿没有名字，靠出生时解析出来的 nestedInChildId 指过去。
+      // 母系：provider 存在代表 owner 只是承载者，遗传母是 provider。
+      // 这两个在下面算 extraSources 时还要用，宣告留在外层。
       const providerInfo = firstSource(child.providerSources, child.provider);
       const chimeraMaternal = firstSource(child.chimera?.maternalSources, '');
+      const nestedInChildId = String(child.nestedInChildId || '').trim();
       const geneticMother = providerInfo.first || chimeraMaternal.first;
-      if (geneticMother && geneticMother !== ownerName) {
+      if (nestedInChildId) {
+        edges.push({ from: `child:${nestedInChildId}`, to: childNodeId, type: 'mother' });
+        edges.push({ from: characterNodeId(ownerName), to: childNodeId, type: 'carrier' });
+      } else if (geneticMother && geneticMother !== ownerName) {
         const from = resolveParent(geneticMother);
         if (from) edges.push({ from, to: childNodeId, type: 'mother' });
         edges.push({ from: characterNodeId(ownerName), to: childNodeId, type: 'carrier' });

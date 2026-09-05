@@ -1115,6 +1115,42 @@ const SUPERFETATION_CHANCE_FACTOR = 0.10;
 const SUPERFETATION_REVEAL_DAYS = SUPERFETATION_RAW_WINDOW_DAYS;
 
 /**
+ * 孕中孕：异期受精的那一颗落进另一颗胎儿体内，成为胎中胎。
+ *
+ * 走的是同一条高潮排卵的异期受精路径，额外三个条件同时成立才会变成孕中孕。
+ * 三个都是硬筛子，不必再加机率系数：
+ *  - 视窗 8-12 周（有效孕日 56-84），比异期本身更窄
+ *  - 宿主胎儿的胎重 >= 1.5。典型胎重 0.95，孕期受精上限 1.83，
+ *    要父系种族支配度接近满才碰得到
+ *  - 子宫内精液总量 > 100。bsAddSperm 建议单次 10-30、每天衰减 10，
+ *    要短时间内多次性交才堆得起来
+ */
+const NESTED_WINDOW_MIN_DAYS = 56;
+const NESTED_HOST_MIN_WEIGHT = 1.5;
+const NESTED_MIN_SPERM = 100;
+/** 揭晓时机比一般异期胎晚得多：要到孕晚期才看得到 */
+const NESTED_REVEAL_DAYS = SUPERFETATION_RAW_WINDOW_DAYS + (Number(PREGNANCY_STAGE_DAYS['孕中期']) || 105);
+
+/**
+ * 挑一颗够大的胎儿当宿主：取最重的，同重时优先女胎。
+ * 只挑已著床的——待著床的胚胎自己都还没安顿好。
+ */
+function pickNestedHostFetus(profile) {
+  const candidates = getImplantedFetuses(profile)
+    .filter((fetus) => clampNumber(fetus?.weight, 0.33, 3.0, 1.0) >= NESTED_HOST_MIN_WEIGHT);
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, fetus) => {
+    const bestWeight = clampNumber(best?.weight, 0.33, 3.0, 1.0);
+    const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
+    if (weight > bestWeight) return fetus;
+    if (weight < bestWeight) return best;
+    // 同重时优先女胎
+    if (fetus?.gender === '女' && best?.gender !== '女') return fetus;
+    return best;
+  });
+}
+
+/**
  * 受精视窗上限。不是整个孕早期——着床要花 getImplantationDays 个真实日，
  * 视窗末尾受精的胚胎会来不及着床就撞上孕中期的强制清除，形成一段
  * 「受精看似成功、实则注定作废」的死区。把视窗提前关闭，死区由构造上消失。
@@ -1927,9 +1963,19 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
     if (winner) {
       pregnant.fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
       const fetus = createSimpleFetus(profile, winner, stage);
-      if (superfetation) markSuperfetationFetus(profile, fetus);
+      // 孕中孕：异期受精成立之后，再看三个额外条件同时成不成立
+      const conceivedAt = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+      const nestedHost = superfetation
+        && conceivedAt >= NESTED_WINDOW_MIN_DAYS
+        && totalSperm > NESTED_MIN_SPERM
+        ? pickNestedHostFetus(profile)
+        : null;
+      if (nestedHost) markNestedFetus(profile, fetus, nestedHost);
+      else if (superfetation) markSuperfetationFetus(profile, fetus);
       pregnant.fetuses.push(fetus);
-      notify.secondly = superfetation ? `${name}在妊娠中再度受精` : `${name}受精成功`;
+      notify.secondly = nestedHost
+        ? `${name}体内的一胎之中又结出了新的受精卵`
+        : (superfetation ? `${name}在妊娠中再度受精` : `${name}受精成功`);
       eggs -= 1;
     }
     break;
@@ -1971,10 +2017,12 @@ function revealSuperfetationFetuses(profile, name, notify, { force = false } = {
   const pregnant = profile.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const shared = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
-  if (!force && shared < SUPERFETATION_REVEAL_DAYS) return false;
   let revealed = 0;
   for (const fetus of fetuses) {
     if (!fetus?.conceivedAtDays || fetus.revealed || fetus.pendingImplantation) continue;
+    // 孕中孕藏得比一般异期胎久：要到孕晚期才看得到
+    const threshold = fetus.nestedInEmbryoId ? NESTED_REVEAL_DAYS : SUPERFETATION_REVEAL_DAYS;
+    if (!force && shared < threshold) continue;
     fetus.revealed = true;
     revealed += 1;
   }
@@ -2026,6 +2074,16 @@ function processSuperfetationImplantation(profile, tick, notify, name) {
   resolvePendingChimeraGenders(pending);
   pregnant.fetusesCount = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.length : 0;
   updateFetalEnergyDrain(profile);
+}
+
+/**
+ * 把新胚胎标成孕中孕：母方是宿主胎儿（用 embryoId 指过去，出生后再解析成孩子 id），
+ * 父方照常是精源。它同时也是异期胎，所以两个标签都带。
+ */
+function markNestedFetus(profile, fetus, host) {
+  markSuperfetationFetus(profile, fetus);
+  fetus.nestedInEmbryoId = host.embryoId;
+  fetus.tags = sanitizeFetusTagList([...(fetus.tags || []), 'nested']);
 }
 
 function processSimpleConception(profile, tick, notify, name) {
@@ -2979,6 +3037,12 @@ function appendChildrenFromFetuses(profile, fetuses) {
       chimera: fetus?.chimera ? cloneValue(fetus.chimera) : null,
       tags: sanitizeFetusTagList(fetus?.tags),
       identicalGroup: Number.isFinite(Number(fetus?.identicalGroup)) ? Number(fetus.identicalGroup) : null,
+      // 孕中孕：出生时把「宿主胎儿的 embryoId」换成宿主孩子的稳定 id。
+      // 产程是一胎一胎娩出的，宿主可能比被套的那胎晚出来，所以先记编号，
+      // 等两边都进了 children 再解析（linkNestedChildren）。
+      birthEmbryoId: Number.isFinite(Number(fetus?.embryoId)) ? Number(fetus.embryoId) : null,
+      nestedInEmbryoId: Number.isFinite(Number(fetus?.nestedInEmbryoId)) ? Number(fetus.nestedInEmbryoId) : null,
+      nestedInChildId: null,
       gender: String(fetus?.gender || '未知'),
       race: String(fetus?.race || '未知'),
       // 父系种族在胎儿上本来就有，此前分娩时被丢掉，血缘图便无从得知路人父亲的血统
@@ -2992,6 +3056,26 @@ function appendChildrenFromFetuses(profile, fetuses) {
     });
   }
   profile.children = children;
+  linkNestedChildren(profile);
+}
+
+/**
+ * 把孕中孕孩子的 nestedInEmbryoId 解析成宿主孩子的稳定 id。
+ * 从後往前找：embryoId 只在单次妊娠内唯一，跨胎次会重号，
+ * 而同一次分娩的两个孩子必定相邻，取最近的那个才对。
+ */
+function linkNestedChildren(profile) {
+  const children = Array.isArray(profile?.children) ? profile.children : [];
+  for (let index = children.length - 1; index >= 0; index -= 1) {
+    const child = children[index];
+    if (!child?.nestedInEmbryoId || child.nestedInChildId) continue;
+    for (let back = children.length - 1; back >= 0; back -= 1) {
+      if (back === index) continue;
+      if (children[back]?.birthEmbryoId !== child.nestedInEmbryoId) continue;
+      child.nestedInChildId = children[back].id || null;
+      break;
+    }
+  }
 }
 
 /**
@@ -3628,6 +3712,13 @@ function applyAbortion(chatState, args) {
 
   if (Number.isInteger(fetusIndex) && fetusIndex >= 0 && fetusIndex < fetuses.length) {
     const removedFetus = fetuses.splice(fetusIndex, 1)[0];
+    // 宿主没了，套在它体内的那一胎也活不下来
+    const removedEmbryoId = Number(removedFetus?.embryoId);
+    if (Number.isFinite(removedEmbryoId)) {
+      for (let index = fetuses.length - 1; index >= 0; index -= 1) {
+        if (Number(fetuses[index]?.nestedInEmbryoId) === removedEmbryoId) fetuses.splice(index, 1);
+      }
+    }
     pregnant.fetuses = fetuses;
     pregnant.fetusesCount = fetuses.length;
     profile.pregnant = pregnant;

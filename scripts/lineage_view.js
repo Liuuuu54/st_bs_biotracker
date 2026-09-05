@@ -70,7 +70,13 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
   }
 
   const byId = new Map(focused.nodes.map((node) => [node.id, node]));
-  const nameOf = (id) => byId.get(id)?.name || id;
+  // 无名的孩子也可能当亲代（孕中孕的母亲就是同胎的另一个孩子），
+  // 没有 fallback 的话关系栏会印出原始节点 id
+  const nameOf = (id) => {
+    const node = byId.get(id);
+    if (!node) return id;
+    return node.name || '未命名';
+  };
 
   /**
    * 同一对关系可能有多条边——自交时同一人既是母也是父，代孕时承载者与遗传母
