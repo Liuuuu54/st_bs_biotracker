@@ -473,7 +473,9 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + '\n该胎的母方为承载者、父方为 returner，种族照常混血，并带 rebirth 标签。'
       + 'returner 若是已注册角色，她的天赋会传给这一胎（技能不传），并且会被冻结：设为离场且停止一切阶段推进（她现在是一颗胎儿），'
       + '期间对她使用生理类工具一律无效；用 bsSetCharacterPresence 将她设回在场即可解除冻结。未注册的 returner 没有冻结这回事。'
-      + '\n在回归期内流产／堕胎视为回归失败，已注册的回归者会被排出并自动恢复原状；一旦转入孕早期即告成立，此后流产不再让她复原。',
+      + '\n回归期不受子宫压力影响，不会因宫压过高而自然流产；只有明确呼叫 bsAbortion 才会中断。'
+      + '\n在回归期内呼叫 bsAbortion 代表回归者被消化吸收：她不会被排出，已注册的角色维持冻结、并入承载者体内，承载者回到卵泡期。'
+      + '一旦转入孕早期，这一胎就是正常胎儿，此后流产按一般流产处理。',
     input_schema: {
       type: 'object',
       properties: {
@@ -3737,19 +3739,12 @@ function applyAbortion(chatState, args) {
     }
   }
 
-  // 回归期中断＝回归失败：把回归者放回来。她还没真正成为胎儿，
-  // 此时不放，角色就会永远冻结在离场状态。进入妊娠之后才算成立，那时不再回复。
-  const interruptedReturner = stage === WOMB_RETURN_STAGE
+  // 回归期中断＝没能成为胎儿，但她不会被吐回来：这一路走的是「消化吸收」，
+  // 回归者就此并入承载者，角色维持冻结、不恢复原状。
+  // 胎内回归本来就分两种玩法——重生与消化，中断这条正是后者。
+  const digestedReturner = stage === WOMB_RETURN_STAGE
     ? String(pregnant.wombReturn?.returner || '').trim()
     : '';
-  if (interruptedReturner && chatState.characters?.[interruptedReturner]) {
-    const restored = cloneValue(chatState.characters[interruptedReturner]);
-    restored.profile = restored.profile || {};
-    const restoredBase = { ...(restored.profile.base || {}), isHere: true };
-    delete restoredBase.wombReturnHost;
-    restored.profile.base = restoredBase;
-    chatState.characters[interruptedReturner] = restored;
-  }
 
   clearPregnancyState(profile);
   restorePregnancyPhysiology(profile, next.runtime || {});
@@ -3760,9 +3755,9 @@ function applyAbortion(chatState, args) {
     profile.notify = {
       ...notify,
       firstly: `${female}进入了卵泡期`,
-      secondly: interruptedReturner
-        ? `${interruptedReturner}的胎内回归失败，被排出并恢复原状`
-        : `${female}的胎内回归失败`,
+      secondly: digestedReturner
+        ? `${digestedReturner}在${female}体内被消化吸收，成了她的一部分`
+        : `${female}体内的回归者被消化吸收了`,
     };
   } else if (MENSTRUAL_STAGES.includes(stage)) {
     base.stage = '卵泡期';

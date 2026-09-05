@@ -223,21 +223,34 @@ test('hours=0 落在孕早期第一天，不是产科偏移的第 14 天', () =>
   assert.equal(profile.base.days, 1);
 });
 
-test('回归期中流产＝回归失败，回归者被放回来', () => {
+test('回归期中堕胎＝被消化吸收，回归者不会被吐回来', () => {
   const chatState = setup();
   call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 24 });
   assert.equal(returnerOf(chatState).base.isHere, false);
 
   const result = call(chatState, 'bsAbortion', { female: '艾拉' });
   assert.equal(result.applied, true, result.message);
-  assert.equal(returnerOf(chatState).base.isHere, true, '回归失败应恢复原状');
-  assert.equal(returnerOf(chatState).base.wombReturnHost, undefined);
+  assert.equal(returnerOf(chatState).base.isHere, false, '消化吸收后仍然离场');
+  assert.equal(returnerOf(chatState).base.wombReturnHost, '艾拉', '仍并在承载者体内');
   assert.equal(hostOf(chatState).base.stage, '卵泡期');
   assert.equal(hostOf(chatState).pregnant.fetuses.length, 0);
+  assert.match(String(hostOf(chatState).notify?.secondly || ''), /消化吸收/);
 
-  // 恢复后阶段推进也要跟着复原
+  // 冻结不解除：阶段仍然不推进
   call(chatState, 'bsPassedTime', { day: 1 });
-  assert.ok(returnerOf(chatState).base.days > 0);
+  assert.equal(returnerOf(chatState).base.days, 0);
+});
+
+test('回归期不会因宫压过高而自然流产', () => {
+  const chatState = setup();
+  call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 200 });
+  for (let i = 0; i < 80; i += 1) {
+    hostOf(chatState).base.uterinePressure = 999;
+    call(chatState, 'bsPassedTime', { hour: 1 });
+  }
+  assert.equal(hostOf(chatState).base.stage, '回归期', '宫压不该打断回归期');
+  assert.equal(hostOf(chatState).pregnant.fetuses.length, 1);
+  assert.equal(hostOf(chatState).experience?.miscarriageExperience || 0, 0);
 });
 
 test('已经进入妊娠之后流产，回归者不再复原', () => {

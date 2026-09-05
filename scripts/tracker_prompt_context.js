@@ -57,6 +57,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- isHere: 是否在场。false 时角色仍会随时间推进，但幕外角色只发送少量状态给你。',
   '- stage: 当前阶段。可能是月经阶段、妊娠阶段、假孕期、回归期、产兆前驱、第一/第二/第三产程、产后恢复、无经期、未激活。',
   '- 回归期：胎内回归的过渡阶段，由 bsWombReturn 产生。此期间衣着压力顶到上限、体内那一胎的胎重为上限 3.0，两者随 pregnant.wombReturn.remainingHours 归零而线性回落，之后自动转入孕早期。',
+  '- 回归期不受子宫压力影响，不会自然流产；此期间呼叫 bsAbortion 代表回归者被消化吸收、并入承载者，而不是被排出。',
   '- pregnant.wombReturn: 回归期的进度，含 returner（回归者名）、totalHours、remainingHours。不在回归期时不出现。',
   '- days: 当前阶段已经过了多少天，使用 0 起算的 elapsed/progress 语义；进入新阶段时为 0，超过该阶段上限后才切换下一阶段。',
   '- fertilizationDays: 受精后、着床前已经过的天数；着床等待期以 6 天为基础，并随角色实际月经周期长度等比缩放。',

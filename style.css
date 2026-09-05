@@ -990,15 +990,16 @@
   color: inherit;
 }
 
-/* 设置项下方的小字解释：宿主默认 small 是低对比灰，在浅色屏上几乎不可读；
-   统一用辅助文字色（各主题经 --bsbt-off-text 自适应）保证可读性 */
+/* 设置项下方的小字解释：宿主默认 small 是低对比灰，在浅色屏上几乎不可读，所以要覆盖。
+   跟随所在表面的文字色再降一点不透明度——不能用 --bsbt-off-text，那是关机层
+   （--bsbt-off-bg）的配套色，画在屏幕背景上会出现樱花主题的白字白底。 */
 #bs-biotracker-settings .settings_section small {
-  color: var(--bsbt-off-text);
+  color: inherit;
+  opacity: 0.85;
   font-size: 11.5px;
   line-height: 1.45;
   display: block;
   margin-top: 4px;
-  opacity: 0.95;
 }
 
 #bs-biotracker-settings .sysHR {
@@ -4765,17 +4766,21 @@
 .bs-bt-special-name {
   flex: 1 1 auto;
 }
+/* 一律吃继承来的文字颜色：13 套主题各有各的背景，任何写死的色相都可能在某一套里糊掉。
+   两种模式靠字重与边框粗细区分，不靠颜色。 */
 .bs-bt-special-mode {
   flex: 0 0 auto;
   font-size: 0.78em;
-  opacity: 0.75;
+  color: inherit;
+  opacity: 0.85;
   border: 1px solid currentColor;
   border-radius: 999px;
   padding: 0 7px;
   line-height: 1.6;
 }
 .bs-bt-special-mode[data-mode="hard"] {
-  color: var(--bsbt-accent, #7ea6d8);
+  font-weight: 600;
+  border-width: 2px;
 }
 .bs-bt-special-body {
   display: flex;
