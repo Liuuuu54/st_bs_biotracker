@@ -223,6 +223,19 @@
             </div>
 
             <div class="settings_section">
+              <label for="bs-bt-reasoning-effort">思考强度</label>
+              <select id="bs-bt-reasoning-effort" class="text_pole">
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">XHigh</option>
+                <option value="max">Max</option>
+                <option value="auto">Auto（自动）</option>
+              </select>
+              <small>reasoning_effort，随本插件设置保存。偏小尺寸的模型拉高思考强度有助于保证输出内容正确性。默认 Auto：不传输思考强度参数，由服务端自动决定。</small>
+            </div>
+
+            <div class="settings_section">
               <label style="display:flex;align-items:center;gap:8px;">
                 <input id="bs-bt-formatted-output-v4" type="checkbox" />
                 <span>格式化输出(v4兼容)</span>
