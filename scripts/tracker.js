@@ -423,13 +423,20 @@ function markHostGenerationEnd() {
 }
 
 function bumpHostMutSeq() {
+  // 先回填再自增：重载后「首次轮询（hydrate）之前就来了编辑事件」时，
+  // 不回填会把持久化的大计数覆成小值，令锚点比对失效、编辑被吞
+  const ctx = hostRunState.ctxRef;
+  let settings = null;
+  try {
+    settings = ctx ? getSettings(ctx) : null;
+    if (settings) hydrateHostMutSeq(settings);
+  } catch {}
   hostRunState.mutSeq += 1;
   // 立即持久化：编辑事件是低频人工操作，直接存不心疼；不存的话「编辑后未及
   // 保存就重载」会让下一会话的回填值偏小、编辑痕迹丢失
   try {
-    const ctx = hostRunState.ctxRef;
-    if (ctx) {
-      getSettings(ctx).hostMutSeqCounter = hostRunState.mutSeq;
+    if (settings && ctx) {
+      settings.hostMutSeqCounter = hostRunState.mutSeq;
       saveSettings(ctx);
     }
   } catch {}
@@ -455,6 +462,12 @@ export function installHostRunWatchers(ctx) {
     source.on(resolveHostEventName(ctx, 'GENERATION_ENDED', 'generation_ended'), markHostGenerationEnd);
     source.on(resolveHostEventName(ctx, 'MESSAGE_EDITED', 'message_edited'), bumpHostMutSeq);
     source.on(resolveHostEventName(ctx, 'MESSAGE_SWIPED', 'message_swiped'), bumpHostMutSeq);
+    // 酒馆助手 ts_edit / JS-Runner 等程序化编辑只发 MESSAGE_UPDATED（不发 EDITED），
+    // /role /name 与编辑取消也走这里：漏订会让「替换后脚本改正文」被当成替换吞掉。
+    // 取消编辑会误前进计数 → 该轮替换不被吸收、多追一次，方向安全。
+    // 宿主 setChatMessages(refresh:'affected') 只发 *_MESSAGE_RENDERED，替换写回
+    // 本身不会误触发本计数。
+    source.on(resolveHostEventName(ctx, 'MESSAGE_UPDATED', 'message_updated'), bumpHostMutSeq);
   } catch (error) {
     console.warn('[BS BioTracker] 無法訂閱宿主生成/編輯事件', error);
   }

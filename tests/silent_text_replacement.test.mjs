@@ -97,6 +97,7 @@ function makeCtx() {
       GENERATION_ENDED: 'generation_ended',
       MESSAGE_EDITED: 'message_edited',
       MESSAGE_SWIPED: 'message_swiped',
+      MESSAGE_UPDATED: 'message_updated',
     },
   };
   globalThis.SillyTavern = { getContext: () => ctx };
@@ -437,5 +438,42 @@ test('页面重载（计数归零）后手动编辑：持久化计数回填仍�
   await sleepPastSettle();
   await runTracker(ctx, deps, 'poll');
   assert.equal(counter.requests, 2, '重载后的编辑不得被静默吞掉');
+});
+
+test('ts_edit 形状的程序化编辑（只发 MESSAGE_UPDATED）：否决吸收，照常追踪', async () => {
+  const { ctx, counter } = makeCtx();
+  await runTracker(ctx, deps, 'manual');
+  counter.requests = 0;
+  await trackOneReply(ctx);
+  assert.equal(counter.requests, 1);
+
+  await sleep(20);
+  simulateReplacement(ctx.chat[2], '完整正文（变量渲染后）');
+  // 酒馆助手 ts_edit / JS-Runner 改正文：只发 message_updated，不发 message_edited
+  ctx.eventSource.emit('message_updated');
+  ctx.chat[2].mes = '完整正文（变量渲染后）+ 脚本改写';
+  await runTracker(ctx, deps, 'poll');
+  await sleepPastSettle();
+  await runTracker(ctx, deps, 'poll');
+  assert.equal(counter.requests, 2, 'MESSAGE_UPDATED 编辑必须同样否决吸收');
+});
+
+test('编辑事件先于任何轮询评估到达：hydrate 先行，持久化计数不被小值覆写', async () => {
+  const { ctx, settings } = makeCtx();
+  await runTracker(ctx, deps, 'manual');
+  // 先来一次编辑，让回执锚点的计数不为 0（hydrate 缺失时覆写 bug 才有鉴别力）
+  ctx.eventSource.emit('message_edited');
+  await trackOneReply(ctx);
+  const persistedAtReceipt = Number(settings.hostMutSeqCounter);
+  assert.ok(persistedAtReceipt >= 1, '回执应持久化非零计数');
+
+  // 模拟重载：内存归零、持久值保留；「首次轮询之前」来了编辑事件——
+  // bump 若不先 hydrate，会把持久值覆成 1，锚点比对（快照=持久值）随即失效
+  __hostRunStateForTest.mutSeq = 0;
+  ctx.eventSource.emit('message_edited');
+  assert.equal(__hostRunStateForTest.mutSeq, persistedAtReceipt + 1,
+    'bump 必须先回填持久计数再自增');
+  assert.equal(Number(settings.hostMutSeqCounter), persistedAtReceipt + 1,
+    '持久计数只前进不后退');
 });
 
