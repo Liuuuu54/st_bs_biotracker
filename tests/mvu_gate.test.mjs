@@ -1,4 +1,4 @@
-﻿// MVU 额外模型解析兼容门控测试：验证追踪请求在 MVU 变量更新结束前会被推迟。
+// MVU 额外模型解析兼容门控测试：验证追踪请求在 MVU 变量更新结束前会被推迟。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -6,6 +6,7 @@ import {
   __mvuGateStateForTest,
   getMainflowContextSnapshot,
   installMvuFetchHook,
+  installMvuGateListener,
   isMvuExtraAnalysisEnabled,
   isMvuExtraAnalysisRequest,
   shouldWaitForMvuExtraAnalysis,
@@ -27,7 +28,7 @@ function makeCtx(overrides = {}) {
 }
 
 function makeSettings(overrides = {}) {
-  return { mvuExtraAnalysisCompat: true, ...overrides };
+  return { ...overrides };
 }
 
 function makeMvuSettings(overrides = {}) {
@@ -45,7 +46,6 @@ function resetGate() {
   __mvuGateStateForTest.pendingKey = '';
   __mvuGateStateForTest.pendingContentKey = '';
   __mvuGateStateForTest.pendingSince = 0;
-  __mvuGateStateForTest.announcedChatKey = '';
   // fetchHooked/eventInstalled 不重置：钩子只装一次，避免嵌套包装
   __mvuGateStateForTest.generateInFlight = 0;
   __mvuGateStateForTest.lastGenerateStartedAt = 0;
@@ -75,13 +75,15 @@ test('MVU 更新方式为随AI输出时不等待', () => {
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
 });
 
-test('关闭兼容开关后即使 MVU 配置了额外解析也不等待', () => {
+test('兼容开关已移除：即使存档里残留关闭值，门控依然恒等待', () => {
   resetGate();
+  setDuring(false);
   const ctx = makeCtx({
     extensionSettings: { mvu_settings: makeMvuSettings() },
   });
-  assert.equal(isMvuExtraAnalysisEnabled(ctx, makeSettings({ mvuExtraAnalysisCompat: false })), false);
-  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings({ mvuExtraAnalysisCompat: false })), false);
+  // 旧存档的 mvuExtraAnalysisCompat: false 已不再被读取，恒开启
+  assert.equal(isMvuExtraAnalysisEnabled(ctx, makeSettings({ mvuExtraAnalysisCompat: false })), true);
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings({ mvuExtraAnalysisCompat: false })), true);
 });
 
 test('额外模型解析未开启自动请求时视为不等待', () => {
@@ -435,4 +437,97 @@ test('mainflow 状态 JSON 转义闭合标签与换行（安全审查 P1 注入�
   // 包裹标签本身仍在（转义只作用于 JSON 内容，不破坏结构）
   assert.ok(prompt.includes('<bs_biotracker>'), '起始包裹标签应保留');
   assert.ok(prompt.trimEnd().endsWith('</bs_biotracker>'), '结束包裹标签应保留在末尾');
+});
+
+// ---- TT 实测两分钟延迟的回归点 ----
+// 数据库正文替换/填表的请求体嵌着含 <UpdateVariable>、json_patch 字样的正文，
+// 会被 fetch 特征误命中。新版 MVU 有 isDuringExtraAnalysis 全局权威时，门控
+// 不得再采信特征计数，否则追踪会串行等完数据库整条后处理管线。
+test('MVU 全局可得时不采信 fetch 特征在飞（正文替换/填表误命中不连锁）', () => {
+  resetGate();
+  setDuring(false); // 全局权威：本轮 MVU 解析已经结束
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  __mvuGateStateForTest.generateInFlight = 5; // 数据库请求被特征误命中
+  // 首次评估进入宽限期等待（此时还没有任何结束信号）
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  __mvuGateStateForTest.pendingSince = Date.now() - MVU_EXTRA_WAIT_GRACE_MS - 1000;
+  assert.equal(
+    shouldWaitForMvuExtraAnalysis(ctx, settings),
+    false,
+    '全局说不忙就放行，不能被误命中的特征计数拖到 120 秒上限',
+  );
+});
+
+test('替换改写不重启宽限：等待起点保持，宽限到期即放行', () => {
+  resetGate();
+  setDuring(false);
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  const pendingSince = __mvuGateStateForTest.pendingSince;
+  // 正文替换落库：同楼层改写 + 戳记晚于等待起点
+  const tail = ctx.chat[ctx.chat.length - 1];
+  tail.mes = '变量渲染后的正文';
+  tail.extra = { _acu_last_optimized_at: Date.now() };
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  assert.equal(__mvuGateStateForTest.pendingSince, pendingSince, '替换落库不得重排等待起点');
+  // 宽限到期即放行（旧逻辑会被替换续杯、继续等待）
+  __mvuGateStateForTest.pendingSince = Date.now() - MVU_EXTRA_WAIT_GRACE_MS - 1000;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+});
+
+test('结束事件新鲜但替换先落地：有晚于事件的替换戳即放行，不等宽限', () => {
+  resetGate();
+  setDuring(false);
+  const ctx = makeCtx({
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  // 结束事件记录的是替换前的指纹
+  const roundKey = `${ctx.chatId}:${ctx.chat.length}:assistant:${ctx.chat[ctx.chat.length - 1].id}`;
+  __mvuGateStateForTest.lastEndedKey = roundKey;
+  __mvuGateStateForTest.lastEndedContentKey = buildSignature(ctx, ctx.chat.length);
+  __mvuGateStateForTest.lastEndedAt = Date.now() - 50;
+  // 替换在事件之后落库
+  const tail = ctx.chat[ctx.chat.length - 1];
+  tail.mes = '替换后正文';
+  tail.extra = { _acu_last_optimized_at: Date.now() };
+  assert.equal(
+    shouldWaitForMvuExtraAnalysis(ctx, settings),
+    false,
+    'MVU 产物已落定（戳晚于结束事件），应立即在最终正文上放行',
+  );
+}); 
+
+test('监听提前安装时，结束事件一到即记录、门控立刻放行（不等宽限期）', () => {
+  resetGate();
+  setDuring(false);
+  // 重置安装标志，用独立 eventSource 验证「先订监听、后发事件」的时序
+  __mvuGateStateForTest.eventInstalled = false;
+  const handlers = new Map();
+  const eventSource = {
+    on(name, fn) { handlers.set(name, [fn]); },
+    emit(name) { (handlers.get(name) || []).forEach((fn) => fn()); },
+  };
+  const ctx = makeCtx({
+    eventSource,
+    extensionSettings: { mvu_settings: makeMvuSettings() },
+  });
+  const settings = makeSettings();
+  installMvuGateListener(ctx); // 相当于 resetPoller 的提前安装时机
+  assert.equal(handlers.size, 1, '事件名解析自 Mvu.events 或字面量，应挂上监听');
+  // 宿主/DB 在忙碌阶段不会评估门控；解析结束事件先于任何评估发生
+  eventSource.emit('mag_variable_update_ended');
+  assert.equal(
+    shouldWaitForMvuExtraAnalysis(ctx, settings),
+    false,
+    '错过的结束事件已被记录，评估当轮即放行',
+  );
+  __mvuGateStateForTest.eventInstalled = false;
 });
