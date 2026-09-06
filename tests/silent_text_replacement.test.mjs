@@ -45,6 +45,8 @@ function resetAllGates(ctx) {
   run.listenersInstalled = false;
   run.generationDepth = 0;
   run.generationBusySince = 0;
+  run.mutSeq = 0;
+  run.ctxRef = null;
   const gate = __mvuGateStateForTest;
   gate.lastEndedKey = '';
   gate.lastEndedContentKey = '';
@@ -93,6 +95,8 @@ function makeCtx() {
       GENERATION_STARTED: 'generation_started',
       GENERATION_STOPPED: 'generation_stopped',
       GENERATION_ENDED: 'generation_ended',
+      MESSAGE_EDITED: 'message_edited',
+      MESSAGE_SWIPED: 'message_swiped',
     },
   };
   globalThis.SillyTavern = { getContext: () => ctx };
@@ -335,3 +339,103 @@ test('真机回归：无 id 楼层（ST/TT 实际形状）同样吸收；message
   // lenient 规则只在两边都有且不等时拒绝，单边出现不拒绝，仍吸收
   assert.equal(counter.requests, 1, '单边 message_id 不应破坏吸收');
 });
+
+// ---- 评审点名：替换戳与编辑的绑定 ----
+// 「追踪完成 → 替换 → 下次轮询吸收之前用户手动编辑」：编辑不动替换戳，
+// 若只看「戳晚于回执」会把编辑一起吞掉。编辑事件计数与戳值前进必须同时成立。
+
+test('替换落库后、吸收之前用户手动编辑：编辑事件否决吸收，照常追踪', async () => {
+  const { ctx, counter } = makeCtx();
+  await runTracker(ctx, deps, 'manual');
+  counter.requests = 0;
+  await trackOneReply(ctx);
+  assert.equal(counter.requests, 1);
+
+  await sleep(20);
+  simulateReplacement(ctx.chat[2], '完整正文（变量渲染后）');
+  // 下一次轮询之前用户手改（宿主发 message_edited）
+  ctx.eventSource.emit('message_edited');
+  ctx.chat[2].mes = '完整正文（变量渲染后）+ 用户微调';
+  await runTracker(ctx, deps, 'poll');
+  await sleepPastSettle();
+  await runTracker(ctx, deps, 'poll');
+  assert.equal(counter.requests, 2, '替换后的手动编辑不得被吸收');
+});
+
+test('请求在飞时先替换、再手动修改：编辑事件否决沿用，作废重跑', async () => {
+  const { ctx, counter } = makeCtx();
+  await runTracker(ctx, deps, 'manual');
+  counter.requests = 0;
+
+  let releaseFetch;
+  let holdNextFetch = true;
+  globalThis.fetch = async () => {
+    counter.requests += 1;
+    if (holdNextFetch) {
+      holdNextFetch = false;
+      await new Promise((resolve) => { releaseFetch = resolve; });
+    }
+    return okResponse();
+  };
+
+  ctx.chat.push({ is_user: true, name: 'User', mes: '继续' });
+  await runTracker(ctx, deps, 'poll');
+  ctx.chat.push({ is_user: false, name: 'Alice', mes: '完整正文', swipe_id: 0 });
+  await runTracker(ctx, deps, 'poll');
+  await sleepPastSettle();
+  const runPromise = runTracker(ctx, deps, 'poll');
+  await sleep(50);
+
+  await sleep(20);
+  simulateReplacement(ctx.chat[2], '完整正文（变量渲染后）');
+  ctx.eventSource.emit('message_edited');
+  ctx.chat[2].mes = '完整正文（变量渲染后）+ 用户微调';
+  releaseFetch();
+  await runPromise;
+  assert.equal(counter.requests, 1, '在飞这轮不作废即不重发');
+  const chatState = chatStateOf(ctx);
+  assert.notEqual(chatState.lastProcessedSignature, buildSignature(ctx, 3), '带编辑的改写必须作废，不得推进回执');
+
+  await runTracker(ctx, deps, 'poll');
+  await sleepPastSettle();
+  await runTracker(ctx, deps, 'poll');
+  assert.equal(counter.requests, 2, '作废后下一轮照常补追（编辑内容被追踪到）');
+});
+
+test('吸收之后手动编辑：戳值未前进否决吸收，照常追踪', async () => {
+  const { ctx, counter } = makeCtx();
+  await runTracker(ctx, deps, 'manual');
+  counter.requests = 0;
+  await trackOneReply(ctx);
+  assert.equal(counter.requests, 1);
+  await replaceTail(ctx, '完整正文（变量渲染后）');
+  assert.equal(counter.requests, 1, '纯替换先被吸收');
+
+  await sleep(20);
+  ctx.chat[2].mes = '用户在吸收之后手改';
+  await runTracker(ctx, deps, 'poll');
+  await sleepPastSettle();
+  await runTracker(ctx, deps, 'poll');
+  assert.equal(counter.requests, 2, '吸收后编辑（戳不前进）必须重追踪');
+});
+
+test('页面重载（计数归零）后手动编辑：持久化计数回填仍能否决吸收', async () => {
+  const { ctx, counter, settings } = makeCtx();
+  await runTracker(ctx, deps, 'manual');
+  counter.requests = 0;
+  await trackOneReply(ctx);
+  assert.equal(counter.requests, 1);
+
+  await sleep(20);
+  simulateReplacement(ctx.chat[2], '完整正文（变量渲染后）');
+  // 模拟重载：内存计数归零，持久化计数（回执时写入）保留；回填后用户编辑 → 前进
+  assert.ok(Number(settings.hostMutSeqCounter) >= 0, '回执应已持久化编辑计数');
+  __hostRunStateForTest.mutSeq = 0;
+  ctx.eventSource.emit('message_edited'); // 重载后的手动编辑
+  ctx.chat[2].mes = '完整正文（变量渲染后）+ 重载后手改';
+  await runTracker(ctx, deps, 'poll');
+  await sleepPastSettle();
+  await runTracker(ctx, deps, 'poll');
+  assert.equal(counter.requests, 2, '重载后的编辑不得被静默吞掉');
+});
+

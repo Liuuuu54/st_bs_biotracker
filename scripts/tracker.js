@@ -320,7 +320,7 @@ export function shouldWaitForMvuExtraAnalysis(ctx, _settings) {
     // 但正文替换的落库同样会改变内容指纹：它的戳记晚于等待起点时只更新指纹、
     // 不重排等待起点，否则每次替换都会把宽限续满，MVU 结束后的追踪被越推越晚。
     mvuGateState.pendingContentKey = contentKey;
-    if (!isReplacementAfter(mvuGateState.pendingSince, last)) {
+    if (!isReplacementAfter({ stampedAt: mvuGateState.pendingSince }, last)) {
       mvuGateState.pendingSince = now;
       mvuGateState.sawGenerateThisRound = false;
     }
@@ -341,7 +341,8 @@ export function shouldWaitForMvuExtraAnalysis(ctx, _settings) {
   // 结束事件与评估之间正文若被替换改写过（指纹对不上），只要替换戳晚于结束事件，
   // 说明 MVU 的产物已落定、无需再等宽限——直接放行，在最终正文上只追一轮
   const endedKeyMatch = mvuGateState.lastEndedKey === roundKey;
-  const replacementAfterEnd = endedKeyMatch && isReplacementAfter(mvuGateState.lastEndedAt, last);
+  const replacementAfterEnd = endedKeyMatch
+    && isReplacementAfter({ stampedAt: mvuGateState.lastEndedAt }, last);
   const waiting = resolveMvuGateWaiting(roundKey, contentKey, now, during || generateActive, replacementAfterEnd);
   // 等待全程静默：MVU 解析结束紧接着就是追踪提示，中间再弹一条等待提示纯属噪音；
   // 排查时看 console 即可
@@ -391,6 +392,11 @@ const hostRunState = {
   listenersInstalled: false,
   generationDepth: 0,
   generationBusySince: 0,
+  // 编辑/抽卡事件计数：吸收判定要求「回执之后没有编辑事件」。持久化到
+  // settings.hostMutSeqCounter 并在载入时回填，重载后继续单调递增——纯内存
+  // 计数重载归零会把「重载后的手动编辑」误判成无痕而吞掉追踪。
+  mutSeq: 0,
+  ctxRef: null,
 };
 export const __hostRunStateForTest = hostRunState;
 // 与 MVU 门控同法：挂到全局方便在真实宿主的 console 里排查触发问题
@@ -416,10 +422,30 @@ function markHostGenerationEnd() {
   hostRunState.generationBusySince = 0;
 }
 
+function bumpHostMutSeq() {
+  hostRunState.mutSeq += 1;
+  // 立即持久化：编辑事件是低频人工操作，直接存不心疼；不存的话「编辑后未及
+  // 保存就重载」会让下一会话的回填值偏小、编辑痕迹丢失
+  try {
+    const ctx = hostRunState.ctxRef;
+    if (ctx) {
+      getSettings(ctx).hostMutSeqCounter = hostRunState.mutSeq;
+      saveSettings(ctx);
+    }
+  } catch {}
+}
+
+/** 从持久化存档回填编辑计数（重载后 max(内存, 存档) 起步，保持单调）。 */
+export function hydrateHostMutSeq(settings) {
+  const persisted = Number(settings?.hostMutSeqCounter);
+  if (Number.isFinite(persisted) && persisted > hostRunState.mutSeq) hostRunState.mutSeq = persisted;
+}
+
 export function installHostRunWatchers(ctx) {
   if (hostRunState.listenersInstalled) return;
   const source = ctx?.eventSource;
   if (!source || typeof source.on !== 'function') return;
+  hostRunState.ctxRef = ctx;
   // 无论订到第几个都标记为已安装、不再重试：宿主 eventSource.on 实际不会抛，
   // 万一抛了也只可能缺一腿，重复叠加监听反而会把深度计数订乱
   hostRunState.listenersInstalled = true;
@@ -427,8 +453,10 @@ export function installHostRunWatchers(ctx) {
     source.on(resolveHostEventName(ctx, 'GENERATION_STARTED', 'generation_started'), markHostGenerationStart);
     source.on(resolveHostEventName(ctx, 'GENERATION_STOPPED', 'generation_stopped'), markHostGenerationEnd);
     source.on(resolveHostEventName(ctx, 'GENERATION_ENDED', 'generation_ended'), markHostGenerationEnd);
+    source.on(resolveHostEventName(ctx, 'MESSAGE_EDITED', 'message_edited'), bumpHostMutSeq);
+    source.on(resolveHostEventName(ctx, 'MESSAGE_SWIPED', 'message_swiped'), bumpHostMutSeq);
   } catch (error) {
-    console.warn('[BS BioTracker] 無法訂閱宿主生成事件', error);
+    console.warn('[BS BioTracker] 無法訂閱宿主生成/編輯事件', error);
   }
 }
 
@@ -480,6 +508,12 @@ function getFloorAnchorFields(message) {
       : String(message.id),
     tailSwipeId: message?.swipe_id === undefined || message?.swipe_id === null ? '' : String(message.swipe_id),
     tailName: String(message?.name || ''),
+    // 盖锚时刻的编辑计数与当时已见的替换戳值：吸收要求「之后没有编辑事件」
+    // 且「戳值相对锚点前进过」——只认戳晚于回执会把「替换后的手动编辑」一起吞掉
+    hostMutSeq: hostRunState.mutSeq,
+    replacementStamp: readReplacementMarkMs(message),
+    // 内存侧锚点时刻（在飞比对用）；快照持久化侧用 createdAt
+    stampedAt: Date.now(),
   };
 }
 
@@ -496,10 +530,20 @@ function sameFloorIdentity(stamp, currentFloor) {
   return true;
 }
 
-/** 正文替换时间戳晚于锚点时刻 = 之后确有替换写回（跨重载有效，不依赖内存计数）。 */
-function isReplacementAfter(anchorAtMs, currentFloor) {
+/**
+ * 楼层当前的替换戳是否「相对锚点前进过」= 锚点之后确有新的替换写回。
+ * 锚点带 replacementStamp（吸收快照记录了当时已见的戳值）时要求戳值严格大于它
+ * ——戳没前进而内容变了必然不是替换（是编辑或其他写回者），不得吸收；
+ * 旧锚点没有该字段（tracker 回执）时回退「戳晚于锚点时刻」判定。
+ */
+function isReplacementAfter(snapshot, currentFloor) {
+  const stamp = readReplacementMarkMs(currentFloor);
+  if (!stamp) return false;
+  const lastSeen = Number(snapshot?.replacementStamp);
+  if (Number.isFinite(lastSeen) && lastSeen > 0) return stamp > lastSeen;
+  const anchorAtMs = Number(snapshot?.createdAt) || Number(snapshot?.stampedAt);
   if (!anchorAtMs) return false;
-  return readReplacementMarkMs(currentFloor) > Number(anchorAtMs);
+  return stamp > anchorAtMs;
 }
 
 function findReplacementAnchorSnapshot(chatState, count) {
@@ -515,11 +559,14 @@ function findReplacementAnchorSnapshot(chatState, count) {
 }
 
 /**
- * 数据库正文替换的静默吸收：追踪回执所在楼层带着晚于回执的替换时间戳时，
- * 就地重锚快照与 lastProcessedSignature，下一轮不再发出追踪请求。
- * 返回 true = 本轮轮询已被吸收。恒生效、无开关、无提示。
+ * 数据库正文替换的静默吸收：追踪回执所在楼层带着「相对锚点前进过的替换戳」、
+ * 且锚点之后没有编辑/抽卡事件时，就地重锚快照与 lastProcessedSignature，
+ * 下一轮不再发出追踪请求。返回 true = 本轮轮询已被吸收。恒生效、无开关、无提示。
+ * 只认「戳晚于回执」会把「替换后用户又手动编辑」一起吞掉（编辑不动戳），
+ * 因此编辑事件计数与戳值前进是必要条件；两者皆有持久化，跨重载成立。
  */
 export function tryAdoptSilentTailReplacement(ctx, settings, chatState) {
+  hydrateHostMutSeq(settings);
   const chat = getHostChat(ctx);
   const count = chat.length;
   if (count <= 0) return false;
@@ -531,8 +578,11 @@ export function tryAdoptSilentTailReplacement(ctx, settings, chatState) {
   const snapshot = findReplacementAnchorSnapshot(chatState, count);
   if (!snapshot || Number(snapshot.anchorVersion) !== 1) return false;
   if (!sameFloorIdentity(snapshot, last)) return false;
-  if (!isReplacementAfter(snapshot.createdAt, last)) return false;
+  if (!isReplacementAfter(snapshot, last)) return false;
+  const stampSeq = Number(snapshot.hostMutSeq);
+  if (Number.isFinite(stampSeq) && stampSeq >= 0 && hostRunState.mutSeq > stampSeq) return false;
   if (isHostGenerationBusy(ctx)) return false;
+  settings.hostMutSeqCounter = hostRunState.mutSeq;
   recordChatStateSnapshot(ctx, chatState, {
     messageCount: count,
     reason: 'silent_replace',
@@ -540,7 +590,7 @@ export function tryAdoptSilentTailReplacement(ctx, settings, chatState) {
   });
   chatState.lastProcessedSignature = currentSignature;
   saveSettings(ctx);
-  console.debug('[BS BioTracker] 偵測到正文替換回寫（楼层带替换戳记且晚于追踪回执），已重新锚定，未重發請求');
+  console.debug('[BS BioTracker] 偵測到正文替換回寫（替换戳前进且无编辑事件），已重新锚定，未重發請求');
   return true;
 }
 
@@ -1427,10 +1477,10 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   const attemptedSignature = buildSignature(ctx, messageIndex + 1);
   chatState.lastAttemptedSignature = attemptedSignature;
   saveSettings(ctx);
-  // 记下发出请求那一刻楼层的样子与时刻：返回时正文若有变化，用它区分
-  // 「重掷/编辑/删楼的合法改动」与「正文替换的静默改写（带替换戳记）」
+  // 记下发出请求那一刻楼层的样子与编辑计数：返回时正文若有变化，用它区分
+  // 「重掷/编辑/删楼的合法改动」与「正文替换的静默改写（替换戳前进且无编辑事件）」
+  hydrateHostMutSeq(settings);
   const preCallFloorStamp = getFloorAnchorFields(chat[messageIndex]);
-  const preCallAtMs = Date.now();
   const systemPrompt = buildTrackerSystemPrompt(settings.systemPrompt || DEFAULT_SYSTEM_PROMPT, settings.registryDescriptionGuides || null, payload);
   recordTrackerRequestDebug(systemPrompt, payload);
   const rawResult = await callOpenAICompatible(
@@ -1452,13 +1502,15 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
     console.warn('[BS BioTracker] 分析后刷新聊天视图失败，改用现有视图比对', error);
   }
   const postCallSignature = buildSignature(ctx, messageIndex + 1);
-  // 在飞期间正文被改写的三种可能按「楼层带晚于发出时刻的替换戳记」一笔判定：
-  // 命中即正文替换（分析对象仍是替换前正文，结果对剧情有效）——沿用结果、
-  // 就地重锚，不作废重跑；重掷/编辑/删楼不会盖出戳记，照旧作废整份结果。
+  // 在飞期间正文被改写：只有「替换戳相对发出时前进、且没有编辑/抽卡事件、
+  // 同楼层同身份」才算正文替换（分析对象仍是替换前正文，结果对剧情有效）——
+  // 沿用结果、就地重锚；替换后又手改（编辑事件）、或重掷/删楼照旧作废整份结果。
+  const currentFloorAfterCall = getHostChat(ctx)[messageIndex];
   const silentReplacementDuringRun = postCallSignature !== attemptedSignature
     && getHostChat(ctx).length === messageIndex + 1
-    && sameFloorIdentity(preCallFloorStamp, getHostChat(ctx)[messageIndex])
-    && isReplacementAfter(preCallAtMs, getHostChat(ctx)[messageIndex])
+    && sameFloorIdentity(preCallFloorStamp, currentFloorAfterCall)
+    && isReplacementAfter(preCallFloorStamp, currentFloorAfterCall)
+    && hostRunState.mutSeq === preCallFloorStamp.hostMutSeq
     && !isHostGenerationBusy(ctx);
   if (postCallSignature !== attemptedSignature && !silentReplacementDuringRun) {
     console.warn('[BS BioTracker] 该消息在分析期间被修改或删除，本次结果已作废');
@@ -1481,6 +1533,7 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   chatState.lastProcessedSignature = silentReplacementDuringRun ? postCallSignature : attemptedSignature;
   chatState.lastFailedSignature = '';
   chatState.lastFailedChatSignature = '';
+  settings.hostMutSeqCounter = hostRunState.mutSeq;
   recordChatStateSnapshot(ctx, chatState, {
     messageCount: messageIndex + 1,
     reason: 'tracker',

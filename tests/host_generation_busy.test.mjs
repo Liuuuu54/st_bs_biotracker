@@ -48,6 +48,8 @@ function resetRunState(ctx) {
   run.listenersInstalled = false;
   run.generationDepth = 0;
   run.generationBusySince = 0;
+  run.mutSeq = 0;
+  run.ctxRef = null;
   __mvuGateStateForTest.generateInFlight = 0;
   if (ctx?.eventSource) installHostRunWatchers(ctx);
 }
