@@ -453,6 +453,11 @@ export function installHostRunWatchers(ctx) {
   const source = ctx?.eventSource;
   if (!source || typeof source.on !== 'function') return;
   hostRunState.ctxRef = ctx;
+  // 安装即回填持久计数：首个编辑事件即使在任何轮询评估之前到达，
+  // 也在正确的基准上自增，不会把存档里的大计数覆成小值
+  try {
+    hydrateHostMutSeq(getSettings(ctx));
+  } catch {}
   // 无论订到第几个都标记为已安装、不再重试：宿主 eventSource.on 实际不会抛，
   // 万一抛了也只可能缺一腿，重复叠加监听反而会把深度计数订乱
   hostRunState.listenersInstalled = true;
