@@ -53,8 +53,8 @@ const TRACKER_SETTINGS = {
   model: 'muse-spark-1.3-contributor',
 };
 
-function trackerPayload(cardName) {
-  return { recent_messages: [], current_character: { name: cardName } };
+function trackerPayload(cardName, chatId = 'chat-1') {
+  return { recent_messages: [], chat_id: chatId, current_character: { name: cardName } };
 }
 
 test('isOpenCodeApiBase 只认 opencode.ai 归属域名', () => {
@@ -86,6 +86,19 @@ test('buildOpenCodeSessionId 同 flow 同卡稳定、跨 flow 跨卡隔离', () 
   const otherFlow = buildOpenCodeSessionId(TRACKER_SETTINGS.apiUrl, trackerPayload('愛麗絲'), 'diary');
   assert.match(otherFlow, /^bsbt-diary-[0-9a-f]{8}$/);
   assert.notEqual(otherFlow, first);
+});
+
+test('buildOpenCodeSessionId 同卡不同聊天隔离、无 chat_id 回退卡级', () => {
+  const chat1 = buildOpenCodeSessionId(TRACKER_SETTINGS.apiUrl, trackerPayload('愛麗絲', 'chat-1'), 'tracker');
+  const chat1Again = buildOpenCodeSessionId(TRACKER_SETTINGS.apiUrl, trackerPayload('愛麗絲', 'chat-1'), 'tracker');
+  assert.equal(chat1Again, chat1);
+  const chat2 = buildOpenCodeSessionId(TRACKER_SETTINGS.apiUrl, trackerPayload('愛麗絲', 'chat-2'), 'tracker');
+  assert.match(chat2, /^bsbt-tracker-[0-9a-f]{8}$/);
+  assert.notEqual(chat2, chat1);
+  const noChat = buildOpenCodeSessionId(TRACKER_SETTINGS.apiUrl, { recent_messages: [], current_character: { name: '愛麗絲' } }, 'tracker');
+  const noChatAgain = buildOpenCodeSessionId(TRACKER_SETTINGS.apiUrl, { recent_messages: [], current_character: { name: '愛麗絲' } }, 'tracker');
+  assert.match(noChat, /^bsbt-tracker-[0-9a-f]{8}$/);
+  assert.equal(noChatAgain, noChat);
 });
 
 test('resolveOpenCodeFlow 没传 flow 时按 target_character 回退', () => {
