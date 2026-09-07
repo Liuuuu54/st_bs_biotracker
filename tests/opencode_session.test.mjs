@@ -128,6 +128,26 @@ test('宿主代理路径：opencode 带会话头、其他渠道不带', async ()
   assert.deepEqual(sessionLines(1), []);
 });
 
+test('中途切换预设到非 opencode：头自动消失，切回即恢复同一 ID', async () => {
+  const seen = [];
+  installBrowserHost(async (url, options) => {
+    seen.push(JSON.parse(options.body).custom_include_headers);
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify({ operations: [] }) } }] });
+  });
+  const otherPreset = { apiUrl: 'https://example-model-host.test/v1/chat/completions', apiKey: 'k', model: 'm' };
+
+  await callOpenAICompatible(TRACKER_SETTINGS, trackerPayload('愛麗絲'), 'Return JSON.', { flow: 'tracker' });
+  await callOpenAICompatible(otherPreset, trackerPayload('愛麗絲'), 'Return JSON.', { flow: 'tracker' });
+  await callOpenAICompatible(TRACKER_SETTINGS, trackerPayload('愛麗絲'), 'Return JSON.', { flow: 'tracker' });
+
+  assert.equal(seen.length, 3);
+  const sessionOf = (headers) => headers.split('\n').find((line) => line.startsWith('x-opencode-session: '));
+  assert.match(sessionOf(seen[0]), /^x-opencode-session: bsbt-tracker-[0-9a-f]{8}$/);
+  assert.equal(sessionOf(seen[1]), undefined);
+  // 切回 opencode 是同一 ID：缓存继续命中，无粘性状态残留
+  assert.equal(sessionOf(seen[2]), sessionOf(seen[0]));
+});
+
 test('宿主代理路径：同 flow 同卡多轮复用同一会话 ID', async () => {
   const seen = [];
   installBrowserHost(async (url, options) => {
