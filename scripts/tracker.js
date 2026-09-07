@@ -1504,7 +1504,8 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   const rawResult = await callOpenAICompatible(
     settings,
     payload,
-    systemPrompt
+    systemPrompt,
+    { flow: 'tracker' }
   );
   recordTrackerResultDebug(rawResult);
 
