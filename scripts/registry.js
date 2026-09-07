@@ -486,7 +486,7 @@ async function runBreedingInference(settings, payload, options = {}) {
   const systemPrompt = options.breedingInferenceSystemPrompt || buildBreedingInferenceSystemPrompt(settings, options);
   recordBreedingInferenceRequestDebug(systemPrompt, payload);
   try {
-    const rawResult = await callOpenAICompatible(settings, payload, systemPrompt);
+    const rawResult = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'breeding' });
     const result = normalizeBreedingInferenceResult(rawResult);
     // 角色卡、最近对话中会同时出现 user 与其他人物；target_character 是 UI 的
     // 明确输入，不能把模型回传的猜测当成目标来源，否则结果会显示成 user。
@@ -665,7 +665,7 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
   payload.existing_wardrobe = chatState.characters[targetName]?.profile?.wardrobe || null;
   payload.existing_outfit = chatState.characters[targetName]?.profile?.outfit || null;
   const systemPrompt = options.wardrobePrepSystemPrompt || buildWardrobePrepSystemPrompt(settings, { ...options, wardrobePrepPrompt, wardrobePrepMainCount, wardrobePrepAccessoryCount });
-  const result = await callOpenAICompatible(settings, payload, systemPrompt);
+  const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'wardrobe' });
   return sanitizeWardrobePrepResult(result);
 }
 
@@ -698,7 +698,7 @@ export async function runRegistryDiaryInference(ctx, options = {}) {
       : 'payload.requested_diary_date 为空时，请依故事上下文自行填写合适的日期标题；不要使用现实系统日期。',
     '只输出 JSON：{"time":"日期标题","content":"日记正文"}。',
   ].join('\n');
-  const result = await callOpenAICompatible(settings, payload, systemPrompt);
+  const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'diary' });
   const time = String(result?.time || requestedDate || '').trim();
   const content = String(result?.content || '').trim();
   if (!time || !content) throw new Error('日记生成结果缺少 time 或 content');
@@ -1698,7 +1698,7 @@ export async function runRegistrySkillInference(ctx, options = {}) {
       // 图鉴为空＝本次是这个聊天的第一个角色，所有引用都只能来自本次 skillDefinitions
       emptyCatalog: payload.skill_catalog.length === 0,
     });
-  const result = await callOpenAICompatible(settings, payload, systemPrompt);
+  const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'skill' });
   return sanitizeRegistrySkillInferenceResult(result);
 }
 
@@ -1952,6 +1952,7 @@ export async function runRegistry(ctx, options = {}) {
       settings,
       payload,
       systemPrompt,
+      { flow: 'registry' },
     );
     if (
       options.breedingInference?.stageProfiles

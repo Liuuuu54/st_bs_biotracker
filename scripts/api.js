@@ -79,7 +79,7 @@ export function getApiBase(settings) {
   return apiBase.replace(/\/+$/, '');
 }
 
-export function getAuthHeaders(settings) {
+export function getAuthHeaders(settings, sessionId = '') {
   const headers = { 'Content-Type': 'application/json' };
   const key = settings.apiKey ? String(settings.apiKey) : '';
   const format = normalizeApiFormat(settings?.apiFormat);
@@ -95,7 +95,80 @@ export function getAuthHeaders(settings) {
   } else if (key) {
     headers.Authorization = `Bearer ${key}`;
   }
+  // OpenCode Go 凭 x-opencode-session 做路由与 prompt 缓存；只在调用方
+  // 显式算出会话 ID 时才带（见 buildOpenCodeSessionId），非 opencode 渠道恒为空
+  if (isValidOpenCodeSessionId(sessionId)) headers[OPENCODE_SESSION_HEADER] = String(sessionId);
   return headers;
+}
+
+/**
+ * OpenCode Go 会话头（https://opencode.ai/docs/go/#where-can-i-use-it）：
+ * 每个 conversation 发稳定的 x-opencode-session，供服务端做路由与 prompt 缓存。
+ * 只有 hostname 归属 opencode.ai 的 endpoint 才带，其他渠道一律不带。
+ */
+const OPENCODE_SESSION_HEADER = 'x-opencode-session';
+const OPENCODE_FLOW_NAMES = ['tracker', 'registry', 'wardrobe', 'diary', 'skill', 'breeding'];
+
+/** 汇点最后校验：非法值直接丢弃，防换行/伪造头注入。 */
+function isValidOpenCodeSessionId(sessionId) {
+  return /^bsbt-[a-z]+-[0-9a-f]{8}$/.test(String(sessionId || ''));
+}
+
+export function isOpenCodeApiBase(apiBase) {
+  const raw = String(apiBase || '').trim();
+  if (!raw) return false;
+  const candidates = raw.includes('://') ? [raw] : [`https://${raw}`];
+  for (const candidate of candidates) {
+    try {
+      const host = new URL(candidate).hostname.toLowerCase();
+      if (host === 'opencode.ai' || host.endsWith('.opencode.ai')) return true;
+    } catch {}
+  }
+  return false;
+}
+
+/** 调用方显式 flow 优先；没传时按 payload 有无 target_character 区分追踪/注册。 */
+export function resolveOpenCodeFlow(payload, explicitFlow = '') {
+  const normalized = String(explicitFlow || '').trim().toLowerCase();
+  if (OPENCODE_FLOW_NAMES.includes(normalized)) return normalized;
+  const target = payload && typeof payload === 'object' ? String(payload.target_character || '').trim() : '';
+  return target ? 'registry' : 'tracker';
+}
+
+/**
+ * 卡独立性：注册类按目标角色名区分，追踪按当前角色卡名区分。
+ * 名称只做哈希输入、不进头值——CJK 名直接放 header 会触发 fetch 的 ByteString 校验。
+ */
+function resolveOpenCodeCardKey(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  const target = String(payload.target_character || '').trim();
+  if (target) return target;
+  const current = payload.current_character && typeof payload.current_character === 'object'
+    ? String(payload.current_character.name || '').trim()
+    : '';
+  return current;
+}
+
+function hashOpenCodeSessionKey(text) {
+  let hash = 0x811c9dc5;
+  const input = String(text || '');
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * 会话 ID 形如 bsbt-tracker-9f3ac2e1：flow 与卡名双维度隔离，各自的 prompt 前缀
+ * 缓存互不冲刷；纯函数推导、无需持久化，重载页面后保持不变、缓存继续命中。
+ * 非 opencode endpoint 返回空字符串，调用方以此决定带不带头。
+ */
+export function buildOpenCodeSessionId(apiBase, payload, explicitFlow = '') {
+  if (!isOpenCodeApiBase(apiBase)) return '';
+  const flow = resolveOpenCodeFlow(payload, explicitFlow);
+  const cardKey = resolveOpenCodeCardKey(payload);
+  return `bsbt-${flow}-${hashOpenCodeSessionKey(`${flow}\n${cardKey}`)}`;
 }
 
 /**
@@ -165,7 +238,7 @@ function getHostProxyHeaders(extraHeaders = {}) {
  */
 const PLUGIN_USER_AGENT = 'BS-BioTracker (+https://github.com/Liuuuu54/st_bs_biotracker)';
 
-function buildHostProxyConfig(apiBase, settings) {
+function buildHostProxyConfig(apiBase, settings, sessionId = '') {
   const apiKey = String(settings?.apiKey || '');
   const format = normalizeApiFormat(settings?.apiFormat);
   const headerLines = [];
@@ -190,6 +263,11 @@ function buildHostProxyConfig(apiBase, settings) {
   // additional headers 最后应用，注入这里会把产品 UA 顶掉，故 TT 跳过。
   if (!hostSupportsFormatAwareProxy()) {
     headerLines.push(`User-Agent: ${PLUGIN_USER_AGENT}`);
+  }
+  // 宿主代理路径走 ST/TT 后端代发上游请求，会话头只能随 custom_include_headers
+  // 进去；非 opencode 渠道 sessionId 恒为空，不会多带
+  if (isValidOpenCodeSessionId(sessionId)) {
+    headerLines.push(`${OPENCODE_SESSION_HEADER}: ${sessionId}`);
   }
   return {
     chat_completion_source: 'custom',
@@ -438,7 +516,7 @@ async function requestHostProxyChatCompletion(apiBase, settings, requestBody, ru
     // 非 compat 格式交给宿主后端按 custom_api_format 翻译；response_format 不在其中
     ...(formatAware ? { custom_api_format: apiFormat } : { response_format: requestBody.response_format }),
     stream: false,
-    ...buildHostProxyConfig(apiBase, settings),
+    ...buildHostProxyConfig(apiBase, settings, runContext.sessionId || ''),
   };
   Object.keys(proxyBody).forEach((key) => {
     if (proxyBody[key] === undefined) delete proxyBody[key];
@@ -1052,6 +1130,8 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     const previousAsyncFlag = globalThis.__bs_biotracker_async_request__;
     globalThis.__bs_biotracker_async_request__ = true;
     const fmt = normalizeApiFormat(settings?.apiFormat);
+    // 会话头只认 opencode endpoint，其他渠道为空、直连与代理路径都不会多带
+    const sessionId = runContext.sessionId || '';
     const upstreamUrl = getApiUrlForFormat(apiBase, fmt);
     const isCompat = fmt === API_FORMATS.OPENAI_COMPAT;
     // TT 后端按 custom_api_format 在服务端翻译；原版 ST 后端不认得这个字段
@@ -1098,7 +1178,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
           }
           ({ response, responseText } = await fetchText(upstreamUrl, {
             method: 'POST',
-            headers: getAuthHeaders(settings),
+            headers: getAuthHeaders(settings, sessionId),
             body: requestText,
             timeoutMs: resolveApiTimeoutMs(settings),
             externalSignal: runContext.signal || null,
@@ -1110,7 +1190,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
         try {
           ({ response, responseText } = await fetchText(transparentProxyUrl, {
             method: 'POST',
-            headers: getHostProxyHeaders(getAuthHeaders(settings)),
+            headers: getHostProxyHeaders(getAuthHeaders(settings, sessionId)),
             body: requestText,
             timeoutMs: resolveApiTimeoutMs(settings),
             externalSignal: runContext.signal || null,
@@ -1126,7 +1206,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
           url = upstreamUrl;
           ({ response, responseText } = await fetchText(upstreamUrl, {
             method: 'POST',
-            headers: getAuthHeaders(settings),
+            headers: getAuthHeaders(settings, sessionId),
             body: requestText,
             timeoutMs: resolveApiTimeoutMs(settings),
             externalSignal: runContext.signal || null,
@@ -1136,7 +1216,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
       } else {
         ({ response, responseText } = await fetchText(upstreamUrl, {
           method: 'POST',
-          headers: getAuthHeaders(settings),
+          headers: getAuthHeaders(settings, sessionId),
           body: requestText,
           timeoutMs: resolveApiTimeoutMs(settings),
           externalSignal: runContext.signal || null,
@@ -1352,7 +1432,7 @@ async function buildPresetEnvelope(settings, baseSystemPrompt, payloadText) {
   }
 }
 
-export async function callOpenAICompatible(settings, payload, systemPrompt = DEFAULT_SYSTEM_PROMPT) {
+export async function callOpenAICompatible(settings, payload, systemPrompt = DEFAULT_SYSTEM_PROMPT, options = {}) {
   const apiBase = getApiBase(settings);
   const model = String(settings.model || '').trim();
   const stCtx = getSillyTavernContext();
@@ -1416,7 +1496,13 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
       } catch {}
     }, deadlineMs);
   }
-  const runContext = { signal: overallController?.signal || null, deadlineMs };
+  const runContext = {
+    signal: overallController?.signal || null,
+    deadlineMs,
+    // opencode 会话 ID 按 flow×卡推导：同 flow 同卡多轮复用同一会话，
+    // prompt 前缀缓存不被其他 flow/卡冲掉；纠错子请求同轮沿用同一会话
+    sessionId: buildOpenCodeSessionId(apiBase, safePayload, options?.flow),
+  };
 
   try {
     return await withGlobalApiRetries(async (globalAttempt) => {
