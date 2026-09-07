@@ -149,6 +149,15 @@ function resolveOpenCodeCardKey(payload) {
   return current;
 }
 
+/**
+ * 聊天粒度：同卡不同聊天分属不同会话，否则两个聊天的不同前缀交替冲刷缓存。
+ * 缺 chat_id 时回退到卡级（旧行为），只损命中率、不影响正确性。
+ */
+function resolveOpenCodeChatKey(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  return String(payload.chat_id || '').trim();
+}
+
 function hashOpenCodeSessionKey(text) {
   let hash = 0x811c9dc5;
   const input = String(text || '');
@@ -160,7 +169,7 @@ function hashOpenCodeSessionKey(text) {
 }
 
 /**
- * 会话 ID 形如 bsbt-tracker-9f3ac2e1：flow 与卡名双维度隔离，各自的 prompt 前缀
+ * 会话 ID 形如 bsbt-tracker-9f3ac2e1：flow×卡×聊天三维隔离，各自的 prompt 前缀
  * 缓存互不冲刷；纯函数推导、无需持久化，重载页面后保持不变、缓存继续命中。
  * 非 opencode endpoint 返回空字符串，调用方以此决定带不带头。
  */
@@ -168,7 +177,9 @@ export function buildOpenCodeSessionId(apiBase, payload, explicitFlow = '') {
   if (!isOpenCodeApiBase(apiBase)) return '';
   const flow = resolveOpenCodeFlow(payload, explicitFlow);
   const cardKey = resolveOpenCodeCardKey(payload);
-  return `bsbt-${flow}-${hashOpenCodeSessionKey(`${flow}\n${cardKey}`)}`;
+  const chatKey = resolveOpenCodeChatKey(payload);
+  // 数组序列化做哈希输入：分隔符无歧义，单行假设不成立时也不会串味
+  return `bsbt-${flow}-${hashOpenCodeSessionKey(JSON.stringify([flow, cardKey, chatKey]))}`;
 }
 
 /**
@@ -1499,8 +1510,8 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   const runContext = {
     signal: overallController?.signal || null,
     deadlineMs,
-    // opencode 会话 ID 按 flow×卡推导：同 flow 同卡多轮复用同一会话，
-    // prompt 前缀缓存不被其他 flow/卡冲掉；纠错子请求同轮沿用同一会话
+    // opencode 会话 ID 按 flow×卡×聊天推导：同 flow 同卡同聊天多轮复用同一会话，
+    // prompt 前缀缓存不被其他 flow/卡/聊天冲掉；纠错子请求同轮沿用同一会话
     sessionId: buildOpenCodeSessionId(apiBase, safePayload, options?.flow),
   };
 
