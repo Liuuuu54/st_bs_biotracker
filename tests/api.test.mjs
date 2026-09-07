@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
 import { callOpenAICompatible, fetchModelList, isApiDeadlineError, isApiTimeoutError, resolveApiTimeoutMs, resolveOverallDeadlineMs } from '../scripts/api.js';
+import { normalizeReasoningEffort } from '../scripts/state.js';
 
 const ORIGINAL_GLOBALS = {
   fetch: globalThis.fetch,
@@ -506,4 +507,132 @@ test('gemini_interactions surfaces a failed status as a retriable error', async 
     // failed 是可重试的上游错误：可能直接抛出，也可能在重试链里撞上总时限
     (error) => /Gemini Interactions 回传失败|总时限/.test(error.message),
   );
+});
+
+test('normalizeReasoningEffort accepts 6 levels with auto fallback', () => {
+  assert.equal(normalizeReasoningEffort('high'), 'high');
+  assert.equal(normalizeReasoningEffort('XHigh'), 'xhigh');
+  assert.equal(normalizeReasoningEffort('Auto'), 'auto');
+  assert.equal(normalizeReasoningEffort(undefined), 'auto');
+  assert.equal(normalizeReasoningEffort(''), 'auto');
+  assert.equal(normalizeReasoningEffort('ultra'), 'auto');
+  // 已移除的 False 档：旧存档残留值按非法处理，回退 auto（不传参）
+  assert.equal(normalizeReasoningEffort('false'), 'auto');
+});
+
+function proxyBodyOf(calls) {
+  assert.equal(calls[0].url, '/api/backends/chat-completions/generate');
+  return JSON.parse(calls[0].options.body);
+}
+
+test('reasoning effort defaults to auto: parameter omitted on the host proxy body', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({
+      choices: [{ message: { content: JSON.stringify({ operations: [] }) } }],
+    });
+  });
+
+  await callOpenAICompatible({
+    apiUrl: 'https://example-model-host.test/v1/chat/completions',
+    apiKey: 'secret-key',
+    model: 'grok-compatible',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  // 默认 Auto = 不传 reasoning_effort——与插件引入该选项之前的请求体完全一致，
+  // 存量使用者零影响
+  assert.equal('reasoning_effort' in proxyBodyOf(calls), false);
+});
+
+test('reasoning effort auto/removed-false/invalid omit; levels pass through', async () => {
+  for (const [setting, expected, present] of [
+    ['auto', undefined, false],
+    // 已移除的 False 档：残留值回退 auto（省略），不会把 false 传给上游
+    ['false', undefined, false],
+    ['ultra', undefined, false],
+    ['high', 'high', true],
+    ['max', 'max', true],
+  ]) {
+    const calls = [];
+    installBrowserHost(async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({
+        choices: [{ message: { content: JSON.stringify({ operations: [] }) } }],
+      });
+    });
+    await callOpenAICompatible({
+      apiUrl: 'https://example-model-host.test/v1/chat/completions',
+      apiKey: 'secret-key',
+      model: 'grok-compatible',
+      reasoningEffort: setting,
+    }, { recent_messages: [] }, 'Return JSON.');
+    const body = proxyBodyOf(calls);
+    assert.equal('reasoning_effort' in body, present, `${setting} present=${present}`);
+    if (present) assert.equal(body.reasoning_effort, expected);
+  }
+});
+
+test('reasoning effort rides the format-aware host proxy for non-compat formats', async () => {
+  const calls = [];
+  globalThis.__TAURITAVERN__ = {};
+  try {
+    installBrowserHost(async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify({ operations: [] }) } }] });
+    });
+
+    await callOpenAICompatible({
+      apiUrl: 'https://opencode.example.test/zen/go/v1',
+      apiKey: 'go-key',
+      model: 'muse-spark-1.2-contributor',
+      apiFormat: 'openai_responses',
+      reasoningEffort: 'xhigh',
+    }, { recent_messages: [] }, 'Return JSON.');
+
+    const body = proxyBodyOf(calls);
+    assert.equal(body.custom_api_format, 'openai_responses');
+    assert.equal(body.reasoning_effort, 'xhigh');
+  } finally {
+    delete globalThis.__TAURITAVERN__;
+  }
+});
+
+test('direct Responses payload carries reasoning.effort; direct Claude omits it', async () => {
+  // Responses 直连（透传代理 404 回退）：档位进 reasoning.effort
+  const responsesCalls = [];
+  installBrowserHost(async (url, options) => {
+    responsesCalls.push({ url, options });
+    if (url.startsWith('/proxy/')) {
+      return { ok: false, status: 404, async text() { return 'disabled'; } };
+    }
+    return jsonResponse(RESPONSES_RESULT);
+  });
+  await callOpenAICompatible({
+    apiUrl: 'https://opencode.example.test/zen/go/v1',
+    apiKey: 'go-key',
+    model: 'muse-spark-1.2-contributor',
+    apiFormat: 'openai_responses',
+    reasoningEffort: 'high',
+  }, { recent_messages: [] }, 'Return JSON.');
+  const responsesBody = JSON.parse(responsesCalls[responsesCalls.length - 1].options.body);
+  assert.deepEqual(responsesBody.reasoning, { effort: 'high' });
+
+  // Claude 直连原生格式没有档位概念（thinking 要 token 数）：不发送，不编造
+  const claudeCalls = [];
+  installBrowserHost(async (url, options) => {
+    claudeCalls.push({ url, options });
+    return jsonResponse({ content: [{ type: 'text', text: JSON.stringify({ operations: [] }) }] });
+  });
+  await callOpenAICompatible({
+    apiUrl: 'https://opencode.example.test/zen/go/v1',
+    apiKey: 'go-key',
+    model: 'qwen3.8-max',
+    apiFormat: 'claude_messages',
+    reasoningEffort: 'high',
+  }, { recent_messages: [] }, 'Return JSON.');
+  const claudeBody = JSON.parse(claudeCalls[0].options.body);
+  assert.equal('reasoning_effort' in claudeBody, false);
+  assert.equal('reasoning' in claudeBody, false);
+  assert.equal('thinking' in claudeBody, false);
 });

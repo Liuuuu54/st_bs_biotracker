@@ -128,6 +128,16 @@ export function normalizeApiFormat(value) {
   return API_FORMATS.OPENAI_COMPAT;
 }
 
+// 思考强度（reasoning_effort）档位：'auto'（默认）与非法值都省略该参数、
+// 由服务端自定——即插件此前的原始行为，存量使用者零影响
+export const REASONING_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max', 'auto']);
+
+export function normalizeReasoningEffort(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (REASONING_EFFORTS.includes(raw)) return raw;
+  return 'auto';
+}
+
 export function getApiEndpointSuffix(format) {
   switch (normalizeApiFormat(format)) {
     case API_FORMATS.OPENAI_RESPONSES: return '/responses';
@@ -167,8 +177,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   apiKey: '',
   model: 'gpt-4.1-mini',
   modelOptions: [],
+  reasoningEffort: 'auto',
   formattedOutputV4: true,
-  mvuExtraAnalysisCompat: true,
   raceCatalogInPrompt: true,
   triggerTiming: 'after_ai',
   pollMs: 1800,
@@ -884,6 +894,11 @@ export function getSettings(ctx) {
   const normalizedApiFormat = normalizeApiFormat(settings.apiFormat);
   if (settings.apiFormat !== normalizedApiFormat) {
     settings.apiFormat = normalizedApiFormat;
+    shouldSave = true;
+  }
+  const normalizedReasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);
+  if (settings.reasoningEffort !== normalizedReasoningEffort) {
+    settings.reasoningEffort = normalizedReasoningEffort;
     shouldSave = true;
   }
   if (shouldSave) saveHostSettings(ctx);
@@ -1868,6 +1883,12 @@ function trimChatStateSnapshots(chatState) {
       boundarySignature: String(chatState.snapshots[0].boundarySignature || ''),
       reason: String(chatState.snapshots[0].reason || 'state'),
       createdAt: Number(chatState.snapshots[0].createdAt || Date.now()),
+      anchorVersion: Number(chatState.snapshots[0].anchorVersion) || 0,
+      tailMessageId: String(chatState.snapshots[0].tailMessageId || ''),
+      tailSwipeId: String(chatState.snapshots[0].tailSwipeId || ''),
+      tailName: String(chatState.snapshots[0].tailName || ''),
+      hostMutSeq: Number.isFinite(Number(chatState.snapshots[0].hostMutSeq)) ? Number(chatState.snapshots[0].hostMutSeq) : -1,
+      replacementStamp: Number.isFinite(Number(chatState.snapshots[0].replacementStamp)) ? Number(chatState.snapshots[0].replacementStamp) : 0,
       snapshotMode: 'full',
       stateSnapshot: materializedFirstPayload,
     };
@@ -1915,6 +1936,15 @@ function createStoredSnapshotState(snapshots, payload, metadata = {}, cache = ne
     boundarySignature: String(metadata.boundarySignature || ''),
     reason: String(metadata.reason || 'state'),
     createdAt: Number(metadata.createdAt || Date.now()),
+    // 靜默正文替換識別錨點（anchorVersion 1）：記錄邊界樓層的身分、「當時的編輯
+    // 事件計數」與「當時已見的替換戳值」。舊快照沒有這些欄位（anchorVersion 0）
+    // → 永遠走原本的判定，零回歸。
+    anchorVersion: Number(metadata.anchorVersion) || 0,
+    tailMessageId: metadata.tailMessageId === undefined || metadata.tailMessageId === null ? '' : String(metadata.tailMessageId),
+    tailSwipeId: metadata.tailSwipeId === undefined || metadata.tailSwipeId === null ? '' : String(metadata.tailSwipeId),
+    tailName: metadata.tailName === undefined || metadata.tailName === null ? '' : String(metadata.tailName),
+    hostMutSeq: Number.isFinite(Number(metadata.hostMutSeq)) ? Number(metadata.hostMutSeq) : -1,
+    replacementStamp: Number.isFinite(Number(metadata.replacementStamp)) ? Number(metadata.replacementStamp) : 0,
   };
 
   if (shouldStoreFullSnapshot(snapshotIndex, normalizedPayload, deltaPatch)) {
@@ -1986,6 +2016,12 @@ function repackChatStateSnapshots(chatState) {
       boundarySignature: snapshot?.boundarySignature,
       reason: snapshot?.reason,
       createdAt: snapshot?.createdAt,
+      anchorVersion: snapshot?.anchorVersion,
+      tailMessageId: snapshot?.tailMessageId,
+      tailSwipeId: snapshot?.tailSwipeId,
+      tailName: snapshot?.tailName,
+      hostMutSeq: snapshot?.hostMutSeq,
+      replacementStamp: snapshot?.replacementStamp,
     }, repackedCache);
     repackedSnapshots.push(stored);
     repackedCache.set(repackedSnapshots.length - 1, cloneValue(payload));
@@ -2055,6 +2091,12 @@ export function recordChatStateSnapshot(ctx, chatState, options = {}) {
       boundarySignature: buildBoundaryMessageSignature(ctx, messageCount),
       reason: String(options.reason || 'state'),
       createdAt: Date.now(),
+      anchorVersion: options.anchorVersion,
+      tailMessageId: options.tailMessageId,
+      tailSwipeId: options.tailSwipeId,
+      tailName: options.tailName,
+      hostMutSeq: options.hostMutSeq,
+      replacementStamp: options.replacementStamp,
     },
   );
   chatState.snapshots.push(snapshot);

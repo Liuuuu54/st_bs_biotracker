@@ -1,4 +1,4 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeReasoningEffort } from './state.js';
 import {
   getHostChat,
   getHostChatCompletionSettings,
@@ -434,6 +434,7 @@ async function requestHostProxyChatCompletion(apiBase, settings, requestBody, ru
     presence_penalty: requestBody.presence_penalty,
     max_tokens: requestBody.max_tokens,
     seed: requestBody.seed,
+    reasoning_effort: requestBody.reasoning_effort,
     // 非 compat 格式交给宿主后端按 custom_api_format 翻译；response_format 不在其中
     ...(formatAware ? { custom_api_format: apiFormat } : { response_format: requestBody.response_format }),
     stream: false,
@@ -813,6 +814,20 @@ async function getResolvedPreset(settings) {
   }
 }
 
+/**
+ * 思考强度请求字段：low/medium/high/xhigh/max 原样透传；
+ * 'auto'（默认）与非法值省略该参数、由服务端自定——即插件此前的原始行为。
+ * 宿主代理路径（TT/ST）由服务端按 custom_api_format 翻译，直连 compat 原样发送；
+ * 直连原生格式里只有 Responses 有 effort 概念（reasoning.effort），Claude 的
+ * thinking 与 Gemini 的 thinkingConfig 要的是 token 数而非档位，无从忠实映射，
+ * 故不发送（宿主代理路径仍由服务端翻译，不受影响）。
+ */
+function resolveReasoningEffortField(settings) {
+  const raw = normalizeReasoningEffort(settings?.reasoningEffort);
+  if (raw === 'auto') return {};
+  return { reasoning_effort: raw };
+}
+
 function buildPresetSamplingBodyFromPreset(preset) {
   const other = preset?.other && typeof preset.other === 'object' ? preset.other : {};
   const utilityPrompts = preset?.utilityPrompts && typeof preset.utilityPrompts === 'object' ? preset.utilityPrompts : {};
@@ -1002,6 +1017,11 @@ function buildDirectPayload(fmt, requestBody) {
     };
     if (requestBody.max_tokens) payload.max_output_tokens = requestBody.max_tokens;
     if (requestBody.max_completion_tokens) payload.max_output_tokens = requestBody.max_completion_tokens;
+    // 直连 Responses 原生端点：档位原样进 reasoning.effort（服务端校验）；
+    // auto 时该字段本就不存在，直接省略
+    if (typeof requestBody.reasoning_effort === 'string' && requestBody.reasoning_effort) {
+      payload.reasoning = { effort: requestBody.reasoning_effort };
+    }
     if (requestBody.response_format?.type === 'json_object') {
       payload.text = { format: { type: 'json_object' } };
     }
@@ -1371,6 +1391,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
     model,
     temperature: 0.2,
     ...stPresetSampling,
+    ...resolveReasoningEffortField(settings),
     messages: effectiveMessages,
     ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
   };
@@ -1409,6 +1430,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
         model,
         temperature: 0.1,
         ...stPresetSampling,
+        ...resolveReasoningEffortField(settings),
         messages: [
           ...effectiveMessages,
           { role: 'assistant', content: String(content || '') },
