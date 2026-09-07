@@ -67,6 +67,7 @@ import {
   replaceHostEventSubscription,
 } from './scripts/host.js';
 import {
+  cloneValue,
   createEmptyChatState,
   DEFAULT_SYSTEM_PROMPT,
   getApiUrlForFormat,
@@ -94,6 +95,7 @@ import {
   resolveRegisteredCharacterName,
   sanitizeWorldbookEntryDisplayName,
   saveSettings,
+  saveSettingsNow,
   THEME_CONFIG,
   worldbookSelectionMatches,
 } from './scripts/state.js';
@@ -5324,13 +5326,15 @@ function openFullStateConfirm() {
   }
 }
 
-function unregisterCharacter(ctx, name) {
+async function unregisterCharacter(ctx, name) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   if (!chatState.characters[name]) {
     globalThis.toastr?.warning?.(`[BS BioTracker] 找不到角色 ${name}`);
     return;
   }
+  const chatKey = getChatKey(ctx);
+  const previousChatState = cloneValue(chatState);
   delete chatState.characters[name];
   for (const character of Object.values(chatState.characters || {})) {
     for (const child of (Array.isArray(character?.profile?.children) ? character.profile.children : [])) {
@@ -5338,7 +5342,19 @@ function unregisterCharacter(ctx, name) {
     }
   }
   recordChatStateSnapshot(ctx, chatState, { reason: 'unregister' });
-  saveSettings(ctx);
+  try {
+    await saveSettingsNow(ctx);
+  } catch (error) {
+    console.error('[BS BioTracker] 注销角色保存失败', error);
+    // 落盘失败就恢复内存状态，避免画面说已删除、重开后却又出现。
+    settings.chatStates[chatKey] = previousChatState;
+    saveSettings(ctx);
+    globalThis.toastr?.error?.(`[BS BioTracker] ${name} 注销失败，原资料已恢复，请稍后重试。`);
+    renderStatusPanel(ctx);
+    renderFullStatePage(ctx);
+    updateMainFlowPrompt(ctx);
+    return;
+  }
   renderStatusPanel(ctx);
   renderFullStatePage(ctx);
   updateMainFlowPrompt(ctx);
@@ -7487,17 +7503,31 @@ async function ensureModal(ctx) {
       globalThis.toastr?.error?.(message, '[BS BioTracker]');
     }
   });
-  document.getElementById('bs-bt-full-state-confirm-yes')?.addEventListener('click', () => {
+  document.getElementById('bs-bt-full-state-confirm-yes')?.addEventListener('click', async () => {
     if (!selectedFullStateName) return;
-    unregisterCharacter(ctx, selectedFullStateName);
+    await unregisterCharacter(ctx, selectedFullStateName);
   });
   document.getElementById('bs-bt-full-state-confirm-no')?.addEventListener('click', () => {
     closeFullStateConfirm();
   });
-  document.getElementById('bs-bt-clear')?.addEventListener('click', () => {
+  document.getElementById('bs-bt-clear')?.addEventListener('click', async () => {
     const settings = getSettings(ctx);
-    settings.chatStates[getChatKey(ctx)] = createEmptyChatState();
-    saveSettings(ctx);
+    const chatKey = getChatKey(ctx);
+    const previousChatState = cloneValue(settings.chatStates[chatKey]);
+    settings.chatStates[chatKey] = createEmptyChatState();
+    try {
+      await saveSettingsNow(ctx);
+    } catch (error) {
+      console.error('[BS BioTracker] 清除当前聊天状态保存失败', error);
+      settings.chatStates[chatKey] = previousChatState;
+      saveSettings(ctx);
+      renderStatusPanel(ctx);
+      renderFullStatePage(ctx);
+      updateMainFlowPrompt(ctx);
+      setRegisterStatus('清除失败，原状态已恢复。', true);
+      globalThis.toastr?.error?.('[BS BioTracker] 清除失败，原状态已恢复，请稍后重试');
+      return;
+    }
     renderStatusPanel(ctx);
     renderFullStatePage(ctx);
     updateMainFlowPrompt(ctx);

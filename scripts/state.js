@@ -31,6 +31,7 @@ import {
   loadHostChatState,
   resolveHostChatId,
   saveHostSettings,
+  flushHostChatStateSave,
   scheduleHostChatStateSave,
 } from './host.js';
 
@@ -894,6 +895,14 @@ export function saveSettings(ctx) {
   const root = getHostExtensionSettings(ctx);
   const chatState = root?.[MODULE_NAME]?.chatStates?.[getChatKey(ctx)];
   if (chatState) scheduleHostChatStateSave(ctx, chatState);
+}
+
+/** 保存全局设置，并等待当前聊天的 TT／Luker sidecar 真正写入。 */
+export async function saveSettingsNow(ctx) {
+  saveHostSettings(ctx);
+  const root = getHostExtensionSettings(ctx);
+  const chatState = root?.[MODULE_NAME]?.chatStates?.[getChatKey(ctx)];
+  if (chatState) await flushHostChatStateSave(ctx, chatState);
 }
 
 export async function hydrateChatStateFromHost(ctx, settings) {

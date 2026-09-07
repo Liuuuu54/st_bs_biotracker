@@ -6,6 +6,10 @@ const TAURI_STATE_NAMESPACE = 'bs-biotracker';
 const TAURI_STATE_KEY = 'chat-state-v1';
 const TAURI_STATE_SAVE_DELAY_MS = 250;
 const TAURI_STATE_SAVE_QUEUE = new Map();
+// 同一聊天的 sidecar 写入必须严格按发起顺序完成。只取消尚未开始的防抖计时器
+// 不够：较旧的 setJson/updateChatState 若已在飞，仍可能晚于新写入完成，把刚删除
+// 的角色资料覆盖回来。
+const TAURI_STATE_WRITE_CHAIN = new Map();
 const TAURI_STATE_KNOWN_MISSING_IDS = new Set();
 const TAURI_STATE_LOAD_INFLIGHT = new Map();
 // 已经确认过存档内容（读到了资料，或确认过没有存档）的聊天。
@@ -444,51 +448,80 @@ export async function loadHostChatState(ctx = null) {
   }
 }
 
-export function scheduleHostChatStateSave(ctx, chatState) {
+function enqueueHostChatStateWrite(chatId, write) {
+  const previous = TAURI_STATE_WRITE_CHAIN.get(chatId) || Promise.resolve();
+  const current = previous.catch(() => {}).then(write);
+  TAURI_STATE_WRITE_CHAIN.set(chatId, current);
+  const cleanup = () => {
+    if (TAURI_STATE_WRITE_CHAIN.get(chatId) === current) TAURI_STATE_WRITE_CHAIN.delete(chatId);
+  };
+  void current.then(cleanup, cleanup);
+  return current;
+}
+
+function prepareHostChatStateSave(ctx, chatState) {
   const hostKind = getHostKind();
-  if (!chatState || typeof chatState !== 'object') return;
+  if (!chatState || typeof chatState !== 'object') return null;
   if (hostKind === 'luker') {
-    if (typeof ctx?.updateChatState !== 'function') return;
+    if (typeof ctx?.updateChatState !== 'function') return null;
     const chatId = getHostChatId(ctx);
-    if (shouldSkipBlankHostChatStateSave(chatId, chatState)) return;
-    const previous = TAURI_STATE_SAVE_QUEUE.get(chatId);
-    if (previous?.timer) clearTimeout(previous.timer);
+    if (shouldSkipBlankHostChatStateSave(chatId, chatState)) return null;
     const payload = { version: 1, chatState: cloneHostValue(chatState) };
-    const timer = setTimeout(async () => {
-      const queued = TAURI_STATE_SAVE_QUEUE.get(chatId);
-      if (!queued || queued.timer !== timer) return;
-      TAURI_STATE_SAVE_QUEUE.delete(chatId);
-      try {
-        await queued.ctx.updateChatState(TAURI_STATE_NAMESPACE, () => queued.payload);
-      } catch (error) {
-        console.warn('[BS BioTracker] unable to save Luker chat state', error);
-      }
-    }, TAURI_STATE_SAVE_DELAY_MS);
-    TAURI_STATE_SAVE_QUEUE.set(chatId, { ctx, payload, timer });
-    return;
+    return {
+      chatId,
+      hostKind,
+      write: () => ctx.updateChatState(TAURI_STATE_NAMESPACE, () => payload),
+    };
   }
-  if (hostKind !== 'tauritavern') return;
+  if (hostKind !== 'tauritavern') return null;
   const handle = getCurrentTauriChatHandle();
-  if (typeof handle?.store?.setJson !== 'function') return;
+  if (typeof handle?.store?.setJson !== 'function') return null;
   const chatId = getHostChatId(ctx);
-  if (shouldSkipBlankHostChatStateSave(chatId, chatState)) return;
+  if (shouldSkipBlankHostChatStateSave(chatId, chatState)) return null;
   TAURI_STATE_KNOWN_MISSING_IDS.delete(chatId);
+  const payload = { version: 1, chatState: cloneHostValue(chatState) };
+  return {
+    chatId,
+    hostKind,
+    write: () => handle.store.setJson({
+      namespace: TAURI_STATE_NAMESPACE,
+      key: TAURI_STATE_KEY,
+      value: payload,
+    }),
+  };
+}
+
+function warnHostChatStateSaveFailure(entry, error) {
+  const hostName = entry?.hostKind === 'luker' ? 'Luker' : 'TauriTavern';
+  console.warn(`[BS BioTracker] unable to save ${hostName} chat state`, error);
+}
+
+export function scheduleHostChatStateSave(ctx, chatState) {
+  const entry = prepareHostChatStateSave(ctx, chatState);
+  if (!entry) return;
+  const { chatId } = entry;
   const previous = TAURI_STATE_SAVE_QUEUE.get(chatId);
   if (previous?.timer) clearTimeout(previous.timer);
-  const payload = { version: 1, chatState: cloneHostValue(chatState) };
-  const timer = setTimeout(async () => {
+  const timer = setTimeout(() => {
     const queued = TAURI_STATE_SAVE_QUEUE.get(chatId);
     if (!queued || queued.timer !== timer) return;
     TAURI_STATE_SAVE_QUEUE.delete(chatId);
-    try {
-      await queued.handle.store.setJson({
-        namespace: TAURI_STATE_NAMESPACE,
-        key: TAURI_STATE_KEY,
-        value: queued.payload,
-      });
-    } catch (error) {
-      console.warn('[BS BioTracker] unable to save TauriTavern chat state', error);
-    }
+    enqueueHostChatStateWrite(chatId, queued.entry.write)
+      .catch((error) => warnHostChatStateSaveFailure(queued.entry, error));
   }, TAURI_STATE_SAVE_DELAY_MS);
-  TAURI_STATE_SAVE_QUEUE.set(chatId, { handle, payload, timer });
+  TAURI_STATE_SAVE_QUEUE.set(chatId, { entry, timer });
+}
+
+/**
+ * 取消尚未开始的防抖保存，把当前状态排到同聊天既有写入之后，并等待真正落盘。
+ * 用于注销／清除等不能在写入完成前宣告成功的破坏性操作。
+ */
+export async function flushHostChatStateSave(ctx, chatState) {
+  const entry = prepareHostChatStateSave(ctx, chatState);
+  if (!entry) return false;
+  const pending = TAURI_STATE_SAVE_QUEUE.get(entry.chatId);
+  if (pending?.timer) clearTimeout(pending.timer);
+  TAURI_STATE_SAVE_QUEUE.delete(entry.chatId);
+  await enqueueHostChatStateWrite(entry.chatId, entry.write);
+  return true;
 }

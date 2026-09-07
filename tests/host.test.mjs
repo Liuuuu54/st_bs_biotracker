@@ -931,3 +931,58 @@ test('a failing list method degrades to the original read path', async () => {
   assert.equal(await state.hydrateChatStateFromHost(ctx, settings), true);
   assert.equal(getJsonCalls, 1, '列举失败不得让载入跟着失败');
 });
+
+test('immediate sidecar save cancels a pending debounce and persists the newest state', async () => {
+  resetGlobals();
+  const writes = [];
+  const ctx = installTauriHostWithStore({
+    setJson: async ({ value }) => { writes.push(value); },
+  }, 'stable-immediate-save');
+  await host.resolveHostChatId(ctx);
+
+  host.scheduleHostChatStateSave(ctx, {
+    characters: { Alice: { initialized: true } },
+    snapshots: [],
+  });
+  await host.flushHostChatStateSave(ctx, {
+    characters: {},
+    snapshots: [{ reason: 'unregister' }],
+  });
+
+  assert.equal(writes.length, 1, '尚未开始的旧防抖写入应被取消');
+  assert.deepEqual(writes[0].chatState.characters, {});
+});
+
+test('immediate sidecar save waits behind an older in-flight write', async () => {
+  resetGlobals();
+  const writes = [];
+  let releaseFirstWrite;
+  const firstWriteBlocked = new Promise((resolve) => { releaseFirstWrite = resolve; });
+  const ctx = installTauriHostWithStore({
+    setJson: async ({ value }) => {
+      writes.push(value);
+      if (writes.length === 1) await firstWriteBlocked;
+    },
+  }, 'stable-serialized-save');
+  await host.resolveHostChatId(ctx);
+
+  host.scheduleHostChatStateSave(ctx, {
+    characters: { Alice: { initialized: true } },
+    snapshots: [],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(writes.length, 1, '旧写入应已开始');
+
+  const deletionSave = host.flushHostChatStateSave(ctx, {
+    characters: {},
+    snapshots: [{ reason: 'unregister' }],
+  });
+  await Promise.resolve();
+  assert.equal(writes.length, 1, '删除写入必须等待旧写入结束');
+  releaseFirstWrite();
+  await deletionSave;
+
+  assert.equal(writes.length, 2);
+  assert.ok(writes[0].chatState.characters.Alice);
+  assert.deepEqual(writes[1].chatState.characters, {}, '最后落盘的必须是删除后的状态');
+});
