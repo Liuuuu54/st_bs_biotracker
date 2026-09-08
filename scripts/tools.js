@@ -5387,7 +5387,8 @@ function applyDebugInjectPregnancy(chatState, args) {
   const fetusCount = Math.floor(clampNumber(args?.fetusCount, 1, 9, 1));
   const equivalentDays = clampNumber(args?.equivalentDays, 0, 300, 0);
   const genderInput = String(args?.genders || '').trim();
-  const forceIdentical = args?.forceIdentical === true;
+  // 胎内回归的正式机制没有同卵分裂；兼容旧 UI 残留值，但不执行。
+  const forceIdentical = mode !== 'womb_return' && args?.forceIdentical === true;
   const forceChimera = args?.forceChimera === true;
   const character = chatState.characters?.[female];
   if (!female || !character) return { applied: false, message: `bsDebugInjectPregnancy skipped: unknown character ${female || '(empty)'}.` };
@@ -5488,6 +5489,8 @@ function applyDebugInjectPregnancy(chatState, args) {
 
   let geneticProfile = profile;
   let provider = null;
+  let secondaryProvider = null;
+  let secondaryGeneticProfile = null;
   if (mode === 'surrogacy') {
     provider = String(args?.provider || '').trim();
     if (!provider) {
@@ -5502,6 +5505,27 @@ function applyDebugInjectPregnancy(chatState, args) {
       ? parseRaceDescriptor(providerRaceInput)
       : parseRaceDescriptor(providerCharacter?.profile?.base?.race || base.race || '人类');
     geneticProfile = { base: { race: providerDescriptor.race || '人类' } };
+
+    if (forceChimera) {
+      const requestedSecondaryProvider = String(args?.secondaryProvider || '').trim();
+      secondaryProvider = requestedSecondaryProvider || provider;
+      if (secondaryProvider === female) {
+        return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: secondary provider must differ from carrier.` };
+      }
+      if (requestedSecondaryProvider && secondaryProvider === provider) {
+        return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: secondary provider must differ from the first provider.` };
+      }
+      if (!requestedSecondaryProvider) {
+        secondaryGeneticProfile = geneticProfile;
+      } else {
+        const secondaryProviderCharacter = chatState.characters?.[secondaryProvider];
+        const secondaryProviderRaceInput = String(args?.secondaryProviderRace || '').trim();
+        const secondaryProviderDescriptor = secondaryProviderRaceInput
+          ? parseRaceDescriptor(secondaryProviderRaceInput)
+          : parseRaceDescriptor(secondaryProviderCharacter?.profile?.base?.race || base.race || '人类');
+        secondaryGeneticProfile = { base: { race: secondaryProviderDescriptor.race || '人类' } };
+      }
+    }
   }
 
   snapshotOriginalPregnancyBio(next);
@@ -5526,11 +5550,15 @@ function applyDebugInjectPregnancy(chatState, args) {
       race: parseRaceDescriptor(rawRaceList.length === 1 ? rawRaceList[0] : rawRaceList[index]).race || '人类',
       derivedType: null,
     };
+    const usesSecondaryProvider = mode === 'surrogacy' && forceChimera && index === 1;
     const fetus = createSimpleFetus(
       profile,
       spermSeed,
       isAdditionalConception || equivalentDays > 0 ? '孕早期' : currentStage,
-      { geneticProfile, provider },
+      {
+        geneticProfile: usesSecondaryProvider ? secondaryGeneticProfile : geneticProfile,
+        provider: usesSecondaryProvider ? secondaryProvider : provider,
+      },
     );
     if (normalizedGenderList.length === 1) {
       fetus.gender = normalizedGenderList[0];

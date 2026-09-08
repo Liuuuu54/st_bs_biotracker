@@ -195,6 +195,8 @@ let debugInjectDraft = {
   equivalentDays: '0',
   provider: '',
   providerRace: '',
+  secondaryProvider: '',
+  secondaryProviderRace: '',
   returner: '',
   returnerRace: '',
   hostFetusIndex: '',
@@ -4020,6 +4022,8 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
   const daysValue = escapeHtml(debugInjectDraft.equivalentDays || '0');
   const providerValue = escapeHtml(debugInjectDraft.provider || '');
   const providerRaceValue = escapeHtml(debugInjectDraft.providerRace || '');
+  const secondaryProviderValue = escapeHtml(debugInjectDraft.secondaryProvider || '');
+  const secondaryProviderRaceValue = escapeHtml(debugInjectDraft.secondaryProviderRace || '');
   const returnerValue = escapeHtml(debugInjectDraft.returner || '');
   const returnerRaceValue = escapeHtml(debugInjectDraft.returnerRace || '');
   const selectedHostIndex = implantedFetuses.some((fetus) => String(fetus.index) === String(debugInjectDraft.hostFetusIndex))
@@ -4139,7 +4143,23 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
             </div>
             ${debugRacePalette('bs-bt-debug-provider-race')}
           </div>
-        </label>` : ''}
+        </label>
+        ${debugInjectDraft.forceChimera ? `
+        <div class="bs-bt-debug-mode-note"><strong>四源嵌合（可选）</strong><span>第二颗胚胎可指定另一名卵源；配合两位父亲即可保留两母源＋两父源。</span></div>
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">第二卵源名字</span>
+          <input id="bs-bt-debug-secondary-provider" class="text_pole" type="text" value="${secondaryProviderValue}" placeholder="留空则沿用第一卵源" />
+        </label>
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">第二卵源种族</span>
+          <div class="bs-bt-race-picker-wrap">
+            <div class="bs-bt-race-input-row">
+              <input id="bs-bt-debug-secondary-provider-race" class="text_pole" type="text" value="${secondaryProviderRaceValue}" placeholder="已登记角色可留空读取本身种族" />
+              <button type="button" class="bs-bt-race-picker-button" data-race-picker-target="bs-bt-debug-secondary-provider-race" title="种族调色盘" aria-label="第二卵源种族调色盘">☥</button>
+            </div>
+            ${debugRacePalette('bs-bt-debug-secondary-provider-race')}
+          </div>
+        </label>` : ''}` : ''}
         ${conceptionMode === 'womb_return' ? `
         <label class="bs-bt-track-debug-field">
           <span class="bs-bt-track-debug-label">回归者名字</span>
@@ -4193,8 +4213,8 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
           <span><strong>强制嵌合胎</strong><small>至少输入 2 颗基础胚胎；前两颗会在着床前融合为 1 颗，并保留双方父系、母源、种族与性别来源。</small></span>
         </label>` : ''}
         <label class="bs-bt-debug-identical-option">
-          <input id="bs-bt-debug-force-identical" type="checkbox"${debugInjectDraft.forceIdentical ? ' checked' : ''} />
-          <span><strong>强制同卵分裂</strong><small>${conceptionMode === 'womb_return' ? '回归胎固定分裂为同卵双胎。' : '每颗融合处理后的胚胎固定分裂为一组同卵双胎；若同时强制嵌合，会先嵌合再分裂。'}</small></span>
+          <input id="bs-bt-debug-force-identical" type="checkbox"${conceptionMode !== 'womb_return' && debugInjectDraft.forceIdentical ? ' checked' : ''}${conceptionMode === 'womb_return' ? ' disabled' : ''} />
+          <span><strong>强制同卵分裂</strong><small>${conceptionMode === 'womb_return' ? '胎内回归的正式机制没有同卵分裂，此项不可用。' : '每颗融合处理后的胚胎固定分裂为一组同卵双胎；若同时强制嵌合，会先嵌合再分裂。'}</small></span>
         </label>
         <button type="button" class="menu_button" data-debug-action="inject-pregnancy">执行${escapeHtml(selectedMode.label)}注入</button>
       </fieldset>
@@ -4321,12 +4341,15 @@ function injectSelectedTrackPregnancy(ctx) {
     equivalentDays: String(document.getElementById('bs-bt-debug-days')?.value ?? debugInjectDraft.equivalentDays ?? '0'),
     provider: String(document.getElementById('bs-bt-debug-provider')?.value ?? debugInjectDraft.provider ?? '').trim(),
     providerRace: String(document.getElementById('bs-bt-debug-provider-race')?.value ?? debugInjectDraft.providerRace ?? '').trim(),
+    secondaryProvider: String(document.getElementById('bs-bt-debug-secondary-provider')?.value ?? debugInjectDraft.secondaryProvider ?? '').trim(),
+    secondaryProviderRace: String(document.getElementById('bs-bt-debug-secondary-provider-race')?.value ?? debugInjectDraft.secondaryProviderRace ?? '').trim(),
     returner: String(document.getElementById('bs-bt-debug-returner')?.value ?? debugInjectDraft.returner ?? '').trim(),
     returnerRace: String(document.getElementById('bs-bt-debug-returner-race')?.value ?? debugInjectDraft.returnerRace ?? '').trim(),
     hostFetusIndex: String(document.getElementById('bs-bt-debug-host-fetus')?.value ?? debugInjectDraft.hostFetusIndex ?? ''),
     forceIdentical: Boolean(document.getElementById('bs-bt-debug-force-identical')?.checked),
     forceChimera: Boolean(document.getElementById('bs-bt-debug-force-chimera')?.checked),
   };
+  if (debugInjectDraft.mode === 'womb_return') debugInjectDraft.forceIdentical = false;
   const result = applyToolCall(chatState, {
     name: 'bsDebugInjectPregnancy',
     arguments: {
@@ -4339,6 +4362,8 @@ function injectSelectedTrackPregnancy(ctx) {
       equivalentDays: Number(debugInjectDraft.equivalentDays || 0),
       provider: debugInjectDraft.provider,
       providerRace: debugInjectDraft.providerRace,
+      secondaryProvider: debugInjectDraft.secondaryProvider,
+      secondaryProviderRace: debugInjectDraft.secondaryProviderRace,
       returner: debugInjectDraft.returner,
       returnerRace: debugInjectDraft.returnerRace,
       hostFetusIndex: Number(debugInjectDraft.hostFetusIndex),
@@ -4375,6 +4400,8 @@ function bindDebugPregnancyDraftControls(root, refresh) {
   bindText('#bs-bt-debug-days', 'equivalentDays', '0');
   bindText('#bs-bt-debug-provider', 'provider');
   bindText('#bs-bt-debug-provider-race', 'providerRace');
+  bindText('#bs-bt-debug-secondary-provider', 'secondaryProvider');
+  bindText('#bs-bt-debug-secondary-provider-race', 'secondaryProviderRace');
   bindText('#bs-bt-debug-returner', 'returner');
   bindText('#bs-bt-debug-returner-race', 'returnerRace');
   root.querySelector('#bs-bt-debug-host-fetus')?.addEventListener('change', (event) => {
@@ -4385,6 +4412,8 @@ function bindDebugPregnancyDraftControls(root, refresh) {
   });
   root.querySelector('#bs-bt-debug-force-chimera')?.addEventListener('change', (event) => {
     debugInjectDraft.forceChimera = Boolean(event.target?.checked);
+    closeRacePalettePopover();
+    refresh();
   });
 }
 
@@ -4809,6 +4838,7 @@ function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(c
     const draftRaceKey = {
       'bs-bt-debug-race': 'race',
       'bs-bt-debug-provider-race': 'providerRace',
+      'bs-bt-debug-secondary-provider-race': 'secondaryProviderRace',
       'bs-bt-debug-returner-race': 'returnerRace',
     }[racePaletteState.targetInputId];
     if (draftRaceKey) debugInjectDraft[draftRaceKey] = target.value;
@@ -5137,6 +5167,7 @@ function renderStatusPanel(ctx) {
     const draftRaceKey = {
       'bs-bt-debug-race': 'race',
       'bs-bt-debug-provider-race': 'providerRace',
+      'bs-bt-debug-secondary-provider-race': 'secondaryProviderRace',
       'bs-bt-debug-returner-race': 'returnerRace',
     }[racePaletteState.targetInputId];
     if (draftRaceKey) debugInjectDraft[draftRaceKey] = target.value;

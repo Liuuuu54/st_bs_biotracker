@@ -106,8 +106,10 @@ test('嵌合与同卵同时强制时先融合再分裂，双胎共享嵌合来�
   const chatState = setup();
   const result = inject(chatState, {
     mode: 'surrogacy',
-    provider: '卵源',
+    provider: '卵源甲',
     providerRace: '精灵',
+    secondaryProvider: '卵源乙',
+    secondaryProviderRace: '兽人',
     father: '甲,乙',
     race: '人类,龙族',
     fetusCount: 2,
@@ -120,7 +122,9 @@ test('嵌合与同卵同时强制时先融合再分裂，双胎共享嵌合来�
   const fetuses = profileOf(chatState).pregnant.fetuses;
   assert.equal(fetuses.length, 2);
   assert.ok(fetuses.every((fetus) => fetus.chimera?.sourceCount === 2));
-  assert.ok(fetuses.every((fetus) => fetus.provider === '卵源'));
+  assert.ok(fetuses.every((fetus) => fetus.provider === '卵源甲 × 卵源乙'));
+  assert.ok(fetuses.every((fetus) => fetus.chimera.maternalSources.join(',') === '卵源甲,卵源乙'));
+  assert.ok(fetuses.every((fetus) => fetus.chimera.fatherSources.join(',') === '甲,乙'));
   assert.equal(fetuses[0].identicalGroup, fetuses[1].identicalGroup);
   assert.equal(fetuses[0].gender, fetuses[1].gender, '同卵嵌合胎不能解析出不同性别');
 });
@@ -136,7 +140,7 @@ test('强制嵌合要求一般或代孕模式至少提供两颗基础胚胎', ()
   assert.equal(profileOf(chatState).pregnant.fetuses.length, 0);
 });
 
-test('胎内回归调试跳过回归期并可强制同卵分裂', () => {
+test('胎内回归调试跳过回归期且忽略旧版强制同卵参数', () => {
   const chatState = setup();
   chatState.characters.B = makeCharacter('B');
   const result = inject(chatState, {
@@ -147,8 +151,9 @@ test('胎内回归调试跳过回归期并可强制同卵分裂', () => {
   assert.equal(profile.base.stage, '孕早期');
   assert.equal(profile.base.days, 1);
   assert.equal(profile.pregnant.wombReturn, undefined);
-  assert.equal(profile.pregnant.fetuses.length, 2);
-  assert.ok(profile.pregnant.fetuses.every((fetus) => fetus.tags.includes('rebirth') && fetus.tags.includes('identical')));
+  assert.equal(profile.pregnant.fetuses.length, 1);
+  assert.ok(profile.pregnant.fetuses[0].tags.includes('rebirth'));
+  assert.equal(profile.pregnant.fetuses[0].tags.includes('identical'), false);
   assert.equal(chatState.characters.B.profile.base.wombReturnHost, 'A');
 });
 
