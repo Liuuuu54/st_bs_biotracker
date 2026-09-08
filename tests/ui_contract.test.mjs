@@ -71,6 +71,8 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /id="bs-bt-debug-returner"/);
   assert.match(controller, /id="bs-bt-debug-host-fetus"/);
   assert.match(controller, /id="bs-bt-debug-force-identical"/);
+  assert.match(controller, /id="bs-bt-debug-force-chimera"/);
+  assert.match(controller, /先嵌合再分裂/);
   assert.match(controller, /function bindDebugPregnancyDraftControls\(/);
   assert.match(controller, /胎儿自主活动调试[\s\S]*?\$\{fetalTalentHtml\}[\s\S]*?妊娠变速效果/);
   assert.match(controller, /function applyFetalTalentDebugChange\(/);

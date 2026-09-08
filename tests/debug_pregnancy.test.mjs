@@ -80,6 +80,62 @@ test('代孕／托卵保存卵源归属与卵源种族', () => {
   assert.match(fetus.race, /精灵/);
 });
 
+test('强制嵌合融合前两颗胚胎并完整保留双方来源', () => {
+  const chatState = setup();
+  const result = inject(chatState, {
+    mode: 'normal',
+    father: '甲,乙',
+    race: '人类,精灵',
+    fetusCount: 2,
+    genders: '男,女',
+    equivalentDays: 20,
+    forceChimera: true,
+  });
+  assert.equal(result.applied, true, result.message);
+  const fetuses = profileOf(chatState).pregnant.fetuses;
+  assert.equal(fetuses.length, 1, '两颗来源胚胎应融合成一颗');
+  const chimera = fetuses[0];
+  assert.equal(chimera.chimera.sourceCount, 2);
+  assert.deepEqual(chimera.chimera.fatherSources, ['甲', '乙']);
+  assert.deepEqual(chimera.chimera.maternalSources, ['A']);
+  assert.deepEqual(chimera.chimera.genderSources, ['男', '女']);
+  assert.match(chimera.race, /精灵/);
+});
+
+test('嵌合与同卵同时强制时先融合再分裂，双胎共享嵌合来源与性别', () => {
+  const chatState = setup();
+  const result = inject(chatState, {
+    mode: 'surrogacy',
+    provider: '卵源',
+    providerRace: '精灵',
+    father: '甲,乙',
+    race: '人类,龙族',
+    fetusCount: 2,
+    genders: '男,女',
+    equivalentDays: 20,
+    forceChimera: true,
+    forceIdentical: true,
+  });
+  assert.equal(result.applied, true, result.message);
+  const fetuses = profileOf(chatState).pregnant.fetuses;
+  assert.equal(fetuses.length, 2);
+  assert.ok(fetuses.every((fetus) => fetus.chimera?.sourceCount === 2));
+  assert.ok(fetuses.every((fetus) => fetus.provider === '卵源'));
+  assert.equal(fetuses[0].identicalGroup, fetuses[1].identicalGroup);
+  assert.equal(fetuses[0].gender, fetuses[1].gender, '同卵嵌合胎不能解析出不同性别');
+});
+
+test('强制嵌合要求一般或代孕模式至少提供两颗基础胚胎', () => {
+  const chatState = setup();
+  const tooFew = inject(chatState, { mode: 'normal', fetusCount: 1, forceChimera: true });
+  assert.equal(tooFew.applied, false);
+  assert.equal(profileOf(chatState).pregnant.fetuses.length, 0);
+
+  const unsupported = inject(chatState, { mode: 'womb_return', returner: 'B', fetusCount: 2, forceChimera: true });
+  assert.equal(unsupported.applied, false);
+  assert.equal(profileOf(chatState).pregnant.fetuses.length, 0);
+});
+
 test('胎内回归调试跳过回归期并可强制同卵分裂', () => {
   const chatState = setup();
   chatState.characters.B = makeCharacter('B');

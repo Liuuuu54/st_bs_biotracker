@@ -1434,11 +1434,34 @@ function applyChimeraFusion(profile, carrierName) {
   pregnant.fetusesCount = pregnant.fetuses.length;
 }
 
+/** 调试工具的确定性嵌合：把指定批次的前两颗胚胎融合为一颗。 */
+function forceChimeraFusion(profile, carrierName, batch) {
+  const pregnant = profile.pregnant || {};
+  const fetuses = ensureEmbryoMetadata(pregnant);
+  const sources = Array.isArray(batch) ? batch.filter((fetus) => fetuses.includes(fetus)) : [];
+  if (sources.length < 2) return null;
+  const [fetusA, fetusB] = sources;
+  const chimera = createChimeraFetus(profile, carrierName, fetusA, fetusB, getNextEmbryoId(fetuses));
+  const consumed = new Set([fetusA, fetusB]);
+  pregnant.fetuses = [...fetuses.filter((fetus) => !consumed.has(fetus)), chimera];
+  pregnant.fetusesCount = pregnant.fetuses.length;
+  return [...sources.filter((fetus) => !consumed.has(fetus)), chimera];
+}
+
 function resolvePendingChimeraGenders(fetuses) {
+  const resolvedIdenticalGroups = new Map();
   for (const fetus of fetuses) {
     if (fetus?.gender !== '待定') continue;
+    const identicalGroup = Number(fetus?.identicalGroup);
+    if (Number.isInteger(identicalGroup) && identicalGroup > 0 && resolvedIdenticalGroups.has(identicalGroup)) {
+      fetus.gender = resolvedIdenticalGroups.get(identicalGroup);
+      continue;
+    }
     const roll = Math.random();
     fetus.gender = roll < 0.4 ? '男' : roll < 0.8 ? '女' : '双';
+    if (Number.isInteger(identicalGroup) && identicalGroup > 0) {
+      resolvedIdenticalGroups.set(identicalGroup, fetus.gender);
+    }
   }
 }
 
@@ -5365,6 +5388,7 @@ function applyDebugInjectPregnancy(chatState, args) {
   const equivalentDays = clampNumber(args?.equivalentDays, 0, 300, 0);
   const genderInput = String(args?.genders || '').trim();
   const forceIdentical = args?.forceIdentical === true;
+  const forceChimera = args?.forceChimera === true;
   const character = chatState.characters?.[female];
   if (!female || !character) return { applied: false, message: `bsDebugInjectPregnancy skipped: unknown character ${female || '(empty)'}.` };
 
@@ -5392,6 +5416,12 @@ function applyDebugInjectPregnancy(chatState, args) {
   }
   if (isAdditionalConception && currentStage !== SUPERFETATION_STAGE) {
     return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: ${mode} is only available during 孕早期.` };
+  }
+  if (forceChimera && !['normal', 'surrogacy'].includes(mode)) {
+    return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: forced chimera is only available for normal or surrogacy conception.` };
+  }
+  if (forceChimera && fetusCount < 2) {
+    return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: forced chimera requires at least 2 base embryos.` };
   }
 
   if (mode === 'womb_return') {
@@ -5514,7 +5544,8 @@ function applyDebugInjectPregnancy(chatState, args) {
 
   pregnant.fetuses = isAdditionalConception ? [...existingFetuses, ...fetuses] : fetuses;
   ensureEmbryoMetadata(pregnant);
-  if (forceIdentical) forceIdenticalTwinSplit(profile, fetuses);
+  const injectedBatch = forceChimera ? forceChimeraFusion(profile, female, fetuses) : fetuses;
+  if (forceIdentical) forceIdenticalTwinSplit(profile, injectedBatch);
   pregnant.fetusesCount = pregnant.fetuses.length;
   if (isAdditionalConception) {
     base.fertilizationDays = 0;
@@ -5547,6 +5578,7 @@ function applyDebugInjectPregnancy(chatState, args) {
   if (equivalentDays === 0) {
     base.fertilizationDays = 0;
   } else {
+    resolvePendingChimeraGenders(pregnant.fetuses);
     applyPregnancyPhysiology(profile, next.runtime || {});
     const actualGestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, 20, 1);
     pregnant.pregnantDays = actualGestationSpeed > 0 ? Math.max(0, equivalentDays / actualGestationSpeed) : equivalentDays;
@@ -5564,8 +5596,8 @@ function applyDebugInjectPregnancy(chatState, args) {
   profile.notify = {
     ...notify,
     secondly: equivalentDays === 0
-      ? `${female}已注入${fetusCount}个刚受精胚胎，尚未着床${forceIdentical ? '（已强制同卵分裂）' : ''}`
-      : `${female}已注入${fetusCount}胎，当前为等效妊娠${equivalentDays}天${forceIdentical ? '（已强制同卵分裂）' : ''}`,
+      ? `${female}已注入${fetusCount}个刚受精胚胎，尚未着床${forceChimera ? '（前两胎已强制嵌合）' : ''}${forceIdentical ? '（已强制同卵分裂）' : ''}`
+      : `${female}已注入${pregnant.fetuses.length}胎，当前为等效妊娠${equivalentDays}天${forceChimera ? '（含强制嵌合胎）' : ''}${forceIdentical ? '（已强制同卵分裂）' : ''}`,
   };
 
   next.profile = profile;

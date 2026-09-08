@@ -199,6 +199,7 @@ let debugInjectDraft = {
   returnerRace: '',
   hostFetusIndex: '',
   forceIdentical: false,
+  forceChimera: false,
 };
 let debugGestationModifierDraft = {
   owner: '',
@@ -4186,10 +4187,14 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
         <label class="bs-bt-track-debug-field">
           <span class="bs-bt-track-debug-label">孕龄天数(人類等效产科孕期，0代表刚受精)</span>
           <input id="bs-bt-debug-days" class="text_pole" type="number" min="0" max="300" value="${daysValue}" />
+        </label>
+        <label class="bs-bt-debug-identical-option">
+          <input id="bs-bt-debug-force-chimera" type="checkbox"${debugInjectDraft.forceChimera ? ' checked' : ''} />
+          <span><strong>强制嵌合胎</strong><small>至少输入 2 颗基础胚胎；前两颗会在着床前融合为 1 颗，并保留双方父系、母源、种族与性别来源。</small></span>
         </label>` : ''}
         <label class="bs-bt-debug-identical-option">
           <input id="bs-bt-debug-force-identical" type="checkbox"${debugInjectDraft.forceIdentical ? ' checked' : ''} />
-          <span><strong>强制同卵分裂</strong><small>${conceptionMode === 'womb_return' ? '回归胎固定分裂为同卵双胎。' : '每颗基础胚胎固定分裂为一组同卵双胎，最终胎数会加倍。'}</small></span>
+          <span><strong>强制同卵分裂</strong><small>${conceptionMode === 'womb_return' ? '回归胎固定分裂为同卵双胎。' : '每颗融合处理后的胚胎固定分裂为一组同卵双胎；若同时强制嵌合，会先嵌合再分裂。'}</small></span>
         </label>
         <button type="button" class="menu_button" data-debug-action="inject-pregnancy">执行${escapeHtml(selectedMode.label)}注入</button>
       </fieldset>
@@ -4320,6 +4325,7 @@ function injectSelectedTrackPregnancy(ctx) {
     returnerRace: String(document.getElementById('bs-bt-debug-returner-race')?.value ?? debugInjectDraft.returnerRace ?? '').trim(),
     hostFetusIndex: String(document.getElementById('bs-bt-debug-host-fetus')?.value ?? debugInjectDraft.hostFetusIndex ?? ''),
     forceIdentical: Boolean(document.getElementById('bs-bt-debug-force-identical')?.checked),
+    forceChimera: Boolean(document.getElementById('bs-bt-debug-force-chimera')?.checked),
   };
   const result = applyToolCall(chatState, {
     name: 'bsDebugInjectPregnancy',
@@ -4337,6 +4343,7 @@ function injectSelectedTrackPregnancy(ctx) {
       returnerRace: debugInjectDraft.returnerRace,
       hostFetusIndex: Number(debugInjectDraft.hostFetusIndex),
       forceIdentical: debugInjectDraft.forceIdentical,
+      forceChimera: debugInjectDraft.forceChimera,
     },
   });
   if (!result?.applied) {
@@ -4375,6 +4382,9 @@ function bindDebugPregnancyDraftControls(root, refresh) {
   });
   root.querySelector('#bs-bt-debug-force-identical')?.addEventListener('change', (event) => {
     debugInjectDraft.forceIdentical = Boolean(event.target?.checked);
+  });
+  root.querySelector('#bs-bt-debug-force-chimera')?.addEventListener('change', (event) => {
+    debugInjectDraft.forceChimera = Boolean(event.target?.checked);
   });
 }
 
