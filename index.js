@@ -186,11 +186,19 @@ function normalizeWorldbookMode(value) {
   return 'exclude';
 }
 let debugInjectDraft = {
+  owner: '',
+  mode: 'normal',
   father: '',
   race: '人类',
   fetusCount: '1',
   genders: '女',
   equivalentDays: '0',
+  provider: '',
+  providerRace: '',
+  returner: '',
+  returnerRace: '',
+  hostFetusIndex: '',
+  forceIdentical: false,
 };
 let debugGestationModifierDraft = {
   owner: '',
@@ -3195,6 +3203,14 @@ function buildTrackCharacterViewModel(character) {
         fetuses: Array.isArray(pregnant.fetuses) ? pregnant.fetuses.length : 0,
         children: Array.isArray(profile.children) ? profile.children.length : 0,
       },
+      fetuses: Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((fetus, index) => ({
+        index,
+        embryoId: fetus?.embryoId ?? null,
+        fathers: String(fetus?.fathers || '未知'),
+        race: String(fetus?.race || '未知'),
+        gender: String(fetus?.gender || '未知'),
+        pendingImplantation: Boolean(fetus?.pendingImplantation),
+      })) : [],
       derivedType: String(base.derivedType || '').trim(),
       blockage: pregnant.blockage && typeof pregnant.blockage === 'object' ? {
         key: String(pregnant.blockage.key || ''),
@@ -3967,17 +3983,57 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
   ).join('');
 
   const defaultFather = String(getContextSafe()?.name1 || '').trim();
+  if (debugInjectDraft.owner !== selectedTrackName) {
+    debugInjectDraft = {
+      ...debugInjectDraft,
+      owner: selectedTrackName,
+      mode: currentStage === '孕早期' ? 'superfetation' : 'normal',
+      father: defaultFather,
+      hostFetusIndex: '',
+    };
+  }
+  const debugFetuses = Array.isArray(viewModel.debug?.fetuses) ? viewModel.debug.fetuses : [];
+  const implantedFetuses = debugFetuses.filter((fetus) => !fetus.pendingImplantation);
+  const canStartNewPregnancy = !hasConceptionState;
+  const canWombReturn = canStartNewPregnancy && ['卵泡期', '排卵期', '黄体期', '月经期', '无经期'].includes(currentStage);
+  const canAddDuringPregnancy = currentStage === '孕早期' && implantedFetuses.length > 0;
+  const conceptionModes = {
+    normal: { label: '一般受孕', available: canStartNewPregnancy, description: '建立新的受精／妊娠状态；孕龄 0 代表尚未着床。' },
+    surrogacy: { label: '代孕／托卵', available: canStartNewPregnancy, description: '由当前角色承载，胎儿母源归属于指定卵源。' },
+    womb_return: { label: '胎内回归', available: canWombReturn, description: '跳过回归期，直接从孕早期第 1 天开始；已登记回归者会被冻结。' },
+    superfetation: { label: '异期受孕', available: canAddDuringPregnancy, description: '仅限孕早期；保留原胎并加入一批等待着床的新胚胎。' },
+    nested: { label: '孕中孕', available: canAddDuringPregnancy, description: '仅限孕早期；必须指定一颗已着床胎儿作为宿主。' },
+  };
+  const requestedMode = Object.prototype.hasOwnProperty.call(conceptionModes, debugInjectDraft.mode) ? debugInjectDraft.mode : 'normal';
+  const fallbackMode = Object.keys(conceptionModes).find((key) => conceptionModes[key].available) || requestedMode;
+  const conceptionMode = conceptionModes[requestedMode].available ? requestedMode : fallbackMode;
+  debugInjectDraft.mode = conceptionMode;
+  const selectedMode = conceptionModes[conceptionMode];
+  const modeOptions = Object.entries(conceptionModes).map(([key, item]) =>
+    `<option value="${key}"${conceptionMode === key ? ' selected' : ''}${item.available ? '' : ' disabled'}>${escapeHtml(item.label)}${item.available ? '' : '（当前不可用）'}</option>`
+  ).join('');
   const fatherValue = escapeHtml(debugInjectDraft.father || defaultFather);
   const raceValue = escapeHtml(debugInjectDraft.race || '人类');
   const countValue = escapeHtml(debugInjectDraft.fetusCount || '1');
   const gendersValue = escapeHtml(debugInjectDraft.genders || '女');
   const daysValue = escapeHtml(debugInjectDraft.equivalentDays || '0');
+  const providerValue = escapeHtml(debugInjectDraft.provider || '');
+  const providerRaceValue = escapeHtml(debugInjectDraft.providerRace || '');
+  const returnerValue = escapeHtml(debugInjectDraft.returner || '');
+  const returnerRaceValue = escapeHtml(debugInjectDraft.returnerRace || '');
+  const selectedHostIndex = implantedFetuses.some((fetus) => String(fetus.index) === String(debugInjectDraft.hostFetusIndex))
+    ? String(debugInjectDraft.hostFetusIndex)
+    : String(implantedFetuses[0]?.index ?? '');
+  debugInjectDraft.hostFetusIndex = selectedHostIndex;
+  const hostOptions = implantedFetuses.map((fetus) =>
+    `<option value="${fetus.index}"${selectedHostIndex === String(fetus.index) ? ' selected' : ''}>胎 ${fetus.index + 1}｜${escapeHtml(fetus.fathers)}｜${escapeHtml(fetus.gender)}｜${escapeHtml(fetus.race)}</option>`
+  ).join('');
   const modifierDraftActive = debugGestationModifierDraft.owner === selectedTrackName;
   const modifierNameValue = escapeHtml(modifierDraftActive ? debugGestationModifierDraft.name : (gestationModifier.name || ''));
   const modifierMultiplierValue = escapeHtml(modifierDraftActive ? debugGestationModifierDraft.multiplier : String(gestationModifier.multiplier ?? 1));
   const modifierDescriptionValue = escapeHtml(modifierDraftActive ? debugGestationModifierDraft.description : (gestationModifier.description || ''));
   const fetalActivityTextValue = escapeHtml(debugFetalActivityDraft.owner === selectedTrackName ? debugFetalActivityDraft.text : '');
-  const palette = racePaletteState.targetInputId === 'bs-bt-debug-race' && racePaletteState.isOpen
+  const debugRacePalette = (targetInputId) => racePaletteState.targetInputId === targetInputId && racePaletteState.isOpen
     ? `<div class="bs-bt-race-popover">${renderRacePaletteBody()}</div>`
     : '';
   return `
@@ -4060,9 +4116,50 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
       </fieldset>
       <div class="bs-bt-track-debug-hint">${hasProtectedPregnancyState ? '当前角色处于妊娠/分娩状态，已禁用此操作。' : '强制切換阶段，會連帶重置階段天數與觸發狀態。'}</div>
     </div>
-    <div class="bs-bt-track-section" style="margin-top: 10px;">
-      <div class="bs-bt-track-section-title">注入胎儿并怀孕 X 天</div>
-      <fieldset class="bs-bt-track-debug-form"${hasConceptionState ? ' disabled' : ''}>
+    <div class="bs-bt-track-section bs-bt-debug-conception" style="margin-top: 10px;">
+      <div class="bs-bt-track-section-title">特殊受孕注入</div>
+      <fieldset class="bs-bt-track-debug-form"${selectedMode.available ? '' : ' disabled'}>
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">受孕类型</span>
+          <select id="bs-bt-debug-conception-mode" class="text_pole">${modeOptions}</select>
+        </label>
+        <div class="bs-bt-debug-mode-note"><strong>${escapeHtml(selectedMode.label)}</strong><span>${escapeHtml(selectedMode.description)}</span></div>
+        ${conceptionMode === 'surrogacy' ? `
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">卵源／托卵者名字</span>
+          <input id="bs-bt-debug-provider" class="text_pole" type="text" value="${providerValue}" placeholder="必填；须与承载者不同" />
+        </label>
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">卵源种族</span>
+          <div class="bs-bt-race-picker-wrap">
+            <div class="bs-bt-race-input-row">
+              <input id="bs-bt-debug-provider-race" class="text_pole" type="text" value="${providerRaceValue}" placeholder="默认承载者种族" />
+              <button type="button" class="bs-bt-race-picker-button" data-race-picker-target="bs-bt-debug-provider-race" title="种族调色盘" aria-label="卵源种族调色盘">☥</button>
+            </div>
+            ${debugRacePalette('bs-bt-debug-provider-race')}
+          </div>
+        </label>` : ''}
+        ${conceptionMode === 'womb_return' ? `
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">回归者名字</span>
+          <input id="bs-bt-debug-returner" class="text_pole" type="text" value="${returnerValue}" placeholder="必填；不可与承载者相同" />
+        </label>
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">回归者种族</span>
+          <div class="bs-bt-race-picker-wrap">
+            <div class="bs-bt-race-input-row">
+              <input id="bs-bt-debug-returner-race" class="text_pole" type="text" value="${returnerRaceValue}" placeholder="已登记角色可留空读取本身种族" />
+              <button type="button" class="bs-bt-race-picker-button" data-race-picker-target="bs-bt-debug-returner-race" title="种族调色盘" aria-label="回归者种族调色盘">☥</button>
+            </div>
+            ${debugRacePalette('bs-bt-debug-returner-race')}
+          </div>
+        </label>` : ''}
+        ${conceptionMode === 'nested' ? `
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">胎内宿主（必选）</span>
+          <select id="bs-bt-debug-host-fetus" class="text_pole">${hostOptions}</select>
+        </label>` : ''}
+        ${conceptionMode !== 'womb_return' ? `
         <label class="bs-bt-track-debug-field">
           <span class="bs-bt-track-debug-label">父亲名字</span>
           <input id="bs-bt-debug-father" class="text_pole" type="text" value="${fatherValue}" placeholder="可用逗号分隔，默认当前 user" />
@@ -4074,24 +4171,29 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
               <input id="bs-bt-debug-race" class="text_pole" type="text" value="${raceValue}" placeholder="可用逗号分隔，默认人类" />
               <button type="button" class="bs-bt-race-picker-button" data-race-picker-target="bs-bt-debug-race" title="种族调色盘" aria-label="种族调色盘">☥</button>
             </div>
-            ${palette}
+            ${debugRacePalette('bs-bt-debug-race')}
           </div>
         </label>
         <label class="bs-bt-track-debug-field">
-          <span class="bs-bt-track-debug-label">胎数</span>
+          <span class="bs-bt-track-debug-label">基础胚胎数</span>
           <input id="bs-bt-debug-count" class="text_pole" type="number" min="1" max="9" value="${countValue}" />
-        </label>
+        </label>` : ''}
         <label class="bs-bt-track-debug-field">
-          <span class="bs-bt-track-debug-label">性别</span>
+          <span class="bs-bt-track-debug-label">${conceptionMode === 'womb_return' ? '回归胎性别' : '胚胎性别'}</span>
           <input id="bs-bt-debug-genders" class="text_pole" type="text" value="${gendersValue}" placeholder="男/女/双/无，多胎用逗号分隔" />
         </label>
+        ${conceptionMode === 'normal' || conceptionMode === 'surrogacy' ? `
         <label class="bs-bt-track-debug-field">
           <span class="bs-bt-track-debug-label">孕龄天数(人類等效产科孕期，0代表刚受精)</span>
           <input id="bs-bt-debug-days" class="text_pole" type="number" min="0" max="300" value="${daysValue}" />
+        </label>` : ''}
+        <label class="bs-bt-debug-identical-option">
+          <input id="bs-bt-debug-force-identical" type="checkbox"${debugInjectDraft.forceIdentical ? ' checked' : ''} />
+          <span><strong>强制同卵分裂</strong><small>${conceptionMode === 'womb_return' ? '回归胎固定分裂为同卵双胎。' : '每颗基础胚胎固定分裂为一组同卵双胎，最终胎数会加倍。'}</small></span>
         </label>
-        <button type="button" class="menu_button" data-debug-action="inject-pregnancy">执行注入</button>
+        <button type="button" class="menu_button" data-debug-action="inject-pregnancy">执行${escapeHtml(selectedMode.label)}注入</button>
       </fieldset>
-      <div class="bs-bt-track-debug-hint">${hasConceptionState ? '当前角色已有受精或妊娠状态，已禁用此操作。' : '父亲名字、父亲种族、性别都可用逗号逐胎填写；填一位父亲 + 胎数 > 1 = 同父多胎；填多位父亲 = 异父妊娠。'}</div>
+      <div class="bs-bt-track-debug-hint">${selectedMode.available ? (conceptionMode === 'womb_return' ? '此调试模式不计算回归期，执行后立即是孕早期第 1 天。' : conceptionMode === 'nested' ? '宿主只列出已着床胎儿；新胎会同时带有孕中孕与异期受孕标记。' : conceptionMode === 'superfetation' ? '新胎使用当前妊娠时钟记录受孕时间，并先进入等待着床状态。' : '父亲名字、父亲种族、性别可用逗号逐胎填写。') : '当前阶段没有可执行的受孕注入模式。'}</div>
     </div>
     <div class="bs-bt-track-section" style="margin-top: 10px;">
       <div class="bs-bt-track-section-title">产兆前驱调试</div>
@@ -4204,21 +4306,37 @@ function injectSelectedTrackPregnancy(ctx) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   debugInjectDraft = {
-    father: String(document.getElementById('bs-bt-debug-father')?.value || '').trim(),
-    race: String(document.getElementById('bs-bt-debug-race')?.value || '人类').trim() || '人类',
-    fetusCount: String(document.getElementById('bs-bt-debug-count')?.value || '1'),
-    genders: String(document.getElementById('bs-bt-debug-genders')?.value || '').trim(),
-    equivalentDays: String(document.getElementById('bs-bt-debug-days')?.value || '0'),
+    ...debugInjectDraft,
+    owner: selectedTrackName,
+    mode: String(document.getElementById('bs-bt-debug-conception-mode')?.value || debugInjectDraft.mode || 'normal'),
+    father: String(document.getElementById('bs-bt-debug-father')?.value ?? debugInjectDraft.father ?? '').trim(),
+    race: String(document.getElementById('bs-bt-debug-race')?.value ?? debugInjectDraft.race ?? '人类').trim() || '人类',
+    fetusCount: String(document.getElementById('bs-bt-debug-count')?.value ?? debugInjectDraft.fetusCount ?? '1'),
+    genders: String(document.getElementById('bs-bt-debug-genders')?.value ?? debugInjectDraft.genders ?? '').trim(),
+    equivalentDays: String(document.getElementById('bs-bt-debug-days')?.value ?? debugInjectDraft.equivalentDays ?? '0'),
+    provider: String(document.getElementById('bs-bt-debug-provider')?.value ?? debugInjectDraft.provider ?? '').trim(),
+    providerRace: String(document.getElementById('bs-bt-debug-provider-race')?.value ?? debugInjectDraft.providerRace ?? '').trim(),
+    returner: String(document.getElementById('bs-bt-debug-returner')?.value ?? debugInjectDraft.returner ?? '').trim(),
+    returnerRace: String(document.getElementById('bs-bt-debug-returner-race')?.value ?? debugInjectDraft.returnerRace ?? '').trim(),
+    hostFetusIndex: String(document.getElementById('bs-bt-debug-host-fetus')?.value ?? debugInjectDraft.hostFetusIndex ?? ''),
+    forceIdentical: Boolean(document.getElementById('bs-bt-debug-force-identical')?.checked),
   };
   const result = applyToolCall(chatState, {
     name: 'bsDebugInjectPregnancy',
     arguments: {
       female: selectedTrackName,
+      mode: debugInjectDraft.mode,
       father: debugInjectDraft.father || String(getContextSafe()?.name1 || '').trim(),
       race: debugInjectDraft.race || '人类',
       fetusCount: Number(debugInjectDraft.fetusCount || 1),
       genders: debugInjectDraft.genders,
       equivalentDays: Number(debugInjectDraft.equivalentDays || 0),
+      provider: debugInjectDraft.provider,
+      providerRace: debugInjectDraft.providerRace,
+      returner: debugInjectDraft.returner,
+      returnerRace: debugInjectDraft.returnerRace,
+      hostFetusIndex: Number(debugInjectDraft.hostFetusIndex),
+      forceIdentical: debugInjectDraft.forceIdentical,
     },
   });
   if (!result?.applied) {
@@ -4230,6 +4348,34 @@ function injectSelectedTrackPregnancy(ctx) {
   renderStatusPanel(ctx);
   renderFullStatePage(ctx);
   globalThis.toastr?.success?.(`[BS BioTracker] 已为 ${selectedTrackName} 注入调试妊娠状态`);
+}
+
+function bindDebugPregnancyDraftControls(root, refresh) {
+  const bindText = (selector, key, fallback = '') => {
+    root.querySelector(selector)?.addEventListener('input', (event) => {
+      debugInjectDraft[key] = String(event.target?.value ?? fallback);
+    });
+  };
+  root.querySelector('#bs-bt-debug-conception-mode')?.addEventListener('change', (event) => {
+    debugInjectDraft.mode = String(event.target?.value || 'normal');
+    closeRacePalettePopover();
+    refresh();
+  });
+  bindText('#bs-bt-debug-father', 'father');
+  bindText('#bs-bt-debug-race', 'race', '人类');
+  bindText('#bs-bt-debug-count', 'fetusCount', '1');
+  bindText('#bs-bt-debug-genders', 'genders');
+  bindText('#bs-bt-debug-days', 'equivalentDays', '0');
+  bindText('#bs-bt-debug-provider', 'provider');
+  bindText('#bs-bt-debug-provider-race', 'providerRace');
+  bindText('#bs-bt-debug-returner', 'returner');
+  bindText('#bs-bt-debug-returner-race', 'returnerRace');
+  root.querySelector('#bs-bt-debug-host-fetus')?.addEventListener('change', (event) => {
+    debugInjectDraft.hostFetusIndex = String(event.target?.value || '');
+  });
+  root.querySelector('#bs-bt-debug-force-identical')?.addEventListener('change', (event) => {
+    debugInjectDraft.forceIdentical = Boolean(event.target?.checked);
+  });
 }
 
 function applySelectedTrackGestationModifier(ctx, clear = false) {
@@ -4490,6 +4636,7 @@ function setSelectedTrackExpansion(ctx, key) {
 
 function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(ctx)) {
   if (!root) return;
+  bindDebugPregnancyDraftControls(root, refresh);
   root.querySelectorAll('[data-debug-immune]').forEach((node) =>
     node.addEventListener('click', () => {
       toggleSelectedTrackImmune(ctx, String(node.dataset.debugImmune || ''));
@@ -4571,21 +4718,6 @@ function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(c
       clearSelectedTrackContainer(ctx, String(node.getAttribute('data-debug-clear') || ''));
     }),
   );
-  root.querySelector('#bs-bt-debug-father')?.addEventListener('input', (event) => {
-    debugInjectDraft.father = String(event.target?.value || '');
-  });
-  root.querySelector('#bs-bt-debug-race')?.addEventListener('input', (event) => {
-    debugInjectDraft.race = String(event.target?.value || '');
-  });
-  root.querySelector('#bs-bt-debug-count')?.addEventListener('input', (event) => {
-    debugInjectDraft.fetusCount = String(event.target?.value || '1');
-  });
-  root.querySelector('#bs-bt-debug-genders')?.addEventListener('input', (event) => {
-    debugInjectDraft.genders = String(event.target?.value || '');
-  });
-  root.querySelector('#bs-bt-debug-days')?.addEventListener('input', (event) => {
-    debugInjectDraft.equivalentDays = String(event.target?.value || '0');
-  });
   root.querySelector('#bs-bt-debug-prodromal-progress')?.addEventListener('input', (event) => {
     const output = root.querySelector('#bs-bt-debug-prodromal-output');
     if (output) output.textContent = `${String(event.target?.value || '0')}%`;
@@ -4664,9 +4796,12 @@ function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(c
     if (!target) return;
     const current = String(target.value || '').trim();
     target.value = isRegisterRaceTarget(racePaletteState.targetInputId) ? descriptor : (current ? `${current},${descriptor}` : descriptor);
-    if (racePaletteState.targetInputId === 'bs-bt-debug-race') {
-      debugInjectDraft.race = target.value;
-    }
+    const draftRaceKey = {
+      'bs-bt-debug-race': 'race',
+      'bs-bt-debug-provider-race': 'providerRace',
+      'bs-bt-debug-returner-race': 'returnerRace',
+    }[racePaletteState.targetInputId];
+    if (draftRaceKey) debugInjectDraft[draftRaceKey] = target.value;
     closeRacePalettePopover();
     refresh();
     refreshRegisterRacePalette();
@@ -4821,6 +4956,7 @@ function renderStatusPanel(ctx) {
   const viewModel = buildTrackCharacterViewModel(current);
   content.innerHTML = renderTrackCharacterContent(viewModel);
   fitSkillNumerals(content);
+  bindDebugPregnancyDraftControls(content, () => renderStatusPanel(ctx));
   content.querySelectorAll('[data-card-nav]').forEach((node) =>
     node.addEventListener('click', () => {
       const kind = String(node.getAttribute('data-card-nav') || '').trim();
@@ -4910,21 +5046,6 @@ function renderStatusPanel(ctx) {
       clearSelectedTrackContainer(ctx, String(node.getAttribute('data-debug-clear') || ''));
     }),
   );
-  content.querySelector('#bs-bt-debug-father')?.addEventListener('input', (event) => {
-    debugInjectDraft.father = String(event.target?.value || '');
-  });
-  content.querySelector('#bs-bt-debug-race')?.addEventListener('input', (event) => {
-    debugInjectDraft.race = String(event.target?.value || '');
-  });
-  content.querySelector('#bs-bt-debug-count')?.addEventListener('input', (event) => {
-    debugInjectDraft.fetusCount = String(event.target?.value || '1');
-  });
-  content.querySelector('#bs-bt-debug-genders')?.addEventListener('input', (event) => {
-    debugInjectDraft.genders = String(event.target?.value || '');
-  });
-  content.querySelector('#bs-bt-debug-days')?.addEventListener('input', (event) => {
-    debugInjectDraft.equivalentDays = String(event.target?.value || '0');
-  });
   content.querySelector('#bs-bt-debug-prodromal-progress')?.addEventListener('input', (event) => {
     const output = content.querySelector('#bs-bt-debug-prodromal-output');
     if (output) output.textContent = `${String(event.target?.value || '0')}%`;
@@ -5003,9 +5124,12 @@ function renderStatusPanel(ctx) {
     if (!target) return;
     const current = String(target.value || '').trim();
     target.value = isRegisterRaceTarget(racePaletteState.targetInputId) ? descriptor : (current ? `${current},${descriptor}` : descriptor);
-    if (racePaletteState.targetInputId === 'bs-bt-debug-race') {
-      debugInjectDraft.race = target.value;
-    }
+    const draftRaceKey = {
+      'bs-bt-debug-race': 'race',
+      'bs-bt-debug-provider-race': 'providerRace',
+      'bs-bt-debug-returner-race': 'returnerRace',
+    }[racePaletteState.targetInputId];
+    if (draftRaceKey) debugInjectDraft[draftRaceKey] = target.value;
     closeRacePalettePopover();
     renderStatusPanel(ctx);
     refreshRegisterRacePalette();

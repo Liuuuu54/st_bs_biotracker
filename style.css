@@ -1815,6 +1815,37 @@
   opacity: 0.55;
 }
 
+#bs-biotracker-settings .bs-bt-debug-mode-note {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--bsbt-border-color);
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.08);
+}
+
+#bs-biotracker-settings .bs-bt-debug-mode-note span,
+#bs-biotracker-settings .bs-bt-debug-identical-option small {
+  display: block;
+  opacity: 0.78;
+  line-height: 1.45;
+}
+
+#bs-biotracker-settings .bs-bt-debug-identical-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid var(--bsbt-border-color);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#bs-biotracker-settings .bs-bt-debug-identical-option input {
+  margin-top: 3px;
+}
+
 #bs-biotracker-settings .bs-bt-track-debug-field {
   display: grid;
   gap: 4px;

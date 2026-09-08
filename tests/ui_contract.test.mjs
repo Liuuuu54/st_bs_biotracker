@@ -63,6 +63,15 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /function updateWardrobeAddTypeFields\(\)/);
   assert.match(controller, /function renderFetalTalentDebugEditor\(/);
   assert.match(controller, /function renderTrackDebug\(viewModel, fetalTalentHtml = ''\)/);
+  assert.match(controller, /id="bs-bt-debug-conception-mode"/);
+  for (const mode of ['normal', 'surrogacy', 'womb_return', 'superfetation', 'nested']) {
+    assert.match(controller, new RegExp(`${mode}: \\{ label:`));
+  }
+  assert.match(controller, /id="bs-bt-debug-provider"/);
+  assert.match(controller, /id="bs-bt-debug-returner"/);
+  assert.match(controller, /id="bs-bt-debug-host-fetus"/);
+  assert.match(controller, /id="bs-bt-debug-force-identical"/);
+  assert.match(controller, /function bindDebugPregnancyDraftControls\(/);
   assert.match(controller, /胎儿自主活动调试[\s\S]*?\$\{fetalTalentHtml\}[\s\S]*?妊娠变速效果/);
   assert.match(controller, /function applyFetalTalentDebugChange\(/);
   assert.match(controller, /data-fetal-talent-save/);

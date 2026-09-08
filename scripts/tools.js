@@ -1461,6 +1461,8 @@ function applyIdenticalSplit(profile, batch = null) {
       continue;
     }
     result.push(baseFetus);
+    // 调试工具可能已明确把这颗胚胎分进同卵组；著床时不可再次掷骰分裂。
+    if (Number.isInteger(Number(baseFetus?.identicalGroup)) && Number(baseFetus.identicalGroup) > 0) continue;
     const physiology = getMergedRacePhysiologyProfile(baseFetus?.race);
     const splitRate = clampNumber(
       physiology?.identicalProbability,
@@ -1490,6 +1492,29 @@ function applyIdenticalSplit(profile, batch = null) {
       result.push(clone);
       targetCount -= 1;
     }
+  }
+  pregnant.fetuses = result;
+  pregnant.fetusesCount = result.length;
+}
+
+/** 调试工具的确定性同卵分裂：每颗指定胚胎固定分成一组双胎。 */
+function forceIdenticalTwinSplit(profile, batch = null) {
+  const pregnant = profile.pregnant || {};
+  const fetuses = ensureEmbryoMetadata(pregnant);
+  if (fetuses.length === 0) return;
+  const targets = batch ? new Set(batch) : new Set(fetuses);
+  const result = [];
+  let nextId = getNextEmbryoId(fetuses);
+  for (const fetus of fetuses) {
+    result.push(fetus);
+    if (!targets.has(fetus)) continue;
+    fetus.identicalGroup = fetus.embryoId;
+    fetus.tags = sanitizeFetusTagList([...(fetus.tags || []), 'identical']);
+    const twin = cloneIdenticalFetus(fetus);
+    twin.embryoId = nextId;
+    twin.identicalGroup = fetus.identicalGroup;
+    nextId += 1;
+    result.push(twin);
   }
   pregnant.fetuses = result;
   pregnant.fetusesCount = result.length;
@@ -5333,13 +5358,20 @@ function applySetMenstrualPhases(chatState, args) {
 
 function applyDebugInjectPregnancy(chatState, args) {
   const female = String(args?.female || '').trim();
+  const mode = String(args?.mode || 'normal').trim();
   const fatherInput = String(args?.father || '').trim();
   const raceInput = String(args?.race || '人类').trim();
-  const fetusCount = clampNumber(args?.fetusCount, 1, 9, 1);
+  const fetusCount = Math.floor(clampNumber(args?.fetusCount, 1, 9, 1));
   const equivalentDays = clampNumber(args?.equivalentDays, 0, 300, 0);
   const genderInput = String(args?.genders || '').trim();
+  const forceIdentical = args?.forceIdentical === true;
   const character = chatState.characters?.[female];
   if (!female || !character) return { applied: false, message: `bsDebugInjectPregnancy skipped: unknown character ${female || '(empty)'}.` };
+
+  const supportedModes = ['normal', 'surrogacy', 'womb_return', 'superfetation', 'nested'];
+  if (!supportedModes.includes(mode)) {
+    return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: unsupported mode ${mode || '(empty)'}.` };
+  }
 
   const next = cloneValue(character);
   const profile = next.profile || {};
@@ -5348,13 +5380,46 @@ function applyDebugInjectPregnancy(chatState, args) {
   const experience = profile.experience || {};
   const notify = profile.notify || {};
   const bio = profile.bio || {};
+  profile.pregnant = pregnant;
   const currentStage = String(base.stage || '');
   const existingFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const hasConceptionState = existingFetuses.length > 0
     || clampNumber(base.fertilizationDays, 0, 9999, 0) > 0
     || isPregnancyStage(currentStage);
-  if (hasConceptionState) {
+  const isAdditionalConception = mode === 'superfetation' || mode === 'nested';
+  if (!isAdditionalConception && hasConceptionState) {
     return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: pregnancy/conception state already exists.` };
+  }
+  if (isAdditionalConception && currentStage !== SUPERFETATION_STAGE) {
+    return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: ${mode} is only available during 孕早期.` };
+  }
+
+  if (mode === 'womb_return') {
+    const returner = String(args?.returner || '').trim();
+    const requestedGender = ({ 男: '男', 女: '女', 双: '双', 雙: '双', 無: '无', 无: '无' })[genderInput];
+    if (genderInput && !requestedGender) {
+      return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: womb return gender must be one supported value.` };
+    }
+    const returned = applyWombReturn(chatState, {
+      female,
+      returner,
+      returnerRace: String(args?.returnerRace || '').trim(),
+      hours: 0,
+    });
+    if (!returned?.applied) return returned;
+    const returnedCharacter = chatState.characters?.[female];
+    const returnedProfile = returnedCharacter?.profile || {};
+    const returnedFetuses = Array.isArray(returnedProfile?.pregnant?.fetuses) ? returnedProfile.pregnant.fetuses : [];
+    if (requestedGender && returnedFetuses[0]) returnedFetuses[0].gender = requestedGender;
+    if (forceIdentical) forceIdenticalTwinSplit(returnedProfile, returnedFetuses);
+    snapshotOriginalPregnancyBio(returnedCharacter);
+    applyPregnancyPhysiology(returnedProfile, returnedCharacter.runtime || {});
+    updateFetalEnergyDrain(returnedProfile);
+    returnedProfile.notify = {
+      ...(returnedProfile.notify || {}),
+      secondly: `${returner}已由调试工具直接进入${female}的孕早期${forceIdentical ? '，并分裂为同卵双胎' : ''}`,
+    };
+    return { applied: true, message: `bsDebugInjectPregnancy applied womb return to ${female}.` };
   }
 
   const rawGenderList = genderInput
@@ -5391,6 +5456,39 @@ function applyDebugInjectPregnancy(chatState, args) {
     return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: unsupported gender value.` };
   }
 
+  let geneticProfile = profile;
+  let provider = null;
+  if (mode === 'surrogacy') {
+    provider = String(args?.provider || '').trim();
+    if (!provider) {
+      return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: provider is required for surrogacy.` };
+    }
+    if (provider === female) {
+      return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: provider must differ from carrier.` };
+    }
+    const providerCharacter = chatState.characters?.[provider];
+    const providerRaceInput = String(args?.providerRace || '').trim();
+    const providerDescriptor = providerRaceInput
+      ? parseRaceDescriptor(providerRaceInput)
+      : parseRaceDescriptor(providerCharacter?.profile?.base?.race || base.race || '人类');
+    geneticProfile = { base: { race: providerDescriptor.race || '人类' } };
+  }
+
+  snapshotOriginalPregnancyBio(next);
+
+  ensureEmbryoMetadata(pregnant);
+  let nestedHost = null;
+  if (mode === 'nested') {
+    const hostIndex = Number(args?.hostFetusIndex);
+    if (!Number.isInteger(hostIndex) || hostIndex < 0 || hostIndex >= existingFetuses.length) {
+      return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: choose a valid host fetus.` };
+    }
+    nestedHost = existingFetuses[hostIndex];
+    if (!isImplantedFetus(nestedHost)) {
+      return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: host fetus must already be implanted.` };
+    }
+  }
+
   const fetuses = [];
   for (let index = 0; index < fetusCount; index += 1) {
     const spermSeed = {
@@ -5398,17 +5496,41 @@ function applyDebugInjectPregnancy(chatState, args) {
       race: parseRaceDescriptor(rawRaceList.length === 1 ? rawRaceList[0] : rawRaceList[index]).race || '人类',
       derivedType: null,
     };
-    const fetus = createSimpleFetus(profile, spermSeed, equivalentDays === 0 ? currentStage : '孕早期');
+    const fetus = createSimpleFetus(
+      profile,
+      spermSeed,
+      isAdditionalConception || equivalentDays > 0 ? '孕早期' : currentStage,
+      { geneticProfile, provider },
+    );
     if (normalizedGenderList.length === 1) {
       fetus.gender = normalizedGenderList[0];
     } else if (normalizedGenderList.length === fetusCount) {
       fetus.gender = normalizedGenderList[index];
     }
+    if (mode === 'superfetation') markSuperfetationFetus(profile, fetus);
+    if (mode === 'nested') markNestedFetus(profile, fetus, nestedHost);
     fetuses.push(fetus);
   }
 
-  pregnant.fetuses = fetuses;
-  pregnant.fetusesCount = fetuses.length;
+  pregnant.fetuses = isAdditionalConception ? [...existingFetuses, ...fetuses] : fetuses;
+  ensureEmbryoMetadata(pregnant);
+  if (forceIdentical) forceIdenticalTwinSplit(profile, fetuses);
+  pregnant.fetusesCount = pregnant.fetuses.length;
+  if (isAdditionalConception) {
+    base.fertilizationDays = 0;
+    applyPregnancyPhysiology(profile, next.runtime || {});
+    updateFetalEnergyDrain(profile);
+    profile.notify = {
+      ...notify,
+      secondly: mode === 'nested'
+        ? `${female}指定胎儿内已注入${fetusCount}个孕中孕胚胎，正等待著床${forceIdentical ? '（已强制同卵分裂）' : ''}`
+        : `${female}已注入${fetusCount}个异期受孕胚胎，正等待著床${forceIdentical ? '（已强制同卵分裂）' : ''}`,
+    };
+    next.profile = profile;
+    chatState.characters[female] = next;
+    return { applied: true, message: `bsDebugInjectPregnancy applied ${mode} to ${female}.` };
+  }
+
   pregnant.laborHours = 0;
   pregnant.effectiveLaborHours = 0;
   pregnant.laborPhase = null;
@@ -5442,8 +5564,8 @@ function applyDebugInjectPregnancy(chatState, args) {
   profile.notify = {
     ...notify,
     secondly: equivalentDays === 0
-      ? `${female}已注入${fetusCount}个刚受精胚胎，尚未着床`
-      : `${female}已注入${fetusCount}胎，当前为等效妊娠${equivalentDays}天`,
+      ? `${female}已注入${fetusCount}个刚受精胚胎，尚未着床${forceIdentical ? '（已强制同卵分裂）' : ''}`
+      : `${female}已注入${fetusCount}胎，当前为等效妊娠${equivalentDays}天${forceIdentical ? '（已强制同卵分裂）' : ''}`,
   };
 
   next.profile = profile;
