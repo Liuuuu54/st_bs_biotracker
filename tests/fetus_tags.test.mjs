@@ -13,10 +13,52 @@ test('一般妊娠没有任何标签', () => {
   assert.deepEqual(tags, []);
 });
 
-test('嵌合体从 chimera 栏位推导，不需要落盘', () => {
+test('一母源两父源的三源嵌合由遗传母本人承载时不算代孕', () => {
   const fetus = { fathers: '凯 × 无名旅人', chimera: { sourceCount: 2, maternalSources: ['艾拉'] } };
-  assert.ok(deriveFetusTags(fetus, { carrierName: '艾拉' }).includes('chimera'));
+  assert.deepEqual(deriveFetusTags(fetus, { carrierName: '艾拉' }), ['chimera']);
   assert.deepEqual(fetus.tags, undefined, '推导标签不应写回资料');
+});
+
+test('两母源两父源的四源嵌合由第三人承载时同时标为嵌合与代孕', () => {
+  const fetus = {
+    fathers: '父甲 × 父乙',
+    provider: '母甲 × 母乙',
+    providerSources: ['母甲', '母乙'],
+    chimera: {
+      sourceCount: 2,
+      fatherSources: ['父甲', '父乙'],
+      maternalSources: ['母甲', '母乙'],
+    },
+  };
+  assert.deepEqual(deriveFetusTags(fetus, { carrierName: '代孕者' }), ['chimera', 'surrogacy']);
+});
+
+test('一母源两父源的三源嵌合由第三人承载时仍然属于代孕', () => {
+  const fetus = {
+    fathers: '父甲 × 父乙',
+    provider: '遗传母',
+    providerSources: ['遗传母'],
+    chimera: {
+      sourceCount: 2,
+      fatherSources: ['父甲', '父乙'],
+      maternalSources: ['遗传母'],
+    },
+  };
+  assert.deepEqual(deriveFetusTags(fetus, { carrierName: '代孕者' }), ['chimera', 'surrogacy']);
+});
+
+test('承载者自己的胚胎与委托胚胎融合成二母一父嵌合时仍然属于代孕', () => {
+  const fetus = {
+    fathers: '共同父方',
+    provider: '代孕者 × 委托母方',
+    providerSources: ['代孕者', '委托母方'],
+    chimera: {
+      sourceCount: 2,
+      fatherSources: ['共同父方'],
+      maternalSources: ['代孕者', '委托母方'],
+    },
+  };
+  assert.deepEqual(deriveFetusTags(fetus, { carrierName: '代孕者' }), ['chimera', 'surrogacy']);
 });
 
 test('代孕：遗传母方不是承载者', () => {

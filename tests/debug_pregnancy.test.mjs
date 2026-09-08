@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
 import * as state from '../scripts/state.js';
+import { deriveFetusTags } from '../scripts/fetus_tags.js';
 import { applyToolCall } from '../scripts/tools.js';
 
 const REAL_RANDOM = Math.random;
@@ -100,6 +101,7 @@ test('强制嵌合融合前两颗胚胎并完整保留双方来源', () => {
   assert.deepEqual(chimera.chimera.maternalSources, ['A']);
   assert.deepEqual(chimera.chimera.genderSources, ['男', '女']);
   assert.match(chimera.race, /精灵/);
+  assert.deepEqual(deriveFetusTags(chimera, { carrierName: 'A' }), ['chimera']);
 });
 
 test('嵌合与同卵同时强制时先融合再分裂，双胎共享嵌合来源与性别', () => {
@@ -125,6 +127,9 @@ test('嵌合与同卵同时强制时先融合再分裂，双胎共享嵌合来�
   assert.ok(fetuses.every((fetus) => fetus.provider === '卵源甲 × 卵源乙'));
   assert.ok(fetuses.every((fetus) => fetus.chimera.maternalSources.join(',') === '卵源甲,卵源乙'));
   assert.ok(fetuses.every((fetus) => fetus.chimera.fatherSources.join(',') === '甲,乙'));
+  assert.ok(fetuses.every((fetus) => (
+    deriveFetusTags(fetus, { carrierName: 'A' }).join(',') === 'chimera,surrogacy,identical'
+  )));
   assert.equal(fetuses[0].identicalGroup, fetuses[1].identicalGroup);
   assert.equal(fetuses[0].gender, fetuses[1].gender, '同卵嵌合胎不能解析出不同性别');
 });
