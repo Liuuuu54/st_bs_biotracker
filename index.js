@@ -3832,10 +3832,16 @@ function selectLineageNode(nodeId) {
 
 function ensureLineageWindow(ctx) {
   let root = document.getElementById(LINEAGE_ID);
-  if (root) return root;
+  // 与主面板放进同一个 stacking context，才能稳定盖过手机浏览器里被合成层提升的装置面板。
+  // 族谱仍是 dialog 的同级元素，不会被可拖曳 dialog 的定位或 transform 限制。
+  const host = document.getElementById(MODAL_ID) || document.body;
+  if (root) {
+    if (host && root.parentElement !== host) host.appendChild(root);
+    return root;
+  }
   root = document.createElement('div');
   root.id = LINEAGE_ID;
-  // 与浮球同样自带主题 class：视窗挂在 body 下，拿不到面板作用域的主题变数
+  // 与浮球同样自带主题 class：视窗不在设备面板内，拿不到面板作用域的主题变数
   root.className = `bs-bt-lineage theme-${getSettings(ctx).theme || 'retro'}`;
   root.innerHTML = `
     <div class="bs-bt-lineage__head">
@@ -3848,7 +3854,7 @@ function ensureLineageWindow(ctx) {
       <div class="bs-bt-lineage__detail"></div>
     </div>
   `;
-  document.body.appendChild(root);
+  host.appendChild(root);
   root.querySelector('.bs-bt-lineage__close')?.addEventListener('click', () => closeLineageWindow());
   root.querySelector('.bs-bt-lineage__chart')?.addEventListener('click', (event) => {
     const cell = event.target?.closest?.('[data-lineage-node]');
@@ -3856,6 +3862,21 @@ function ensureLineageWindow(ctx) {
     selectLineageNode(cell.dataset.lineageNode);
   });
   return root;
+}
+
+function centerLineageCard(root) {
+  const card = root?.querySelector('.bs-bt-lineage__card.is-center');
+  const scroller = card?.closest?.('.bs-bt-lineage__row-scroll');
+  if (!card || !scroller) return;
+  // scrollIntoView 会继续捲动外层 ST 页面；Android 浏览器因此可能把全屏族谱推离视窗。
+  // 这里只移动该世代自己的横向卷轴。
+  const cardRect = card.getBoundingClientRect();
+  const scrollRect = scroller.getBoundingClientRect();
+  const left = Math.max(0, scroller.scrollLeft
+    + cardRect.left - scrollRect.left
+    - (scrollRect.width - cardRect.width) / 2);
+  if (typeof scroller.scrollTo === 'function') scroller.scrollTo({ left, behavior: 'auto' });
+  else scroller.scrollLeft = left;
 }
 
 function closeLineageWindow() {
@@ -3876,8 +3897,8 @@ function openLineageWindow(ctx, centerName) {
   root.querySelector('.bs-bt-lineage__chart').innerHTML = renderLineageChart(view);
   root.classList.add('is-open');
   selectLineageNode(view.empty ? null : view.centerId);
-  // 窄屏上每一代各自横向卷动，中心角色常常落在画面外，开窗时先把他卷到视野中央
-  root.querySelector('.bs-bt-lineage__card.is-center')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  // 窄屏上每一代各自横向卷动，开窗时只把中心角色所在的这一列卷到中央。
+  centerLineageCard(root);
 }
 
 function renderTrackDiary(viewModel) {

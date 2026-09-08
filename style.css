@@ -4343,16 +4343,26 @@
 }
 
 /* ── 血缘视窗 ──────────────────────────────────────────────
-   独立全屏覆盖层，挂在 body 下（与浮球同样自带主题 class），
-   不放进面板内部以免被 modal 的 transform 困住 position: fixed。
+   独立全屏覆盖层，挂在 modal 根节点、可拖曳 dialog 的同层（与浮球同样自带主题 class），
+   避免手机浏览器把 dialog 提升为合成层后反过来盖住族谱。
    版面走「分代横排 + 手足成丛」：同一对亲代的孩子聚成一丛，
    丛上方挂亲代标注，再用一条横杆与各自的竖线连到每张卡。 */
 .bs-bt-lineage {
   position: fixed;
   inset: 0;
   z-index: 10050;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-width: 100vw;
+  max-height: 100dvh;
   display: none;
   flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  isolation: isolate;
   background: var(--bsbt-pager-bg);
   color: var(--bsbt-off-text);
   font-family: var(--bsbt-font-main);
@@ -4406,14 +4416,18 @@
 .bs-bt-lineage__body {
   flex: 1 1 auto;
   min-height: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .bs-bt-lineage__chart {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 14px 12px 20px;
 }
 
@@ -4444,6 +4458,8 @@
 /* 窄屏放不下就整列横向卷动；用 max-content + min-width 让内容少时仍居中 */
 .bs-bt-lineage__row-scroll {
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
   padding-bottom: 4px;
 }
 

@@ -71,6 +71,11 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /manual_fetal_talent_delete/);
   assert.match(controller, /function renderRegisterChildSourceOptions\(/);
   assert.match(controller, /function syncRegisterChildSourceFields\(/);
+  assert.match(controller, /const host = document\.getElementById\(MODAL_ID\) \|\| document\.body/);
+  assert.match(controller, /function centerLineageCard\(root\)/);
+  assert.doesNotMatch(controller, /querySelector\('\.bs-bt-lineage__card\.is-center'\)\?\.scrollIntoView/);
+  assert.match(css, /\.bs-bt-lineage \{[\s\S]*?height:\s*100dvh/);
+  assert.match(css, /\.bs-bt-lineage \{[\s\S]*?pointer-events:\s*auto/);
   assert.match(controller, /sourceChild/);
   assert.doesNotMatch(controller, /data-wardrobe-item-edit/);
   assert.doesNotMatch(controller, /data-wardrobe-item-new/);
