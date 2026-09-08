@@ -17,6 +17,7 @@ const TAURI_STATE_LOAD_INFLIGHT = new Map();
 const TAURI_STATE_HYDRATED_IDS = new Set();
 const TAURI_HANDLE_WAIT_TIMEOUT_MS = 3000;
 const TAURI_HANDLE_WAIT_INTERVAL_MS = 100;
+let SILLYTAVERN_SCRIPT_MODULE_PROMISE = null;
 const HOST_EVENT_TYPE_KEYS = Object.freeze({
   appReady: 'APP_READY',
   chatChanged: 'CHAT_CHANGED',
@@ -213,6 +214,57 @@ export function saveHostSettings(ctx) {
     ctx?.saveSettingsDebounced?.();
   } catch (error) {
     console.warn('[BS BioTracker] unable to save host settings', error);
+  }
+}
+
+async function loadSillyTavernScriptModule() {
+  if (!SILLYTAVERN_SCRIPT_MODULE_PROMISE) {
+    // host.js 位于 public/scripts/extensions/third-party/<extension>/scripts。
+    // 动态载入避免 TT／Luker 在启动时解析原版 ST 专用模组。
+    SILLYTAVERN_SCRIPT_MODULE_PROMISE = import('../../../../../script.js').catch((error) => {
+      SILLYTAVERN_SCRIPT_MODULE_PROMISE = null;
+      throw error;
+    });
+  }
+  return SILLYTAVERN_SCRIPT_MODULE_PROMISE;
+}
+
+/**
+ * 原生 SillyTavern 的 saveSettingsDebounced 有约一秒等待窗；删除后立刻换页或重载时，
+ * 计时器可能尚未执行。破坏性操作改用 ST 导出的 saveSettings，并等待请求结束。
+ * ctx.saveSettings 是向前相容与测试入口；当前官方 context 未公开时动态载入 script.js。
+ */
+export async function saveHostSettingsImmediately(ctx) {
+  if (getHostKind() !== 'sillytavern') return;
+  try {
+    if (typeof ctx?.saveSettings === 'function') {
+      await ctx.saveSettings();
+      return;
+    }
+    const module = await loadSillyTavernScriptModule();
+    if (typeof module?.saveSettings !== 'function') {
+      throw new Error('SillyTavern saveSettings is unavailable');
+    }
+    // ST 的 saveSettings 会自行捕获 fetch 错误，因此用成功事件确认这次写入。
+    const savedEvent = module?.event_types?.SETTINGS_UPDATED;
+    const eventSource = module?.eventSource;
+    const canConfirmSave = Boolean(savedEvent && typeof eventSource?.on === 'function');
+    let didSave = false;
+    const markSaved = () => { didSave = true; };
+    if (canConfirmSave) eventSource.on(savedEvent, markSaved);
+    try {
+      await module.saveSettings();
+    } finally {
+      if (canConfirmSave && typeof eventSource?.off === 'function') {
+        eventSource.off(savedEvent, markSaved);
+      }
+    }
+    if (canConfirmSave && !didSave) {
+      throw new Error('SillyTavern settings save did not complete successfully');
+    }
+  } catch (error) {
+    console.warn('[BS BioTracker] unable to save SillyTavern settings immediately', error);
+    throw error;
   }
 }
 

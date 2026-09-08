@@ -853,6 +853,51 @@ test('native SillyTavern is always confirmed and never waits on a sidecar', asyn
   assert.equal(await host.loadHostChatState(ctx), null);
 });
 
+test('destructive native SillyTavern save schedules a trailing write and awaits the immediate write', async () => {
+  resetGlobals();
+  let debouncedCalls = 0;
+  let immediateCalls = 0;
+  let releaseImmediate;
+  const immediateBlocked = new Promise((resolve) => { releaseImmediate = resolve; });
+  const ctx = {
+    chatId: 'native-immediate-save',
+    extensionSettings: {},
+    saveSettingsDebounced() { debouncedCalls += 1; },
+    async saveSettings() {
+      immediateCalls += 1;
+      await immediateBlocked;
+    },
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  state.getChatState(ctx, settings);
+
+  let settled = false;
+  const saving = state.saveSettingsNow(ctx).then(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(debouncedCalls, 1);
+  assert.equal(immediateCalls, 1);
+  assert.equal(settled, false, '成功提示前必须等原生 ST 写入结束');
+
+  releaseImmediate();
+  await saving;
+  assert.equal(settled, true);
+});
+
+test('native SillyTavern immediate save failure is reported to the destructive-operation rollback', async () => {
+  resetGlobals();
+  const ctx = {
+    chatId: 'native-immediate-failure',
+    extensionSettings: {},
+    saveSettingsDebounced() {},
+    async saveSettings() { throw new Error('settings write failed'); },
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  state.getChatState(ctx, settings);
+  await assert.rejects(state.saveSettingsNow(ctx), /settings write failed/);
+});
+
 function installTauriHostWithStore(store, stableId) {
   const handle = { stableId: async () => stableId, store };
   const ctx = { chatId: `${stableId}-fallback`, extensionSettings: {}, saveSettingsDebounced() {} };
