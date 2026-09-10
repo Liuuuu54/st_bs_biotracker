@@ -288,6 +288,14 @@ export function shouldWaitForMvuExtraAnalysis(ctx, _settings) {
   // fetch 钩子必须在首次评估前就装好：否则正文后第一时间启动的 MVU 请求会被漏观测
   installMvuFetchHook();
 
+  // MVU 只在「优先实例」上把 Mvu 挂到 window.parent（见其 store 的 should_enable），
+  // 所以全局不在场＝本轮没有激活的 MVU 实例＝不会有人做额外模型解析。
+  const mvu = getMvuApi();
+  const mvuPresent = mvu !== null;
+  // 不在场就抹掉「见过 MVU 信号」的记忆：该标记是页面级粘性、生产路径上无人清除，
+  // 停用 MVU 或换到没有 MVU 的卡之后它仍为真，会让每一轮都白等一次宽限期。
+  if (!mvuPresent) mvuGateState.everSawMvuSignal = false;
+
   const mvuSettings = getMvuSettings(ctx);
   const method = mvuSettings?.更新方式;
   // 能读到设置且明确是随AI输出 → 不需要等待
@@ -297,12 +305,16 @@ export function shouldWaitForMvuExtraAnalysis(ctx, _settings) {
     const autoRequest = mvuSettings?.额外模型解析配置?.启用自动请求 ?? mvuSettings?.自动触发额外模型解析;
     if (autoRequest === false) return false;
   }
-  const mvu = getMvuApi();
-  const mvuCapable = mvu && typeof mvu.isDuringExtraAnalysis === 'function';
+  // 设置是会话无关的持久态，会残留：mvu_settings 存在 SillyTavern.extensionSettings
+  // （全局、跨卡跨聊天共享、MVU 落盘后无人清理），停用 MVU 或换到没有 MVU 的卡之后
+  // 它依然在。只凭设置就认定「本环境有 MVU」，会把这类用户当成 MVU 用户——每轮白等
+  // 宽限期，并让下面的 fetch 兜底信号生效（最长 120 秒）。故设置须与「全局在场」同时
+  // 成立才算证据。
+  const mvuCapable = Boolean(mvu && typeof mvu.isDuringExtraAnalysis === 'function');
   // 三种信号源全部不可用（fetch 被禁用、无 Mvu、设置读不到）→ 无从判断
   if (!mvuGateState.fetchHooked && !mvuCapable && method !== '额外模型解析') return false;
   if (mvuCapable) mvuGateState.everSawMvuSignal = true;
-  if (method === '额外模型解析') mvuGateState.everSawMvuSignal = true;
+  if (mvuPresent && method === '额外模型解析') mvuGateState.everSawMvuSignal = true;
 
   installMvuGateListener(ctx);
   const roundKey = getMvuRoundKey(ctx);
@@ -328,12 +340,12 @@ export function shouldWaitForMvuExtraAnalysis(ctx, _settings) {
 
   // 信号 1：MVU 全局 API 报告正在解析
   const during = mvuCapable && mvu.isDuringExtraAnalysis() === true;
-  // 信号 2：正文之后仍有非本插件的生成请求在飞行——仅作旧版 MVU（没有
-  // isDuringExtraAnalysis 全局）的兜底。请求特征会被误命中：数据库正文替换/
-  // 填表的请求体嵌着含 <UpdateVariable>、json_patch 字样的正文与提示词，全局
-  // 标志可得时不再采信它，否则兼容门控会串行等完数据库一整条后处理管线
-  // （TT 实测一分钟以上的延迟）。
-  const generateActive = !mvuCapable && mvuGateState.generateInFlight > 0;
+  // 信号 2：正文之后仍有非本插件的生成请求在飞行——仅作旧版 MVU（全局在场但它
+  // 没有 isDuringExtraAnalysis 方法）的兜底。请求特征会被误命中：数据库正文替换/
+  // 填表的请求体嵌着含 <UpdateVariable>、json_patch 字样的正文与提示词。
+  // 两个前提缺一不可：只有全局在场才说明真有 MVU 可能在做解析（否则没人会解析，
+  // 等下去纯属空转），且只有带不了权威标志的旧版才需要退而采信请求特征。
+  const generateActive = mvuPresent && !mvuCapable && mvuGateState.generateInFlight > 0;
   // 生成请求只作为本轮「在飞」等待信号，不参与 everSawMvuSignal——
   // 否则普通 ST 主流请求也会让设备被标记为「见过 MVU 信号」，导致每轮白等宽限
   if (during) mvuGateState.everSawMvuSignal = true;
