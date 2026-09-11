@@ -507,8 +507,11 @@ function hostDatasetGenerating() {
  * 的等待由既有的兼容门控 shouldWaitForMvuExtraAnalysis 负责（TT 上它走带停止
  * 按钮的 Generate 管线，dataset 信号同样会覆盖其在飞阶段），兼容开关语义不动。
  */
-export function isHostGenerationBusy(ctx) {
-  if (hostDatasetGenerating()) return true;
+export function getHostBusyDetail(ctx) {
+  void ctx;
+  // dataset 旗标是停止按钮的权威状态，没有超时自愈：真在生成时必须等，
+  // 卡死时则会一直挡——面板上要能区分它和事件计数
+  if (hostDatasetGenerating()) return { busy: true, source: 'dataset' };
   if (hostRunState.generationDepth > 0) {
     const staleMs = Number(globalThis[HOST_BUSY_STALE_MS_KEY]) || 600000;
     if (Date.now() - hostRunState.generationBusySince > staleMs) {
@@ -516,10 +519,14 @@ export function isHostGenerationBusy(ctx) {
       hostRunState.generationDepth = 0;
       hostRunState.generationBusySince = 0;
     } else {
-      return true;
+      return { busy: true, source: 'depth', depth: hostRunState.generationDepth };
     }
   }
-  return false;
+  return { busy: false, source: '' };
+}
+
+export function isHostGenerationBusy(ctx) {
+  return getHostBusyDetail(ctx).busy;
 }
 
 /** 楼层上正文替换盖的毫秒时间戳；没盖过返回 0。 */
@@ -1653,9 +1660,22 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     deps.renderStatusPanel(ctx);
     return { skipped: true, reason: 'luker_multi_agent_manual' };
   }
-  if (reason === 'poll' && isHostGenerationBusy(ctx)) {
-    // 主连接没说完话就绝不追踪：从根上消灭「开始吐字时抢发一轮」
-    return recordPollSkip(ctx, chatState, deps, 'host_generation_in_flight', '宿主仍在生成中，自动追踪等待中。');
+  if (reason === 'poll') {
+    // 主连接没说完话就绝不追踪：从根上消灭「开始吐字时抢发一轮」。
+    // 两路信号分开展示：dataset 是停止按钮的权威状态（无自愈，卡死会一直挡），
+    // depth 是生成事件计数（600 秒自愈）。「卡在正文生成阶段」时面板直接指明是哪一路。
+    const busyDetail = getHostBusyDetail(ctx);
+    if (busyDetail.busy) {
+      return recordPollSkip(
+        ctx,
+        chatState,
+        deps,
+        'host_generation_in_flight',
+        busyDetail.source === 'depth'
+          ? `宿主生成事件未闭合（${Number(busyDetail.depth) || 0} 层），自动追踪等待中。`
+          : '宿主仍在生成中（停止按钮未释放），自动追踪等待中。',
+      );
+    }
   }
   if (reason === 'poll') {
     const agentBarrier = await getHostAgentRunBarrier(ctx, lastMessage);

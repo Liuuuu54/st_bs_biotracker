@@ -116,7 +116,7 @@ test('recordPollSkip 原因变化或换聊天时重新写', () => {
   assert.equal(renders.length, 3, '换聊天重新写');
 });
 
-test('runTracker 宿主忙碌时面板留下原因', async () => {
+test('runTracker 宿主忙碌时面板留下原因（事件计数一路）', async () => {
   const { ctx } = makeCtx();
   const { deps } = makeDeps();
   ctx.eventSource.emit('generation_started');
@@ -125,7 +125,21 @@ test('runTracker 宿主忙碌时面板留下原因', async () => {
   const outcome = await runTracker(ctx, deps, 'poll');
   assert.deepEqual(outcome, { skipped: true, reason: 'host_generation_in_flight' });
   const chatState = state.getChatState(ctx, state.getSettings(ctx));
-  assert.equal(chatState.lastRawResult.message, '宿主仍在生成中，自动追踪等待中。');
+  assert.equal(chatState.lastRawResult.message, '宿主生成事件未闭合（1 层），自动追踪等待中。');
+});
+
+test('runTracker 宿主忙碌时面板留下原因（停止按钮旗标一路）', async () => {
+  const { ctx } = makeCtx();
+  const { deps } = makeDeps();
+  globalThis.document = { body: { dataset: { generating: 'true' } } };
+  try {
+    const outcome = await runTracker(ctx, deps, 'poll');
+    assert.deepEqual(outcome, { skipped: true, reason: 'host_generation_in_flight' });
+    const chatState = state.getChatState(ctx, state.getSettings(ctx));
+    assert.equal(chatState.lastRawResult.message, '宿主仍在生成中（停止按钮未释放），自动追踪等待中。');
+  } finally {
+    delete globalThis.document;
+  }
 });
 
 test('poll 未启用时面板留下原因', async () => {
