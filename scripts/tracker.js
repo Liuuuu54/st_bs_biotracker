@@ -1574,6 +1574,29 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   return { discarded: false, triggered: true };
 }
 
+/**
+ * 轮询跳过原因显形：下面几条自动独有的早退原本全程静默，面板停在旧结果上，
+ * 使用者分不清「已追完」「正在等」还是「被某道门卡死」（自动不可用、手动可用
+ * 时只能瞎猜）。只在「同聊天＋同原因」变化时写一次，避免每 1.8 秒刷一次
+ * 持久化与面板；追踪一旦真正跑起来，结果会照常覆盖这里。
+ */
+const lastPollSkipReport = { chatKey: '', reason: '' };
+export const __pollSkipReportForTest = lastPollSkipReport;
+
+export function recordPollSkip(ctx, chatState, deps, reason, message) {
+  const chatKey = String(getChatKey(ctx) || '');
+  if (lastPollSkipReport.chatKey === chatKey && lastPollSkipReport.reason === reason) {
+    return { skipped: true, reason };
+  }
+  lastPollSkipReport.chatKey = chatKey;
+  lastPollSkipReport.reason = reason;
+  chatState.lastRawResult = { message, tool_calls: [] };
+  chatState.lastOperationLogs = [];
+  saveSettings(ctx);
+  deps.renderStatusPanel(ctx);
+  return { skipped: true, reason };
+}
+
 export async function runTracker(ctx, deps, reason = 'manual') {
   const settings = getSettings(ctx);
   await hydrateChatStateFromHost(ctx, settings);
@@ -1632,7 +1655,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   }
   if (reason === 'poll' && isHostGenerationBusy(ctx)) {
     // 主连接没说完话就绝不追踪：从根上消灭「开始吐字时抢发一轮」
-    return { skipped: true, reason: 'host_generation_in_flight' };
+    return recordPollSkip(ctx, chatState, deps, 'host_generation_in_flight', '宿主仍在生成中，自动追踪等待中。');
   }
   if (reason === 'poll') {
     const agentBarrier = await getHostAgentRunBarrier(ctx, lastMessage);
@@ -1658,20 +1681,26 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     }
   }
   if (reason === 'poll' && !isAfterAiMessageSettled(ctx, settings, chatState)) {
-    return { skipped: true, reason: 'message_not_settled' };
+    return recordPollSkip(ctx, chatState, deps, 'message_not_settled', '等待 AI 正文稳定后再追踪。');
   }
   if (reason === 'poll' && !hasPendingChatHistory(ctx, chatState)) {
-    return { skipped: true, reason: 'no_pending_history' };
+    return recordPollSkip(ctx, chatState, deps, 'no_pending_history', '没有新的可追踪内容，自动追踪待命中。');
   }
   if (reason === 'poll' && shouldWaitForMvuExtraAnalysis(ctx, settings)) {
-    return { skipped: true, reason: 'waiting_mvu_extra_analysis' };
+    return recordPollSkip(ctx, chatState, deps, 'waiting_mvu_extra_analysis', '等待 MVU 额外解析结束后再追踪。');
   }
   if (reason === 'poll' && tryAdoptSilentTailReplacement(ctx, settings, chatState)) {
     // 正文替换的无痕改写：静默重锚，不发请求也不弹任何提示
     return { skipped: true, reason: 'silent_tail_replacement' };
   }
   if (reason === 'poll' && isFailedAutoRetryBlocked(ctx, chatState)) {
-    return { skipped: true, reason: 'failed_message_blocked' };
+    return recordPollSkip(
+      ctx,
+      chatState,
+      deps,
+      'failed_message_blocked',
+      '上次自动追踪失败，对话无变化时暂停自动重试；可手动分析或等待新消息。',
+    );
   }
   const runToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   globalThis[RUN_RUNTIME_KEY] = runToken;
@@ -1736,7 +1765,15 @@ export async function runTracker(ctx, deps, reason = 'manual') {
 
 export async function poll(ctx, deps) {
   const settings = getSettings(ctx);
-  if (!settings.enabled) return;
+  if (!settings.enabled) {
+    return recordPollSkip(
+      ctx,
+      getChatState(ctx, settings),
+      deps,
+      'disabled',
+      '自动追踪未启用（在设置中开启后生效）。',
+    );
+  }
   await runTracker(ctx, deps, 'poll');
 }
 
