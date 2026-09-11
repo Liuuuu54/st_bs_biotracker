@@ -420,7 +420,12 @@ function resolveHostEventName(ctx, typeKey, fallback) {
   return typeof resolved === 'string' && resolved ? resolved : fallback;
 }
 
-function markHostGenerationStart() {
+function markHostGenerationStart(...args) {
+  // dry-run（token 计数拼 prompt）只发 STARTED 不发 ENDED：按钮从没显示过，
+  // 两家宿主 hideStopButton 的 NOOP 守卫都会吞掉 ENDED。计入深度等于把自动追踪
+  // 卡到 600 秒自愈。两家 STARTED 的最后一个事件参数都是 dryRun（ST/TT 一致），
+  // 只在这个确切形状下跳过，其它一律照计。
+  if (args.length > 0 && args[args.length - 1] === true) return;
   hostRunState.generationDepth += 1;
   if (hostRunState.generationDepth === 1) hostRunState.generationBusySince = Date.now();
 }

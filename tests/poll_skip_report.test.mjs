@@ -152,3 +152,29 @@ test('poll 未启用时面板留下原因', async () => {
   const chatState = state.getChatState(ctx, state.getSettings(ctx));
   assert.equal(chatState.lastRawResult.message, '自动追踪未启用（在设置中开启后生效）。');
 });
+
+test('dry-run 的 generation_started 不计入忙碌（宿主只发 STARTED 不发 ENDED）', async () => {
+  const { ctx } = makeCtx();
+  const { deps } = makeDeps();
+  // 两家宿主的 dry-run（token 计数）都带 dryRun=true 尾参，且从不显示停止按钮，
+  // hideStopButton 的 NOOP 守卫会吞掉 ENDED；计入就等于卡到 600 秒自愈
+  ctx.eventSource.emit('generation_started', 'quiet', { quiet_prompt: '计数' }, true);
+  assert.equal(__hostRunStateForTest.generationDepth, 0, 'dry-run 不得计数');
+  ctx.eventSource.emit('generation_started', 'quiet', { quiet_prompt: '计数' }, true);
+  assert.equal(__hostRunStateForTest.generationDepth, 0, '多次 dry-run 也不得累积');
+
+  const outcome = await runTracker(ctx, deps, 'poll');
+  assert.notEqual(outcome?.reason, 'host_generation_in_flight', 'dry-run 不得挡住自动追踪');
+});
+
+test('dry-run 之后真生成仍照常计数', async () => {
+  const { ctx } = makeCtx();
+  const { deps } = makeDeps();
+  ctx.eventSource.emit('generation_started', 'quiet', {}, true);
+  assert.equal(__hostRunStateForTest.generationDepth, 0);
+  ctx.eventSource.emit('generation_started', 'normal', {});
+  assert.equal(__hostRunStateForTest.generationDepth, 1);
+
+  const outcome = await runTracker(ctx, deps, 'poll');
+  assert.deepEqual(outcome, { skipped: true, reason: 'host_generation_in_flight' });
+});
