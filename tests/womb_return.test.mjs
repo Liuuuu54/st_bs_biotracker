@@ -54,13 +54,13 @@ test('回归后进入回归期，多出一胎且胎重为上限', () => {
 });
 
 test('母为承载者、父为回归者，种族照常混血，并带 rebirth 标签', () => {
-  const chatState = setup({ base: { race: '精灵' } }, { base: { race: '龙族' } });
+  const chatState = setup({ base: { race: '精灵' } }, { base: { race: '西方龙' } });
   call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 1 });
   const fetus = hostOf(chatState).pregnant.fetuses[0];
   assert.equal(fetus.fathers, '琪拉');
-  assert.equal(fetus.fatherRace, '龙族');
+  assert.equal(fetus.fatherRace, '西方龙');
   assert.match(fetus.race, /精灵/);
-  assert.match(fetus.race, /龙族/);
+  assert.match(fetus.race, /西方龙/);
   assert.deepEqual(deriveFetusTags(fetus, { carrierName: '艾拉' }), ['rebirth']);
 });
 
@@ -356,12 +356,12 @@ test('未注册的回归者可用 returnerRace 指定种族，含衍生类型', 
   const chatState = setup({ base: { race: '人类' } });
   delete chatState.characters['琪拉'];
   call(chatState, 'bsWombReturn', {
-    female: '艾拉', returner: '无名旅人', returnerRace: '[血族]龙族', hours: 1,
+    female: '艾拉', returner: '无名旅人', returnerRace: '[血族]西方龙', hours: 1,
   });
   const fetus = hostOf(chatState).pregnant.fetuses[0];
-  assert.equal(fetus.fatherRace, '龙族');
+  assert.equal(fetus.fatherRace, '西方龙');
   assert.equal(fetus.fatherDerivedType, '血族');
-  assert.match(fetus.race, /龙族/);
+  assert.match(fetus.race, /西方龙/);
 });
 
 test('未注册且没给种族时，视同与承载者同族', () => {
@@ -374,7 +374,7 @@ test('未注册且没给种族时，视同与承载者同族', () => {
 });
 
 test('returnerRace 优先于已注册角色自己的种族', () => {
-  const chatState = setup({ base: { race: '人类' } }, { base: { race: '龙族' } });
+  const chatState = setup({ base: { race: '人类' } }, { base: { race: '西方龙' } });
   call(chatState, 'bsWombReturn', {
     female: '艾拉', returner: '琪拉', returnerRace: '兽人', hours: 1,
   });

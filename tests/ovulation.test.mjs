@@ -42,7 +42,7 @@ test('总卵数 = 1 颗基础 + 额外排卵倾向，不随经期倍率变动', 
   assert.equal(eggsAfterOneDay({ menstrualLengthRatio: 1, orgasmOvulationAmount: 1 }), 2);
   // 精灵：倾向 0 → 1 颗。旧算法按 6 天排卵窗口给 6 颗，与「几乎不具备额外排卵能力」矛盾
   assert.equal(eggsAfterOneDay({ menstrualLengthRatio: 3, orgasmOvulationAmount: 0 }), 1);
-  // 龙族：倍率 4 但倾向仍是 1 → 2 颗，不再因窗口长而虚增到 8
+  // 西方龙：倍率 4，但排卵只取额外倾向，不再因窗口长而虚增
   assert.equal(eggsAfterOneDay({ menstrualLengthRatio: 4, orgasmOvulationAmount: 1 }), 2);
   // 社会虫族：高倾向照常排满
   assert.equal(eggsAfterOneDay({ menstrualLengthRatio: 0.75, orgasmOvulationAmount: 8 }), 9);

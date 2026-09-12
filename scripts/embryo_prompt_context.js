@@ -85,7 +85,7 @@ export function buildEmbryoTypeLorePrompt(payload = {}, { includeAllIfEmpty = fa
     '[胚胎类型补充设定]',
     '以下文本来自项目内的胚胎类型 lore，请将其视为高优先级设定。',
     '当母体和胎兒父源种族涉及不同生殖体系时，需要同时参考多个胚胎类型文本；不要只保留单一类型。',
-    '例如人类母体怀有龙族胎儿时，应同时参考「胎生」与「胎转卵生」。',
+    '例如人类母体怀有西方龙或东方龙胎儿时，应同时参考「胎生」与「胎转卵生」。',
     '',
     ...finalTypes.map((type) => EMBRYO_TYPE_REFERENCE[type]).filter(Boolean),
   ].join('\n');

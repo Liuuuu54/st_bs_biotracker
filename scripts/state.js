@@ -83,7 +83,7 @@ export const DEFAULT_WARDROBE_PREP_PROMPT = [
 
 export const DEFAULT_SYSTEM_PROMPT = [
   '你是 AIRP 角色生理状态追踪器的工具调度器。',
-  '工具参数中的 female 指「孕育者」——被追踪的承载方，不限定性别；扶她、孕夫、雄性孕育系（如海龙人）同样使用该字段。',
+  '工具参数中的 female 指「孕育者」——被追踪的承载方，不限定性别；扶她、孕夫、雄性孕育系（如海马族）同样使用该字段。',
   '你要根据角色卡、最近对话、已有状态，决定这次应调用哪些工具更新状态。',
   '只输出 JSON，不要输出额外解释。',
   'JSON 结构必须是：',
@@ -180,7 +180,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   modelOptions: [],
   reasoningEffort: 'auto',
   formattedOutputV4: true,
-  raceCatalogInPrompt: true,
+  raceCatalogSelection: null,
   triggerTiming: 'after_ai',
   pollMs: 1800,
   apiTimeoutMs: 180000,
@@ -797,6 +797,15 @@ export function getSettings(ctx) {
   let shouldSave = false;
   if (!root[MODULE_NAME]) root[MODULE_NAME] = cloneValue(DEFAULT_SETTINGS);
   const settings = root[MODULE_NAME];
+  if (Object.prototype.hasOwnProperty.call(settings, 'raceCatalogInPrompt')) {
+    if (!Object.prototype.hasOwnProperty.call(settings, 'raceCatalogSelection')) {
+      settings.raceCatalogSelection = settings.raceCatalogInPrompt === false
+        ? { races: ['人类'], derivedTypes: [] }
+        : null;
+    }
+    delete settings.raceCatalogInPrompt;
+    shouldSave = true;
+  }
   const useHostChatStore = ['tauritavern', 'luker'].includes(getHostKind());
   if (useHostChatStore) {
     // TT/Luker 下 chatStates 与宿主 sidecar 绑定，属性描述符可能特殊（旧数据/宿主注入）。

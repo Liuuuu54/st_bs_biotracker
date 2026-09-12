@@ -109,17 +109,17 @@ test('未注册的父亲带上血统，且只在单一父源时才标', () => {
   const graph = buildLineageGraph({
     characters: {
       艾拉: character('艾拉', [
-        { id: 'c1', name: '独子', fathers: '凯', fatherRace: '龙族', fatherDerivedType: '血族' },
+        { id: 'c1', name: '独子', fathers: '凯', fatherRace: '西方龙', fatherDerivedType: '血族' },
         {
           id: 'c2', name: '融合儿', fathers: '甲×乙',
-          fatherRace: '龙族x人类',
+          fatherRace: '西方龙x人类',
           chimera: { fatherSources: ['甲', '乙'] },
         },
       ]),
     },
   });
   const kai = graph.nodes.find((node) => node.name === '凯');
-  assert.equal(kai.race, '龙族', '单一父源应带上血统');
+  assert.equal(kai.race, '西方龙', '单一父源应带上血统');
   assert.equal(kai.derivedType, '血族');
   // 嵌合体的 fatherRace 是合并字串，对不回单一个人，宁可留空
   const jia = graph.nodes.find((node) => node.name === '甲');

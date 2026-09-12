@@ -1,4 +1,4 @@
-// 种族名录回归：词汇表是否真的进入两条提示词，以及开关能否关掉。
+// 种族名录回归：词汇表是否真的进入两条提示词，以及百科勾选能否筛选。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -28,27 +28,52 @@ test('紧凑模式不带辨识提示，注册模式带', () => {
   assert.ok(hinted.length > compact.length);
 });
 
-test('追踪系统提示词默认带名录，payload 旗标可关闭', () => {
-  const on = buildTrackerSystemPrompt('base', null, { race_catalog_enabled: true });
-  assert.ok(on.includes('[可用种族名录]'), '默认应带名录');
-  const off = buildTrackerSystemPrompt('base', null, { race_catalog_enabled: false });
-  assert.equal(off.includes('[可用种族名录]'), false, '关闭后不应带名录');
+test('百科选择会筛选名录，只保留人类时不会夹带异种或衍生类型', () => {
+  const selection = { races: ['人类'], derivedTypes: [] };
+  const block = buildRaceCatalogBlock({ selection });
+  assert.ok(block.includes('- 胎生: 人类'));
+  assert.equal(block.includes('鱼人'), false);
+  assert.equal(block.includes('衍生类型'), false);
+  assert.equal(buildRaceCatalogBlock({ selection: { races: [], derivedTypes: [] } }), '');
 });
 
-test('注册系统提示词默认带名录，设定可关闭', () => {
+test('追踪与注册提示词共用百科名录选择', () => {
+  const selection = { races: ['人类', '精灵'], derivedTypes: ['血族'] };
+  const tracked = buildTrackerSystemPrompt('base', null, { race_catalog_selection: selection });
+  assert.ok(tracked.includes('人类、精灵'));
+  assert.ok(tracked.includes('血族'));
+  assert.equal(tracked.includes('鱼人'), false);
+
   const on = buildRegistrySystemPrompt({}, {});
   assert.ok(on.includes('[可用种族名录]'), '默认应带名录');
   assert.ok(on.includes('鱼人(Fishfolk，人形而带鱼类特徵与粗尾鳍)'), '注册应带辨识提示');
-  const off = buildRegistrySystemPrompt({ raceCatalogInPrompt: false }, {});
-  assert.equal(off.includes('[可用种族名录]'), false, '关闭后不应带名录');
+  const filtered = buildRegistrySystemPrompt({ raceCatalogSelection: selection }, {});
+  assert.ok(filtered.includes('精灵(Elf，长寿的尖耳亚人)'));
+  assert.ok(filtered.includes('血族('));
+  assert.equal(filtered.includes('鱼人('), false);
 });
 
 test('衍生类型有内建短敘述并进入名录', () => {
-  for (const type of ['器灵', '序列', '星际']) {
+  for (const type of ['器灵', '序列', '星际', '兽化']) {
     assert.ok(getDerivedTypeIntroductionLine(type), `衍生类型 ${type} 应有内建短敘述`);
   }
   const hinted = buildRaceCatalogBlock({ withHints: true });
-  assert.ok(hinted.includes('序列(ABO'), '名录应带衍生类型提示');
+  assert.ok(hinted.includes('序列(Secondary Dynamics'), '名录应带扩展后的序列提示');
+  assert.ok(hinted.includes('兽化(Therian'), '名录应带兽化提示');
+});
+
+test('序列兼容三大女性向设定，兽化使用独立兽性与乳意抵免', async () => {
+  const raceConfig = await import('../scripts/race_config.js');
+  assert.equal(raceConfig.DERIVED_TYPE_RACES.length, 12);
+  assert.match(raceConfig.getDerivedTypeIntroductionLine('序列'), /ABO、哨兵／向导与 Dom／Sub/);
+  assert.equal(raceConfig.getDerivedTypeFluxProfile('序列').fluxName, '序列活性');
+  assert.equal(raceConfig.getDerivedTypeFluxProfile('兽化-猫').fluxName, '兽性');
+  assert.equal(raceConfig.getDerivedTypeInheritanceProfile('兽化-猫').inheritanceSpeed, 1.25);
+  assert.deepEqual(
+    raceConfig.getDerivedTypeMetabolismExemptions('兽化-猫'),
+    ['milk', 'odor', 'companionship'],
+  );
+  assert.match(raceConfig.getDerivedTypeFluxProfile('兽化').fluxDefinition, /乳意由兽性抵免而不单独追踪/);
 });
 
 test('短敘述与名录提示都走使用者覆写', async () => {
@@ -129,20 +154,20 @@ test('承载耐受进入提示词，且偏移不再被胎儿种族放大', async
       },
     },
   });
-  // 单族区块要能读到耐受，龙族与精灵的叙述必须分得开
+  // 单族区块要能读到耐受，西方龙与精灵的叙述必须分得开
   const toleranceLine = (race) => buildRacePhysiologyPrompt(makePayload(race, race))
     .split('\n')
     .find((line) => line.startsWith('- 承载耐受:'));
-  assert.ok(toleranceLine('龙族'), '生理区块应有承载耐受行');
+  assert.ok(toleranceLine('西方龙'), '生理区块应有承载耐受行');
   // 耐受 10 落在最高档：妊娠近乎无负担
-  assert.match(toleranceLine('龙族'), /行动力与常态无异/);
+  assert.match(toleranceLine('西方龙'), /行动力与常态无异/);
   // 耐受 7 落在次高档：明确点出仍可战斗
   assert.match(toleranceLine('天使'), /战斗/);
   // 低耐受要能分得开
   assert.match(toleranceLine('精灵'), /行动力明显下降/);
 
   // 人类怀龙胎不该因为胎儿种族耐受高而变成十倍耐受
-  const humanCarryingDragon = buildRacePhysiologyPrompt(makePayload('人类', '龙族'));
+  const humanCarryingDragon = buildRacePhysiologyPrompt(makePayload('人类', '西方龙'));
   const shiftLine = humanCarryingDragon.split('\n').find((line) => line.startsWith('- 承载耐受偏移:'));
   assert.ok(shiftLine, '妊娠偏移应有承载耐受行');
   assert.match(shiftLine, /^- 承载耐受偏移: 1（/, `人类怀龙胎的耐受应维持 1，实际: ${shiftLine}`);

@@ -753,7 +753,10 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
   const embryoTypeLorePrompt = buildEmbryoTypeLorePrompt(options.payload || {}, { includeAllIfEmpty: true });
   const racePhysiologyPrompt = buildRegistryRacePhysiologyPrompt(options.payload || {});
   // 注册是一次性请求，附上辨识提示帮模型在形近种族间选对（人鱼／鱼人、精灵／妖精）
-  const raceCatalogPrompt = settings?.raceCatalogInPrompt === false ? '' : buildRaceCatalogBlock({ withHints: true });
+  const raceCatalogPrompt = buildRaceCatalogBlock({
+    withHints: true,
+    selection: settings?.raceCatalogSelection || null,
+  });
   const psyMensLines = Object.entries(PSY_MENS_FIELDS).flatMap(([key, value]) => [
     `- psychology.mens.${key}_value: ${value.definition}`,
     `  阶段预览: ${value.preview}`,
@@ -820,7 +823,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- miscarriageExperience: 流产/堕胎次数',
     '示例：',
     '- 高中女生: {"experience":{"virginity":"前男友","emotionalMate":"{{user_name}}","pregnantExperience":0}}',
-    '- 魅魔女仆: {"experience":{"virginity":"前任主人","emotionalMate":null,"pregnantExperience":5,"naturalBirthExperience":3,"surgicalBirthExperience":0,"miscarriageExperience":2}}',
+    '- 媚魔女仆: {"experience":{"virginity":"前任主人","emotionalMate":null,"pregnantExperience":5,"naturalBirthExperience":3,"surgicalBirthExperience":0,"miscarriageExperience":2}}',
     '- 守贞人妻: {"experience":{"virginity":"丈夫","latestSexPartner":"丈夫","emotionalMate":"丈夫","marriageMate":"丈夫","pregnantExperience":3,"naturalBirthExperience":0,"surgicalBirthExperience":2,"miscarriageExperience":0}}',
     '- 刚做爱开局: {"base":{"latestSexDays":0,"sperms":[{"male":"丈夫","race":"[不死-僵尸]人类","value":30}]},"experience":{"latestSexPartner":"丈夫"}}',
     '【3. 繁育心理】',

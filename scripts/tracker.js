@@ -1231,7 +1231,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     existing_state: buildTrackerStateView(existingState, settings),
     available_tools: getTrackerToolDefinitions(settings, existingState),
     diary_enabled: diaryEnabled,
-    race_catalog_enabled: settings?.raceCatalogInPrompt !== false,
+    race_catalog_selection: settings?.raceCatalogSelection || null,
     require_full_description_updates: settings?.requireFullDescriptionUpdates === true,
     ...(psychologyEnabled ? { breeding_psychology_enabled: true } : {}),
     wardrobe_enabled: hasPreparedWardrobe(existingState),

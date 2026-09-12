@@ -13,7 +13,7 @@ function sample() {
       母: ch('母', [{ id: 'k2', name: '我', fathers: '父', registeredAs: '我' }], { race: '精灵' }),
       我: ch('我', [{ id: 'k3', name: '长子', gender: '男', race: '精灵x人类', fathers: '配偶' }]),
       父: ch('父'),
-      配偶: ch('配偶', [], { race: '龙族' }),
+      配偶: ch('配偶', [], { race: '西方龙' }),
     },
   };
 }
@@ -156,12 +156,12 @@ test('胎内回归者标为「前身」而不是「父」，但仍算遗传亲�
         profile: {
           base: { race: '人类', age: 24 },
           children: [{
-            id: 'r1', name: '重生子', fathers: '琪拉', fatherRace: '龙族',
-            race: '人类x龙族', age: 0, tags: ['rebirth'],
+            id: 'r1', name: '重生子', fathers: '琪拉', fatherRace: '西方龙',
+            race: '人类x西方龙', age: 0, tags: ['rebirth'],
           }],
         },
       },
-      琪拉: { name: '琪拉', initialized: true, profile: { base: { race: '龙族', age: 26 }, children: [] } },
+      琪拉: { name: '琪拉', initialized: true, profile: { base: { race: '西方龙', age: 26 }, children: [] } },
     },
   }, '艾拉');
 

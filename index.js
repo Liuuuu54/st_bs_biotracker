@@ -16,6 +16,8 @@ import {
   DERIVED_TYPE_FLUX_PROFILES,
   DERIVED_TYPE_INHERITANCE_PROFILES,
   DERIVED_TYPE_RACES,
+  RACE_INHERITANCE_FIELD,
+  RACE_INHERITANCE_MODES,
   RACE_INTRODUCTION_FIELD,
   RACE_PHYSIOLOGY_FIELDS,
   getEmbryoTypeByRace,
@@ -255,6 +257,11 @@ const RACE_PHYSIOLOGY_FIELD_HINTS = Object.freeze({
 });
 const EDITABLE_RACE_PHYSIOLOGY_FIELDS = Object.freeze(RACE_PHYSIOLOGY_FIELDS.filter((field) => field !== 'recoveryDays'));
 const RACE_INTRODUCTION_LABEL = '物种短敘述';
+const RACE_INHERITANCE_LABELS = Object.freeze({
+  [RACE_INHERITANCE_MODES.NORMAL]: '一般',
+  [RACE_INHERITANCE_MODES.PATERNAL]: '雄核',
+  [RACE_INHERITANCE_MODES.MATERNAL]: '雌核',
+});
 
 function setConnectStatus(message, isError = false) {
   const el = document.getElementById('bs-bt-connect-status');
@@ -1492,6 +1499,39 @@ function syncRacePhysiologyOverrides(settings) {
   setDerivedTypeOverrides(settings?.derivedTypeOverrides || {});
 }
 
+function getRaceCatalogSelection(settings) {
+  const raw = settings?.raceCatalogSelection;
+  const races = raw && Array.isArray(raw.races)
+    ? RACE_ENCYCLOPEDIA_LIST.filter((race) => raw.races.includes(race))
+    : [...RACE_ENCYCLOPEDIA_LIST];
+  const derivedTypes = raw && Array.isArray(raw.derivedTypes)
+    ? DERIVED_ENCYCLOPEDIA_LIST.filter((type) => raw.derivedTypes.includes(type))
+    : [...DERIVED_ENCYCLOPEDIA_LIST];
+  return { races, derivedTypes };
+}
+
+function saveRaceCatalogSelection(ctx, selection) {
+  const settings = getSettings(ctx);
+  settings.raceCatalogSelection = {
+    races: RACE_ENCYCLOPEDIA_LIST.filter((race) => selection.races.includes(race)),
+    derivedTypes: DERIVED_ENCYCLOPEDIA_LIST.filter((type) => selection.derivedTypes.includes(type)),
+  };
+  saveSettings(ctx);
+  updateMainFlowPrompt(ctx);
+  renderRaceEncyclopediaPage(ctx);
+}
+
+function setRaceCatalogEntryIncluded(ctx, kind, name, included) {
+  const settings = getSettings(ctx);
+  const selection = getRaceCatalogSelection(settings);
+  const key = kind === 'derived' ? 'derivedTypes' : 'races';
+  const values = new Set(selection[key]);
+  if (included) values.add(name);
+  else values.delete(name);
+  selection[key] = [...values];
+  saveRaceCatalogSelection(ctx, selection);
+}
+
 function setEncyclopediaSubpage(page) {
   selectedEncyclopediaSubpage = page === 'derived' ? 'derived' : 'race';
   document.querySelectorAll('#bs-bt-encyclopedia-tabs [data-encyclopedia-tab]').forEach((node) => {
@@ -1538,7 +1578,7 @@ function renderRacePhysiologyEditor(race) {
   const statusNode = document.getElementById('bs-bt-race-editor-status');
   if (!editorNode) return;
   editorNode.innerHTML = '';
-  if (statusNode) statusNode.textContent = '物种短敘述可留空；数值只保存与内置值不同的字段；产后恢复天数由系统公式与指令流程处理。';
+  if (statusNode) statusNode.textContent = '物种短敘述可留空；核型与数值只保存和内置值不同的字段；混血种族固定按一般核型处理。';
   if (!race) {
     editorNode.textContent = '请选择种族后编辑参数。';
     return;
@@ -1575,6 +1615,32 @@ function renderRacePhysiologyEditor(race) {
   }
 
   editorNode.appendChild(introductionLabel);
+
+  const inheritanceLabel = document.createElement('label');
+  inheritanceLabel.className = 'bs-bt-race-editor-field';
+  inheritanceLabel.setAttribute('for', 'bs-bt-race-inheritance-mode');
+  const inheritanceText = document.createElement('span');
+  inheritanceText.textContent = '遗传核型';
+  inheritanceLabel.appendChild(inheritanceText);
+  const inheritanceSelect = document.createElement('select');
+  inheritanceSelect.id = 'bs-bt-race-inheritance-mode';
+  inheritanceSelect.className = 'text_pole';
+  inheritanceSelect.dataset.raceInheritanceField = RACE_INHERITANCE_FIELD;
+  for (const [value, labelText] of Object.entries(RACE_INHERITANCE_LABELS)) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = labelText;
+    inheritanceSelect.appendChild(option);
+  }
+  inheritanceSelect.value = String((override && override[RACE_INHERITANCE_FIELD]) || builtin[RACE_INHERITANCE_FIELD] || RACE_INHERITANCE_MODES.NORMAL);
+  inheritanceLabel.appendChild(inheritanceSelect);
+  if (override && Object.prototype.hasOwnProperty.call(override, RACE_INHERITANCE_FIELD)) {
+    const badge = document.createElement('span');
+    badge.className = 'bs-bt-race-editor-badge';
+    badge.textContent = '已覆盖';
+    inheritanceLabel.appendChild(badge);
+  }
+  editorNode.appendChild(inheritanceLabel);
 
   for (const field of EDITABLE_RACE_PHYSIOLOGY_FIELDS) {
     const label = document.createElement('label');
@@ -1619,6 +1685,11 @@ function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
     const baseValue = '';
     const changed = value !== baseValue;
     if (value && (!onlyDiff || changed)) result[RACE_INTRODUCTION_FIELD] = value;
+  }
+  const inheritanceSelect = document.querySelector(`[data-race-inheritance-field="${RACE_INHERITANCE_FIELD}"]`);
+  if (inheritanceSelect instanceof HTMLSelectElement) {
+    const value = String(inheritanceSelect.value || RACE_INHERITANCE_MODES.NORMAL);
+    if (!onlyDiff || value !== builtin[RACE_INHERITANCE_FIELD]) result[RACE_INHERITANCE_FIELD] = value;
   }
   for (const field of EDITABLE_RACE_PHYSIOLOGY_FIELDS) {
     const input = document.querySelector(`[data-race-physiology-field="${field}"]`);
@@ -1675,6 +1746,10 @@ function copyHumanPhysiologyToEditor() {
   if (!human) return;
   const introductionInput = document.querySelector(`[data-race-introduction-field="${RACE_INTRODUCTION_FIELD}"]`);
   if (introductionInput instanceof HTMLTextAreaElement) introductionInput.value = '';
+  const inheritanceSelect = document.querySelector(`[data-race-inheritance-field="${RACE_INHERITANCE_FIELD}"]`);
+  if (inheritanceSelect instanceof HTMLSelectElement) {
+    inheritanceSelect.value = human[RACE_INHERITANCE_FIELD] || RACE_INHERITANCE_MODES.NORMAL;
+  }
   for (const field of EDITABLE_RACE_PHYSIOLOGY_FIELDS) {
     const input = document.querySelector(`[data-race-physiology-field="${field}"]`);
     if (!(input instanceof HTMLInputElement)) continue;
@@ -1758,7 +1833,9 @@ function resetDerivedTypeOverride(ctx) {
 }
 
 function renderRaceEncyclopediaPage(ctx = null) {
-  if (ctx) syncRacePhysiologyOverrides(getSettings(ctx));
+  const settings = ctx ? getSettings(ctx) : null;
+  if (settings) syncRacePhysiologyOverrides(settings);
+  const catalogSelection = getRaceCatalogSelection(settings);
   setEncyclopediaSubpage(selectedEncyclopediaSubpage);
   const countNode = document.getElementById('bs-bt-race-count');
   const selectNode = document.getElementById('bs-bt-race-select');
@@ -1771,9 +1848,11 @@ function renderRaceEncyclopediaPage(ctx = null) {
   const editButton = document.getElementById('bs-bt-race-open-editor');
   const editorModal = document.getElementById('bs-bt-race-editor-modal');
   const editorTitle = document.getElementById('bs-bt-race-editor-title');
+  const raceCatalogIncluded = document.getElementById('bs-bt-race-catalog-included');
+  const derivedCatalogIncluded = document.getElementById('bs-bt-derived-catalog-included');
   if (!countNode || !selectNode || !outputNode || !derivedSelectNode || !derivedOutputNode) return;
 
-  countNode.innerHTML = `内置种族数量：${RACE_ENCYCLOPEDIA_LIST.length}<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}`;
+  countNode.innerHTML = `内置种族数量：${RACE_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.races.length}）<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.derivedTypes.length}）`;
   if (!selectedRaceEncyclopedia || !RACE_ENCYCLOPEDIA_LIST.includes(selectedRaceEncyclopedia)) {
     selectedRaceEncyclopedia = RACE_ENCYCLOPEDIA_LIST[0] || '';
   }
@@ -1808,6 +1887,9 @@ function renderRaceEncyclopediaPage(ctx = null) {
     if (editButton) editButton.disabled = true;
     closeRacePhysiologyEditor();
   } else {
+    if (raceCatalogIncluded instanceof HTMLInputElement) {
+      raceCatalogIncluded.checked = catalogSelection.races.includes(selectedRaceEncyclopedia);
+    }
     if (editButton) {
       editButton.disabled = false;
       editButton.textContent = getRacePhysiologyOverride(selectedRaceEncyclopedia) ? '编辑覆盖' : '调整参数';
@@ -1826,6 +1908,10 @@ function renderRaceEncyclopediaPage(ctx = null) {
     if (derivedEditButton) derivedEditButton.disabled = true;
     closeDerivedTypeEditor();
     return;
+  }
+
+  if (derivedCatalogIncluded instanceof HTMLInputElement) {
+    derivedCatalogIncluded.checked = catalogSelection.derivedTypes.includes(selectedDerivedEncyclopedia);
   }
 
   if (derivedEditButton) {
@@ -5928,7 +6014,6 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-reasoning-effort', normalizeReasoningEffort(settings.reasoningEffort));
   updateApiEndpointPreview();
   setValue('bs-bt-formatted-output-v4', settings.formattedOutputV4 !== false);
-  setValue('bs-bt-race-catalog', settings.raceCatalogInPrompt !== false);
   setValue('bs-bt-trigger', settings.triggerTiming);
   setValue('bs-bt-poll-ms', settings.pollMs);
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
@@ -6495,8 +6580,6 @@ function readSettingsFromForm(ctx) {
   settings.reasoningEffort = normalizeReasoningEffort(getValue('bs-bt-reasoning-effort'));
   const formattedOutputToggle = document.getElementById('bs-bt-formatted-output-v4');
   if (formattedOutputToggle) settings.formattedOutputV4 = Boolean(formattedOutputToggle.checked);
-  const raceCatalogToggle = document.getElementById('bs-bt-race-catalog');
-  if (raceCatalogToggle) settings.raceCatalogInPrompt = Boolean(raceCatalogToggle.checked);
   settings.triggerTiming = String(getValue('bs-bt-trigger')).trim() || 'after_ai';
   settings.pollMs = Math.max(800, Number(getValue('bs-bt-poll-ms')) || 1800);
   const rawApiTimeoutSec = String(getValue('bs-bt-api-timeout-sec')).trim();
@@ -7178,6 +7261,21 @@ async function ensureModal(ctx) {
     racePhysiologyEditorOpen = false;
     renderRaceEncyclopediaPage(ctx);
   });
+  document.getElementById('bs-bt-race-catalog-included')?.addEventListener('change', (event) => {
+    if (!selectedRaceEncyclopedia) return;
+    setRaceCatalogEntryIncluded(ctx, 'race', selectedRaceEncyclopedia, Boolean(event.target?.checked));
+  });
+  document.getElementById('bs-bt-race-catalog-human-only')?.addEventListener('click', () => {
+    saveRaceCatalogSelection(ctx, { races: ['人类'], derivedTypes: [] });
+    globalThis.toastr?.success?.('[BS BioTracker] 提示词种族名录已只保留人类');
+  });
+  document.getElementById('bs-bt-race-catalog-select-all')?.addEventListener('click', () => {
+    saveRaceCatalogSelection(ctx, {
+      races: [...RACE_ENCYCLOPEDIA_LIST],
+      derivedTypes: [...DERIVED_ENCYCLOPEDIA_LIST],
+    });
+    globalThis.toastr?.success?.('[BS BioTracker] 已将全部种族与衍生类型加入提示词名录');
+  });
   document.getElementById('bs-bt-tracker-worldbook-mode')?.addEventListener('change', async () => {
     readSettingsFromForm(ctx);
     syncWorldbookFilterInput(ctx);
@@ -7222,6 +7320,10 @@ async function ensureModal(ctx) {
     selectedDerivedEncyclopedia = String(event.target?.value || '');
     derivedTypeEditorOpen = false;
     renderRaceEncyclopediaPage(ctx);
+  });
+  document.getElementById('bs-bt-derived-catalog-included')?.addEventListener('change', (event) => {
+    if (!selectedDerivedEncyclopedia) return;
+    setRaceCatalogEntryIncluded(ctx, 'derived', selectedDerivedEncyclopedia, Boolean(event.target?.checked));
   });
   document.getElementById('bs-bt-derived-open-editor')?.addEventListener('click', () => {
     if (!selectedDerivedEncyclopedia) return;

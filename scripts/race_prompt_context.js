@@ -1,4 +1,4 @@
-import { AMORPHOUS_RACES, DERIVED_TYPE_RACES, METOVIVIPAROUS_RACES, OVIPAROUS_RACES, OVOVIVIPAROUS_RACES, VIVIPAROUS_RACES, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceDescriptorComponents, getRaceIntroductionLine, getRacePhysiologyProfile } from './race_config.js';
+import { AMORPHOUS_RACES, DERIVED_TYPE_RACES, METOVIVIPAROUS_RACES, OVIPAROUS_RACES, OVOVIVIPAROUS_RACES, VIVIPAROUS_RACES, deriveFetusRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile } from './race_config.js';
 
 /**
  * 提示词插值防线：剥离换行、闭合标签与控制字符——race/derivedType 等用户可控字符串
@@ -51,25 +51,33 @@ function buildRaceCatalogHint(text) {
  * withHints=false 只有名字，约 350 token，适合每轮都发的追踪请求；
  * withHints=true 附极短辨识提示，适合一次性的注册请求。
  */
-export function buildRaceCatalogBlock({ withHints = false } = {}) {
+export function buildRaceCatalogBlock({ withHints = false, selection = null } = {}) {
+  const selectedRaces = selection && Array.isArray(selection.races)
+    ? new Set(selection.races.map((race) => String(race || '').trim()).filter(Boolean))
+    : null;
+  const selectedDerivedTypes = selection && Array.isArray(selection.derivedTypes)
+    ? new Set(selection.derivedTypes.map((type) => String(type || '').trim()).filter(Boolean))
+    : null;
   const groupLines = RACE_CATALOG_GROUPS.map(([label, races]) => {
-    const names = races.map((race) => {
+    const names = races.filter((race) => !selectedRaces || selectedRaces.has(race)).map((race) => {
       const hint = withHints ? buildRaceCatalogHint(getRaceIntroductionLine(race)) : '';
       return hint ? `${race}(${hint})` : race;
     });
-    return `- ${label}: ${names.join('、')}`;
-  });
+    return names.length > 0 ? `- ${label}: ${names.join('、')}` : '';
+  }).filter(Boolean);
+  const derivedTypes = DERIVED_TYPE_RACES.filter((type) => !selectedDerivedTypes || selectedDerivedTypes.has(type));
+  if (groupLines.length === 0 && derivedTypes.length === 0) return '';
   return [
     '[可用种族名录]',
     '以下是系统内建的种族，写 base.race、fatherRace、bsAddSperm.race 时应优先从中选择。',
     ...groupLines,
-    `- 衍生类型（写作 [类型]种族，如 [血族]人类）: ${DERIVED_TYPE_RACES.map((type) => {
+    derivedTypes.length > 0 ? `- 衍生类型（写作 [类型]种族，如 [血族]人类）: ${derivedTypes.map((type) => {
       const hint = withHints ? buildRaceCatalogHint(getDerivedTypeIntroductionLine(type)) : '';
       return hint ? `${type}(${hint})` : type;
-    }).join('、')}`,
-    '名录外的形象请就近归入最相似的一项（例如鲸鱼娘归入空鲸或鱼人），不要自创种族名——自创名称在系统内查不到生理参数。',
-    '混血以 x 分隔，装饰子项以 - 附加，例如 兽耳族-兔x精灵-木。',
-  ].join('\n');
+    }).join('、')}` : '',
+    '名录外的形象请就近归入本次名录中最相似的一项，不要自创种族名——自创名称在系统内查不到生理参数。',
+    '混血以 x 分隔，装饰子项以 - 附加；两侧只能使用本次名录列出的种族名。',
+  ].filter(Boolean).join('\n');
 }
 
 function formatNumber(value, digits = 2) {
@@ -197,23 +205,22 @@ function getGenderRatioText(value) {
   return `后代偏雌性，约 ${Math.round(100 - num)}% 为雌性。`;
 }
 
+function getInheritanceModeText(race) {
+  switch (getRaceInheritanceMode(race)) {
+    case 'paternal':
+      return '雄核；仅一方具核型时保留精方种族。';
+    case 'maternal':
+      return '雌核；仅一方具核型时保留卵方种族。';
+    default:
+      return '一般；混血种族固定视为一般。';
+  }
+}
+
 function isSameRaceGroup(leftRace, rightRace) {
   const left = getRaceComponents(leftRace).sort();
   const right = getRaceComponents(rightRace).sort();
   if (left.length === 0 || right.length === 0 || left.length !== right.length) return false;
   return left.every((value, index) => value === right[index]);
-}
-
-function deriveFetusRace(motherRace, fatherRace) {
-  const motherParts = getRaceDescriptorComponents(motherRace);
-  const fatherParts = getRaceDescriptorComponents(fatherRace);
-  const combined = [...fatherParts, ...motherParts].filter(Boolean);
-  if (combined.length === 0) return '人类';
-  const unique = [];
-  for (const part of combined) {
-    if (!unique.includes(part)) unique.push(part);
-  }
-  return unique.join('x');
 }
 
 function getGenderRatioDisplay(value) {
@@ -265,6 +272,7 @@ function buildSingleRacePhysiologyBlock(race) {
     `- 分娩难度: ${getBirthDifficultyText(profile.birthDifficulty)}`,
     `- 承载耐受: ${getBreedToleranceText(profile.breedTolerance)}（数值 ${formatNumber(profile.breedTolerance)}；越高则孕期越不被削弱）`,
     `- 受精难度: ${getImpregnationDifficultyText(profile.impregnationDifficulty)}`,
+    `- 遗传核型: ${getInheritanceModeText(race)}`,
     `- 多产性: ${getProlificacyText(profile.orgasmOvulationAmount, profile.identicalProbability)}；额外排卵倾向 ${formatNumber(profile.orgasmOvulationAmount)}，同卵多胎概率 ${formatNumber(profile.identicalProbability)}%`,
     `- 性别比: ${getGenderRatioText(profile.genderRatio)}`,
   ].filter(Boolean).join('\n');
@@ -338,6 +346,7 @@ function buildSpermCalculationBlock(characterState) {
   const motherRace = String(base.race || '').trim();
   if (!motherRace) return '';
   const motherProfile = getMergedRacePhysiologyProfile(motherRace) || {};
+  const motherInheritanceMode = getRaceInheritanceMode(motherRace);
   const motherDifficulty = Number(motherProfile?.impregnationDifficulty);
   const motherEmbryoType = getEmbryoTypeByRace(motherRace);
   const heteroSperms = sperms.filter((sperm) => {
@@ -352,6 +361,7 @@ function buildSpermCalculationBlock(characterState) {
     `- 母体种族: ${sanitizePromptText(motherRace)}`,
     `- 母体受精难度: ${formatNumber(motherDifficulty)} (${getImpregnationDifficultyText(motherDifficulty)})`,
     `- 母体胚胎类型: ${motherEmbryoType}`,
+    `- 卵方遗传核型: ${getInheritanceModeText(motherRace)}`,
   ];
 
   heteroSperms.forEach((sperm, index) => {
@@ -359,6 +369,7 @@ function buildSpermCalculationBlock(characterState) {
     const fatherProfile = getMergedRacePhysiologyProfile(fatherRace) || {};
     const fatherDifficulty = Number(fatherProfile?.impregnationDifficulty);
     const fatherEmbryoType = getEmbryoTypeByRace(fatherRace);
+    const fatherInheritanceMode = getRaceInheritanceMode(fatherRace);
     let effectiveDifficulty = (Number.isFinite(motherDifficulty) ? motherDifficulty : 1.0) + (Number.isFinite(fatherDifficulty) ? fatherDifficulty : 1.0);
     if (motherEmbryoType !== fatherEmbryoType) effectiveDifficulty *= 1.5;
     const fetusRace = deriveFetusRace(motherRace, fatherRace);
@@ -370,8 +381,10 @@ function buildSpermCalculationBlock(characterState) {
         `- 精方: ${sanitizePromptText(String(sperm?.male || '未知'))} / ${sanitizePromptText(fatherRace)}`,
         `- 精方受精难度: ${formatNumber(fatherDifficulty)} (${getImpregnationDifficultyText(fatherDifficulty)})`,
         `- 精方胚胎类型: ${fatherEmbryoType}`,
+        `- 精方遗传核型: ${getInheritanceModeText(fatherRace)}`,
         `- 系统受精难度计算: 母体 ${formatNumber(motherDifficulty)} + 精方 ${formatNumber(fatherDifficulty)}${motherEmbryoType !== fatherEmbryoType ? `，且因胚胎类型不同（${motherEmbryoType} vs ${fatherEmbryoType}）再 ×1.5` : ''} = ${formatNumber(effectiveDifficulty)}`,
-        `- 混合后胎儿种族: ${sanitizePromptText(fetusRace)}`,
+        `- 核型判定: 精方 ${fatherInheritanceMode} / 卵方 ${motherInheritanceMode}；双方皆一般或皆具核型时混血，只有一方具核型时雄核保留精方、雌核保留卵方。`,
+        `- 核型判定后胎儿种族: ${sanitizePromptText(fetusRace)}`,
         `- 系统性别比计算: 以后代种族 ${sanitizePromptText(fetusRace)} 的 genderRatio 为准，当前结果为 ${getGenderRatioDisplay(fetusGenderRatio)} (${getGenderRatioText(fetusGenderRatio)})`,
       ].join('\n'),
     );

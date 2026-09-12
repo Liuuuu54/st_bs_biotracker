@@ -113,7 +113,7 @@ test('嵌合与同卵同时强制时先融合再分裂，双胎共享嵌合来�
     secondaryProvider: '卵源乙',
     secondaryProviderRace: '兽人',
     father: '甲,乙',
-    race: '人类,龙族',
+    race: '人类,西方龙',
     fetusCount: 2,
     genders: '男,女',
     equivalentDays: 20,
@@ -149,7 +149,7 @@ test('胎内回归调试跳过回归期且忽略旧版强制同卵参数', () =>
   const chatState = setup();
   chatState.characters.B = makeCharacter('B');
   const result = inject(chatState, {
-    mode: 'womb_return', returner: 'B', returnerRace: '龙族', forceIdentical: true,
+    mode: 'womb_return', returner: 'B', returnerRace: '西方龙', forceIdentical: true,
   });
   assert.equal(result.applied, true, result.message);
   const profile = profileOf(chatState);

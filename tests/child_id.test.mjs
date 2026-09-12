@@ -28,7 +28,7 @@ test('分娩产生的孩子带上 id 与父系名字', () => {
           },
           bio: {},
           pregnant: {
-            fetuses: [{ fathers: '凯', race: '龙族x人类', gender: '女', embryoType: '胎生', weight: 1, talents: [] }],
+            fetuses: [{ fathers: '凯', race: '西方龙x人类', gender: '女', embryoType: '胎生', weight: 1, talents: [] }],
             fetusesCount: 1, pregnantDays: 280,
           },
           immune: {}, experience: {}, metabolism: {}, cooldown: {},

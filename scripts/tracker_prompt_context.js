@@ -299,7 +299,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     String(basePrompt || '').trim(),
     metabolismGuide,
     // 名录只给名字：模型写 bsAddSperm.race 时需要词汇表，但每轮都发，不附辨识提示
-    payload?.race_catalog_enabled === false ? '' : buildRaceCatalogBlock(),
+    buildRaceCatalogBlock({ selection: payload?.race_catalog_selection || null }),
   ];
   if (payload?.mainflow_context_snapshot) {
     parts.push([

@@ -47,6 +47,7 @@ import {
   PREGNANCY_STAGES,
 } from './stage_config.js';
 import {
+  deriveFetusRace,
   getBaseRaceName,
   getDerivedTypeInheritanceProfile,
   getDerivedTypeMetabolismExemptions,
@@ -989,7 +990,7 @@ function refreshOutfitPregFit(profile) {
  * 单个排卵期自然排出的卵数 = 1 颗基础 + orgasmOvulationAmount 额外排卵倾向。
  *
  * 旧算法是「每天至少 1 颗 x 排卵天数」，而排卵天数随 menstrualLengthRatio 线性拉长，
- * 于是长周期种族按窗口长度虚增：精灵额外倾向明明是 0 却每周期排 6 颗、龙族排 8 颗，
+ * 于是长周期种族按窗口长度虚增：精灵额外倾向明明是 0 却每周期排 6 颗、西方龙排 8 颗，
  * 与该字段的语义（高潮诱发的额外排卵量，见 applyOrgasmOvulation）完全无关。
  * 周期越长排得越多也让「一年一次经期」这类设定无法成立。
  */
@@ -1048,21 +1049,6 @@ function isSameRaceGroup(leftRace, rightRace) {
   const right = getRaceComponents(rightRace).sort();
   if (left.length === 0 || right.length === 0 || left.length !== right.length) return false;
   return left.every((value, index) => value === right[index]);
-}
-
-function deriveFetusRace(motherRace, fatherRace) {
-  // 血统显示保留每个种族的 -装饰子项；生理运算另用 getRaceComponents 取基础种族。
-  const motherParts = getRaceDescriptorComponents(motherRace);
-  const fatherParts = getRaceDescriptorComponents(fatherRace);
-  const combined = [...fatherParts, ...motherParts].filter(Boolean);
-  if (combined.length === 0) return '人类';
-  // 必须去重，否则同族生育会得到「人类x人类」这种自我混血的种族。
-  // race_prompt_context.js 的同名函数一直有去重，这里漏了。
-  const unique = [];
-  for (const part of combined) {
-    if (!unique.includes(part)) unique.push(part);
-  }
-  return unique.join('x');
 }
 
 function deriveFetusEmbryoType(race) {

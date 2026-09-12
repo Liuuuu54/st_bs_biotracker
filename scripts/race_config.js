@@ -2,6 +2,7 @@ export const VIVIPAROUS_RACES = Object.freeze([
   "人类",
   "精灵",
   "兽耳族",
+  "怪兽类",
   "袋兽族",
   "哥布林",
   "兽人",
@@ -9,7 +10,7 @@ export const VIVIPAROUS_RACES = Object.freeze([
   "半身人",
   "半人马",
   "巨人",
-  "魅魔",
+  "媚魔",
   "雪族",
   "夜叉",
   "妖狐",
@@ -20,6 +21,7 @@ export const VIVIPAROUS_RACES = Object.freeze([
 
 export const OVIPAROUS_RACES = Object.freeze([
   "鸟人",
+  "怪鸟类",
   "植物亚人",
   "社会虫族",
   "蜥蜴人",
@@ -40,19 +42,21 @@ export const OVIPAROUS_RACES = Object.freeze([
 export const OVOVIVIPAROUS_RACES = Object.freeze([
   "人鱼",
   "鱼人",
+  "怪鱼类",
   "海妖",
   "独居虫族",
   "蛇人",
   "蛙人",
   "眼魔",
   "水母族",
-  "海龙人",
+  "海马族",
   "河童",
   "梅杜莎"
 ]);
 
 export const METOVIVIPAROUS_RACES = Object.freeze([
-  "龙族",
+  "西方龙",
+  "东方龙",
   "狮鹫族",
   "天使",
   "恶魔",
@@ -62,6 +66,7 @@ export const METOVIVIPAROUS_RACES = Object.freeze([
   "白泽",
   "独角兽",
   "空鲸",
+  "星繭族",
   "修格斯"
 ]);
 
@@ -71,6 +76,7 @@ export const AMORPHOUS_RACES = Object.freeze([
   "烛灵",
   "人偶",
   "心魇",
+  "夢魔",
   "宝石人",
   "奈米丛族",
   "元素灵",
@@ -88,12 +94,38 @@ export const ALL_BUILTIN_RACES = Object.freeze([
   ...AMORPHOUS_RACES,
 ]);
 
+export const RACE_INHERITANCE_FIELD = "inheritanceMode";
+export const RACE_INHERITANCE_MODES = Object.freeze({
+  NORMAL: "normal",
+  PATERNAL: "paternal",
+  MATERNAL: "maternal",
+});
+
+export const RACE_INHERITANCE_PROFILES = Object.freeze(Object.assign(
+  Object.fromEntries(ALL_BUILTIN_RACES.map((race) => [race, RACE_INHERITANCE_MODES.NORMAL])),
+  {
+    "哥布林": RACE_INHERITANCE_MODES.PATERNAL,
+    "狗头人": RACE_INHERITANCE_MODES.PATERNAL,
+    "海马族": RACE_INHERITANCE_MODES.PATERNAL,
+    "怪兽类": RACE_INHERITANCE_MODES.PATERNAL,
+    "怪鸟类": RACE_INHERITANCE_MODES.PATERNAL,
+    "怪鱼类": RACE_INHERITANCE_MODES.PATERNAL,
+    "媚魔": RACE_INHERITANCE_MODES.MATERNAL,
+    "夢魔": RACE_INHERITANCE_MODES.MATERNAL,
+    "心魇": RACE_INHERITANCE_MODES.MATERNAL,
+    "星繭族": RACE_INHERITANCE_MODES.MATERNAL,
+    "社会虫族": RACE_INHERITANCE_MODES.MATERNAL,
+    "梅杜莎": RACE_INHERITANCE_MODES.MATERNAL,
+  },
+));
+
 export const RACE_INTRODUCTION_LINES = Object.freeze(Object.assign(
   // 未列出的种族留空，提示词会自动略过该行
   Object.fromEntries(ALL_BUILTIN_RACES.map((race) => [race, ""])),
   {
     "精灵": "Elf，长寿的尖耳亚人，面容姣好、擅长魔法；肤色深青的亚种称黑暗精灵（卓尔）。",
     "兽耳族": "Kemonomimi／Beastfolk，保有人形、带兽耳兽尾的亚人；日系兽娘与西方 furry 皆归此类。",
+    "怪兽类": "Beast，异种交配情境中的完整兽形动物；具体物种写作怪兽类-狼、怪兽类-马等。",
     "袋兽族": "Marsupial-folk，有袋目亚人。幼体极早产出后转入育儿袋，因此承载耐受极低。",
     "哥布林": "Goblin，西幻小型怪物，繁殖力旺盛且几乎只诞下雄性；少数雌性个体存在。",
     "兽人": "即 Orc（绿皮），高大粗野的战斗种族；与「兽耳族」无关，勿混用。",
@@ -101,21 +133,22 @@ export const RACE_INTRODUCTION_LINES = Object.freeze(Object.assign(
     "半身人": "Halfling，又称哈比人，身形矮小的和平亚人。",
     "半人马": "Centaur，上身为人、下身为马的亚人，源自希腊神话。",
     "巨人": "Giant，体型远超人类的种族；巨魔、山怪、独眼巨人、泰坦皆归此类。",
-    "魅魔": "Succubus／Incubus，性欲特化的恶魔系亚人，与恶魔已分家；男性的梦魔同属此类。",
+    "媚魔": "Succubus，近乎纯女性的性欲特化恶魔系亚人；与近乎纯男性的夢魔为对应种族。",
     "雪族": "Yuki-onna／Yeti，雪女与雪怪的复合群体，栖于严寒。",
     "夜叉": "Yaksha／Oni，头生角的日系鬼族，罗刹与阿修罗皆归此类。",
     "妖狐": "Kitsune，祖先为兽耳族，沾妖后独立演化的狐系妖族，修行增尾；未沾妖的兽耳狐娘应写作兽耳族-狐。",
     "貓又": "Nekomata，祖先为兽耳族，沾妖后独立演化的猫系妖族，久养成妖、尾端分岔；未沾妖的兽耳猫娘应写作兽耳族-猫。",
     "鸟人": "Harpy，典型形象为哈比，带翼的鸟类亚人；现代创作已性别比正常化。",
-    "植物亚人": "Dryad／Plant-folk，植物拟人，具自花授粉特性；亦可作为纯粹的播种方怪物。",
+    "怪鸟类": "Monstrous Bird，异种交配情境中的完整鸟形动物；具体物种写作怪鸟类-鹰、怪鸟类-鸦等。",
+    "植物亚人": "Dryad／Plant-folk，植物拟人，具自花授粉特性。",
     "社会虫族": "Eusocial Insectfolk，蜜蜂与蚂蚁一类的真社会性虫族，以雌性为绝对多数。",
     "蜥蜴人": "Lizardfolk，又称亚龙人的鳞甲亚人；设定上从部落怪物到与人平起平坐皆有。",
-    "触手怪": "Tentacle Monster，成群触手构成的无性种族，繁殖上通常作为播种方。",
+    "触手怪": "Tentacle Monster，起源不明、擅长拟态的异形外星群体生命；主要向异族宿主植入同族胚体扩散，真正与宿主发生遗传融合的案例极少。",
     "妖精": "fairy，娇小带翅的精怪；与长身尖耳的「精灵」不同。",
-    "真菌亚人": "Myconid，菌类拟人，具自体授粉特性；亦可作为纯粹的播种方怪物。",
+    "真菌亚人": "Myconid，菌类拟人，具自体授粉特性。",
     "海蛞蝓族": "Sea Slug-folk，海兔拟人，雌雄同体；交配方式奇特（交配列车、阴茎击剑）。",
     "龟族": "Turtle-folk，龟类拟人，长寿而孕期极长。",
-    "甲壳族": "Crustacean-folk，蟹虾一类的甲壳拟人；亦可作为纯粹的播种方怪物。",
+    "甲壳族": "Crustacean-folk，蟹虾一类的甲壳拟人。",
     "宝箱怪": "Mimic，宝箱拟态怪，雌雄同体；所产之卵呈金币状。",
     "阿拉克涅": "Arachne，上身为人、下身为蜘蛛的亚人，源自希腊神话。",
     "百足姬": "Centipede-folk，上身为人、下身为蜈蚣的亚人，雅称天龙；可视为蜈蚣版的阿拉克涅。",
@@ -123,29 +156,33 @@ export const RACE_INTRODUCTION_LINES = Object.freeze(Object.assign(
     "深潜者": "Deep One，源自克苏鲁的海系异种，潜伏于人类社会；胚胎类型刻意与其他海系亚人不同。",
     "人鱼": "Mermaid，以鱼尾替代双足的美人鱼；可借魔法置换双足上陆。",
     "鱼人": "Fishfolk，人形而带鱼类特徵与粗尾鳍，可视为海中的精灵——孕期长、产子少。萨尔达的佐拉族属此。",
+    "怪鱼类": "Monstrous Fish，异种交配情境中的完整鱼形动物；具体物种写作怪鱼类-鲨、怪鱼类-鲤等。",
     "海妖": "Scylla，章鱼乌贼一类，以触腕替代双足；无须变形即可上陆。",
     "独居虫族": "Solitary Insectfolk，与社会虫族相对的独居性虫族；蛾、螳螂等拟人归此，部分会将卵寄入异族代孕孵化。",
     "蛇人": "Lamia，上身为人、下身为蛇的亚人，形象参考拉米亚。",
-    "蛙人": "Frogfolk，蛙类拟人，出生时性别由外在环境决定，故不适用固定男女比；亦可作为纯粹的播种方怪物。",
+    "蛙人": "Frogfolk，蛙类拟人，出生时性别由外在环境决定，故不适用固定男女比。",
     "眼魔": "Beholder，引用 D&D 的眼球暴君，经拟人化后的形象。",
     "水母族": "Jellyfish-folk，水母拟人，幼体（水螅体）与成体（水母体）形态差异极大。",
-    "海龙人": "Seahorse-folk，外形似龙、本质为海马的海系亚人，属雄性孕育系。",
+    "海马族": "Seahorse-folk，海马拟人的海系亚人，属雄性孕育系。",
     "河童": "Kappa，头顶盛水皿的日系妖怪，蛙人的妖系分支。",
-    "龙族": "Dragon，可在人态与完全态之间自由转换的上位生物，孕期极长。",
+    "西方龙": "Western Dragon，近似 D&D 的西方巨龙，可在人态与完全龙形间转换；性欲旺盛、乐于跨种族交配，龙卵产量也高于东方龙。",
+    "东方龙": "Eastern Dragon，汲取天地灵气的东方神龙，可化为人形；孕期漫长而自身承载耐受很低，产后需要长期恢复。",
     "狮鹫族": "Griffin，鹰首狮身的上位幻兽，可在人态与完全态之间转换。",
     "天使": "Angel，天界种族，以「天使之卵」孕育。",
-    "恶魔": "Demon，魔界种族，以「恶魔之卵」孕育；与已分家的魅魔不同。",
+    "恶魔": "Demon，魔界种族，以「恶魔之卵」孕育；与已分家的媚魔及夢魔不同。",
     "奇美拉": "Chimera，合成兽。胎转卵生的过程可在孕育期平衡混杂血脉的冲突。",
     "麒麟": "Qilin，东方上位神兽，汲取环境灵气孕育，自身承载耐受偏低；可拟人化。",
     "凤凰": "Phoenix，东方上位神兽，浴火重生，汲取环境灵气孕育；可拟人化。",
-    "白泽": "Bai Ze，东方上位神兽，通晓万物，汲取环境灵气孕育；承载耐受为神兽中最低。",
+    "白泽": "Bai Ze，东方上位神兽，通晓万物，汲取环境灵气孕育；自身承载耐受偏低。",
     "独角兽": "Unicorn，额生独角的上位幻兽，可在人态与完全态之间转换。",
     "空鲸": "Sky Whale，翱翔天际的巨鲸，可在常态人形与巨态鱼形间切换（鲲鹏之属），孕期为全表最长。",
+    "星繭族": "Astral Cocoon-folk，特化的寰宇虫娘，单胎于子宫中度过幼虫期，分娩时产下虫繭而非虫卵；会让异族女性以假孕分摊孕育能量。",
     "史萊姆": "Slime，繁殖策略极多样：可无性分裂，可孕育任何种族之胎，亦可寄入异族子宫。",
     "石像鬼": "Gargoyle，人类造物之一，石质无性种族；受精难度极高，繁殖基本限于同族。",
     "烛灵": "Candle Spirit，人类造物之一，烛火所寄的无性种族；受精难度极高，繁殖基本限于同族。",
     "人偶": "Living Doll，人类造物之一，得灵的人偶，无性；受精难度极高，繁殖基本限于同族。",
-    "心魇": "Kaijin，由人心中的黑暗诞生的怪人（魔法少女题材），亦会对人类播种。",
+    "心魇": "Kaijin，由人心黑暗与负面情绪孕育而生的异形种族，常作为魔法少女的敌人；其后代通常继承母方的心魇外貌与异形特徵。",
+    "夢魔": "Incubus，近乎纯男性的性欲特化恶魔系不定型种族；胚胎发育随母体调整外形，但基因定序仍属夢魔。",
     "宝石人": "Gem-folk，矿物构成的种族，可参考宝石之国一类的设定。",
     "奈米丛族": "Nanite Swarm，由亿级奈米机械单元构成的液态金属体。",
     "元素灵": "Elemental，自然元素的拟人体，如水元素温蒂妮。",
@@ -173,7 +210,8 @@ export const DERIVED_TYPE_RACES = Object.freeze([
   "机械",
   "器灵",
   "变异",
-  "序列"
+  "序列",
+  "兽化"
 ]);
 
 export const DERIVED_TYPE_INTRODUCTION_LINES = Object.freeze({
@@ -187,7 +225,8 @@ export const DERIVED_TYPE_INTRODUCTION_LINES = Object.freeze({
   "机械": "Android，以核心能源与算力驱动的机械体，具拟似人格。",
   "器灵": "Artifact Spirit，器物生智而成的灵体，与持有者共鸣。",
   "变异": "Mutant，基因突变而获得超自然能力的个体。",
-  "序列": "ABO，具 Alpha／Omega 等序列阶级与信息素本能的个体。",
+  "序列": "Secondary Dynamics，在原有性别与种族之外具有第二生理或精神序列的个体；涵盖 ABO、哨兵／向导与 Dom／Sub Universe。",
+  "兽化": "Therian，原种族个体带有动物性身体特征与本能；程度可仅有兽耳、尾巴、敏锐感官与发情周期，也可进一步半兽化或化为完整兽形。",
 });
 
 export const DERIVED_TYPE_INHERITANCE_PROFILES = Object.freeze({
@@ -223,6 +262,9 @@ export const DERIVED_TYPE_INHERITANCE_PROFILES = Object.freeze({
   }),
   "序列": Object.freeze({
     inheritanceSpeed: 1.0
+  }),
+  "兽化": Object.freeze({
+    inheritanceSpeed: 1.25
   })
 });
 
@@ -268,8 +310,12 @@ export const DERIVED_TYPE_FLUX_PROFILES = Object.freeze({
     fluxDefinition: "基因突变所产生的超自然能力输出频率。\n[平衡] 异能如同呼吸与肌肉般自然运作，能完美控制力道，将能力无缝融入日常生理活动与战斗中，身心协调无负担。\n[正极] 表现为‘基因失控’：生理上异能特征以极具侵略性的方式外显（如体表长出结晶、自燃、周遭重力异常），肉体承受着被自身力量撕裂的痛苦；心理上被能力的‘属性本能’反向支配（例如火系变得狂躁暴戾、精神系变得神经质且多疑），理智断线，充满无差别的破坏欲，无法停止力量的宣泄。\n[负极] 表现为‘感官失能’：生理上如同突然失去了一条重要的肢体（幻肢痛），出现严重的平衡感丧失、动作笨拙、神经抽搐与极度虚弱；心理上陷入强烈的困惑、自我怀疑与恐慌，因为原本依赖的‘第六感（异能）’被剥夺，对世界感到极度陌生与毫无安全感，表现出防御性极强的暴躁或严重的退缩。"
   }),
   "序列": Object.freeze({
-    fluxName: "信息素",
-    fluxDefinition: "决定序列阶级（如Alpha/Omega）与生物本能的化学贺尔蒙浓度。\n[平衡] 气味收敛且稳定，能维持完美的社会化面具，理性完全掌控兽性本能，情绪平稳且具备清晰的社交边界感。\n[正极] 表现为‘发情/易感’：生理上体温飙高如同重病，腺体不受控地释放极具侵略性或诱惑性的浓烈气味，对触碰与气味极度敏感，甚至伴随领地意识的生理性低吼；心理上理智被繁衍、占有或臣服的兽性本能彻底摧毁，丧失所有社会化禁忌，展现出极端的偏执、占有欲或不顾一切的渴求，眼中只剩下‘目标’。\n[负极] 表现为‘群体排斥’：生理上腺体干瘪疼痛，短暂失去嗅觉（无法感知他人气味），并伴随畏寒与强烈的反胃感；心理上触发‘被族群抛弃的孤狼’的远古恐惧，陷入极度的自卑、抑郁与被剥夺感，觉得自己散发着腐败或令人作呕的气息，会主动躲避人群、抗拒社交，对任何轻微的拒绝都会产生过激的悲观反应。"
+    fluxName: "序列活性",
+    fluxDefinition: "原有性别与种族之外的第二生理或精神序列活跃度；子项可写作序列-ABO、序列-哨兵、序列-向导、序列-Dom或序列-Sub。\n[平衡] 序列特征稳定，个体能控制本能并维持健康界线；ABO的信息素、哨兵／向导的感官与精神连结、Dom／Sub的支配服从需求皆能正常调节。\n[正极] 表现为‘序列过载’：本能与感官压倒理性；ABO进入发情或易感，哨兵感官暴走、向导精神海泛滥，Dom／Sub则出现无法克制的命令或服从冲动。\n[负极] 表现为‘序列失衡’：配对、疏导或回馈长期缺失；可表现为信息素紊乱、精神屏障崩解、感官封闭、Drop／Subdrop，以及强烈的被排斥感与自我认同动摇。"
+  }),
+  "兽化": Object.freeze({
+    fluxName: "兽性",
+    fluxDefinition: "动物性身体特征、感官与本能的显化程度；轻度可仅有兽耳、尾巴、发情周期与动物习性，重度可进入半兽或完整兽形。乳意由兽性抵免而不单独追踪：哺乳型个体在妊娠、育幼、发情或乳房刺激下可迅速泌乳，具体产量依物种与敘事表现；非哺乳型个体则无此需求。\n[平衡] 兽征与人性自然协调，感官、本能和社会行为皆可自主控制。\n[正极] 表现为‘野性显化’：兽耳、尾巴、爪牙或体毛更鲜明，发情、护群、领地、追猎等本能增强；重度者会进入半兽或纯兽形态。\n[负极] 表现为‘本能失调’：兽征萎靡、感官错乱、尾耳失去控制；个体既无法顺从动物本能，也难以适应纯人类行为，产生强烈的身分残缺与不安。"
   })
 });
 
@@ -285,6 +331,7 @@ export const DERIVED_TYPE_METABOLISM_EXEMPTIONS = Object.freeze({
   "星际": Object.freeze(["sleep", "milk", "companionship"]),
   "变异": Object.freeze(["sleep", "hunger", "odor"]),
   "序列": Object.freeze(["sleep", "odor", "companionship"]),
+  "兽化": Object.freeze(["milk", "odor", "companionship"]),
 });
 
 export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
@@ -316,6 +363,16 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "impregnationDifficulty": 0.5,
     "orgasmOvulationAmount": 3,
     "identicalProbability": 45,
+    "genderRatio": 50
+  },
+  "怪兽类": {
+    "menstrualLengthRatio": 0.75,
+    "gestationSpeciesSpeed": 2,
+    "birthDifficulty": 0.8,
+    "breedTolerance": 3,
+    "impregnationDifficulty": 0.5,
+    "orgasmOvulationAmount": 3,
+    "identicalProbability": 1,
     "genderRatio": 50
   },
   "袋兽族": {
@@ -368,7 +425,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "identicalProbability": 30,
     "genderRatio": 50
   },
-  "魅魔": {
+  "媚魔": {
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 1,
     "birthDifficulty": 0.5,
@@ -376,7 +433,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "impregnationDifficulty": 1,
     "orgasmOvulationAmount": 2,
     "identicalProbability": 33,
-    "genderRatio": 50
+    "genderRatio": 5
   },
   "半人马": {
     "menstrualLengthRatio": 1,
@@ -446,6 +503,16 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "impregnationDifficulty": 0.5,
     "orgasmOvulationAmount": 3,
     "identicalProbability": 15,
+    "genderRatio": 50
+  },
+  "怪鸟类": {
+    "menstrualLengthRatio": 0.25,
+    "gestationSpeciesSpeed": 20,
+    "birthDifficulty": 0.2,
+    "breedTolerance": 2,
+    "impregnationDifficulty": 0.4,
+    "orgasmOvulationAmount": 3,
+    "identicalProbability": 1,
     "genderRatio": 50
   },
   "植物亚人": {
@@ -608,6 +675,16 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "identicalProbability": 2,
     "genderRatio": 50
   },
+  "怪鱼类": {
+    "menstrualLengthRatio": 0.25,
+    "gestationSpeciesSpeed": 4,
+    "birthDifficulty": 0.2,
+    "breedTolerance": 2,
+    "impregnationDifficulty": 0.3,
+    "orgasmOvulationAmount": 8,
+    "identicalProbability": 0,
+    "genderRatio": 50
+  },
   "海妖": {
     "menstrualLengthRatio": 0.5,
     "gestationSpeciesSpeed": 1,
@@ -628,7 +705,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "identicalProbability": 50,
     "genderRatio": null
   },
-  "海龙人": {
+  "海马族": {
     "menstrualLengthRatio": 1.5,
     "gestationSpeciesSpeed": 0.625,
     "birthDifficulty": 2,
@@ -688,14 +765,24 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "identicalProbability": 0,
     "genderRatio": 30
   },
-  "龙族": {
+  "西方龙": {
     "menstrualLengthRatio": 4,
     "gestationSpeciesSpeed": 0.25,
     "birthDifficulty": 4,
     "breedTolerance": 10,
-    "impregnationDifficulty": 5,
-    "orgasmOvulationAmount": 1,
+    "impregnationDifficulty": 2,
+    "orgasmOvulationAmount": 2,
     "identicalProbability": 25,
+    "genderRatio": 50
+  },
+  "东方龙": {
+    "menstrualLengthRatio": 4,
+    "gestationSpeciesSpeed": 0.25,
+    "birthDifficulty": 4,
+    "breedTolerance": 1 / 3,
+    "impregnationDifficulty": 5,
+    "orgasmOvulationAmount": 0,
+    "identicalProbability": 5,
     "genderRatio": 50
   },
   "狮鹫族": {
@@ -762,7 +849,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1.75,
     "gestationSpeciesSpeed": 0.35,
     "birthDifficulty": 4,
-    "breedTolerance": 0.3,
+    "breedTolerance": 0.4,
     "impregnationDifficulty": 5,
     "orgasmOvulationAmount": 0,
     "identicalProbability": 5,
@@ -787,6 +874,16 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "orgasmOvulationAmount": 1,
     "identicalProbability": 5,
     "genderRatio": 33
+  },
+  "星繭族": {
+    "menstrualLengthRatio": 1.5,
+    "gestationSpeciesSpeed": 2 / 3,
+    "birthDifficulty": 3,
+    "breedTolerance": 1,
+    "impregnationDifficulty": 0.1,
+    "orgasmOvulationAmount": 0,
+    "identicalProbability": 0,
+    "genderRatio": 0
   },
   "史萊姆": {
     "menstrualLengthRatio": 0.25,
@@ -837,6 +934,16 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "orgasmOvulationAmount": 0,
     "identicalProbability": 20,
     "genderRatio": 50
+  },
+  "夢魔": {
+    "menstrualLengthRatio": 1,
+    "gestationSpeciesSpeed": 1,
+    "birthDifficulty": 0.5,
+    "breedTolerance": 3,
+    "impregnationDifficulty": 1,
+    "orgasmOvulationAmount": 2,
+    "identicalProbability": 33,
+    "genderRatio": 95
   },
   "元素灵": {
     "menstrualLengthRatio": 0.5,
@@ -1025,6 +1132,12 @@ function sanitizeRacePhysiologyProfilePatch(profile) {
     const introductionLine = String(profile[RACE_INTRODUCTION_FIELD] || '').trim();
     if (introductionLine) result[RACE_INTRODUCTION_FIELD] = introductionLine;
   }
+  if (Object.prototype.hasOwnProperty.call(profile, RACE_INHERITANCE_FIELD)) {
+    const inheritanceMode = String(profile[RACE_INHERITANCE_FIELD] || '').trim();
+    if (Object.values(RACE_INHERITANCE_MODES).includes(inheritanceMode)) {
+      result[RACE_INHERITANCE_FIELD] = inheritanceMode;
+    }
+  }
   for (const field of RACE_PHYSIOLOGY_FIELDS) {
     if (field === 'recoveryDays') continue;
     if (!Object.prototype.hasOwnProperty.call(profile, field)) continue;
@@ -1046,7 +1159,7 @@ export function setRacePhysiologyOverrides(overrides = {}) {
   const next = {};
   if (overrides && typeof overrides === 'object' && !Array.isArray(overrides)) {
     for (const [race, profile] of Object.entries(overrides)) {
-      const key = String(race || '').trim();
+      const key = getBaseRaceName(race);
       const patch = sanitizeRacePhysiologyProfilePatch(profile);
       if (key && patch) next[key] = Object.freeze(patch);
     }
@@ -1055,15 +1168,18 @@ export function setRacePhysiologyOverrides(overrides = {}) {
 }
 
 export function getRacePhysiologyOverride(race) {
-  const key = String(race || '').trim();
+  const key = getBaseRaceName(race);
   const profile = customRacePhysiologyProfiles[key];
   return profile ? { ...profile } : null;
 }
 
 export function getBuiltinRacePhysiologyProfile(race) {
-  const key = String(race || '').trim();
+  const key = getBaseRaceName(race);
   const profile = RACE_PHYSIOLOGY_PROFILES[key];
-  return profile ? { ...profile } : null;
+  return profile ? {
+    ...profile,
+    [RACE_INHERITANCE_FIELD]: RACE_INHERITANCE_PROFILES[key] || RACE_INHERITANCE_MODES.NORMAL,
+  } : null;
 }
 
 export function getRaceIntroductionLine(race) {
@@ -1075,11 +1191,12 @@ export function getRaceIntroductionLine(race) {
 }
 
 function getEffectiveRacePhysiologyProfileValue(race) {
-  const key = String(race || '').trim();
+  const key = getBaseRaceName(race);
   const builtin = RACE_PHYSIOLOGY_PROFILES[key];
   if (!builtin) return null;
   return {
     ...builtin,
+    [RACE_INHERITANCE_FIELD]: RACE_INHERITANCE_PROFILES[key] || RACE_INHERITANCE_MODES.NORMAL,
     ...(customRacePhysiologyProfiles[key] || {}),
   };
 }
@@ -1116,7 +1233,7 @@ function resolveRecoveryDays(profile, embryoType) {
 }
 
 export function getRacePhysiologyProfile(race) {
-  const key = String(race || "");
+  const key = getBaseRaceName(race);
   const profile = getEffectiveRacePhysiologyProfileValue(key);
   if (!profile) return null;
   return {
@@ -1192,14 +1309,18 @@ export function parseRaceDescriptor(rawRace) {
   };
 }
 
+function canonicalizeRaceComponent(component) {
+  return String(component || '').trim();
+}
+
 export function getRaceDescriptorComponents(race) {
   const value = parseRaceDescriptor(race).race;
   if (!value) return [];
-  return value.split(/[xX]/).map((item) => item.trim()).filter(Boolean);
+  return value.split(/[xX]/).map(canonicalizeRaceComponent).filter(Boolean);
 }
 
 function getBaseRaceComponentName(component) {
-  const value = String(component || '').trim();
+  const value = canonicalizeRaceComponent(component);
   if (!value) return '';
   const separatorIndex = value.indexOf('-');
   return separatorIndex >= 0 ? value.slice(0, separatorIndex).trim() : value;
@@ -1269,9 +1390,50 @@ export function getMergedRacePhysiologyProfile(race) {
   }
 
   merged.genderRatio = mergeGenderRatioValues(profiles.map((profile) => profile.genderRatio));
+  // 核型不按生理数值混合；任何复合种族都回归一般遗传。
+  merged[RACE_INHERITANCE_FIELD] = RACE_INHERITANCE_MODES.NORMAL;
   // 存在未收录的混血成分：不静默丢弃，标记出来让提示词明确「数值仅供参考」
   if (profiles.length < parts.length) merged.hasUnknownRace = true;
   return merged;
+}
+
+export function getRaceInheritanceMode(race) {
+  const descriptorParts = getRaceDescriptorComponents(race);
+  if (descriptorParts.length !== 1) return RACE_INHERITANCE_MODES.NORMAL;
+  const key = getBaseRaceComponentName(descriptorParts[0]);
+  const profile = getEffectiveRacePhysiologyProfileValue(key);
+  const mode = String(profile?.[RACE_INHERITANCE_FIELD] || '');
+  return Object.values(RACE_INHERITANCE_MODES).includes(mode)
+    ? mode
+    : RACE_INHERITANCE_MODES.NORMAL;
+}
+
+function combineRaceDescriptors(spermRace, eggRace) {
+  const combined = [
+    ...getRaceDescriptorComponents(spermRace),
+    ...getRaceDescriptorComponents(eggRace),
+  ].filter(Boolean);
+  if (combined.length === 0) return '人类';
+  return [...new Set(combined)].join('x');
+}
+
+/**
+ * 依精方与卵方的核型决定胎儿种族。只有一方具核型时，雄核保留精方、雌核保留卵方；
+ * 双方皆一般或皆具核型时形成混血。混血亲本本身一律按一般处理。
+ */
+export function deriveFetusRace(eggRace, spermRace) {
+  const eggMode = getRaceInheritanceMode(eggRace);
+  const spermMode = getRaceInheritanceMode(spermRace);
+  const eggHasNucleus = eggMode !== RACE_INHERITANCE_MODES.NORMAL;
+  const spermHasNucleus = spermMode !== RACE_INHERITANCE_MODES.NORMAL;
+
+  if (eggHasNucleus !== spermHasNucleus) {
+    const activeMode = eggHasNucleus ? eggMode : spermMode;
+    const selectedRace = activeMode === RACE_INHERITANCE_MODES.PATERNAL ? spermRace : eggRace;
+    const selectedParts = getRaceDescriptorComponents(selectedRace);
+    if (selectedParts.length > 0) return [...new Set(selectedParts)].join('x');
+  }
+  return combineRaceDescriptors(spermRace, eggRace);
 }
 
 export function getEmbryoTypeByRace(race) {

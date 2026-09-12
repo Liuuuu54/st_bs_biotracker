@@ -75,8 +75,8 @@
           eggs: 2,
           sperms: [
             { male: '凯', race: '人类', derivedType: null, value: 24 },
-            { male: '无名旅人', race: '龙族', derivedType: '血族', value: 12 },
-            { male: '古龙', race: '龙族', derivedType: null, value: 5 },
+            { male: '无名旅人', race: '西方龙', derivedType: '血族', value: 12 },
+            { male: '古龙', race: '西方龙', derivedType: null, value: 5 },
           ],
         },
         profile: {
@@ -100,11 +100,11 @@
             // 一般生育 + 已注册成角色（节点会与「长女」合并）
             { id: 'c1', name: '长女', gender: '女', race: '精灵x人类', fathers: '凯', fatherRace: '人类', age: 18, registeredAs: '长女', talents: [] },
             // 未注册的路人父亲，带上血统
-            { id: 'c2', name: '次子', gender: '男', race: '精灵x龙族', fathers: '无名旅人', fatherRace: '龙族', fatherDerivedType: '血族', age: 6, talents: [] },
+            { id: 'c2', name: '次子', gender: '男', race: '精灵x西方龙', fathers: '无名旅人', fatherRace: '西方龙', fatherDerivedType: '血族', age: 6, talents: [] },
             // 代孕：艾拉只是承载者，遗传母是琪拉
             { id: 'c3', name: '寄养儿', gender: '女', race: '兽耳族', fathers: '凯', fatherRace: '人类', provider: '琪拉', providerSources: ['琪拉'], age: 3, talents: [] },
             // 嵌合体：两位父源，只连首位，另一位在详情里标注
-            { id: 'c4', name: '融合儿', gender: '双', race: '精灵x龙族', fathers: '凯×无名旅人', fatherRace: '人类x龙族', chimera: { fatherSources: ['凯', '无名旅人'], maternalSources: ['艾拉'] }, age: 1, talents: [] },
+            { id: 'c4', name: '融合儿', gender: '双', race: '精灵x西方龙', fathers: '凯×无名旅人', fatherRace: '人类x西方龙', chimera: { fatherSources: ['凯', '无名旅人'], maternalSources: ['艾拉'] }, age: 1, talents: [] },
             // 自交：父方就是艾拉自己
             { id: 'c5', name: '孤生子', gender: '女', race: '精灵', fathers: '艾拉', fatherRace: '精灵', age: 0, talents: [] },
           ],
@@ -135,7 +135,7 @@
             // 胎儿标签取样：代孕（推导）／嵌合（推导）／同卵一组两胎（落盘）
             fetuses: [
               { embryoId: 1, fathers: '莱昂', fatherRace: '人类', provider: '艾拉', providerSources: ['艾拉'], embryoType: '胎生', gender: '女', weight: 1.05, tendencyAngle: 30, affinity: 60, talents: [{ skillId: 1, level: 2, exp: 40 }] },
-              { embryoId: 2, fathers: '莱昂 × 无名旅人', fatherRace: '人类x龙族', chimera: { sourceCount: 2, fatherSources: ['莱昂', '无名旅人'], maternalSources: ['琪拉'], genderSources: ['男', '女'] }, embryoType: '胎生', gender: '男', weight: 0.98, tendencyAngle: -20, affinity: -35, talents: [{ skillId: 2, level: -1, exp: -30 }] },
+              { embryoId: 2, fathers: '莱昂 × 无名旅人', fatherRace: '人类x西方龙', chimera: { sourceCount: 2, fatherSources: ['莱昂', '无名旅人'], maternalSources: ['琪拉'], genderSources: ['男', '女'] }, embryoType: '胎生', gender: '男', weight: 0.98, tendencyAngle: -20, affinity: -35, talents: [{ skillId: 2, level: -1, exp: -30 }] },
               { embryoId: 3, fathers: '莱昂', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 1.0, tendencyAngle: 10, affinity: 20, tags: ['identical'], identicalGroup: 3, talents: [] },
               { embryoId: 4, fathers: '莱昂', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 1.0, tendencyAngle: 15, affinity: 20, tags: ['identical'], identicalGroup: 3, talents: [] },
             ],

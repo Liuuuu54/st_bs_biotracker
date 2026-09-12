@@ -244,14 +244,6 @@
             </div>
 
             <div class="settings_section">
-              <div class="bs-bt-setting-toggle-row">
-                <input id="bs-bt-race-catalog" type="checkbox" />
-                <label for="bs-bt-race-catalog">提示词附带种族名录</label>
-              </div>
-              <small>让模型知道系统内建了哪些种族，避免注册与 bsAddSperm 时凭空自创种族名（自创名称查不到生理参数）。追踪请求约多 350 token，注册请求约多 1000 token。纯现代写实剧本可关闭。</small>
-            </div>
-
-            <div class="settings_section">
               <label for="bs-bt-trigger">触发时机</label>
               <select id="bs-bt-trigger" class="text_pole">
                 <option value="after_ai">after_ai</option>
@@ -824,6 +816,15 @@
               <select id="bs-bt-race-select" class="text_pole">
                 <option value="">请选择种族</option>
               </select>
+              <div class="bs-bt-setting-toggle-row">
+                <input id="bs-bt-race-catalog-included" type="checkbox" />
+                <label for="bs-bt-race-catalog-included">将当前种族加入提示词名录</label>
+              </div>
+              <small>只将本故事可能登场的种族送入追踪与注册提示词，可减少无关名录占用。</small>
+              <div class="settings_section bs-bt-action-row">
+                <button id="bs-bt-race-catalog-human-only" class="menu_button" type="button">只保留人类</button>
+                <button id="bs-bt-race-catalog-select-all" class="menu_button" type="button">全部收录</button>
+              </div>
             </div>
 
             <div class="settings_section">
@@ -840,7 +841,7 @@
                     <button id="bs-bt-race-save-override" class="menu_button" type="button">保存覆盖</button>
                     <button id="bs-bt-race-reset-override" class="menu_button" type="button">恢复内置</button>
                   </div>
-                  <div id="bs-bt-race-editor-status" class="bs-bt-inline-status">物种短敘述可留空；数值只保存与内置值不同的字段；产后恢复天数由系统公式与指令流程处理。</div>
+                  <div id="bs-bt-race-editor-status" class="bs-bt-inline-status">物种短敘述可留空；核型与数值只保存和内置值不同的字段；混血种族固定按一般核型处理。</div>
                 </div>
               </div>
             </div>
@@ -857,6 +858,10 @@
               <select id="bs-bt-derived-select" class="text_pole">
                 <option value="">请选择衍生</option>
               </select>
+              <div class="bs-bt-setting-toggle-row">
+                <input id="bs-bt-derived-catalog-included" type="checkbox" />
+                <label for="bs-bt-derived-catalog-included">将当前衍生类型加入提示词名录</label>
+              </div>
             </div>
 
             <div class="settings_section">
