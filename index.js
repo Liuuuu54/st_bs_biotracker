@@ -44,7 +44,7 @@ import {
   PREGNANCY_STAGE_DAYS,
   PREGNANCY_STAGES,
 } from './scripts/stage_config.js';
-import { buildMainFlowPrompt, resetPoller, runTracker } from './scripts/tracker.js';
+import { buildMainFlowPrompt, resetPoller, runTracker, getPollWaitStatus } from './scripts/tracker.js';
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
 import { isFetusKnownToCharacter } from './scripts/tools.js';
@@ -4933,6 +4933,11 @@ function renderStatusPanel(ctx) {
   updateBatteryIndicator(settings);
 
   list.innerHTML = '';
+  const pollWait = document.getElementById('bs-bt-track-poll-wait');
+  if (pollWait) {
+    // 轮询待命提示是暂态：只读模块级状态，不动最后一次真实追踪结果
+    pollWait.textContent = getPollWaitStatus(ctx)?.message || '';
+  }
   if (latestCall) {
     const toolCalls = Array.isArray(chatState.lastRawResult?.tool_calls) ? chatState.lastRawResult.tool_calls : [];
     const characterChecks = Array.isArray(chatState.lastRawResult?.character_checks) ? chatState.lastRawResult.character_checks : [];

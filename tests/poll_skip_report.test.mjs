@@ -1,11 +1,14 @@
 // 轮询跳过原因显形：自动独有的静默早退必须在面板留下原因，
-// 否则“自动不可用、手动可用”时无从定位。只在原因变化时写一次。
+// 否则“自动不可用、手动可用”时无从定位。状态是模块级暂态，
+// 不改写最后一次真实追踪结果；同聊天＋同原因＋同文案＋同来源才去重。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as state from '../scripts/state.js';
 import {
-  __pollSkipReportForTest,
+  __pollWaitByChatForTest,
+  clearPollWaitStatus,
+  getPollWaitStatus,
   poll,
   recordPollSkip,
   runTracker,
@@ -45,8 +48,7 @@ function resetGates(ctx) {
   gate.lastGenerateStartedAt = 0;
   gate.sawGenerateThisRound = false;
   gate.everSawMvuSignal = false;
-  __pollSkipReportForTest.chatKey = '';
-  __pollSkipReportForTest.reason = '';
+  __pollWaitByChatForTest.clear();
   delete globalThis.Mvu;
   delete globalThis.document;
   if (ctx?.eventSource) installHostRunWatchers(ctx);
@@ -84,48 +86,57 @@ function makeDeps() {
   return { deps: { renderStatusPanel() { renders.push(1); }, updateMainFlowPrompt() {} }, renders };
 }
 
-test('recordPollSkip 首报写入面板，同原因重复不再写', () => {
+test('recordPollSkip 首报写入暂态，不动最后一次真实结果', () => {
   const { ctx, settings } = makeCtx();
   const { deps, renders } = makeDeps();
   const chatState = state.getChatState(ctx, settings);
+  chatState.lastRawResult = { message: '真实追踪结果', tool_calls: [{ name: 'bsSetCharacterPresence' }] };
+  chatState.lastOperationLogs = [{ name: 'bsSetCharacterPresence', applied: true }];
 
-  const first = recordPollSkip(ctx, chatState, deps, 'no_pending_history', '没有新的可追踪内容，自动追踪待命中。');
+  const first = recordPollSkip(ctx, deps, 'no_pending_history', '没有新的可追踪内容，自动追踪待命中。');
   assert.deepEqual(first, { skipped: true, reason: 'no_pending_history' });
-  assert.equal(chatState.lastRawResult.message, '没有新的可追踪内容，自动追踪待命中。');
+  assert.equal(getPollWaitStatus(ctx)?.message, '没有新的可追踪内容，自动追踪待命中。');
+  assert.equal(chatState.lastRawResult.message, '真实追踪结果', '待命提示不得冲掉真实结果');
+  assert.equal(chatState.lastOperationLogs.length, 1, '执行日志不得被清空');
   assert.equal(renders.length, 1);
 
-  const second = recordPollSkip(ctx, chatState, deps, 'no_pending_history', '没有新的可追踪内容，自动追踪待命中。');
+  const second = recordPollSkip(ctx, deps, 'no_pending_history', '没有新的可追踪内容，自动追踪待命中。');
   assert.deepEqual(second, { skipped: true, reason: 'no_pending_history' });
-  assert.equal(renders.length, 1, '同聊天同原因不重复写');
+  assert.equal(renders.length, 1, '同聊天同原因同文案不重复渲染');
 });
 
-test('recordPollSkip 原因变化或换聊天时重新写', () => {
-  const { ctx, settings } = makeCtx();
+test('recordPollSkip 文案或来源变化时刷新（同原因也刷新）', () => {
+  const { ctx } = makeCtx();
   const { deps, renders } = makeDeps();
-  const chatState = state.getChatState(ctx, settings);
 
-  recordPollSkip(ctx, chatState, deps, 'message_not_settled', '等待 AI 正文稳定后再追踪。');
+  recordPollSkip(ctx, deps, 'host_generation_in_flight', '宿主生成事件未闭合（1 层），自动追踪等待中。', { source: 'depth' });
   assert.equal(renders.length, 1);
-  recordPollSkip(ctx, chatState, deps, 'host_generation_in_flight', '宿主仍在生成中，自动追踪等待中。');
+  // 同原因、层数变化 → 文案变化，必须刷新
+  recordPollSkip(ctx, deps, 'host_generation_in_flight', '宿主生成事件未闭合（2 层），自动追踪等待中。', { source: 'depth' });
   assert.equal(renders.length, 2);
-  assert.equal(chatState.lastRawResult.message, '宿主仍在生成中，自动追踪等待中。');
+  assert.match(getPollWaitStatus(ctx)?.message || '', /2 层/);
+  // 同原因同文案、来源切换（事件计数→停止按钮）→ 必须刷新
+  recordPollSkip(ctx, deps, 'host_generation_in_flight', '宿主生成事件未闭合（2 层），自动追踪等待中。', { source: 'dataset' });
+  assert.equal(renders.length, 3);
 
   const other = makeCtx('skip-report-other-chat');
-  const otherState = state.getChatState(other.ctx, other.settings);
-  recordPollSkip(other.ctx, otherState, deps, 'host_generation_in_flight', '宿主仍在生成中，自动追踪等待中。');
-  assert.equal(renders.length, 3, '换聊天重新写');
+  recordPollSkip(other.ctx, deps, 'host_generation_in_flight', '宿主生成事件未闭合（2 层），自动追踪等待中。', { source: 'depth' });
+  assert.equal(renders.length, 4, '换聊天重新写');
 });
 
-test('runTracker 宿主忙碌时面板留下原因（事件计数一路）', async () => {
-  const { ctx } = makeCtx();
+test('runTracker 宿主忙碌时面板留下原因（事件计数一路），不动真实结果', async () => {
+  const { ctx, settings } = makeCtx();
   const { deps } = makeDeps();
+  const chatState = state.getChatState(ctx, settings);
+  chatState.lastRawResult = { message: '真实追踪结果', tool_calls: [] };
   ctx.eventSource.emit('generation_started');
   assert.equal(__hostRunStateForTest.generationDepth, 1);
 
   const outcome = await runTracker(ctx, deps, 'poll');
   assert.deepEqual(outcome, { skipped: true, reason: 'host_generation_in_flight' });
-  const chatState = state.getChatState(ctx, state.getSettings(ctx));
-  assert.equal(chatState.lastRawResult.message, '宿主生成事件未闭合（1 层），自动追踪等待中。');
+  assert.equal(getPollWaitStatus(ctx)?.message, '宿主生成事件未闭合（1 层），自动追踪等待中。');
+  assert.equal(getPollWaitStatus(ctx)?.source, 'depth');
+  assert.equal(chatState.lastRawResult.message, '真实追踪结果');
 });
 
 test('runTracker 宿主忙碌时面板留下原因（停止按钮旗标一路）', async () => {
@@ -135,22 +146,58 @@ test('runTracker 宿主忙碌时面板留下原因（停止按钮旗标一路）
   try {
     const outcome = await runTracker(ctx, deps, 'poll');
     assert.deepEqual(outcome, { skipped: true, reason: 'host_generation_in_flight' });
-    const chatState = state.getChatState(ctx, state.getSettings(ctx));
-    assert.equal(chatState.lastRawResult.message, '宿主仍在生成中（停止按钮未释放），自动追踪等待中。');
+    assert.equal(getPollWaitStatus(ctx)?.message, '宿主仍在生成中（停止按钮未释放），自动追踪等待中。');
+    assert.equal(getPollWaitStatus(ctx)?.source, 'dataset');
   } finally {
     delete globalThis.document;
   }
 });
 
-test('poll 未启用时面板留下原因', async () => {
+test('poll 未启用时面板留下原因，不动真实结果', async () => {
   const { ctx, settings } = makeCtx();
   settings.enabled = false;
   const { deps } = makeDeps();
+  const chatState = state.getChatState(ctx, settings);
+  chatState.lastRawResult = { message: '真实追踪结果', tool_calls: [] };
 
   const outcome = await poll(ctx, deps);
   assert.deepEqual(outcome, { skipped: true, reason: 'disabled' });
-  const chatState = state.getChatState(ctx, state.getSettings(ctx));
-  assert.equal(chatState.lastRawResult.message, '自动追踪未启用（在设置中开启后生效）。');
+  assert.equal(getPollWaitStatus(ctx)?.message, '自动追踪未启用（在设置中开启后生效）。');
+  assert.equal(chatState.lastRawResult.message, '真实追踪结果');
+});
+
+test('clearPollWaitStatus 清掉暂态提示（真实开跑后调用）', () => {
+  const { ctx } = makeCtx();
+  const { deps } = makeDeps();
+  recordPollSkip(ctx, deps, 'no_pending_history', '没有新的可追踪内容，自动追踪待命中。');
+  assert.ok(getPollWaitStatus(ctx));
+  clearPollWaitStatus(ctx);
+  assert.equal(getPollWaitStatus(ctx), null);
+});
+
+test('早退改写 lastRawResult 时旧待命提示一并清除', async () => {
+  const { ctx, settings } = makeCtx();
+  const { deps } = makeDeps();
+  recordPollSkip(ctx, deps, 'host_generation_in_flight', '宿主生成事件未闭合（1 层），自动追踪等待中。', { source: 'depth' });
+  assert.ok(getPollWaitStatus(ctx));
+  ctx.chat = [];
+  const outcome = await runTracker(ctx, deps, 'poll');
+  assert.deepEqual(outcome, { skipped: true, reason: 'empty_chat' });
+  const chatState = state.getChatState(ctx, settings);
+  assert.equal(chatState.lastRawResult.message, '当前对话没有可分析的消息，已跳过追踪。');
+  assert.equal(getPollWaitStatus(ctx), null, '旧等待行不得压在新结果上');
+});
+
+test('暂态按聊天隔离，只保留最近若干个', () => {
+  const { deps } = makeDeps();
+  // 直接用最小 ctx：makeCtx 自带 resetGates 会清空 Map，不适合测淘汰
+  const first = { chatId: 'skip-report-evict-first' };
+  recordPollSkip(first, deps, 'no_pending_history', '待命。');
+  for (let i = 0; i < 60; i += 1) {
+    recordPollSkip({ chatId: `skip-report-evict-${i}` }, deps, 'no_pending_history', '待命。');
+  }
+  assert.ok(__pollWaitByChatForTest.size <= 50, `实际 ${__pollWaitByChatForTest.size}`);
+  assert.equal(getPollWaitStatus(first), null, '最早的聊天先被淘汰');
 });
 
 test('dry-run 的 generation_started 不计入忙碌（宿主只发 STARTED 不发 ENDED）', async () => {

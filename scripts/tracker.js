@@ -1589,22 +1589,35 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
 /**
  * 轮询跳过原因显形：下面几条自动独有的早退原本全程静默，面板停在旧结果上，
  * 使用者分不清「已追完」「正在等」还是「被某道门卡死」（自动不可用、手动可用
- * 时只能瞎猜）。只在「同聊天＋同原因」变化时写一次，避免每 1.8 秒刷一次
- * 持久化与面板；追踪一旦真正跑起来，结果会照常覆盖这里。
+ * 时只能瞎猜）。状态放在模块级 Map 里按聊天隔离，天然暂态：不进 chatState、
+ * 不持久化、不进快照，更不改写 lastRawResult／lastOperationLogs——成功追踪的
+ * 结果不会被下一轮待命 poll 冲掉。同聊天＋同原因＋同文案＋同来源才去重，
+ * 忙碌来源切换（停止按钮→事件计数）或层数变化都会刷新提示。
  */
-const lastPollSkipReport = { chatKey: '', reason: '' };
-export const __pollSkipReportForTest = lastPollSkipReport;
+const pollWaitByChat = new Map();
+export const __pollWaitByChatForTest = pollWaitByChat;
 
-export function recordPollSkip(ctx, chatState, deps, reason, message) {
+export function getPollWaitStatus(ctx) {
+  return pollWaitByChat.get(String(getChatKey(ctx) || '')) || null;
+}
+
+export function clearPollWaitStatus(ctx) {
+  pollWaitByChat.delete(String(getChatKey(ctx) || ''));
+}
+
+export function recordPollSkip(ctx, deps, reason, message, opts = {}) {
   const chatKey = String(getChatKey(ctx) || '');
-  if (lastPollSkipReport.chatKey === chatKey && lastPollSkipReport.reason === reason) {
+  const source = String(opts?.source || '');
+  const prev = pollWaitByChat.get(chatKey);
+  if (prev && prev.reason === reason && prev.message === message && prev.source === source) {
+    prev.updatedAt = Date.now();
     return { skipped: true, reason };
   }
-  lastPollSkipReport.chatKey = chatKey;
-  lastPollSkipReport.reason = reason;
-  chatState.lastRawResult = { message, tool_calls: [] };
-  chatState.lastOperationLogs = [];
-  saveSettings(ctx);
+  pollWaitByChat.set(chatKey, { reason, message, source, updatedAt: Date.now() });
+  // 按聊天隔离的暂态条目：聊天数有界，换聊天只保留最近若干个
+  while (pollWaitByChat.size > 50) {
+    pollWaitByChat.delete(pollWaitByChat.keys().next().value);
+  }
   deps.renderStatusPanel(ctx);
   return { skipped: true, reason };
 }
@@ -1621,6 +1634,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   const chat = getHostChat(ctx);
   const lastMessage = chat[chat.length - 1];
   if (!lastMessage) {
+    clearPollWaitStatus(ctx);
     chatState.lastRawResult = {
       message: '当前对话没有可分析的消息，已跳过追踪。',
       tool_calls: [],
@@ -1632,6 +1646,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   }
   if (globalThis[RUN_RUNTIME_KEY]) {
     if (!isTrackerRunStale(settings)) {
+      clearPollWaitStatus(ctx);
       chatState.lastRawResult = {
         message: '已有一轮追踪请求正在执行，本次请求未重复发送。',
         tool_calls: [],
@@ -1645,6 +1660,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     globalThis[RUN_RUNTIME_KEY] = null;
   }
   if (registeredTargets.length === 0) {
+    clearPollWaitStatus(ctx);
     chatState.lastRawResult = {
       message: '尚无已注册角色，跳过分析。',
       tool_calls: [],
@@ -1656,6 +1672,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     return { skipped: true, reason: 'no_registered_targets' };
   }
   if (reason === 'poll' && getHostKind() === 'luker' && settings.lukerMultiAgentManualOnly !== false) {
+    clearPollWaitStatus(ctx);
     chatState.lastRawResult = {
       message: 'Luker 多智能体安全模式已开启，自动追踪暂停；请在编排完成后手动分析。',
       tool_calls: [],
@@ -1673,60 +1690,61 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     if (busyDetail.busy) {
       return recordPollSkip(
         ctx,
-        chatState,
         deps,
         'host_generation_in_flight',
         busyDetail.source === 'depth'
           ? `宿主生成事件未闭合（${Number(busyDetail.depth) || 0} 层），自动追踪等待中。`
           : '宿主仍在生成中（停止按钮未释放），自动追踪等待中。',
+        { source: busyDetail.source || '' },
       );
     }
   }
   if (reason === 'poll') {
     const agentBarrier = await getHostAgentRunBarrier(ctx, lastMessage);
     if (agentBarrier.state === 'pending') {
-      chatState.lastRawResult = {
-        message: `TauriTavern Agent run ${agentBarrier.runId} 尚未完成，自动追踪将等待最终提交。`,
-        tool_calls: [],
-      };
-      chatState.lastOperationLogs = [];
-      saveSettings(ctx);
-      deps.renderStatusPanel(ctx);
-      return { skipped: true, reason: 'agent_run_pending' };
+      return recordPollSkip(
+        ctx,
+        deps,
+        'agent_run_pending',
+        `TauriTavern Agent run ${agentBarrier.runId} 尚未完成，自动追踪将等待最终提交。`,
+        { source: 'agent' },
+      );
     }
     if (agentBarrier.state === 'aborted') {
-      chatState.lastRawResult = {
-        message: `TauriTavern Agent run ${agentBarrier.runId} 已取消或失败，未自动追踪该提交；可手动分析。`,
-        tool_calls: [],
-      };
-      chatState.lastOperationLogs = [];
-      saveSettings(ctx);
-      deps.renderStatusPanel(ctx);
-      return { skipped: true, reason: 'agent_run_aborted' };
+      return recordPollSkip(
+        ctx,
+        deps,
+        'agent_run_aborted',
+        `TauriTavern Agent run ${agentBarrier.runId} 已取消或失败，未自动追踪该提交；可手动分析。`,
+        { source: 'agent' },
+      );
     }
   }
   if (reason === 'poll' && !isAfterAiMessageSettled(ctx, settings, chatState)) {
-    return recordPollSkip(ctx, chatState, deps, 'message_not_settled', '等待 AI 正文稳定后再追踪。');
+    return recordPollSkip(ctx, deps, 'message_not_settled', '等待 AI 正文稳定后再追踪。');
   }
   if (reason === 'poll' && !hasPendingChatHistory(ctx, chatState)) {
-    return recordPollSkip(ctx, chatState, deps, 'no_pending_history', '没有新的可追踪内容，自动追踪待命中。');
+    return recordPollSkip(ctx, deps, 'no_pending_history', '没有新的可追踪内容，自动追踪待命中。');
   }
   if (reason === 'poll' && shouldWaitForMvuExtraAnalysis(ctx, settings)) {
-    return recordPollSkip(ctx, chatState, deps, 'waiting_mvu_extra_analysis', '等待 MVU 额外解析结束后再追踪。');
+    return recordPollSkip(ctx, deps, 'waiting_mvu_extra_analysis', '等待 MVU 额外解析结束后再追踪。');
   }
   if (reason === 'poll' && tryAdoptSilentTailReplacement(ctx, settings, chatState)) {
-    // 正文替换的无痕改写：静默重锚，不发请求也不弹任何提示
+    // 正文替换的无痕改写：静默重锚，不发请求也不弹任何提示；上一轮待命提示作废
+    clearPollWaitStatus(ctx);
+    deps.renderStatusPanel(ctx);
     return { skipped: true, reason: 'silent_tail_replacement' };
   }
   if (reason === 'poll' && isFailedAutoRetryBlocked(ctx, chatState)) {
     return recordPollSkip(
       ctx,
-      chatState,
       deps,
       'failed_message_blocked',
       '上次自动追踪失败，对话无变化时暂停自动重试；可手动分析或等待新消息。',
     );
   }
+  // 门控全部通过、真正要干活了：上一轮待命的暂态提示作废，后续面板只展示真实结果
+  clearPollWaitStatus(ctx);
   const runToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   globalThis[RUN_RUNTIME_KEY] = runToken;
   markTrackerRunProgress();
@@ -1768,6 +1786,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     // 记下失败当下「整段对话」的签名：只要对话没变，自动重试就该被挡住。
     // 失败可能发生在回放的中间楼，只比对尾楼会让轮询无限重发。
     chatState.lastFailedChatSignature = buildSignature(ctx, getHostChat(ctx).length);
+    clearPollWaitStatus(ctx);
     chatState.lastRawResult = {
       error: String(error?.message || error),
       tool_calls: [],
@@ -1793,7 +1812,6 @@ export async function poll(ctx, deps) {
   if (!settings.enabled) {
     return recordPollSkip(
       ctx,
-      getChatState(ctx, settings),
       deps,
       'disabled',
       '自动追踪未启用（在设置中开启后生效）。',
