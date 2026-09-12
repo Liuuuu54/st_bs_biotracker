@@ -264,17 +264,74 @@ test('额外模型解析但自动请求关闭 → 门控直接放行', () => {
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
 });
 
-test('TT 场景：读不到设置、无 Mvu，但确认是 MVU 额外解析请求在飞行 → 等待', () => {
+test('完全没有 Mvu 全局时，特征请求在飞也不等待（第三方插件误命中不再空等）', () => {
   resetGate();
   const ctx = makeCtx(); // 无 mvu_settings、无 Mvu 全局
   const settings = makeSettings();
   // 首次评估：未看到信号
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
-  // MVU 的额外解析请求开始飞行（fetch 钩子观测到）
+  // 某个第三方插件（数据库正文替换/填表转发聊天正文）的请求命中 MVU 特征、在飞行：
+  // 没有激活的 MVU 实例就不会有人解析变量（MVU 只在优先实例上挂 window.parent.Mvu），
+  // 此时等待纯属空转——这正是无 MVU 用户被拖住的历史路径
   __mvuGateStateForTest.generateInFlight = 1;
   __mvuGateStateForTest.lastGenerateStartedAt = Date.now();
   __mvuGateStateForTest.sawGenerateThisRound = true;
-  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+});
+
+test('回归：停用 MVU 后 mvu_settings 残留、Mvu 全局不在场 → 不等待', () => {
+  resetGate();
+  // MVU 把设置写在 SillyTavern.extensionSettings.mvu_settings（全局、跨卡共享、
+  // 无人清理），所以换到没有 MVU 的卡或停用 MVU 后设置仍在；而 Mvu 全局会随
+  // 优先实例缺席而不在场。只凭设置就等待，会让这类用户每轮白等宽限期。
+  const ctx = makeCtx({ extensionSettings: { mvu_settings: makeMvuSettings() } });
+  const settings = makeSettings();
+  assert.equal(globalThis.Mvu, undefined, '前提：没有 Mvu 全局');
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false, '设置残留不应单独构成等待理由');
+  assert.equal(
+    __mvuGateStateForTest.everSawMvuSignal,
+    false,
+    '残留设置不得把设备标记为「见过 MVU 信号」（否则之后每轮都白等宽限）',
+  );
+  // 即便有特征请求在飞也照样放行：没有 MVU 实例，没人会解析
+  __mvuGateStateForTest.generateInFlight = 1;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+});
+
+test('旧版 MVU：全局在场但没有 isDuringExtraAnalysis → 仍按请求特征兜底等待', () => {
+  resetGate();
+  // 旧版 MVU 只暴露 Mvu 全局、没有权威的解析状态方法
+  globalThis.Mvu = { getMvuData: () => ({}) };
+  const ctx = makeCtx({ extensionSettings: { mvu_settings: makeMvuSettings() } });
+  const settings = makeSettings();
+  __mvuGateStateForTest.generateInFlight = 1;
+  __mvuGateStateForTest.lastGenerateStartedAt = Date.now();
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true, '旧版兜底路径必须保留');
+  __mvuGateStateForTest.generateInFlight = 0;
+  __mvuGateStateForTest.pendingSince = Date.now() - 5000;
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+});
+
+test('在场判定要认 window.parent.Mvu（MVU 跑在酒馆助手 iframe 时挂在父窗口）', () => {
+  resetGate();
+  // MVU 作为酒馆助手脚本运行在 iframe，把全局挂到 window.parent；本插件若也在
+  // iframe 之外的上下文里取，就必须认这条分支——门控现在以「全局在场」为门槛
+  globalThis.parent = { Mvu: { isDuringExtraAnalysis: () => true } };
+  try {
+    const ctx = makeCtx();
+    assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), true, 'parent 上的 Mvu 应被认作在场');
+  } finally {
+    delete globalThis.parent;
+  }
+});
+
+test('Mvu 全局不是对象时不算在场（不放行出兜底等待）', () => {
+  resetGate();
+  // getMvuApi 只认对象；万一 MVU 暴露成函数或原始值，不能当作「有 MVU」
+  globalThis.Mvu = () => {};
+  const ctx = makeCtx({ extensionSettings: { mvu_settings: makeMvuSettings() } });
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, makeSettings()), false);
+  assert.equal(__mvuGateStateForTest.everSawMvuSignal, false);
 });
 
 test('fetch 钩子只认 MVU 特征请求：普通 ST 主线生成不触发（误报回归）', () => {
@@ -378,6 +435,8 @@ test('端到端：MVU 额外解析请求经过真实 fetch 钩子触发等待', 
 
 test('生成请求结束后放行', () => {
   resetGate();
+  // 走旧版兜底路径：全局在场（才有解析可能）但没有权威状态方法
+  globalThis.Mvu = { getMvuData: () => ({}) };
   const ctx = makeCtx();
   const settings = makeSettings();
   // 请求在飞行 → 等待
@@ -386,11 +445,14 @@ test('生成请求结束后放行', () => {
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
   // 请求完成 → 放行（MVU 变量已更新）
   __mvuGateStateForTest.generateInFlight = 0;
+  __mvuGateStateForTest.pendingSince = Date.now() - 5000;
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
 });
 
 test('见过 MVU 信号后，无信号轮次走宽限期等待', () => {
   resetGate();
+  // MVU 在场（没有权威状态方法，走旧版兜底那条）
+  globalThis.Mvu = { getMvuData: () => ({}) };
   const ctx = makeCtx();
   const settings = makeSettings();
   // 之前某轮见过生成请求（everSaw 为 true）
@@ -400,6 +462,17 @@ test('见过 MVU 信号后，无信号轮次走宽限期等待', () => {
   // 超过宽限期仍未出现信号 → 放行
   __mvuGateStateForTest.pendingSince = Date.now() - 5000;
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+});
+
+test('MVU 不在场时粘性标记被清除：停用/换卡后不再每轮白等宽限', () => {
+  resetGate();
+  const ctx = makeCtx({ extensionSettings: { mvu_settings: makeMvuSettings() } });
+  const settings = makeSettings();
+  // 模拟本页早先见过 MVU 信号、之后 MVU 消失（停用脚本或换到无 MVU 的卡）
+  __mvuGateStateForTest.everSawMvuSignal = true;
+  assert.equal(globalThis.Mvu, undefined, '前提：此刻没有 Mvu 全局');
+  assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
+  assert.equal(__mvuGateStateForTest.everSawMvuSignal, false, '不在场时应抹掉记忆，下一轮才不会再白等');
 });
 
 test('mainflow 快照绑定当前聊天：跨聊天/无绑定一律拒绝', () => {
