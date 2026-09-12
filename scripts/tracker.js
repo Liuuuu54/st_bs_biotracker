@@ -288,6 +288,14 @@ export function shouldWaitForMvuExtraAnalysis(ctx, _settings) {
   // fetch 钩子必须在首次评估前就装好：否则正文后第一时间启动的 MVU 请求会被漏观测
   installMvuFetchHook();
 
+  // MVU 只在「优先实例」上把 Mvu 挂到 window.parent（见其 store 的 should_enable），
+  // 所以全局不在场＝本轮没有激活的 MVU 实例＝不会有人做额外模型解析。
+  const mvu = getMvuApi();
+  const mvuPresent = mvu !== null;
+  // 不在场就抹掉「见过 MVU 信号」的记忆：该标记是页面级粘性、生产路径上无人清除，
+  // 停用 MVU 或换到没有 MVU 的卡之后它仍为真，会让每一轮都白等一次宽限期。
+  if (!mvuPresent) mvuGateState.everSawMvuSignal = false;
+
   const mvuSettings = getMvuSettings(ctx);
   const method = mvuSettings?.更新方式;
   // 能读到设置且明确是随AI输出 → 不需要等待
@@ -297,12 +305,16 @@ export function shouldWaitForMvuExtraAnalysis(ctx, _settings) {
     const autoRequest = mvuSettings?.额外模型解析配置?.启用自动请求 ?? mvuSettings?.自动触发额外模型解析;
     if (autoRequest === false) return false;
   }
-  const mvu = getMvuApi();
-  const mvuCapable = mvu && typeof mvu.isDuringExtraAnalysis === 'function';
+  // 设置是会话无关的持久态，会残留：mvu_settings 存在 SillyTavern.extensionSettings
+  // （全局、跨卡跨聊天共享、MVU 落盘后无人清理），停用 MVU 或换到没有 MVU 的卡之后
+  // 它依然在。只凭设置就认定「本环境有 MVU」，会把这类用户当成 MVU 用户——每轮白等
+  // 宽限期，并让下面的 fetch 兜底信号生效（最长 120 秒）。故设置须与「全局在场」同时
+  // 成立才算证据。
+  const mvuCapable = Boolean(mvu && typeof mvu.isDuringExtraAnalysis === 'function');
   // 三种信号源全部不可用（fetch 被禁用、无 Mvu、设置读不到）→ 无从判断
   if (!mvuGateState.fetchHooked && !mvuCapable && method !== '额外模型解析') return false;
   if (mvuCapable) mvuGateState.everSawMvuSignal = true;
-  if (method === '额外模型解析') mvuGateState.everSawMvuSignal = true;
+  if (mvuPresent && method === '额外模型解析') mvuGateState.everSawMvuSignal = true;
 
   installMvuGateListener(ctx);
   const roundKey = getMvuRoundKey(ctx);
@@ -328,12 +340,12 @@ export function shouldWaitForMvuExtraAnalysis(ctx, _settings) {
 
   // 信号 1：MVU 全局 API 报告正在解析
   const during = mvuCapable && mvu.isDuringExtraAnalysis() === true;
-  // 信号 2：正文之后仍有非本插件的生成请求在飞行——仅作旧版 MVU（没有
-  // isDuringExtraAnalysis 全局）的兜底。请求特征会被误命中：数据库正文替换/
-  // 填表的请求体嵌着含 <UpdateVariable>、json_patch 字样的正文与提示词，全局
-  // 标志可得时不再采信它，否则兼容门控会串行等完数据库一整条后处理管线
-  // （TT 实测一分钟以上的延迟）。
-  const generateActive = !mvuCapable && mvuGateState.generateInFlight > 0;
+  // 信号 2：正文之后仍有非本插件的生成请求在飞行——仅作旧版 MVU（全局在场但它
+  // 没有 isDuringExtraAnalysis 方法）的兜底。请求特征会被误命中：数据库正文替换/
+  // 填表的请求体嵌着含 <UpdateVariable>、json_patch 字样的正文与提示词。
+  // 两个前提缺一不可：只有全局在场才说明真有 MVU 可能在做解析（否则没人会解析，
+  // 等下去纯属空转），且只有带不了权威标志的旧版才需要退而采信请求特征。
+  const generateActive = mvuPresent && !mvuCapable && mvuGateState.generateInFlight > 0;
   // 生成请求只作为本轮「在飞」等待信号，不参与 everSawMvuSignal——
   // 否则普通 ST 主流请求也会让设备被标记为「见过 MVU 信号」，导致每轮白等宽限
   if (during) mvuGateState.everSawMvuSignal = true;
@@ -408,7 +420,12 @@ function resolveHostEventName(ctx, typeKey, fallback) {
   return typeof resolved === 'string' && resolved ? resolved : fallback;
 }
 
-function markHostGenerationStart() {
+function markHostGenerationStart(...args) {
+  // dry-run（token 计数拼 prompt）只发 STARTED 不发 ENDED：按钮从没显示过，
+  // 两家宿主 hideStopButton 的 NOOP 守卫都会吞掉 ENDED。计入深度等于把自动追踪
+  // 卡到 600 秒自愈。两家 STARTED 的最后一个事件参数都是 dryRun（ST/TT 一致），
+  // 只在这个确切形状下跳过，其它一律照计。
+  if (args.length > 0 && args[args.length - 1] === true) return;
   hostRunState.generationDepth += 1;
   if (hostRunState.generationDepth === 1) hostRunState.generationBusySince = Date.now();
 }
@@ -495,8 +512,11 @@ function hostDatasetGenerating() {
  * 的等待由既有的兼容门控 shouldWaitForMvuExtraAnalysis 负责（TT 上它走带停止
  * 按钮的 Generate 管线，dataset 信号同样会覆盖其在飞阶段），兼容开关语义不动。
  */
-export function isHostGenerationBusy(ctx) {
-  if (hostDatasetGenerating()) return true;
+export function getHostBusyDetail(ctx) {
+  void ctx;
+  // dataset 旗标是停止按钮的权威状态，没有超时自愈：真在生成时必须等，
+  // 卡死时则会一直挡——面板上要能区分它和事件计数
+  if (hostDatasetGenerating()) return { busy: true, source: 'dataset' };
   if (hostRunState.generationDepth > 0) {
     const staleMs = Number(globalThis[HOST_BUSY_STALE_MS_KEY]) || 600000;
     if (Date.now() - hostRunState.generationBusySince > staleMs) {
@@ -504,10 +524,14 @@ export function isHostGenerationBusy(ctx) {
       hostRunState.generationDepth = 0;
       hostRunState.generationBusySince = 0;
     } else {
-      return true;
+      return { busy: true, source: 'depth', depth: hostRunState.generationDepth };
     }
   }
-  return false;
+  return { busy: false, source: '' };
+}
+
+export function isHostGenerationBusy(ctx) {
+  return getHostBusyDetail(ctx).busy;
 }
 
 /** 楼层上正文替换盖的毫秒时间戳；没盖过返回 0。 */
@@ -1562,6 +1586,42 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   return { discarded: false, triggered: true };
 }
 
+/**
+ * 轮询跳过原因显形：下面几条自动独有的早退原本全程静默，面板停在旧结果上，
+ * 使用者分不清「已追完」「正在等」还是「被某道门卡死」（自动不可用、手动可用
+ * 时只能瞎猜）。状态放在模块级 Map 里按聊天隔离，天然暂态：不进 chatState、
+ * 不持久化、不进快照，更不改写 lastRawResult／lastOperationLogs——成功追踪的
+ * 结果不会被下一轮待命 poll 冲掉。同聊天＋同原因＋同文案＋同来源才去重，
+ * 忙碌来源切换（停止按钮→事件计数）或层数变化都会刷新提示。
+ */
+const pollWaitByChat = new Map();
+export const __pollWaitByChatForTest = pollWaitByChat;
+
+export function getPollWaitStatus(ctx) {
+  return pollWaitByChat.get(String(getChatKey(ctx) || '')) || null;
+}
+
+export function clearPollWaitStatus(ctx) {
+  pollWaitByChat.delete(String(getChatKey(ctx) || ''));
+}
+
+export function recordPollSkip(ctx, deps, reason, message, opts = {}) {
+  const chatKey = String(getChatKey(ctx) || '');
+  const source = String(opts?.source || '');
+  const prev = pollWaitByChat.get(chatKey);
+  if (prev && prev.reason === reason && prev.message === message && prev.source === source) {
+    prev.updatedAt = Date.now();
+    return { skipped: true, reason };
+  }
+  pollWaitByChat.set(chatKey, { reason, message, source, updatedAt: Date.now() });
+  // 按聊天隔离的暂态条目：聊天数有界，换聊天只保留最近若干个
+  while (pollWaitByChat.size > 50) {
+    pollWaitByChat.delete(pollWaitByChat.keys().next().value);
+  }
+  deps.renderStatusPanel(ctx);
+  return { skipped: true, reason };
+}
+
 export async function runTracker(ctx, deps, reason = 'manual') {
   const settings = getSettings(ctx);
   await hydrateChatStateFromHost(ctx, settings);
@@ -1574,6 +1634,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   const chat = getHostChat(ctx);
   const lastMessage = chat[chat.length - 1];
   if (!lastMessage) {
+    clearPollWaitStatus(ctx);
     chatState.lastRawResult = {
       message: '当前对话没有可分析的消息，已跳过追踪。',
       tool_calls: [],
@@ -1585,6 +1646,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   }
   if (globalThis[RUN_RUNTIME_KEY]) {
     if (!isTrackerRunStale(settings)) {
+      clearPollWaitStatus(ctx);
       chatState.lastRawResult = {
         message: '已有一轮追踪请求正在执行，本次请求未重复发送。',
         tool_calls: [],
@@ -1598,6 +1660,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     globalThis[RUN_RUNTIME_KEY] = null;
   }
   if (registeredTargets.length === 0) {
+    clearPollWaitStatus(ctx);
     chatState.lastRawResult = {
       message: '尚无已注册角色，跳过分析。',
       tool_calls: [],
@@ -1609,6 +1672,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     return { skipped: true, reason: 'no_registered_targets' };
   }
   if (reason === 'poll' && getHostKind() === 'luker' && settings.lukerMultiAgentManualOnly !== false) {
+    clearPollWaitStatus(ctx);
     chatState.lastRawResult = {
       message: 'Luker 多智能体安全模式已开启，自动追踪暂停；请在编排完成后手动分析。',
       tool_calls: [],
@@ -1618,49 +1682,69 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     deps.renderStatusPanel(ctx);
     return { skipped: true, reason: 'luker_multi_agent_manual' };
   }
-  if (reason === 'poll' && isHostGenerationBusy(ctx)) {
-    // 主连接没说完话就绝不追踪：从根上消灭「开始吐字时抢发一轮」
-    return { skipped: true, reason: 'host_generation_in_flight' };
+  if (reason === 'poll') {
+    // 主连接没说完话就绝不追踪：从根上消灭「开始吐字时抢发一轮」。
+    // 两路信号分开展示：dataset 是停止按钮的权威状态（无自愈，卡死会一直挡），
+    // depth 是生成事件计数（600 秒自愈）。「卡在正文生成阶段」时面板直接指明是哪一路。
+    const busyDetail = getHostBusyDetail(ctx);
+    if (busyDetail.busy) {
+      return recordPollSkip(
+        ctx,
+        deps,
+        'host_generation_in_flight',
+        busyDetail.source === 'depth'
+          ? `宿主生成事件未闭合（${Number(busyDetail.depth) || 0} 层），自动追踪等待中。`
+          : '宿主仍在生成中（停止按钮未释放），自动追踪等待中。',
+        { source: busyDetail.source || '' },
+      );
+    }
   }
   if (reason === 'poll') {
     const agentBarrier = await getHostAgentRunBarrier(ctx, lastMessage);
     if (agentBarrier.state === 'pending') {
-      chatState.lastRawResult = {
-        message: `TauriTavern Agent run ${agentBarrier.runId} 尚未完成，自动追踪将等待最终提交。`,
-        tool_calls: [],
-      };
-      chatState.lastOperationLogs = [];
-      saveSettings(ctx);
-      deps.renderStatusPanel(ctx);
-      return { skipped: true, reason: 'agent_run_pending' };
+      return recordPollSkip(
+        ctx,
+        deps,
+        'agent_run_pending',
+        `TauriTavern Agent run ${agentBarrier.runId} 尚未完成，自动追踪将等待最终提交。`,
+        { source: 'agent' },
+      );
     }
     if (agentBarrier.state === 'aborted') {
-      chatState.lastRawResult = {
-        message: `TauriTavern Agent run ${agentBarrier.runId} 已取消或失败，未自动追踪该提交；可手动分析。`,
-        tool_calls: [],
-      };
-      chatState.lastOperationLogs = [];
-      saveSettings(ctx);
-      deps.renderStatusPanel(ctx);
-      return { skipped: true, reason: 'agent_run_aborted' };
+      return recordPollSkip(
+        ctx,
+        deps,
+        'agent_run_aborted',
+        `TauriTavern Agent run ${agentBarrier.runId} 已取消或失败，未自动追踪该提交；可手动分析。`,
+        { source: 'agent' },
+      );
     }
   }
   if (reason === 'poll' && !isAfterAiMessageSettled(ctx, settings, chatState)) {
-    return { skipped: true, reason: 'message_not_settled' };
+    return recordPollSkip(ctx, deps, 'message_not_settled', '等待 AI 正文稳定后再追踪。');
   }
   if (reason === 'poll' && !hasPendingChatHistory(ctx, chatState)) {
-    return { skipped: true, reason: 'no_pending_history' };
+    return recordPollSkip(ctx, deps, 'no_pending_history', '没有新的可追踪内容，自动追踪待命中。');
   }
   if (reason === 'poll' && shouldWaitForMvuExtraAnalysis(ctx, settings)) {
-    return { skipped: true, reason: 'waiting_mvu_extra_analysis' };
+    return recordPollSkip(ctx, deps, 'waiting_mvu_extra_analysis', '等待 MVU 额外解析结束后再追踪。');
   }
   if (reason === 'poll' && tryAdoptSilentTailReplacement(ctx, settings, chatState)) {
-    // 正文替换的无痕改写：静默重锚，不发请求也不弹任何提示
+    // 正文替换的无痕改写：静默重锚，不发请求也不弹任何提示；上一轮待命提示作废
+    clearPollWaitStatus(ctx);
+    deps.renderStatusPanel(ctx);
     return { skipped: true, reason: 'silent_tail_replacement' };
   }
   if (reason === 'poll' && isFailedAutoRetryBlocked(ctx, chatState)) {
-    return { skipped: true, reason: 'failed_message_blocked' };
+    return recordPollSkip(
+      ctx,
+      deps,
+      'failed_message_blocked',
+      '上次自动追踪失败，对话无变化时暂停自动重试；可手动分析或等待新消息。',
+    );
   }
+  // 门控全部通过、真正要干活了：上一轮待命的暂态提示作废，后续面板只展示真实结果
+  clearPollWaitStatus(ctx);
   const runToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   globalThis[RUN_RUNTIME_KEY] = runToken;
   markTrackerRunProgress();
@@ -1702,6 +1786,7 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     // 记下失败当下「整段对话」的签名：只要对话没变，自动重试就该被挡住。
     // 失败可能发生在回放的中间楼，只比对尾楼会让轮询无限重发。
     chatState.lastFailedChatSignature = buildSignature(ctx, getHostChat(ctx).length);
+    clearPollWaitStatus(ctx);
     chatState.lastRawResult = {
       error: String(error?.message || error),
       tool_calls: [],
@@ -1724,7 +1809,14 @@ export async function runTracker(ctx, deps, reason = 'manual') {
 
 export async function poll(ctx, deps) {
   const settings = getSettings(ctx);
-  if (!settings.enabled) return;
+  if (!settings.enabled) {
+    return recordPollSkip(
+      ctx,
+      deps,
+      'disabled',
+      '自动追踪未启用（在设置中开启后生效）。',
+    );
+  }
   await runTracker(ctx, deps, 'poll');
 }
 
