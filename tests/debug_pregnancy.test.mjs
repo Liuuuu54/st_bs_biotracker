@@ -81,6 +81,30 @@ test('代孕／托卵保存卵源归属与卵源种族', () => {
   assert.match(fetus.race, /精灵/);
 });
 
+test('孕早期的代孕／托卵追加外源胚胎并产生双标签', () => {
+  const chatState = setup('孕早期');
+  const profile = profileOf(chatState);
+  profile.pregnant = {
+    pregnantDays: 25,
+    effectivePregnantDays: 25,
+    fetusesCount: 1,
+    fetuses: [{ embryoId: 1, fusionCheckedWith: [], tags: [], fathers: '原父', race: '人类', fatherRace: '人类', gender: '女', embryoType: '胎生', weight: 1 }],
+  };
+
+  const result = inject(chatState, {
+    mode: 'surrogacy', provider: '卵源', providerRace: '精灵', father: '委托父亲', race: '精灵',
+  });
+  assert.equal(result.applied, true, result.message);
+  const updated = profileOf(chatState);
+  assert.equal(updated.pregnant.fetuses.length, 2);
+  assert.equal(updated.pregnant.fetuses[0].fathers, '原父');
+  const added = updated.pregnant.fetuses[1];
+  assert.equal(added.provider, '卵源');
+  assert.equal(added.pendingImplantation, true);
+  assert.equal(added.conceivedAtDays, 25);
+  assert.deepEqual(deriveFetusTags(added, { carrierName: 'A' }), ['surrogacy', 'superfetation']);
+});
+
 test('强制嵌合融合前两颗胚胎并完整保留双方来源', () => {
   const chatState = setup();
   const result = inject(chatState, {

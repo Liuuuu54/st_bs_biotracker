@@ -1,6 +1,6 @@
 import { callOpenAICompatible } from './api.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
-import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt } from './race_prompt_context.js';
+import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt, buildWorldBaselineBlock } from './race_prompt_context.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import {
   buildEmptyPsychologyGroup,
@@ -353,6 +353,7 @@ export function buildBreedingInferenceSystemPrompt(settings, options = {}) {
   const customNotes = String(options.customNotes !== undefined ? options.customNotes : (settings?.registryCustomNotes || '')).trim();
   const declaredRace = String(options.declaredRace || '').trim();
   const breedingInferencePrompt = String(options.breedingInferencePrompt || '').trim();
+  const worldBaselinePrompt = buildWorldBaselineBlock(settings?.worldBaselinePrompt);
   const sourceChild = options.sourceChildContext?.child || null;
   const psyMensLines = Object.entries(PSY_MENS_FIELDS).map(([key, value]) => `- mens.${key}_value: ${value.definition}`);
   const psyMensBoolLines = Object.entries(PSY_MENS_BOOL_FIELDS).map(([key, value]) => `- mens.${key}: ${value.definition}`);
@@ -360,6 +361,7 @@ export function buildBreedingInferenceSystemPrompt(settings, options = {}) {
   const psyPregBoolLines = Object.entries(PSY_PREG_BOOL_FIELDS).map(([key, value]) => `- preg.${key}: ${value.definition}`);
   const stageKeysText = PSY_STAGE_KEYS.join(', ');
   return [
+    worldBaselinePrompt,
     '你是 AIRP 角色繁育推演器。',
     '你的任务不是注册角色，而是在注册前根据角色卡、世界书、最近对话与用户补充，推演该角色的繁育心理底盘。',
     targetName ? `本次唯一目标是「${targetName}」。target_character 必须逐字填写「${targetName}」，不得填写 user、角色卡名或任何其他角色。` : '',
@@ -768,6 +770,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
   ]);
   const psyPregBoolLines = Object.entries(PSY_PREG_BOOL_FIELDS).map(([key, value]) => `- psychology.preg.${key}: ${value.definition}`);
   const prompt = [
+    buildWorldBaselineBlock(settings?.worldBaselinePrompt),
     racePhysiologyPrompt,
     raceCatalogPrompt,
     '你是 AIRP 角色注册初始化器。',
@@ -1227,7 +1230,7 @@ function deriveRegisteredFetusRace(motherRace, fatherRace) {
 export const SPECIAL_FETUS_HINTS = {
   chimera: '这次妊娠里要有一颗嵌合体胎儿：两颗以上的受精卵在著床前融合成一个个体。请给它 chimera = { sourceCount, fatherSources, maternalSources, genderSources }，来源名字要取自角色卡里真实存在的人，父方与母方名字合计至少两个。',
   identical: '这次妊娠里要有一对同卵双胞胎：至少两颗胎儿都标上 tags: ["identical"]，两者的 fathers 与 race 必须一致。',
-  superfetation: '这次妊娠里要有一颗异期复孕的胎儿：它在母体已经怀孕之后才受精。给它 tags: ["superfetation"] 与 conceivedAtDays（受精当下母体已怀的有效孕日，必须小于目前孕龄），它比同腹其他胎儿发育落后。',
+  superfetation: '这次妊娠里要有一颗异期复孕的胎儿：它在母体已经怀孕之后才受精或植入。给它 tags: ["superfetation"] 与 conceivedAtDays（受精或植入当下母体已怀的有效孕日，必须小于目前孕龄），它比同腹其他胎儿发育落后。',
   nested: '这次妊娠里要有一颗孕中孕的胎儿：它长在另一颗胎儿体内。给它 tags: ["nested"]、conceivedAtDays，以及 nestedInIndex＝宿主在 fetuses 阵列里的下标。宿主本身必须是一颗正常胎儿。',
 };
 

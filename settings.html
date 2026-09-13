@@ -799,12 +799,23 @@
         <section id="bs-bt-view-race-encyclopedia" class="bs-bt-view" data-view="race-encyclopedia">
           <div class="bs-bt-panel">
             <div class="settings_section">
-              <div id="bs-bt-race-count" class="bs-bt-status-title">内置种族数量：0</div>
+              <div id="bs-bt-race-count" class="bs-bt-status-title">异种数量：0</div>
+            </div>
+
+            <div class="settings_section">
+              <label for="bs-bt-world-baseline-prompt">世界基准提示词</label>
+              <textarea id="bs-bt-world-baseline-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="留空即采用普通人类与现实社会常识；例如：本世界人类的男女生殖生理与社会角色和现实相反，所有角色都视为正常。"></textarea>
+              <small>描述全剧本共通的人类生理、性别角色与社会常识；会送入主线、追踪、注册及繁育推演。人类始终可用，但不列入下方 72 个异种名录。</small>
+              <div class="settings_section bs-bt-action-row">
+                <button id="bs-bt-world-baseline-save" class="menu_button" type="button">保存世界基准</button>
+                <button id="bs-bt-race-catalog-human-only" class="menu_button" type="button">现代写实</button>
+                <button id="bs-bt-race-catalog-select-all" class="menu_button" type="button">全部收录</button>
+              </div>
             </div>
 
             <div class="settings_section">
               <div class="bs-bt-track-tabs" id="bs-bt-encyclopedia-tabs">
-                <button type="button" class="bs-bt-track-tab is-active" data-encyclopedia-tab="race">一般类型</button>
+                <button type="button" class="bs-bt-track-tab is-active" data-encyclopedia-tab="race">异种</button>
                 <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="derived">衍生类型</button>
               </div>
             </div>
@@ -821,10 +832,6 @@
                 <label for="bs-bt-race-catalog-included">将当前种族加入提示词名录</label>
               </div>
               <small>只将本故事可能登场的种族送入追踪与注册提示词，可减少无关名录占用。</small>
-              <div class="settings_section bs-bt-action-row">
-                <button id="bs-bt-race-catalog-human-only" class="menu_button" type="button">只保留人类</button>
-                <button id="bs-bt-race-catalog-select-all" class="menu_button" type="button">全部收录</button>
-              </div>
             </div>
 
             <div class="settings_section">

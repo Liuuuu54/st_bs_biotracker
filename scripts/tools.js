@@ -443,7 +443,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + '胚胎种族依遗传母方推导而非承载者，所以虫母的卵放进人类宿主仍是虫族血统。'
       + 'race 与 fatherRace 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔。母系 derivedType 永远来自承载者；父系优先取 fatherRace，未写时才取 race。'
       + 'provider 若尚未注册，用 race 指明遗传母方种族；父方种族预设与遗传母方同族，跨种族时用 fatherRace 指明。'
-      + '工具加入的是尚未着床的受精卵，可在同一着床窗口重复调用；第一颗会启动共用 fertilizationDays，之后由 bsPassedTime 推进并统一着床。已进入妊娠阶段后不可再加入。自然受孕请勿使用本工具。',
+      + '工具加入的是尚未着床的受精卵，可在同一着床窗口重复调用；第一颗会启动共用 fertilizationDays，之后由 bsPassedTime 推进并统一着床。孕早期且仍在异期复孕窗口时也可追加，此时新胎同时标记代孕与异期复孕；其余妊娠阶段不可加入。自然受孕请勿使用本工具。',
     input_schema: {
       type: 'object',
       properties: {
@@ -3848,8 +3848,17 @@ function applyImplantEmbryo(chatState, args) {
   const pregnant = profile.pregnant || {};
   const notify = profile.notify || {};
   const currentStage = String(base.stage || '');
-  if (isPregnancyStage(currentStage)) {
-    return { applied: false, message: `bsImplantEmbryo skipped for ${female}: implantation has already completed.` };
+  const existingFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const isAdditionalSurrogacy = isPregnancyStage(currentStage);
+  if (isAdditionalSurrogacy) {
+    if (currentStage !== SUPERFETATION_STAGE || getImplantedFetuses(profile).length === 0) {
+      return { applied: false, message: `bsImplantEmbryo skipped for ${female}: additional implantation is only available during early pregnancy.` };
+    }
+    const windowDays = getSuperfetationWindowDays(profile);
+    const conceivedAtDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+    if (windowDays <= 0 || conceivedAtDays >= windowDays) {
+      return { applied: false, message: `bsImplantEmbryo skipped for ${female}: the superfetation window has closed.` };
+    }
   }
 
   const count = Math.max(1, Math.min(50, Math.floor(Number(args?.count) || 1)));
@@ -3878,22 +3887,28 @@ function applyImplantEmbryo(chatState, args) {
     derivedType: fatherDescriptor.derivedType || geneticDescriptor.derivedType || null,
   };
 
-  const existingFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const hadPendingImplantation = existingFetuses.some((fetus) => !isImplantedFetus(fetus));
   ensureEmbryoMetadata(pregnant);
   for (let index = 0; index < count; index += 1) {
-    existingFetuses.push(createSimpleFetus(profile, spermSeed, currentStage, { geneticProfile, provider }));
+    const fetus = createSimpleFetus(profile, spermSeed, currentStage, { geneticProfile, provider });
+    if (isAdditionalSurrogacy) markSuperfetationFetus(profile, fetus);
+    existingFetuses.push(fetus);
   }
   pregnant.fetuses = existingFetuses;
   ensureEmbryoMetadata(pregnant);
   pregnant.fetusesCount = existingFetuses.length;
-  if (existingFetuses.length === count) base.fertilizationDays = 0;
+  if ((!isAdditionalSurrogacy && existingFetuses.length === count) || (isAdditionalSurrogacy && !hadPendingImplantation)) {
+    base.fertilizationDays = 0;
+  }
 
   profile.base = base;
   profile.pregnant = pregnant;
   updateFetalEnergyDrain(profile);
   profile.notify = {
     ...notify,
-    secondly: `${female}加入了${count}个来自${provider}的受精卵，正等待共同著床窗口`,
+    secondly: isAdditionalSurrogacy
+      ? `${female}在孕早期追加了${count}个来自${provider}的代孕异期胚胎，正等待共同著床窗口`
+      : `${female}加入了${count}个来自${provider}的受精卵，正等待共同著床窗口`,
   };
 
   next.profile = profile;
@@ -5397,12 +5412,23 @@ function applyDebugInjectPregnancy(chatState, args) {
   const hasConceptionState = existingFetuses.length > 0
     || clampNumber(base.fertilizationDays, 0, 9999, 0) > 0
     || isPregnancyStage(currentStage);
-  const isAdditionalConception = mode === 'superfetation' || mode === 'nested';
+  const isAdditionalSurrogacy = mode === 'surrogacy' && hasConceptionState;
+  const isAdditionalConception = mode === 'superfetation' || mode === 'nested' || isAdditionalSurrogacy;
   if (!isAdditionalConception && hasConceptionState) {
     return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: pregnancy/conception state already exists.` };
   }
   if (isAdditionalConception && currentStage !== SUPERFETATION_STAGE) {
     return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: ${mode} is only available during 孕早期.` };
+  }
+  if (isAdditionalConception && !existingFetuses.some((fetus) => isImplantedFetus(fetus))) {
+    return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: an implanted fetus is required.` };
+  }
+  if (isAdditionalConception) {
+    const windowDays = getSuperfetationWindowDays(profile);
+    const conceivedAtDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+    if (windowDays <= 0 || conceivedAtDays >= windowDays) {
+      return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: the superfetation window has closed.` };
+    }
   }
   if (forceChimera && !['normal', 'surrogacy'].includes(mode)) {
     return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: forced chimera is only available for normal or surrogacy conception.` };
@@ -5517,6 +5543,7 @@ function applyDebugInjectPregnancy(chatState, args) {
   snapshotOriginalPregnancyBio(next);
 
   ensureEmbryoMetadata(pregnant);
+  const hadPendingImplantation = existingFetuses.some((fetus) => !isImplantedFetus(fetus));
   let nestedHost = null;
   if (mode === 'nested') {
     const hostIndex = Number(args?.hostFetusIndex);
@@ -5551,7 +5578,7 @@ function applyDebugInjectPregnancy(chatState, args) {
     } else if (normalizedGenderList.length === fetusCount) {
       fetus.gender = normalizedGenderList[index];
     }
-    if (mode === 'superfetation') markSuperfetationFetus(profile, fetus);
+    if (mode === 'superfetation' || isAdditionalSurrogacy) markSuperfetationFetus(profile, fetus);
     if (mode === 'nested') markNestedFetus(profile, fetus, nestedHost);
     fetuses.push(fetus);
   }
@@ -5562,14 +5589,16 @@ function applyDebugInjectPregnancy(chatState, args) {
   if (forceIdentical) forceIdenticalTwinSplit(profile, injectedBatch);
   pregnant.fetusesCount = pregnant.fetuses.length;
   if (isAdditionalConception) {
-    base.fertilizationDays = 0;
+    if (!hadPendingImplantation) base.fertilizationDays = 0;
     applyPregnancyPhysiology(profile, next.runtime || {});
     updateFetalEnergyDrain(profile);
     profile.notify = {
       ...notify,
       secondly: mode === 'nested'
         ? `${female}指定胎儿内已注入${fetusCount}个孕中孕胚胎，正等待著床${forceIdentical ? '（已强制同卵分裂）' : ''}`
-        : `${female}已注入${fetusCount}个异期受孕胚胎，正等待著床${forceIdentical ? '（已强制同卵分裂）' : ''}`,
+        : isAdditionalSurrogacy
+          ? `${female}已注入${fetusCount}个代孕异期胚胎，正等待著床${forceIdentical ? '（已强制同卵分裂）' : ''}`
+          : `${female}已注入${fetusCount}个异期受孕胚胎，正等待著床${forceIdentical ? '（已强制同卵分裂）' : ''}`,
     };
     next.profile = profile;
     chatState.characters[female] = next;

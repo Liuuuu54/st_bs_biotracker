@@ -181,6 +181,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   reasoningEffort: 'auto',
   formattedOutputV4: true,
   raceCatalogSelection: null,
+  worldBaselinePrompt: '',
   triggerTiming: 'after_ai',
   pollMs: 1800,
   apiTimeoutMs: 180000,
@@ -800,7 +801,7 @@ export function getSettings(ctx) {
   if (Object.prototype.hasOwnProperty.call(settings, 'raceCatalogInPrompt')) {
     if (!Object.prototype.hasOwnProperty.call(settings, 'raceCatalogSelection')) {
       settings.raceCatalogSelection = settings.raceCatalogInPrompt === false
-        ? { races: ['人类'], derivedTypes: [] }
+        ? { races: [], derivedTypes: [] }
         : null;
     }
     delete settings.raceCatalogInPrompt;

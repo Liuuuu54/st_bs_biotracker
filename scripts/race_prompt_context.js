@@ -23,6 +23,15 @@ const RACE_CATALOG_GROUPS = Object.freeze([
 ]);
 
 /**
+ * 剧本级的人类与社会常识。它不是种族参数，也不参与 72 个异种的名录计数；
+ * 留空即沿用普通人类基准。压成单行可避免用户文字闭合高优先级提示区块。
+ */
+export function buildWorldBaselineBlock(value) {
+  const text = sanitizePromptText(value);
+  return text ? `[世界基准]\n${text}` : '';
+}
+
+/**
  * 从短敘述里取一句极短的辨识提示：按逗号逐句累积到长度上限，
  * 且至少收到一句中文（短敘述多以英文原名开头，只有英文时信息量不足）。
  * 目的是让模型在名录阶段就能分辨形近种族（人鱼／鱼人、精灵／妖精），
@@ -59,7 +68,7 @@ export function buildRaceCatalogBlock({ withHints = false, selection = null } = 
     ? new Set(selection.derivedTypes.map((type) => String(type || '').trim()).filter(Boolean))
     : null;
   const groupLines = RACE_CATALOG_GROUPS.map(([label, races]) => {
-    const names = races.filter((race) => !selectedRaces || selectedRaces.has(race)).map((race) => {
+    const names = races.filter((race) => race !== '人类' && (!selectedRaces || selectedRaces.has(race))).map((race) => {
       const hint = withHints ? buildRaceCatalogHint(getRaceIntroductionLine(race)) : '';
       return hint ? `${race}(${hint})` : race;
     });
@@ -69,14 +78,14 @@ export function buildRaceCatalogBlock({ withHints = false, selection = null } = 
   if (groupLines.length === 0 && derivedTypes.length === 0) return '';
   return [
     '[可用种族名录]',
-    '以下是系统内建的种族，写 base.race、fatherRace、bsAddSperm.race 时应优先从中选择。',
+    '人类是始终可用的系统基准；以下是本故事启用的系统内建异种，写 base.race、fatherRace、bsAddSperm.race 时应优先从人类或下列项目中选择。',
     ...groupLines,
     derivedTypes.length > 0 ? `- 衍生类型（写作 [类型]种族，如 [血族]人类）: ${derivedTypes.map((type) => {
       const hint = withHints ? buildRaceCatalogHint(getDerivedTypeIntroductionLine(type)) : '';
       return hint ? `${type}(${hint})` : type;
     }).join('、')}` : '',
     '名录外的形象请就近归入本次名录中最相似的一项，不要自创种族名——自创名称在系统内查不到生理参数。',
-    '混血以 x 分隔，装饰子项以 - 附加；两侧只能使用本次名录列出的种族名。',
+    '混血以 x 分隔，装饰子项以 - 附加；两侧只能使用人类或本次名录列出的种族名。',
   ].filter(Boolean).join('\n');
 }
 

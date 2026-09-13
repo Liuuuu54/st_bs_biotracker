@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as state from '../scripts/state.js';
+import { deriveFetusTags } from '../scripts/fetus_tags.js';
 import { getBaseRaceName, getRaceComponents, getRaceDescriptorComponents, parseRaceDescriptor } from '../scripts/race_config.js';
 import { applyToolCall, calculateChimeraFusionProbability } from '../scripts/tools.js';
 
@@ -280,7 +281,7 @@ test('an unregistered provider can still supply the race explicitly', () => {
   assert.equal(fetuses[0].provider, '深渊母巢');
 });
 
-test('implanting is refused when the carrier is already pregnant', () => {
+test('implanting is refused after early pregnancy', () => {
   const chatState = state.createEmptyChatState();
   chatState.characters['艾拉'] = makeCharacter('艾拉', [makeFetus()]);
   chatState.characters['委托母亲'] = makeHost('委托母亲');
@@ -291,7 +292,61 @@ test('implanting is refused when the carrier is already pregnant', () => {
   });
 
   assert.equal(result.applied, false);
-  assert.match(result.message, /already completed/);
+  assert.match(result.message, /only available during early pregnancy/);
+});
+
+test('implanting during early pregnancy adds a surrogate superfetation fetus', () => {
+  const chatState = state.createEmptyChatState();
+  chatState.characters['艾拉'] = makeCharacter('艾拉', [makeFetus({ fathers: '原父' })]);
+  chatState.characters['委托母亲'] = makeHost('委托母亲', '精灵');
+  const profile = chatState.characters['艾拉'].profile;
+  profile.base.stage = '孕早期';
+  profile.pregnant.pregnantDays = 25;
+  profile.pregnant.effectivePregnantDays = 25;
+
+  const first = applyToolCall(chatState, {
+    name: 'bsImplantEmbryo',
+    arguments: { female: '艾拉', provider: '委托母亲', fathers: '委托父亲' },
+  });
+  assert.equal(first.applied, true, first.message);
+
+  const updated = chatState.characters['艾拉'].profile;
+  assert.equal(updated.pregnant.fetuses.length, 2);
+  assert.equal(updated.pregnant.fetuses[0].fathers, '原父', '原胎必须保留');
+  const added = updated.pregnant.fetuses[1];
+  assert.equal(added.provider, '委托母亲');
+  assert.equal(added.pendingImplantation, true);
+  assert.equal(added.conceivedAtDays, 25);
+  assert.ok(added.weight < 1, '晚植入胎应套用异期发育落差');
+  assert.deepEqual(deriveFetusTags(added, { carrierName: '艾拉' }), ['surrogacy', 'superfetation']);
+
+  updated.base.fertilizationDays = 2;
+  const second = applyToolCall(chatState, {
+    name: 'bsImplantEmbryo',
+    arguments: { female: '艾拉', provider: '另一卵源', fathers: '另一父亲', race: '兽人' },
+  });
+  assert.equal(second.applied, true, second.message);
+  assert.equal(chatState.characters['艾拉'].profile.base.fertilizationDays, 2, '同一等待窗口不得重置计时');
+  assert.deepEqual(
+    deriveFetusTags(chatState.characters['艾拉'].profile.pregnant.fetuses[2], { carrierName: '艾拉' }),
+    ['surrogacy', 'superfetation'],
+  );
+});
+
+test('implanting during early pregnancy is refused after the superfetation window', () => {
+  const chatState = state.createEmptyChatState();
+  chatState.characters['艾拉'] = makeCharacter('艾拉', [makeFetus()]);
+  const profile = chatState.characters['艾拉'].profile;
+  profile.base.stage = '孕早期';
+  profile.pregnant.pregnantDays = 80;
+  profile.pregnant.effectivePregnantDays = 80;
+
+  const result = applyToolCall(chatState, {
+    name: 'bsImplantEmbryo',
+    arguments: { female: '艾拉', provider: '委托母亲' },
+  });
+  assert.equal(result.applied, false);
+  assert.match(result.message, /window has closed/);
 });
 
 test('implanting is refused when the provider is the carrier herself', () => {

@@ -235,11 +235,11 @@ const RACE_ENCYCLOPEDIA_LIST = Array.from(
     ...OVOVIVIPAROUS_RACES,
     ...METOVIVIPAROUS_RACES,
     ...AMORPHOUS_RACES,
-  ]),
+  ].filter((race) => race !== '人类')),
 ).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
 const RACE_ENCYCLOPEDIA_GROUPS = RACE_PALETTE_GROUPS.map((group) => ({
   label: group.label,
-  races: Array.from(new Set(group.races)),
+  races: Array.from(new Set(group.races.filter((race) => race !== '人类'))),
 })).filter((group) => group.races.length > 0);
 const DERIVED_ENCYCLOPEDIA_LIST = Array.from(new Set(DERIVED_TYPE_RACES)).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
 const RACE_PHYSIOLOGY_FIELD_LABELS = Object.freeze({
@@ -1532,6 +1532,13 @@ function setRaceCatalogEntryIncluded(ctx, kind, name, included) {
   saveRaceCatalogSelection(ctx, selection);
 }
 
+function saveWorldBaselinePrompt(ctx, value) {
+  const settings = getSettings(ctx);
+  settings.worldBaselinePrompt = String(value || '').trim();
+  saveSettings(ctx);
+  updateMainFlowPrompt(ctx);
+}
+
 function setEncyclopediaSubpage(page) {
   selectedEncyclopediaSubpage = page === 'derived' ? 'derived' : 'race';
   document.querySelectorAll('#bs-bt-encyclopedia-tabs [data-encyclopedia-tab]').forEach((node) => {
@@ -1850,9 +1857,13 @@ function renderRaceEncyclopediaPage(ctx = null) {
   const editorTitle = document.getElementById('bs-bt-race-editor-title');
   const raceCatalogIncluded = document.getElementById('bs-bt-race-catalog-included');
   const derivedCatalogIncluded = document.getElementById('bs-bt-derived-catalog-included');
+  const worldBaselineInput = document.getElementById('bs-bt-world-baseline-prompt');
   if (!countNode || !selectNode || !outputNode || !derivedSelectNode || !derivedOutputNode) return;
 
-  countNode.innerHTML = `内置种族数量：${RACE_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.races.length}）<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.derivedTypes.length}）`;
+  countNode.innerHTML = `异种数量：${RACE_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.races.length}）<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.derivedTypes.length}）`;
+  if (worldBaselineInput && document.activeElement !== worldBaselineInput) {
+    worldBaselineInput.value = String(settings?.worldBaselinePrompt || '');
+  }
   if (!selectedRaceEncyclopedia || !RACE_ENCYCLOPEDIA_LIST.includes(selectedRaceEncyclopedia)) {
     selectedRaceEncyclopedia = RACE_ENCYCLOPEDIA_LIST[0] || '';
   }
@@ -4088,7 +4099,12 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
   const canAddDuringPregnancy = currentStage === '孕早期' && implantedFetuses.length > 0;
   const conceptionModes = {
     normal: { label: '一般受孕', available: canStartNewPregnancy, description: '建立新的受精／妊娠状态；孕龄 0 代表尚未着床。' },
-    surrogacy: { label: '代孕／托卵', available: canStartNewPregnancy, description: '由当前角色承载，胎儿母源归属于指定卵源。' },
+    surrogacy: { label: '代孕／托卵',
+      available: canStartNewPregnancy || canAddDuringPregnancy,
+      description: canAddDuringPregnancy
+        ? '保留原胎并植入外源胚胎；新胎同时标记代孕与异期复孕。'
+        : '由当前角色承载，胎儿母源归属于指定卵源。',
+    },
     womb_return: { label: '胎内回归', available: canWombReturn, description: '跳过回归期，直接从孕早期第 1 天开始；已登记回归者会被冻结。' },
     superfetation: { label: '异期受孕', available: canAddDuringPregnancy, description: '仅限孕早期；保留原胎并加入一批等待着床的新胚胎。' },
     nested: { label: '孕中孕', available: canAddDuringPregnancy, description: '仅限孕早期；必须指定一颗已着床胎儿作为宿主。' },
@@ -4098,6 +4114,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
   const conceptionMode = conceptionModes[requestedMode].available ? requestedMode : fallbackMode;
   debugInjectDraft.mode = conceptionMode;
   const selectedMode = conceptionModes[conceptionMode];
+  const isAdditionalSurrogacy = conceptionMode === 'surrogacy' && hasConceptionState;
   const modeOptions = Object.entries(conceptionModes).map(([key, item]) =>
     `<option value="${key}"${conceptionMode === key ? ' selected' : ''}${item.available ? '' : ' disabled'}>${escapeHtml(item.label)}${item.available ? '' : '（当前不可用）'}</option>`
   ).join('');
@@ -4289,11 +4306,12 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
           <span class="bs-bt-track-debug-label">${conceptionMode === 'womb_return' ? '回归胎性别' : '胚胎性别'}</span>
           <input id="bs-bt-debug-genders" class="text_pole" type="text" value="${gendersValue}" placeholder="男/女/双/无，多胎用逗号分隔" />
         </label>
-        ${conceptionMode === 'normal' || conceptionMode === 'surrogacy' ? `
+        ${conceptionMode === 'normal' || (conceptionMode === 'surrogacy' && !isAdditionalSurrogacy) ? `
         <label class="bs-bt-track-debug-field">
           <span class="bs-bt-track-debug-label">孕龄天数(人類等效产科孕期，0代表刚受精)</span>
           <input id="bs-bt-debug-days" class="text_pole" type="number" min="0" max="300" value="${daysValue}" />
-        </label>
+        </label>` : ''}
+        ${conceptionMode === 'normal' || conceptionMode === 'surrogacy' ? `
         <label class="bs-bt-debug-identical-option">
           <input id="bs-bt-debug-force-chimera" type="checkbox"${debugInjectDraft.forceChimera ? ' checked' : ''} />
           <span><strong>强制嵌合胎</strong><small>至少输入 2 颗基础胚胎；前两颗会在着床前融合为 1 颗，并保留双方父系、母源、种族与性别来源。</small></span>
@@ -4304,7 +4322,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
         </label>
         <button type="button" class="menu_button" data-debug-action="inject-pregnancy">执行${escapeHtml(selectedMode.label)}注入</button>
       </fieldset>
-      <div class="bs-bt-track-debug-hint">${selectedMode.available ? (conceptionMode === 'womb_return' ? '此调试模式不计算回归期，执行后立即是孕早期第 1 天。' : conceptionMode === 'nested' ? '宿主只列出已着床胎儿；新胎会同时带有孕中孕与异期受孕标记。' : conceptionMode === 'superfetation' ? '新胎使用当前妊娠时钟记录受孕时间，并先进入等待着床状态。' : '父亲名字、父亲种族、性别可用逗号逐胎填写。') : '当前阶段没有可执行的受孕注入模式。'}</div>
+      <div class="bs-bt-track-debug-hint">${selectedMode.available ? (conceptionMode === 'womb_return' ? '此调试模式不计算回归期，执行后立即是孕早期第 1 天。' : conceptionMode === 'nested' ? '宿主只列出已着床胎儿；新胎会同时带有孕中孕与异期受孕标记。' : conceptionMode === 'superfetation' ? '新胎使用当前妊娠时钟记录受孕时间，并先进入等待着床状态。' : isAdditionalSurrogacy ? '新胎沿用当前妊娠时钟并等待著床，同时带有代孕与异期复孕标记。' : '父亲名字、父亲种族、性别可用逗号逐胎填写。') : '当前阶段没有可执行的受孕注入模式。'}</div>
     </div>
     <div class="bs-bt-track-section" style="margin-top: 10px;">
       <div class="bs-bt-track-section-title">产兆前驱调试</div>
@@ -6025,6 +6043,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-targets', settings.targetNames);
   setValue('bs-bt-tracker-worldbook-mode', normalizeWorldbookMode(settings.trackerWorldbookMode));
   setValue('bs-bt-system-prompt', settings.systemPrompt);
+  setValue('bs-bt-world-baseline-prompt', settings.worldBaselinePrompt);
   setValue('bs-bt-register-custom-notes', settings.registryCustomNotes);
   setValue('bs-bt-register-skill-prompt', settings.registrySkillPrompt);
   setValue('bs-bt-registry-normal-description', settings.registryDescriptionGuides?.normalDescription);
@@ -6605,6 +6624,7 @@ function readSettingsFromForm(ctx) {
   if (settings.trackerWorldbookMode === 'allowlist_all') settings.trackerGlobalWorldbookIncludeNames = globalFilterNames;
   else settings.trackerGlobalWorldbookExcludeNames = globalFilterNames;
   settings.systemPrompt = String(getValue('bs-bt-system-prompt')).trim() || DEFAULT_SYSTEM_PROMPT;
+  settings.worldBaselinePrompt = String(getValue('bs-bt-world-baseline-prompt')).trim();
   settings.registryCustomNotes = String(getValue('bs-bt-register-custom-notes')).trim();
   settings.registrySkillPrompt = String(getValue('bs-bt-register-skill-prompt')).trim();
   settings.registryDescriptionGuides = {
@@ -7266,8 +7286,11 @@ async function ensureModal(ctx) {
     setRaceCatalogEntryIncluded(ctx, 'race', selectedRaceEncyclopedia, Boolean(event.target?.checked));
   });
   document.getElementById('bs-bt-race-catalog-human-only')?.addEventListener('click', () => {
-    saveRaceCatalogSelection(ctx, { races: ['人类'], derivedTypes: [] });
-    globalThis.toastr?.success?.('[BS BioTracker] 提示词种族名录已只保留人类');
+    saveWorldBaselinePrompt(ctx, '');
+    const input = document.getElementById('bs-bt-world-baseline-prompt');
+    if (input) input.value = '';
+    saveRaceCatalogSelection(ctx, { races: [], derivedTypes: [] });
+    globalThis.toastr?.success?.('[BS BioTracker] 已切换为现代写实基准');
   });
   document.getElementById('bs-bt-race-catalog-select-all')?.addEventListener('click', () => {
     saveRaceCatalogSelection(ctx, {
@@ -7275,6 +7298,11 @@ async function ensureModal(ctx) {
       derivedTypes: [...DERIVED_ENCYCLOPEDIA_LIST],
     });
     globalThis.toastr?.success?.('[BS BioTracker] 已将全部种族与衍生类型加入提示词名录');
+  });
+  document.getElementById('bs-bt-world-baseline-save')?.addEventListener('click', () => {
+    const value = document.getElementById('bs-bt-world-baseline-prompt')?.value || '';
+    saveWorldBaselinePrompt(ctx, value);
+    globalThis.toastr?.success?.('[BS BioTracker] 世界基准提示词已保存');
   });
   document.getElementById('bs-bt-tracker-worldbook-mode')?.addEventListener('change', async () => {
     readSettingsFromForm(ctx);

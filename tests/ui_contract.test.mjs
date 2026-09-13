@@ -21,6 +21,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
     'bs-bt-skill-catalog-list', 'bs-bt-skill-definition-detail', 'bs-bt-skill-detail-characters',
     'bs-bt-wardrobe-tabs', 'bs-bt-wardrobe-list', 'bs-bt-wardrobe-characters-page', 'bs-bt-wardrobe-add-page',
     'bs-bt-register-source', 'bs-bt-register-source-summary',
+    'bs-bt-world-baseline-prompt', 'bs-bt-world-baseline-save',
   ]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }

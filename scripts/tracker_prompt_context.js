@@ -1,6 +1,6 @@
 import { PSY_MENS_FIELDS, PSY_PREG_FIELDS } from './registry_psy_config.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
-import { buildRaceCatalogBlock, buildRacePhysiologyPrompt } from './race_prompt_context.js';
+import { buildRaceCatalogBlock, buildRacePhysiologyPrompt, buildWorldBaselineBlock } from './race_prompt_context.js';
 import { getDerivedTypeFluxProfile } from './race_config.js';
 import { deriveFetusTags, describeFetusTags } from './fetus_tags.js';
 import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js';
@@ -103,7 +103,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].tags: 系统标注的胎儿来历标签（如 chimera/surrogacy/identical），由系统推导或在事件发生当下写入，只读，不要自行增删。本轮出现过的标签会在下方另行说明。',
   '- fetuses[*].identicalGroup: 同卵分裂的组别编号；带同一编号且 tags 含 identical 的胎儿由同一颗受精卵分裂而来。没有分裂时不出现。',
   '- fetuses[*].nestedInEmbryoId: 孕中孕专用——这一胎套在体内哪一颗胎儿之中（指向该胎的内部编号）。它的母亲是那颗胎儿，父亲照常是精源；出生后两个孩子一起娩出，被套的那个的母亲就是同胎的另一个孩子。孕中孕藏得比一般异期胎更久，要到孕晚期才会出现在 fetuses 里。',
-  '- fetuses[*].conceivedAtDays: 异期复孕专用——这一胎受精当下的 effectivePregnantDays。该胎自己的孕龄 = effectivePregnantDays 减去这个值，所以同腹胎儿的发育进度可能不同。一般妊娠不出现。',
+  '- fetuses[*].conceivedAtDays: 异期复孕专用——这一胎受精或植入当下的 effectivePregnantDays。该胎自己的孕龄 = effectivePregnantDays 减去这个值，所以同腹胎儿的发育进度可能不同。一般妊娠不出现。',
   '- 异期复孕的胎儿在进入孕中期之前不会出现在 fetuses 里，也不计入 fetusesCount：角色本人还不知道自己怀了两胎。它在系统里照常发育、照常消耗供养力，所以在揭晓前你会看到供养负担与体感比胎数应有的更重——那是伏笔，可以据此写身体的异样，但不要直接写破「其实有两胎」。揭晓时系统会以 notify 告知。',
   '- fetuses[*].fatherRace: 父方种族字符串，已去除 [derived] 前缀，用于理解父源与 fatherDerivedType。',
   '- fetuses[*].fatherDerivedType: 父方衍生类型；若没有则为 null。',
@@ -297,6 +297,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
       '- 其他状态工具默认建立在时间推进之后，不要跳过 bsPassedTime 直接更新长程状态。',
     ].join('\n'),
     String(basePrompt || '').trim(),
+    buildWorldBaselineBlock(payload?.world_baseline_prompt),
     metabolismGuide,
     // 名录只给名字：模型写 bsAddSperm.race 时需要词汇表，但每轮都发，不附辨识提示
     buildRaceCatalogBlock({ selection: payload?.race_catalog_selection || null }),
@@ -378,6 +379,7 @@ export function buildMainFlowStatePrompt(payload = {}) {
     ? ['', '[本轮出现的特殊胎儿来历]', ...fetusTagLines].join('\n')
     : '';
   return [
+    buildWorldBaselineBlock(payload?.world_baseline_prompt),
     racePhysiologyPrompt,
     '<bs_biotracker>',
     '[并行生理追踪上下文]',

@@ -2,16 +2,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildRaceCatalogBlock } from '../scripts/race_prompt_context.js';
+import { buildRaceCatalogBlock, buildWorldBaselineBlock } from '../scripts/race_prompt_context.js';
 import { getDerivedTypeIntroductionLine, getRaceIntroductionLine } from '../scripts/race_config.js';
-import { buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
-import { buildRegistrySystemPrompt } from '../scripts/registry.js';
+import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildBreedingInferenceSystemPrompt, buildRegistrySystemPrompt } from '../scripts/registry.js';
 
 test('名录涵盖全部内建种族与衍生类型', () => {
   const block = buildRaceCatalogBlock();
-  for (const race of ['人类', '鱼人', '人鱼', '空鲸', '史萊姆', '深潜者']) {
+  for (const race of ['鱼人', '人鱼', '空鲸', '史萊姆', '深潜者']) {
     assert.ok(block.includes(race), `名录应含 ${race}`);
   }
+  assert.equal(block.includes('- 胎生: 人类'), false, '人类是隐含基准，不列入异种名录');
+  assert.ok(block.includes('人类是始终可用的系统基准'));
   for (const derived of ['血族', '序列', '器灵']) {
     assert.ok(block.includes(derived), `名录应含衍生类型 ${derived}`);
   }
@@ -28,19 +30,18 @@ test('紧凑模式不带辨识提示，注册模式带', () => {
   assert.ok(hinted.length > compact.length);
 });
 
-test('百科选择会筛选名录，只保留人类时不会夹带异种或衍生类型', () => {
+test('百科选择会筛选名录，人类不会作为百科项目出现', () => {
   const selection = { races: ['人类'], derivedTypes: [] };
   const block = buildRaceCatalogBlock({ selection });
-  assert.ok(block.includes('- 胎生: 人类'));
-  assert.equal(block.includes('鱼人'), false);
-  assert.equal(block.includes('衍生类型'), false);
+  assert.equal(block, '');
   assert.equal(buildRaceCatalogBlock({ selection: { races: [], derivedTypes: [] } }), '');
 });
 
 test('追踪与注册提示词共用百科名录选择', () => {
   const selection = { races: ['人类', '精灵'], derivedTypes: ['血族'] };
   const tracked = buildTrackerSystemPrompt('base', null, { race_catalog_selection: selection });
-  assert.ok(tracked.includes('人类、精灵'));
+  assert.ok(tracked.includes('- 胎生: 精灵'));
+  assert.ok(tracked.includes('人类是始终可用的系统基准'));
   assert.ok(tracked.includes('血族'));
   assert.equal(tracked.includes('鱼人'), false);
 
@@ -51,6 +52,20 @@ test('追踪与注册提示词共用百科名录选择', () => {
   assert.ok(filtered.includes('精灵(Elf，长寿的尖耳亚人)'));
   assert.ok(filtered.includes('血族('));
   assert.equal(filtered.includes('鱼人('), false);
+});
+
+test('世界基准独立于 72+12 名录并进入四条提示词', () => {
+  const world = '本世界人类的男女生殖生理与社会角色完全翻转。';
+  assert.equal(buildWorldBaselineBlock(''), '');
+  assert.match(buildWorldBaselineBlock(world), /\[世界基准\][\s\S]*男女生殖生理/);
+
+  const tracker = buildTrackerSystemPrompt('base', null, { world_baseline_prompt: world });
+  const mainflow = buildMainFlowStatePrompt({ world_baseline_prompt: world, existing_state: { A: { name: 'A' } } });
+  const registry = buildRegistrySystemPrompt({ worldBaselinePrompt: world }, {});
+  const breeding = buildBreedingInferenceSystemPrompt({ worldBaselinePrompt: world }, { targetName: 'A' });
+  for (const prompt of [tracker, mainflow, registry, breeding]) {
+    assert.ok(prompt.includes(world), '每条相关提示词都应收到世界基准');
+  }
 });
 
 test('衍生类型有内建短敘述并进入名录', () => {
