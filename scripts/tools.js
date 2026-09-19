@@ -353,16 +353,22 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddSperm',
-    description: '向单一角色体内加入精液，用于性交后留下受孕机会。amount 必须为正数，建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；给过大的值会让正文连续多日描写残留。扣除/排出精液请用 bsDrainSperm。race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
+    description: '记录可受孕生殖道内的插入、精液沉积与拔出；口交、肛交、体外射精、隔着保险套、手淫或单纯体表接触一律不要调用。'
+      + '必须按状态机使用：action=insert 且 amount=0 进入 inserted；只有 inserted 才能 action=deposit 且 amount>0，成功后进入 spent 并禁止连续重复沉积；下一轮沉积前须再次 insert；action=withdraw 且 amount=0 才回到 idle。'
+      + '当前已有其他来源时，不同来源的 insert 视为原子交棒：旧来源已经拔出、新来源立即接手，penetrationSource 直接覆写，不建立多人列表。旧来源之后不能替新来源 deposit 或 withdraw。'
+      + 'inserted 与 spent 都表示仍在插入，可供未来子宫 SVG 显示；deposit 不等于自动拔出。'
+      + 'amount 建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
+      + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
         male: { type: 'string' },
         race: { type: 'string' },
-        amount: { type: 'number' },
+        action: { type: 'string', enum: ['insert', 'deposit', 'withdraw'] },
+        amount: { type: 'number', description: 'insert／withdraw 必须为 0；deposit 必须为正数。' },
       },
-      required: ['female', 'male', 'race', 'amount'],
+      required: ['female', 'male', 'race', 'action', 'amount'],
       additionalProperties: false,
     },
   },
@@ -863,6 +869,8 @@ function applyWombReturn(chatState, args) {
   base.sperms = [];
   base.eggs = 0;
   base.fertilizationDays = 0;
+  base.penetrationState = 'idle';
+  base.penetrationSource = null;
   pregnant.fetuses = [];
   pregnant.fetusesCount = 0;
   pregnant.fetalEnergyDrain = 0;
@@ -5268,15 +5276,62 @@ function applyAddSperm(chatState, args) {
   const male = String(args?.male || '').trim();
   const parsedRace = parseRaceDescriptor(args?.race || '人类');
   const race = parsedRace.race || '人类';
-  const amount = Number(args?.amount || 0);
+  const action = String(args?.action || '').trim();
+  const amount = Number(args?.amount);
   const character = chatState.characters?.[female];
   if (!female || !character) return { applied: false, message: `bsAddSperm skipped: unknown character ${female || '(empty)'}.` };
   if (!male) return { applied: false, message: 'bsAddSperm skipped: empty male.' };
-  if (!Number.isFinite(amount) || amount === 0) return { applied: false, message: 'bsAddSperm skipped: invalid amount.' };
+  if (!['insert', 'deposit', 'withdraw'].includes(action)) {
+    return { applied: false, message: 'bsAddSperm skipped: action 必须是 insert、deposit 或 withdraw。' };
+  }
+  if (!Number.isFinite(amount)) return { applied: false, message: 'bsAddSperm skipped: invalid amount.' };
   if (amount < 0) return { applied: false, message: 'bsAddSperm skipped: negative amount 请改用 bsDrainSperm 扣除精液。' };
 
   const next = cloneValue(character);
   const base = next.profile?.base || {};
+  const currentState = ['idle', 'inserted', 'spent'].includes(base.penetrationState)
+    ? base.penetrationState
+    : 'idle';
+  const currentSource = String(base.penetrationSource || '').trim();
+
+  if (action === 'insert') {
+    if (amount !== 0) return { applied: false, message: `bsAddSperm skipped for ${female}: insert 的 amount 必须为 0。` };
+    base.penetrationState = 'inserted';
+    base.penetrationSource = male;
+    base.latestSexDays = 0;
+    next.profile.base = base;
+    const experience = { ...(next.profile?.experience || {}), latestSexPartner: male };
+    if (experience.virginity === null || experience.virginity === undefined) experience.virginity = male;
+    next.profile.experience = experience;
+    chatState.characters[female] = next;
+    return {
+      applied: true,
+      message: currentState !== 'idle' && currentSource && currentSource !== male
+        ? `bsAddSperm insert applied to ${female}: ${currentSource} → ${male} handoff, penetrationState=inserted.`
+        : `bsAddSperm insert applied to ${female}: penetrationState=inserted.`,
+    };
+  }
+
+  if (action === 'withdraw') {
+    if (amount !== 0) return { applied: false, message: `bsAddSperm skipped for ${female}: withdraw 的 amount 必须为 0。` };
+    if (currentState !== 'idle' && currentSource && currentSource !== male) {
+      return { applied: false, message: `bsAddSperm skipped for ${female}: 当前插入来源是 ${currentSource}，不是 ${male}。` };
+    }
+    base.penetrationState = 'idle';
+    base.penetrationSource = null;
+    next.profile.base = base;
+    chatState.characters[female] = next;
+    return { applied: true, message: `bsAddSperm withdraw applied to ${female}: penetrationState=idle.` };
+  }
+
+  if (amount <= 0) return { applied: false, message: `bsAddSperm skipped for ${female}: deposit 的 amount 必须为正数。` };
+  if (currentState !== 'inserted') {
+    return { applied: false, message: `bsAddSperm skipped for ${female}: 当前状态为 ${currentState}，必须先 action=insert、amount=0。` };
+  }
+  if (currentSource && currentSource !== male) {
+    return { applied: false, message: `bsAddSperm skipped for ${female}: 当前插入来源是 ${currentSource}，不是 ${male}。` };
+  }
+
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   const maleDerivedType = parsedRace.derivedType || null;
   const existing = sperms.find((item) => String(item?.male || '') === male);
@@ -5288,6 +5343,8 @@ function applyAddSperm(chatState, args) {
     sperms.push({ male, race, derivedType: maleDerivedType, value: amount });
   }
   base.sperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
+  base.penetrationState = 'spent';
+  base.penetrationSource = male;
   base.latestSexDays = 0;
   next.profile.base = base;
   const experience = {
@@ -5298,11 +5355,9 @@ function applyAddSperm(chatState, args) {
     experience.virginity = male;
   }
   next.profile.experience = experience;
-  if (amount > 0) {
-    applyOdorGain(next.profile, Math.min(18, 4 + Math.log10(Math.max(1, amount)) * 4));
-  }
+  applyOdorGain(next.profile, Math.min(18, 4 + Math.log10(Math.max(1, amount)) * 4));
   chatState.characters[female] = next;
-  return { applied: true, message: `bsAddSperm applied to ${female}.` };
+  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent.` };
 }
 
 function applyDrainSperm(chatState, args) {

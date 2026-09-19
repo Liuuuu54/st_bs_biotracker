@@ -47,6 +47,49 @@ test('bsSetCharacterPresence 的 isPresent：schema 与实作一致要求必填'
   assert.equal(call(one(), 'bsSetCharacterPresence', { female: 'A', isPresent: false }).applied, true);
 });
 
+test('bsImplantEmbryo.count 明确是胎儿卡数而非卵群枚数', () => {
+  const tool = toolOf('bsImplantEmbryo');
+  assert.match(tool.description, /count 只表示要建立几张胎儿卡/);
+  assert.match(tool.description, /十枚卵.*count=1/);
+  assert.match(tool.input_schema.properties.count.description, /有效后代候选数/);
+  assert.match(tool.input_schema.properties.count.description, /不是卵群中的卵枚数/);
+});
+
+test('bsAddSperm 以 insert / deposit / withdraw 驱动插入状态机', () => {
+  const fresh = state.createDefaultFemaleState('新角色');
+  assert.equal(fresh.profile.base.penetrationState, 'idle');
+  assert.equal(fresh.profile.base.penetrationSource, null);
+
+  const chatState = one();
+  const args = { female: 'A', male: 'B', race: '人类' };
+  const tool = toolOf('bsAddSperm');
+  assert.ok(tool.input_schema.required.includes('action'));
+  assert.deepEqual(tool.input_schema.properties.action.enum, ['insert', 'deposit', 'withdraw']);
+
+  assert.equal(call(chatState, 'bsAddSperm', { ...args, action: 'deposit', amount: 20 }).applied, false, '未插入不能沉积');
+  assert.equal(call(chatState, 'bsAddSperm', { ...args, action: 'insert', amount: 0 }).applied, true);
+  assert.equal(chatState.characters.A.profile.base.penetrationState, 'inserted');
+  assert.equal(chatState.characters.A.profile.base.penetrationSource, 'B');
+  assert.equal(chatState.characters.A.profile.base.sperms.length, 0, '插入本身不增加精液');
+  assert.equal(call(chatState, 'bsAddSperm', { ...args, male: 'C', action: 'insert', amount: 0 }).applied, true);
+  assert.equal(chatState.characters.A.profile.base.penetrationSource, 'C', '不同来源 insert 应原子交棒');
+  assert.equal(call(chatState, 'bsAddSperm', { ...args, action: 'deposit', amount: 20 }).applied, false, '旧来源不能替新来源沉积');
+  assert.equal(call(chatState, 'bsAddSperm', { ...args, action: 'withdraw', amount: 0 }).applied, false, '旧来源不能替新来源拔出');
+  assert.equal(call(chatState, 'bsAddSperm', { ...args, action: 'insert', amount: 0 }).applied, true, '可以再交棒回原来源');
+
+  assert.equal(call(chatState, 'bsAddSperm', { ...args, action: 'deposit', amount: 20 }).applied, true);
+  assert.equal(chatState.characters.A.profile.base.penetrationState, 'spent');
+  assert.equal(chatState.characters.A.profile.base.sperms[0].value, 20);
+  assert.equal(call(chatState, 'bsAddSperm', { ...args, action: 'deposit', amount: 20 }).applied, false, '沉积后不得连续重复');
+
+  call(chatState, 'bsAddSperm', { ...args, action: 'insert', amount: 0 });
+  assert.equal(call(chatState, 'bsAddSperm', { ...args, action: 'deposit', amount: 10 }).applied, true, '重新 insert 后可再次沉积');
+  assert.equal(chatState.characters.A.profile.base.sperms[0].value, 30);
+  assert.equal(call(chatState, 'bsAddSperm', { ...args, action: 'withdraw', amount: 0 }).applied, true);
+  assert.equal(chatState.characters.A.profile.base.penetrationState, 'idle');
+  assert.equal(chatState.characters.A.profile.base.penetrationSource, null);
+});
+
 test('bsSetMenstrualPhases 说明列出的阶段，正好就是实作接受的阶段', () => {
   const description = toolOf('bsSetMenstrualPhases').description;
   const accepted = ['卵泡期', '排卵期', '黄体期', '月经期', '产后恢复', '假孕期'];

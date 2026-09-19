@@ -106,7 +106,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '如果只是心理数值变化，使用 bsUpdatePsychology；其数值参数一律表示变化量(delta)而不是目标值，例如当前为 78 时传 2 会变成 80。应优先做单一心理项的小幅调整，单次建议只动一个字段，幅度尽量控制在 ±1 到 ±3，±5 已属于偏大变化。每名角色在每个新小时内仅允许一次成功的 bsUpdatePsychology 变化，重复调用会被跳过。如果只是经验或关系记录变化，使用 bsUpdateExperience。',
   '如果只是描述文字变化，使用 bsSetDescription。',
   '剧情中出现穿上、脱下、更衣、借穿、被脱除、淋湿更换、洗浴后重新着装等衣着变化时，必须用 bsChangeOutfit 同步当前穿着；只更新衣着描述文字而不换装是错误的。角色获得新长期衣物用 bsAddWardrobeItem，永久失去衣物用 bsRemoveWardrobeItem。',
-  '性交留精用 bsAddSperm；排出残留精液用 bsDrainSperm；缓解生理需求用 bsExcreteMetabolism。',
+  '可受孕生殖道的插入／精液沉积／拔出用 bsAddSperm 状态机；排出既有残留精液用 bsDrainSperm；缓解生理需求用 bsExcreteMetabolism。',
   '跨日、重大事件或 notify 提醒时，可用 bsWriteDiary 为角色追加主观日记。',
   '月经阶段、排卵期、假孕期切换用 bsSetMenstrualPhases；不要用它覆盖正在进行的受精、真妊娠或产程。',
   '流产用 bsAbortion；立即结束分娩用 bsChildbirth；角色在场状态变化用 bsSetCharacterPresence，参数必须为 female 和 isPresent（布尔值 true/false，不要使用 isHere）。角色明确回到当前场景、重新同行或参与当前互动时应设为 true；明确离开、失联或转为幕外时才设为 false。',
@@ -344,6 +344,19 @@ export function normalizeCharacterPsychologyState(characterState) {
   characterState.profile.skills = normalizeSkillList(characterState.profile.skills);
   characterState.profile.talents = normalizeTalentList(characterState.profile.talents);
   characterState.profile.skillHistory = normalizeSkillHistory(characterState.profile.skillHistory);
+  characterState.profile.base = characterState.profile.base && typeof characterState.profile.base === 'object'
+    ? characterState.profile.base
+    : {};
+  const penetrationState = ['idle', 'inserted', 'spent'].includes(characterState.profile.base.penetrationState)
+    ? characterState.profile.base.penetrationState
+    : 'idle';
+  const penetrationSource = String(characterState.profile.base.penetrationSource || '').trim();
+  characterState.profile.base.penetrationState = penetrationState !== 'idle' && penetrationSource
+    ? penetrationState
+    : 'idle';
+  characterState.profile.base.penetrationSource = characterState.profile.base.penetrationState === 'idle'
+    ? null
+    : penetrationSource;
   if (characterState.profile.childSource && typeof characterState.profile.childSource === 'object' && !Array.isArray(characterState.profile.childSource)) {
     const motherName = String(characterState.profile.childSource.motherName || '').trim();
     const childIndex = Number(characterState.profile.childSource.childIndex);
@@ -696,6 +709,8 @@ export function createDefaultFemaleState(name = '') {
         days: 0,
         fertilizationDays: 0,
         latestSexDays: null,
+        penetrationState: 'idle',
+        penetrationSource: null,
         age: 15,
         stage: null,
         race: '人类',
@@ -1547,6 +1562,8 @@ function createSnapshotCharacterBaseline(name = '') {
         days: 0,
         fertilizationDays: 0,
         latestSexDays: null,
+        penetrationState: 'idle',
+        penetrationSource: null,
         age: 15,
         stage: null,
         race: '人类',

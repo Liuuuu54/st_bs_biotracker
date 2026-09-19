@@ -37,7 +37,7 @@ test('bsAddSperm 负 amount 被拒绝且不改性行为字段', () => {
   const cs = makeChatState(makeCharacter({
     base: { stage: '卵泡期', days: 3, race: '人类', sperms: [{ male: 'A', race: '人类', value: 20 }] },
   }));
-  const result = applyToolCall(cs, { name: 'bsAddSperm', arguments: { female: 'F', male: 'A', race: '人类', amount: -5 } });
+  const result = applyToolCall(cs, { name: 'bsAddSperm', arguments: { female: 'F', male: 'A', race: '人类', action: 'deposit', amount: -5 } });
   assert.equal(result.applied, false);
   assert.match(result.message, /bsDrainSperm/);
   assert.equal(cs.characters.F.profile.base.latestSexDays, undefined);
