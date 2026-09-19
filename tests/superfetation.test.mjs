@@ -66,6 +66,7 @@ test('孕早期可以再次受精，新胚胎带 superfetation 标签且待著�
   assert.ok(late.conceivedAtDays > 0, '要记下受精当下的共用时钟');
   assert.deepEqual(deriveFetusTags(late, { carrierName: 'A' }), ['superfetation']);
   assert.equal(P(chatState).pregnant.fetuses.length, 2, '先来那胎不受影响');
+  assert.equal(P(chatState).base.sperms[0].value, 90, '受精只读取有效精液量，不得额外扣除或清空可见残留');
 });
 
 test('胎重按落后进度打折，且乘在既有的种族混血偏移之上', () => {

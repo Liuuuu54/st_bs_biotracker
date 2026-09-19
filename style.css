@@ -4304,7 +4304,7 @@
   white-space: nowrap;
 }
 
-/* ── 精液来源占比环 ────────────────────────────────────────
+/* ── 精液来源占比环（单一或多个来源统一呈现） ──────────────
    同一个 currentColor 的阶梯透明度 + 分隔缺口，不引入新色盘，
    12 套主题下都读得出来。 */
 #bs-biotracker-settings .bs-bt-sperm-share {
@@ -4354,11 +4354,24 @@
 }
 
 #bs-biotracker-settings .bs-bt-sperm-share__name {
-  flex: 1 1 auto;
-  min-width: 0;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__identity {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-sperm-share__race {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85em;
+  opacity: 0.62;
 }
 
 #bs-biotracker-settings .bs-bt-sperm-share__pct {

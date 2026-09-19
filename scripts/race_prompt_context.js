@@ -36,6 +36,7 @@ export const CLUTCH_SIZE_DEFINITION_PROMPT = [
   '- clutchSize 是一张胎儿卡所代表的整群卵／幼体数量，不是 fetusesCount，也不是最后建立的孩子人数。',
   '- 这群中只有该胎儿卡对应的一个个体能成功长大并繁衍；剧情可描写产下整群卵，但分娩与族谱只建立一名有效后代，不要为每枚卵新增胎儿卡或孩子。',
   '- 胎生与胎转卵生恒为 1。其他胚型是否高产由种族的典型卵群数量决定，不能只因属于卵生、卵胎生或不定型就自行增加。',
+  '- 自然受精时，当下胜出精源的有效精液量会影响卵群：20 为标准量，10／30／40 分别约为 0.75／1.25／1.5 倍，再叠加约 ±10% 生理波动。受精不会因此扣除或清空可见精液残留。',
 ].join('\n');
 
 /**
@@ -289,7 +290,7 @@ function buildSingleRacePhysiologyBlock(race) {
     `- 承载耐受: ${getBreedToleranceText(profile.breedTolerance)}（数值 ${formatNumber(profile.breedTolerance)}；越高则孕期越不被削弱）`,
     `- 受精难度: ${getImpregnationDifficultyText(profile.impregnationDifficulty)}`,
     `- 遗传核型: ${getInheritanceModeText(race)}`,
-    `- 典型卵群数量: ${formatNumber(getClutchSizeMeanByRace(race))}（实际每次受孕会在约 ±25% 内固化；均值 1 恒为 1）`,
+    `- 典型卵群数量: ${formatNumber(getClutchSizeMeanByRace(race))}（自然受精会依有效精液量调整后再作约 ±10% 波动；均值 1 恒为 1）`,
     `- 多产性: ${getProlificacyText(profile.orgasmOvulationAmount, profile.identicalProbability)}；额外排卵倾向 ${formatNumber(profile.orgasmOvulationAmount)}，同卵多胎概率 ${formatNumber(profile.identicalProbability)}%`,
     `- 性别比: ${getGenderRatioText(profile.genderRatio)}`,
   ].filter(Boolean).join('\n');

@@ -53,6 +53,7 @@ import {
   getDerivedTypeMetabolismExemptions,
   getEmbryoTypeByRace,
   getMergedRacePhysiologyProfile,
+  getSpermDoseDifficultyBonus,
   rollClutchSizeForRace,
   parseRaceDescriptor,
   getRaceDescriptorComponents,
@@ -357,7 +358,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + '必须按状态机使用：action=insert 且 amount=0 进入 inserted；只有 inserted 才能 action=deposit 且 amount>0，成功后进入 spent 并禁止连续重复沉积；下一轮沉积前须再次 insert；action=withdraw 且 amount=0 才回到 idle。'
       + '当前已有其他来源时，不同来源的 insert 视为原子交棒：旧来源已经拔出、新来源立即接手，penetrationSource 直接覆写，不建立多人列表。旧来源之后不能替新来源 deposit 或 withdraw。'
       + 'inserted 与 spent 都表示仍在插入，可供未来子宫 SVG 显示；deposit 不等于自动拔出。'
-      + 'amount 建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
+      + 'amount 建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；当下有效量越高，本次受孕越容易且高产物种的卵群可能越大，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
       + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
     input_schema: {
       type: 'object',
@@ -1585,7 +1586,7 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     gender,
     embryoType: deriveFetusEmbryoType(fetusRace),
     // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
-    clutchSize: rollClutchSizeForRace(fetusRace),
+    clutchSize: rollClutchSizeForRace(fetusRace, Math.random, sperm?.value),
     weight: getConceptionWeight(cycleStage, gender, weightRatio),
     tendencyAngle: randomInt(0, 360),
     affinity: derivedSeed.affinity,
@@ -2008,6 +2009,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
 
   while (eggs > 0 && availableSperms.length > 0) {
     const totalSperm = availableSperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
+    const spermDoseBonus = getSpermDoseDifficultyBonus(totalSperm);
     let winner = null;
     for (const sperm of availableSperms) {
       const share = totalSperm > 0 ? clampNumber(sperm?.value, 0, 999999, 0) / totalSperm : 0;
@@ -2017,6 +2019,8 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
       const femaleEmbryoType = deriveFetusEmbryoType(profile?.base?.race);
       const maleEmbryoType = deriveFetusEmbryoType(sperm?.race);
       if (femaleEmbryoType !== maleEmbryoType) effectiveDifficulty *= 1.5;
+      // 精液绝对量只改变本次有效难度；成功受精不扣除可见残留，仍由生命周期自然衰减。
+      effectiveDifficulty /= spermDoseBonus;
       const spermBaseChance = Math.max(0.001, Math.min(0.8, (deltaDays * 12 * 0.5) / effectiveDifficulty));
       const spermChance = Math.max(0, Math.min(0.8, spermBaseChance * share * chanceFactor));
       if (spermChance > 0 && Math.random() <= spermChance) {

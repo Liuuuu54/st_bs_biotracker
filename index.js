@@ -3494,11 +3494,11 @@ function renderTrackPsychology(viewModel) {
 }
 
 /**
- * 精液来源的占比环：两个以上来源才画——只有一个来源时整圈都是他，看不出资讯。
+ * 精液来源统一使用占比环；单一来源也画完整一圈，不再退回精子卡片。
  *
  * 画的是「残留量占总量的比例」，这正是引擎里的 share 项：受精判定时每个来源的
- * 命中率会乘上自己的 share。但 share 不等于最终中奖率——同族／异族、胎生卵生
- * 不同还会各自乘上难度系数，所以这里只标占比，不标机率。
+ * 命中率会乘上自己的 share。但 share 不等于最终中奖率——总有效量、同族／异族、
+ * 胎生卵生不同还会各自影响难度，所以这里只标占比，不标机率。
  *
  * 不引入新色盘：12 套主题的配色差异太大，固定色系一定会跟某几套打架。
  * 改用同一个 currentColor 的阶梯透明度加分隔缺口，任何主题下都读得出来。
@@ -3507,10 +3507,14 @@ const SPERM_SHARE_STEPS = [1, 0.68, 0.46, 0.32, 0.22, 0.16];
 
 function renderSpermShareChart(sperms) {
   const items = (Array.isArray(sperms) ? sperms : [])
-    .map((item) => ({ male: String(item?.male || '未知'), value: Math.max(0, Number(item?.value) || 0) }))
+    .map((item) => ({
+      male: String(item?.male || '未知'),
+      raceLabel: formatRaceLabel(item?.race, item?.derivedType),
+      value: Math.max(0, Number(item?.value) || 0),
+    }))
     .filter((item) => item.value > 0)
     .sort((a, b) => b.value - a.value);
-  if (items.length < 2) return '';
+  if (items.length === 0) return '';
 
   const total = items.reduce((sum, item) => sum + item.value, 0);
   if (total <= 0) return '';
@@ -3534,7 +3538,10 @@ function renderSpermShareChart(sperms) {
   const legend = items.map((item, index) => `
     <div class="bs-bt-sperm-share__row">
       <span class="bs-bt-sperm-share__swatch" style="opacity:${SPERM_SHARE_STEPS[index % SPERM_SHARE_STEPS.length]}"></span>
-      <span class="bs-bt-sperm-share__name">${escapeHtml(item.male)}</span>
+      <span class="bs-bt-sperm-share__identity">
+        <span class="bs-bt-sperm-share__name">${escapeHtml(item.male)}</span>
+        <span class="bs-bt-sperm-share__race">${escapeHtml(item.raceLabel)}</span>
+      </span>
       <span class="bs-bt-sperm-share__pct">${Math.round((item.value / total) * 100)}%</span>
       <span class="bs-bt-sperm-share__val">${Math.round(item.value)}</span>
     </div>
@@ -3548,6 +3555,16 @@ function renderSpermShareChart(sperms) {
         <text x="40" y="50" text-anchor="middle" class="bs-bt-sperm-share__unit">总残留</text>
       </svg>
       <div class="bs-bt-sperm-share__legend">${legend}</div>
+    </div>
+  `;
+}
+
+function renderSpermShareSection(sperms, badge = '') {
+  const chart = renderSpermShareChart(sperms);
+  return `
+    <div class="bs-bt-track-section">
+      <div class="bs-bt-track-section-title">${renderTrackTitle('精液来源', badge)}</div>
+      ${chart || '<div class="bs-bt-track-card-empty">当前无精液残留</div>'}
     </div>
   `;
 }
@@ -3592,19 +3609,7 @@ function renderTrackPregnancy(viewModel) {
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">说明</span><span class="bs-bt-track-meta-value">${escapeHtml(gestationModifier.description || '无')}</span></div>
       </div>
     </div>` : ''}
-    ${renderCardCarouselSection(
-      '精液来源',
-      data.sperms,
-      (item, index) => `<div class="bs-bt-track-card">
-          <div class="bs-bt-track-card-title">来源 ${index + 1}</div>
-          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">对象</span><span class="bs-bt-track-list-value">${escapeHtml(item?.male || '未知')}</span></div>
-          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">种族</span><span class="bs-bt-track-list-value">${escapeHtml(formatRaceLabel(item?.race, item?.derivedType))}</span></div>
-          <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">残留量</span><span class="bs-bt-track-list-value">${Math.round(Number(item?.value) || 0)}</span></div>
-        </div>`,
-      '当前无精液残留',
-      'sperms',
-      { badge: fertilityBadge, lead: renderSpermShareChart(data.sperms) },
-    )}
+    ${renderSpermShareSection(data.sperms, fertilityBadge)}
     ${data.showPregnantFields
       ? `${renderCardCarouselSection(
             '胎儿信息',

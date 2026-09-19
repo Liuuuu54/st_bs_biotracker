@@ -64,6 +64,11 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /function updateWardrobeAddTypeFields\(\)/);
   assert.match(controller, /function renderFetalTalentDebugEditor\(/);
   assert.match(controller, /function renderTrackDebug\(viewModel, fetalTalentHtml = ''\)/);
+  assert.match(controller, /function renderSpermShareSection\(sperms, badge = ''\)/);
+  assert.ok(controller.includes('${renderSpermShareSection(data.sperms, fertilityBadge)}'));
+  assert.doesNotMatch(controller, /renderCardCarouselSection\(\s*'精液来源'/, '精液来源不应再走卡片轮播');
+  assert.match(controller, /if \(items\.length === 0\) return '';/, '单一精液来源也必须显示占比环');
+  assert.match(controller, /bs-bt-sperm-share__race/, '圆饼图图例应保留来源种族');
   assert.match(controller, /id="bs-bt-debug-conception-mode"/);
   for (const mode of ['normal', 'surrogacy', 'womb_return', 'superfetation', 'nested']) {
     assert.match(controller, new RegExp(`${mode}: \\{ label:`));

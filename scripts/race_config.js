@@ -1516,10 +1516,26 @@ export function getClutchSizeMeanByRace(race) {
   return Math.exp(values.reduce((sum, value) => sum + Math.log(value), 0) / values.length);
 }
 
-/** 受孕时抽一次并落盘；均值 1 是硬特例，不受 ±25% 与整数取整影响。 */
-export function rollClutchSizeForRace(race, random = Math.random) {
+/**
+ * 精液量 20 视为标准剂量；10／20／30／40 分别对应 0.75／1／1.25／1.5 倍卵群。
+ * 这里只读取受精当下的有效量，不代表液体被胚胎消耗。
+ */
+export function getSpermDoseClutchMultiplier(spermValue = 20) {
+  const dose = Number.isFinite(Number(spermValue)) ? Math.max(0, Number(spermValue)) : 20;
+  return Math.max(0.5, Math.min(1.5, 0.5 + (dose / 40)));
+}
+
+/** 总有效精液量动态降低本次受孕难度；标准量 20 为 1 倍，最多提供 2 倍成功率。 */
+export function getSpermDoseDifficultyBonus(totalSperm) {
+  const dose = Number.isFinite(Number(totalSperm)) ? Math.max(0, Number(totalSperm)) : 0;
+  return Math.max(0.5, Math.min(2, Math.sqrt(dose / 20)));
+}
+
+/** 受孕时抽一次并落盘；均值 1 是硬特例，不受剂量、±10% 波动与整数取整影响。 */
+export function rollClutchSizeForRace(race, random = Math.random, spermValue = 20) {
   const mean = getClutchSizeMeanByRace(race);
   if (!Number.isFinite(mean) || mean <= 1) return 1;
-  const raw = mean * (0.75 + (Math.max(0, Math.min(1, Number(random()) || 0)) * 0.5));
+  const variation = 0.9 + (Math.max(0, Math.min(1, Number(random()) || 0)) * 0.2);
+  const raw = mean * getSpermDoseClutchMultiplier(spermValue) * variation;
   return Math.max(1, Math.min(12500, Math.round(raw)));
 }

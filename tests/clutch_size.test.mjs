@@ -5,6 +5,8 @@ import {
   getClutchSizeMeanByRace,
   getEmbryoTypeByRace,
   getRacePhysiologyProfile,
+  getSpermDoseClutchMultiplier,
+  getSpermDoseDifficultyBonus,
   rollClutchSizeForRace,
   setRacePhysiologyOverrides,
 } from '../scripts/race_config.js';
@@ -39,9 +41,26 @@ test('混血先由最长孕期决定胚型，再决定是否计算几何平均',
 test('百科覆写会改变卵群计算，均值 1 永远不会被随机成 2', () => {
   setRacePhysiologyOverrides({ 怪鸟类: { clutchSizeMean: 8 } });
   assert.equal(getClutchSizeMeanByRace('怪鸟类'), 8);
-  assert.equal(rollClutchSizeForRace('怪鸟类', () => 0), 6);
-  assert.equal(rollClutchSizeForRace('怪鸟类', () => 1), 10);
+  assert.equal(rollClutchSizeForRace('怪鸟类', () => 0), 7);
+  assert.equal(rollClutchSizeForRace('怪鸟类', () => 1), 9);
   assert.equal(rollClutchSizeForRace('妖精', () => 1), 1);
+});
+
+test('精液有效量影响受孕难度与多卵群，但不会突破单卵硬规则', () => {
+  assert.equal(getSpermDoseClutchMultiplier(10), 0.75);
+  assert.equal(getSpermDoseClutchMultiplier(20), 1);
+  assert.equal(getSpermDoseClutchMultiplier(30), 1.25);
+  assert.equal(getSpermDoseClutchMultiplier(40), 1.5);
+  assert.equal(getSpermDoseClutchMultiplier(1000), 1.5, '卵群剂量倍率必须封顶');
+  assert.equal(getSpermDoseDifficultyBonus(5), 0.5);
+  assert.equal(getSpermDoseDifficultyBonus(20), 1);
+  assert.equal(getSpermDoseDifficultyBonus(80), 2);
+  assert.equal(getSpermDoseDifficultyBonus(1000), 2, '受孕加成必须封顶');
+
+  assert.equal(rollClutchSizeForRace('怪鸟类', () => 0.5, 10), 3);
+  assert.equal(rollClutchSizeForRace('怪鸟类', () => 0.5, 20), 4);
+  assert.equal(rollClutchSizeForRace('怪鸟类', () => 0.5, 40), 6);
+  assert.equal(rollClutchSizeForRace('妖精', () => 0.5, 40), 1);
 });
 
 test('高产卵群分娩仍只建立一名族谱后代', () => {
