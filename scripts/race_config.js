@@ -1475,6 +1475,20 @@ export function deriveFetusRace(eggRace, spermRace) {
   return combineRaceDescriptors(spermRace, eggRace);
 }
 
+/**
+ * 只有精卵双方恰有一方使用特殊核型时，胚胎才属于雄核或雌核发生。
+ * 双方皆一般或双方皆有特殊核型时依九格规则形成混血，不附核型标签。
+ */
+export function getFetusInheritanceTag(eggRace, spermRace) {
+  const eggMode = getRaceInheritanceMode(eggRace);
+  const spermMode = getRaceInheritanceMode(spermRace);
+  const eggHasNucleus = eggMode !== RACE_INHERITANCE_MODES.NORMAL;
+  const spermHasNucleus = spermMode !== RACE_INHERITANCE_MODES.NORMAL;
+  if (eggHasNucleus === spermHasNucleus) return null;
+  const activeMode = eggHasNucleus ? eggMode : spermMode;
+  return activeMode === RACE_INHERITANCE_MODES.PATERNAL ? 'androgenesis' : 'gynogenesis';
+}
+
 export function getEmbryoTypeByRace(race) {
   const parts = getRaceComponents(race);
   if (parts.length === 0) return '胎生';

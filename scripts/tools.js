@@ -12,6 +12,7 @@ import {
   getSettings,
   getVitalityInitByLevel,
   saveSettings,
+  setConceptionCue,
   summarizeOperationLogs,
   summarizeRawResult,
   syncCharacterStageFromProfile,
@@ -48,6 +49,7 @@ import {
 } from './stage_config.js';
 import {
   deriveFetusRace,
+  getFetusInheritanceTag,
   getBaseRaceName,
   getDerivedTypeInheritanceProfile,
   getDerivedTypeMetabolismExemptions,
@@ -376,9 +378,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   {
     name: 'bsAddSperm',
     description: '记录可受孕生殖道内的插入、精液沉积与拔出；口交、肛交、体外射精、隔着保险套、手淫或单纯体表接触一律不要调用。'
-      + '必须按状态机使用：action=insert 且 amount=0 进入 inserted；只有 inserted 才能 action=deposit 且 amount>0，成功后进入 spent 并禁止连续重复沉积；下一轮沉积前须再次 insert；action=withdraw 且 amount=0 才回到 idle。'
-      + '当前已有其他来源时，不同来源的 insert 视为原子交棒：旧来源已经拔出、新来源立即接手，penetrationSource 直接覆写，不建立多人列表。旧来源之后不能替新来源 deposit 或 withdraw。'
-      + 'inserted 与 spent 都表示仍在插入，可供未来子宫 SVG 显示；deposit 不等于自动拔出。'
+      + 'action=insert／withdraw 时 amount=0；只有 insert 后才能以 action=deposit 沉积正数精液，沉积后若要再次射精须重新 insert。不同来源 insert 会直接交棒。'
       + 'amount 建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；当下有效量越高，本次受孕越容易且高产物种的卵群可能越大，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
       + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
     input_schema: {
@@ -932,6 +932,7 @@ function applyWombReturn(chatState, args) {
     talents: normalizeTalentList(returnerProfile.talents),
   }];
   pregnant.fetusesCount = 1;
+  setConceptionCue(profile, 'rebirth');
 
   // 不能静默把垃圾值当成 0：那会让「传错参数」变成「瞬间完成回归」，
   // 与本档其他工具要求显式传值的做法一致
@@ -1466,7 +1467,10 @@ function applyChimeraFusion(profile, carrierName) {
       nextId += 1;
     }
   }
-  if (fused.length > 0) pregnant.fetuses = [...fetuses.filter((fetus) => !consumed.has(fetus.embryoId)), ...fused];
+  if (fused.length > 0) {
+    pregnant.fetuses = [...fetuses.filter((fetus) => !consumed.has(fetus.embryoId)), ...fused];
+    setConceptionCue(profile, 'chimera');
+  }
   pregnant.fetusesCount = pregnant.fetuses.length;
 }
 
@@ -1481,6 +1485,7 @@ function forceChimeraFusion(profile, carrierName, batch) {
   const consumed = new Set([fetusA, fetusB]);
   pregnant.fetuses = [...fetuses.filter((fetus) => !consumed.has(fetus)), chimera];
   pregnant.fetusesCount = pregnant.fetuses.length;
+  setConceptionCue(profile, 'chimera');
   return [...sources.filter((fetus) => !consumed.has(fetus)), chimera];
 }
 
@@ -1589,6 +1594,7 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
   const motherRace = parseRaceDescriptor(geneticProfile?.base?.race || '人类').race || '人类';
   const fatherRace = parseRaceDescriptor(sperm?.race || motherRace || '人类').race || motherRace || '人类';
   const fetusRace = deriveFetusRace(motherRace, fatherRace);
+  const inheritanceTag = getFetusInheritanceTag(motherRace, fatherRace);
   const gender = deriveFetusGender(fetusRace);
   const weightRatio = getConceptionWeightRatio(profile, sperm);
   const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
@@ -1598,7 +1604,7 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     embryoId: null,
     fusionCheckedWith: [],
     // 嵌合／代孕／自交都能从既有栏位推导，不写进来；这里只留给推导不出来的标签
-    tags: [],
+    tags: inheritanceTag ? [inheritanceTag] : [],
     fathers: String(sperm?.male || '未知'),
     // 自然受精恒为 null；代孕／注卵由植入工具指定归属
     provider: options.provider ? String(options.provider) : null,
@@ -2064,6 +2070,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
       if (nestedHost) markNestedFetus(profile, fetus, nestedHost);
       else if (superfetation) markSuperfetationFetus(profile, fetus);
       pregnant.fetuses.push(fetus);
+      setConceptionCue(profile, nestedHost ? 'nested' : 'fertilization');
       notify.secondly = nestedHost
         ? `${name}体内的一胎之中又结出了新的受精卵`
         : (superfetation ? `${name}在妊娠中再度受精` : `${name}受精成功`);
@@ -3976,6 +3983,7 @@ function applyImplantEmbryo(chatState, args) {
       ? `${female}在孕早期追加了${count}个来自${provider}的代孕异期胚胎，正等待共同著床窗口`
       : `${female}加入了${count}个来自${provider}的受精卵，正等待共同著床窗口`,
   };
+  setConceptionCue(profile, 'surrogacy');
 
   next.profile = profile;
   chatState.characters[female] = syncCharacterStageFromProfile(next);
@@ -5730,6 +5738,15 @@ function applyDebugInjectPregnancy(chatState, args) {
   const injectedBatch = forceChimera ? forceChimeraFusion(profile, female, fetuses) : fetuses;
   if (forceIdentical) forceIdenticalTwinSplit(profile, injectedBatch);
   pregnant.fetusesCount = pregnant.fetuses.length;
+  if (!forceChimera) {
+    setConceptionCue(profile, mode === 'womb_return'
+      ? 'rebirth'
+      : mode === 'surrogacy'
+        ? 'surrogacy'
+        : mode === 'nested'
+          ? 'nested'
+          : 'fertilization');
+  }
   if (isAdditionalConception) {
     if (!hadPendingImplantation) base.fertilizationDays = 0;
     applyPregnancyPhysiology(profile, next.runtime || {});
@@ -6045,6 +6062,9 @@ export function applyToolCallsResult(ctx, result) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const toolCalls = Array.isArray(result?.tool_calls) ? result.tool_calls : [];
+  for (const character of Object.values(chatState.characters || {})) {
+    if (character?.profile) setConceptionCue(character.profile, null);
+  }
   const logs = [];
   for (const call of toolCalls) {
     const normalizedCall = {

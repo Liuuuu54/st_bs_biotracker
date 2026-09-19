@@ -311,6 +311,27 @@ function normalizeOutfitState(value, wardrobe) {
   };
 }
 
+export const CONCEPTION_CUE_VALUES = Object.freeze([
+  'fertilization', 'surrogacy', 'rebirth', 'chimera', 'nested',
+]);
+const CONCEPTION_CUE_PRIORITY = Object.freeze({
+  fertilization: 1, surrogacy: 2, nested: 3, chimera: 4, rebirth: 5,
+});
+
+export function setConceptionCue(profile, value) {
+  if (!profile || typeof profile !== 'object') return null;
+  if (value === null || value === undefined) {
+    profile.conceptionCue = null;
+    return profile.conceptionCue;
+  }
+  if (!CONCEPTION_CUE_VALUES.includes(value)) return profile.conceptionCue ?? null;
+  const current = CONCEPTION_CUE_VALUES.includes(profile.conceptionCue) ? profile.conceptionCue : null;
+  profile.conceptionCue = !current || CONCEPTION_CUE_PRIORITY[value] >= CONCEPTION_CUE_PRIORITY[current]
+    ? value
+    : current;
+  return profile.conceptionCue;
+}
+
 export function normalizeCharacterPsychologyState(characterState) {
   if (!characterState || typeof characterState !== 'object') return characterState;
   if (!characterState.profile || typeof characterState.profile !== 'object') return characterState;
@@ -318,6 +339,8 @@ export function normalizeCharacterPsychologyState(characterState) {
   characterState.profile.skills = normalizeSkillList(characterState.profile.skills);
   characterState.profile.talents = normalizeTalentList(characterState.profile.talents);
   characterState.profile.skillHistory = normalizeSkillHistory(characterState.profile.skillHistory);
+  const conceptionCue = characterState.profile.conceptionCue;
+  characterState.profile.conceptionCue = CONCEPTION_CUE_VALUES.includes(conceptionCue) ? conceptionCue : null;
   characterState.profile.base = characterState.profile.base && typeof characterState.profile.base === 'object'
     ? characterState.profile.base
     : {};
@@ -658,6 +681,7 @@ export function createDefaultFemaleState(name = '') {
     name: String(name || '').trim(),
     initialized: false,
     profile: {
+      conceptionCue: null,
       cooldown: {
         orgasmOvulationUsed: false,
         naturalOvulationUsed: false,
@@ -1510,6 +1534,7 @@ function createSnapshotCharacterBaseline(name = '') {
     name: String(name || '').trim(),
     initialized: false,
     profile: {
+      conceptionCue: null,
       cooldown: {
         orgasmOvulationUsed: false,
         naturalOvulationUsed: false,

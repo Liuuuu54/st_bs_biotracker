@@ -173,6 +173,25 @@ test('a simulated model response drives the full apply pipeline and refreshes th
   );
 });
 
+test('conceptionCue lasts for one tracker result and never enters the model payload', () => {
+  const ctx = makeContext();
+  const settings = state.getSettings(ctx);
+  const first = applyToolCallsResult(ctx, {
+    tool_calls: [{
+      name: 'bsImplantEmbryo',
+      arguments: { female: '艾拉', provider: '委托者', race: '人类', fathers: '父方', fatherRace: '人类', count: 1 },
+    }],
+  });
+  assert.equal(first.logs[0].applied, true, first.logs[0].message);
+  assert.equal(settings.chatStates[CHAT_KEY].characters['艾拉'].profile.conceptionCue, 'surrogacy');
+  state.setConceptionCue(settings.chatStates[CHAT_KEY].characters['艾拉'].profile, 'fertilization');
+  assert.equal(settings.chatStates[CHAT_KEY].characters['艾拉'].profile.conceptionCue, 'surrogacy', 'lower-priority cue cannot hide the more specific image');
+  assert.equal(buildTrackerPayload(ctx, settings).existing_state['艾拉'].profile.conceptionCue, undefined);
+
+  applyToolCallsResult(ctx, { tool_calls: [] });
+  assert.equal(settings.chatStates[CHAT_KEY].characters['艾拉'].profile.conceptionCue, null);
+});
+
 test('empty description patches are a no-op instead of wiping the field', () => {
   const ctx = makeContext();
   const settings = state.getSettings(ctx);

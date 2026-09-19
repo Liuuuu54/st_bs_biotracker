@@ -7,6 +7,7 @@ import {
   ALL_BUILTIN_RACES,
   RACE_INHERITANCE_MODES,
   deriveFetusRace,
+  getFetusInheritanceTag,
   getEmbryoTypeByRace,
   getRaceInheritanceMode,
   getRacePhysiologyProfile,
@@ -117,6 +118,16 @@ test('精方与卵方核型依完整九格矩阵决定胎儿种族', () => {
   }
 });
 
+test('只有单侧特殊核型会产生雄核或雌核胎儿标签', () => {
+  assert.equal(getFetusInheritanceTag('人类', '哥布林'), 'androgenesis');
+  assert.equal(getFetusInheritanceTag('哥布林', '人类'), 'androgenesis');
+  assert.equal(getFetusInheritanceTag('人类', '媚魔'), 'gynogenesis');
+  assert.equal(getFetusInheritanceTag('媚魔', '人类'), 'gynogenesis');
+  assert.equal(getFetusInheritanceTag('人类', '精灵'), null);
+  assert.equal(getFetusInheritanceTag('狗头人', '哥布林'), null);
+  assert.equal(getFetusInheritanceTag('心魇', '媚魔'), null);
+});
+
 test('混血固定一般，装饰子项继承纯种核型，旧称不兼容', () => {
   assert.equal(getRaceInheritanceMode('哥布林x人类'), RACE_INHERITANCE_MODES.NORMAL);
   assert.equal(getRaceInheritanceMode('怪兽类-狼'), RACE_INHERITANCE_MODES.PATERNAL);
@@ -148,7 +159,10 @@ test('植入胚胎按遗传卵方与精方核型计算，承载者不混入血�
     name: 'bsImplantEmbryo',
     arguments: { female: '人类宿主', provider: '媚魔卵源', fathers: '人类父亲', fatherRace: '人类' },
   });
-  assert.equal(maternalState.characters['人类宿主'].profile.pregnant.fetuses[0].race, '媚魔');
+  const maternalFetus = maternalState.characters['人类宿主'].profile.pregnant.fetuses[0];
+  assert.equal(maternalFetus.race, '媚魔');
+  assert.deepEqual(maternalFetus.tags, ['gynogenesis']);
+  assert.equal(maternalState.characters['人类宿主'].profile.conceptionCue, 'surrogacy');
 
   const paternalState = state.createEmptyChatState();
   paternalState.characters['精灵宿主'] = makeHost('精灵宿主', '精灵');
@@ -157,5 +171,7 @@ test('植入胚胎按遗传卵方与精方核型计算，承载者不混入血�
     name: 'bsImplantEmbryo',
     arguments: { female: '精灵宿主', provider: '人类卵源', fathers: '哥布林父亲', fatherRace: '哥布林' },
   });
-  assert.equal(paternalState.characters['精灵宿主'].profile.pregnant.fetuses[0].race, '哥布林');
+  const paternalFetus = paternalState.characters['精灵宿主'].profile.pregnant.fetuses[0];
+  assert.equal(paternalFetus.race, '哥布林');
+  assert.deepEqual(paternalFetus.tags, ['androgenesis']);
 });
