@@ -328,10 +328,12 @@ test('full description update mode adds the strict tracker instruction', () => {
   assert.equal(prompt.includes('所有既有子字段'), true);
 });
 
-test('wardrobe preparation treats upper and lower garments as one main outfit', () => {
-  const prompt = buildWardrobePrepSystemPrompt({}, { wardrobePrepMainCount: 3, wardrobePrepAccessoryCount: 2 });
-  assert.equal(prompt.includes('完整套装，不是单件'), true);
-  assert.equal(prompt.includes('把上衣与下着合并为同一个 main'), true);
+test('wardrobe supplement stays small and uses semantic clothing fields', () => {
+  const prompt = buildWardrobePrepSystemPrompt({}, {});
+  assert.equal(prompt.includes('补充少量长期衣物'), true);
+  assert.equal(prompt.includes('fitProfile'), true);
+  assert.equal(prompt.includes('不改变当前穿着'), true);
+  assert.equal(prompt.includes('不要输出数值四维'), true);
 });
 
 test('psychology tool is hidden until a character has breeding stage profiles', () => {
@@ -356,13 +358,13 @@ test('tracker prompt omits psychology guidance when no breeding inference exists
   assert.equal(prompt.includes('bsUpdatePsychology'), false);
 });
 
-test('wardrobe and psychology tools reject targets without their opt-in state', () => {
+test('wardrobe is automatic while psychology still requires inferred stage profiles', () => {
   const chatState = state.createEmptyChatState();
   chatState.characters.Alice = state.createDefaultFemaleState('Alice');
   assert.equal(applyToolCall(chatState, {
     name: 'bsAddWardrobeItem',
-    arguments: { female: 'Alice', item: { id: 1, name: '外套', note: '黑色外套', slot: 'main', masking: 1, support: 0, capacity: 1, convenience: 1 } },
-  }).applied, false);
+    arguments: { female: 'Alice', item: { id: 1, name: '外套', note: '黑色外套', slot: 'accessory', category: 'outerwear', effects: ['masking_up'] } },
+  }).applied, true);
   assert.equal(applyToolCall(chatState, {
     name: 'bsUpdatePsychology',
     arguments: { female: 'Alice', options: { mens: { mastery: 1 } } },

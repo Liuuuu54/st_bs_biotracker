@@ -57,6 +57,11 @@ import {
   registerSkillDefinition,
   resolveSkillDefinition,
 } from './skill_config.js';
+import {
+  createDefaultWardrobeItem,
+  normalizeWardrobeItem,
+  sanitizeWearState,
+} from './wardrobe_config.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
 const DEBUG_LAST_REGISTRY_RESULT_KEY = '__bs_biotracker_debug_last_registry_result__';
@@ -438,51 +443,25 @@ export function buildBreedingInferenceSystemPrompt(settings, options = {}) {
 
 export function buildWardrobePrepSystemPrompt(settings, options = {}) {
   const userPrompt = String(options.wardrobePrepPrompt || settings?.wardrobePrepPrompt || '').trim();
-  const mainCount = Math.max(1, Math.min(12, Math.floor(Number(options.wardrobePrepMainCount ?? settings?.wardrobePrepMainCount ?? 3) || 3)));
-  const accessoryCount = Math.max(0, Math.min(12, Math.floor(Number(options.wardrobePrepAccessoryCount ?? settings?.wardrobePrepAccessoryCount ?? 3) || 0)));
   return [
-    '你是 AIRP 角色衣柜备装初始化器。',
-    '你只为 payload.target_character 生成衣柜 JSON，不得新增其他角色。',
-    '根据角色卡、世界书、最近对话、已注册状态、normalDescription/pregnantDescription 与衣柜记录中的服装线索，推断该角色合理拥有的长期衣物与当前穿着。',
-    `默认生成 ${mainCount} 套 main 主件、${accessoryCount} 件 accessory 配件；main 的计数单位是完整套装，不是单件。若用户额外提示指定更合理的数量或场景，可在接近该数量的范围内微调。`,
+    '你是 AIRP 角色衣柜补充器。只为 payload.target_character 补充少量长期衣物，不重建衣柜，不改变当前穿着。',
+    '根据用户要求选择最必要的项目；未指定数量时一般补充 2-4 项，避免为每个角色创建庞大专属衣柜。',
     '只输出 JSON，不要输出额外解释。',
-    'JSON 顶层结构必须是：',
-    '{',
-    '  "wardrobe": { "items": [] },',
-    '  "outfit": { "mainItemId": 1, "accessoryItemIds": [], "temporaryItems": [] }',
-    '}',
-    'wardrobe.items 只放长期衣柜，不要放系统保留的 id=0，也不要放病服、借来的外套、旅馆睡衣等临时衣物。',
-    '临时衣物如确实是当前穿着，放入 outfit.temporaryItems，并让 outfit.mainItemId 或 accessoryItemIds 指向其中 id；否则 temporaryItems 输出空数组。',
-    '每件衣物必须包含 id/name/note/slot/masking/support/capacity/convenience；main 主件可附 parts 数组列出组成部件名（如 ["白衬衫","牛仔裤"]，连身装可省略）；accessory 配件可附 layer（inner=贴身内衣等穿在主件之下，outer=外搭，默认 outer）。',
-    'note 只写衣物稳定外观与来源：颜色、材质、版型、长短、固定开口、图案、制服/病服/借装来源等。皮肤暴露、开衩、透肤、深领等稳定外观写在 note。禁止写当前穿着反应、角色感受、近期身体变化、怀孕/胀痛/压胸/勒红/变紧/显怀等动态状态；这些由四维、pregFit 与当轮叙事推导。',
-    'id 必须使用正整数，从 1 开始递增且不可重复；0 保留给全裸。name 使用中文或角色设定中的自然名称。',
-    'slot 只能是 main 或 accessory。main 是可独立穿着的完整基础套装：一般必须把上衣与下着合并为同一个 main（连身裙、连体衣等一体式服装除外），name 与 note 都要同时写出上下身；不得把卫衣/T恤与牛仔裤/裙子拆成彼此互斥的多个 main，也不得把下着塞进 accessory。main 的四维按整套效果评分。accessory 才是可独立叠加在 main 上的外套、鞋履、帽子、饰品、托腹带等配件补正。',
-    '可独立穿脱的外层（毛衣、开衫、外套、罩衫、披肩等罩在基础套装外面的衣物）不要并入 main 或写进 parts，应拆成 layer=outer 的 accessory，这样剧情中单独脱掉时才有机械表达；main 只保留脱掉外层后仍成立的基础层。',
-    '四维数值范围 -10 到 10：masking=掩盖身体曲线、孕肚、胸腹变化的程度；support=对胸、腹、腰、重心的承托程度，高表示托得住但可能偏束，低表示松散；capacity=容许体型变化的程度；convenience=行动、穿脱、如厕、哺乳或排解需求的方便程度。',
-    '主件通常使用 0 到 10；配件单项只能 -3 到 3，通常只影响 1-2 个最相关维度，其他维度必须填 0，避免把配件写成整套服装。',
-    '配件例：外套可提高 masking；托腹带可提高 support 或 capacity；高跟鞋可降低 convenience；鞋履通常不应大幅提高 support，除非 note 明确是矫正/固定用途。',
-    '配件中通常应包含 1-2 件 layer=inner 的贴身衣物（如内衣），其四维补正同样遵守 -3 到 3 的配件规则。',
-    'outfit.mainItemId 必须是 wardrobe.items 或 outfit.temporaryItems 中 slot=main 的 id；若无法判断当前穿着，选择最日常的一件主件。',
-    'outfit.accessoryItemIds 只能包含 slot=accessory 的 id；未知则空数组。',
-    '[用户额外备装提示]',
+    'JSON 顶层结构必须是：{"items": [...]}。',
+    'main 是完整基础套装，可附 parts，并使用 fitProfile 档位。accessory 使用 category 与最多两项 effects。',
+    'fitProfile：masking=very_low/low/medium/high，support=none/normal/strong，capacity=tight/fitted/stretch/loose，convenience=inconvenient/normal/convenient。',
+    'category：underwear/outerwear/footwear/headwear/ornament/support/other。effects：masking/support/capacity/convenience 加 _up 或 _down。',
+    'note 只写稳定外观与来源，不写当前反应或怀孕变化。不要输出数值四维。',
+    '[用户补充要求]',
     userPrompt || '无',
   ].join('\n');
 }
 
 function sanitizeWardrobePrepResult(result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('备装推演必须返回 JSON 对象');
-  const items = Array.isArray(result?.wardrobe?.items) ? result.wardrobe.items : [];
-  if (items.length <= 0) throw new Error('备装推演缺少 wardrobe.items');
-  const outfit = result?.outfit && typeof result.outfit === 'object' && !Array.isArray(result.outfit) ? result.outfit : null;
-  if (!outfit) throw new Error('备装推演缺少 outfit');
-  return {
-    wardrobe: { items },
-    outfit: {
-      mainItemId: Number.isInteger(Number(outfit.mainItemId)) ? Number(outfit.mainItemId) : 0,
-      accessoryItemIds: Array.isArray(outfit.accessoryItemIds) ? outfit.accessoryItemIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id >= 0) : [],
-      temporaryItems: Array.isArray(outfit.temporaryItems) ? outfit.temporaryItems : [],
-    },
-  };
+  const items = Array.isArray(result?.items) ? result.items : (Array.isArray(result?.wardrobe?.items) ? result.wardrobe.items : []);
+  if (items.length <= 0) throw new Error('衣柜补充缺少 items');
+  return { items };
 }
 
 async function runBreedingInference(settings, payload, options = {}) {
@@ -653,8 +632,6 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
   const customNotes = String(options.customNotes !== undefined ? options.customNotes : (settings.registryCustomNotes || '')).trim();
   const declaredRace = String(options.declaredRace || '').trim();
   const wardrobePrepPrompt = String(options.wardrobePrepPrompt || settings.wardrobePrepPrompt || '').trim();
-  const wardrobePrepMainCount = Math.max(1, Math.min(12, Math.floor(Number(options.wardrobePrepMainCount ?? settings.wardrobePrepMainCount ?? 3) || 3)));
-  const wardrobePrepAccessoryCount = Math.max(0, Math.min(12, Math.floor(Number(options.wardrobePrepAccessoryCount ?? settings.wardrobePrepAccessoryCount ?? 3) || 0)));
   const payload = await buildRegistryPayload(ctx, settings, chatState, {
     ...options,
     targetName,
@@ -664,11 +641,9 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
     userInstruction: wardrobePrepPrompt,
   });
   payload.wardrobe_prep_prompt = wardrobePrepPrompt;
-  payload.wardrobe_prep_main_count = wardrobePrepMainCount;
-  payload.wardrobe_prep_accessory_count = wardrobePrepAccessoryCount;
   payload.existing_wardrobe = chatState.characters[targetName]?.profile?.wardrobe || null;
   payload.existing_outfit = chatState.characters[targetName]?.profile?.outfit || null;
-  const systemPrompt = options.wardrobePrepSystemPrompt || buildWardrobePrepSystemPrompt(settings, { ...options, wardrobePrepPrompt, wardrobePrepMainCount, wardrobePrepAccessoryCount });
+  const systemPrompt = options.wardrobePrepSystemPrompt || buildWardrobePrepSystemPrompt(settings, { ...options, wardrobePrepPrompt });
   const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'wardrobe' });
   return sanitizeWardrobePrepResult(result);
 }
@@ -791,6 +766,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '4. 既有孩子记录：children',
     '5. 初登场即怀孕：pregnant.pregnantDays、pregnant.fetusesCount、pregnant.fetuses',
     '6. 文字描述栏位：descriptions',
+    '7. 当前衣着：currentOutfit。只记录登场时明确可见的完整基础衣着与配件，不要顺便生成整个衣柜；无法可靠判断时省略。',
     '如果资料不足，可以省略字段或给 null；不要为了凑完整而编造。',
     embryoTypeLorePrompt,
     '以下字段定义、参数说明、注意事项与示例，均视为必要规则：',
@@ -901,6 +877,10 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     String(guides.normalDescription || DEFAULT_REGISTRY_DESCRIPTION_GUIDES.normalDescription),
     '[pregnantDescription]',
     String(guides.pregnantDescription || DEFAULT_REGISTRY_DESCRIPTION_GUIDES.pregnantDescription),
+    '【7. 当前衣着】',
+    'currentOutfit.main 是当前一套完整基础衣着，使用 name/note/parts/fitProfile。fitProfile 档位：masking=very_low/low/medium/high，support=none/normal/strong，capacity=tight/fitted/stretch/loose，convenience=inconvenient/normal/convenient。',
+    'currentOutfit.accessories 只列当前穿戴的配件，category 为 underwear/outerwear/footwear/headwear/ornament/support/other，effects 最多两项，使用四维名加 _up/_down。',
+    '明确全裸时填 currentOutfit.nude=true；衣着不明时整个省略，不得用全裸代替未知。',
     `【${includeBreedingPsychology ? 7 : 6}. 角色补充设定】`,
     customNotes ? customNotes : '无',
     '若提供了角色补充设定，必须优先视为该角色已明确声明的特征，并在推演、注册与备装相关字段中如实体现；不要忽略，也不要擅自扩写超出原意的内容。',
@@ -997,6 +977,12 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '    "descriptions": {',
     '      "normalDescription": "string",',
     '      "pregnantDescription": "string"',
+    '    },',
+    '    "currentOutfit": {',
+    '      "nude": false,',
+    '      "main": { "name": "string", "note": "string", "parts": [], "fitProfile": { "masking": "medium", "support": "normal", "capacity": "fitted", "convenience": "normal" } },',
+    '      "accessories": [{ "name": "string", "note": "string", "category": "other", "effects": [] }],',
+    '      "wearState": "整齐"',
     '    }',
     '  }',
     '}',
@@ -1548,6 +1534,39 @@ function sanitizeRegistryProfile(profile, baseProfile) {
   const descriptions = pickObjectFields(profile.descriptions, DESCRIPTION_FIELDS);
   if (Object.keys(descriptions).length > 0) sanitized.descriptions = descriptions;
 
+  if (profile.currentOutfit && typeof profile.currentOutfit === 'object' && !Array.isArray(profile.currentOutfit)) {
+    const currentOutfit = profile.currentOutfit;
+    const items = [createDefaultWardrobeItem()];
+    let nextId = 1;
+    let mainItemId = null;
+    if (currentOutfit.nude === true) {
+      mainItemId = 0;
+    } else if (currentOutfit.main && typeof currentOutfit.main === 'object' && !Array.isArray(currentOutfit.main)) {
+      const main = normalizeWardrobeItem({ ...currentOutfit.main, id: nextId, slot: 'main' });
+      if (main) {
+        items.push(main);
+        mainItemId = nextId;
+        nextId += 1;
+      }
+    }
+    const accessoryItemIds = [];
+    for (const source of (Array.isArray(currentOutfit.accessories) ? currentOutfit.accessories : [])) {
+      const accessory = normalizeWardrobeItem({ ...source, id: nextId, slot: 'accessory' });
+      if (!accessory) continue;
+      items.push(accessory);
+      accessoryItemIds.push(nextId);
+      nextId += 1;
+    }
+    sanitized.wardrobe = { enabled: true, items };
+    sanitized.outfit = {
+      mainItemId,
+      accessoryItemIds,
+      transientItems: [],
+      wearState: sanitizeWearState(currentOutfit.wearState),
+      pregFit: null,
+    };
+  }
+
   return sanitized;
 }
 
@@ -1557,6 +1576,10 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
   const current = chatState.characters[name];
   const base = current && typeof current === 'object' ? current : createDefaultFemaleState(name);
   const sanitizedProfile = sanitizeRegistryProfile(result.profile, base.profile);
+  if (current && current.profile?.outfit?.mainItemId !== null && current.profile?.outfit?.mainItemId !== undefined) {
+    delete sanitizedProfile.wardrobe;
+    delete sanitizedProfile.outfit;
+  }
   if (!allowBreedingPsychology) delete sanitizedProfile.psychology;
   const effectiveRace = sanitizedProfile.base?.race ?? base.profile.base.race;
   const mergedRaceProfile = getMergedRacePhysiologyProfile(effectiveRace);

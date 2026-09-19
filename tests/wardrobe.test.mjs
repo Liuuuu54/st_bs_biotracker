@@ -2,21 +2,23 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getWardrobeItemMetrics,
   getNextWardrobeItemId,
-  normalizeTemporaryOutfitItems,
+  normalizeTransientOutfitItems,
   normalizeWardrobeItem,
   normalizeWardrobeItemId,
   resolveWardrobeItemRef,
   sanitizeWearState,
 } from '../scripts/wardrobe_config.js';
-import { applyToolCall } from '../scripts/tools.js';
-import { normalizeCharacterPsychologyState } from '../scripts/state.js';
+import { applyToolCall, TOOL_DEFINITIONS } from '../scripts/tools.js';
+import { createEmptyChatState, normalizeCharacterPsychologyState } from '../scripts/state.js';
+import { applyRegistryResult } from '../scripts/registry.js';
 
 const REF_ITEMS = [
   { id: 0, name: '全裸', slot: 'main' },
   { id: 1, name: '白色连身裙', slot: 'main' },
   { id: 2, name: '针织外套', slot: 'accessory' },
-  { id: normalizeWardrobeItemId('病服'), name: '病服', slot: 'main' },
+  { id: 4, name: '病服', slot: 'main' },
 ];
 
 test('resolveWardrobeItemRef resolves integer ids, digit strings and names', () => {
@@ -26,10 +28,11 @@ test('resolveWardrobeItemRef resolves integer ids, digit strings and names', () 
   assert.equal(resolveWardrobeItemRef(REF_ITEMS, ' 针织外套 ')?.id, 2);
 });
 
-test('resolveWardrobeItemRef resolves nude keyword, nude name and legacy hashed ids', () => {
+test('resolveWardrobeItemRef resolves nude keyword and exact names without inventing ids', () => {
   assert.equal(resolveWardrobeItemRef(REF_ITEMS, 'nude')?.id, 0);
   assert.equal(resolveWardrobeItemRef(REF_ITEMS, '全裸')?.id, 0);
   assert.equal(resolveWardrobeItemRef(REF_ITEMS, '病服')?.name, '病服');
+  assert.equal(normalizeWardrobeItemId('病服'), null);
 });
 
 test('resolveWardrobeItemRef honors slot filter and rejects unknown refs', () => {
@@ -39,52 +42,81 @@ test('resolveWardrobeItemRef honors slot filter and rejects unknown refs', () =>
   assert.equal(resolveWardrobeItemRef(REF_ITEMS, -1), null);
 });
 
-test('getNextWardrobeItemId increments past used ids and skips hash range collisions', () => {
-  assert.equal(getNextWardrobeItemId(REF_ITEMS), 3);
+test('getNextWardrobeItemId increments past used integer ids', () => {
+  assert.equal(getNextWardrobeItemId(REF_ITEMS), 5);
   assert.equal(getNextWardrobeItemId([]), 1);
   assert.equal(getNextWardrobeItemId([{ id: 1 }, { id: 2 }, { id: 3 }]), 4);
 });
 
-test('normalizeWardrobeItem supports missing ids, accessory dim limits and legacy fields', () => {
+test('normalizeWardrobeItem maps semantic main tiers and accessory effects', () => {
   const missing = normalizeWardrobeItem(
-    { name: '围裙', note: '', slot: 'accessory', masking: 1, support: 2, capacity: 3, convenience: 0 },
+    { name: '围裙', note: '', slot: 'accessory', category: 'outerwear', effects: ['capacity_up', 'support_up', 'masking_up'] },
     { allowMissingId: true },
   );
   assert.equal(missing.id, null);
-  assert.equal(missing.capacity, 3);
+  assert.equal(missing.category, 'outerwear');
+  assert.deepEqual(missing.effects, ['capacity_up', 'support_up']);
+  assert.equal(missing.capacity, 2);
   assert.equal(missing.support, 2);
-  assert.equal(missing.masking, 0, 'accessory keeps only the top-2 dimensions');
+  assert.equal(missing.masking, 0, 'accessory keeps at most two semantic effects');
 
-  const legacy = normalizeWardrobeItem({ id: 5, name: '旧裙', note: '', slot: 'main', contour: 3, unsupported: 8, capacity: 4, convenience: 5 });
-  assert.equal(legacy.masking, 7, 'contour converts to masking');
-  assert.equal(legacy.support, 2, 'unsupported converts to support');
+  const main = normalizeWardrobeItem({ id: 5, name: '长裙', note: '', slot: 'main', fitProfile: { masking: 'high', support: 'strong', capacity: 'stretch', convenience: 'convenient' } });
+  assert.deepEqual(getWardrobeItemMetrics(main), { masking: 8, support: 8, capacity: 7, convenience: 8 });
+  assert.equal(normalizeWardrobeItem({ id: '5', name: '错误 id', note: '', slot: 'main', fitProfile: {} }), null);
 });
 
-test('normalizeWardrobeItem keeps parts only on mains and layer only on accessories', () => {
-  const main = normalizeWardrobeItem({ id: 1, name: '衬衫牛仔裤', note: '', slot: 'main', parts: ['白衬衫', '牛仔裤'], layer: 'inner', masking: 5, support: 3, capacity: 4, convenience: 6 });
-  assert.deepEqual(main.parts, ['白衬衫', '牛仔裤']);
-  assert.equal(main.layer, undefined);
+test('wardrobe tool schemas expose only the semantic clothing contract', () => {
+  const addProperties = TOOL_DEFINITIONS.find((tool) => tool.name === 'bsAddWardrobeItem').input_schema.properties.item.properties;
+  const changeProperties = TOOL_DEFINITIONS.find((tool) => tool.name === 'bsChangeOutfit').input_schema.properties;
+  assert.deepEqual(addProperties.id, { type: 'integer', minimum: 1 });
+  for (const field of ['masking', 'support', 'capacity', 'convenience', 'contour', 'unsupported', 'layer']) {
+    assert.equal(Object.hasOwn(addProperties, field), false, field);
+  }
+  assert.equal(Object.hasOwn(changeProperties, 'temporaryItems'), false);
+  assert.equal(Object.hasOwn(changeProperties, 'main'), true);
+  assert.equal(Object.hasOwn(changeProperties, 'accessories'), true);
+});
 
-  const accessory = normalizeWardrobeItem({ id: 2, name: '蕾丝内衣', note: '', slot: 'accessory', layer: 'inner', parts: ['x'], masking: 0, support: 2, capacity: 0, convenience: 0 });
-  assert.equal(accessory.layer, 'inner');
+test('normalizeWardrobeItem keeps parts on mains and categories on accessories', () => {
+  const main = normalizeWardrobeItem({ id: 1, name: '衬衫牛仔裤', note: '', slot: 'main', parts: ['白衬衫', '牛仔裤'], fitProfile: { masking: 'medium', support: 'normal', capacity: 'fitted', convenience: 'normal' } });
+  assert.deepEqual(main.parts, ['白衬衫', '牛仔裤']);
+
+  const accessory = normalizeWardrobeItem({ id: 2, name: '蕾丝内衣', note: '', slot: 'accessory', category: 'underwear', effects: ['support_up'], parts: ['x'] });
+  assert.equal(accessory.category, 'underwear');
   assert.equal(accessory.parts, undefined);
 });
 
-test('normalizeTemporaryOutfitItems drops the reserved id and duplicates', () => {
-  const items = normalizeTemporaryOutfitItems([
-    { id: 0, name: 'x', note: '', slot: 'main', masking: 0, support: 0, capacity: 0, convenience: 0 },
-    { id: 7, name: '病服', note: '', slot: 'main', masking: 5, support: 0, capacity: 0, convenience: 0 },
-    { id: 7, name: '重复', note: '', slot: 'main', masking: 0, support: 0, capacity: 0, convenience: 0 },
+test('normalizeTransientOutfitItems drops the reserved id and duplicates', () => {
+  const items = normalizeTransientOutfitItems([
+    { id: 0, name: 'x', note: '', slot: 'main', fitProfile: {} },
+    { id: 7, name: '病服', note: '', slot: 'main', fitProfile: { masking: 'low', support: 'none', capacity: 'loose', convenience: 'convenient' } },
+    { id: 7, name: '重复', note: '', slot: 'main', fitProfile: {} },
   ]);
   assert.equal(items.length, 1);
   assert.equal(items[0].id, 7);
-  assert.equal(items[0].source, 'temporary');
+  assert.equal(items[0].source, 'transient');
 });
 
 test('sanitizeWearState defaults, trims, strips separators and caps length', () => {
   assert.equal(sanitizeWearState(undefined), '整齐');
   assert.equal(sanitizeWearState('  湿透且衬衫紧贴身体十分狼狈不堪  '), '湿透且衬衫紧贴身体十分狼');
   assert.equal(sanitizeWearState('敞开|x;;y'), '敞开 x y');
+});
+
+test('registration records only a reliable current outfit and otherwise stays unknown', () => {
+  const chatState = createEmptyChatState();
+  const unknown = applyRegistryResult(chatState, { name: '未知子', profile: { base: { race: '人类' } } });
+  assert.equal(unknown.profile.wardrobe.enabled, true);
+  assert.equal(unknown.profile.outfit.mainItemId, null);
+
+  const dressed = applyRegistryResult(chatState, { name: '有衣子', profile: { base: { race: '人类' }, currentOutfit: {
+    main: { name: '日常套装', note: '白襯衫與長裙', parts: ['白襯衫', '長裙'], fitProfile: { masking: 'medium', support: 'normal', capacity: 'fitted', convenience: 'normal' } },
+    accessories: [{ name: '平底鞋', note: '', category: 'footwear', effects: [] }],
+  } } });
+  assert.equal(dressed.profile.wardrobe.items.some((item) => item.name === '日常套装'), true);
+  assert.equal(dressed.profile.wardrobe.items.some((item) => item.name === '平底鞋'), true);
+  assert.equal(dressed.profile.outfit.mainItemId, 1);
+  assert.deepEqual(dressed.profile.outfit.accessoryItemIds, [2]);
 });
 
 function makeWardrobeState() {
@@ -98,19 +130,19 @@ function makeWardrobeState() {
           wardrobe: {
             enabled: true,
             items: [
-              { id: 1, name: '白色连身裙', note: '', slot: 'main', parts: ['连身裙'], masking: 6, support: 4, capacity: 3, convenience: 5 },
-              { id: 2, name: '蕾丝内衣', note: '', slot: 'accessory', layer: 'inner', masking: 0, support: 2, capacity: 0, convenience: 0 },
-              { id: 3, name: '针织外套', note: '', slot: 'accessory', masking: 2, support: 0, capacity: 0, convenience: 0 },
+              { id: 1, name: '白色连身裙', note: '', slot: 'main', parts: ['连身裙'], fitProfile: { masking: 'medium', support: 'normal', capacity: 'fitted', convenience: 'normal' } },
+              { id: 2, name: '蕾丝内衣', note: '', slot: 'accessory', category: 'underwear', effects: ['support_up'] },
+              { id: 3, name: '针织外套', note: '', slot: 'accessory', category: 'outerwear', effects: ['masking_up'] },
             ],
           },
-          outfit: { mainItemId: 1, accessoryItemIds: [2, 3], temporaryItems: [], wearState: '整齐', pregFit: null },
+          outfit: { mainItemId: 1, accessoryItemIds: [2, 3], transientItems: [], wearState: '整齐', pregFit: null },
         },
       },
     },
   };
 }
 
-test('bsChangeOutfit resolves item references by name including temporary items', () => {
+test('bsChangeOutfit resolves existing and newly-created temporary items by name', () => {
   const state = makeWardrobeState();
   const result = applyToolCall(state, { name: 'bsChangeOutfit', arguments: { female: '艾拉', mainItemId: '白色连身裙', accessoryItemIds: ['针织外套'] } });
   assert.equal(result.applied, true, result.message);
@@ -121,12 +153,12 @@ test('bsChangeOutfit resolves item references by name including temporary items'
     name: 'bsChangeOutfit',
     arguments: {
       female: '艾拉',
-      temporaryItems: [{ id: 50, name: '病服', note: '医院提供', slot: 'main', masking: 4, support: 1, capacity: 8, convenience: 7 }],
-      mainItemId: '病服',
+      scope: 'temporary',
+      main: { name: '病服', note: '医院提供', fitProfile: { masking: 'low', support: 'none', capacity: 'loose', convenience: 'convenient' } },
     },
   });
   assert.equal(temp.applied, true, temp.message);
-  assert.equal(state.characters['艾拉'].profile.outfit.mainItemId, 50);
+  assert.equal(state.characters['艾拉'].profile.outfit.transientItems.some((item) => item.name === '病服'), true);
 });
 
 test('bsChangeOutfit skips unknown references without changing the outfit', () => {
@@ -139,15 +171,11 @@ test('bsChangeOutfit skips unknown references without changing the outfit', () =
 
 test('bsAddWardrobeItem auto-assigns sequential ids and updates by name', () => {
   const state = makeWardrobeState();
-  const added = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { name: '晨袍', note: '丝质', slot: 'main', masking: 3, support: 1, capacity: 6, convenience: 8 } } });
+  const added = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { name: '晨袍', note: '丝质', slot: 'main', fitProfile: { masking: 'low', support: 'none', capacity: 'stretch', convenience: 'convenient' } } } });
   assert.equal(added.applied, true, added.message);
   assert.match(added.message, /id=4/, 'omitted id gets the next sequential id');
 
-  const stringId = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { id: '睡衣套装', name: '睡衣套装', note: '', slot: 'main', masking: 2, support: 1, capacity: 7, convenience: 9 } } });
-  assert.equal(stringId.applied, true, stringId.message);
-  assert.match(stringId.message, /id=5/, 'string id becomes sequential instead of a hash');
-
-  const updated = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { name: '白色连身裙', note: '加了蕾丝', slot: 'main', masking: 6, support: 4, capacity: 3, convenience: 5 } } });
+  const updated = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { name: '白色连身裙', note: '加了蕾丝', slot: 'main', fitProfile: { masking: 'medium', support: 'normal', capacity: 'fitted', convenience: 'normal' } } } });
   assert.equal(updated.applied, true, updated.message);
   assert.match(updated.message, /id=1/, 'name match updates the existing item');
   const dresses = state.characters['艾拉'].profile.wardrobe.items.filter((item) => item.name === '白色连身裙');
@@ -158,7 +186,7 @@ test('bsRemoveWardrobeItem removes by name and protects the reserved main', () =
   const state = makeWardrobeState();
   const removed = applyToolCall(state, { name: 'bsRemoveWardrobeItem', arguments: { female: '艾拉', itemId: '白色连身裙' } });
   assert.equal(removed.applied, true, removed.message);
-  assert.equal(state.characters['艾拉'].profile.outfit.mainItemId, 0, 'worn main falls back to nude');
+  assert.equal(state.characters['艾拉'].profile.outfit.mainItemId, null, 'removed worn main becomes unknown, never inferred nude');
 
   assert.equal(applyToolCall(state, { name: 'bsRemoveWardrobeItem', arguments: { female: '艾拉', itemId: 0 } }).applied, false);
   assert.equal(applyToolCall(state, { name: 'bsRemoveWardrobeItem', arguments: { female: '艾拉', itemId: '全裸' } }).applied, false);
@@ -166,22 +194,22 @@ test('bsRemoveWardrobeItem removes by name and protects the reserved main', () =
 
 test('bsAddWardrobeItem with explicit ids creates, renames in place and rejects bad input', () => {
   const state = makeWardrobeState();
-  const created = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { id: 7, name: '米色风衣', note: '长款。', slot: 'accessory', masking: 2, support: 0, capacity: 0, convenience: 0 } } });
+  const created = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { id: 7, name: '米色风衣', note: '长款。', slot: 'accessory', category: 'outerwear', effects: ['masking_up'] } } });
   assert.equal(created.applied, true, created.message);
   assert.match(created.message, /id=7/, 'explicit integer id is honored');
 
-  const renamed = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { id: 7, name: '驼色风衣', note: '长款。', slot: 'accessory', masking: 2, support: 0, capacity: 0, convenience: 0 } } });
+  const renamed = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { id: 7, name: '驼色风衣', note: '长款。', slot: 'accessory', category: 'outerwear', effects: ['masking_up'] } } });
   assert.equal(renamed.applied, true, renamed.message);
   const items = state.characters['艾拉'].profile.wardrobe.items;
   assert.equal(items.some((item) => item.name === '驼色风衣'), true, 'rename via id works');
   assert.equal(items.some((item) => item.name === '米色风衣'), false, 'old name is gone');
   assert.equal(items.filter((item) => item.id === 7).length, 1, 'no duplicate for the same id');
 
-  const reserved = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { id: 0, name: '不该存在', note: '', slot: 'main', masking: 0, support: 0, capacity: 0, convenience: 0 } } });
+  const reserved = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { id: 0, name: '不该存在', note: '', slot: 'main', fitProfile: { masking: 'very_low', support: 'none', capacity: 'tight', convenience: 'inconvenient' } } } });
   assert.equal(reserved.applied, false);
   assert.match(reserved.message, /id=0 is reserved/);
 
-  const invalid = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { note: '没有名字', slot: 'main', masking: 0, support: 0, capacity: 0, convenience: 0 } } });
+  const invalid = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { note: '没有名字', slot: 'main', fitProfile: {} } } });
   assert.equal(invalid.applied, false);
   assert.match(invalid.message, /invalid item/);
 });
@@ -199,22 +227,41 @@ test('bsRemoveWardrobeItem detaches worn accessories and reports missing items',
   assert.match(missing.message, /item not found/);
 });
 
-test('wardrobe tools refuse characters without a prepared wardrobe', () => {
+test('wardrobe tools lazily initialize characters without a prepared wardrobe', () => {
   const state = { characters: { 小北: { name: '小北', initialized: true, profile: { base: { stage: '卵泡期', days: 1, isHere: true } } } } };
-  const add = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '小北', item: { name: '外套', note: '', slot: 'accessory', masking: 1, support: 0, capacity: 0, convenience: 0 } } });
-  assert.equal(add.applied, false);
-  assert.match(add.message, /wardrobe is not prepared/);
+  const add = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '小北', item: { name: '外套', note: '', slot: 'accessory', category: 'outerwear', effects: ['masking_up'] } } });
+  assert.equal(add.applied, true, add.message);
+  assert.equal(state.characters['小北'].profile.wardrobe.enabled, true);
+  assert.equal(state.characters['小北'].profile.wardrobe.items.some((item) => item.name === '外套'), true);
   const remove = applyToolCall(state, { name: 'bsRemoveWardrobeItem', arguments: { female: '小北', itemId: 1 } });
-  assert.equal(remove.applied, false);
-  assert.match(remove.message, /wardrobe is not prepared/);
-  assert.equal(state.characters['小北'].profile.wardrobe, undefined, 'refusal must not create a wardrobe as a side effect');
+  assert.equal(remove.applied, true, remove.message);
+});
+
+test('bsChangeOutfit atomically creates and wears owned or temporary semantic items', () => {
+  const state = { characters: { 小北: { name: '小北', initialized: true, profile: { base: { stage: '卵泡期', days: 1, isHere: true } } } } };
+  const owned = applyToolCall(state, { name: 'bsChangeOutfit', arguments: {
+    female: '小北', scope: 'owned',
+    main: { name: '襯衫短裙', note: '', parts: ['襯衫', '短裙'], fitProfile: { masking: 'low', support: 'normal', capacity: 'fitted', convenience: 'normal' } },
+    accessories: [{ name: '短靴', note: '', category: 'footwear', effects: ['convenience_down'] }],
+  } });
+  assert.equal(owned.applied, true, owned.message);
+  assert.equal(state.characters['小北'].profile.wardrobe.items.some((item) => item.name === '襯衫短裙'), true);
+  assert.equal(state.characters['小北'].profile.outfit.accessoryItemIds.length, 1);
+
+  const temporary = applyToolCall(state, { name: 'bsChangeOutfit', arguments: {
+    female: '小北', scope: 'temporary',
+    main: { name: '病服', note: '医院提供', fitProfile: { masking: 'low', support: 'none', capacity: 'loose', convenience: 'convenient' } },
+  } });
+  assert.equal(temporary.applied, true, temporary.message);
+  assert.equal(state.characters['小北'].profile.outfit.transientItems.some((item) => item.name === '病服'), true);
+  assert.equal(state.characters['小北'].profile.wardrobe.items.some((item) => item.name === '病服'), false);
 });
 
 test('bsChangeOutfit incremental accessory params put on and take off without restating the list', () => {
   const state = makeWardrobeState();
   // 穿上：现有 [2, 3]，按名称加上一件（复用 id 2 会被去重，模拟传错也安全）
   state.characters['艾拉'].profile.wardrobe.items.push(
-    { id: 5, name: '猫咪短袜与运动鞋', note: '', slot: 'accessory', masking: 0, support: 0, capacity: 0, convenience: -1 },
+    { id: 5, name: '猫咪短袜与运动鞋', note: '', slot: 'accessory', category: 'footwear', effects: ['convenience_down'] },
   );
   const putOn = applyToolCall(state, { name: 'bsChangeOutfit', arguments: { female: '艾拉', addAccessoryItemIds: ['猫咪短袜与运动鞋'] } });
   assert.equal(putOn.applied, true, putOn.message);
@@ -272,9 +319,9 @@ function makePregnancyState(stage, days) {
           bio: {},
           wardrobe: {
             enabled: true,
-            items: [{ id: 1, name: '孕妇裙', note: '', slot: 'main', masking: 6, support: 5, capacity: 8, convenience: 6 }],
+            items: [{ id: 1, name: '孕妇裙', note: '', slot: 'main', fitProfile: { masking: 'medium', support: 'normal', capacity: 'stretch', convenience: 'normal' } }],
           },
-          outfit: { mainItemId: 0, accessoryItemIds: [], temporaryItems: [], wearState: '整齐', pregFit: null },
+          outfit: { mainItemId: 0, accessoryItemIds: [], transientItems: [], wearState: '整齐', pregFit: null },
         },
       },
     },
@@ -301,7 +348,7 @@ test('pregFit stays null outside the wear-fit window', () => {
   }
 });
 
-test('state load strips legacy outfit description fields but keeps everything else', () => {
+test('state normalization leaves user description fields untouched', () => {
   const character = {
     name: '艾拉',
     profile: {
@@ -310,13 +357,13 @@ test('state load strips legacy outfit description fields but keeps everything el
         normalDescription: '外貌|黑发碧眼;;衣着动态|裙摆被风吹起;;神态|微笑;;衣著自評|觉得很合身;;',
         pregnantDescription: '孕态|无;;衣着自评|旧数据;;',
       },
-      wardrobe: { enabled: true, items: [{ id: 1, name: '连身裙', note: '', slot: 'main', masking: 5, support: 3, capacity: 3, convenience: 5 }] },
-      outfit: { mainItemId: 1, accessoryItemIds: [], temporaryItems: [], wearState: '敞开' },
+      wardrobe: { enabled: true, items: [{ id: 1, name: '连身裙', note: '', slot: 'main', fitProfile: { masking: 'medium', support: 'normal', capacity: 'fitted', convenience: 'normal' } }] },
+      outfit: { mainItemId: 1, accessoryItemIds: [], transientItems: [], wearState: '敞开' },
     },
   };
   normalizeCharacterPsychologyState(character);
-  assert.equal(character.profile.descriptions.normalDescription, '外貌|黑发碧眼;;神态|微笑;;');
-  assert.equal(character.profile.descriptions.pregnantDescription, '孕态|无;;');
+  assert.equal(character.profile.descriptions.normalDescription, '外貌|黑发碧眼;;衣着动态|裙摆被风吹起;;神态|微笑;;衣著自評|觉得很合身;;');
+  assert.equal(character.profile.descriptions.pregnantDescription, '孕态|无;;衣着自评|旧数据;;');
   assert.equal(character.profile.outfit.wearState, '敞开', 'wearState survives normalization');
 
   const plain = { name: 'B', profile: { base: {}, descriptions: { normalDescription: '外貌|红发;;' } } };

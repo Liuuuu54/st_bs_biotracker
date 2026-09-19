@@ -29,7 +29,7 @@ import {
   DEFAULT_WARDROBE_ITEM,
   DEFAULT_WEAR_STATE,
   getNextWardrobeItemId,
-  normalizeTemporaryOutfitItems,
+  normalizeTransientOutfitItems,
   normalizeWardrobeItem,
   resolveWardrobeItemRef,
   sanitizeWearState,
@@ -128,7 +128,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddWardrobeItem',
-    description: '向单一角色衣柜添加或更新一件衣物。id 引用规则：更新既有衣物时传其整数 id 或准确名称字符串；新增衣物可省略 id，系统会自动分配下一个整数 id，不要自造大数字 id。main 主件可给 parts 数组列出组成部件名（如 ["白衬衫","牛仔裤"]，连身装可省略）；剧情中重新搭配上下装时，应用本工具铸造新的组合主件再换上。accessory 配件可给 layer：inner=贴身内衣等穿在主件之下，outer=外套鞋饰等穿在主件之外（默认 outer）。衣物保存稳定外观 note 与机械数值；note 只写衣物稳定外观与来源：颜色、材质、版型、长短、固定开口、图案、制服/病服/借装来源等。禁止写当前穿着反应、角色感受、近期身体变化、怀孕/胀痛/压胸/勒红/变紧/显怀等动态状态；这些由四维、pregFit 与当轮叙事推导。slot=main 为主件，slot=accessory 为配件。主件通常使用 0-10；配件只是补正，单项只能 -3 到 3，通常只影响 1-2 个维度，其他维度填 0。四维：masking 掩盖身体曲线/孕肚变化、support 对胸腹腰与重心的承托、capacity 容许孕肚/胸腹/骨盆/水肿等体型变化、convenience 行动/穿脱/如厕/哺乳或排解需求的方便程度。皮肤暴露与稳定外观写入 note，不作为机械数值。',
+    description: '向单一角色的长期衣柜添加或更新衣物，无需先准备衣柜。main 是一套完整基础衣着，可用 parts 列出组成，fitProfile 使用隐藏四档与支撑/容身/方便档位。accessory 使用 category，effects 最多两项。新增可省略 id；更新传整数 id 或准确名称。note 只写稳定外观与来源。',
     input_schema: {
       type: 'object',
       properties: {
@@ -136,18 +136,25 @@ export const TOOL_DEFINITIONS = Object.freeze([
         item: {
           type: 'object',
           properties: {
-            id: { type: ['integer', 'string'] },
+            id: { type: 'integer', minimum: 1 },
             name: { type: 'string' },
             note: { type: 'string' },
             slot: { type: 'string', enum: ['main', 'accessory'] },
             parts: { type: 'array', items: { type: 'string' } },
-            layer: { type: 'string', enum: ['inner', 'outer'] },
-            masking: { type: 'number' },
-            support: { type: 'number' },
-            capacity: { type: 'number' },
-            convenience: { type: 'number' },
+            fitProfile: {
+              type: 'object',
+              properties: {
+                masking: { type: 'string', enum: ['very_low', 'low', 'medium', 'high'] },
+                support: { type: 'string', enum: ['none', 'normal', 'strong'] },
+                capacity: { type: 'string', enum: ['tight', 'fitted', 'stretch', 'loose'] },
+                convenience: { type: 'string', enum: ['inconvenient', 'normal', 'convenient'] },
+              },
+              additionalProperties: false,
+            },
+            category: { type: 'string', enum: ['underwear', 'outerwear', 'footwear', 'headwear', 'ornament', 'support', 'other'] },
+            effects: { type: 'array', maxItems: 2, items: { type: 'string', enum: ['masking_up', 'masking_down', 'support_up', 'support_down', 'capacity_up', 'capacity_down', 'convenience_up', 'convenience_down'] } },
           },
-          required: ['name', 'note', 'slot', 'masking', 'support', 'capacity', 'convenience'],
+          required: ['name', 'note', 'slot'],
           additionalProperties: false,
         },
       },
@@ -157,7 +164,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsRemoveWardrobeItem',
-    description: '从单一角色衣柜删除一件衣物。itemId 可传整数 id 或准确衣物名称字符串。不能删除默认主件 id=0。若删除当前主件，穿着会回到 id=0；若删除当前配件，会从当前配件列表移除，并重算 pregFit。',
+    description: '从单一角色的长期衣柜永久删除衣物。itemId 可传整数 id 或准确名称。不能删除 id=0 的裸体特殊状态；删除正在穿的主衣装后，当前衣着会变为未记录。',
     input_schema: {
       type: 'object',
       properties: {
@@ -170,36 +177,50 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsChangeOutfit',
-    description: '更换单一角色当前穿着。mainItemId 指定主件。穿上或脱下个别配件时优先用增量参数：addAccessoryItemIds 穿上、removeAccessoryItemIds 脱下，均在当前配件基础上生效，不需要重述其他配件。accessoryItemIds 则是覆盖式完整列表（空数组=脱掉所有配件），与增量参数同传时以 accessoryItemIds 为准。衣物引用优先传整数 id；若不确定 id，可传准确衣物名称字符串，系统会按名称解析（含临时衣物）。注意：wearState 只是状态标签，不会改变穿了哪些衣物；穿上鞋、戴上外套等必须通过配件参数完成。wearState 为当前穿着状态短标签（12 字内）：建议使用 整齐/凌乱/敞开/半褪/撩起/上衣已褪/下装已褪/湿透，也可按情境自造同粒度短标签；主件有 parts 时优先引用部件名消歧（如 毛衣已脱）。只更新穿着状态时可只传 wearState。换主件时未显式传 wearState 会自动重置为整齐。temporaryItems 可放病服、借装等临时衣物，只保存于当前 outfit，不写入 wardrobe；换回衣柜服装时可传 temporaryItems: [] 清除临时衣物。临时衣物也要写稳定外观 note，且 note 只写衣物稳定外观与来源：颜色、材质、版型、长短、固定开口、图案、制服/病服/借装来源等。禁止写当前穿着反应、角色感受、近期身体变化、怀孕/胀痛/压胸/勒红/变紧/显怀等动态状态；这些由四维、pregFit 与当轮叙事推导。全裸也是主件 id=0。角色处于真实妊娠/产兆前驱/产程/产后恢复时会重算 outfit.pregFit（产后恢复的衣着压力随恢复进度递减）；其余阶段 pregFit 为 null。衣着状态变化的叙事文字由当轮叙事自行处理，不写回 wardrobe/outfit。',
+    description: '原子更换单一角色的当前穿着，无需先准备衣柜。可用 mainItemId/配件 id 或准确名称引用既有衣物，也可在 main 与 accessories 直接建立并穿上新衣；scope=owned 收入衣柜，temporary 只存在当前穿着。mainItemId=0 是明确全裸，null 是衣着未记录。accessoryItemIds 覆盖整表，add/removeAccessoryItemIds 增量穿脱。wearState 只是 12 字内的动态状态标签。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
-        mainItemId: { type: ['integer', 'string'] },
-        accessoryItemIds: { type: 'array', items: { type: ['integer', 'string'] } },
-        addAccessoryItemIds: { type: 'array', items: { type: ['integer', 'string'] } },
-        removeAccessoryItemIds: { type: 'array', items: { type: ['integer', 'string'] } },
-        wearState: { type: 'string' },
-        temporaryItems: {
+        mainItemId: { type: ['integer', 'string', 'null'] },
+        scope: { type: 'string', enum: ['owned', 'temporary'] },
+        main: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' }, note: { type: 'string' },
+            parts: { type: 'array', items: { type: 'string' } },
+            fitProfile: {
+              type: 'object',
+              properties: {
+                masking: { type: 'string', enum: ['very_low', 'low', 'medium', 'high'] },
+                support: { type: 'string', enum: ['none', 'normal', 'strong'] },
+                capacity: { type: 'string', enum: ['tight', 'fitted', 'stretch', 'loose'] },
+                convenience: { type: 'string', enum: ['inconvenient', 'normal', 'convenient'] },
+              },
+              required: ['masking', 'support', 'capacity', 'convenience'],
+              additionalProperties: false,
+            },
+          },
+          required: ['name', 'note', 'fitProfile'],
+          additionalProperties: false,
+        },
+        accessories: {
           type: 'array',
           items: {
             type: 'object',
             properties: {
-              id: { type: 'integer', minimum: 0 },
-              name: { type: 'string' },
-              note: { type: 'string' },
-              slot: { type: 'string', enum: ['main', 'accessory'] },
-              parts: { type: 'array', items: { type: 'string' } },
-              layer: { type: 'string', enum: ['inner', 'outer'] },
-              masking: { type: 'number' },
-              support: { type: 'number' },
-              capacity: { type: 'number' },
-              convenience: { type: 'number' },
+              name: { type: 'string' }, note: { type: 'string' },
+              category: { type: 'string', enum: ['underwear', 'outerwear', 'footwear', 'headwear', 'ornament', 'support', 'other'] },
+              effects: { type: 'array', maxItems: 2, items: { type: 'string', enum: ['masking_up', 'masking_down', 'support_up', 'support_down', 'capacity_up', 'capacity_down', 'convenience_up', 'convenience_down'] } },
             },
-            required: ['id', 'name', 'note', 'slot', 'masking', 'support', 'capacity', 'convenience'],
+            required: ['name', 'note', 'category', 'effects'],
             additionalProperties: false,
           },
         },
+        accessoryItemIds: { type: 'array', items: { type: ['integer', 'string'] } },
+        addAccessoryItemIds: { type: 'array', items: { type: ['integer', 'string'] } },
+        removeAccessoryItemIds: { type: 'array', items: { type: ['integer', 'string'] } },
+        wearState: { type: 'string' },
       },
       required: ['female'],
       additionalProperties: false,
@@ -572,10 +593,6 @@ function ensureWardrobeState(profile) {
   return profile.wardrobe;
 }
 
-function hasPreparedWardrobe(profile) {
-  return Boolean(profile?.wardrobe?.enabled === true);
-}
-
 function hasBreedingPsychology(profile) {
   const stageProfiles = profile?.psychology?.stageProfiles;
   return Boolean(stageProfiles && typeof stageProfiles === 'object' && !Array.isArray(stageProfiles)
@@ -584,10 +601,10 @@ function hasBreedingPsychology(profile) {
 
 function getAvailableOutfitItems(profile) {
   const wardrobe = ensureWardrobeState(profile);
-  const temporaryItems = Array.isArray(profile?.outfit?.temporaryItems)
-    ? profile.outfit.temporaryItems.map(normalizeWardrobeItem).filter(Boolean).map((item) => ({ ...item, source: 'temporary' }))
+  const transientItems = Array.isArray(profile?.outfit?.transientItems)
+    ? profile.outfit.transientItems.map(normalizeWardrobeItem).filter(Boolean).map((item) => ({ ...item, source: 'transient' }))
     : [];
-  return [...wardrobe.items, ...temporaryItems.filter((item) => item.id !== DEFAULT_WARDROBE_ITEM.id)];
+  return [...wardrobe.items, ...transientItems.filter((item) => item.id !== DEFAULT_WARDROBE_ITEM.id)];
 }
 
 function findOutfitItem(profile, itemRef, slot = '') {
@@ -597,14 +614,16 @@ function findOutfitItem(profile, itemRef, slot = '') {
 function ensureOutfitState(profile) {
   ensureWardrobeState(profile);
   if (!profile.outfit || typeof profile.outfit !== 'object' || Array.isArray(profile.outfit)) profile.outfit = {};
-  profile.outfit.temporaryItems = normalizeTemporaryOutfitItems(profile.outfit.temporaryItems);
-  const mainItem = findOutfitItem(profile, profile.outfit.mainItemId ?? DEFAULT_WARDROBE_ITEM.id, 'main');
+  profile.outfit.transientItems = normalizeTransientOutfitItems(profile.outfit.transientItems);
+  const mainItem = profile.outfit.mainItemId === null || profile.outfit.mainItemId === undefined
+    ? null
+    : findOutfitItem(profile, profile.outfit.mainItemId, 'main');
   const accessoryItems = Array.isArray(profile.outfit.accessoryItemIds)
     ? profile.outfit.accessoryItemIds
       .map((ref) => findOutfitItem(profile, ref, 'accessory'))
       .filter(Boolean)
     : [];
-  profile.outfit.mainItemId = mainItem ? mainItem.id : DEFAULT_WARDROBE_ITEM.id;
+  profile.outfit.mainItemId = mainItem ? mainItem.id : null;
   profile.outfit.accessoryItemIds = accessoryItems
     .map((item) => item.id)
     .filter((id, index, list) => list.indexOf(id) === index);
@@ -615,11 +634,11 @@ function ensureOutfitState(profile) {
 
 function getOutfitItems(profile) {
   const outfit = ensureOutfitState(profile);
-  const main = findOutfitItem(profile, outfit.mainItemId, 'main') || { ...DEFAULT_WARDROBE_ITEM };
+  const main = outfit.mainItemId === null ? null : findOutfitItem(profile, outfit.mainItemId, 'main');
   const accessories = outfit.accessoryItemIds
     .map((id) => findOutfitItem(profile, id, 'accessory'))
     .filter(Boolean);
-  return [main, ...accessories];
+  return [...(main ? [main] : []), ...accessories];
 }
 
 function getOutfitDimensionTotals(profile) {
@@ -982,6 +1001,10 @@ function calculateWombReturnWearPressure(profile) {
 function refreshOutfitPregFit(profile) {
   if (!profile?.wardrobe?.enabled) return null;
   const outfit = ensureOutfitState(profile);
+  if (outfit.mainItemId === null) {
+    outfit.pregFit = null;
+    return outfit;
+  }
   const stage = String(profile?.base?.stage || '');
   const inPostpartum = stage === '产后恢复';
   const inWombReturn = stage === WOMB_RETURN_STAGE;
@@ -4858,18 +4881,15 @@ function applyAddWardrobeItem(chatState, args) {
   if (item.id === DEFAULT_WARDROBE_ITEM.id) return { applied: false, message: `bsAddWardrobeItem skipped for ${female}: id=0 is reserved.` };
   const next = cloneValue(character);
   const profile = next.profile || {};
-  if (!hasPreparedWardrobe(profile)) return { applied: false, message: `bsAddWardrobeItem skipped for ${female}: wardrobe is not prepared.` };
   const wardrobe = ensureWardrobeState(profile);
   const rawId = args?.item?.id;
-  const hasExplicitIntegerId = Number.isInteger(Number(rawId)) && String(rawId ?? '').trim() !== '';
-  // 定位更新目标：显式整数 id 直接比对；否则按 id 引用（含名称/hash 兼容）或衣物名称匹配既有条目。
+  const hasExplicitIntegerId = Number.isInteger(rawId) && rawId > 0;
+  // 显式 id 更新对应条目；省略 id 时以名称更新或建立新条目。
   let target = null;
   if (hasExplicitIntegerId) {
     target = wardrobe.items.find((entry) => entry.id === item.id) || null;
   } else {
-    target = resolveWardrobeItemRef(wardrobe.items, rawId)
-      || resolveWardrobeItemRef(wardrobe.items, item.name)
-      || null;
+    target = resolveWardrobeItemRef(wardrobe.items, item.name) || null;
   }
   if (target && target.id === DEFAULT_WARDROBE_ITEM.id) return { applied: false, message: `bsAddWardrobeItem skipped for ${female}: id=0 is reserved.` };
   if (target) {
@@ -4877,7 +4897,6 @@ function applyAddWardrobeItem(chatState, args) {
     const existingIndex = wardrobe.items.findIndex((entry) => entry.id === target.id);
     wardrobe.items[existingIndex] = item;
   } else {
-    // 新衣物：显式整数 id 沿用；缺失或字符串 id 自动分配下一个序号，避免 hash id 污染长期衣柜。
     if (!hasExplicitIntegerId) item.id = getNextWardrobeItemId(wardrobe.items);
     wardrobe.items.push(item);
   }
@@ -4893,7 +4912,6 @@ function applyRemoveWardrobeItem(chatState, args) {
   if (!female || !character) return { applied: false, message: `bsRemoveWardrobeItem skipped: unknown character ${female || '(empty)'}.` };
   const next = cloneValue(character);
   const profile = next.profile || {};
-  if (!hasPreparedWardrobe(profile)) return { applied: false, message: `bsRemoveWardrobeItem skipped for ${female}: wardrobe is not prepared.` };
   const wardrobe = ensureWardrobeState(profile);
   const target = resolveWardrobeItemRef(wardrobe.items, args?.itemId);
   if (!target) return { applied: false, message: `bsRemoveWardrobeItem skipped for ${female}: item not found (${JSON.stringify(args?.itemId ?? null)}).` };
@@ -4901,12 +4919,28 @@ function applyRemoveWardrobeItem(chatState, args) {
   if (itemId === DEFAULT_WARDROBE_ITEM.id) return { applied: false, message: `bsRemoveWardrobeItem skipped for ${female}: id=0 cannot be removed.` };
   wardrobe.items = wardrobe.items.filter((item) => item.id !== itemId);
   const outfit = ensureOutfitState(profile);
-  if (outfit.mainItemId === itemId) outfit.mainItemId = DEFAULT_WARDROBE_ITEM.id;
+  if (outfit.mainItemId === itemId) outfit.mainItemId = null;
   outfit.accessoryItemIds = outfit.accessoryItemIds.filter((id) => id !== itemId);
   refreshOutfitPregFit(profile);
   next.profile = profile;
   chatState.characters[female] = syncCharacterStageFromProfile(next);
   return { applied: true, message: `bsRemoveWardrobeItem applied to ${female}: ${itemId}.` };
+}
+
+function createInlineOutfitItem(profile, source, slot, scope) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+  const wardrobe = ensureWardrobeState(profile);
+  const outfit = ensureOutfitState(profile);
+  const occupied = [...wardrobe.items, ...outfit.transientItems];
+  const item = normalizeWardrobeItem({
+    ...source,
+    id: getNextWardrobeItemId(occupied),
+    slot,
+  });
+  if (!item) return null;
+  if (scope === 'temporary') outfit.transientItems.push({ ...item, source: 'transient' });
+  else wardrobe.items.push(item);
+  return item;
 }
 
 function applyChangeOutfit(chatState, args) {
@@ -4915,17 +4949,30 @@ function applyChangeOutfit(chatState, args) {
   if (!female || !character) return { applied: false, message: `bsChangeOutfit skipped: unknown character ${female || '(empty)'}.` };
   const next = cloneValue(character);
   const profile = next.profile || {};
-  if (!hasPreparedWardrobe(profile)) return { applied: false, message: `bsChangeOutfit skipped for ${female}: wardrobe is not prepared.` };
   const outfit = ensureOutfitState(profile);
-  if (args?.temporaryItems !== undefined) {
-    if (!Array.isArray(args.temporaryItems)) return { applied: false, message: `bsChangeOutfit skipped for ${female}: temporaryItems must be an array.` };
-    outfit.temporaryItems = normalizeTemporaryOutfitItems(args.temporaryItems);
-  }
   const previousMainItemId = outfit.mainItemId;
   if (args?.mainItemId !== undefined) {
-    const mainItem = findOutfitItem(profile, args.mainItemId, 'main');
-    if (!mainItem) return { applied: false, message: `bsChangeOutfit skipped for ${female}: unknown main item ${JSON.stringify(args.mainItemId ?? null)}.` };
+    if (args.mainItemId === null) {
+      outfit.mainItemId = null;
+    } else {
+      const mainItem = findOutfitItem(profile, args.mainItemId, 'main');
+      if (!mainItem) return { applied: false, message: `bsChangeOutfit skipped for ${female}: unknown main item ${JSON.stringify(args.mainItemId ?? null)}.` };
+      outfit.mainItemId = mainItem.id;
+    }
+  }
+  const inlineScope = args?.scope === 'temporary' ? 'temporary' : 'owned';
+  if (args?.main !== undefined) {
+    const mainItem = createInlineOutfitItem(profile, args.main, 'main', inlineScope);
+    if (!mainItem) return { applied: false, message: `bsChangeOutfit skipped for ${female}: invalid inline main item.` };
     outfit.mainItemId = mainItem.id;
+  }
+  if (args?.accessories !== undefined) {
+    if (!Array.isArray(args.accessories)) return { applied: false, message: `bsChangeOutfit skipped for ${female}: accessories must be an array.` };
+    for (const source of args.accessories) {
+      const accessory = createInlineOutfitItem(profile, source, 'accessory', inlineScope);
+      if (!accessory) return { applied: false, message: `bsChangeOutfit skipped for ${female}: invalid inline accessory item.` };
+      if (!outfit.accessoryItemIds.includes(accessory.id)) outfit.accessoryItemIds.push(accessory.id);
+    }
   }
   if (args?.accessoryItemIds !== undefined) {
     if (!Array.isArray(args.accessoryItemIds)) return { applied: false, message: `bsChangeOutfit skipped for ${female}: accessoryItemIds must be an array.` };
@@ -4964,6 +5011,11 @@ function applyChangeOutfit(chatState, args) {
     // 换了主件且未显式指定穿着状态：新衣服默认穿整齐。
     outfit.wearState = DEFAULT_WEAR_STATE;
   }
+  const wornIds = new Set([
+    ...(outfit.mainItemId === null ? [] : [outfit.mainItemId]),
+    ...outfit.accessoryItemIds,
+  ]);
+  outfit.transientItems = outfit.transientItems.filter((item) => wornIds.has(item.id));
   refreshOutfitPregFit(profile);
   next.profile = profile;
   chatState.characters[female] = syncCharacterStageFromProfile(next);

@@ -114,13 +114,13 @@
           wardrobe: {
             enabled: true,
             items: [
-              { id: 1, name: '白色连身裙', note: '及膝雪纺，方领。', slot: 'main', parts: ['连身裙'], masking: 6, support: 4, capacity: 3, convenience: 5 },
-              { id: 2, name: '衬衫牛仔裤', note: '白衬衫配直筒牛仔裤。', slot: 'main', parts: ['白衬衫', '牛仔裤'], masking: 7, support: 5, capacity: 4, convenience: 7 },
-              { id: 3, name: '蕾丝内衣', note: '浅色蕾丝，贴身。', slot: 'accessory', layer: 'inner', masking: 0, support: 2, capacity: 0, convenience: 0 },
-              { id: 4, name: '针织外套', note: '米色开衫。', slot: 'accessory', masking: 2, support: 0, capacity: 0, convenience: 0 },
+              { id: 1, name: '白色连身裙', note: '及膝雪纺，方领。', slot: 'main', parts: ['连身裙'], fitProfile: { masking: 'medium', support: 'normal', capacity: 'fitted', convenience: 'normal' } },
+              { id: 2, name: '衬衫牛仔裤', note: '白衬衫配直筒牛仔裤。', slot: 'main', parts: ['白衬衫', '牛仔裤'], fitProfile: { masking: 'high', support: 'normal', capacity: 'fitted', convenience: 'convenient' } },
+              { id: 3, name: '蕾丝内衣', note: '浅色蕾丝，贴身。', slot: 'accessory', category: 'underwear', effects: ['support_up'] },
+              { id: 4, name: '针织外套', note: '米色开衫。', slot: 'accessory', category: 'outerwear', effects: ['masking_up'] },
             ],
           },
-          outfit: { mainItemId: 1, accessoryItemIds: [3, 4], temporaryItems: [], wearState: '敞开', pregFit: null },
+          outfit: { mainItemId: 1, accessoryItemIds: [3, 4], transientItems: [], wearState: '敞开', pregFit: null },
         },
       }),
       琪拉: makeCharacter('琪拉', {
@@ -148,12 +148,12 @@
           wardrobe: {
             enabled: true,
             items: [
-              { id: 1, name: '孕妇裙', note: '高腰伞形，弹性面料。', slot: 'main', masking: 6, support: 5, capacity: 8, convenience: 6 },
-              { id: 2, name: '哺乳内衣', note: '前开扣。', slot: 'accessory', layer: 'inner', masking: 0, support: 3, capacity: 0, convenience: 0 },
+              { id: 1, name: '孕妇裙', note: '高腰伞形，弹性面料。', slot: 'main', fitProfile: { masking: 'medium', support: 'normal', capacity: 'stretch', convenience: 'normal' } },
+              { id: 2, name: '哺乳内衣', note: '前开扣。', slot: 'accessory', category: 'underwear', effects: ['support_up'] },
             ],
           },
           outfit: {
-            mainItemId: 1, accessoryItemIds: [2], temporaryItems: [], wearState: '整齐',
+            mainItemId: 1, accessoryItemIds: [2], transientItems: [], wearState: '整齐',
             pregFit: { pregWearPressure: 3.3, gap: { masking: 2.7, support: 4.7, capacity: 4.7, convenience: 2.7 } },
           },
         },

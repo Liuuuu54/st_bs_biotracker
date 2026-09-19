@@ -184,9 +184,9 @@ test('回归期的衣着压力顶到上限并随时间回落', () => {
     profile: {
       wardrobe: {
         enabled: true,
-        items: [{ id: 1, name: '连身裙', slot: 'main', masking: 6, support: 5, capacity: 5, convenience: 6 }],
+        items: [{ id: 1, name: '连身裙', note: '', slot: 'main', fitProfile: { masking: 'medium', support: 'normal', capacity: 'fitted', convenience: 'normal' } }],
       },
-      outfit: { mainItemId: 1, accessoryItemIds: [], temporaryItems: [], wearState: '整齐', pregFit: null },
+      outfit: { mainItemId: 1, accessoryItemIds: [], transientItems: [], wearState: '整齐', pregFit: null },
     },
   });
   call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 24 });

@@ -59,8 +59,11 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /data-skill-definition-delete/);
   assert.match(controller, /class="bs-bt-wardrobe-row-delete"/);
   assert.match(controller, /id="bs-bt-wardrobe-item-character"/);
-  assert.match(controller, /id="bs-bt-wardrobe-item-layer-field"[\s\S]*?data-wardrobe-type-field="accessory" hidden/);
+  assert.match(controller, /id="bs-bt-wardrobe-item-category-field"[\s\S]*?data-wardrobe-type-field="accessory" hidden/);
+  assert.match(controller, /id="bs-bt-wardrobe-item-effects-field"[\s\S]*?data-wardrobe-type-field="accessory" hidden/);
   assert.match(controller, /id="bs-bt-wardrobe-item-parts-field"[\s\S]*?data-wardrobe-type-field="main"/);
+  assert.match(controller, /<option value="unknown"/);
+  assert.doesNotMatch(controller, /bs-bt-wardrobe-item-\$\{key\}[\s\S]*?type="number"/);
   assert.match(controller, /function updateWardrobeAddTypeFields\(\)/);
   assert.match(controller, /function renderFetalTalentDebugEditor\(/);
   assert.match(controller, /function renderTrackDebug\(viewModel, fetalTalentHtml = ''\)/);
@@ -103,9 +106,11 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.doesNotMatch(html, /id="bs-bt-skill-definition-delete"/);
   assert.match(css, /#bs-bt-skill-catalog-overview\[hidden\][\s\S]*?display:\s*none/);
   assert.match(css, /#bs-bt-wardrobe-add-page\[hidden\][\s\S]*?display:\s*none/);
+  assert.doesNotMatch(controller, /data-wardrobe-initialize/);
+  assert.doesNotMatch(controller, /initializeEmptyWardrobe/);
   for (const action of [
     'data-skill-definition-open',
-    'data-wardrobe-initialize', 'data-wardrobe-item-save', 'data-wardrobe-item-delete', 'data-wardrobe-outfit-apply',
+    'data-wardrobe-item-save', 'data-wardrobe-item-delete', 'data-wardrobe-outfit-apply',
   ]) {
     assert.match(controller, new RegExp(action));
   }

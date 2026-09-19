@@ -489,37 +489,28 @@
             </div>
             <div class="bs-bt-register-page" data-register-page="wardrobe" hidden>
               <div class="settings_section">
-                <label>备装数量</label>
-                <div class="bs-bt-inline-grid bs-bt-inline-grid--two">
-                  <label class="bs-bt-mini-field" for="bs-bt-wardrobe-prep-main-count">
-                    <span>主件 main</span>
-                    <input id="bs-bt-wardrobe-prep-main-count" class="text_pole" type="number" min="1" max="12" step="1" />
-                  </label>
-                  <label class="bs-bt-mini-field" for="bs-bt-wardrobe-prep-accessory-count">
-                    <span>配件 accessory</span>
-                    <input id="bs-bt-wardrobe-prep-accessory-count" class="text_pole" type="number" min="0" max="12" step="1" />
-                  </label>
-                </div>
+                <div class="bs-bt-status-title">衣柜补充（可选）</div>
+                <small>角色注册时已会记录当前衣着。只在剧情需要更多可换衣物时，再用此页补充少量长期衣柜项目。</small>
               </div>
 
               <div class="settings_section">
-                <label for="bs-bt-wardrobe-prep-prompt">额外备装提示</label>
-                <textarea id="bs-bt-wardrobe-prep-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="可写角色偏好、禁忌、职业/场景、常穿颜色、是否需要孕期可扩容衣物等。"></textarea>
+                <label for="bs-bt-wardrobe-prep-prompt">补充要求（可选）</label>
+                <textarea id="bs-bt-wardrobe-prep-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="例如：补一套正式外出服与一件冬季外套；避免高跟鞋。"></textarea>
               </div>
 
               <div class="settings_section bs-bt-action-row">
-                <button id="bs-bt-wardrobe-prep-run" class="menu_button" type="button">生成备装</button>
-                <button id="bs-bt-wardrobe-prep-apply" class="menu_button" type="button">套用备装</button>
+                <button id="bs-bt-wardrobe-prep-run" class="menu_button" type="button">生成衣柜补充</button>
+                <button id="bs-bt-wardrobe-prep-apply" class="menu_button" type="button">合并补充</button>
               </div>
 
               <div class="settings_section">
-                <label for="bs-bt-wardrobe-prep-json">备装 JSON</label>
-                <textarea id="bs-bt-wardrobe-prep-json" class="text_pole bs-bt-textarea" rows="16" placeholder="先输入已注册角色名，再让 AI 生成备装；生成后可在这里手动微调 JSON，再套用。"></textarea>
+                <label for="bs-bt-wardrobe-prep-json">衣柜补充 JSON</label>
+                <textarea id="bs-bt-wardrobe-prep-json" class="text_pole bs-bt-textarea" rows="16" placeholder="先输入已注册角色名，生成后可手动微调再合并。"></textarea>
               </div>
 
               <div class="settings_section">
-                <div class="bs-bt-status-title">备装状态</div>
-                <pre id="bs-bt-wardrobe-prep-status" class="bs-bt-status-box">角色必须已注册，才能准备衣柜与当前穿着。</pre>
+                <div class="bs-bt-status-title">补充状态</div>
+                <pre id="bs-bt-wardrobe-prep-status" class="bs-bt-status-box">角色必须已注册。补充不会覆盖原衣柜或强制换装。</pre>
               </div>
             </div>
             <div class="bs-bt-register-page" data-register-page="diary" hidden>

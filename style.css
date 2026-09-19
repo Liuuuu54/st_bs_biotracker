@@ -4127,6 +4127,39 @@
   gap: 6px 12px;
 }
 
+#bs-biotracker-settings .bs-bt-wardrobe-accessory-checks fieldset,
+#bs-biotracker-settings #bs-bt-wardrobe-item-effects-field {
+  min-width: 0;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-radius: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-wardrobe-accessory-checks fieldset {
+  display: flex;
+  flex: 1 1 180px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+#bs-biotracker-settings #bs-bt-wardrobe-item-effects-field {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+#bs-biotracker-settings #bs-bt-wardrobe-item-effects-field[hidden] {
+  display: none;
+}
+
+#bs-biotracker-settings .bs-bt-wardrobe-accessory-checks legend,
+#bs-biotracker-settings #bs-bt-wardrobe-item-effects-field legend {
+  padding: 0 4px;
+  opacity: 0.78;
+  font-size: 0.82em;
+}
+
 @media (max-width: 560px) {
   #bs-biotracker-settings .bs-bt-skill-history li,
   #bs-biotracker-settings .bs-bt-wardrobe-outfit-editor,
@@ -4138,6 +4171,10 @@
   #bs-biotracker-settings .bs-bt-wardrobe-editor-wide,
   #bs-biotracker-settings .bs-bt-wardrobe-outfit-editor > .menu_button {
     grid-column: auto;
+  }
+
+  #bs-biotracker-settings #bs-bt-wardrobe-item-effects-field {
+    grid-template-columns: 1fr;
   }
 }
 

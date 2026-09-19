@@ -12,7 +12,8 @@ import { LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, PREGNANCY_STAGE_D
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
 import {
   createDefaultWardrobeItem,
-  normalizeTemporaryOutfitItems,
+  DEFAULT_WEAR_STATE,
+  normalizeTransientOutfitItems,
   normalizeWardrobeItem,
   normalizeWardrobeItemId,
   sanitizeWearState,
@@ -66,18 +67,11 @@ export const THEME_CONFIG = {
 };
 
 export const DEFAULT_WARDROBE_PREP_PROMPT = [
-  '请根据角色卡、世界书、最近对话、已注册状态与当前服装描述，为指定角色准备衣柜 JSON。',
-  '默认生成 3 件 main 主件、3 件 accessory 配件；若用户在本提示中指定数量、风格、场景或禁忌，请优先遵守。',
-  '主件应覆盖角色常用日常服、较正式/外出服、睡衣或居家服等；配件可包含外套、托腹带、鞋履、披肩、制服配件、贴身内衣等。',
-  'note 只写衣物稳定外观与来源：颜色、材质、版型、长短、固定开口、图案、制服/病服/借装来源等。皮肤暴露、开衩、透肤、深领等稳定外观写在 note。禁止写当前穿着反应、角色感受、近期身体变化、怀孕/胀痛/压胸/勒红/变紧/显怀等动态状态；这些由四维、pregFit 与当轮叙事推导。',
-  '每件衣物字段必须为 id/name/note/slot/masking/support/capacity/convenience；主件可附 parts 数组列出组成部件名（如 ["白衬衫","牛仔裤"]，连身装可省略）；配件可附 layer（inner=贴身内衣等穿在主件之下，outer=外搭，默认 outer），通常应生成 1-2 件 layer=inner 的贴身衣物配件。',
-  '可独立穿脱的外层（毛衣、开衫、外套、罩衫、披肩等）不要并入 main 或写进 parts，应拆成 layer=outer 的配件；main 只保留脱掉外层后仍成立的基础层。',
-  'slot 只能是 main 或 accessory；main 是主件，只能穿一件；accessory 可叠加，但只是补正。',
-  '四维均为 -10 到 10；主件通常使用 0 到 10。配件单项只能 -3 到 3，通常只影响 1-2 个维度，其他维度必须填 0。旧的 contour/unsupported 若出现在资料中，会被视为 masking/support 的反向旧字段。',
-  'masking=掩盖身体曲线、孕肚、胸腹变化的程度；support=对胸、腹、腰、重心的承托程度，高表示托得住但可能偏束，低表示松散；capacity=容许体型变化的程度；convenience=行动、穿脱、如厕、哺乳或排解需求的方便程度。',
-  'id 必须使用整数；0 是系统保留默认主件，表示全裸，不要放入 wardrobe.items。长期衣柜 id 从 1 开始递增。',
-  'outfit.mainItemId 请选择一件最符合当前叙事/注册描述的主件；outfit.accessoryItemIds 选择当前已穿戴配件，未知则空数组。',
-  'temporaryItems 只用于病服、借装、旅馆睡衣等临时衣物；备装长期衣柜时通常输出空数组。',
+  '请根据角色卡、世界书、最近对话与已注册状态，为指定角色补充少量可重复使用的衣柜项目 JSON。不要重建整个衣柜。',
+  'main 是一套完整的基础衣着，同时只有一套；可用 parts 列出上衣、下装等组成。accessory 是可叠加配件。',
+  'main 使用 fitProfile：masking 只能为 very_low/low/medium/high，support 只能为 none/normal/strong，capacity 只能为 tight/fitted/stretch/loose，convenience 只能为 inconvenient/normal/convenient。',
+  'accessory 使用 category：underwear/outerwear/footwear/headwear/ornament/support/other；effects 最多两项，可选 masking/support/capacity/convenience 后缀 _up 或 _down。',
+  'note 只写稳定外观与来源，不写当前穿着反应、怀孕变化或感受。返回 items 数组，不需要手填数值分数。',
 ].join('\n');
 
 
@@ -192,8 +186,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   diaryRecentLimit: 5,
   diaryWritingPrompt: DEFAULT_DIARY_WRITING_PROMPT,
   wardrobePrepPrompt: '',
-  wardrobePrepMainCount: 3,
-  wardrobePrepAccessoryCount: 3,
   targetNames: '',
   trackerWorldbookMode: 'exclude',
   trackerWorldbookExcludeNames: '',
@@ -274,7 +266,7 @@ function normalizeWardrobeState(value) {
     items.push(item);
   }
   if (!items.some((item) => item.id === 0)) items.unshift(createDefaultWardrobeItem());
-  return { enabled: Boolean(value?.enabled), items };
+  return { enabled: true, items };
 }
 
 function normalizePregFitState(value) {
@@ -298,11 +290,13 @@ function normalizePregFitState(value) {
 
 function normalizeOutfitState(value, wardrobe) {
   const wardrobeItems = Array.isArray(wardrobe?.items) ? wardrobe.items : [];
-  const temporaryItems = normalizeTemporaryOutfitItems(value?.temporaryItems);
-  const availableItems = [...wardrobeItems, ...temporaryItems];
+  const transientItems = normalizeTransientOutfitItems(value?.transientItems);
+  const availableItems = [...wardrobeItems, ...transientItems];
   const hasItem = (id, slot = '') => availableItems.some((item) => item.id === id && (!slot || item.slot === slot));
-  const requestedMainId = normalizeWardrobeItemId(value?.mainItemId, 0);
-  const mainItemId = hasItem(requestedMainId, 'main') ? requestedMainId : 0;
+  const requestedMainId = value?.mainItemId === null || value?.mainItemId === undefined
+    ? null
+    : normalizeWardrobeItemId(value.mainItemId, null);
+  const mainItemId = requestedMainId !== null && hasItem(requestedMainId, 'main') ? requestedMainId : null;
   const accessoryItemIds = Array.isArray(value?.accessoryItemIds)
     ? value.accessoryItemIds
       .map((item) => normalizeWardrobeItemId(item))
@@ -311,30 +305,10 @@ function normalizeOutfitState(value, wardrobe) {
   return {
     mainItemId,
     accessoryItemIds,
-    temporaryItems,
+    transientItems,
     wearState: sanitizeWearState(value?.wearState),
     pregFit: normalizePregFitState(value?.pregFit),
   };
-}
-
-// v0.8.5 起衣着状态由 outfit.wearState 与 currentWearText 承担；
-// 旧版备装写入的两个描述子字段会与机械穿着脱节，载入时一次性剥离。
-const REMOVED_OUTFIT_DESCRIPTION_FIELD_NAMES = new Set([
-  '衣着动态', '衣着動態', '衣著动态', '衣著動態',
-  '衣着自评', '衣著自評', '衣着自評', '衣著自评', '服装自评', '服裝自評',
-]);
-
-function stripRemovedOutfitDescriptionFields(text) {
-  const source = String(text || '');
-  if (!source.includes('|')) return source;
-  const entries = source.split(';;').filter((entry) => entry.trim());
-  const kept = entries.filter((entry) => {
-    const separatorIndex = entry.indexOf('|');
-    const name = separatorIndex >= 0 ? entry.slice(0, separatorIndex).trim() : '';
-    return !REMOVED_OUTFIT_DESCRIPTION_FIELD_NAMES.has(name);
-  });
-  if (kept.length === entries.length) return source;
-  return kept.length > 0 ? `${kept.join(';;')};;` : '';
 }
 
 export function normalizeCharacterPsychologyState(characterState) {
@@ -387,21 +361,8 @@ export function normalizeCharacterPsychologyState(characterState) {
       return next;
     });
   }
-  if (characterState.profile.wardrobe?.enabled) {
-    characterState.profile.wardrobe = normalizeWardrobeState(characterState.profile.wardrobe);
-    characterState.profile.outfit = normalizeOutfitState(characterState.profile.outfit, characterState.profile.wardrobe);
-  } else {
-    delete characterState.profile.wardrobe;
-    delete characterState.profile.outfit;
-  }
-  const descriptions = characterState.profile.descriptions;
-  if (descriptions && typeof descriptions === 'object' && !Array.isArray(descriptions)) {
-    for (const key of ['normalDescription', 'pregnantDescription']) {
-      if (typeof descriptions[key] === 'string' && descriptions[key]) {
-        descriptions[key] = stripRemovedOutfitDescriptionFields(descriptions[key]);
-      }
-    }
-  }
+  characterState.profile.wardrobe = normalizeWardrobeState(characterState.profile.wardrobe);
+  characterState.profile.outfit = normalizeOutfitState(characterState.profile.outfit, characterState.profile.wardrobe);
   const metabolism = characterState.profile.metabolism;
   if (metabolism && typeof metabolism === 'object' && !Array.isArray(metabolism)) {
     if (metabolism.excretion === undefined && (metabolism.urine !== undefined || metabolism.stool !== undefined)) {
@@ -792,6 +753,17 @@ export function createDefaultFemaleState(name = '') {
         normalDescription: '',
         pregnantDescription: '',
       },
+      wardrobe: {
+        enabled: true,
+        items: [createDefaultWardrobeItem()],
+      },
+      outfit: {
+        mainItemId: null,
+        accessoryItemIds: [],
+        transientItems: [],
+        wearState: DEFAULT_WEAR_STATE,
+        pregFit: null,
+      },
       notify: {
         firstly: '',
         secondly: '',
@@ -860,18 +832,6 @@ export function getSettings(ctx) {
   }
   if (!String(settings.diaryWritingPrompt || '').trim()) {
     settings.diaryWritingPrompt = DEFAULT_DIARY_WRITING_PROMPT;
-    shouldSave = true;
-  }
-  const rawWardrobePrepMainCount = Number(settings.wardrobePrepMainCount);
-  const wardrobePrepMainCount = Math.max(1, Math.min(12, Math.floor(Number.isFinite(rawWardrobePrepMainCount) ? rawWardrobePrepMainCount : DEFAULT_SETTINGS.wardrobePrepMainCount)));
-  if (settings.wardrobePrepMainCount !== wardrobePrepMainCount) {
-    settings.wardrobePrepMainCount = wardrobePrepMainCount;
-    shouldSave = true;
-  }
-  const rawWardrobePrepAccessoryCount = Number(settings.wardrobePrepAccessoryCount);
-  const wardrobePrepAccessoryCount = Math.max(0, Math.min(12, Math.floor(Number.isFinite(rawWardrobePrepAccessoryCount) ? rawWardrobePrepAccessoryCount : DEFAULT_SETTINGS.wardrobePrepAccessoryCount)));
-  if (settings.wardrobePrepAccessoryCount !== wardrobePrepAccessoryCount) {
-    settings.wardrobePrepAccessoryCount = wardrobePrepAccessoryCount;
     shouldSave = true;
   }
   const rawDiaryRecentLimit = Number(settings.diaryRecentLimit);
@@ -1644,6 +1604,17 @@ function createSnapshotCharacterBaseline(name = '') {
       descriptions: {
         normalDescription: '',
         pregnantDescription: '',
+      },
+      wardrobe: {
+        enabled: true,
+        items: [createDefaultWardrobeItem()],
+      },
+      outfit: {
+        mainItemId: null,
+        accessoryItemIds: [],
+        transientItems: [],
+        wearState: DEFAULT_WEAR_STATE,
+        pregFit: null,
       },
       notify: {
         firstly: '',

@@ -39,13 +39,13 @@ function makeContext() {
           wardrobe: {
             enabled: true,
             items: [
-              { id: 1, name: '白色连身裙', note: '及膝雪纺，方领。', slot: 'main', parts: ['连身裙'], masking: 6, support: 4, capacity: 3, convenience: 5 },
-              { id: 2, name: '衬衫牛仔裤', note: '白衬衫配直筒牛仔裤。', slot: 'main', parts: ['白衬衫', '牛仔裤'], masking: 7, support: 5, capacity: 4, convenience: 7 },
-              { id: 3, name: '蕾丝内衣', note: '浅色蕾丝，贴身。', slot: 'accessory', layer: 'inner', masking: 0, support: 2, capacity: 0, convenience: 0 },
-              { id: 4, name: '针织外套', note: '米色开衫。', slot: 'accessory', masking: 2, support: 0, capacity: 0, convenience: 0 },
+              { id: 1, name: '白色连身裙', note: '及膝雪纺，方领。', slot: 'main', parts: ['连身裙'], fitProfile: { masking: 'medium', support: 'normal', capacity: 'fitted', convenience: 'normal' } },
+              { id: 2, name: '衬衫牛仔裤', note: '白衬衫配直筒牛仔裤。', slot: 'main', parts: ['白衬衫', '牛仔裤'], fitProfile: { masking: 'high', support: 'normal', capacity: 'fitted', convenience: 'convenient' } },
+              { id: 3, name: '蕾丝内衣', note: '浅色蕾丝，贴身。', slot: 'accessory', category: 'underwear', effects: ['support_up'] },
+              { id: 4, name: '针织外套', note: '米色开衫。', slot: 'accessory', category: 'outerwear', effects: ['masking_up'] },
             ],
           },
-          outfit: { mainItemId: 1, accessoryItemIds: [3, 4], temporaryItems: [], wearState: '敞开', pregFit: null },
+          outfit: { mainItemId: 1, accessoryItemIds: [3, 4], transientItems: [], wearState: '敞开', pregFit: null },
         },
       }),
       贝拉: makeCharacter('贝拉', {
@@ -53,9 +53,9 @@ function makeContext() {
         profile: {
           wardrobe: {
             enabled: true,
-            items: [{ id: 1, name: '孕妇裙', note: '高腰伞形。', slot: 'main', masking: 6, support: 5, capacity: 8, convenience: 6 }],
+            items: [{ id: 1, name: '孕妇裙', note: '高腰伞形。', slot: 'main', fitProfile: { masking: 'medium', support: 'normal', capacity: 'stretch', convenience: 'normal' } }],
           },
-          outfit: { mainItemId: 1, accessoryItemIds: [], temporaryItems: [], wearState: '整齐', pregFit: null },
+          outfit: { mainItemId: 1, accessoryItemIds: [], transientItems: [], wearState: '整齐', pregFit: null },
         },
       }),
       幕外子: makeCharacter('幕外子', {
@@ -63,9 +63,9 @@ function makeContext() {
         profile: {
           wardrobe: {
             enabled: true,
-            items: [{ id: 1, name: '和服', note: '藏青碎花。', slot: 'main', masking: 8, support: 3, capacity: 5, convenience: 3 }],
+            items: [{ id: 1, name: '和服', note: '藏青碎花。', slot: 'main', fitProfile: { masking: 'high', support: 'normal', capacity: 'fitted', convenience: 'inconvenient' } }],
           },
-          outfit: { mainItemId: 1, accessoryItemIds: [], temporaryItems: [], wearState: '整齐', pregFit: null },
+          outfit: { mainItemId: 1, accessoryItemIds: [], transientItems: [], wearState: '整齐', pregFit: null },
         },
       }),
     },
@@ -90,7 +90,7 @@ function makeContext() {
   return ctx;
 }
 
-test('tracker payload sends slim wardrobe outside the wear-fit window with parts/layer intact', () => {
+test('tracker payload sends a slim catalog and detailed current items outside the wear-fit window', () => {
   const ctx = makeContext();
   const payload = buildTrackerPayload(ctx, state.getSettings(ctx));
   assert.equal(payload.wardrobe_enabled, true);
@@ -98,15 +98,17 @@ test('tracker payload sends slim wardrobe outside the wear-fit window with parts
   const aila = payload.existing_state['艾拉'];
   const dress = aila.profile.wardrobe.items.find((item) => item.id === 1);
   assert.equal(dress.masking, undefined, 'non-pregnancy payload omits the four dimensions');
-  assert.equal(dress.note, '及膝雪纺，方领。', 'note is kept for narrative use');
-  assert.deepEqual(dress.parts, ['连身裙']);
+  assert.equal(dress.note, undefined, 'unworn catalog entries remain compact');
+  const currentDress = aila.profile.outfit.currentItems.find((item) => item.id === 1);
+  assert.equal(currentDress.note, '及膝雪纺，方领。', 'current item keeps narrative detail');
+  assert.deepEqual(currentDress.parts, ['连身裙']);
   const innerwear = aila.profile.wardrobe.items.find((item) => item.id === 3);
-  assert.equal(innerwear.layer, 'inner');
+  assert.equal(innerwear.category, 'underwear');
   assert.equal(aila.profile.outfit.wearState, '敞开');
   assert.equal(aila.profile.outfit.currentWearText, '白色连身裙（敞开） + 针织外套（内着：蕾丝内衣）');
 });
 
-test('tracker payload keeps four dimensions and pregFit inside the wear-fit window', () => {
+test('tracker payload keeps four dimensions only on current items inside the wear-fit window', () => {
   const ctx = makeContext();
   const settings = state.getSettings(ctx);
   // pregFit 是惰性刷新：由工具执行（bsPassedTime/bsChangeOutfit 等）触发，payload 只序列化。
@@ -114,7 +116,8 @@ test('tracker payload keeps four dimensions and pregFit inside the wear-fit wind
   const payload = buildTrackerPayload(ctx, settings);
   const bella = payload.existing_state['贝拉'];
   const dress = bella.profile.wardrobe.items.find((item) => item.id === 1);
-  assert.equal(dress.masking, 6, 'postpartum characters keep the four dimensions');
+  assert.equal(dress.masking, undefined, 'catalog stays slim even during postpartum');
+  assert.equal(bella.profile.outfit.currentItems.find((item) => item.id === 1)?.masking, 6, 'current item keeps derived dimensions');
   assert.equal(typeof bella.profile.outfit.pregFit?.pregWearPressure, 'number', 'postpartum pregFit is computed');
   assert.equal(bella.profile.outfit.pregFit.pregWearPressure > 0, true, 'postpartum pressure is non-zero early in recovery');
 });
@@ -135,9 +138,11 @@ test('tracker system prompt carries the wardrobe rules only when a wardrobe exis
   const payload = buildTrackerPayload(ctx, state.getSettings(ctx));
   const prompt = buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, payload);
   assert.match(prompt, /\[wardrobe \/ outfit\]/);
-  assert.match(prompt, /换装触发规则/);
-  assert.match(prompt, /整齐\/凌乱\/敞开\/半褪\/撩起/, 'wearState vocabulary is included');
-  assert.match(prompt, /铸造新的组合主件/, 'lazy combination rule is included');
+  assert.match(prompt, /衣柜无需预先准备/);
+  assert.match(prompt, /mainItemId=null.*衣着未记录/);
+  assert.match(prompt, /scope=owned/, 'atomic lazy creation rule is included');
+  assert.match(prompt, /fitProfile/, 'semantic tier contract is included');
+  assert.doesNotMatch(prompt, /配件单项只能 -3 到 3/);
 
   const disabled = buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, { ...payload, wardrobe_enabled: false });
   assert.doesNotMatch(disabled, /\[wardrobe \/ outfit\]/);

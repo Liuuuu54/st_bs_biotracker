@@ -689,7 +689,7 @@ function getDiaryRecentLimit(settings, characterCount) {
 }
 
 function hasPreparedWardrobe(existingState = {}) {
-  return Object.values(existingState || {}).some((item) => item?.profile?.wardrobe?.enabled === true);
+  return Object.values(existingState || {}).some((item) => item && typeof item === 'object');
 }
 
 export function hasBreedingPsychology(existingState = {}) {
@@ -773,7 +773,7 @@ function getOutfitCurrentWearText(profile) {
   if (!wardrobe?.enabled || !outfit || typeof outfit !== 'object') return '';
   const availableItems = [
     ...(Array.isArray(wardrobe.items) ? wardrobe.items : []),
-    ...(Array.isArray(outfit.temporaryItems) ? outfit.temporaryItems : []),
+    ...(Array.isArray(outfit.transientItems) ? outfit.transientItems : []),
   ];
   const findItem = (id) => availableItems.find((entry) => entry?.id === id) || null;
   const itemName = (id) => {
@@ -781,14 +781,18 @@ function getOutfitCurrentWearText(profile) {
     if (found?.name) return String(found.name);
     return id === 0 ? '全裸' : `未知衣物#${id}`;
   };
-  const mainId = outfit.mainItemId ?? 0;
+  const mainId = outfit.mainItemId ?? null;
   const wearState = sanitizeWearState(outfit.wearState);
   const stateSuffix = wearState !== DEFAULT_WEAR_STATE ? `（${wearState}）` : '';
   const accessoryIds = Array.isArray(outfit.accessoryItemIds) ? outfit.accessoryItemIds : [];
   const innerNames = [];
   const outerNames = [];
   for (const id of accessoryIds) {
-    (findItem(id)?.layer === 'inner' ? innerNames : outerNames).push(itemName(id));
+    (findItem(id)?.category === 'underwear' ? innerNames : outerNames).push(itemName(id));
+  }
+  if (mainId === null) {
+    const accessories = [...innerNames, ...outerNames];
+    return accessories.length > 0 ? `衣着未记录；已知配件：${accessories.join(' + ')}` : '衣着未记录';
   }
   if (mainId === 0 && (innerNames.length > 0 || outerNames.length > 0)) {
     return `仅着：${[...innerNames, ...outerNames].join(' + ')}${stateSuffix}`;
@@ -802,7 +806,7 @@ function buildSlimWardrobeItem(entry) {
     id: entry?.id,
     name: entry?.name,
     slot: entry?.slot,
-    ...(entry?.layer ? { layer: entry.layer } : {}),
+    ...(entry?.category ? { category: entry.category } : {}),
   };
 }
 
@@ -823,7 +827,9 @@ function buildNarrativeWardrobeItem(entry) {
     slot: entry?.slot,
     note: entry?.note,
     ...(Array.isArray(entry?.parts) && entry.parts.length > 0 ? { parts: entry.parts } : {}),
-    ...(entry?.layer ? { layer: entry.layer } : {}),
+    ...(entry?.fitProfile ? { fitProfile: entry.fitProfile } : {}),
+    ...(entry?.category ? { category: entry.category } : {}),
+    ...(Array.isArray(entry?.effects) ? { effects: entry.effects } : {}),
   };
 }
 
@@ -899,12 +905,22 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
 
   if (profile.wardrobe?.enabled && profile.outfit && typeof profile.outfit === 'object') {
     profile.outfit.currentWearText = getOutfitCurrentWearText(profile);
-    if (!isWearFitWindowActive(base)) {
-      profile.wardrobe.items = (Array.isArray(profile.wardrobe.items) ? profile.wardrobe.items : []).map(buildNarrativeWardrobeItem);
-      if (Array.isArray(profile.outfit.temporaryItems)) {
-        profile.outfit.temporaryItems = profile.outfit.temporaryItems.map((entry) => ({ ...buildNarrativeWardrobeItem(entry), source: entry?.source }));
-      }
-    }
+    const wardrobeItems = Array.isArray(profile.wardrobe.items) ? profile.wardrobe.items : [];
+    const transientItems = Array.isArray(profile.outfit.transientItems) ? profile.outfit.transientItems : [];
+    const currentIds = new Set([
+      ...(profile.outfit.mainItemId === null || profile.outfit.mainItemId === undefined ? [] : [profile.outfit.mainItemId]),
+      ...(Array.isArray(profile.outfit.accessoryItemIds) ? profile.outfit.accessoryItemIds : []),
+    ]);
+    profile.outfit.currentItems = [...wardrobeItems, ...transientItems]
+      .filter((entry) => currentIds.has(entry?.id))
+      .map((entry) => {
+        const narrative = buildNarrativeWardrobeItem(entry);
+        return isWearFitWindowActive(base)
+          ? { ...narrative, masking: entry?.masking, support: entry?.support, capacity: entry?.capacity, convenience: entry?.convenience }
+          : narrative;
+      });
+    profile.wardrobe.items = wardrobeItems.map(buildSlimWardrobeItem);
+    profile.outfit.transientItems = transientItems.map((entry) => ({ ...buildSlimWardrobeItem(entry), source: entry?.source }));
   }
 
   delete profile.bio;
@@ -956,11 +972,11 @@ function buildOffscreenCharacterState(item, diaryLimit = 0) {
           items: (Array.isArray(profile.wardrobe.items) ? profile.wardrobe.items : []).map(buildSlimWardrobeItem),
         },
         outfit: {
-          mainItemId: profile.outfit?.mainItemId ?? 0,
+          mainItemId: profile.outfit?.mainItemId ?? null,
           accessoryItemIds: Array.isArray(profile.outfit?.accessoryItemIds) ? [...profile.outfit.accessoryItemIds] : [],
           wearState: sanitizeWearState(profile.outfit?.wearState),
-          ...(Array.isArray(profile.outfit?.temporaryItems) && profile.outfit.temporaryItems.length > 0
-            ? { temporaryItems: profile.outfit.temporaryItems.map(buildSlimWardrobeItem) }
+          ...(Array.isArray(profile.outfit?.transientItems) && profile.outfit.transientItems.length > 0
+            ? { transientItems: profile.outfit.transientItems.map(buildSlimWardrobeItem) }
             : {}),
           currentWearText: getOutfitCurrentWearText(profile),
         },
