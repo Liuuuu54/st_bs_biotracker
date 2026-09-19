@@ -334,6 +334,40 @@ export const DERIVED_TYPE_METABOLISM_EXEMPTIONS = Object.freeze({
   "兽化": Object.freeze(["milk", "odor", "companionship"]),
 });
 
+/**
+ * 一张胎儿卡所代表的典型卵群大小。默认都是单卵群；胚胎类型本身只代表
+ * 「允许多卵」，不会让所有卵生／卵胎生／不定型种族自动变成高产。
+ */
+export const RACE_CLUTCH_SIZE_MEANS = Object.freeze(Object.assign(
+  Object.fromEntries(ALL_BUILTIN_RACES.map((race) => [race, 1])),
+  {
+    "怪鸟类": 4,
+    "植物亚人": 12,
+    "真菌亚人": 20,
+    "社会虫族": 50,
+    "独居虫族": 20,
+    "蜥蜴人": 12,
+    "海蛞蝓族": 30,
+    "龟族": 20,
+    "甲壳族": 50,
+    "宝箱怪": 8,
+    "阿拉克涅": 30,
+    "百足姬": 25,
+    "触手怪": 10,
+    "狗头人": 2,
+    "怪鱼类": 100,
+    "海妖": 16,
+    "蛙人": 100,
+    "水母族": 50,
+    "海马族": 30,
+    "蛇人": 1,
+    "人鱼": 1,
+    "深潜者": 1,
+    "史萊姆": 4,
+    "活体铠甲": 6,
+  },
+));
+
 export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
   "人类": {
     "menstrualLengthRatio": 1,
@@ -1075,6 +1109,7 @@ export const RACE_PHYSIOLOGY_FIELDS = Object.freeze([
   "impregnationDifficulty",
   "orgasmOvulationAmount",
   "identicalProbability",
+  "clutchSizeMean",
   "recoveryDays",
   "genderRatio"
 ]);
@@ -1149,6 +1184,7 @@ function sanitizeRacePhysiologyProfilePatch(profile) {
     if (!Number.isFinite(value)) continue;
     if (field === 'genderRatio') result[field] = Math.max(-1, Math.min(100, Math.round(value)));
     else if (field === 'orgasmOvulationAmount') result[field] = Math.max(0, Math.round(value));
+    else if (field === 'clutchSizeMean') result[field] = Math.max(1, Math.min(10000, Math.round(value)));
     else if (field === 'identicalProbability') result[field] = Math.max(0, Math.min(100, value));
     else result[field] = Math.max(0, value);
   }
@@ -1178,6 +1214,7 @@ export function getBuiltinRacePhysiologyProfile(race) {
   const profile = RACE_PHYSIOLOGY_PROFILES[key];
   return profile ? {
     ...profile,
+    clutchSizeMean: RACE_CLUTCH_SIZE_MEANS[key] || 1,
     [RACE_INHERITANCE_FIELD]: RACE_INHERITANCE_PROFILES[key] || RACE_INHERITANCE_MODES.NORMAL,
   } : null;
 }
@@ -1196,6 +1233,7 @@ function getEffectiveRacePhysiologyProfileValue(race) {
   if (!builtin) return null;
   return {
     ...builtin,
+    clutchSizeMean: RACE_CLUTCH_SIZE_MEANS[key] || 1,
     [RACE_INHERITANCE_FIELD]: RACE_INHERITANCE_PROFILES[key] || RACE_INHERITANCE_MODES.NORMAL,
     ...(customRacePhysiologyProfiles[key] || {}),
   };
@@ -1378,7 +1416,7 @@ export function getMergedRacePhysiologyProfile(race) {
 
   const merged = {};
   for (const field of RACE_PHYSIOLOGY_FIELDS) {
-    if (field === 'genderRatio') continue;
+    if (field === 'genderRatio' || field === 'clutchSizeMean') continue;
     const values = profiles
       .map((profile) => Number(profile[field]))
       .filter((value) => Number.isFinite(value));
@@ -1389,6 +1427,7 @@ export function getMergedRacePhysiologyProfile(race) {
     }
   }
 
+  merged.clutchSizeMean = getClutchSizeMeanByRace(race);
   merged.genderRatio = mergeGenderRatioValues(profiles.map((profile) => profile.genderRatio));
   // 核型不按生理数值混合；任何复合种族都回归一般遗传。
   merged[RACE_INHERITANCE_FIELD] = RACE_INHERITANCE_MODES.NORMAL;
@@ -1457,4 +1496,30 @@ export function getEmbryoTypeByRace(race) {
   if (METOVIVIPAROUS_RACES.includes(dominantRace)) return '胎转卵生';
   if (AMORPHOUS_RACES.includes(dominantRace)) return '不定型';
   return '胎生';
+}
+
+/**
+ * 混血先沿用既有规则：孕期最长（gestationSpeciesSpeed 最低）的成分决定胚型。
+ * 胎生与胎转卵生恒为单卵群；其余类型才让所有成分（包括均值 1）参与几何平均。
+ */
+export function getClutchSizeMeanByRace(race) {
+  const embryoType = getEmbryoTypeByRace(race);
+  if (embryoType === '胎生' || embryoType === '胎转卵生') return 1;
+  const parts = getRaceComponents(race);
+  if (parts.length === 0) return 1;
+  const values = parts.map((part) => {
+    const profile = getEffectiveRacePhysiologyProfileValue(part);
+    const value = Number(profile?.clutchSizeMean);
+    return Number.isFinite(value) && value >= 1 ? value : 1;
+  });
+  if (values.length === 1) return values[0];
+  return Math.exp(values.reduce((sum, value) => sum + Math.log(value), 0) / values.length);
+}
+
+/** 受孕时抽一次并落盘；均值 1 是硬特例，不受 ±25% 与整数取整影响。 */
+export function rollClutchSizeForRace(race, random = Math.random) {
+  const mean = getClutchSizeMeanByRace(race);
+  if (!Number.isFinite(mean) || mean <= 1) return 1;
+  const raw = mean * (0.75 + (Math.max(0, Math.min(1, Number(random()) || 0)) * 0.5));
+  return Math.max(1, Math.min(12500, Math.round(raw)));
 }

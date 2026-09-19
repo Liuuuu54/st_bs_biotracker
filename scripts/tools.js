@@ -53,6 +53,7 @@ import {
   getDerivedTypeMetabolismExemptions,
   getEmbryoTypeByRace,
   getMergedRacePhysiologyProfile,
+  rollClutchSizeForRace,
   parseRaceDescriptor,
   getRaceDescriptorComponents,
   getRaceComponents as getConfiguredRaceComponents,
@@ -443,6 +444,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + '胚胎种族依遗传母方推导而非承载者，所以虫母的卵放进人类宿主仍是虫族血统。'
       + 'race 与 fatherRace 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔。母系 derivedType 永远来自承载者；父系优先取 fatherRace，未写时才取 race。'
       + 'provider 若尚未注册，用 race 指明遗传母方种族；父方种族预设与遗传母方同族，跨种族时用 fatherRace 指明。'
+      + 'count 只表示要建立几张胎儿卡、也就是几名可能写入族谱的有效后代候选，绝不表示故事中植入了几枚卵。一个十枚卵但仅有一名有效后代的卵群必须传 count=1；该卡的 clutchSize 由系统依种族另行决定。'
       + '工具加入的是尚未着床的受精卵，可在同一着床窗口重复调用；第一颗会启动共用 fertilizationDays，之后由 bsPassedTime 推进并统一着床。孕早期且仍在异期复孕窗口时也可追加，此时新胎同时标记代孕与异期复孕；其余妊娠阶段不可加入。自然受孕请勿使用本工具。',
     input_schema: {
       type: 'object',
@@ -450,7 +452,12 @@ export const TOOL_DEFINITIONS = Object.freeze([
         female: { type: 'string' },
         provider: { type: 'string' },
         fathers: { type: 'string' },
-        count: { type: 'integer', minimum: 1, maximum: 50 },
+        count: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 50,
+          description: '建立的胎儿卡／有效后代候选数，不是卵群中的卵枚数。一般一个卵群传 1；clutchSize 由系统另算。',
+        },
         race: { type: 'string' },
         fatherRace: { type: 'string' },
       },
@@ -886,6 +893,8 @@ function applyWombReturn(chatState, args) {
     fatherDerivedType,
     gender: deriveFetusGender(fetusRace),
     embryoType: deriveFetusEmbryoType(fetusRace),
+    // 回归者本身就是唯一的有效个体，不套用物种高产卵群。
+    clutchSize: 1,
     // 刚进去时是一个成人的体积，之后随回归期线性回落到 1.0
     weight: WOMB_RETURN_PEAK_WEIGHT,
     tendencyAngle: randomInt(0, 360),
@@ -1351,6 +1360,7 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
     : (genderSources[0] === genderSources[1] ? genderSources[0] : (genderSources.includes('双') ? '双' : genderSources[0]));
   const fatherDerivedType = fetusA?.fatherDerivedType || fetusB?.fatherDerivedType || null;
   const race = combineRaceDescriptors(fetusA?.race, fetusB?.race);
+  const embryoType = deriveFetusEmbryoType(race);
   const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
   const derivedSeed = getDerivedTypeSeed(motherDerivedType, fatherDerivedType);
   const providerSources = maternalSources.length > 1
@@ -1368,7 +1378,15 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
     fatherRace: combineRaceDescriptors(fetusA?.fatherRace, fetusB?.fatherRace),
     fatherDerivedType,
     gender,
-    embryoType: deriveFetusEmbryoType(race),
+    embryoType,
+    // 胎生／胎转卵生的硬规则优先；其余嵌合保留较大的既成卵群，不重新抽签。
+    clutchSize: embryoType === '胎生' || embryoType === '胎转卵生'
+      ? 1
+      : Math.max(
+        1,
+        Math.floor(Number(fetusA?.clutchSize) || 1),
+        Math.floor(Number(fetusB?.clutchSize) || 1),
+      ),
     weight: (clampNumber(fetusA?.weight, 0.33, 3, 1) + clampNumber(fetusB?.weight, 0.33, 3, 1)) / 2,
     tendencyAngle: randomInt(0, 360),
     affinity: derivedSeed.affinity,
@@ -1558,6 +1576,8 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     fatherDerivedType,
     gender,
     embryoType: deriveFetusEmbryoType(fetusRace),
+    // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
+    clutchSize: rollClutchSizeForRace(fetusRace),
     weight: getConceptionWeight(cycleStage, gender, weightRatio),
     tendencyAngle: randomInt(0, 360),
     affinity: derivedSeed.affinity,
@@ -3087,6 +3107,8 @@ function appendChildrenFromFetuses(profile, fetuses) {
       derivedType: childDerivedType,
       age: 0,
       birthWeightRatio: clampNumber(fetus?.weight, 0.33, 3.0, 1.0),
+      // 卵群只留下出生背景；无论几枚，祖谱仍只新增这一名有效后代。
+      birthClutchSize: Math.max(1, Math.floor(Number(fetus?.clutchSize) || 1)),
       birthAffinity: clampNumber(fetus?.affinity, -50, 50, 0),
       talents: normalizeTalentList(fetus?.talents ?? fetus?.inheritedTalents),
     });
@@ -3168,6 +3190,11 @@ function applyChildbirthInternal(profile, female, isNatural) {
   const experience = profile.experience || {};
   const runtime = profile.__runtimeRef || null;
   const remainingFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((item) => ({ ...item })) : [];
+  const clutchEggs = remainingFetuses.reduce(
+    (sum, fetus) => sum + Math.max(1, Math.floor(Number(fetus?.clutchSize) || 1)),
+    0,
+  );
+  const hasMultipleEggClutch = clutchEggs > remainingFetuses.length;
   if (remainingFetuses.length > 0) appendChildrenFromFetuses(profile, remainingFetuses);
   clearPregnancyState(profile);
   if (runtime) restorePregnancyPhysiology(profile, runtime);
@@ -3181,8 +3208,12 @@ function applyChildbirthInternal(profile, female, isNatural) {
     firstly: `${female}进入了产后恢复`,
     secondly: remainingFetuses.length > 0
       ? (isNatural
-        ? `${female}自然分娩，生下了${remainingFetuses.length}个孩子`
-        : `${female}通过手术分娩，生下了${remainingFetuses.length}个孩子`)
+        ? (hasMultipleEggClutch
+          ? `${female}自然分娩，产下合计${clutchEggs}枚卵，记录${remainingFetuses.length}名有效后代`
+          : `${female}自然分娩，生下了${remainingFetuses.length}个孩子`)
+        : (hasMultipleEggClutch
+          ? `${female}通过手术分娩，取出合计${clutchEggs}枚卵，记录${remainingFetuses.length}名有效后代`
+          : `${female}通过手术分娩，生下了${remainingFetuses.length}个孩子`))
       : (isNatural
         ? `${female}完成了自然分娩，进入产后恢复`
         : `${female}完成了手术分娩，进入产后恢复`),
