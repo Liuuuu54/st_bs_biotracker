@@ -636,3 +636,32 @@ test('direct Responses payload carries reasoning.effort; direct Claude omits it'
   assert.equal('reasoning' in claudeBody, false);
   assert.equal('thinking' in claudeBody, false);
 });
+
+async function collectTemperaturesThroughJsonRetry(settings) {
+  const temps = [];
+  let calls = 0;
+  installBrowserHost(async (url, options) => {
+    calls += 1;
+    temps.push(JSON.parse(options.body).temperature);
+    // 首轮回非 JSON，逼出同轮 JSON 纠错重试
+    const content = calls === 1 ? 'not json' : JSON.stringify({ operations: [] });
+    return jsonResponse({ choices: [{ message: { content } }] });
+  });
+  await callOpenAICompatible({
+    apiUrl: 'https://relay.example.test/v1',
+    apiKey: 'k',
+    model: 'm',
+    apiTimeoutMs: 180000,
+    ...settings,
+  }, { recent_messages: [] }, 'Return JSON.');
+  return temps;
+}
+
+test('temperature default follows upstream logic: 0.2 primary, 0.1 retry', async () => {
+  assert.deepEqual(await collectTemperaturesThroughJsonRetry({}), [0.2, 0.1]);
+  assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperature: null }), [0.2, 0.1]);
+});
+
+test('configured temperature wins on both primary and retry', async () => {
+  assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperature: 1 }), [1, 1]);
+});

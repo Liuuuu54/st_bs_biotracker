@@ -142,6 +142,18 @@ export function normalizeTemperature(value) {
   return Math.max(0, Math.min(2, num));
 }
 
+/**
+ * 用户是否明确配置过温度：只有输入框里手填的有限数值才算。
+ * null/空/非法一律视为未配置，走上游逻辑（主请求 0.2／纠错重试 0.1，预设可覆盖）。
+ */
+export function resolveUserTemperature(settings) {
+  const raw = settings?.temperature;
+  if (raw === '' || raw == null) return null;
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return null;
+  return Math.max(0, Math.min(2, num));
+}
+
 export function getApiEndpointSuffix(format) {
   switch (normalizeApiFormat(format)) {
     case API_FORMATS.OPENAI_RESPONSES: return '/responses';
@@ -182,7 +194,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   model: 'gpt-4.1-mini',
   modelOptions: [],
   reasoningEffort: 'auto',
-  temperature: DEFAULT_TEMPERATURE,
+  temperature: null,
   formattedOutputV4: true,
   raceCatalogSelection: null,
   worldBaselinePrompt: '',
@@ -922,11 +934,20 @@ export function getSettings(ctx) {
     settings.reasoningEffort = normalizedReasoningEffort;
     shouldSave = true;
   }
-  const rawTemperature = Number(settings.temperature);
-  const normalizedTemperature = Number.isFinite(rawTemperature) ? Math.max(0, Math.min(2, rawTemperature)) : DEFAULT_TEMPERATURE;
-  if (settings.temperature !== normalizedTemperature) {
-    settings.temperature = normalizedTemperature;
-    shouldSave = true;
+  // temperature 存量迁移：null 表示未配置（走上游逻辑）；之前版本迁移写入的 0.2
+  // 并非用户手填，一并视为未配置；只有手填过的数值（含 0.2）才保留为用户配置。
+  const rawTemperatureSetting = settings.temperature;
+  if (rawTemperatureSetting === '' || rawTemperatureSetting == null || !Number.isFinite(Number(rawTemperatureSetting)) || Number(rawTemperatureSetting) === DEFAULT_TEMPERATURE) {
+    if (settings.temperature !== null) {
+      settings.temperature = null;
+      shouldSave = true;
+    }
+  } else {
+    const clampedTemperature = Math.max(0, Math.min(2, Number(rawTemperatureSetting)));
+    if (settings.temperature !== clampedTemperature) {
+      settings.temperature = clampedTemperature;
+      shouldSave = true;
+    }
   }
   if (shouldSave) saveHostSettings(ctx);
   return settings;

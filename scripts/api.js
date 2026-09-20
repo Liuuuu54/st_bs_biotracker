@@ -1,4 +1,4 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPERATURE, getApiUrlForFormat, normalizeApiFormat, normalizeReasoningEffort, normalizeTemperature } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeReasoningEffort, resolveUserTemperature } from './state.js';
 import {
   getHostChat,
   getHostChatCompletionSettings,
@@ -917,8 +917,14 @@ function resolveReasoningEffortField(settings) {
   return { reasoning_effort: raw };
 }
 
-function resolveTemperatureField(settings) {
-  return { temperature: normalizeTemperature(settings?.temperature) };
+/**
+ * 温度请求字段：未配置时走上游逻辑（调用方先写死 0.2／0.1，预设可覆盖）；
+ * 用户配置过才返回强制覆盖字段，压在预设之后、每次都用用户的。
+ */
+function resolveUserTemperatureField(settings) {
+  const userTemperature = resolveUserTemperature(settings);
+  if (userTemperature === null) return {};
+  return { temperature: userTemperature };
 }
 
 function buildPresetSamplingBodyFromPreset(preset) {
@@ -1484,8 +1490,9 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   }
   const body = {
     model,
-    ...resolveTemperatureField(settings),
+    temperature: 0.2,
     ...stPresetSampling,
+    ...resolveUserTemperatureField(settings),
     ...resolveReasoningEffortField(settings),
     messages: effectiveMessages,
     ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
@@ -1529,8 +1536,9 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
       // 同一轮全局尝试内：先做一次「请只输出 JSON」纠错请求
       const retryBody = {
         model,
-        ...resolveTemperatureField(settings),
+        temperature: 0.1,
         ...stPresetSampling,
+        ...resolveUserTemperatureField(settings),
         ...resolveReasoningEffortField(settings),
         messages: [
           ...effectiveMessages,
