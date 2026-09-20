@@ -62,6 +62,7 @@ import {
   normalizeWardrobeItem,
   sanitizeWearState,
 } from './wardrobe_config.js';
+import { calculateDerivedInheritanceProgress } from './tools.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
 const DEBUG_LAST_REGISTRY_RESULT_KEY = '__bs_biotracker_debug_last_registry_result__';
@@ -1388,6 +1389,22 @@ function normalizeRegisteredPregnancy(profile) {
   pregnant.pregnantDays = Math.max(1, Math.floor(Number(pregnant.pregnantDays) || 1));
   const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0.1, 20, 1.0);
   pregnant.effectivePregnantDays = Math.max(1, pregnant.pregnantDays * gestationSpeed);
+  const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
+  const gestationModifierMultiplier = clampNumber(profile?.bio?.gestationModifierMultiplier, 0, 20, 1);
+  for (const fetus of pregnant.fetuses) {
+    if (Number.isFinite(Number(fetus?.maternalDerivedTypeProgress))) continue;
+    const conceivedAtDays = Math.max(0, Number(fetus?.conceivedAtDays) || 0);
+    const elapsedDays = Math.max(0, pregnant.pregnantDays - (conceivedAtDays / gestationSpeed));
+    fetus.maternalDerivedTypeProgress = calculateDerivedInheritanceProgress({
+      currentProgress: 0,
+      affinity: fetus?.affinity,
+      motherDerivedType,
+      fatherDerivedType: fetus?.fatherDerivedType,
+      fetusRace: fetus?.race,
+      passedDays: elapsedDays,
+      gestationModifierMultiplier,
+    });
+  }
   pregnant.amnionDurability = 100;
   // 必须排在 effectivePregnantDays 算出来之后：受精点要夹进这次妊娠的范围，
   // 揭晓与否也要拿它跟门槛比

@@ -226,3 +226,28 @@ test('explicit fatherRace is honored and mixed against the mother (P0 companion)
   assert.equal(fetus.race, '精灵x人类', '显式 fatherRace 应重算为 父系x母系');
   assert.equal(fetus.fatherRace, '精灵');
 });
+
+test('an already-pregnant registration reconstructs omitted derived inheritance progress', () => {
+  const { applyRegistryResult } = registry;
+  const chatState = state.createEmptyChatState();
+  const result = {
+    name: '魔导孕母',
+    profile: {
+      base: { race: '人类', derivedType: '魔导' },
+      pregnant: {
+        pregnantDays: 140,
+        fetusesCount: 1,
+        fetuses: [{ fathers: '凡人父亲', provider: null, race: '人类', gender: '女', embryoType: '胎生', affinity: 0 }],
+      },
+      bio: {},
+      immune: {},
+      experience: {},
+      descriptions: {},
+      metabolism: { excretion: 10, hunger: 10, sleep: 10, milk: 10, odor: 10, companionship: 10 },
+    },
+  };
+
+  applyRegistryResult(chatState, result);
+  const fetus = chatState.characters['魔导孕母'].profile.pregnant.fetuses[0];
+  assert.equal(fetus.maternalDerivedTypeProgress, 75);
+});

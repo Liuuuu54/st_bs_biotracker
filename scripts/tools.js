@@ -1254,28 +1254,83 @@ function getDerivedTypeSeed(motherDerivedType, fatherDerivedType) {
   return { affinity: 15, progress: 0 };
 }
 
+export const DERIVED_INHERITANCE_THRESHOLD = 75;
+export const DERIVED_INHERITANCE_BASELINE_DAYS = 140;
+
+function getDerivedInheritanceDirection(currentProgress, motherDerivedType, fatherDerivedType) {
+  if (currentProgress !== 0) return Math.sign(currentProgress);
+  const mother = motherDerivedType ? String(motherDerivedType) : null;
+  const father = fatherDerivedType ? String(fatherDerivedType) : null;
+  if (mother && !father) return 1;
+  if (!mother && father) return -1;
+  if (mother && father) return mother === father ? 1 : -1;
+  return 0;
+}
+
+/**
+ * 推进一胎的衍生遗传轴。人类孕期、亲合度 0、遗传速度 1 时，
+ * 从 0 走到判定线恰需 140 天；分娩判定采用严格越线，所以要在其后才会遗传。
+ * 胎儿种族与临时妊娠倍率共同决定实际日速度，长孕期物种会等比例传得更久。
+ */
+export function calculateDerivedInheritanceProgress({
+  currentProgress = 0,
+  affinity = 0,
+  motherDerivedType = null,
+  fatherDerivedType = null,
+  fetusRace = '人类',
+  passedDays = 0,
+  gestationModifierMultiplier = 1,
+} = {}) {
+  const progress = clampNumber(currentProgress, -100, 100, 0);
+  const direction = getDerivedInheritanceDirection(progress, motherDerivedType, fatherDerivedType);
+  const elapsedDays = Math.max(0, Number(passedDays) || 0);
+  if (direction === 0 || elapsedDays <= 0) return progress;
+
+  const activeDerivedType = direction > 0 ? motherDerivedType : fatherDerivedType;
+  if (!activeDerivedType) return progress;
+  const alignedAffinity = direction * clampNumber(affinity, -50, 50, 0);
+  const affinityFactor = clampNumber(1 + (alignedAffinity / 30), 0, 3, 1);
+  const inheritanceSpeed = clampNumber(
+    getDerivedTypeInheritanceProfile(activeDerivedType)?.inheritanceSpeed,
+    0.2,
+    3.0,
+    1.0,
+  );
+  const speciesSpeed = clampNumber(
+    getMergedRacePhysiologyProfile(fetusRace)?.gestationSpeciesSpeed,
+    0.1,
+    20,
+    1.0,
+  );
+  const modifier = clampNumber(gestationModifierMultiplier, 0, 20, 1);
+  const baseProgressPerDay = DERIVED_INHERITANCE_THRESHOLD / DERIVED_INHERITANCE_BASELINE_DAYS;
+  const delta = direction * elapsedDays * baseProgressPerDay
+    * speciesSpeed * modifier * affinityFactor * inheritanceSpeed;
+  return clampNumber(progress + delta, -100, 100, progress);
+}
+
 function updateDerivedTypeProgress(profile, tick) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const motherDerivedType = base.derivedType ? String(base.derivedType) : null;
   const passedDays = Math.max(0, tick.passedDays);
+  const gestationModifierMultiplier = getGestationModifierMultiplier(profile);
   if (fetuses.length === 0 || passedDays <= 0) return;
 
   for (const fetus of fetuses) {
     const fatherDerivedType = fetus?.fatherDerivedType ? String(fetus.fatherDerivedType) : null;
     if (!motherDerivedType && !fatherDerivedType) continue;
     const currentProgress = clampNumber(fetus?.maternalDerivedTypeProgress, -100, 100, 0);
-    if (currentProgress === 0) continue;
-
-    const direction = Math.sign(currentProgress);
-    const affinity = clampNumber(fetus?.affinity, -50, 50, 0);
-    const alignment = direction * affinity;
-    const factor = clampNumber(1 + (alignment / 30), 0, 3, 1);
-    const activeDerivedType = direction > 0 ? motherDerivedType : fatherDerivedType;
-    const inheritanceSpeed = clampNumber(getDerivedTypeInheritanceProfile(activeDerivedType)?.inheritanceSpeed, 0.2, 3.0, 1.0);
-    const delta = direction * passedDays * 3 * factor * inheritanceSpeed;
-    fetus.maternalDerivedTypeProgress = clampNumber(currentProgress + delta, -100, 100, currentProgress);
+    fetus.maternalDerivedTypeProgress = calculateDerivedInheritanceProgress({
+      currentProgress,
+      affinity: fetus?.affinity,
+      motherDerivedType,
+      fatherDerivedType,
+      fetusRace: fetus?.race,
+      passedDays,
+      gestationModifierMultiplier,
+    });
   }
 
   pregnant.fetuses = fetuses;
@@ -3113,10 +3168,10 @@ function appendChildrenFromFetuses(profile, fetuses) {
     const fatherDerivedType = fetus?.fatherDerivedType ? String(fetus.fatherDerivedType) : null;
     let childDerivedType = null;
 
-    if (progress > 75 && motherDerivedType) {
+    if (progress > DERIVED_INHERITANCE_THRESHOLD && motherDerivedType) {
       childDerivedType = motherDerivedType;
     }
-    if (progress < -75 && fatherDerivedType) {
+    if (progress < -DERIVED_INHERITANCE_THRESHOLD && fatherDerivedType) {
       childDerivedType = fatherDerivedType;
     }
 

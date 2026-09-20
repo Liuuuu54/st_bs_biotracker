@@ -83,7 +83,7 @@ test('序列兼容三大女性向设定，兽化使用独立兽性与乳意抵�
   assert.match(raceConfig.getDerivedTypeIntroductionLine('序列'), /ABO、哨兵／向导与 Dom／Sub/);
   assert.equal(raceConfig.getDerivedTypeFluxProfile('序列').fluxName, '序列活性');
   assert.equal(raceConfig.getDerivedTypeFluxProfile('兽化-猫').fluxName, '兽性');
-  assert.equal(raceConfig.getDerivedTypeInheritanceProfile('兽化-猫').inheritanceSpeed, 1.25);
+  assert.equal(raceConfig.getDerivedTypeInheritanceProfile('兽化-猫').inheritanceSpeed, 1.4);
   assert.deepEqual(
     raceConfig.getDerivedTypeMetabolismExemptions('兽化-猫'),
     ['milk', 'odor', 'companionship'],
@@ -126,7 +126,7 @@ test('修行拆成修炼与魔导后，旧存档与繁体写法仍解析得到',
   assert.equal(canonical.fluxName, '炁');
   // 旧存档写的是 [修行]XXX，不能静默失效
   assert.equal(raceConfig.getDerivedTypeFluxProfile('修行').fluxName, '炁');
-  assert.equal(raceConfig.getDerivedTypeInheritanceProfile('修行').inheritanceSpeed, 0.75);
+  assert.equal(raceConfig.getDerivedTypeInheritanceProfile('修行').inheritanceSpeed, 0.8);
   assert.deepEqual(raceConfig.getDerivedTypeMetabolismExemptions('修行'), ['hunger', 'excretion', 'companionship']);
   // 繁体写法一并映射；带装饰子项也要能解析
   assert.equal(raceConfig.getDerivedTypeFluxProfile('修煉').fluxName, '炁');

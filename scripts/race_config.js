@@ -231,7 +231,7 @@ export const DERIVED_TYPE_INTRODUCTION_LINES = Object.freeze({
 
 export const DERIVED_TYPE_INHERITANCE_PROFILES = Object.freeze({
   "修炼": Object.freeze({
-    inheritanceSpeed: 0.75
+    inheritanceSpeed: 0.8
   }),
   "魔导": Object.freeze({
     inheritanceSpeed: 1.0
@@ -240,31 +240,31 @@ export const DERIVED_TYPE_INHERITANCE_PROFILES = Object.freeze({
     inheritanceSpeed: 1.25
   }),
   "神祇": Object.freeze({
-    inheritanceSpeed: 0.33
+    inheritanceSpeed: 0.25
   }),
   "不死": Object.freeze({
-    inheritanceSpeed: 2.0
+    inheritanceSpeed: 2.5
   }),
   "血族": Object.freeze({
-    inheritanceSpeed: 1.66
+    inheritanceSpeed: 1.9
   }),
   "星际": Object.freeze({
-    inheritanceSpeed: 1.5
+    inheritanceSpeed: 1.7
   }),
   "机械": Object.freeze({
     inheritanceSpeed: 0.5
   }),
   "器灵": Object.freeze({
-    inheritanceSpeed: 0.66
+    inheritanceSpeed: 0.65
   }),
   "变异": Object.freeze({
-    inheritanceSpeed: 1.33
+    inheritanceSpeed: 1.55
   }),
   "序列": Object.freeze({
-    inheritanceSpeed: 1.0
+    inheritanceSpeed: 1.1
   }),
   "兽化": Object.freeze({
-    inheritanceSpeed: 1.25
+    inheritanceSpeed: 1.4
   })
 });
 
