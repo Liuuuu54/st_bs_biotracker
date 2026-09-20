@@ -1,4 +1,4 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeReasoningEffort } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPERATURE, getApiUrlForFormat, normalizeApiFormat, normalizeReasoningEffort, normalizeTemperature } from './state.js';
 import {
   getHostChat,
   getHostChatCompletionSettings,
@@ -917,6 +917,10 @@ function resolveReasoningEffortField(settings) {
   return { reasoning_effort: raw };
 }
 
+function resolveTemperatureField(settings) {
+  return { temperature: normalizeTemperature(settings?.temperature) };
+}
+
 function buildPresetSamplingBodyFromPreset(preset) {
   const other = preset?.other && typeof preset.other === 'object' ? preset.other : {};
   const utilityPrompts = preset?.utilityPrompts && typeof preset.utilityPrompts === 'object' ? preset.utilityPrompts : {};
@@ -1480,7 +1484,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   }
   const body = {
     model,
-    temperature: 0.2,
+    ...resolveTemperatureField(settings),
     ...stPresetSampling,
     ...resolveReasoningEffortField(settings),
     messages: effectiveMessages,

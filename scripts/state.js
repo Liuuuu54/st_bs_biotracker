@@ -133,6 +133,15 @@ export function normalizeReasoningEffort(value) {
   return 'auto';
 }
 
+export const DEFAULT_TEMPERATURE = 0.2;
+
+export function normalizeTemperature(value) {
+  if (value === '' || value == null) return DEFAULT_TEMPERATURE;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return DEFAULT_TEMPERATURE;
+  return Math.max(0, Math.min(2, num));
+}
+
 export function getApiEndpointSuffix(format) {
   switch (normalizeApiFormat(format)) {
     case API_FORMATS.OPENAI_RESPONSES: return '/responses';
@@ -173,6 +182,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   model: 'gpt-4.1-mini',
   modelOptions: [],
   reasoningEffort: 'auto',
+  temperature: DEFAULT_TEMPERATURE,
   formattedOutputV4: true,
   raceCatalogSelection: null,
   worldBaselinePrompt: '',
@@ -910,6 +920,12 @@ export function getSettings(ctx) {
   const normalizedReasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);
   if (settings.reasoningEffort !== normalizedReasoningEffort) {
     settings.reasoningEffort = normalizedReasoningEffort;
+    shouldSave = true;
+  }
+  const rawTemperature = Number(settings.temperature);
+  const normalizedTemperature = Number.isFinite(rawTemperature) ? Math.max(0, Math.min(2, rawTemperature)) : DEFAULT_TEMPERATURE;
+  if (settings.temperature !== normalizedTemperature) {
+    settings.temperature = normalizedTemperature;
     shouldSave = true;
   }
   if (shouldSave) saveHostSettings(ctx);

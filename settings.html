@@ -257,17 +257,24 @@
               <input id="bs-bt-model" class="text_pole" type="text" placeholder="gpt-4.1-mini" />
             </div>
 
-            <div class="settings_section">
-              <label for="bs-bt-reasoning-effort">思考强度</label>
-              <select id="bs-bt-reasoning-effort" class="text_pole">
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="xhigh">XHigh</option>
-                <option value="max">Max</option>
-                <option value="auto">Auto（自动）</option>
-              </select>
-              <small>reasoning_effort，随本插件设置保存。偏小尺寸的模型拉高思考强度有助于保证输出内容正确性。默认 Auto：不传输思考强度参数，由服务端自动决定。</small>
+            <div class="settings_section" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div>
+                <label for="bs-bt-temperature">温度</label>
+                <input id="bs-bt-temperature" class="text_pole" type="number" min="0" max="2" step="0.1" placeholder="0.2" />
+                <small>temperature，默认 0.2。Kimi 等固定温度模型请填 1.0（或按其非思考 0.6）。</small>
+              </div>
+              <div>
+                <label for="bs-bt-reasoning-effort">思考强度</label>
+                <select id="bs-bt-reasoning-effort" class="text_pole">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="xhigh">XHigh</option>
+                  <option value="max">Max</option>
+                  <option value="auto">Auto（自动）</option>
+                </select>
+                <small>reasoning_effort，默认 Auto：不传参由服务端决定。</small>
+              </div>
             </div>
 
             <div class="settings_section">
