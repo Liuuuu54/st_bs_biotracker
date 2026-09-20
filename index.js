@@ -81,6 +81,7 @@ import {
   cloneValue,
   createEmptyChatState,
   DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_TEMPERATURE,
   getApiUrlForFormat,
   normalizeApiFormat,
   normalizeReasoningEffort,
@@ -6263,7 +6264,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-api-format', normalizeApiFormat(settings.apiFormat));
   setValue('bs-bt-api-key', settings.apiKey);
   setValue('bs-bt-model', settings.model);
-  setValue('bs-bt-temperature', normalizeTemperature(settings.temperature));
+  setValue('bs-bt-temperature', normalizeTemperature(settings.temperature) === DEFAULT_TEMPERATURE ? '' : normalizeTemperature(settings.temperature));
   setValue('bs-bt-reasoning-effort', normalizeReasoningEffort(settings.reasoningEffort));
   updateApiEndpointPreview();
   setValue('bs-bt-formatted-output-v4', settings.formattedOutputV4 !== false);
