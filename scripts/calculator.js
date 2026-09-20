@@ -12,6 +12,10 @@ import {
 } from './race_config.js';
 import { MENSTRUAL_STAGE_DAYS, MENSTRUAL_STAGES } from './stage_config.js';
 
+export const SPERM_DECAY_PER_DAY = 10;
+export const CROSS_RACE_DIFFICULTY_MULTIPLIER = 1.5;
+export const EMBRYO_TYPE_MISMATCH_MULTIPLIER = 1.25;
+
 function clampNumber(value, min, max, fallback = min) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
@@ -24,6 +28,20 @@ function isSameRaceGroup(raceA, raceB) {
   return left.length > 0 && right.length > 0
     && left.length === right.length
     && left.every((value, index) => value === right[index]);
+}
+
+/**
+ * 精液以固定速度线性流失。受精判定发生在整段时间推进之前，因此必须在这里截断
+ * 实际可暴露时长；否则只剩 1 的残留在推进 1 天时仍会被当成完整作用一整天。
+ */
+export function calculateSpermExposure(value, elapsedDays, decayPerDay = SPERM_DECAY_PER_DAY) {
+  const startingValue = clampNumber(value, 0, 999999, 0);
+  const requestedDays = Math.max(0, Number(elapsedDays) || 0);
+  const decay = clampNumber(decayPerDay, 0.000001, 999999, SPERM_DECAY_PER_DAY);
+  const exposureDays = Math.min(requestedDays, startingValue / decay);
+  const endingValue = Math.max(0, startingValue - (decay * exposureDays));
+  const exposureAmountDays = ((startingValue + endingValue) / 2) * exposureDays;
+  return { startingValue, endingValue, exposureDays, exposureAmountDays };
 }
 
 /**
@@ -48,23 +66,35 @@ export function calculateFertilizationPreview({
       race: String(source?.race || '人类'),
       value: clampNumber(source?.value, 0, 999999, 0),
     }))
-    .filter((source) => source.value > 0);
+    .filter((source) => source.value > 0)
+    .map((source) => ({
+      ...source,
+      ...calculateSpermExposure(source.value, elapsedDays),
+    }))
+    .filter((source) => source.exposureDays > 0);
   const totalSperm = validSources.reduce((sum, source) => sum + source.value, 0);
-  const spermDoseBonus = getSpermDoseDifficultyBonus(totalSperm);
+  const effectiveExposureDays = validSources.reduce((max, source) => Math.max(max, source.exposureDays), 0);
+  const totalExposureAmountDays = validSources.reduce((sum, source) => sum + source.exposureAmountDays, 0);
+  const effectiveTotalSperm = effectiveExposureDays > 0
+    ? totalExposureAmountDays / effectiveExposureDays
+    : 0;
+  const spermDoseBonus = getSpermDoseDifficultyBonus(effectiveTotalSperm);
   const sources = validSources.map((source) => {
-    const share = totalSperm > 0 ? source.value / totalSperm : 0;
+    const share = totalExposureAmountDays > 0 ? source.exposureAmountDays / totalExposureAmountDays : 0;
     const maleProfile = getMergedRacePhysiologyProfile(source.race) || {};
     const maleDifficulty = clampNumber(maleProfile.impregnationDifficulty, 0.1, 100, 1);
     const sameRace = isSameRaceGroup(eggRace, source.race);
-    let effectiveDifficulty = sameRace ? femaleDifficulty : femaleDifficulty + maleDifficulty;
+    let effectiveDifficulty = sameRace
+      ? femaleDifficulty
+      : Math.sqrt(femaleDifficulty * maleDifficulty) * CROSS_RACE_DIFFICULTY_MULTIPLIER;
     const eggEmbryoType = getEmbryoTypeByRace(eggRace);
     const spermEmbryoType = getEmbryoTypeByRace(source.race);
     const embryoTypeMismatch = eggEmbryoType !== spermEmbryoType;
-    if (embryoTypeMismatch) effectiveDifficulty *= 1.5;
+    if (embryoTypeMismatch) effectiveDifficulty *= EMBRYO_TYPE_MISMATCH_MULTIPLIER;
     effectiveDifficulty /= spermDoseBonus;
 
     const baseChance = clampNumber(
-      (Math.max(0, Number(elapsedDays) || 0) * 12 * 0.5) / effectiveDifficulty,
+      (effectiveExposureDays * 12 * 0.5) / effectiveDifficulty,
       0.001,
       1,
       0.001,
@@ -94,6 +124,9 @@ export function calculateFertilizationPreview({
     eggRace,
     femaleDifficulty,
     totalSperm,
+    effectiveTotalSperm,
+    effectiveExposureDays,
+    totalExposureAmountDays,
     spermDoseBonus,
     sources: weightedSources,
     totalChanceWeight,

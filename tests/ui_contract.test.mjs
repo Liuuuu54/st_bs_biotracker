@@ -113,11 +113,19 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /function updateWardrobeAddTypeFields\(\)/);
   assert.match(controller, /function renderFetalTalentDebugEditor\(/);
   assert.match(controller, /function renderTrackDebug\(viewModel, fetalTalentHtml = ''\)/);
-  assert.match(controller, /function renderSpermShareSection\(sperms, badge = ''\)/);
-  assert.ok(controller.includes('${renderSpermShareSection(data.sperms, fertilityBadge)}'));
+  assert.match(controller, /function renderSpermShareSection\(sperms, \{ badge = '', badgeClass = '', conceptionChance = null \} = \{\}\)/);
+  assert.match(controller, /renderSpermShareSection\(data\.sperms, \{/);
   assert.doesNotMatch(controller, /renderCardCarouselSection\(\s*'精液来源'/, '精液来源不应再走卡片轮播');
   assert.match(controller, /if \(items\.length === 0\) return '';/, '单一精液来源也必须显示占比环');
   assert.match(controller, /bs-bt-sperm-share__race/, '圆饼图图例应保留来源种族');
+  assert.doesNotMatch(controller, /bs-bt-sperm-share__pct/, '圆饼图已经表达占比，图例不应重复显示百分比');
+  assert.match(controller, /calculateFertilizationPreview/, '精卵同时存在时应复用真实受精公式');
+  assert.match(controller, /MENSTRUAL_STAGE_DAYS,\s*MENSTRUAL_STAGES,\s*PREGNANCY_STAGE_DAYS/s, '追踪页受孕率依赖的月经阶段目录必须显式导入');
+  assert.match(controller, /conceptionChance/, '精液来源区应显示所有精源合计受孕率');
+  assert.match(controller, /is-conceived/, '已有受精卵时危险期徽章应进入特效状态');
+  assert.match(controller, /hasPendingImplantation/, '普通受精、异期受孕与孕中孕的待着床胚胎都应触发状态徽章特效');
+  assert.match(controller, /bs-bt-sperm-share__chance/, '24 小时受孕率应有独立的圆饼图下方样式');
+  assert.match(controller, /bs-bt-sperm-share__visual[\s\S]*\$\{chanceHtml\}[\s\S]*bs-bt-sperm-share__legend/, '受孕率应放在圆饼视觉栏内而非标题或图例');
   assert.match(controller, /id="bs-bt-debug-conception-mode"/);
   for (const mode of ['normal', 'surrogacy', 'womb_return', 'superfetation', 'nested']) {
     assert.match(controller, new RegExp(`${mode}: \\{ label:`));

@@ -157,15 +157,16 @@ function calculateFertilization() {
     spermSources,
   });
   const lines = [
-    `总精液量：${formatNumber(result.totalSperm)}　剂量降难倍率：×${formatNumber(result.spermDoseBonus, 3)}`,
+    `当前精液量：${formatNumber(result.totalSperm)}　有效暴露：${formatNumber(result.effectiveExposureDays, 3)} 天`,
+    `暴露期平均有效量：${formatNumber(result.effectiveTotalSperm, 3)}　剂量降难倍率：×${formatNumber(result.spermDoseBonus, 3)}`,
     `至少一方受精：${formatPercent(result.successChance)}　全部失败：${formatPercent(result.failureChance)}`,
   ];
   if (!result.sources.length) lines.push('没有精液量大于 0 的有效精源。');
   result.sources.forEach((source, index) => {
     const notes = [source.sameRace ? '同种' : '异种'];
-    if (source.embryoTypeMismatch) notes.push('胚型不同 ×1.5 难度');
+    if (source.embryoTypeMismatch) notes.push('胚型不同 ×1.25 难度');
     lines.push(
-      `${index + 1}. ${source.race}：份额 ${formatPercent(source.share)}；本源机会 ${formatPercent(source.chance)}；最终胜出 ${formatPercent(source.winChance)}（${notes.join('、')}）`,
+      `${index + 1}. ${source.race}：有效 ${formatNumber(source.exposureDays, 3)} 天；份额 ${formatPercent(source.share)}；本源机会 ${formatPercent(source.chance)}；最终胜出 ${formatPercent(source.winChance)}（${notes.join('、')}）`,
     );
   });
   lines.push(`成功受精后约 ${formatNumber(calculateRaceImplantationDays(eggRace), 3)} 天进行着床判定。`);

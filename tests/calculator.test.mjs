@@ -7,6 +7,7 @@ import {
   calculateImplantationPreview,
   calculateOffspringPreview,
   calculateRaceImplantationDays,
+  calculateSpermExposure,
   getDerivedInheritanceSeed,
 } from '../scripts/calculator.js';
 
@@ -36,6 +37,37 @@ test('fertilization calculator allows sufficiently favorable conditions to reach
   assert.equal(result.sources[0].chance, 1);
   assert.equal(result.successChance, 1);
   assert.equal(result.failureChance, 0);
+});
+
+test('fertilization uses only the time before residual sperm naturally reaches zero', () => {
+  assert.deepEqual(calculateSpermExposure(1, 1), {
+    startingValue: 1,
+    endingValue: 0,
+    exposureDays: 0.1,
+    exposureAmountDays: 0.05,
+  });
+  const trace = calculateFertilizationPreview({
+    eggRace: '人类',
+    elapsedDays: 1,
+    spermSources: [{ race: '人类', value: 1 }],
+  });
+  assert.equal(trace.effectiveExposureDays, 0.1);
+  assert.equal(trace.effectiveTotalSperm, 0.5);
+  assert.ok(Math.abs(trace.successChance - 0.3) < 1e-12);
+});
+
+test('cross-race difficulty uses a moderate geometric penalty instead of adding both difficulties', () => {
+  const result = calculateFertilizationPreview({
+    eggRace: '人类',
+    elapsedDays: 0.1,
+    spermSources: [{ race: '石像鬼', value: 20 }],
+  });
+  const source = result.sources[0];
+  const formerAdditiveDifficulty = (result.femaleDifficulty + source.maleDifficulty) * 1.5 / result.spermDoseBonus;
+  assert.equal(source.sameRace, false);
+  assert.equal(source.embryoTypeMismatch, true);
+  assert.ok(source.effectiveDifficulty < formerAdditiveDifficulty);
+  assert.ok(result.successChance > 0.1, '异种受精不应被双重难度压到极低');
 });
 
 test('fertilization calculator uses race difficulty when override is blank', () => {

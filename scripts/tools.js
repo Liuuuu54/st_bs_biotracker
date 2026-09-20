@@ -65,6 +65,7 @@ import {
   DERIVED_INHERITANCE_BASELINE_DAYS,
   DERIVED_INHERITANCE_THRESHOLD,
   getDerivedInheritanceSeed,
+  SPERM_DECAY_PER_DAY,
 } from './calculator.js';
 export {
   calculateDerivedInheritanceProgress,
@@ -2009,7 +2010,7 @@ function processSpermLifecycle(profile, stage, tick) {
   base.sperms = sperms
     .map((item) => ({
       ...item,
-      value: Math.max(0, clampNumber(item?.value, 0, 999999, 0) - (tick.deltaDays * 10)),
+      value: Math.max(0, clampNumber(item?.value, 0, 999999, 0) - (tick.deltaDays * SPERM_DECAY_PER_DAY)),
     }))
     .filter((item) => item.value > 0);
 }

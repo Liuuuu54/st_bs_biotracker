@@ -37,6 +37,7 @@ import {
   VIVIPAROUS_RACES,
 } from './scripts/race_config.js';
 import { initializeCalculatorUi } from './scripts/calculator_ui.js';
+import { calculateFertilizationPreview } from './scripts/calculator.js';
 import {
   FIRST_STAGE_NATURAL_BIRTH_EXPERIENCE,
   LABOR_STAGES,
@@ -44,6 +45,7 @@ import {
   LABOR_STAGE_INCREMENT,
   LABOR_POSTPARTUM_OBSERVATION_HOURS,
   MENSTRUAL_STAGE_DAYS,
+  MENSTRUAL_STAGES,
   PREGNANCY_STAGE_DAYS,
   PREGNANCY_STAGES,
 } from './scripts/stage_config.js';
@@ -3276,6 +3278,21 @@ function buildTrackCharacterViewModel(character) {
   const gestationModifierMultiplier = Number.isFinite(Number(bio.gestationModifierMultiplier)) ? Number(bio.gestationModifierMultiplier) : 1;
   const stage = String(base.stage || '未设定');
   const totalSperm = (Array.isArray(base.sperms) ? base.sperms : []).reduce((sum, item) => sum + (Number(item?.value) || 0), 0);
+  const eggs = Number(base.eggs) || 0;
+  const allowsNaturalConception = [...MENSTRUAL_STAGES, '产后恢复'].includes(stage) && stage !== '月经期';
+  const conceptionPreview = eggs > 0 && totalSperm > 0 && allowsNaturalConception
+    ? calculateFertilizationPreview({
+      eggRace: base.race,
+      impregnationDifficulty: bio.impregnationDifficulty,
+      elapsedDays: 1,
+      chanceFactor: 1,
+      spermSources: base.sperms,
+    })
+    : null;
+  const rawFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const hasFertilizedEmbryo = rawFetuses.length > 0;
+  const hasPendingImplantation = rawFetuses.some((fetus) => fetus?.pendingImplantation)
+    || (!isPregnantStage(stage) && hasFertilizedEmbryo);
   return {
     name: character?.name || '未命名',
     base: {
@@ -3307,10 +3324,13 @@ function buildTrackCharacterViewModel(character) {
       psychology: hasBreedingPsychologyProfile(profile) ? getPsychologyView(profile) : null,
     },
     pregnancy: {
-      eggs: Number(base.eggs) || 0,
+      eggs,
       fertilizationDays: Number(base.fertilizationDays) || 0,
       totalSperm,
       sperms: Array.isArray(base.sperms) ? base.sperms : [],
+      conceptionChance: conceptionPreview?.successChance ?? null,
+      hasFertilizedEmbryo,
+      hasPendingImplantation,
       pregnantDays: Number(pregnant.pregnantDays) || 0,
       effectivePregnantDays: Number(pregnant.effectivePregnantDays) || 0,
       laborHours: Number(pregnant.laborHours) || 0,
@@ -3583,7 +3603,7 @@ function renderTrackPsychology(viewModel) {
  */
 const SPERM_SHARE_STEPS = [1, 0.68, 0.46, 0.32, 0.22, 0.16];
 
-function renderSpermShareChart(sperms) {
+function renderSpermShareChart(sperms, conceptionChance = null) {
   const items = (Array.isArray(sperms) ? sperms : [])
     .map((item) => ({
       male: String(item?.male || '未知'),
@@ -3620,28 +3640,40 @@ function renderSpermShareChart(sperms) {
         <span class="bs-bt-sperm-share__name">${escapeHtml(item.male)}</span>
         <span class="bs-bt-sperm-share__race">${escapeHtml(item.raceLabel)}</span>
       </span>
-      <span class="bs-bt-sperm-share__pct">${Math.round((item.value / total) * 100)}%</span>
       <span class="bs-bt-sperm-share__val">${Math.round(item.value)}</span>
     </div>
   `).join('');
+  const chance = Number(conceptionChance);
+  const chanceHtml = conceptionChance !== null && conceptionChance !== undefined && Number.isFinite(chance)
+    ? `<div class="bs-bt-sperm-share__chance">24h受孕率 <strong>${Math.round(Math.max(0, Math.min(1, chance)) * 100)}%</strong></div>`
+    : '';
 
   return `
     <div class="bs-bt-sperm-share">
-      <svg class="bs-bt-sperm-share__ring" viewBox="0 0 80 80" role="img" aria-label="精液来源占比">
-        <g transform="rotate(-90 40 40)">${segments}</g>
-        <text x="40" y="38" text-anchor="middle" class="bs-bt-sperm-share__total">${Math.round(total)}</text>
-        <text x="40" y="50" text-anchor="middle" class="bs-bt-sperm-share__unit">总残留</text>
-      </svg>
+      <div class="bs-bt-sperm-share__visual">
+        <svg class="bs-bt-sperm-share__ring" viewBox="0 0 80 80" role="img" aria-label="精液来源占比">
+          <g transform="rotate(-90 40 40)">${segments}</g>
+          <text x="40" y="38" text-anchor="middle" class="bs-bt-sperm-share__total">${Math.round(total)}</text>
+          <text x="40" y="50" text-anchor="middle" class="bs-bt-sperm-share__unit">总残留</text>
+        </svg>
+        ${chanceHtml}
+      </div>
       <div class="bs-bt-sperm-share__legend">${legend}</div>
     </div>
   `;
 }
 
-function renderSpermShareSection(sperms, badge = '') {
-  const chart = renderSpermShareChart(sperms);
+function renderSpermShareSection(sperms, { badge = '', badgeClass = '', conceptionChance = null } = {}) {
+  const chart = renderSpermShareChart(sperms, conceptionChance);
+  const statusBadge = String(badge || '').trim()
+    ? `<span class="bs-bt-track-title-badge bs-bt-sperm-share__status${badgeClass ? ` ${escapeHtml(badgeClass)}` : ''}">${escapeHtml(badge)}</span>`
+    : '';
   return `
     <div class="bs-bt-track-section">
-      <div class="bs-bt-track-section-title">${renderTrackTitle('精液来源', badge)}</div>
+      <div class="bs-bt-track-section-title bs-bt-track-section-title--split">
+        <span class="bs-bt-track-title-left">${renderTrackTitle('精液来源')}</span>
+        ${statusBadge}
+      </div>
       ${chart || '<div class="bs-bt-track-card-empty">当前无精液残留</div>'}
     </div>
   `;
@@ -3658,9 +3690,11 @@ function renderFetusTagRow(fetus) {
 function renderTrackPregnancy(viewModel) {
   const data = viewModel.pregnancy;
   const gestationModifier = data.gestationModifier || {};
+  const hasFertilizedEmbryo = Boolean(data.hasFertilizedEmbryo);
+  const hasPendingImplantation = Boolean(data.hasPendingImplantation);
   const fertilityBadge = data.showPregnantFields
     ? '已怀孕'
-    : (Number(data.eggs) > 0 || Number(data.fertilizationDays) > 0 || (Array.isArray(data.fetuses) && data.fetuses.length > 0))
+    : (Number(data.eggs) > 0 || Number(data.fertilizationDays) > 0 || hasFertilizedEmbryo)
       ? '危险期'
       : '安全期';
   const pregnantDaysBadge = data.showPregnantFields
@@ -3687,7 +3721,11 @@ function renderTrackPregnancy(viewModel) {
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">说明</span><span class="bs-bt-track-meta-value">${escapeHtml(gestationModifier.description || '无')}</span></div>
       </div>
     </div>` : ''}
-    ${renderSpermShareSection(data.sperms, fertilityBadge)}
+    ${renderSpermShareSection(data.sperms, {
+      badge: fertilityBadge,
+      badgeClass: hasPendingImplantation ? 'is-conceived' : '',
+      conceptionChance: data.conceptionChance,
+    })}
     ${data.showPregnantFields
       ? `${renderCardCarouselSection(
             '胎儿信息',
