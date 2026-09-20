@@ -51,16 +51,26 @@ import {
   deriveFetusRace,
   getFetusInheritanceTag,
   getBaseRaceName,
-  getDerivedTypeInheritanceProfile,
   getDerivedTypeMetabolismExemptions,
   getEmbryoTypeByRace,
   getMergedRacePhysiologyProfile,
-  getSpermDoseDifficultyBonus,
   rollClutchSizeForRace,
   parseRaceDescriptor,
   getRaceDescriptorComponents,
-  getRaceComponents as getConfiguredRaceComponents,
 } from './race_config.js';
+import {
+  calculateDerivedInheritanceProgress,
+  calculateFertilizationPreview,
+  calculateImplantationDays,
+  DERIVED_INHERITANCE_BASELINE_DAYS,
+  DERIVED_INHERITANCE_THRESHOLD,
+  getDerivedInheritanceSeed,
+} from './calculator.js';
+export {
+  calculateDerivedInheritanceProgress,
+  DERIVED_INHERITANCE_BASELINE_DAYS,
+  DERIVED_INHERITANCE_THRESHOLD,
+} from './calculator.js';
 import {
   addSkillExperience,
   addTalentExperience,
@@ -907,7 +917,7 @@ function applyWombReturn(chatState, args) {
   const fetusRace = deriveFetusRace(motherRace, fatherRace);
   const fatherDerivedType = parsedReturner?.derivedType
     || (returnerBase.derivedType ? String(returnerBase.derivedType) : null);
-  const derivedSeed = getDerivedTypeSeed(base.derivedType ? String(base.derivedType) : null, fatherDerivedType);
+  const derivedSeed = getDerivedInheritanceSeed(base.derivedType ? String(base.derivedType) : null, fatherDerivedType);
 
   pregnant.fetuses = [{
     embryoId: 1,
@@ -1048,7 +1058,7 @@ function shouldResetNaturalOvulation(stage) {
 
 function getImplantationDays(profile) {
   const cycleLength = getMenstrualCycleLength(profile);
-  return Math.max(1, (6 * cycleLength) / 28);
+  return calculateImplantationDays(cycleLength);
 }
 
 function getObstetricPregnancyOffsetDays(profile) {
@@ -1080,17 +1090,6 @@ function shuffleInPlace(list) {
     const swapIndex = randomInt(0, index);
     [list[index], list[swapIndex]] = [list[swapIndex], list[index]];
   }
-}
-
-function getRaceComponents(race) {
-  return getConfiguredRaceComponents(race);
-}
-
-function isSameRaceGroup(leftRace, rightRace) {
-  const left = getRaceComponents(leftRace).sort();
-  const right = getRaceComponents(rightRace).sort();
-  if (left.length === 0 || right.length === 0 || left.length !== right.length) return false;
-  return left.every((value, index) => value === right[index]);
 }
 
 function deriveFetusEmbryoType(race) {
@@ -1245,70 +1244,6 @@ function getConceptionWeightRatio(profile, sperm) {
   return clampNumber(1 + (dominance * 0.65), 0.625, 1.6, 1.0);
 }
 
-function getDerivedTypeSeed(motherDerivedType, fatherDerivedType) {
-  const mother = motherDerivedType ? String(motherDerivedType) : null;
-  const father = fatherDerivedType ? String(fatherDerivedType) : null;
-  if (!mother && !father) return { affinity: 0, progress: 0 };
-  if (mother && father && mother === father) return { affinity: 30, progress: 30 };
-  if (mother && father && mother !== father) return { affinity: -30, progress: -30 };
-  return { affinity: 15, progress: 0 };
-}
-
-export const DERIVED_INHERITANCE_THRESHOLD = 75;
-export const DERIVED_INHERITANCE_BASELINE_DAYS = 140;
-
-function getDerivedInheritanceDirection(currentProgress, motherDerivedType, fatherDerivedType) {
-  if (currentProgress !== 0) return Math.sign(currentProgress);
-  const mother = motherDerivedType ? String(motherDerivedType) : null;
-  const father = fatherDerivedType ? String(fatherDerivedType) : null;
-  if (mother && !father) return 1;
-  if (!mother && father) return -1;
-  if (mother && father) return mother === father ? 1 : -1;
-  return 0;
-}
-
-/**
- * 推进一胎的衍生遗传轴。人类孕期、亲合度 0、遗传速度 1 时，
- * 从 0 走到判定线恰需 140 天；分娩判定采用严格越线，所以要在其后才会遗传。
- * 胎儿种族与临时妊娠倍率共同决定实际日速度，长孕期物种会等比例传得更久。
- */
-export function calculateDerivedInheritanceProgress({
-  currentProgress = 0,
-  affinity = 0,
-  motherDerivedType = null,
-  fatherDerivedType = null,
-  fetusRace = '人类',
-  passedDays = 0,
-  gestationModifierMultiplier = 1,
-} = {}) {
-  const progress = clampNumber(currentProgress, -100, 100, 0);
-  const direction = getDerivedInheritanceDirection(progress, motherDerivedType, fatherDerivedType);
-  const elapsedDays = Math.max(0, Number(passedDays) || 0);
-  if (direction === 0 || elapsedDays <= 0) return progress;
-
-  const activeDerivedType = direction > 0 ? motherDerivedType : fatherDerivedType;
-  if (!activeDerivedType) return progress;
-  const alignedAffinity = direction * clampNumber(affinity, -50, 50, 0);
-  const affinityFactor = clampNumber(1 + (alignedAffinity / 30), 0, 3, 1);
-  const inheritanceSpeed = clampNumber(
-    getDerivedTypeInheritanceProfile(activeDerivedType)?.inheritanceSpeed,
-    0.2,
-    3.0,
-    1.0,
-  );
-  const speciesSpeed = clampNumber(
-    getMergedRacePhysiologyProfile(fetusRace)?.gestationSpeciesSpeed,
-    0.1,
-    20,
-    1.0,
-  );
-  const modifier = clampNumber(gestationModifierMultiplier, 0, 20, 1);
-  const baseProgressPerDay = DERIVED_INHERITANCE_THRESHOLD / DERIVED_INHERITANCE_BASELINE_DAYS;
-  const delta = direction * elapsedDays * baseProgressPerDay
-    * speciesSpeed * modifier * affinityFactor * inheritanceSpeed;
-  return clampNumber(progress + delta, -100, 100, progress);
-}
-
 function updateDerivedTypeProgress(profile, tick) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
@@ -1450,7 +1385,7 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
   const race = combineRaceDescriptors(fetusA?.race, fetusB?.race);
   const embryoType = deriveFetusEmbryoType(race);
   const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
-  const derivedSeed = getDerivedTypeSeed(motherDerivedType, fatherDerivedType);
+  const derivedSeed = getDerivedInheritanceSeed(motherDerivedType, fatherDerivedType);
   const providerSources = maternalSources.length > 1
     ? maternalSources
     : maternalSources.filter((source) => source !== carrierName);
@@ -1654,7 +1589,7 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
   const weightRatio = getConceptionWeightRatio(profile, sperm);
   const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
   const fatherDerivedType = sperm?.derivedType ? String(sperm.derivedType) : null;
-  const derivedSeed = getDerivedTypeSeed(motherDerivedType, fatherDerivedType);
+  const derivedSeed = getDerivedInheritanceSeed(motherDerivedType, fatherDerivedType);
   return {
     embryoId: null,
     fusionCheckedWith: [],
@@ -2089,28 +2024,30 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   const availableSperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
   let eggs = clampNumber(base.eggs, 0, 99, 0);
-  const femaleDifficulty = clampNumber(profile?.bio?.impregnationDifficulty, 0.1, 100, 1.0);
 
   while (eggs > 0 && availableSperms.length > 0) {
-    const totalSperm = availableSperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
-    const spermDoseBonus = getSpermDoseDifficultyBonus(totalSperm);
+    const preview = calculateFertilizationPreview({
+      eggRace: profile?.base?.race,
+      impregnationDifficulty: profile?.bio?.impregnationDifficulty,
+      elapsedDays: deltaDays,
+      chanceFactor,
+      spermSources: availableSperms,
+    });
+    const totalSperm = preview.totalSperm;
     let winner = null;
-    for (const sperm of availableSperms) {
-      const share = totalSperm > 0 ? clampNumber(sperm?.value, 0, 999999, 0) / totalSperm : 0;
-      const maleDifficulty = clampNumber(getMergedRacePhysiologyProfile(sperm?.race)?.impregnationDifficulty, 0.1, 100, 1.0);
-      const isSameRace = isSameRaceGroup(profile?.base?.race, sperm?.race);
-      let effectiveDifficulty = isSameRace ? femaleDifficulty : (femaleDifficulty + maleDifficulty);
-      const femaleEmbryoType = deriveFetusEmbryoType(profile?.base?.race);
-      const maleEmbryoType = deriveFetusEmbryoType(sperm?.race);
-      if (femaleEmbryoType !== maleEmbryoType) effectiveDifficulty *= 1.5;
-      // 精液绝对量只改变本次有效难度；成功受精不扣除可见残留，仍由生命周期自然衰减。
-      effectiveDifficulty /= spermDoseBonus;
-      const spermBaseChance = Math.max(0.001, Math.min(0.8, (deltaDays * 12 * 0.5) / effectiveDifficulty));
-      const spermChance = Math.max(0, Math.min(0.8, spermBaseChance * share * chanceFactor));
-      if (spermChance > 0 && Math.random() <= spermChance) {
-        winner = sperm;
-        break;
+    if (preview.successChance > 0 && Math.random() <= preview.successChance) {
+      let selectedSource = preview.sources[0] || null;
+      if (preview.sources.length > 1) {
+        let roll = Math.random() * preview.totalChanceWeight;
+        for (const source of preview.sources) {
+          roll -= source.chance;
+          if (roll <= 0) {
+            selectedSource = source;
+            break;
+          }
+        }
       }
+      winner = selectedSource ? availableSperms[selectedSource.sourceIndex] : null;
     }
     if (winner) {
       pregnant.fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];

@@ -379,7 +379,7 @@
                   <button type="button" class="bs-bt-race-picker-button" data-race-picker-target="bs-bt-register-race"
                     title="种族调色盘" aria-label="种族调色盘">☥</button>
                 </div>
-                <div id="bs-bt-register-race-palette-anchor"></div>
+                <div id="bs-bt-register-race-palette-anchor" data-race-palette-anchor></div>
               </div>
             </div>
 
@@ -831,8 +831,9 @@
             <div class="settings_section">
               <div class="bs-bt-track-tabs" id="bs-bt-encyclopedia-tabs">
                 <button type="button" class="bs-bt-track-tab is-active" data-encyclopedia-tab="race">异种</button>
-                <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="derived">衍生类型</button>
-                <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="world">世界基准</button>
+                <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="derived">衍生</button>
+                <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="world">基准</button>
+                <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="calculator">计算</button>
               </div>
             </div>
 
@@ -923,9 +924,79 @@
                 </div>
               </div>
             </div>
+
+            <div class="bs-bt-encyclopedia-page" data-encyclopedia-page="calculator" hidden>
+              <div class="settings_section">
+                <div class="bs-bt-track-tabs bs-bt-calculator-tabs" id="bs-bt-calculator-tabs">
+                  <button type="button" class="bs-bt-track-tab is-active" data-calculator-tab="fertilization">自然受精</button>
+                  <button type="button" class="bs-bt-track-tab" data-calculator-tab="offspring">后代预测</button>
+                  <button type="button" class="bs-bt-track-tab" data-calculator-tab="derived">衍生遗传</button>
+                </div>
+                <small>只读推演，不会抽签，也不会写入角色变量。使用当前百科参数覆盖。</small>
+              </div>
+
+              <div class="bs-bt-calculator-panel" data-calculator-panel="fertilization">
+                <div class="settings_section bs-bt-calculator-card">
+                  <div class="bs-bt-status-title">自然受精</div>
+                  <div class="bs-bt-calculator-grid">
+                    <label><span>卵方种族</span><div class="bs-bt-race-picker-wrap"><div class="bs-bt-race-input-row"><input id="bs-bt-calc-fert-egg-race" class="text_pole" type="text" value="人类" /><button type="button" class="bs-bt-race-picker-button" data-race-picker-target="bs-bt-calc-fert-egg-race" title="种族调色盘" aria-label="卵方种族调色盘">☥</button></div><div id="bs-bt-calc-fert-egg-race-palette-anchor" data-race-palette-anchor></div></div></label>
+                    <label><span>判定时间（天）</span><input id="bs-bt-calc-fert-days" class="text_pole" type="number" min="0" step="0.01" value="1" /></label>
+                  </div>
+                  <div id="bs-bt-calc-sperm-list" class="bs-bt-calculator-sperm-list"></div>
+                  <div class="settings_section bs-bt-action-row">
+                    <button id="bs-bt-calc-sperm-add" class="menu_button" type="button">新增精源</button>
+                    <button id="bs-bt-calc-fert-run" class="menu_button" type="button">计算受精</button>
+                  </div>
+                  <small class="bs-bt-calculator-rule-note">硬规则：仅在卵方体内至少有 1 颗可用卵，且当前阶段允许自然受精时进行判定。</small>
+                  <pre id="bs-bt-calc-fert-output" class="bs-bt-status-box">输入条件后计算；同条件精源不受排列顺序影响。</pre>
+                </div>
+
+              </div>
+
+              <div class="bs-bt-calculator-panel" data-calculator-panel="offspring" hidden>
+                <div class="settings_section bs-bt-calculator-card">
+                  <div class="bs-bt-calculator-grid">
+                    <label><span>卵方种族</span><div class="bs-bt-race-picker-wrap"><div class="bs-bt-race-input-row"><input id="bs-bt-calc-offspring-egg-race" class="text_pole" type="text" value="人类" /><button type="button" class="bs-bt-race-picker-button" data-race-picker-target="bs-bt-calc-offspring-egg-race" title="种族调色盘" aria-label="卵方种族调色盘">☥</button></div><div id="bs-bt-calc-offspring-egg-race-palette-anchor" data-race-palette-anchor></div></div></label>
+                    <label><span>精方种族</span><div class="bs-bt-race-picker-wrap"><div class="bs-bt-race-input-row"><input id="bs-bt-calc-offspring-sperm-race" class="text_pole" type="text" value="人类" /><button type="button" class="bs-bt-race-picker-button" data-race-picker-target="bs-bt-calc-offspring-sperm-race" title="种族调色盘" aria-label="精方种族调色盘">☥</button></div><div id="bs-bt-calc-offspring-sperm-race-palette-anchor" data-race-palette-anchor></div></div></label>
+                    <label><span>精液量</span><input id="bs-bt-calc-offspring-sperm" class="text_pole" type="number" min="0" step="1" value="20" /></label>
+                    <label><span>受精阶段</span><select id="bs-bt-calc-offspring-stage" class="text_pole">
+                      <option value="排卵期">排卵期</option>
+                      <option value="黄体期">黄体期</option>
+                      <option value="卵泡期">卵泡期</option>
+                      <option value="月经期">月经期</option>
+                      <option value="产后恢复">产后恢复</option>
+                    </select></label>
+                  </div>
+                  <div class="settings_section bs-bt-action-row">
+                    <button id="bs-bt-calc-offspring-run" class="menu_button" type="button">预测后代</button>
+                  </div>
+                  <pre id="bs-bt-calc-offspring-output" class="bs-bt-status-box">显示核型规则、后代种族、胚型来源；多卵群种族另显示卵群范围。</pre>
+                </div>
+              </div>
+
+              <div class="bs-bt-calculator-panel" data-calculator-panel="derived" hidden>
+                <div class="settings_section bs-bt-calculator-card">
+                  <div class="bs-bt-calculator-grid">
+                    <label><span>母方衍生</span><select id="bs-bt-calc-derived-mother" class="text_pole"></select></label>
+                    <label><span>父方衍生</span><select id="bs-bt-calc-derived-father" class="text_pole"></select></label>
+                    <label><span>胎儿种族</span><div class="bs-bt-race-picker-wrap"><div class="bs-bt-race-input-row"><input id="bs-bt-calc-derived-race" class="text_pole" type="text" value="人类" /><button type="button" class="bs-bt-race-picker-button" data-race-picker-target="bs-bt-calc-derived-race" title="种族调色盘" aria-label="胎儿种族调色盘">☥</button></div><div id="bs-bt-calc-derived-race-palette-anchor" data-race-palette-anchor></div></div></label>
+                    <label><span>当前亲合度</span><input id="bs-bt-calc-derived-affinity" class="text_pole" type="number" min="-50" max="50" step="1" value="0" /></label>
+                    <label><span>当前遗传轴</span><input id="bs-bt-calc-derived-progress" class="text_pole" type="number" min="-100" max="100" step="1" value="0" /></label>
+                    <label><span>经过天数</span><input id="bs-bt-calc-derived-days" class="text_pole" type="number" min="0" step="0.01" value="140" /></label>
+                  </div>
+                  <div class="settings_section bs-bt-action-row">
+                    <button id="bs-bt-calc-derived-seed" class="menu_button" type="button">套用受精初值</button>
+                    <button id="bs-bt-calc-derived-run" class="menu_button" type="button">计算遗传</button>
+                  </div>
+                  <pre id="bs-bt-calc-derived-output" class="bs-bt-status-box">正值偏母方，负值偏父方；必须严格越过 ±75 才会遗传。</pre>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </div>
+
+      <div id="bs-bt-race-palette-modal" class="bs-bt-race-screen-modal" role="dialog" aria-modal="true" aria-label="种族调色盘" hidden></div>
 
       <div id="bs-bt-power-off-screen" class="bs-bt-power-off-overlay">
         <div>𓃠<br />~nya</div>

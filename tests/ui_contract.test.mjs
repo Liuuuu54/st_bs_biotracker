@@ -5,10 +5,11 @@ import test from 'node:test';
 const root = new URL('../', import.meta.url);
 
 test('home grid and manual skill/wardrobe controls stay wired in markup and controller', async () => {
-  const [html, controller, css] = await Promise.all([
+  const [html, controller, css, calculatorUi] = await Promise.all([
     readFile(new URL('settings.html', root), 'utf8'),
     readFile(new URL('index.js', root), 'utf8'),
     readFile(new URL('style.css', root), 'utf8'),
+    readFile(new URL('scripts/calculator_ui.js', root), 'utf8'),
   ]);
   const homeSection = html.match(/<section id="bs-bt-view-home"[\s\S]*?<\/section>/)?.[0] || '';
   const views = [...homeSection.matchAll(/data-nav-view="([^"]+)"/g)].map((match) => match[1]);
@@ -42,10 +43,36 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(html, /id="bs-bt-register-skill-result"/);
   assert.deepEqual(
     [...html.matchAll(/data-encyclopedia-tab="([^"]+)"/g)].map((match) => match[1]),
-    ['race', 'derived', 'world'],
+    ['race', 'derived', 'world', 'calculator'],
+  );
+  assert.deepEqual(
+    [...html.matchAll(/data-encyclopedia-tab="[^"]+">([^<]+)<\/button>/g)].map((match) => match[1]),
+    ['异种', '衍生', '基准', '计算'],
   );
   assert.match(html, /data-encyclopedia-page="world"[\s\S]*?id="bs-bt-world-baseline-prompt"/);
-  assert.match(controller, /selectedEncyclopediaSubpage = \['race', 'derived', 'world'\]\.includes\(page\)/);
+  assert.match(html, /data-encyclopedia-page="calculator"[\s\S]*?id="bs-bt-calculator-tabs"/);
+  assert.match(html, /<input id="bs-bt-calc-fert-egg-race"/);
+  assert.match(html, /data-race-picker-target="bs-bt-calc-fert-egg-race"/);
+  assert.match(html, /<input id="bs-bt-calc-offspring-sperm-race"/);
+  assert.match(html, /data-race-picker-target="bs-bt-calc-offspring-sperm-race"/);
+  assert.match(html, /id="bs-bt-race-palette-modal"[^>]*role="dialog"[^>]*aria-modal="true"/);
+  assert.match(html, /class="bs-bt-calculator-rule-note">硬规则：/);
+  assert.doesNotMatch(calculatorUi, /lines\.push\('前提：/);
+  assert.match(calculatorUi, /if \(result\.clutchSizeMean > 1\)/);
+  assert.match(calculatorUi, /raceAnchor\.dataset\.racePaletteAnchor/);
+  assert.match(calculatorUi, /heading\.append\(order, amountLabel\)/);
+  assert.match(calculatorUi, /controls\.append\(racePicker, input, remove\)/);
+  assert.doesNotMatch(calculatorUi, /整体受精成功后按各精源机会权重/);
+  assert.match(controller, /function bindCalculatorRacePalette\(\)/);
+  assert.match(controller, /paletteModal\.innerHTML = racePaletteState\.isOpen \? renderRacePaletteBody\(\) : ''/);
+  assert.match(controller, /const debugRacePalette = \(\) => '';/);
+  assert.match(css, /\.bs-bt-race-screen-modal \{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;/);
+  assert.doesNotMatch(html, /id="bs-bt-calc-fert-factor"/);
+  assert.doesNotMatch(html, /id="bs-bt-calc-fert-difficulty"/);
+  assert.doesNotMatch(html, /id="bs-bt-calc-implant-/);
+  assert.doesNotMatch(html, /id="bs-bt-calc-derived-modifier"/);
+  assert.match(html, /id="bs-bt-calc-offspring-stage"/);
+  assert.match(controller, /selectedEncyclopediaSubpage = \['race', 'derived', 'world', 'calculator'\]\.includes\(page\)/);
   assert.match(controller, /bs-bt-race-open-editor'[\s\S]*?scrollEncyclopediaToTop\(\)[\s\S]*?openRacePhysiologyEditor/);
   assert.doesNotMatch(html, /id="bs-bt-register-skill-load-child"/);
   assert.doesNotMatch(html, /用自然语言描述角色注册时应具备的技能与天赋/);

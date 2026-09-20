@@ -36,6 +36,7 @@ import {
   OVOVIVIPAROUS_RACES,
   VIVIPAROUS_RACES,
 } from './scripts/race_config.js';
+import { initializeCalculatorUi } from './scripts/calculator_ui.js';
 import {
   FIRST_STAGE_NATURAL_BIRTH_EXPERIENCE,
   LABOR_STAGES,
@@ -1596,7 +1597,7 @@ function saveWorldBaselinePrompt(ctx, value) {
 }
 
 function setEncyclopediaSubpage(page) {
-  selectedEncyclopediaSubpage = ['race', 'derived', 'world'].includes(page) ? page : 'race';
+  selectedEncyclopediaSubpage = ['race', 'derived', 'world', 'calculator'].includes(page) ? page : 'race';
   document.querySelectorAll('#bs-bt-encyclopedia-tabs [data-encyclopedia-tab]').forEach((node) => {
     node.classList.toggle('is-active', node.dataset.encyclopediaTab === selectedEncyclopediaSubpage);
   });
@@ -1900,6 +1901,9 @@ function resetDerivedTypeOverride(ctx) {
 function renderRaceEncyclopediaPage(ctx = null) {
   const settings = ctx ? getSettings(ctx) : null;
   if (settings) syncRacePhysiologyOverrides(settings);
+  initializeCalculatorUi();
+  bindCalculatorRacePalette();
+  bindRacePaletteModal(ctx);
   const catalogSelection = getRaceCatalogSelection(settings);
   setEncyclopediaSubpage(selectedEncyclopediaSubpage);
   const countNode = document.getElementById('bs-bt-race-count');
@@ -2339,6 +2343,10 @@ function isRegisterRaceTarget(targetInputId = '') {
   return String(targetInputId || '') === 'bs-bt-register-race';
 }
 
+function isCalculatorRaceTarget(targetInputId = '') {
+  return String(targetInputId || '').startsWith('bs-bt-calc-');
+}
+
 function renderRacePaletteSelect(selectId, currentValue, includeEmpty = false) {
   const options = [];
   if (includeEmpty) options.push('<option value="">不设</option>');
@@ -2351,6 +2359,14 @@ function renderRacePaletteSelect(selectId, currentValue, includeEmpty = false) {
 
 function renderRacePaletteBody() {
   const isRegister = isRegisterRaceTarget(racePaletteState.targetInputId);
+  const isCalculator = isCalculatorRaceTarget(racePaletteState.targetInputId);
+  const paletteTitle = isRegister ? '角色种族调色盘' : isCalculator ? '计算种族调色盘' : '父源调色盘';
+  const emptyHint = isRegister ? '尚未加入角色种族 tag。' : isCalculator ? '尚未加入计算种族 tag。' : '尚未加入这位父亲的种族 tag。';
+  const guide = isRegister
+    ? '先把角色种族逐个加入 tag，衍生型会套在整体种族上；确认后会直接写入注册种族并关闭。'
+    : isCalculator
+      ? '逐个加入种族即可组成混血；衍生型会套在整体种族上，确认后写入当前计算栏位。'
+      : '先把种族逐个加入 tag，衍生型会套在整位父亲上；确认后会直接写入父亲种族并关闭。';
   const derivedOptions = [`<option value="">不设</option>`, ...DERIVED_TYPE_RACES.map((value) => `<option value="${escapeHtml(value)}"${racePaletteState.selectedDerivedType === value ? ' selected' : ''}>${escapeHtml(value)}</option>`)];
   const raceTags = Array.isArray(racePaletteState.raceTags) && racePaletteState.raceTags.length > 0
     ? racePaletteState.raceTags.map((entry, index) => `
@@ -2359,14 +2375,14 @@ function renderRacePaletteBody() {
           <span aria-hidden="true">×</span>
         </button>
       `).join('')
-    : `<div class="bs-bt-race-preview-hint">${isRegister ? '尚未加入角色种族 tag。' : '尚未加入这位父亲的种族 tag。'}</div>`;
+    : `<div class="bs-bt-race-preview-hint">${emptyHint}</div>`;
   return `
     <div class="bs-bt-race-palette">
       <div class="bs-bt-race-palette-head">
-        <div class="bs-bt-race-palette-title">${isRegister ? '角色种族调色盘' : '父源调色盘'}</div>
+        <div class="bs-bt-race-palette-title">${paletteTitle}</div>
         <button type="button" class="bs-bt-race-close-button" data-race-action="cancel" aria-label="关闭调色盘" title="关闭调色盘">×</button>
       </div>
-      <div class="bs-bt-race-preview-hint">${isRegister ? '先把角色种族逐个加入 tag，衍生型会套在整体种族上；确认后会直接写入注册种族并关闭。' : '先把种族逐个加入 tag，衍生型会套在整位父亲上；确认后会直接写入父亲种族并关闭。'}</div>
+      <div class="bs-bt-race-preview-hint">${guide}</div>
       <div class="bs-bt-race-tag-list">${raceTags}</div>
       <label class="bs-bt-track-debug-field">
         <span class="bs-bt-track-debug-label">衍生型</span>
@@ -4214,9 +4230,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
   const modifierMultiplierValue = escapeHtml(modifierDraftActive ? debugGestationModifierDraft.multiplier : String(gestationModifier.multiplier ?? 1));
   const modifierDescriptionValue = escapeHtml(modifierDraftActive ? debugGestationModifierDraft.description : (gestationModifier.description || ''));
   const fetalActivityTextValue = escapeHtml(debugFetalActivityDraft.owner === selectedTrackName ? debugFetalActivityDraft.text : '');
-  const debugRacePalette = (targetInputId) => racePaletteState.targetInputId === targetInputId && racePaletteState.isOpen
-    ? `<div class="bs-bt-race-popover">${renderRacePaletteBody()}</div>`
-    : '';
+  const debugRacePalette = () => '';
   return `
     <div class="bs-bt-track-section">
       <div class="bs-bt-track-section-title">快捷调试</div>
@@ -5035,18 +5049,122 @@ function openRacePalettePopover(targetInputId) {
     subtype: '',
     raceTags: [],
   };
+  refreshRegisterRacePalette();
 }
 
 function closeRacePalettePopover() {
   racePaletteState.isOpen = false;
+  refreshRegisterRacePalette();
 }
 
 function refreshRegisterRacePalette() {
-  const anchor = document.getElementById('bs-bt-register-race-palette-anchor');
-  if (!anchor) return;
-  anchor.innerHTML = racePaletteState.targetInputId === 'bs-bt-register-race' && racePaletteState.isOpen
-    ? `<div class="bs-bt-race-popover">${renderRacePaletteBody()}</div>`
-    : '';
+  const paletteModal = document.getElementById('bs-bt-race-palette-modal');
+  if (paletteModal) {
+    paletteModal.hidden = !racePaletteState.isOpen;
+    paletteModal.innerHTML = racePaletteState.isOpen ? renderRacePaletteBody() : '';
+  }
+  document.querySelectorAll('[data-race-palette-anchor]').forEach((anchor) => {
+    anchor.innerHTML = '';
+  });
+}
+
+function bindCalculatorRacePalette() {
+  const root = document.querySelector('[data-encyclopedia-page="calculator"]');
+  if (!(root instanceof HTMLElement) || root.dataset.racePaletteBound === 'true') return;
+  root.dataset.racePaletteBound = 'true';
+
+  root.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const pickerButton = target.closest('[data-race-picker-target]');
+    if (pickerButton) {
+      const inputId = String(pickerButton.getAttribute('data-race-picker-target') || '');
+      if (!isCalculatorRaceTarget(inputId)) return;
+      if (racePaletteState.isOpen && racePaletteState.targetInputId === inputId) closeRacePalettePopover();
+      else openRacePalettePopover(inputId);
+      refreshRegisterRacePalette();
+    }
+  });
+}
+
+function bindRacePaletteModal(ctx) {
+  const modal = document.getElementById('bs-bt-race-palette-modal');
+  if (!(modal instanceof HTMLElement) || modal.dataset.racePaletteBound === 'true') return;
+  modal.dataset.racePaletteBound = 'true';
+
+  modal.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element) || !racePaletteState.isOpen) return;
+    const removeButton = target.closest('[data-race-remove-index]');
+    if (removeButton) {
+      const index = Number(removeButton.getAttribute('data-race-remove-index'));
+      if (Number.isInteger(index) && index >= 0) {
+        racePaletteState.raceTags = racePaletteState.raceTags.filter((_, entryIndex) => entryIndex !== index);
+        refreshRegisterRacePalette();
+      }
+      return;
+    }
+
+    const actionButton = target.closest('[data-race-action]');
+    if (!actionButton) return;
+    const action = String(actionButton.getAttribute('data-race-action') || '');
+    if (action === 'append') {
+      const raceName = String(racePaletteState.selectedRace || '').trim();
+      const subtype = String(racePaletteState.subtype || '').trim();
+      const raceTag = raceName ? `${raceName}${subtype ? `-${subtype}` : ''}` : '';
+      if (!raceTag) {
+        globalThis.toastr?.warning?.('[BS BioTracker] 请先选择种族');
+        return;
+      }
+      racePaletteState.raceTags = [...racePaletteState.raceTags, raceTag];
+      racePaletteState.selectedRace = '人类';
+      racePaletteState.subtype = '';
+      refreshRegisterRacePalette();
+      return;
+    }
+    if (action === 'cancel') {
+      closeRacePalettePopover();
+      refreshRegisterRacePalette();
+      return;
+    }
+    if (action === 'confirm') {
+      const descriptor = buildRacePaletteDescriptor(racePaletteState);
+      if (!descriptor) {
+        globalThis.toastr?.warning?.('[BS BioTracker] 请先加入至少一个种族 tag');
+        return;
+      }
+      const input = document.getElementById(racePaletteState.targetInputId);
+      if (!(input instanceof HTMLInputElement)) return;
+      const replacesValue = isRegisterRaceTarget(racePaletteState.targetInputId)
+        || isCalculatorRaceTarget(racePaletteState.targetInputId);
+      const current = String(input.value || '').trim();
+      input.value = replacesValue ? descriptor : (current ? `${current},${descriptor}` : descriptor);
+      const draftRaceKey = {
+        'bs-bt-debug-race': 'race',
+        'bs-bt-debug-provider-race': 'providerRace',
+        'bs-bt-debug-secondary-provider-race': 'secondaryProviderRace',
+        'bs-bt-debug-returner-race': 'returnerRace',
+      }[racePaletteState.targetInputId];
+      if (draftRaceKey) debugInjectDraft[draftRaceKey] = input.value;
+      closeRacePalettePopover();
+      if (draftRaceKey && ctx) renderStatusPanel(ctx);
+    }
+  });
+
+  modal.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement) || !racePaletteState.isOpen) return;
+    if (target.id === 'bs-bt-race-derived') racePaletteState.selectedDerivedType = String(target.value || '');
+    if (target.id === 'bs-bt-race-primary') racePaletteState.selectedRace = String(target.value || '人类');
+    refreshRegisterRacePalette();
+  });
+
+  modal.addEventListener('input', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || !racePaletteState.isOpen) return;
+    if (target.id === 'bs-bt-race-derived-subtype') racePaletteState.derivedSubtype = String(target.value || '');
+    if (target.id === 'bs-bt-race-subtype') racePaletteState.subtype = String(target.value || '');
+  });
 }
 
 function populateModelList(settings) {
@@ -6054,6 +6172,10 @@ function setView(view) {
   if (!root) return;
   const normalizedView = view === 'time-lapse' ? 'full-state' : view;
   const next = ['home', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog'].includes(normalizedView) ? normalizedView : 'home';
+  if (root.dataset.view !== next && racePaletteState.isOpen) {
+    closeRacePalettePopover();
+    refreshRegisterRacePalette();
+  }
   root.dataset.view = next;
   try {
     globalThis.localStorage?.setItem(LAST_VIEW_STORAGE_KEY, next);
@@ -7996,6 +8118,7 @@ async function ensureModal(ctx) {
     globalThis.toastr?.success?.(`[BS BioTracker] 已清空全部 ${chatCount} 个聊天的追踪状态`);
   });
   document.getElementById('bs-bt-close')?.addEventListener('click', () => {
+    if (racePaletteState.isOpen) closeRacePalettePopover();
     const modalRoot = document.getElementById(MODAL_ID);
     const dialog = modalRoot?.querySelector('.bs-bt-modal__dialog');
     const sphere = document.getElementById('bs-bt-floating-sphere');
