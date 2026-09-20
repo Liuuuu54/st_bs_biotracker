@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
 import { callOpenAICompatible, fetchModelList, isApiDeadlineError, isApiTimeoutError, resolveApiTimeoutMs, resolveOverallDeadlineMs } from '../scripts/api.js';
-import { normalizeReasoningEffort } from '../scripts/state.js';
+import { normalizeReasoningEffort, resolveUserTemperature } from '../scripts/state.js';
 
 const ORIGINAL_GLOBALS = {
   fetch: globalThis.fetch,
@@ -509,13 +509,14 @@ test('gemini_interactions surfaces a failed status as a retriable error', async 
   );
 });
 
-test('normalizeReasoningEffort accepts 6 levels with auto fallback', () => {
+test('normalizeReasoningEffort accepts 8 levels with auto fallback', () => {
   assert.equal(normalizeReasoningEffort('high'), 'high');
   assert.equal(normalizeReasoningEffort('XHigh'), 'xhigh');
+  assert.equal(normalizeReasoningEffort('Minimal'), 'minimal');
+  assert.equal(normalizeReasoningEffort('Ultra'), 'ultra');
   assert.equal(normalizeReasoningEffort('Auto'), 'auto');
   assert.equal(normalizeReasoningEffort(undefined), 'auto');
   assert.equal(normalizeReasoningEffort(''), 'auto');
-  assert.equal(normalizeReasoningEffort('ultra'), 'auto');
   // 已移除的 False 档：旧存档残留值按非法处理，回退 auto（不传参）
   assert.equal(normalizeReasoningEffort('false'), 'auto');
 });
@@ -550,8 +551,9 @@ test('reasoning effort auto/removed-false/invalid omit; levels pass through', as
     ['auto', undefined, false],
     // 已移除的 False 档：残留值回退 auto（省略），不会把 false 传给上游
     ['false', undefined, false],
-    ['ultra', undefined, false],
+    ['minimal', 'minimal', true],
     ['high', 'high', true],
+    ['ultra', 'ultra', true],
     ['max', 'max', true],
   ]) {
     const calls = [];
@@ -664,4 +666,13 @@ test('temperature default follows upstream logic: 0.2 primary, 0.1 retry', async
 
 test('configured temperature wins on both primary and retry', async () => {
   assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperature: 1 }), [1, 1]);
+});
+
+test('filled 0.2 equals default: follows upstream logic', async () => {
+  // 填 0.2 即上游默认值，走上游逻辑：主请求 0.2、纠错重试 0.1
+  assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperature: 0.2 }), [0.2, 0.1]);
+  assert.equal(resolveUserTemperature({ temperature: 0.2 }), null);
+  assert.equal(resolveUserTemperature({ temperature: null }), null);
+  assert.equal(resolveUserTemperature({}), null);
+  assert.equal(resolveUserTemperature({ temperature: 1 }), 1);
 });

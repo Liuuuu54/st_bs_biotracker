@@ -125,7 +125,7 @@ export function normalizeApiFormat(value) {
 
 // 思考强度（reasoning_effort）档位：'auto'（默认）与非法值都省略该参数、
 // 由服务端自定——即插件此前的原始行为，存量使用者零影响
-export const REASONING_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max', 'auto']);
+export const REASONING_EFFORTS = Object.freeze(['minimal', 'low', 'medium', 'high', 'xhigh', 'ultra', 'max', 'auto']);
 
 export function normalizeReasoningEffort(value) {
   const raw = String(value || '').trim().toLowerCase();
@@ -143,15 +143,19 @@ export function normalizeTemperature(value) {
 }
 
 /**
- * 用户是否明确配置过温度：只有输入框里手填的有限数值才算。
- * null/空/非法一律视为未配置，走上游逻辑（主请求 0.2／纠错重试 0.1，预设可覆盖）。
+ * 用户是否明确配置过温度：只有手填的、且不等于上游默认值 0.2 的有限数值才算。
+ * 填 0.2 即视为默认，走上游逻辑（主请求 0.2／纠错重试 0.1，预设可覆盖）。
+ * null/空/非法同样视为未配置。
  */
 export function resolveUserTemperature(settings) {
-  const raw = settings?.temperature;
+  const rawInput = settings?.temperature;
+  const raw = typeof rawInput === 'string' ? rawInput.trim() : rawInput;
   if (raw === '' || raw == null) return null;
   const num = Number(raw);
   if (!Number.isFinite(num)) return null;
-  return Math.max(0, Math.min(2, num));
+  const clamped = Math.max(0, Math.min(2, num));
+  if (clamped === DEFAULT_TEMPERATURE) return null;
+  return clamped;
 }
 
 export function getApiEndpointSuffix(format) {
@@ -934,20 +938,12 @@ export function getSettings(ctx) {
     settings.reasoningEffort = normalizedReasoningEffort;
     shouldSave = true;
   }
-  // temperature 存量迁移：null 表示未配置（走上游逻辑）；之前版本迁移写入的 0.2
-  // 并非用户手填，一并视为未配置；只有手填过的数值（含 0.2）才保留为用户配置。
-  const rawTemperatureSetting = settings.temperature;
-  if (rawTemperatureSetting === '' || rawTemperatureSetting == null || !Number.isFinite(Number(rawTemperatureSetting)) || Number(rawTemperatureSetting) === DEFAULT_TEMPERATURE) {
-    if (settings.temperature !== null) {
-      settings.temperature = null;
-      shouldSave = true;
-    }
-  } else {
-    const clampedTemperature = Math.max(0, Math.min(2, Number(rawTemperatureSetting)));
-    if (settings.temperature !== clampedTemperature) {
-      settings.temperature = clampedTemperature;
-      shouldSave = true;
-    }
+  // temperature 存储归一：null 表示未配置（走上游逻辑）；0.2 即上游默认值，
+  // 存了也视为未配置；其余有限数值钳制到 0~2 后保留为用户配置。
+  const normalizedStoredTemperature = resolveUserTemperature(settings);
+  if (settings.temperature !== normalizedStoredTemperature) {
+    settings.temperature = normalizedStoredTemperature;
+    shouldSave = true;
   }
   if (shouldSave) saveHostSettings(ctx);
   return settings;

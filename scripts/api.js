@@ -904,7 +904,7 @@ async function getResolvedPreset(settings) {
 }
 
 /**
- * 思考强度请求字段：low/medium/high/xhigh/max 原样透传；
+ * 思考强度请求字段：minimal/low/medium/high/xhigh/ultra/max 原样透传；
  * 'auto'（默认）与非法值省略该参数、由服务端自定——即插件此前的原始行为。
  * 宿主代理路径（TT/ST）由服务端按 custom_api_format 翻译，直连 compat 原样发送；
  * 直连原生格式里只有 Responses 有 effort 概念（reasoning.effort），Claude 的

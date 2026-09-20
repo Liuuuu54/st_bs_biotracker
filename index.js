@@ -84,7 +84,6 @@ import {
   getApiUrlForFormat,
   normalizeApiFormat,
   normalizeReasoningEffort,
-  normalizeTemperature,
   resolveUserTemperature,
   getCharacterWorldBookName,
   getCharacterWorldBookNameViaSTscript,
@@ -6830,7 +6829,7 @@ function readSettingsFromForm(ctx) {
   settings.apiFormat = normalizeApiFormat(getValue('bs-bt-api-format'));
   settings.apiKey = String(getValue('bs-bt-api-key')).trim();
   settings.model = String(getValue('bs-bt-model')).trim();
-  settings.temperature = String(getValue('bs-bt-temperature')).trim() === '' ? null : normalizeTemperature(getValue('bs-bt-temperature'));
+  settings.temperature = resolveUserTemperature({ temperature: getValue('bs-bt-temperature') });
   settings.reasoningEffort = normalizeReasoningEffort(getValue('bs-bt-reasoning-effort'));
   const formattedOutputToggle = document.getElementById('bs-bt-formatted-output-v4');
   if (formattedOutputToggle) settings.formattedOutputV4 = Boolean(formattedOutputToggle.checked);
