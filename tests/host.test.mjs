@@ -489,12 +489,17 @@ test('registry skill prompt reuses catalog and atomically creates described miss
 });
 
 test('dedicated registry skill prompt requires catalog reuse and described new definitions', () => {
-  const prompt = buildRegistrySkillSystemPrompt({ skillPrompt: '她擅长剑术。' });
+  const prompt = buildRegistrySkillSystemPrompt({
+    skillPrompt: '她擅长剑术。',
+    skillBaselinePrompt: '只建立正格冒险技能，不使用调教技能。',
+  });
   assert.match(prompt, /payload\.skill_catalog/);
   assert.match(prompt, /不得用近义词建立重复技能/);
   assert.match(prompt, /每个新定义必须同时提供 name 与明确说明技能范围的 description/);
   assert.match(prompt, /initialSkills/);
   assert.match(prompt, /initialTalents/);
+  assert.match(prompt, /严格遵守 payload\.skill_baseline_prompt/);
+  assert.match(prompt, /即使图鉴已有被基准排除的技能/);
 });
 
 test('skill ids are never reused and snapshots restore catalog plus allocator', () => {
@@ -508,15 +513,18 @@ test('skill ids are never reused and snapshots restore catalog plus allocator', 
   applyToolCall(chatState, { name: 'bsRegisterSkillDefinition', arguments: { name: '枪术', description: '长枪的运用。' } });
   assert.deepEqual(chatState.skillCatalog.map((item) => item.id), [1, 3]);
   assert.equal(chatState.nextSkillId, 4);
+  chatState.skillBaselinePrompt = '只追踪冒险技能。';
 
   const ctx = { chatId: 'snapshot-skill-test', chat: [] };
   state.recordChatStateSnapshot(ctx, chatState, { reason: 'skill_snapshot' });
   const snapshot = chatState.snapshots.at(-1);
   chatState.skillCatalog = [{ id: 99, name: '错误定义', description: '不应保留。' }];
   chatState.nextSkillId = 100;
+  chatState.skillBaselinePrompt = '错误基准';
   state.restoreChatStateFromSnapshot(chatState, snapshot);
   assert.deepEqual(chatState.skillCatalog.map((item) => item.id), [1, 3]);
   assert.equal(chatState.nextSkillId, 4);
+  assert.equal(chatState.skillBaselinePrompt, '只追踪冒险技能。');
 });
 
 test('middle-pregnancy training passes talent to one randomly selected fetus through childbirth', () => {
@@ -697,6 +705,11 @@ test('skill tool and inheritance guidance are always available to tracker', () =
   const prompt = buildTrackerSystemPrompt('', null, {});
   assert.equal(prompt.includes('[skills / talents]'), true);
   assert.equal(prompt.includes('第二与第三产程禁止传递'), true);
+  const boundedPrompt = buildTrackerSystemPrompt('', null, {
+    skill_baseline_prompt: '只追踪战斗、生存、探索与交涉；排除调教技能。',
+  });
+  assert.match(boundedPrompt, /\[本聊天技能基准：高优先级\]/);
+  assert.match(boundedPrompt, /不得为基准排除的类别调用 bsRegisterSkillDefinition 或 bsTrainSkill/);
 });
 
 test('derived type overrides affect base types and custom subtypes', () => {

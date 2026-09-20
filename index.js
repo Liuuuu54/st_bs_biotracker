@@ -498,6 +498,8 @@ function renderSkillCatalogPage(ctx) {
   const container = document.getElementById('bs-bt-skill-catalog-list');
   if (!container) return;
   const chatState = getChatState(ctx, getSettings(ctx));
+  const baselinePrompt = document.getElementById('bs-bt-skill-baseline-prompt');
+  if (baselinePrompt && document.activeElement !== baselinePrompt) baselinePrompt.value = String(chatState.skillBaselinePrompt || '');
   const catalog = Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [];
   const overview = document.getElementById('bs-bt-skill-catalog-overview');
   const detail = document.getElementById('bs-bt-skill-definition-detail');
@@ -519,6 +521,22 @@ function renderSkillCatalogPage(ctx) {
     }).join('');
   }
   if (selectedDefinition) renderSkillDefinitionDetail(chatState, selectedDefinition);
+}
+
+function saveSkillBaselinePrompt(ctx) {
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const node = document.getElementById('bs-bt-skill-baseline-prompt');
+  const status = document.getElementById('bs-bt-skill-baseline-status');
+  chatState.skillBaselinePrompt = String(node?.value || '').trim();
+  if (node) node.value = chatState.skillBaselinePrompt;
+  recordChatStateSnapshot(ctx, chatState, { reason: 'manual_skill_baseline_prompt' });
+  saveSettings(ctx);
+  resetPoller(ctx, trackerDeps);
+  if (status) {
+    status.textContent = chatState.skillBaselinePrompt ? '已保存本聊天的技能基准。' : '已清空技能基准，本聊天不追加技能类型限制。';
+    status.dataset.state = 'normal';
+  }
 }
 
 function renderSkillDefinitionDetail(chatState, definition) {
@@ -7563,6 +7581,7 @@ async function ensureModal(ctx) {
   });
   document.getElementById('bs-bt-skill-preset-development')?.addEventListener('click', () => importSkillPreset(ctx, 'development'));
   document.getElementById('bs-bt-skill-preset-behavior')?.addEventListener('click', () => importSkillPreset(ctx, 'behavior'));
+  document.getElementById('bs-bt-skill-baseline-save')?.addEventListener('click', () => saveSkillBaselinePrompt(ctx));
   document.getElementById('bs-bt-skill-catalog-list')?.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     if (event.target.closest('[data-skill-definition-delete]')) return;

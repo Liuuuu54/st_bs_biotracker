@@ -21,6 +21,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
     'bs-bt-skill-catalog-list', 'bs-bt-skill-definition-detail', 'bs-bt-skill-detail-characters',
     'bs-bt-skill-detail-name', 'bs-bt-skill-detail-description', 'bs-bt-skill-detail-save',
     'bs-bt-skill-preset-development', 'bs-bt-skill-preset-behavior',
+    'bs-bt-skill-baseline-prompt', 'bs-bt-skill-baseline-save',
     'bs-bt-wardrobe-tabs', 'bs-bt-wardrobe-list', 'bs-bt-wardrobe-characters-page', 'bs-bt-wardrobe-add-page',
     'bs-bt-register-source', 'bs-bt-register-source-summary',
     'bs-bt-world-baseline-prompt', 'bs-bt-world-baseline-save',
@@ -69,6 +70,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /importSkillPresetGroup\(chatState\.skillCatalog, chatState\.nextSkillId, groupKey\)/);
   assert.match(controller, /bs-bt-skill-preset-development/);
   assert.match(controller, /bs-bt-skill-preset-behavior/);
+  assert.match(controller, /function saveSkillBaselinePrompt\(ctx\)/);
   assert.match(controller, /updateSkillDefinition\(chatState\.skillCatalog, selectedSkillDefinitionId/);
   assert.doesNotMatch(controller, /kinkExperiences|kinkCatalog|bsAddKinkExperience/);
   assert.match(controller, /class="bs-bt-wardrobe-row-delete"/);

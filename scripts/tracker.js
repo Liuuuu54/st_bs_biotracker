@@ -1244,6 +1244,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     mainflow_context_snapshot: mainflowContextSnapshot,
     tracked_females: getRegisteredTargetNames(ctx, settings, chatState),
     priority_character_names: getPriorityCharacterNames(ctx, settings, chatState),
+    skill_baseline_prompt: String(chatState.skillBaselinePrompt || '').trim(),
     skill_catalog: Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [],
     existing_state: buildTrackerStateView(existingState, settings),
     available_tools: getTrackerToolDefinitions(settings, existingState),

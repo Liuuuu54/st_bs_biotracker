@@ -71,6 +71,16 @@
           <div class="bs-bt-panel">
             <div id="bs-bt-skill-catalog-overview">
               <div class="settings_section">
+                <div class="bs-bt-section-title">技能基准 Prompt</div>
+                <textarea id="bs-bt-skill-baseline-prompt" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="3" maxlength="4000" placeholder="例如：本聊天只追踪正格冒险中的战斗、生存、探索、交涉与专业技能；不要建立或提升调教、性行为与部位开发技能。"></textarea>
+                <div class="bs-bt-inline-status">按聊天保存，约束初始技能推演与 Tracker 后续建技／成长；不会删除已经存在的技能资料。留空表示不追加限制。</div>
+                <button id="bs-bt-skill-baseline-save" class="menu_button" type="button">保存技能基准</button>
+                <div id="bs-bt-skill-baseline-status" class="bs-bt-inline-status"></div>
+              </div>
+
+              <hr class="sysHR" />
+
+              <div class="settings_section">
                 <div class="bs-bt-section-title">可选预设技能</div>
                 <div class="bs-bt-inline-status">按聊天导入到现有技能图鉴；两组可独立选用，重复导入会自动去重。角色进度仍使用原有 skills 与 bsTrainSkill。</div>
                 <div class="bs-bt-skill-preset-grid">

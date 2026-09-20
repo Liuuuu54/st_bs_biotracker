@@ -92,8 +92,11 @@ function makeContext() {
 
 test('tracker payload sends a slim catalog and detailed current items outside the wear-fit window', () => {
   const ctx = makeContext();
-  const payload = buildTrackerPayload(ctx, state.getSettings(ctx));
+  const settings = state.getSettings(ctx);
+  settings.chatStates[CHAT_KEY].skillBaselinePrompt = '只追踪正格冒险技能。';
+  const payload = buildTrackerPayload(ctx, settings);
   assert.equal(payload.wardrobe_enabled, true);
+  assert.equal(payload.skill_baseline_prompt, '只追踪正格冒险技能。');
 
   const aila = payload.existing_state['艾拉'];
   const dress = aila.profile.wardrobe.items.find((item) => item.id === 1);

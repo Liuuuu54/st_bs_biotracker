@@ -1697,11 +1697,15 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
 
 export function buildRegistrySkillSystemPrompt(options = {}) {
   const skillPrompt = String(options.skillPrompt || '').trim();
+  const skillBaselinePrompt = String(options.skillBaselinePrompt || '').trim();
   const inheritedTalentsLocked = Boolean(options.inheritedTalentsLocked);
   const emptyCatalog = Boolean(options.emptyCatalog);
   return [
     '你是 AIRP 角色初始技能与天赋配置器。只处理 payload.target_character。',
     '根据角色卡、世界书、最近对话、已注册角色状态及用户提示，生成可供用户确认的初始技能／天赋 JSON。',
+    skillBaselinePrompt
+      ? '严格遵守 payload.skill_baseline_prompt：它是本聊天的高优先级技能基准，决定允许辨识与建立的技能类型。即使图鉴已有被基准排除的技能，也不得因此为角色配置、建立或发展该类技能；既有资料无需删除。'
+      : '本聊天未设置额外技能基准，按角色资料与技能图鉴谨慎判断。',
     emptyCatalog
       ? '注意：payload.skill_catalog 目前是空的（这是本聊天的第一个角色）。因此 initialSkills 与 initialTalents 用到的每一个技能，都必须由你在本次 skillDefinitions 中完整定义，没有任何既有技能可以复用。'
       : '先查阅 payload.skill_catalog。语义适合的技能必须复用其精确 name 或 id，不得用近义词建立重复技能。',
@@ -1758,6 +1762,7 @@ export async function runRegistrySkillInference(ctx, options = {}) {
     userInstruction: skillPrompt,
   });
   payload.initial_skill_prompt = skillPrompt;
+  payload.skill_baseline_prompt = String(chatState.skillBaselinePrompt || '').trim();
   payload.skill_catalog = normalizeSkillCatalog(chatState.skillCatalog);
   payload.existing_skill_setup = {
     skills: normalizeSkillList(chatState.characters[targetName]?.profile?.skills),
@@ -1768,6 +1773,7 @@ export async function runRegistrySkillInference(ctx, options = {}) {
   const systemPrompt = options.skillSystemPrompt
     || buildRegistrySkillSystemPrompt({
       skillPrompt,
+      skillBaselinePrompt: payload.skill_baseline_prompt,
       inheritedTalentsLocked,
       // 图鉴为空＝本次是这个聊天的第一个角色，所有引用都只能来自本次 skillDefinitions
       emptyCatalog: payload.skill_catalog.length === 0,

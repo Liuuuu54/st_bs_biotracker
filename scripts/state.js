@@ -663,6 +663,7 @@ export function createEmptyChatState() {
     lastRunAt: 0,
     sceneSummary: '',
     minutesPassed: 0,
+    skillBaselinePrompt: '',
     skillCatalog: [],
     nextSkillId: 1,
     // null-proto：角色名直接作键，模型吐出 constructor/toString/__proto__ 之类的名字时
@@ -984,6 +985,9 @@ export function getChatState(ctx, settings) {
   const normalizedSkillCatalog = normalizeSkillCatalog(chatState.skillCatalog);
   if (JSON.stringify(chatState.skillCatalog || []) !== JSON.stringify(normalizedSkillCatalog)) shouldSave = true;
   chatState.skillCatalog = normalizedSkillCatalog;
+  const normalizedSkillBaselinePrompt = String(chatState.skillBaselinePrompt || '');
+  if (chatState.skillBaselinePrompt !== normalizedSkillBaselinePrompt) shouldSave = true;
+  chatState.skillBaselinePrompt = normalizedSkillBaselinePrompt;
   const normalizedNextSkillId = normalizeNextSkillId(chatState.skillCatalog, chatState.nextSkillId);
   if (chatState.nextSkillId !== normalizedNextSkillId) shouldSave = true;
   chatState.nextSkillId = normalizedNextSkillId;
@@ -1032,11 +1036,12 @@ export function isChatStateEffectivelyEmpty(chatState) {
   if (!chatState || typeof chatState !== 'object') return true;
   const hasCharacters = Object.keys(chatState.characters || {}).length > 0;
   const hasSkillCatalog = Array.isArray(chatState.skillCatalog) && chatState.skillCatalog.length > 0;
+  const hasSkillBaseline = Boolean(String(chatState.skillBaselinePrompt || '').trim());
   const hasConsumedSkillIds = Number(chatState.nextSkillId) > 1;
   const hasSnapshots = Array.isArray(chatState.snapshots) && chatState.snapshots.length > 0;
   const hasSceneSummary = Boolean(String(chatState.sceneSummary || '').trim());
   const hasMinutesPassed = Number(chatState.minutesPassed) > 0;
-  return !(hasCharacters || hasSkillCatalog || hasConsumedSkillIds || hasSnapshots || hasSceneSummary || hasMinutesPassed);
+  return !(hasCharacters || hasSkillCatalog || hasSkillBaseline || hasConsumedSkillIds || hasSnapshots || hasSceneSummary || hasMinutesPassed);
 }
 
 export function inheritChatStateFromMatchingChat(ctx, settings) {
@@ -1722,6 +1727,7 @@ function exportChatStateSnapshotPayload(chatState) {
   return {
     snapshotSchema: 'packed_v2',
     charactersFormat: 'default_delta_v1',
+    skillBaselinePrompt: String(chatState.skillBaselinePrompt || ''),
     skillCatalog: normalizeSkillCatalog(chatState.skillCatalog),
     nextSkillId: normalizeNextSkillId(chatState.skillCatalog, chatState.nextSkillId),
     lastAttemptedSignature: sanitizeStoredSignature(chatState.lastAttemptedSignature),
@@ -2095,6 +2101,7 @@ export function restoreChatStateFromSnapshot(chatState, snapshot) {
   chatState.lastRunAt = payload.lastRunAt || 0;
   chatState.sceneSummary = payload.sceneSummary || '';
   chatState.minutesPassed = payload.minutesPassed || 0;
+  if (payload.skillBaselinePrompt !== undefined) chatState.skillBaselinePrompt = String(payload.skillBaselinePrompt || '');
   if (payload.skillCatalog !== undefined) chatState.skillCatalog = normalizeSkillCatalog(payload.skillCatalog);
   if (payload.nextSkillId !== undefined) chatState.nextSkillId = normalizeNextSkillId(chatState.skillCatalog, payload.nextSkillId);
   chatState.characters = unpackSnapshotCharacters(payload.characters, payload.charactersFormat || '');

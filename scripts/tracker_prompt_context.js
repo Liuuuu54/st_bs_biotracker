@@ -288,6 +288,7 @@ function collectPregnantDescriptionInitNames(payload = {}) {
 export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = null, payload = null) {
   const diaryEnabled = payload?.diary_enabled !== false;
   const metabolismGuide = buildTrackerMetabolismGuide(payload);
+  const skillBaselinePrompt = String(payload?.skill_baseline_prompt || '').trim();
   const parts = [
     [
       '[bsPassedTime 强制规则]',
@@ -302,6 +303,14 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     // 名录只给名字：模型写 bsAddSperm.race 时需要词汇表，但每轮都发，不附辨识提示
     buildRaceCatalogBlock({ selection: payload?.race_catalog_selection || null }),
   ];
+  if (skillBaselinePrompt) {
+    parts.push([
+      '[本聊天技能基准：高优先级]',
+      skillBaselinePrompt,
+      '- 此基准决定当前聊天应辨识、建立与成长的技能类型，优先于技能图鉴中「已有某项技能」所形成的暗示。',
+      '- 不得为基准排除的类别调用 bsRegisterSkillDefinition 或 bsTrainSkill。既有技能资料只保留，不因基准变化而删除或主动降级。',
+    ].join('\n'));
+  }
   if (payload?.mainflow_context_snapshot) {
     parts.push([
       '[主流上下文快照使用规则]',
