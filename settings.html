@@ -70,6 +70,25 @@
         <section id="bs-bt-view-skill-catalog" class="bs-bt-view" data-view="skill-catalog">
           <div class="bs-bt-panel">
             <div id="bs-bt-skill-catalog-overview">
+              <div class="settings_section">
+                <div class="bs-bt-section-title">可选预设技能</div>
+                <div class="bs-bt-inline-status">按聊天导入到现有技能图鉴；两组可独立选用，重复导入会自动去重。角色进度仍使用原有 skills 与 bsTrainSkill。</div>
+                <div class="bs-bt-skill-preset-grid">
+                  <article class="bs-bt-skill-card">
+                    <div class="bs-bt-skill-card__title">部位开发（6）</div>
+                    <div class="bs-bt-skill-card__description">口腔、胸部、性器、子宫、后庭、尿道</div>
+                    <button id="bs-bt-skill-preset-development" class="menu_button" type="button">导入部位开发</button>
+                  </article>
+                  <article class="bs-bt-skill-card">
+                    <div class="bs-bt-skill-card__title">行为与倾向（9）</div>
+                    <div class="bs-bt-skill-card__description">前戏、侍奉、自慰、露出、拘束、M/S倾向、情趣玩具、多人行为</div>
+                    <button id="bs-bt-skill-preset-behavior" class="menu_button" type="button">导入行为与倾向</button>
+                  </article>
+                </div>
+              </div>
+
+              <hr class="sysHR" />
+
               <div id="bs-bt-skill-catalog-list" class="bs-bt-skill-catalog-list"></div>
 
               <hr class="sysHR" />
@@ -79,7 +98,7 @@
                 <label for="bs-bt-skill-definition-name">技能名称</label>
                 <input id="bs-bt-skill-definition-name" class="text_pole" type="text" placeholder="例如：NTR" />
                 <label for="bs-bt-skill-definition-description">定义描述</label>
-                <textarea id="bs-bt-skill-definition-description" class="text_pole bs-bt-textarea" rows="4" placeholder="新增技能必须提供清楚且稳定的定义。"></textarea>
+                <textarea id="bs-bt-skill-definition-description" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="2" placeholder="新增技能必须提供清楚且稳定的定义。"></textarea>
                 <button id="bs-bt-skill-definition-add" class="menu_button" type="button">新增技能</button>
               </div>
 
@@ -90,7 +109,13 @@
               <div class="settings_section bs-bt-skill-detail-head">
                 <button id="bs-bt-skill-detail-back" class="menu_button" type="button">返回技能列表</button>
                 <div id="bs-bt-skill-detail-title" class="bs-bt-section-title"></div>
-                <div id="bs-bt-skill-detail-description"></div>
+                <label for="bs-bt-skill-detail-name">技能名称</label>
+                <input id="bs-bt-skill-detail-name" class="text_pole" type="text" />
+                <label for="bs-bt-skill-detail-description">技能描述 Prompt</label>
+                <textarea id="bs-bt-skill-detail-description" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="3"></textarea>
+                <div class="bs-bt-inline-status">此描述会随技能图鉴送入 Tracker，作为技能成立与成长的判断标准。</div>
+                <button id="bs-bt-skill-detail-save" class="menu_button" type="button">保存技能定义</button>
+                <div id="bs-bt-skill-detail-status" class="bs-bt-inline-status"></div>
               </div>
               <div id="bs-bt-skill-detail-characters" class="bs-bt-skill-detail-characters"></div>
               <div id="bs-bt-character-skill-status" class="bs-bt-inline-status"></div>
@@ -794,20 +819,10 @@
             </div>
 
             <div class="settings_section">
-              <label for="bs-bt-world-baseline-prompt">世界基准提示词</label>
-              <textarea id="bs-bt-world-baseline-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="留空即采用普通人类与现实社会常识；例如：本世界人类的男女生殖生理与社会角色和现实相反，所有角色都视为正常。"></textarea>
-              <small>描述全剧本共通的人类生理、性别角色与社会常识；会送入主线、追踪、注册及繁育推演。人类始终可用，但不列入下方 72 个异种名录。</small>
-              <div class="settings_section bs-bt-action-row">
-                <button id="bs-bt-world-baseline-save" class="menu_button" type="button">保存世界基准</button>
-                <button id="bs-bt-race-catalog-human-only" class="menu_button" type="button">现代写实</button>
-                <button id="bs-bt-race-catalog-select-all" class="menu_button" type="button">全部收录</button>
-              </div>
-            </div>
-
-            <div class="settings_section">
               <div class="bs-bt-track-tabs" id="bs-bt-encyclopedia-tabs">
                 <button type="button" class="bs-bt-track-tab is-active" data-encyclopedia-tab="race">异种</button>
                 <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="derived">衍生类型</button>
+                <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="world">世界基准</button>
               </div>
             </div>
 
@@ -884,6 +899,19 @@
               <div class="bs-bt-status-title">衍生资料</div>
               <pre id="bs-bt-derived-output" class="bs-bt-status-box">请选择衍生查看 Flux 资料。</pre>
             </div>
+            </div>
+
+            <div class="bs-bt-encyclopedia-page" data-encyclopedia-page="world" hidden>
+              <div class="settings_section">
+                <label for="bs-bt-world-baseline-prompt">世界基准提示词</label>
+                <textarea id="bs-bt-world-baseline-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="留空即采用普通人类与现实社会常识；例如：本世界人类的男女生殖生理与社会角色和现实相反，所有角色都视为正常。"></textarea>
+                <small>描述全剧本共通的人类生理、性别角色与社会常识；会送入主线、追踪、注册及繁育推演。人类始终可用，但不列入 72 个异种名录。</small>
+                <div class="settings_section bs-bt-action-row">
+                  <button id="bs-bt-world-baseline-save" class="menu_button" type="button">保存世界基准</button>
+                  <button id="bs-bt-race-catalog-human-only" class="menu_button" type="button">现代写实</button>
+                  <button id="bs-bt-race-catalog-select-all" class="menu_button" type="button">全部收录</button>
+                </div>
+              </div>
             </div>
           </div>
         </section>

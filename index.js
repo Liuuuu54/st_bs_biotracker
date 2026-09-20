@@ -53,7 +53,7 @@ import { isFetusKnownToCharacter } from './scripts/tools.js';
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
-import { appendSkillHistory, getTalentLabel, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL } from './scripts/skill_config.js';
+import { appendSkillHistory, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
 import {
   DEFAULT_MAIN_FIT_PROFILE,
   WARDROBE_ACCESSORY_CATEGORY_LABELS,
@@ -167,6 +167,7 @@ let selectedTrackSubpage = 'overview';
 let selectedTrackCardIndexes = {};
 let selectedWardrobeName = '';
 let selectedWardrobeSubpage = 'characters';
+let selectedWardrobeItemId = 0;
 let selectedSkillDefinitionId = 0;
 let selectedRaceEncyclopedia = '';
 let selectedDerivedEncyclopedia = '';
@@ -401,6 +402,28 @@ function setSkillCatalogStatus(message, isError = false) {
   node.dataset.state = isError ? 'error' : 'normal';
 }
 
+function setSkillDetailStatus(message, isError = false) {
+  const node = document.getElementById('bs-bt-skill-detail-status');
+  if (!node) return;
+  node.textContent = String(message || '');
+  node.dataset.state = isError ? 'error' : 'normal';
+}
+
+function importSkillPreset(ctx, groupKey) {
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const result = importSkillPresetGroup(chatState.skillCatalog, chatState.nextSkillId, groupKey);
+  chatState.skillCatalog = result.catalog;
+  chatState.nextSkillId = result.nextSkillId;
+  if (result.created > 0) {
+    recordChatStateSnapshot(ctx, chatState, { reason: `import_skill_preset_${groupKey}` });
+    saveSettings(ctx);
+    updateMainFlowPrompt(ctx);
+  }
+  renderSkillCatalogPage(ctx);
+  setSkillCatalogStatus(result.created > 0 ? `已导入 ${result.created} 项预设技能。` : '该组预设已全部存在。');
+}
+
 function setRegisterSkillStatus(message, isError = false) {
   const node = document.getElementById('bs-bt-register-skill-status');
   if (!node) return;
@@ -502,9 +525,11 @@ function renderSkillDefinitionDetail(chatState, definition) {
   const container = document.getElementById('bs-bt-skill-detail-characters');
   if (!container) return;
   const title = document.getElementById('bs-bt-skill-detail-title');
+  const name = document.getElementById('bs-bt-skill-detail-name');
   const description = document.getElementById('bs-bt-skill-detail-description');
-  if (title) title.textContent = `#${definition.id} ${definition.name}`;
-  if (description) description.textContent = definition.description;
+  if (title) title.textContent = `技能 #${definition.id}`;
+  if (name) name.value = definition.name;
+  if (description) description.value = definition.description;
   const names = Object.keys(chatState.characters || {}).sort((left, right) => left.localeCompare(right));
   if (names.length === 0) {
     container.innerHTML = '<div class="bs-bt-track-description-empty">尚无注册角色。</div>';
@@ -544,6 +569,27 @@ function renderSkillDefinitionDetail(chatState, definition) {
       </details>
     </article>`;
   }).join('');
+}
+
+function saveSkillDefinitionEdit(ctx) {
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const result = updateSkillDefinition(chatState.skillCatalog, selectedSkillDefinitionId, {
+    name: document.getElementById('bs-bt-skill-detail-name')?.value,
+    description: document.getElementById('bs-bt-skill-detail-description')?.value,
+  });
+  if (!result.ok) {
+    setSkillDetailStatus(result.message, true);
+    return;
+  }
+  chatState.skillCatalog = result.catalog;
+  recordChatStateSnapshot(ctx, chatState, { reason: 'manual_skill_definition_update' });
+  saveSettings(ctx);
+  renderSkillCatalogPage(ctx);
+  renderStatusPanel(ctx);
+  renderFullStatePage(ctx);
+  updateMainFlowPrompt(ctx);
+  setSkillDetailStatus(result.message);
 }
 
 function applyManualCharacterSkillChange(ctx, characterName, mutation, reason) {
@@ -1532,7 +1578,7 @@ function saveWorldBaselinePrompt(ctx, value) {
 }
 
 function setEncyclopediaSubpage(page) {
-  selectedEncyclopediaSubpage = page === 'derived' ? 'derived' : 'race';
+  selectedEncyclopediaSubpage = ['race', 'derived', 'world'].includes(page) ? page : 'race';
   document.querySelectorAll('#bs-bt-encyclopedia-tabs [data-encyclopedia-tab]').forEach((node) => {
     node.classList.toggle('is-active', node.dataset.encyclopediaTab === selectedEncyclopediaSubpage);
   });
@@ -2878,6 +2924,7 @@ function renderWardrobeItemRow(item = {}, options = {}) {
           ${item.note ? `<span class="bs-bt-wardrobe-row-note">${escapeHtml(item.note)}</span>` : ''}
         </span>
       </button>
+      <button class="bs-bt-wardrobe-row-edit" type="button" data-wardrobe-item-edit="${escapeHtml(item.id)}" aria-label="编辑衣物 ${escapeHtml(item.name || item.id || '未命名')}" title="编辑衣物">✎</button>
       <button class="bs-bt-wardrobe-row-delete" type="button" data-wardrobe-item-delete="${escapeHtml(item.id)}" aria-label="删除衣物 ${escapeHtml(item.name || item.id || '未命名')}" title="删除衣物">×</button>
     </div>
   `;
@@ -2994,6 +3041,17 @@ function renderWardrobeCharacterPage(character) {
   const items = getWardrobeItems(profile).filter((item) => Number(item?.id) !== 0);
   const mainItems = items.filter((item) => item.slot !== 'accessory');
   const accessoryItems = items.filter((item) => item.slot === 'accessory');
+  const editingItem = items.find((item) => Number(item.id) === Number(selectedWardrobeItemId)) || null;
+  const editForm = editingItem ? `<div class="bs-bt-wardrobe-item-editor">
+    <div class="bs-bt-wardrobe-group-title">编辑衣物 #${escapeHtml(editingItem.id)}</div>
+    <label>名称<input id="bs-bt-wardrobe-edit-name" class="text_pole" type="text" value="${escapeHtml(editingItem.name)}"></label>
+    <label>稳定描述 Prompt<textarea id="bs-bt-wardrobe-edit-note" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="3">${escapeHtml(editingItem.note || '')}</textarea></label>
+    <div class="bs-bt-inline-status">此描述会随衣柜资料送入 Tracker；保存不会改变衣物 ID 或当前穿着。</div>
+    <div class="bs-bt-wardrobe-editor-actions">
+      <button class="menu_button" type="button" data-wardrobe-item-edit-save="${escapeHtml(editingItem.id)}">保存衣物</button>
+      <button class="menu_button" type="button" data-wardrobe-item-edit-cancel>取消</button>
+    </div>
+  </div>` : '';
   const renderGroup = (title, groupItems) => `
     <div class="bs-bt-wardrobe-group">
       <div class="bs-bt-wardrobe-group-title">${escapeHtml(title)}</div>
@@ -3025,6 +3083,7 @@ function renderWardrobeCharacterPage(character) {
           <button class="menu_button" type="button" data-wardrobe-outfit-apply>套用当前穿着</button>
         </div>
       </div>
+      ${editForm}
       ${profile?.wardrobe?.enabled === true ? `${renderGroup('主衣装', mainItems)}${Object.entries(WARDROBE_ACCESSORY_CATEGORY_LABELS).map(([category, label]) => renderGroup(label, accessoryItems.filter((item) => (item.category || 'other') === category))).join('')}` : '<div class="bs-bt-track-description-empty">衣着未记录。</div>'}
       <div id="bs-bt-wardrobe-manual-status" class="bs-bt-inline-status"></div>
     </div>
@@ -3038,7 +3097,7 @@ function renderWardrobeAddPage(characters = []) {
     <label>名称<input id="bs-bt-wardrobe-item-name" class="text_pole" type="text"></label>
     <label>类型<select id="bs-bt-wardrobe-item-slot" class="text_pole"><option value="main">主件</option><option value="accessory">配件</option></select></label>
     <label id="bs-bt-wardrobe-item-category-field" data-wardrobe-type-field="accessory" hidden>分类<select id="bs-bt-wardrobe-item-category" class="text_pole">${Object.entries(WARDROBE_ACCESSORY_CATEGORY_LABELS).map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join('')}</select></label>
-    <label class="bs-bt-wardrobe-editor-wide">稳定描述<textarea id="bs-bt-wardrobe-item-note" class="text_pole bs-bt-textarea" rows="3"></textarea></label>
+    <label class="bs-bt-wardrobe-editor-wide">稳定描述 Prompt<textarea id="bs-bt-wardrobe-item-note" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="2"></textarea></label>
     <label id="bs-bt-wardrobe-item-parts-field" class="bs-bt-wardrobe-editor-wide" data-wardrobe-type-field="main">组成部件（逗号分隔）<input id="bs-bt-wardrobe-item-parts" class="text_pole" type="text"></label>
     ${levelSelect('masking', '隐藏')}${levelSelect('support', '支撑')}${levelSelect('capacity', '容身')}${levelSelect('convenience', '方便')}
     <fieldset id="bs-bt-wardrobe-item-effects-field" class="bs-bt-wardrobe-editor-wide" data-wardrobe-type-field="accessory" hidden><legend>配件效果（最多两项）</legend>${Object.entries(WARDROBE_ACCESSORY_EFFECTS).map(([value, definition]) => `<label><input type="checkbox" data-wardrobe-item-effect="${value}"> ${escapeHtml(definition.label)}</label>`).join('')}</fieldset>
@@ -6988,6 +7047,7 @@ async function ensureModal(ctx) {
   document.querySelectorAll('#bs-bt-wardrobe-tabs [data-wardrobe-tab]').forEach((node) => {
     node.addEventListener('click', () => {
       selectedWardrobeSubpage = String(node.getAttribute('data-wardrobe-tab') || '') === 'add' ? 'add' : 'characters';
+      selectedWardrobeItemId = 0;
       renderWardrobePage(ctx);
     });
   });
@@ -7006,13 +7066,57 @@ async function ensureModal(ctx) {
       const character = getChatState(ctx, getSettings(ctx)).characters?.[characterName];
       if (character) {
         selectedWardrobeName = characterName;
+        selectedWardrobeItemId = 0;
         renderWardrobePage(ctx);
       }
       return;
     }
     if (target.closest('[data-wardrobe-back]')) {
       selectedWardrobeName = '';
+      selectedWardrobeItemId = 0;
       renderWardrobePage(ctx);
+      return;
+    }
+    const editButton = target.closest('[data-wardrobe-item-edit]');
+    if (editButton && selectedWardrobeName) {
+      selectedWardrobeItemId = Number(editButton.getAttribute('data-wardrobe-item-edit')) || 0;
+      renderWardrobePage(ctx);
+      return;
+    }
+    if (target.closest('[data-wardrobe-item-edit-cancel]')) {
+      selectedWardrobeItemId = 0;
+      renderWardrobePage(ctx);
+      return;
+    }
+    const editSaveButton = target.closest('[data-wardrobe-item-edit-save]');
+    if (editSaveButton && selectedWardrobeName) {
+      const itemId = Number(editSaveButton.getAttribute('data-wardrobe-item-edit-save'));
+      const character = getChatState(ctx, getSettings(ctx)).characters?.[selectedWardrobeName];
+      const existing = findWardrobeViewItem(character?.profile, itemId);
+      if (!existing) return;
+      try {
+        const name = String(document.getElementById('bs-bt-wardrobe-edit-name')?.value || '').trim();
+        if (!name) throw new Error('衣物名称不能为空。');
+        const duplicate = getWardrobeItems(character?.profile).some((item) => item.id !== itemId && String(item.name || '').trim().toLocaleLowerCase() === name.toLocaleLowerCase());
+        if (duplicate) throw new Error(`衣物名称「${name}」已存在。`);
+        const result = applyManualWardrobeTool(ctx, {
+          name: 'bsAddWardrobeItem',
+          arguments: {
+            female: selectedWardrobeName,
+            item: {
+              ...existing,
+              id: itemId,
+              name,
+              note: String(document.getElementById('bs-bt-wardrobe-edit-note')?.value || '').trim(),
+            },
+          },
+        }, 'manual_wardrobe_item_update');
+        const status = document.getElementById('bs-bt-wardrobe-manual-status');
+        if (status) status.textContent = `已保存「${name}」的衣物定义。`;
+        globalThis.toastr?.success?.(result.message, '[BS BioTracker]');
+      } catch (error) {
+        globalThis.toastr?.error?.(String(error?.message || error), '[BS BioTracker]');
+      }
       return;
     }
     const deleteButton = target.closest('[data-wardrobe-item-delete]');
@@ -7359,6 +7463,7 @@ async function ensureModal(ctx) {
   });
   document.getElementById('bs-bt-race-open-editor')?.addEventListener('click', () => {
     setEncyclopediaSubpage('race');
+    scrollEncyclopediaToTop();
     openRacePhysiologyEditor(ctx);
   });
   document.getElementById('bs-bt-race-editor-close')?.addEventListener('click', () => {
@@ -7456,6 +7561,8 @@ async function ensureModal(ctx) {
     selectedSkillDefinitionId = Number(card.getAttribute('data-skill-definition-open')) || 0;
     renderSkillCatalogPage(ctx);
   });
+  document.getElementById('bs-bt-skill-preset-development')?.addEventListener('click', () => importSkillPreset(ctx, 'development'));
+  document.getElementById('bs-bt-skill-preset-behavior')?.addEventListener('click', () => importSkillPreset(ctx, 'behavior'));
   document.getElementById('bs-bt-skill-catalog-list')?.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     if (event.target.closest('[data-skill-definition-delete]')) return;
@@ -7469,6 +7576,7 @@ async function ensureModal(ctx) {
     selectedSkillDefinitionId = 0;
     renderSkillCatalogPage(ctx);
   });
+  document.getElementById('bs-bt-skill-detail-save')?.addEventListener('click', () => saveSkillDefinitionEdit(ctx));
   document.getElementById('bs-bt-skill-detail-characters')?.addEventListener('change', (event) => {
     const target = event.target;
     if (!(target instanceof Element) || !target.matches('[data-character-skill-level], [data-character-skill-exp]')) return;

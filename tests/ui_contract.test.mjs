@@ -19,6 +19,8 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   ]);
   for (const id of [
     'bs-bt-skill-catalog-list', 'bs-bt-skill-definition-detail', 'bs-bt-skill-detail-characters',
+    'bs-bt-skill-detail-name', 'bs-bt-skill-detail-description', 'bs-bt-skill-detail-save',
+    'bs-bt-skill-preset-development', 'bs-bt-skill-preset-behavior',
     'bs-bt-wardrobe-tabs', 'bs-bt-wardrobe-list', 'bs-bt-wardrobe-characters-page', 'bs-bt-wardrobe-add-page',
     'bs-bt-register-source', 'bs-bt-register-source-summary',
     'bs-bt-world-baseline-prompt', 'bs-bt-world-baseline-save',
@@ -37,6 +39,13 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(html, /id="bs-bt-register-skill-generate"/);
   assert.match(html, /id="bs-bt-register-skill-write"/);
   assert.match(html, /id="bs-bt-register-skill-result"/);
+  assert.deepEqual(
+    [...html.matchAll(/data-encyclopedia-tab="([^"]+)"/g)].map((match) => match[1]),
+    ['race', 'derived', 'world'],
+  );
+  assert.match(html, /data-encyclopedia-page="world"[\s\S]*?id="bs-bt-world-baseline-prompt"/);
+  assert.match(controller, /selectedEncyclopediaSubpage = \['race', 'derived', 'world'\]\.includes\(page\)/);
+  assert.match(controller, /bs-bt-race-open-editor'[\s\S]*?scrollEncyclopediaToTop\(\)[\s\S]*?openRacePhysiologyEditor/);
   assert.doesNotMatch(html, /id="bs-bt-register-skill-load-child"/);
   assert.doesNotMatch(html, /用自然语言描述角色注册时应具备的技能与天赋/);
   assert.doesNotMatch(html, /选择已备装角色后，可直接调整衣物、当前穿着与穿着状态/);
@@ -57,7 +66,15 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(css, /\.bs-bt-status-icons::after/);
   assert.match(css, /\.bs-bt-status-icons:focus-visible::after/);
   assert.match(controller, /data-skill-definition-delete/);
+  assert.match(controller, /importSkillPresetGroup\(chatState\.skillCatalog, chatState\.nextSkillId, groupKey\)/);
+  assert.match(controller, /bs-bt-skill-preset-development/);
+  assert.match(controller, /bs-bt-skill-preset-behavior/);
+  assert.match(controller, /updateSkillDefinition\(chatState\.skillCatalog, selectedSkillDefinitionId/);
+  assert.doesNotMatch(controller, /kinkExperiences|kinkCatalog|bsAddKinkExperience/);
   assert.match(controller, /class="bs-bt-wardrobe-row-delete"/);
+  assert.match(controller, /data-wardrobe-item-edit/);
+  assert.match(controller, /id="bs-bt-wardrobe-edit-note"/);
+  assert.match(controller, /manual_wardrobe_item_update/);
   assert.match(controller, /id="bs-bt-wardrobe-item-character"/);
   assert.match(controller, /id="bs-bt-wardrobe-item-category-field"[\s\S]*?data-wardrobe-type-field="accessory" hidden/);
   assert.match(controller, /id="bs-bt-wardrobe-item-effects-field"[\s\S]*?data-wardrobe-type-field="accessory" hidden/);
@@ -100,7 +117,6 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(css, /\.bs-bt-lineage \{[\s\S]*?height:\s*100dvh/);
   assert.match(css, /\.bs-bt-lineage \{[\s\S]*?pointer-events:\s*auto/);
   assert.match(controller, /sourceChild/);
-  assert.doesNotMatch(controller, /data-wardrobe-item-edit/);
   assert.doesNotMatch(controller, /data-wardrobe-item-new/);
   assert.doesNotMatch(html, /id="bs-bt-skill-definition-delete-select"/);
   assert.doesNotMatch(html, /id="bs-bt-skill-definition-delete"/);

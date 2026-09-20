@@ -1098,6 +1098,12 @@
   resize: vertical;
 }
 
+#bs-biotracker-settings .bs-bt-textarea.bs-bt-compact-textarea {
+  min-height: 56px;
+  max-height: 120px;
+  resize: vertical;
+}
+
 #bs-biotracker-settings .bs-bt-status-box {
   white-space: pre-wrap;
   min-height: 160px;
@@ -1813,6 +1819,19 @@
 
 #bs-biotracker-settings .bs-bt-track-debug-form[disabled] {
   opacity: 0.55;
+}
+
+#bs-biotracker-settings .bs-bt-skill-preset-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+#bs-biotracker-settings .bs-bt-skill-card__description {
+  margin: 6px 0 10px;
+  font-size: 0.88em;
+  line-height: 1.45;
+  opacity: 0.82;
 }
 
 #bs-biotracker-settings .bs-bt-debug-mode-note {
@@ -4058,11 +4077,12 @@
 
 #bs-biotracker-settings .bs-bt-wardrobe-row-wrap {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 26px;
+  grid-template-columns: minmax(0, 1fr) 26px 26px;
   align-items: center;
   gap: 8px;
 }
 
+#bs-biotracker-settings .bs-bt-wardrobe-row-edit,
 #bs-biotracker-settings .bs-bt-wardrobe-row-delete {
   width: 24px;
   min-width: 24px;
@@ -4080,9 +4100,37 @@
   opacity: 0.72;
 }
 
+#bs-biotracker-settings .bs-bt-wardrobe-row-edit:hover,
 #bs-biotracker-settings .bs-bt-wardrobe-row-delete:hover {
   opacity: 1;
   border-color: currentColor;
+}
+
+#bs-biotracker-settings .bs-bt-wardrobe-item-editor {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--bsbt-border-color) 55%, transparent);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#bs-biotracker-settings .bs-bt-wardrobe-item-editor label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.88em;
+}
+
+#bs-biotracker-settings .bs-bt-wardrobe-editor-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-wardrobe-editor-actions .menu_button {
+  width: 100%;
+  margin: 0;
 }
 
 #bs-biotracker-settings #bs-bt-wardrobe-add-page[hidden],
@@ -4117,8 +4165,7 @@
 }
 
 #bs-biotracker-settings #bs-bt-wardrobe-item-note {
-  min-height: 90px;
-  resize: vertical;
+  min-height: 56px;
 }
 
 #bs-biotracker-settings .bs-bt-wardrobe-accessory-checks {
