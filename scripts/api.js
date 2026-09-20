@@ -1529,7 +1529,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
       // 同一轮全局尝试内：先做一次「请只输出 JSON」纠错请求
       const retryBody = {
         model,
-        temperature: 0.1,
+        ...resolveTemperatureField(settings),
         ...stPresetSampling,
         ...resolveReasoningEffortField(settings),
         messages: [
