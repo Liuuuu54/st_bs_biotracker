@@ -6249,14 +6249,16 @@ function updateApiEndpointPreview() {
   } catch {}
 }
 
-/** 非手动指定档禁用并清空温度数字框，避免填了却不生效的误解。 */
-function syncTemperatureInputDisabled() {
+/** 温度数字框跟随档位：非手动档禁用并清空；omit 档占位符显示 N/A，其余显示 default。 */
+function syncTemperatureInput() {
   const modeNode = document.getElementById('bs-bt-temperature-mode');
   const inputNode = document.getElementById('bs-bt-temperature');
   if (!modeNode || !inputNode) return;
-  const isManual = normalizeTemperatureMode(modeNode.value) === 'manual';
+  const mode = normalizeTemperatureMode(modeNode.value);
+  const isManual = mode === 'manual';
   inputNode.disabled = !isManual;
   if (!isManual) inputNode.value = '';
+  inputNode.placeholder = mode === 'omit' ? 'N/A' : 'default';
 }
 
 function applySettingsToForm(ctx) {
@@ -6276,7 +6278,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-model', settings.model);
   setValue('bs-bt-temperature', resolveUserTemperature(settings) ?? '');
   setValue('bs-bt-temperature-mode', normalizeTemperatureMode(settings.temperatureMode));
-  syncTemperatureInputDisabled();
+  syncTemperatureInput();
   setValue('bs-bt-reasoning-effort', normalizeReasoningEffort(settings.reasoningEffort));
   updateApiEndpointPreview();
   setValue('bs-bt-formatted-output-v4', settings.formattedOutputV4 !== false);
@@ -7691,7 +7693,7 @@ async function ensureModal(ctx) {
     globalThis.toastr?.success?.('[BS BioTracker] 设置已保存');
   });
   document.getElementById('bs-bt-temperature-mode')?.addEventListener('change', () => {
-    syncTemperatureInputDisabled();
+    syncTemperatureInput();
   });
   document.getElementById('bs-bt-worldbook-clear-all')?.addEventListener('click', async () => {
     try {
