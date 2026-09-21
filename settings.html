@@ -261,12 +261,12 @@
               <div>
                 <label for="bs-bt-temperature-mode">温度</label>
                 <select id="bs-bt-temperature-mode" class="text_pole">
-                  <option value="legacy">沿用旧预设</option>
+                  <option value="legacy">沿用旧行为</option>
                   <option value="omit">不传参数</option>
                   <option value="manual">手动指定</option>
                 </select>
                 <input id="bs-bt-temperature" class="text_pole" type="number" min="0" max="2" step="0.1" placeholder="default" style="margin-top:6px;" />
-                <small>temperature，仅适用于支援该参数的模型。沿用旧预设＝上游逻辑（主 0.2／重试 0.1，预设可覆盖）；不传参数适用于要求省略该参数的模型；手动指定每次都用你的（含覆盖预设，填 0.2 视同旧预设）。</small>
+                <small>temperature，仅适用于支援该参数的模型。沿用旧行为＝过往逻辑（主 0.2／重试 0.1，预设可覆盖）；不传参数适用于要求省略该参数的模型；手动指定每次都用你的（含覆盖预设，填 0.2 视同旧行为）。</small>
               </div>
               <div>
                 <label for="bs-bt-reasoning-effort">思考强度</label>
@@ -280,7 +280,7 @@
                   <option value="max">Max</option>
                   <option value="auto">Auto（自动）</option>
                 </select>
-                <small>reasoning_effort，默认 Auto：不传参由服务端决定。</small>
+                <small>reasoning_effort，随本插件设置保存。偏小尺寸的模型拉高思考强度有助于保证输出内容正确性。默认 Auto：不传输思考强度参数，由服务端自动决定。</small>
               </div>
             </div>
 

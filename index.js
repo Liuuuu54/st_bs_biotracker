@@ -6249,12 +6249,14 @@ function updateApiEndpointPreview() {
   } catch {}
 }
 
-/** 非手动指定档禁用温度数字框，避免填了却不生效的误解。 */
+/** 非手动指定档禁用并清空温度数字框，避免填了却不生效的误解。 */
 function syncTemperatureInputDisabled() {
   const modeNode = document.getElementById('bs-bt-temperature-mode');
   const inputNode = document.getElementById('bs-bt-temperature');
   if (!modeNode || !inputNode) return;
-  inputNode.disabled = normalizeTemperatureMode(modeNode.value) !== 'manual';
+  const isManual = normalizeTemperatureMode(modeNode.value) === 'manual';
+  inputNode.disabled = !isManual;
+  if (!isManual) inputNode.value = '';
 }
 
 function applySettingsToForm(ctx) {
