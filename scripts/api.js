@@ -1,4 +1,4 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeReasoningEffort } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeReasoningEffort, normalizeTemperatureMode, resolveUserTemperature } from './state.js';
 import {
   getHostChat,
   getHostChatCompletionSettings,
@@ -904,7 +904,7 @@ async function getResolvedPreset(settings) {
 }
 
 /**
- * 思考强度请求字段：low/medium/high/xhigh/max 原样透传；
+ * 思考强度请求字段：minimal/low/medium/high/xhigh/ultra/max 原样透传；
  * 'auto'（默认）与非法值省略该参数、由服务端自定——即插件此前的原始行为。
  * 宿主代理路径（TT/ST）由服务端按 custom_api_format 翻译，直连 compat 原样发送；
  * 直连原生格式里只有 Responses 有 effort 概念（reasoning.effort），Claude 的
@@ -915,6 +915,29 @@ function resolveReasoningEffortField(settings) {
   const raw = normalizeReasoningEffort(settings?.reasoningEffort);
   if (raw === 'auto') return {};
   return { reasoning_effort: raw };
+}
+
+/**
+ * 温度三态请求字段：
+ * - omit：不返回字段，调用方收尾再删（连预设带入的 temperature 一并清除）；
+ * - manual：返回强制覆盖字段，压在预设之后、每次都用用户的；
+ * - legacy：返回上游硬编码（主 0.2／重试 0.1），预设可覆盖。
+ */
+function resolveBaseTemperatureField(settings, fallback) {
+  if (normalizeTemperatureMode(settings?.temperatureMode) === 'omit') return {};
+  return { temperature: fallback };
+}
+
+function resolveManualTemperatureField(settings) {
+  if (normalizeTemperatureMode(settings?.temperatureMode) !== 'manual') return {};
+  const userTemperature = resolveUserTemperature(settings);
+  if (userTemperature === null) return {};
+  return { temperature: userTemperature };
+}
+
+function stripTemperatureField(settings, body) {
+  if (normalizeTemperatureMode(settings?.temperatureMode) === 'omit') delete body.temperature;
+  return body;
 }
 
 function buildPresetSamplingBodyFromPreset(preset) {
@@ -1283,7 +1306,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   const isNonCompatFormat = isResponses || isClaude || isGemini;
 
   if (!response.ok && response.status === 400 && body.response_format && !isNonCompatFormat) {
-    const fallbackBody = {
+    const fallbackBody = stripTemperatureField(settings, {
       model: body.model,
       temperature: body.temperature,
       top_p: body.top_p,
@@ -1292,7 +1315,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
       max_tokens: body.max_tokens,
       seed: body.seed,
       messages: body.messages,
-    };
+    });
     result = await postBody(fallbackBody, 'without_response_format');
     response = result.response;
     responseText = result.responseText;
@@ -1478,14 +1501,15 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
       ...effectiveMessages.slice(1),
     ];
   }
-  const body = {
+  const body = stripTemperatureField(settings, {
     model,
-    temperature: 0.2,
+    ...resolveBaseTemperatureField(settings, 0.2),
     ...stPresetSampling,
+    ...resolveManualTemperatureField(settings),
     ...resolveReasoningEffortField(settings),
     messages: effectiveMessages,
     ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
-  };
+  });
   recordEffectiveRequestDebug(
     `${safePayload?.target_character ? 'registry' : 'tracker'}${mainflowCopy.hasMainflowCopy ? '-mainflow-copy' : (safePayload?.resolved_worldbook_prompt ? '-mainflow-worldinfo' : '')}${useFormattedOutputV4 ? '' : '-no-response-format'}${injectV4Instruction ? '-v4-instruction' : ''}`,
     effectivePresetName,
@@ -1523,10 +1547,11 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
       if (parsed && typeof parsed === 'object') return parsed;
 
       // 同一轮全局尝试内：先做一次「请只输出 JSON」纠错请求
-      const retryBody = {
+      const retryBody = stripTemperatureField(settings, {
         model,
-        temperature: 0.1,
+        ...resolveBaseTemperatureField(settings, 0.1),
         ...stPresetSampling,
+        ...resolveManualTemperatureField(settings),
         ...resolveReasoningEffortField(settings),
         messages: [
           ...effectiveMessages,
@@ -1534,7 +1559,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
           { role: 'user', content: buildJsonRetryInstruction() },
         ],
         ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
-      };
+      });
       const retryData = await requestChatCompletion(apiBase, settings, retryBody, runContext);
       const retryContent = retryData?.choices?.[0]?.message?.content || '';
       parsed = extractJson(retryContent);

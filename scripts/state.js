@@ -125,12 +125,37 @@ export function normalizeApiFormat(value) {
 
 // 思考强度（reasoning_effort）档位：'auto'（默认）与非法值都省略该参数、
 // 由服务端自定——即插件此前的原始行为，存量使用者零影响
-export const REASONING_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max', 'auto']);
+export const REASONING_EFFORTS = Object.freeze(['minimal', 'low', 'medium', 'high', 'xhigh', 'ultra', 'max', 'auto']);
 
 export function normalizeReasoningEffort(value) {
   const raw = String(value || '').trim().toLowerCase();
   if (REASONING_EFFORTS.includes(raw)) return raw;
   return 'auto';
+}
+
+/**
+ * 手填温度解析：有限数值（含 0.2）一律视为有效配置，钳制到 0~2；
+ * null/空/非法视为未配置。0.2 是否等同默认由 temperatureMode 决定，
+ * 本函数不做判断——manual 档下 0.2 与其他值一视同仁。
+ */
+export function resolveUserTemperature(settings) {
+  const rawInput = settings?.temperature;
+  const raw = typeof rawInput === 'string' ? rawInput.trim() : rawInput;
+  if (raw === '' || raw == null) return null;
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return null;
+  return Math.max(0, Math.min(2, num));
+}
+
+// 溫度三態：'legacy' 沿用舊預設（預設，主 0.2／重試 0.1，預設可覆蓋）、
+// 'omit' 完全不傳 temperature（給不接受該參數的模型）、
+// 'manual' 每次都用手填值（含覆蓋預設）。
+export const TEMPERATURE_MODES = Object.freeze(['legacy', 'omit', 'manual']);
+
+export function normalizeTemperatureMode(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (TEMPERATURE_MODES.includes(raw)) return raw;
+  return 'legacy';
 }
 
 export function getApiEndpointSuffix(format) {
@@ -173,6 +198,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   model: 'gpt-4.1-mini',
   modelOptions: [],
   reasoningEffort: 'auto',
+  temperature: null,
+  temperatureMode: 'legacy',
   formattedOutputV4: true,
   raceCatalogSelection: null,
   worldBaselinePrompt: '',
@@ -911,6 +938,25 @@ export function getSettings(ctx) {
   if (settings.reasoningEffort !== normalizedReasoningEffort) {
     settings.reasoningEffort = normalizedReasoningEffort;
     shouldSave = true;
+  }
+  // temperature 存储归一：null 表示未配置；有限数值（含 0.2）钳制到 0~2 后保留。
+  // 0.2 是否等同默认由 temperatureMode 决定，这里只做数值归一。
+  const normalizedStoredTemperature = resolveUserTemperature(settings);
+  if (settings.temperature !== normalizedStoredTemperature) {
+    settings.temperature = normalizedStoredTemperature;
+    shouldSave = true;
+  }
+  // temperatureMode 迁移：此前版本没有该字段，已存手填数字的用户归为 manual。
+  // 表单在非 manual 档直接存 null，此后存量数字只可能来自旧版本，翻转安全。
+  if (normalizeTemperatureMode(settings.temperatureMode) === 'legacy' && normalizedStoredTemperature !== null) {
+    settings.temperatureMode = 'manual';
+    shouldSave = true;
+  } else {
+    const normalizedTemperatureMode = normalizeTemperatureMode(settings.temperatureMode);
+    if (settings.temperatureMode !== normalizedTemperatureMode) {
+      settings.temperatureMode = normalizedTemperatureMode;
+      shouldSave = true;
+    }
   }
   if (shouldSave) saveHostSettings(ctx);
   return settings;
