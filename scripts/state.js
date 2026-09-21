@@ -133,12 +133,10 @@ export function normalizeReasoningEffort(value) {
   return 'auto';
 }
 
-export const DEFAULT_TEMPERATURE = 0.2;
-
 /**
- * 用户是否明确配置过温度：只有手填的、且不等于上游默认值 0.2 的有限数值才算。
- * 填 0.2 即视为默认，走上游逻辑（主请求 0.2／纠错重试 0.1，预设可覆盖）。
- * null/空/非法同样视为未配置。
+ * 手填温度解析：有限数值（含 0.2）一律视为有效配置，钳制到 0~2；
+ * null/空/非法视为未配置。0.2 是否等同默认由 temperatureMode 决定，
+ * 本函数不做判断——manual 档下 0.2 与其他值一视同仁。
  */
 export function resolveUserTemperature(settings) {
   const rawInput = settings?.temperature;
@@ -146,9 +144,7 @@ export function resolveUserTemperature(settings) {
   if (raw === '' || raw == null) return null;
   const num = Number(raw);
   if (!Number.isFinite(num)) return null;
-  const clamped = Math.max(0, Math.min(2, num));
-  if (clamped === DEFAULT_TEMPERATURE) return null;
-  return clamped;
+  return Math.max(0, Math.min(2, num));
 }
 
 // 溫度三態：'legacy' 沿用舊預設（預設，主 0.2／重試 0.1，預設可覆蓋）、
@@ -943,8 +939,8 @@ export function getSettings(ctx) {
     settings.reasoningEffort = normalizedReasoningEffort;
     shouldSave = true;
   }
-  // temperature 存储归一：null 表示未配置（走上游逻辑）；0.2 即上游默认值，
-  // 存了也视为未配置；其余有限数值钳制到 0~2 后保留为用户配置。
+  // temperature 存储归一：null 表示未配置；有限数值（含 0.2）钳制到 0~2 后保留。
+  // 0.2 是否等同默认由 temperatureMode 决定，这里只做数值归一。
   const normalizedStoredTemperature = resolveUserTemperature(settings);
   if (settings.temperature !== normalizedStoredTemperature) {
     settings.temperature = normalizedStoredTemperature;

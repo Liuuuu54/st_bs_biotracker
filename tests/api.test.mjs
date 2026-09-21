@@ -672,6 +672,8 @@ test('temperature default and legacy follow upstream logic: 0.2 primary, 0.1 ret
   assert.deepEqual(await collectTemperaturesThroughJsonRetry({}), [0.2, 0.1]);
   assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperature: null }), [0.2, 0.1]);
   assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperatureMode: 'legacy' }), [0.2, 0.1]);
+  // 非 manual 档的裸 0.2 仍走上游逻辑（0.2 是否固定由档位决定）
+  assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperature: 0.2 }), [0.2, 0.1]);
 });
 
 test('temperature omit mode sends no temperature on primary or retry', async () => {
@@ -720,16 +722,29 @@ test('temperature mode migrates stored numbers to manual, fresh stays legacy', (
   const migrated = getSettings(makeCtx({ temperature: 1 }));
   assert.equal(migrated.temperatureMode, 'manual');
   assert.equal(migrated.temperature, 1);
+  // 存量 0.2 同样归 manual：manual 档下 0.2 为固定值，不再视同未配置
+  const migratedZeroTwo = getSettings(makeCtx({ temperature: 0.2 }));
+  assert.equal(migratedZeroTwo.temperatureMode, 'manual');
+  assert.equal(migratedZeroTwo.temperature, 0.2);
+  // 幂等：同一份存档再跑一次 getSettings，结果不变、不抖动
+  const ctxDup = makeCtx({ temperature: 0.2 });
+  getSettings(ctxDup);
+  const twice = getSettings(ctxDup);
+  assert.equal(twice.temperatureMode, 'manual');
+  assert.equal(twice.temperature, 0.2);
   // 新用户／未配过 → legacy＋null，走上游逻辑
   const fresh = getSettings(makeCtx({}));
   assert.equal(fresh.temperatureMode, 'legacy');
   assert.equal(fresh.temperature, null);
 });
 
-test('filled 0.2 equals default: follows upstream logic', async () => {
-  // 填 0.2 即上游默认值，走上游逻辑：主请求 0.2、纠错重试 0.1
-  assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperature: 0.2 }), [0.2, 0.1]);
-  assert.equal(resolveUserTemperature({ temperature: 0.2 }), null);
+test('manual 0.2 is fixed like any other value: [0.2, 0.2]', async () => {
+  // 手动档下 0.2 与其他值一视同仁：主请求与纠错重试都固定 0.2，预设不可覆盖
+  assert.deepEqual(
+    await collectTemperaturesThroughJsonRetry({ temperatureMode: 'manual', temperature: 0.2 }),
+    [0.2, 0.2],
+  );
+  assert.equal(resolveUserTemperature({ temperature: 0.2 }), 0.2);
   assert.equal(resolveUserTemperature({ temperature: null }), null);
   assert.equal(resolveUserTemperature({}), null);
   assert.equal(resolveUserTemperature({ temperature: 1 }), 1);
