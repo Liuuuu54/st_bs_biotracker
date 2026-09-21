@@ -135,13 +135,6 @@ export function normalizeReasoningEffort(value) {
 
 export const DEFAULT_TEMPERATURE = 0.2;
 
-export function normalizeTemperature(value) {
-  if (value === '' || value == null) return DEFAULT_TEMPERATURE;
-  const num = Number(value);
-  if (!Number.isFinite(num)) return DEFAULT_TEMPERATURE;
-  return Math.max(0, Math.min(2, num));
-}
-
 /**
  * 用户是否明确配置过温度：只有手填的、且不等于上游默认值 0.2 的有限数值才算。
  * 填 0.2 即视为默认，走上游逻辑（主请求 0.2／纠错重试 0.1，预设可覆盖）。
@@ -156,6 +149,17 @@ export function resolveUserTemperature(settings) {
   const clamped = Math.max(0, Math.min(2, num));
   if (clamped === DEFAULT_TEMPERATURE) return null;
   return clamped;
+}
+
+// 溫度三態：'legacy' 沿用舊預設（預設，主 0.2／重試 0.1，預設可覆蓋）、
+// 'omit' 完全不傳 temperature（給不接受該參數的模型）、
+// 'manual' 每次都用手填值（含覆蓋預設）。
+export const TEMPERATURE_MODES = Object.freeze(['legacy', 'omit', 'manual']);
+
+export function normalizeTemperatureMode(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (TEMPERATURE_MODES.includes(raw)) return raw;
+  return 'legacy';
 }
 
 export function getApiEndpointSuffix(format) {
@@ -199,6 +203,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   modelOptions: [],
   reasoningEffort: 'auto',
   temperature: null,
+  temperatureMode: 'legacy',
   formattedOutputV4: true,
   raceCatalogSelection: null,
   worldBaselinePrompt: '',
@@ -944,6 +949,18 @@ export function getSettings(ctx) {
   if (settings.temperature !== normalizedStoredTemperature) {
     settings.temperature = normalizedStoredTemperature;
     shouldSave = true;
+  }
+  // temperatureMode 迁移：此前版本没有该字段，已存手填数字的用户归为 manual。
+  // 表单在非 manual 档直接存 null，此后存量数字只可能来自旧版本，翻转安全。
+  if (normalizeTemperatureMode(settings.temperatureMode) === 'legacy' && normalizedStoredTemperature !== null) {
+    settings.temperatureMode = 'manual';
+    shouldSave = true;
+  } else {
+    const normalizedTemperatureMode = normalizeTemperatureMode(settings.temperatureMode);
+    if (settings.temperatureMode !== normalizedTemperatureMode) {
+      settings.temperatureMode = normalizedTemperatureMode;
+      shouldSave = true;
+    }
   }
   if (shouldSave) saveHostSettings(ctx);
   return settings;

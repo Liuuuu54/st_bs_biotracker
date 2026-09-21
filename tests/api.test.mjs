@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
 import { callOpenAICompatible, fetchModelList, isApiDeadlineError, isApiTimeoutError, resolveApiTimeoutMs, resolveOverallDeadlineMs } from '../scripts/api.js';
-import { normalizeReasoningEffort, resolveUserTemperature } from '../scripts/state.js';
+import { getSettings, normalizeReasoningEffort, normalizeTemperatureMode, resolveUserTemperature } from '../scripts/state.js';
 
 const ORIGINAL_GLOBALS = {
   fetch: globalThis.fetch,
@@ -659,13 +659,71 @@ async function collectTemperaturesThroughJsonRetry(settings) {
   return temps;
 }
 
-test('temperature default follows upstream logic: 0.2 primary, 0.1 retry', async () => {
-  assert.deepEqual(await collectTemperaturesThroughJsonRetry({}), [0.2, 0.1]);
-  assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperature: null }), [0.2, 0.1]);
+test('normalizeTemperatureMode defaults to legacy with three states', () => {
+  assert.equal(normalizeTemperatureMode('omit'), 'omit');
+  assert.equal(normalizeTemperatureMode('Manual'), 'manual');
+  assert.equal(normalizeTemperatureMode('legacy'), 'legacy');
+  assert.equal(normalizeTemperatureMode(undefined), 'legacy');
+  assert.equal(normalizeTemperatureMode(''), 'legacy');
+  assert.equal(normalizeTemperatureMode('auto'), 'legacy');
 });
 
-test('configured temperature wins on both primary and retry', async () => {
-  assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperature: 1 }), [1, 1]);
+test('temperature default and legacy follow upstream logic: 0.2 primary, 0.1 retry', async () => {
+  assert.deepEqual(await collectTemperaturesThroughJsonRetry({}), [0.2, 0.1]);
+  assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperature: null }), [0.2, 0.1]);
+  assert.deepEqual(await collectTemperaturesThroughJsonRetry({ temperatureMode: 'legacy' }), [0.2, 0.1]);
+});
+
+test('temperature omit mode sends no temperature on primary or retry', async () => {
+  const bodies = [];
+  let calls = 0;
+  installBrowserHost(async (url, options) => {
+    calls += 1;
+    bodies.push(JSON.parse(options.body));
+    const content = calls === 1 ? 'not json' : JSON.stringify({ operations: [] });
+    return jsonResponse({ choices: [{ message: { content } }] });
+  });
+  await callOpenAICompatible({
+    apiUrl: 'https://relay.example.test/v1',
+    apiKey: 'k',
+    model: 'm',
+    apiTimeoutMs: 180000,
+    temperatureMode: 'omit',
+  }, { recent_messages: [] }, 'Return JSON.');
+  assert.equal(bodies.length, 2);
+  for (const body of bodies) assert.equal('temperature' in body, false);
+});
+
+test('manual temperature wins on both primary and retry', async () => {
+  assert.deepEqual(
+    await collectTemperaturesThroughJsonRetry({ temperatureMode: 'manual', temperature: 1 }),
+    [1, 1],
+  );
+  // manual 档无有效数字时回落上游逻辑，不发残缺值
+  assert.deepEqual(
+    await collectTemperaturesThroughJsonRetry({ temperatureMode: 'manual' }),
+    [0.2, 0.1],
+  );
+});
+
+test('temperature mode migrates stored numbers to manual, fresh stays legacy', () => {
+  const makeCtx = (stored) => {
+    const ctx = {
+      chatId: 'temp-migrate',
+      extensionSettings: { bs_biotracker: { ...stored } },
+      saveSettingsDebounced() {},
+    };
+    globalThis.SillyTavern = { getContext: () => ctx };
+    return ctx;
+  };
+  // 旧版本存的手填数字 → manual（作者三态要求前已配好的用户不断流）
+  const migrated = getSettings(makeCtx({ temperature: 1 }));
+  assert.equal(migrated.temperatureMode, 'manual');
+  assert.equal(migrated.temperature, 1);
+  // 新用户／未配过 → legacy＋null，走上游逻辑
+  const fresh = getSettings(makeCtx({}));
+  assert.equal(fresh.temperatureMode, 'legacy');
+  assert.equal(fresh.temperature, null);
 });
 
 test('filled 0.2 equals default: follows upstream logic', async () => {

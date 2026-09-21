@@ -84,6 +84,7 @@ import {
   getApiUrlForFormat,
   normalizeApiFormat,
   normalizeReasoningEffort,
+  normalizeTemperatureMode,
   resolveUserTemperature,
   getCharacterWorldBookName,
   getCharacterWorldBookNameViaSTscript,
@@ -6248,6 +6249,14 @@ function updateApiEndpointPreview() {
   } catch {}
 }
 
+/** 非手动指定档禁用温度数字框，避免填了却不生效的误解。 */
+function syncTemperatureInputDisabled() {
+  const modeNode = document.getElementById('bs-bt-temperature-mode');
+  const inputNode = document.getElementById('bs-bt-temperature');
+  if (!modeNode || !inputNode) return;
+  inputNode.disabled = normalizeTemperatureMode(modeNode.value) !== 'manual';
+}
+
 function applySettingsToForm(ctx) {
   const settings = getSettings(ctx);
   syncRacePhysiologyOverrides(settings);
@@ -6264,6 +6273,8 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-api-key', settings.apiKey);
   setValue('bs-bt-model', settings.model);
   setValue('bs-bt-temperature', resolveUserTemperature(settings) ?? '');
+  setValue('bs-bt-temperature-mode', normalizeTemperatureMode(settings.temperatureMode));
+  syncTemperatureInputDisabled();
   setValue('bs-bt-reasoning-effort', normalizeReasoningEffort(settings.reasoningEffort));
   updateApiEndpointPreview();
   setValue('bs-bt-formatted-output-v4', settings.formattedOutputV4 !== false);
@@ -6829,7 +6840,10 @@ function readSettingsFromForm(ctx) {
   settings.apiFormat = normalizeApiFormat(getValue('bs-bt-api-format'));
   settings.apiKey = String(getValue('bs-bt-api-key')).trim();
   settings.model = String(getValue('bs-bt-model')).trim();
-  settings.temperature = resolveUserTemperature({ temperature: getValue('bs-bt-temperature') });
+  settings.temperatureMode = normalizeTemperatureMode(getValue('bs-bt-temperature-mode'));
+  settings.temperature = settings.temperatureMode === 'manual'
+    ? resolveUserTemperature({ temperature: getValue('bs-bt-temperature') })
+    : null;
   settings.reasoningEffort = normalizeReasoningEffort(getValue('bs-bt-reasoning-effort'));
   const formattedOutputToggle = document.getElementById('bs-bt-formatted-output-v4');
   if (formattedOutputToggle) settings.formattedOutputV4 = Boolean(formattedOutputToggle.checked);
@@ -7673,6 +7687,9 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-save')?.addEventListener('click', () => {
     readSettingsFromForm(ctx);
     globalThis.toastr?.success?.('[BS BioTracker] 设置已保存');
+  });
+  document.getElementById('bs-bt-temperature-mode')?.addEventListener('change', () => {
+    syncTemperatureInputDisabled();
   });
   document.getElementById('bs-bt-worldbook-clear-all')?.addEventListener('click', async () => {
     try {
