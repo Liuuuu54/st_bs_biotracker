@@ -29,6 +29,10 @@ import {
   getDerivedTypeOverride,
   getRaceIntroductionLine,
   getRacePhysiologyOverride,
+  normalizeDerivedOverrideMap,
+  normalizeRaceOverrideMap,
+  removeDerivedOverrideEntry,
+  removeRaceOverrideEntry,
   setRacePhysiologyOverrides,
   setDerivedTypeOverrides,
   METOVIVIPAROUS_RACES,
@@ -1556,8 +1560,46 @@ function updateBatteryIndicator(settings = null) {
 }
 
 function syncRacePhysiologyOverrides(settings) {
+  // 先把旧键收敛成基名再套用：覆写一律按基名生效，键位不一致的旧资料
+  // 会变成删不掉的幽灵覆写（早期版本存下的「人类」就是这样从百科里消失的）。
+  if (settings) {
+    settings.racePhysiologyOverrides = normalizeRaceOverrideMap(settings.racePhysiologyOverrides);
+    settings.derivedTypeOverrides = normalizeDerivedOverrideMap(settings.derivedTypeOverrides);
+  }
   setRacePhysiologyOverrides(settings?.racePhysiologyOverrides || {});
   setDerivedTypeOverrides(settings?.derivedTypeOverrides || {});
+}
+
+function listOverrideInventory(settings) {
+  const races = Object.keys(settings?.racePhysiologyOverrides || {})
+    .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+    .map((name) => ({ kind: 'race', name }));
+  const derivedTypes = Object.keys(settings?.derivedTypeOverrides || {})
+    .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+    .map((name) => ({ kind: 'derived', name }));
+  return [...races, ...derivedTypes];
+}
+
+function clearOverrideEntry(ctx, kind, name) {
+  if (!ctx || !name) return;
+  const settings = getSettings(ctx);
+  if (kind === 'derived') settings.derivedTypeOverrides = removeDerivedOverrideEntry(settings.derivedTypeOverrides, name);
+  else settings.racePhysiologyOverrides = removeRaceOverrideEntry(settings.racePhysiologyOverrides, name);
+  syncRacePhysiologyOverrides(settings);
+  saveSettings(ctx);
+  updateMainFlowPrompt(ctx);
+  renderRaceEncyclopediaPage(ctx);
+}
+
+function clearAllOverrideEntries(ctx) {
+  if (!ctx) return;
+  const settings = getSettings(ctx);
+  settings.racePhysiologyOverrides = {};
+  settings.derivedTypeOverrides = {};
+  syncRacePhysiologyOverrides(settings);
+  saveSettings(ctx);
+  updateMainFlowPrompt(ctx);
+  renderRaceEncyclopediaPage(ctx);
 }
 
 function getRaceCatalogSelection(settings) {
@@ -1781,13 +1823,10 @@ function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
 function saveRacePhysiologyOverrideFromEditor(ctx, mode = 'diff') {
   if (!ctx || !selectedRaceEncyclopedia) return;
   const settings = getSettings(ctx);
-  const currentOverrides = settings.racePhysiologyOverrides && typeof settings.racePhysiologyOverrides === 'object'
-    ? { ...settings.racePhysiologyOverrides }
-    : {};
   const profile = collectRacePhysiologyEditorProfile(selectedRaceEncyclopedia, { onlyDiff: mode === 'diff' });
   if (!profile) return;
-  if (Object.keys(profile).length === 0) delete currentOverrides[selectedRaceEncyclopedia];
-  else currentOverrides[selectedRaceEncyclopedia] = profile;
+  const currentOverrides = removeRaceOverrideEntry(settings.racePhysiologyOverrides, selectedRaceEncyclopedia);
+  if (Object.keys(profile).length > 0) currentOverrides[selectedRaceEncyclopedia] = profile;
   settings.racePhysiologyOverrides = currentOverrides;
   syncRacePhysiologyOverrides(settings);
   saveSettings(ctx);
@@ -1799,11 +1838,7 @@ function saveRacePhysiologyOverrideFromEditor(ctx, mode = 'diff') {
 function resetRacePhysiologyOverride(ctx) {
   if (!ctx || !selectedRaceEncyclopedia) return;
   const settings = getSettings(ctx);
-  const currentOverrides = settings.racePhysiologyOverrides && typeof settings.racePhysiologyOverrides === 'object'
-    ? { ...settings.racePhysiologyOverrides }
-    : {};
-  delete currentOverrides[selectedRaceEncyclopedia];
-  settings.racePhysiologyOverrides = currentOverrides;
+  settings.racePhysiologyOverrides = removeRaceOverrideEntry(settings.racePhysiologyOverrides, selectedRaceEncyclopedia);
   syncRacePhysiologyOverrides(settings);
   saveSettings(ctx);
   updateMainFlowPrompt(ctx);
@@ -1876,11 +1911,10 @@ function closeDerivedTypeEditor() {
 function saveDerivedTypeOverrideFromEditor(ctx) {
   if (!ctx || !selectedDerivedEncyclopedia) return;
   const settings = getSettings(ctx);
-  const overrides = { ...(settings.derivedTypeOverrides || {}) };
   const profile = collectDerivedTypeEditorOverride(selectedDerivedEncyclopedia);
   if (!profile) return;
+  const overrides = removeDerivedOverrideEntry(settings.derivedTypeOverrides, selectedDerivedEncyclopedia);
   if (Object.keys(profile).length) overrides[selectedDerivedEncyclopedia] = profile;
-  else delete overrides[selectedDerivedEncyclopedia];
   settings.derivedTypeOverrides = overrides;
   syncRacePhysiologyOverrides(settings);
   saveSettings(ctx);
@@ -1892,14 +1926,51 @@ function saveDerivedTypeOverrideFromEditor(ctx) {
 function resetDerivedTypeOverride(ctx) {
   if (!ctx || !selectedDerivedEncyclopedia) return;
   const settings = getSettings(ctx);
-  const overrides = { ...(settings.derivedTypeOverrides || {}) };
-  delete overrides[selectedDerivedEncyclopedia];
-  settings.derivedTypeOverrides = overrides;
+  settings.derivedTypeOverrides = removeDerivedOverrideEntry(settings.derivedTypeOverrides, selectedDerivedEncyclopedia);
   syncRacePhysiologyOverrides(settings);
   saveSettings(ctx);
   updateMainFlowPrompt(ctx);
   closeDerivedTypeEditor();
   renderRaceEncyclopediaPage(ctx);
+}
+
+/**
+ * 列出设定档里所有还在生效的参数覆写。
+ *
+ * 只靠「选中某个种族 → 恢复内置」是不够的：种族名录会随版本增删（人类就被移出过异种名录），
+ * 被移出名录的覆写照样参与运算，却再也选不到、删不掉。这份清单把覆写本身当成第一公民，
+ * 让任何一笔都有对应的清除按钮，不必再去翻 SillyTavern 的设定档。
+ */
+function renderOverrideInventory(settings) {
+  const section = document.getElementById('bs-bt-override-inventory');
+  const list = document.getElementById('bs-bt-override-list');
+  if (!section || !list) return;
+  const entries = listOverrideInventory(settings);
+  section.hidden = entries.length === 0;
+  list.innerHTML = '';
+  for (const entry of entries) {
+    const row = document.createElement('div');
+    row.className = 'bs-bt-override-row';
+
+    const label = document.createElement('span');
+    label.className = 'bs-bt-override-name';
+    const kindLabel = entry.kind === 'derived' ? '衍生' : '种族';
+    const missing = entry.kind === 'derived'
+      ? !DERIVED_ENCYCLOPEDIA_LIST.includes(entry.name)
+      : !RACE_ENCYCLOPEDIA_LIST.includes(entry.name);
+    label.textContent = `[${kindLabel}] ${entry.name}${missing ? '（名录外）' : ''}`;
+    row.appendChild(label);
+
+    const button = document.createElement('button');
+    button.className = 'menu_button bs-bt-override-clear';
+    button.type = 'button';
+    button.dataset.overrideKind = entry.kind;
+    button.dataset.overrideName = entry.name;
+    button.textContent = '清除';
+    row.appendChild(button);
+
+    list.appendChild(row);
+  }
 }
 
 function renderRaceEncyclopediaPage(ctx = null) {
@@ -1927,6 +1998,7 @@ function renderRaceEncyclopediaPage(ctx = null) {
   if (!countNode || !selectNode || !outputNode || !derivedSelectNode || !derivedOutputNode) return;
 
   countNode.innerHTML = `异种数量：${RACE_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.races.length}）<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.derivedTypes.length}）`;
+  renderOverrideInventory(settings);
   if (worldBaselineInput && document.activeElement !== worldBaselineInput) {
     worldBaselineInput.value = String(settings?.worldBaselinePrompt || '');
   }
@@ -7683,6 +7755,17 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-race-reset-override')?.addEventListener('click', () => {
     resetRacePhysiologyOverride(ctx);
     globalThis.toastr?.success?.(`[BS BioTracker] 已恢复 ${selectedRaceEncyclopedia} 的内置种族参数`);
+  });
+  document.getElementById('bs-bt-override-list')?.addEventListener('click', (event) => {
+    const button = event.target?.closest?.('[data-override-name]');
+    if (!button) return;
+    const name = String(button.dataset.overrideName || '');
+    clearOverrideEntry(ctx, String(button.dataset.overrideKind || 'race'), name);
+    globalThis.toastr?.success?.(`[BS BioTracker] 已清除 ${name} 的参数覆写`);
+  });
+  document.getElementById('bs-bt-override-clear-all')?.addEventListener('click', () => {
+    clearAllOverrideEntries(ctx);
+    globalThis.toastr?.success?.('[BS BioTracker] 已清除全部种族与衍生参数覆写');
   });
   document.getElementById('bs-bt-connect')?.addEventListener('click', async () => {
     readSettingsFromForm(ctx);

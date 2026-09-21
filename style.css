@@ -3954,6 +3954,27 @@
   display: none !important;
 }
 
+#bs-biotracker-settings .bs-bt-override-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-override-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-override-name {
+  overflow-wrap: anywhere;
+}
+
+#bs-biotracker-settings .bs-bt-override-clear {
+  flex: 0 0 auto;
+}
+
 #bs-biotracker-settings #bs-bt-view-track .menu_button,
 #bs-biotracker-settings #bs-bt-view-track .text_pole,
 #bs-biotracker-settings #bs-bt-view-track textarea,

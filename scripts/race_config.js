@@ -1209,6 +1209,55 @@ export function getRacePhysiologyOverride(race) {
   return profile ? { ...profile } : null;
 }
 
+/**
+ * 把覆写表的键位收敛成执行期真正用来查表的基名。
+ *
+ * 覆写生效时走的是基名（getBaseRaceName / getBaseDerivedTypeName），
+ * 但覆写被写进设定档时用的是使用者当下选到的字串——带子项、带别名、带空白都算数。
+ * 键与查法对不上时覆写照样生效，UI 的「恢复内置」却删不到那一笔，
+ * 使用者只剩下手动翻 SillyTavern 设定档这条路。这里让「存」与「查」走同一个基名。
+ */
+function rekeyOverrideMap(overrides, toBaseName) {
+  const source = overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides : {};
+  const result = {};
+  for (const [rawKey, profile] of Object.entries(source)) {
+    const key = toBaseName(rawKey);
+    if (!key || !profile || typeof profile !== 'object' || Array.isArray(profile)) continue;
+    // 同一基名下的多笔旧键合并，后写入的栏位盖过先前的；宁可留下一笔可删的覆写，
+    // 也不要在正规化时凭空丢掉使用者设定过的数值。
+    result[key] = { ...(result[key] || {}), ...profile };
+  }
+  return result;
+}
+
+function removeOverrideEntry(overrides, name, toBaseName) {
+  const source = overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides : {};
+  const target = toBaseName(name);
+  const result = {};
+  for (const [rawKey, profile] of Object.entries(source)) {
+    // 连同所有会正规化到同一基名的旧键一起删，否则删完重开又被旧键喂回来。
+    if (target && toBaseName(rawKey) === target) continue;
+    result[rawKey] = profile;
+  }
+  return result;
+}
+
+export function normalizeRaceOverrideMap(overrides) {
+  return rekeyOverrideMap(overrides, getBaseRaceName);
+}
+
+export function normalizeDerivedOverrideMap(overrides) {
+  return rekeyOverrideMap(overrides, getBaseDerivedTypeName);
+}
+
+export function removeRaceOverrideEntry(overrides, race) {
+  return removeOverrideEntry(overrides, race, getBaseRaceName);
+}
+
+export function removeDerivedOverrideEntry(overrides, derivedType) {
+  return removeOverrideEntry(overrides, derivedType, getBaseDerivedTypeName);
+}
+
 export function getBuiltinRacePhysiologyProfile(race) {
   const key = getBaseRaceName(race);
   const profile = RACE_PHYSIOLOGY_PROFILES[key];
