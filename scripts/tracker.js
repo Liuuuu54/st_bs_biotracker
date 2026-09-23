@@ -1,7 +1,7 @@
 import { callOpenAICompatible, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCallsResult, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
+import { applyToolCallsResult, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import {
   buildRecentMessages,
   buildSignature,
@@ -857,10 +857,10 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
       effectivePregnantDays: Number.isFinite(Number(pregnant.effectivePregnantDays)) ? Number(pregnant.effectivePregnantDays) : 0,
       ...getPromptFacingLaborState(base, pregnant),
       amnionDurability: Number.isFinite(Number(pregnant.amnionDurability)) ? Number(pregnant.amnionDurability) : 0,
-      ...(hasFetuses && !immune.metabolism ? { nutrition: Number.isFinite(Number(pregnant.nutrition)) ? Number(pregnant.nutrition) : 0 } : {}),
+      ...(hasFetuses && !immune.metabolism ? { nutrition: getPregnancyNutritionTotal(pregnant) } : {}),
       ...(immune.metabolism ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
       fetuses: pregnant.fetuses.filter(isFetusKnownToCharacter).map((fetus) => {
-        const { embryoId: _embryoId, fusionCheckedWith: _fusionCheckedWith, ...visibleFetus } = fetus;
+        const { embryoId: _embryoId, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, ...visibleFetus } = fetus;
         return {
           ...visibleFetus,
           tendencyAngleText: getTendencyAngleText(fetus?.tendencyAngle),

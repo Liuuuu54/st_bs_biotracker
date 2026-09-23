@@ -429,7 +429,11 @@ export function normalizeCharacterPsychologyState(characterState) {
   if (pregnant && pregnant.expansion === undefined) {
     pregnant.expansion = null;
   }
-  if (pregnant) delete pregnant.symptomReliefPending;
+  if (pregnant) {
+    delete pregnant.symptomReliefPending;
+    // 供养力改为每胎各记一份（fetus.nutrition），母体层不再保存
+    delete pregnant.nutrition;
+  }
   if (pregnant?.blockage?.key === 'stool') pregnant.blockage.key = 'excretion';
   if (pregnant?.blockage?.key === 'urine') {
     if (!pregnant.acceleration) {
@@ -749,7 +753,6 @@ export function createDefaultFemaleState(name = '') {
         fetusesCount: 0,
         fetalEnergyDrain: 0,
         amnionDurability: 0,
-        nutrition: 0,
         blockage: null,
         acceleration: null,
         expansion: null,
@@ -1624,7 +1627,6 @@ function createSnapshotCharacterBaseline(name = '') {
         fetusesCount: 0,
         fetalEnergyDrain: 0,
         amnionDurability: 0,
-        nutrition: 0,
         blockage: null,
         acceleration: null,
         expansion: null,

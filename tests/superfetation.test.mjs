@@ -196,8 +196,11 @@ test('两胎一起生，异期标签跟到孩子身上', () => {
   assert.deepEqual(children.map((c) => c.fathers).sort(), ['乙', '甲']);
   const lateChild = children.find((c) => c.fathers === '乙');
   assert.deepEqual(lateChild.tags, ['superfetation'], '标签要跟到孩子身上');
-  // 不断言出生体重差：长孕期的供养赤字会把两胎都压到 0.33 地板，初始差距被抹平。
-  // 受精当下的胎重折扣由上面「胎重按落后进度打折」那条直接验证。
+  // 无人照料时两胎都会亏，但供养赤字按各自孕龄分摊、单周有上限，不会双双压到地板，
+  // 晚到那胎受精时的胎重折扣在出生时仍看得出来。
+  const firstChild = children.find((c) => c.fathers === '甲');
+  assert.ok(lateChild.birthWeightRatio < firstChild.birthWeightRatio, '晚到那胎出生时仍较小');
+  assert.ok(lateChild.birthWeightRatio > 0.33, '不会被赤字压到地板');
 });
 
 test('只有待著床胚胎时不能分娩', () => {

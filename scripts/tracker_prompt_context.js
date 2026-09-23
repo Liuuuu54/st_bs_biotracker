@@ -90,7 +90,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- laborFetusIndex: 第二产程当前处理的胎次，从 1 起算；其他阶段通常为 0。',
   '- laborPain: 当前分娩疼痛程度，范围 0-10。描写疼痛反应不得明显超过此等级；刚进入第一产程时不应写成已达到极限痛苦。',
   '- amnionDurability: 母体层的膜耐性；过低代表接近或已经破水。',
-  '- nutrition: 妊娠供养力盈余/赤字，由需求照料累积：任一需求在「高」时用 bsExcreteMetabolism 处理到「高」以下 +1，拖到「爆」-1（停在爆只扣一次），「满」不增不减。正值代表供养充足，负值代表供养亏空；每周会参与胎儿体重结算。',
+  '- nutrition: 妊娠供养力盈余/赤字，由需求照料累积：任一需求在「高」时用 bsExcreteMetabolism 彻底处理到「无」约 +1，只处理一半不算；拖到「爆」约 -1，停在爆每满 24 小时再扣一次；「满」不增不减。点数会按种族与妊娠负担折算，所以常见小数。正值代表供养充足，负值代表供养亏空。这是全部胎儿的合计：系统每次计分当下就按各胎孕龄与位置拆给每一胎，每周各自换算成胎重后归零。',
   '- bsMaternalFetalInteraction 的 direction=fetal 表示胎儿对母体的亲近或排斥，须传 change 来改变 affinity；direction=maternal 表示母体安抚胎儿，不传 change，系统会随机决定 affinity 变化，产兆前驱时用于分娩抵抗。母胎互动不影响供养力。每名角色每个新小时仅能成功生效一次。',
   '- blockage: 当日妊娠阻塞状态，格式为 {key, severity}。key 可为 excretion/hunger/sleep/milk/odor/companionship/fluxPositive/fluxNegative；它会让对应需求的 bsExcreteMetabolism 排解不顺畅。',
   '- acceleration: 当日妊娠快积状态，格式同 blockage；它会让对应需求更快累积。',

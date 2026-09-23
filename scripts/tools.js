@@ -1277,6 +1277,7 @@ function cloneIdenticalFetus(fetus) {
   return {
     ...fetus,
     embryoId: null,
+    nutrition: 0,
     fusionCheckedWith: [],
     providerSources: Array.isArray(fetus?.providerSources) ? [...fetus.providerSources] : undefined,
     chimera: fetus?.chimera ? cloneValue(fetus.chimera) : undefined,
@@ -1412,6 +1413,7 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
         Math.floor(Number(fetusB?.clutchSize) || 1),
       ),
     weight: (clampNumber(fetusA?.weight, 0.33, 3, 1) + clampNumber(fetusB?.weight, 0.33, 3, 1)) / 2,
+    nutrition: (Number(fetusA?.nutrition) || 0) + (Number(fetusB?.nutrition) || 0),
     tendencyAngle: randomInt(0, 360),
     affinity: derivedSeed.affinity,
     maternalDerivedTypeProgress: derivedSeed.progress,
@@ -2691,41 +2693,79 @@ function applyHourlyPregnancyMetabolism(profile, tick) {
   applyDerivedMetabolismExemptions(profile);
 }
 
+// 供养力分池：每胎各记一个 fetus.nutrition。每次计分当下就按各胎需求拆开，
+// 胎位在一周内上下移动时，在宫顶待得越久分得越多，而不是只看结算那一刻停在哪。
+// 每点供养力对胎重的对数影响；乘上妊娠变速让各种族整个孕期的总成长一致。
+const NUTRITION_WEIGHT_SCALE = 0.0005;
+// 单周（按有效孕程）胎重变化上限，同样乘妊娠变速，快孕期种族一周走完多周孕程不被卡住。
+const NUTRITION_WEEKLY_CAP = 0.03;
+// 越靠宫顶供养越好；亏损时取倒数，宫顶胎受保护、低位胎先亏。descentStage 尚未建立时为 1。
+const NUTRITION_POSITION_FACTORS = Object.freeze({ '-3': 1.5, '-2': 1.0, '-1': 0.8, 0: 0.6 });
+
+function getNutritionPositionFactor(fetus, fetuses, surplus) {
+  const host = fetus?.nestedInEmbryoId !== undefined && fetus?.nestedInEmbryoId !== null
+    ? fetuses.find((candidate) => candidate?.embryoId === fetus.nestedInEmbryoId)
+    : null;
+  const stage = Number((host || fetus)?.descentStage);
+  if (!Number.isFinite(stage)) return 1;
+  const factor = NUTRITION_POSITION_FACTORS[Math.round(stage)];
+  if (!factor) return 0;
+  return surplus ? factor : 1 / factor;
+}
+
+/**
+ * 分配权重 = 自己的孕龄 × 位置。不乘胎重（大胎会越分越多、把既有大小差不断放大），
+ * 不乘种族承载差（跨种族负担在受精时已换算进胎重）。待着床的胚胎还没接上供养。
+ */
+function getNutritionDemand(fetus, fetuses, effectivePregnantDays, surplus) {
+  if (fetus?.pendingImplantation) return 0;
+  const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
+  return ownAge * getNutritionPositionFactor(fetus, fetuses, surplus);
+}
+
+function roundNutrition(value) {
+  return Math.round(value * 10000) / 10000;
+}
+
+/** 母体层面的供养力总额：各胎的加总。prompt 只看这个数，看不到每胎的份额。 */
+export function getPregnancyNutritionTotal(pregnant) {
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  const total = fetuses.reduce((sum, fetus) => sum + (Number(fetus?.nutrition) || 0), 0);
+  return Math.round(total * 100) / 100;
+}
+
+/** 按计分当下的需求把点数拆给各胎；一胎都接不上供养（全在待着床）时点数作废。 */
+function addNutrition(profile, amount) {
+  const pregnant = profile?.pregnant || {};
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+  const demands = fetuses.map((fetus) => getNutritionDemand(fetus, fetuses, effectivePregnantDays, amount > 0));
+  const totalDemand = demands.reduce((sum, value) => sum + value, 0);
+  if (!amount || totalDemand <= 0) return 0;
+  for (let i = 0; i < fetuses.length; i += 1) {
+    if (demands[i] <= 0) continue;
+    fetuses[i].nutrition = roundNutrition((Number(fetuses[i].nutrition) || 0) + amount * (demands[i] / totalDemand));
+  }
+  return amount;
+}
+
+/** 周结算：每胎把自己累积的供养力换算成胎重倍率后归零。 */
 function applyWeeklyNutrition(profile) {
   const pregnant = profile?.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  if (fetuses.length === 0) return false;
-
-  const nutrition = Number(pregnant.nutrition) || 0;
-  if (nutrition === 0) return false;
-
-  const absAffinities = fetuses.map((fetus) => Math.abs(clampNumber(fetus?.affinity, -50, 50, 0)));
-  const totalAbs = absAffinities.reduce((sum, value) => sum + value, 0);
-
   const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0.1, 20, 1);
-  const weightScale = 0.02;
-
-  if (nutrition > 0) {
-    for (let i = 0; i < fetuses.length; i += 1) {
-      const share = totalAbs > 0 ? nutrition * (absAffinities[i] / totalAbs) : nutrition / fetuses.length;
-      const factor = 1 + share * gestationSpeed * weightScale;
-      fetuses[i].weight = clampNumber((Number(fetuses[i].weight) || 1) * factor, 0.33, 3.0, 1);
-    }
-  } else {
-    const maxAbs = Math.max(...absAffinities, 0);
-    const reverseWeights = absAffinities.map((value) => maxAbs - value + 1);
-    const totalReverse = reverseWeights.reduce((sum, value) => sum + value, 0);
-    for (let i = 0; i < fetuses.length; i += 1) {
-      const share = totalReverse > 0 ? nutrition * (reverseWeights[i] / totalReverse) : nutrition / fetuses.length;
-      const factor = 1 + share * gestationSpeed * weightScale;
-      fetuses[i].weight = clampNumber((Number(fetuses[i].weight) || 1) * factor, 0.33, 3.0, 1);
-    }
+  const cap = NUTRITION_WEEKLY_CAP * gestationSpeed;
+  let changed = false;
+  for (const fetus of fetuses) {
+    const nutrition = Number(fetus?.nutrition) || 0;
+    if (nutrition === 0) continue;
+    const delta = clampNumber(nutrition * gestationSpeed * NUTRITION_WEIGHT_SCALE, -cap, cap, 0);
+    // 以指数换算：亏空再深也只会逐步变小，不会跌穿成负值
+    fetus.weight = clampNumber((Number(fetus.weight) || 1) * Math.exp(delta), 0.33, 3.0, 1);
+    fetus.nutrition = 0;
+    changed = true;
   }
-
-  pregnant.nutrition = 0;
-  pregnant.fetuses = fetuses;
-  profile.pregnant = pregnant;
-  return true;
+  return changed;
 }
 
 function applyOverduePressure(profile, tick, female) {
@@ -2853,9 +2893,10 @@ function getDerivedFluxNeedLabel(value) {
   return (Number(value) || 0) >= 0 ? '正极释放需求' : '负极释放需求';
 }
 
-// 供养力只来自需求照料：在「高」时处理掉 +1，拖到「爆」−1。
+// 供养力只来自需求照料：在「高」时处理到「无」+1，拖到「爆」−1、停在爆每满 24 小时再 −1（点数再按种族归一化）。
 // 「满」是中性区；产程中已无周结算，计分到产兆前驱为止。
 const NUTRITION_NEED_KEYS = Object.freeze(['excretion', 'hunger', 'sleep', 'milk', 'odor', 'companionship']);
+const NUTRITION_BURST_REPEAT_MINUTES = 24 * 60;
 
 function canScoreNutrition(profile) {
   if (profile?.immune?.metabolism) return false;
@@ -2879,46 +2920,86 @@ function getNutritionNeedLevels(profile) {
   return levels;
 }
 
-function addNutrition(profile, amount) {
-  const pregnant = profile.pregnant || {};
-  pregnant.nutrition = (Number(pregnant.nutrition) || 0) + amount;
-  profile.pregnant = pregnant;
+/**
+ * 每次计分的点数先归一化，让不同种族照顾得一样好就得到一样的结果：
+ * - 需求项数：衍生类型抵免掉的需求越多，计分机会越少，按 6 项折算；
+ * - 加分再除以 (1 + fetalEnergyDrain)：承载力低的母体需求涨得快、处理机会多，
+ *   不除的话她反而最容易养出巨胎。扣分按天计，不受需求速度影响，不必再除。
+ */
+function getNutritionPointScale(levels) {
+  const count = Math.max(1, Object.keys(levels).length);
+  return NUTRITION_NEED_KEYS.length / count;
 }
 
 /**
- * 处理加分：处理前在「高」、处理后降到「高」以下。
+ * 处理加分：处理前在「高」、处理后降到「无」。
+ * 门槛压到「无」是防刷：处理一半就算的话，需求回升周期短，频繁半处理比处理干净更划算。
  * 不需要另存上膛旗标——要再拿一次，需求必须先重新涨回「高」。
  */
 function applyNutritionReliefGain(profile, levelsBefore) {
   if (!canScoreNutrition(profile)) return 0;
   const levelsAfter = getNutritionNeedLevels(profile);
-  let gained = 0;
+  let count = 0;
   for (const [key, before] of Object.entries(levelsBefore)) {
-    if (before !== '高') continue;
-    const after = levelsAfter[key];
-    if (after && after !== '高' && after !== '满' && after !== '爆') gained += 1;
+    if (before === '高' && levelsAfter[key] === '无') count += 1;
   }
-  if (gained > 0) addNutrition(profile, gained);
-  return gained;
+  if (count === 0) return 0;
+  const drain = clampNumber(profile?.pregnant?.fetalEnergyDrain, 0, 9999, 0);
+  return addNutrition(profile, count * getNutritionPointScale(levelsAfter) / (1 + drain));
 }
 
 /**
- * 爆的扣分与来源无关：任何改动需求的操作结束后扫一次。
- * nutritionBurst 记着「已经扣过、仍停在爆」的需求，降到爆以下才重新上膛，
- * 所以长时间停在爆只扣一次，也不依赖是哪条路径推上去的。
- * 不能计分的阶段只同步清单不扣分，着床当下已在爆的需求因此不会被追扣。
+ * 进入爆的扣分与来源无关：任何改动需求的操作结束后扫一次。
+ * nutritionBurst 是 {需求: 距上次扣分的分钟数}，只记「已扣过、仍停在爆」的需求；
+ * 降到爆以下即移除、重新上膛。停在爆的时长由时间推进累加（accrueNutritionBurst）。
+ * 不能计分的阶段只同步不扣分，着床当下已在爆的需求因此不会被追扣；
+ * 从未同步过（没有 nutritionBurst）的角色第一次也只建档。
  */
 function syncNutritionBurst(profile) {
   if (!profile || profile?.immune?.metabolism) return 0;
   const pregnant = profile.pregnant;
   if (!pregnant || typeof pregnant !== 'object') return 0;
   const levels = getNutritionNeedLevels(profile);
-  const bursting = Object.keys(levels).filter((key) => levels[key] === '爆');
-  const scoring = canScoreNutrition(profile) && Array.isArray(pregnant.nutritionBurst);
-  const charged = scoring ? bursting.filter((key) => !pregnant.nutritionBurst.includes(key)).length : 0;
-  pregnant.nutritionBurst = bursting;
-  if (charged > 0) addNutrition(profile, -charged);
-  return charged;
+  const previous = pregnant.nutritionBurst && typeof pregnant.nutritionBurst === 'object' ? pregnant.nutritionBurst : null;
+  const scoring = canScoreNutrition(profile) && previous !== null;
+  const next = {};
+  let charged = 0;
+  for (const key of Object.keys(levels)) {
+    if (levels[key] !== '爆') continue;
+    if (previous && Object.hasOwn(previous, key)) {
+      next[key] = clampNumber(previous[key], 0, NUTRITION_BURST_REPEAT_MINUTES, 0);
+    } else {
+      next[key] = 0;
+      if (scoring) charged += 1;
+    }
+  }
+  pregnant.nutritionBurst = next;
+  if (charged === 0) return 0;
+  return addNutrition(profile, -charged * getNutritionPointScale(levels));
+}
+
+/**
+ * 停在爆的时长。只累加推进前就已扣过、推进后仍在爆的需求——
+ * 这一轮才冲进爆的，由随后的 syncNutritionBurst 扣第一次并从 0 起算。
+ */
+function accrueNutritionBurst(profile, deltaMinutes) {
+  if (!profile || profile?.immune?.metabolism || !(deltaMinutes > 0)) return 0;
+  const pregnant = profile.pregnant;
+  const burst = pregnant?.nutritionBurst;
+  if (!burst || typeof burst !== 'object') return 0;
+  const levels = getNutritionNeedLevels(profile);
+  const scoring = canScoreNutrition(profile);
+  let charged = 0;
+  for (const key of Object.keys(burst)) {
+    if (levels[key] !== '爆') continue;
+    let minutes = clampNumber(burst[key], 0, NUTRITION_BURST_REPEAT_MINUTES, 0) + deltaMinutes;
+    const repeats = Math.floor(minutes / NUTRITION_BURST_REPEAT_MINUTES);
+    minutes -= repeats * NUTRITION_BURST_REPEAT_MINUTES;
+    burst[key] = minutes;
+    if (scoring) charged += repeats;
+  }
+  if (charged === 0) return 0;
+  return addNutrition(profile, -charged * getNutritionPointScale(levels));
 }
 
 function syncAllNutritionBurst(chatState) {
@@ -2968,6 +3049,12 @@ function updateAdvisoryNotify(profile, female) {
     reminders.push(odorLevel === '高' || odorLevel === '满' || odorLevel === '爆'
       ? `${female}渴望陪伴，但当前臭意会妨碍社交舒适度；清洁后再给予陪伴或安抚更有效`
       : `${female}渴望陪伴，可优先给予陪伴、交流或安抚`);
+  }
+  if (canScoreNutrition(profile)) {
+    const levels = getNutritionNeedLevels(profile);
+    if (Object.values(levels).includes('高')) {
+      reminders.push(`${female}有需求正处于「高」：趁现在彻底处理能为胎儿补充供养力，拖到「爆」则会流失`);
+    }
   }
 
   const stage = String(base.stage || '');
@@ -3142,7 +3229,6 @@ function clearPregnancyState(profile) {
   pregnant.fetusesCount = 0;
   pregnant.fetalEnergyDrain = 0;
   pregnant.amnionDurability = 0;
-  pregnant.nutrition = 0;
   pregnant.blockage = null;
   pregnant.acceleration = null;
   pregnant.expansion = null;
@@ -4728,6 +4814,7 @@ function applyTimeToCharacter(character, tick) {
     psychologyUpdateUsed: tick.passedHours > 0 ? false : Boolean(cooldown.psychologyUpdateUsed),
     maternalFetalInteractionUsed: tick.passedHours > 0 ? false : Boolean(cooldown.maternalFetalInteractionUsed),
   };
+  accrueNutritionBurst(profile, tick.deltaMinutes);
   updateAdvisoryNotify(profile, next.name);
   if (tick.passedDays > 0) {
     appendNotifyReminder(profile.notify || notify, '已跨入新的一天；若角色有值得沉淀的经历、心境、关系或身体变化，可调用 bsWriteDiary 写入主观日记');
