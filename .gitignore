@@ -4,3 +4,4 @@ node_modules/
 __pycache__/
 bastneth.code-workspace
 .claude/
+*_PLAN.md
