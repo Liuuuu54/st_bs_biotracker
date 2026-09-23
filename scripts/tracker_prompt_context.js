@@ -1,6 +1,6 @@
 import { PSY_MENS_FIELDS, PSY_PREG_FIELDS } from './registry_psy_config.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
-import { buildRaceCatalogBlock, buildRacePhysiologyPrompt, buildWorldBaselineBlock } from './race_prompt_context.js';
+import { buildRaceCatalogBlock, buildRacePhysiologyPrompt, buildWorldBaselineBlock, isOwnMetabolismHidden } from './race_prompt_context.js';
 import { getDerivedTypeFluxProfile } from './race_config.js';
 import { deriveFetusTags, describeFetusTags } from './fetus_tags.js';
 import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js';
@@ -33,7 +33,7 @@ function collectRelevantFluxNames(payload = {}) {
       const profile = item?.profile || {};
       const base = profile.base || {};
       const pregnant = profile.pregnant || {};
-      pushFluxName(base.derivedType);
+      if (!isOwnMetabolismHidden(profile)) pushFluxName(base.derivedType);
       for (const sperm of (Array.isArray(base.sperms) ? base.sperms : [])) pushFluxName(sperm?.derivedType);
       for (const fetus of (Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [])) pushFluxName(fetus?.fatherDerivedType);
       for (const child of (Array.isArray(profile.children) ? profile.children : [])) pushFluxName(child?.derivedType);
@@ -50,7 +50,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- 每个角色结构为 name / initialized / profile。',
   '- profile 主要包含 base、pregnant、experience、psychology、skills、talents、children、metabolism、descriptions、diary、notify，必要时也会附带部分 bio 字段。',
   '- bio 与 immune 大多属于内部运行参数，tracker 默认不会完整发给你；但与剧情表达直接相关的少数 bio 字段可以发送。',
-  '- 若角色具有 immune.metabolism=true，则 metabolism 也不会发给你，因为该角色不受代谢累积影响。',
+  '- 若角色带有 immune.metabolism=true，则 metabolism、pregnant.nutrition 与 blockage/acceleration/expansion 都不会发给你，本人的衍生需求说明也不发，因为该角色不受代谢累积影响；不要为她调用 bsExcreteMetabolism。',
   '- 若角色带有 offscreen=true，表示该角色当前不在场，existing_state 只提供精简状态，不代表角色不存在。',
   '',
   '[base]',
@@ -90,9 +90,8 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- laborFetusIndex: 第二产程当前处理的胎次，从 1 起算；其他阶段通常为 0。',
   '- laborPain: 当前分娩疼痛程度，范围 0-10。描写疼痛反应不得明显超过此等级；刚进入第一产程时不应写成已达到极限痛苦。',
   '- amnionDurability: 母体层的膜耐性；过低代表接近或已经破水。',
-  '- nutrition: 妊娠供养力盈余/赤字。正值代表供养充足，负值代表供养亏空；每周会参与胎儿体重结算。',
-  '- symptomReliefPending: 尚待透过母体安抚胎儿处理的妊娠不适次数；direction=maternal 的普通母胎互动成功时可消耗一次，其随机 affinity 结果为轻微变化时补回 1 点供养力，显著变化时补回 2 点供养力。',
-  '- bsMaternalFetalInteraction 的 direction=fetal 表示胎儿对母体的亲近或排斥，须传 change 来改变 affinity，且不会补充供养力；direction=maternal 表示母体安抚胎儿，不传 change，系统会随机决定 affinity 变化，成功时也可依变化强度回补待安抚供养力，产兆前驱时用于分娩抵抗。每名角色每个新小时仅能成功生效一次。',
+  '- nutrition: 妊娠供养力盈余/赤字，由需求照料累积：任一需求在「高」时用 bsExcreteMetabolism 处理到「高」以下 +1，拖到「爆」-1（停在爆只扣一次），「满」不增不减。正值代表供养充足，负值代表供养亏空；每周会参与胎儿体重结算。',
+  '- bsMaternalFetalInteraction 的 direction=fetal 表示胎儿对母体的亲近或排斥，须传 change 来改变 affinity；direction=maternal 表示母体安抚胎儿，不传 change，系统会随机决定 affinity 变化，产兆前驱时用于分娩抵抗。母胎互动不影响供养力。每名角色每个新小时仅能成功生效一次。',
   '- blockage: 当日妊娠阻塞状态，格式为 {key, severity}。key 可为 excretion/hunger/sleep/milk/odor/companionship/fluxPositive/fluxNegative；它会让对应需求的 bsExcreteMetabolism 排解不顺畅。',
   '- acceleration: 当日妊娠快积状态，格式同 blockage；它会让对应需求更快累积。',
   '- expansion: 当日妊娠扩容状态，格式同 blockage；它会将对应普通需求上限从 150 扩为 200，或将对应方向的 flux 上限从 ±150 扩为 ±200。blockage、acceleration 与 expansion 不会同时落在同一项需求上。非衍生角色不会出现 fluxPositive/fluxNegative；衍生角色不会出现其 derivedType 已抵免的普通需求。',

@@ -514,6 +514,15 @@ function collectRelevantRaces(payload = {}, options = {}) {
   return found;
 }
 
+/**
+ * 需求免疫的角色，本人的衍生需求（flux）说明一律不发。
+ * 原始状态与 tracker 投影都保留 immune.metabolism（投影只留这一项）。
+ * 只管角色本人——精源、胎儿父系、子女的衍生类型描述的是别人，照发。
+ */
+export function isOwnMetabolismHidden(profile) {
+  return profile?.immune?.metabolism === true;
+}
+
 function collectRelevantDerivedTypes(payload = {}, options = {}) {
   const includeExistingState = options.includeExistingState !== false;
   const includeCurrentCharacter = options.includeCurrentCharacter !== false;
@@ -531,7 +540,7 @@ function collectRelevantDerivedTypes(payload = {}, options = {}) {
       const profile = item?.profile || {};
       const base = profile.base || {};
       const pregnant = profile.pregnant || {};
-      pushDerivedType(base.derivedType);
+      if (!isOwnMetabolismHidden(profile)) pushDerivedType(base.derivedType);
       for (const sperm of (Array.isArray(base.sperms) ? base.sperms : [])) pushDerivedType(sperm?.derivedType);
       for (const fetus of (Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [])) pushDerivedType(fetus?.fatherDerivedType);
       for (const child of (Array.isArray(profile.children) ? profile.children : [])) pushDerivedType(child?.derivedType);

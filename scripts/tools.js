@@ -563,7 +563,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsMaternalFetalInteraction',
-    description: '处理母体与胎儿之间的互动。每名角色在每个新小时内最多成功互动一次；在 bsPassedTime 推进满下一小时之前，重复调用会被跳过。direction=fetal 表示胎儿对母体的亲近或排斥，必须传 change，并调整随机一胎的 affinity，不会补充供养力。direction=maternal 表示母体安抚胎儿，不使用 change；系统会随机判定 affinity 变化，若成功且有尚待安抚的妊娠不适，会消耗一次并依轻微/显著变化补回 1/2 点供养力。若当前处于产兆前驱且 direction=maternal，则改为分娩抵抗判定。',
+    description: '处理母体与胎儿之间的互动。每名角色在每个新小时内最多成功互动一次；在 bsPassedTime 推进满下一小时之前，重复调用会被跳过。direction=fetal 表示胎儿对母体的亲近或排斥，必须传 change，并调整随机一胎的 affinity。direction=maternal 表示母体安抚胎儿，不使用 change；系统会随机判定 affinity 变化。母胎互动不影响供养力。若当前处于产兆前驱且 direction=maternal，则改为分娩抵抗判定。',
     input_schema: {
       type: 'object',
       properties: {
@@ -2665,7 +2665,7 @@ function getUterinePressureCap(profile) {
   return Math.round(50 + (150 - 50) * progress);
 }
 
-function applyHourlyPregnancyMetabolism(profile, tick, female) {
+function applyHourlyPregnancyMetabolism(profile, tick) {
   const immune = profile?.immune || {};
   if (immune.metabolism) return;
   const stage = String(profile?.base?.stage || '');
@@ -2689,28 +2689,6 @@ function applyHourlyPregnancyMetabolism(profile, tick, female) {
   addMetabolismValue(profile, 'hunger', delta, 0, 150);
   addMetabolismValue(profile, 'sleep', delta, 0, 150);
   applyDerivedMetabolismExemptions(profile);
-
-  const vitality = clampNumber(profile?.base?.vitality, 0, 200, 100);
-  const days = Math.max(1, Math.ceil(tick.deltaDays));
-  // 症状抽样的轮数上限：bsPassedTime 各分量独立 clamp 后可叠到十几万天，
-  // 乘上 fetalEnergyDrain 就是十亿级循环，会把 UI 冻死。
-  // 封顶的是循环次数而不是时间本身——时间推进与阶段推进保持原语义，
-  // 超长时间跳跃只是症状擲骰次数不再线性增长（本来也不该线性增长）。
-  const MAX_SYMPTOM_ROUNDS = 2000;
-  const rounds = Math.min(MAX_SYMPTOM_ROUNDS, Math.max(1, Math.ceil(fetalEnergyDrain)) * days);
-  for (let i = 0; i < rounds; i += 1) {
-    const symptomChance = (200 - vitality) * 0.5;
-    if (Math.random() * 100 < symptomChance) {
-      pregnant.nutrition = (Number(pregnant.nutrition) || 0) - 1;
-      pregnant.symptomReliefPending = clampNumber(pregnant.symptomReliefPending, 0, 999, 0) + 1;
-      profile.pregnant = pregnant;
-      profile.notify = {
-        ...(profile.notify || {}),
-        secondly: `${female}的妊娠症状使身体感到不适，供养力有所流失`,
-      };
-      break;
-    }
-  }
 }
 
 function applyWeeklyNutrition(profile) {
@@ -2875,6 +2853,80 @@ function getDerivedFluxNeedLabel(value) {
   return (Number(value) || 0) >= 0 ? '正极释放需求' : '负极释放需求';
 }
 
+// 供养力只来自需求照料：在「高」时处理掉 +1，拖到「爆」−1。
+// 「满」是中性区；产程中已无周结算，计分到产兆前驱为止。
+const NUTRITION_NEED_KEYS = Object.freeze(['excretion', 'hunger', 'sleep', 'milk', 'odor', 'companionship']);
+
+function canScoreNutrition(profile) {
+  if (profile?.immune?.metabolism) return false;
+  const stage = String(profile?.base?.stage || '');
+  if (!PREGNANCY_STAGES.includes(stage) && stage !== '产兆前驱') return false;
+  return Array.isArray(profile?.pregnant?.fetuses) && profile.pregnant.fetuses.length > 0;
+}
+
+/** 当前参与计分的需求及其等级；flux 按绝对值、按当前极性的容量判定 */
+function getNutritionNeedLevels(profile) {
+  const metabolism = profile?.metabolism || {};
+  const levels = {};
+  for (const key of NUTRITION_NEED_KEYS) {
+    if (isMetabolismExempt(profile, key)) continue;
+    levels[key] = getMetabolismLevel(Number(metabolism[key]) || 0, getMetabolismCap(profile, key));
+  }
+  if (hasDerivedMetabolism(profile)) {
+    const flux = Number(metabolism.flux) || 0;
+    levels.flux = getDerivedFluxLevel(flux, getMetabolismCap(profile, 'flux', flux));
+  }
+  return levels;
+}
+
+function addNutrition(profile, amount) {
+  const pregnant = profile.pregnant || {};
+  pregnant.nutrition = (Number(pregnant.nutrition) || 0) + amount;
+  profile.pregnant = pregnant;
+}
+
+/**
+ * 处理加分：处理前在「高」、处理后降到「高」以下。
+ * 不需要另存上膛旗标——要再拿一次，需求必须先重新涨回「高」。
+ */
+function applyNutritionReliefGain(profile, levelsBefore) {
+  if (!canScoreNutrition(profile)) return 0;
+  const levelsAfter = getNutritionNeedLevels(profile);
+  let gained = 0;
+  for (const [key, before] of Object.entries(levelsBefore)) {
+    if (before !== '高') continue;
+    const after = levelsAfter[key];
+    if (after && after !== '高' && after !== '满' && after !== '爆') gained += 1;
+  }
+  if (gained > 0) addNutrition(profile, gained);
+  return gained;
+}
+
+/**
+ * 爆的扣分与来源无关：任何改动需求的操作结束后扫一次。
+ * nutritionBurst 记着「已经扣过、仍停在爆」的需求，降到爆以下才重新上膛，
+ * 所以长时间停在爆只扣一次，也不依赖是哪条路径推上去的。
+ * 不能计分的阶段只同步清单不扣分，着床当下已在爆的需求因此不会被追扣。
+ */
+function syncNutritionBurst(profile) {
+  if (!profile || profile?.immune?.metabolism) return 0;
+  const pregnant = profile.pregnant;
+  if (!pregnant || typeof pregnant !== 'object') return 0;
+  const levels = getNutritionNeedLevels(profile);
+  const bursting = Object.keys(levels).filter((key) => levels[key] === '爆');
+  const scoring = canScoreNutrition(profile) && Array.isArray(pregnant.nutritionBurst);
+  const charged = scoring ? bursting.filter((key) => !pregnant.nutritionBurst.includes(key)).length : 0;
+  pregnant.nutritionBurst = bursting;
+  if (charged > 0) addNutrition(profile, -charged);
+  return charged;
+}
+
+function syncAllNutritionBurst(chatState) {
+  for (const character of Object.values(chatState?.characters || {})) {
+    if (character?.profile) syncNutritionBurst(character.profile);
+  }
+}
+
 function updateAdvisoryNotify(profile, female) {
   const notify = profile?.notify || {};
   const metabolism = profile?.metabolism || {};
@@ -2989,6 +3041,7 @@ function applyExcreteMetabolism(chatState, args) {
   if (immune.metabolism) return { applied: false, message: `bsExcreteMetabolism skipped for ${female}: metabolism immune.` };
   applyDerivedMetabolismExemptions(profile);
   applyMetabolismCapacityLimits(profile);
+  const nutritionLevelsBefore = getNutritionNeedLevels(profile);
 
   const isDerived = hasDerivedMetabolism(profile);
   const hasOptions = Object.keys(options).length > 0;
@@ -3061,6 +3114,7 @@ function applyExcreteMetabolism(chatState, args) {
   applyDerivedMetabolismExemptions(profile);
 
   profile.metabolism = metabolism;
+  applyNutritionReliefGain(profile, nutritionLevelsBefore);
   updateAdvisoryNotify(profile, female);
   next.profile = profile;
   chatState.characters[female] = next;
@@ -3089,7 +3143,6 @@ function clearPregnancyState(profile) {
   pregnant.fetalEnergyDrain = 0;
   pregnant.amnionDurability = 0;
   pregnant.nutrition = 0;
-  pregnant.symptomReliefPending = 0;
   pregnant.blockage = null;
   pregnant.acceleration = null;
   pregnant.expansion = null;
@@ -4215,12 +4268,6 @@ function applyMaternalFetalInteraction(chatState, args) {
     slight_decrease: '轻微减少',
     significant_decrease: '显著减少',
   });
-  const maternalNutritionGainMap = Object.freeze({
-    slight_increase: 1,
-    significant_increase: 2,
-    slight_decrease: 1,
-    significant_decrease: 2,
-  });
   const next = cloneValue(character);
   const profile = next.profile || {};
   const stage = String(profile?.base?.stage || '');
@@ -4256,22 +4303,12 @@ function applyMaternalFetalInteraction(chatState, args) {
     const maternalChange = maternalChangeKeys[randomInt(0, maternalChangeKeys.length - 1)];
     const maternalChangeValue = changeMap[maternalChange];
     const maternalChangeDisplay = changeDisplayMap[maternalChange];
-    let nutritionMessage = '';
 
     const psyStress = clampNumber(profile?.base?.psyStress, 0, 9999, 0);
     const success = Math.random() >= Math.min(1, psyStress / 200);
     if (success) {
       const currentAffinity = clampNumber(selectedFetus?.affinity, -50, 50, 0);
       selectedFetus.affinity = clampNumber(currentAffinity + maternalChangeValue, -50, 50, 0);
-      const symptomReliefPending = clampNumber(pregnant.symptomReliefPending, 0, 999, 0);
-      if (symptomReliefPending > 0) {
-        const nutritionGain = maternalNutritionGainMap[maternalChange];
-        pregnant.nutrition = (Number(pregnant.nutrition) || 0) + nutritionGain;
-        pregnant.symptomReliefPending = symptomReliefPending - 1;
-        nutritionMessage = pregnant.symptomReliefPending > 0
-          ? `，身体补回了${nutritionGain}点供养力（仍有${pregnant.symptomReliefPending}次不适待安抚）`
-          : `，身体补回了${nutritionGain}点供养力`;
-      }
     } else {
       const currentAngle = Number.isFinite(Number(selectedFetus?.tendencyAngle))
         ? Number(selectedFetus.tendencyAngle)
@@ -4288,8 +4325,8 @@ function applyMaternalFetalInteraction(chatState, args) {
     profile.notify = {
       ...(profile.notify || {}),
       secondly: success
-        ? `${female}安抚了第${selectedIndex + 1}胎，亲密度${maternalChangeDisplay}了${nutritionMessage}`
-        : `${female}尝试安抚第${selectedIndex + 1}胎，但因心理压力过大而失败，胎位角度发生了微小转动${nutritionMessage}`,
+        ? `${female}安抚了第${selectedIndex + 1}胎，亲密度${maternalChangeDisplay}了`
+        : `${female}尝试安抚第${selectedIndex + 1}胎，但因心理压力过大而失败，胎位角度发生了微小转动`,
     };
     next.profile = profile;
     chatState.characters[female] = next;
@@ -4540,7 +4577,7 @@ function applyTimeToCharacter(character, tick) {
     updateFetalPositions(profile, tick, next.name);
     if (isHere) {
       applyOverduePressure(profile, tick, next.name);
-      applyHourlyPregnancyMetabolism(profile, tick, next.name);
+      applyHourlyPregnancyMetabolism(profile, tick);
     }
     const pressureCrisis = isHere ? applyPressureCrisis(profile, next.runtime || {}, next.name) : { changed: false, warned: false };
     if (pressureCrisis.changed) {
@@ -4598,14 +4635,14 @@ function applyTimeToCharacter(character, tick) {
     if (newWeek > oldWeek && isHere) {
       applyWeeklyNutrition(profile);
     }
-    if (isHere) applyHourlyPregnancyMetabolism(profile, tick, next.name);
+    if (isHere) applyHourlyPregnancyMetabolism(profile, tick);
     updateDerivedTypeProgress(profile, tick);
     const laborChanged = processLabor(profile, tick, next.name);
     stage = String(base.stage || stage);
     days = clampNumber(base.days, 0, 9999, 0);
     stageChanged = stageChanged || laborChanged || stage !== oldStage;
   } else if (LABOR_STAGES.includes(stage)) {
-    if (isHere) applyHourlyPregnancyMetabolism(profile, tick, next.name);
+    if (isHere) applyHourlyPregnancyMetabolism(profile, tick);
     updateDerivedTypeProgress(profile, tick);
     const laborChanged = processLabor(profile, tick, next.name);
     stage = String(base.stage || stage);
@@ -6007,6 +6044,12 @@ function applyDebugSetProdromal(chatState, args) {
 }
 
 export function applyToolCall(chatState, call) {
+  const result = dispatchToolCall(chatState, call);
+  syncAllNutritionBurst(chatState);
+  return result;
+}
+
+function dispatchToolCall(chatState, call) {
   const name = String(call?.name || '').trim();
   const args = resolvePersonNameArgs(normalizeToolCallArguments(call?.arguments));
   if (!name) return { applied: false, message: 'Empty tool call name.' };

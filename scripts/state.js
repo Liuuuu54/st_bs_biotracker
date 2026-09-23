@@ -104,7 +104,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '跨日、重大事件或 notify 提醒时，可用 bsWriteDiary 为角色追加主观日记。',
   '月经阶段、排卵期、假孕期切换用 bsSetMenstrualPhases；不要用它覆盖正在进行的受精、真妊娠或产程。',
   '流产用 bsAbortion；立即结束分娩用 bsChildbirth；角色在场状态变化用 bsSetCharacterPresence，参数必须为 female 和 isPresent（布尔值 true/false，不要使用 isHere）。角色明确回到当前场景、重新同行或参与当前互动时应设为 true；明确离开、失联或转为幕外时才设为 false。',
-  '母胎互动用 bsMaternalFetalInteraction；每名角色在每个新小时内仅允许一次成功的母胎互动变化，重复调用会被跳过。direction=fetal 时须传 change，表示胎儿对母体的亲近或排斥并改变 affinity，不补充营养。direction=maternal 时不传 change，表示母体安抚胎儿，系统随机判定 affinity 变化；若成功且有待安抚不适，小幅变化补回 1 点营养，大幅变化补回 2 点营养。若处于产兆前驱则表示分娩抵抗。',
+  '母胎互动用 bsMaternalFetalInteraction；每名角色在每个新小时内仅允许一次成功的母胎互动变化，重复调用会被跳过。direction=fetal 时须传 change，表示胎儿对母体的亲近或排斥并改变 affinity。direction=maternal 时不传 change，表示母体安抚胎儿，系统随机判定 affinity 变化。母胎互动不影响营养。若处于产兆前驱则表示分娩抵抗。',
   '不要编造怀孕天数、胎数、流产、分娩或其他高影响事件。',
 ].join('\n');
 
@@ -429,9 +429,7 @@ export function normalizeCharacterPsychologyState(characterState) {
   if (pregnant && pregnant.expansion === undefined) {
     pregnant.expansion = null;
   }
-  if (pregnant && pregnant.symptomReliefPending === undefined) {
-    pregnant.symptomReliefPending = characterState.profile.cooldown?.pregnancySymptomActive ? 1 : 0;
-  }
+  if (pregnant) delete pregnant.symptomReliefPending;
   if (pregnant?.blockage?.key === 'stool') pregnant.blockage.key = 'excretion';
   if (pregnant?.blockage?.key === 'urine') {
     if (!pregnant.acceleration) {
@@ -752,7 +750,6 @@ export function createDefaultFemaleState(name = '') {
         fetalEnergyDrain: 0,
         amnionDurability: 0,
         nutrition: 0,
-        symptomReliefPending: 0,
         blockage: null,
         acceleration: null,
         expansion: null,
@@ -1628,7 +1625,6 @@ function createSnapshotCharacterBaseline(name = '') {
         fetalEnergyDrain: 0,
         amnionDurability: 0,
         nutrition: 0,
-        symptomReliefPending: 0,
         blockage: null,
         acceleration: null,
         expansion: null,

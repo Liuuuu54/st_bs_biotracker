@@ -857,9 +857,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
       effectivePregnantDays: Number.isFinite(Number(pregnant.effectivePregnantDays)) ? Number(pregnant.effectivePregnantDays) : 0,
       ...getPromptFacingLaborState(base, pregnant),
       amnionDurability: Number.isFinite(Number(pregnant.amnionDurability)) ? Number(pregnant.amnionDurability) : 0,
-      ...(hasFetuses ? { nutrition: Number.isFinite(Number(pregnant.nutrition)) ? Number(pregnant.nutrition) : 0 } : {}),
-      ...(hasFetuses ? { symptomReliefPending: Number.isFinite(Number(pregnant.symptomReliefPending)) ? Number(pregnant.symptomReliefPending) : 0 } : {}),
-      ...getPromptFacingMetabolismSymptoms(pregnant),
+      ...(hasFetuses && !immune.metabolism ? { nutrition: Number.isFinite(Number(pregnant.nutrition)) ? Number(pregnant.nutrition) : 0 } : {}),
+      ...(immune.metabolism ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
       fetuses: pregnant.fetuses.filter(isFetusKnownToCharacter).map((fetus) => {
         const { embryoId: _embryoId, fusionCheckedWith: _fusionCheckedWith, ...visibleFetus } = fetus;
         return {
@@ -875,7 +874,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
       effectivePregnantDays: Number.isFinite(Number(pregnant.effectivePregnantDays)) ? Number(pregnant.effectivePregnantDays) : 0,
       ...getPromptFacingLaborState(base, pregnant),
       amnionDurability: Number.isFinite(Number(pregnant.amnionDurability)) ? Number(pregnant.amnionDurability) : 0,
-      ...getPromptFacingMetabolismSymptoms(pregnant),
+      ...(immune.metabolism ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
       fetuses: [],
     };
   }
@@ -924,7 +923,9 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
   }
 
   delete profile.bio;
-  delete profile.immune;
+  // immune 只留 metabolism 一项：prompt 据此不发本人的需求与衍生需求说明
+  if (immune.metabolism) profile.immune = { metabolism: true };
+  else delete profile.immune;
   delete profile.cooldown;
   delete profile.conceptionCue;
   if (immune.metabolism) delete profile.metabolism;
@@ -943,6 +944,7 @@ function buildOffscreenCharacterState(item, diaryLimit = 0) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const notify = profile.notify || {};
+  const metabolismImmune = profile.immune?.metabolism === true;
   const hasFetuses = Array.isArray(pregnant.fetuses) && pregnant.fetuses.length > 0;
   const sendPregnantState = shouldSendPregnantState(base, pregnant);
   return {
@@ -964,9 +966,10 @@ function buildOffscreenCharacterState(item, diaryLimit = 0) {
           effectivePregnantDays: pregnant.effectivePregnantDays ?? 0,
           ...getPromptFacingLaborState(base, pregnant),
           fetusesCount: hasFetuses ? pregnant.fetuses.filter(isFetusKnownToCharacter).length : 0,
-          ...getPromptFacingMetabolismSymptoms(pregnant),
+          ...(metabolismImmune ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
         },
       } : {}),
+      ...(metabolismImmune ? { immune: { metabolism: true } } : {}),
       ...(profile.wardrobe?.enabled ? {
         wardrobe: {
           enabled: true,
