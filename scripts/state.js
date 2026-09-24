@@ -433,6 +433,8 @@ export function normalizeCharacterPsychologyState(characterState) {
     delete pregnant.symptomReliefPending;
     // 供养力改为每胎各记一份（fetus.nutrition），母体层不再保存
     delete pregnant.nutrition;
+    // 分娩胎次改由 presentingEmbryoId 指认、laborBirthNumber 计数
+    delete pregnant.laborFetusIndex;
   }
   if (pregnant?.blockage?.key === 'stool') pregnant.blockage.key = 'excretion';
   if (pregnant?.blockage?.key === 'urine') {
@@ -745,7 +747,8 @@ export function createDefaultFemaleState(name = '') {
         laborHours: 0,
         effectiveLaborHours: 0,
         laborPhase: null,
-        laborFetusIndex: 0,
+        laborBirthNumber: 0,
+        presentingEmbryoId: null,
         laborPain: 0,
         prodromalOriginStage: null,
         prodromalRemainingHours: 0,
@@ -1619,7 +1622,8 @@ function createSnapshotCharacterBaseline(name = '') {
         laborHours: 0,
         effectiveLaborHours: 0,
         laborPhase: null,
-        laborFetusIndex: 0,
+        laborBirthNumber: 0,
+        presentingEmbryoId: null,
         laborPain: 0,
         prodromalOriginStage: null,
         prodromalRemainingHours: 0,

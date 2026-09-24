@@ -56,7 +56,7 @@ import {
 import { buildMainFlowPrompt, resetPoller, runTracker, getPollWaitStatus } from './scripts/tracker.js';
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
-import { isFetusKnownToCharacter } from './scripts/tools.js';
+import { getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
@@ -2639,7 +2639,7 @@ function getLaborStageThreshold(profile, stage, options = {}) {
   }
   if (stage === '第二产程' && fetuses.length > 0) {
     if (phase === '间歇期') return Math.max(0.5, birthDifficulty * 0.5);
-    const firstFetus = fetuses[0];
+    const firstFetus = getPresentingFetus(pregnant) || fetuses[0];
     const fetalAngle = Number.isFinite(Number(firstFetus?.tendencyAngle)) ? wrapLaborAngle(firstFetus.tendencyAngle) : 0;
     const positionDifficulty = getLaborPositionDifficulty(fetalAngle, firstFetus);
     const fetalWeight = Math.max(0.33, Math.min(3.0, Number(firstFetus?.weight) || 1.0));
@@ -3409,7 +3409,7 @@ function buildTrackCharacterViewModel(character) {
       effectivePregnantDays: Number(pregnant.effectivePregnantDays) || 0,
       laborHours: Number(pregnant.laborHours) || 0,
       laborPhase: pregnant.laborPhase ?? null,
-      laborFetusIndex: Number(pregnant.laborFetusIndex) || 0,
+      laborBirthNumber: Number(pregnant.laborBirthNumber) || 0,
       laborPain: Number(pregnant.laborPain) || 0,
       prodromalOriginStage: pregnant.prodromalOriginStage ?? null,
       prodromalRemainingHours: Number(pregnant.prodromalRemainingHours) || 0,
@@ -3597,7 +3597,7 @@ function renderTrackOverview(viewModel) {
   const progress = viewModel.overview.stageProgress;
   const currentStage = viewModel.overview.stage;
   const stageBadge = viewModel.pregnancy?.showLaborFields
-    ? `${viewModel.pregnancy?.laborPhase || '产程'}${Number(viewModel.pregnancy?.laborFetusIndex) > 0 ? ` ${viewModel.pregnancy.laborFetusIndex}胎` : ''}`
+    ? `${viewModel.pregnancy?.laborPhase || '产程'}${Number(viewModel.pregnancy?.laborBirthNumber) > 0 ? ` ${viewModel.pregnancy.laborBirthNumber}胎` : ''}`
     : '';
   const laborPain = Math.max(0, Math.min(10, Number(viewModel.pregnancy?.laborPain) || 0));
   const stageSectionClass = viewModel.pregnancy?.showLaborPainBadge
@@ -3607,7 +3607,7 @@ function renderTrackOverview(viewModel) {
     ? ` style="--bsbt-labor-pain:${laborPain / 10};"`
     : '';
   const progressLabel = currentStage === '第二产程'
-    ? `第二产程·第${Math.max(1, Number(viewModel.pregnancy?.laborFetusIndex) || 1)}胎${viewModel.pregnancy?.laborPhase || '胎体下降'}`
+    ? `第二产程·第${Math.max(1, Number(viewModel.pregnancy?.laborBirthNumber) || 1)}胎${viewModel.pregnancy?.laborPhase || '胎体下降'}`
     : currentStage;
   const progressHtml = progress
     ? renderProgressList([{ label: progressLabel, value: progress.value, cap: progress.max, unbounded: progress.unbounded, integerDisplay: progress.integerDisplay }])
@@ -5816,7 +5816,7 @@ function validateManualCharacterState(next, currentName) {
     ['profile', 'pregnant', 'effectivePregnantDays'],
     ['profile', 'pregnant', 'laborHours'],
     ['profile', 'pregnant', 'effectiveLaborHours'],
-    ['profile', 'pregnant', 'laborFetusIndex'],
+    ['profile', 'pregnant', 'laborBirthNumber'],
     ['profile', 'pregnant', 'laborPain'],
     ['profile', 'pregnant', 'prodromalRemainingHours'],
     ['profile', 'pregnant', 'prodromalDelayProgressHours'],

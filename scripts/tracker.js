@@ -762,7 +762,7 @@ function getPromptFacingLaborState(base = {}, pregnant = {}) {
     laborHours: Number.isFinite(Number(pregnant.laborHours)) ? Number(pregnant.laborHours) : 0,
     effectiveLaborHours: Number.isFinite(Number(pregnant.effectiveLaborHours)) ? Number(pregnant.effectiveLaborHours) : 0,
     laborPhase: pregnant.laborPhase ?? null,
-    laborFetusIndex: Number.isFinite(Number(pregnant.laborFetusIndex)) ? Number(pregnant.laborFetusIndex) : 0,
+    laborBirthNumber: Number.isFinite(Number(pregnant.laborBirthNumber)) ? Number(pregnant.laborBirthNumber) : 0,
     laborPain: Number.isFinite(Number(pregnant.laborPain)) ? Number(pregnant.laborPain) : 0,
   };
 }
@@ -863,6 +863,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
         const { embryoId: _embryoId, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, ...visibleFetus } = fetus;
         return {
           ...visibleFetus,
+          ...(LABOR_STAGES.includes(String(base.stage || '')) && fetus.embryoId === pregnant.presentingEmbryoId ? { presenting: true } : {}),
           tendencyAngleText: getTendencyAngleText(fetus?.tendencyAngle),
           race: undefined,
         };
