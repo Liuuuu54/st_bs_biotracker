@@ -1,7 +1,7 @@
 import { callOpenAICompatible, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCallsResult, getFetusAmnionDurability, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
+import { applyToolCallsResult, describeFetalPosition, getFetusAmnionDurability, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import {
   buildRecentMessages,
   buildSignature,
@@ -890,13 +890,14 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
       fetuses: visibleFetuses.map((fetus) => {
         const {
           embryoId: _embryoId, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion,
-          // 位置在 I 步改为紧凑的文字摘要再送；数值与解绑旗标先不外露
+          // 位置只送紧凑的文字摘要（positionText）；数值、解绑与阻塞旗标不外露
           descentStage: _descentStage, nestedReleased: _nestedReleased,
           inletIntruder: _inletIntruder, shoulderDystocia: _shoulderDystocia, shoulderRelieved: _shoulderRelieved, ...visibleFetus
         } = fetus;
         return {
           ...visibleFetus,
           ...(LABOR_STAGES.includes(String(base.stage || '')) && fetus.embryoId === pregnant.presentingEmbryoId ? { presenting: true } : {}),
+          positionText: describeFetalPosition(pregnant, fetus),
           ...(amnion.tags.has(fetus) ? { amnion: amnion.tags.get(fetus) } : {}),
           tendencyAngleText: getTendencyAngleText(fetus?.tendencyAngle),
           race: undefined,

@@ -115,6 +115,8 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].weight: 胎重系数，標準1.0，范围0.33~3.0。影响妊娠负担、分娩难度与恢复期。',
   '- fetuses[*].tendencyAngle: 胎位倾向角度，影响孕期/产兆前驱中的调位，以及第二产程胎体下降/娩出的难度；角度映射固定为 0/360=正常头位/正位，180=完全臀位/倒位，90或270=横位，禁止反写；不会阻止第一产程进入第二产程。若 notify 发出难产警示，应优先考虑 bsChildbirth 手术产。',
   '- fetuses[*].tendencyAngleText: 系统额外附带的胎位文字说明，如 正位(头位)/倒位(臀位)/横位/斜位。',
+  '- fetuses[*].positionText: 这一胎在子宫里的深度，由系统的胎动与产程自动结算：顶到宫顶／宫内自由／子宫低位／入盆／进入产道／着冠／先露部已出；卡住时会写明（如 与另一胎一起卡在入口、肩部卡住、在宿主胎儿体内）。描写胎儿位置、腹部下沉、入盆时须与它一致，不要自行改写；需要人为调整请用 bsAssistFetalPosition。',
+  '- fetuses 的排列顺序是子宫里由左至右的相对位置，不代表出生顺序；正在下降或娩出的那一胎带 presenting=true。',
   '- fetuses[*].affinity: 母胎之間的親密度，也会参与 derivedType 进展。',
   '- fetuses[*].maternalDerivedTypeProgress: 与母体(正)/父源(負)衍生同化的进度，范围 -100 到 100。',
   '- fetuses[*].talents: 胎儿承接的天赋，只含 skillId、带正负号的 level 与 exp；只能由孕体角色的 bsTrainSkill 在允许阶段自动改变。',

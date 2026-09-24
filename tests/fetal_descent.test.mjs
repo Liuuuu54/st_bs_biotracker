@@ -5,6 +5,7 @@ import test, { afterEach } from 'node:test';
 
 import * as state from '../scripts/state.js';
 import { applyToolCall } from '../scripts/tools.js';
+import { buildTrackerPayload, getTrackerToolDefinitions } from '../scripts/tracker.js';
 
 const REAL_RANDOM = Math.random;
 afterEach(() => { Math.random = REAL_RANDOM; });
@@ -477,3 +478,57 @@ for (const [label, over, base, realistic] of [
     assert.equal(P(chatState).children.length, 1);
   });
 }
+
+// ── 提示词与调试 ─────────────────────────────────────────
+
+function promptFetusesOf(chatState) {
+  const ctx = {
+    chatId: 'descent-chat', characters: [], chat: [{ name: '用户', is_user: true, mes: '……' }], name1: '用户', name2: 'A',
+    extensionSettings: { bs_biotracker: { enabled: true, chatStates: { 'descent-chat': chatState } } },
+    saveSettingsDebounced() {},
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  return buildTrackerPayload(ctx, state.getSettings(ctx)).existing_state.A.profile.pregnant.fetuses;
+}
+
+test('prompt：每胎只送位置文字，不送 descentStage 数值与内部旗标；卡住时写明', () => {
+  const chatState = realisticAt('第一产程', [
+    fetus(1, { descentStage: 0 }), fetus(2, { descentStage: 0, inletIntruder: true }), fetus(3, { descentStage: -3 }),
+  ], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
+  touch(chatState);
+  const fetuses = promptFetusesOf(chatState);
+  assert.deepEqual(fetuses.map((f) => f.positionText), ['入盆', '与另一胎一起卡在入口', '顶到宫顶']);
+  assert.equal(fetuses[0].presenting, true);
+  for (const f of fetuses) {
+    for (const key of ['descentStage', 'inletIntruder', 'shoulderDystocia', 'nestedReleased', 'embryoId']) assert.equal(key in f, false, key);
+  }
+});
+
+const debugSet = (chatState, args) => applyToolCall(chatState, { name: 'bsDebugSetFetalPosition', arguments: { female: 'A', ...args } });
+
+test('调试工具：设定角度与位置，仍受阶段上限夹回', () => {
+  const chatState = setup('孕晚期', [fetus(1)]);
+  const result = debugSet(chatState, { fetusIndex: 0, tendencyAngle: 180, descentStage: 2 });
+  assert.equal(result.applied, true, result.message);
+  assert.equal(P(chatState).pregnant.fetuses[0].tendencyAngle, 180);
+  assert.equal(P(chatState).pregnant.fetuses[0].descentStage, -1, '孕期最低只到子宫低位');
+});
+
+test('调试工具：病理状态只在真实模式、且先露胎已在入口时才允许', () => {
+  const gentle = setup('第一产程', [fetus(1, { descentStage: 0 }), fetus(2, { descentStage: -1 })], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
+  assert.equal(debugSet(gentle, { fetusIndex: 1, allowPathologicalState: true }).applied, false);
+  const realistic = realisticAt('第一产程', [fetus(1, { descentStage: 0 }), fetus(2, { descentStage: -1 })], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
+  assert.equal(debugSet(realistic, { fetusIndex: 1, allowPathologicalState: true }).applied, true);
+  assert.deepEqual(depths(realistic), [0, 0]);
+  // 不勾病理状态时，第二胎到入口会被容量规则挡回
+  const plain = realisticAt('第一产程', [fetus(1, { descentStage: 0 }), fetus(2, { descentStage: -1 })], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
+  debugSet(plain, { fetusIndex: 1, descentStage: 0 });
+  assert.deepEqual(depths(plain), [0, -1]);
+});
+
+test('调试工具不对 Tracker 开放', () => {
+  const names = getTrackerToolDefinitions({ diaryRecentLimit: 0 }, { A: { profile: { base: { stage: '第一产程' }, pregnant: { fetuses: [{ embryoId: 1 }] } } } })
+    .map((tool) => tool.name);
+  assert.equal(names.includes('bsDebugSetFetalPosition'), false);
+  assert.equal(names.includes('bsAssistFetalPosition'), true);
+});

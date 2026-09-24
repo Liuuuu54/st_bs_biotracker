@@ -56,7 +56,7 @@ import {
 import { buildMainFlowPrompt, resetPoller, runTracker, getPollWaitStatus } from './scripts/tracker.js';
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
-import { getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
+import { describeFetalPosition, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
@@ -3421,6 +3421,8 @@ function buildTrackCharacterViewModel(character) {
         ...fetus,
         // 标签在这里解析：推导需要承载者名字，渲染层拿不到
         tagLabels: getFetusTagLabels(deriveFetusTags(fetus, { carrierName: character?.name || '' })),
+        positionText: describeFetalPosition(pregnant, fetus),
+        isPresenting: (stage === '产兆前驱' || LABOR_STAGES.includes(stage)) && fetus?.embryoId === pregnant.presentingEmbryoId,
         talents: (Array.isArray(fetus?.talents) ? fetus.talents : []).map(enrichTalent),
       })) : [],
       pregnantBlocks: parseDescriptionBlocks(descriptions.pregnantDescription),
@@ -3488,6 +3490,10 @@ function buildTrackCharacterViewModel(character) {
         race: String(fetus?.race || '未知'),
         gender: String(fetus?.gender || '未知'),
         pendingImplantation: Boolean(fetus?.pendingImplantation),
+        tendencyAngle: Number.isFinite(Number(fetus?.tendencyAngle)) ? Number(fetus.tendencyAngle) : 0,
+        descentStage: Number.isFinite(Number(fetus?.descentStage)) ? Number(fetus.descentStage) : null,
+        positionText: describeFetalPosition(pregnant, fetus),
+        isPresenting: fetus?.embryoId === pregnant.presentingEmbryoId,
       })) : [],
       derivedType: String(base.derivedType || '').trim(),
       blockage: pregnant.blockage && typeof pregnant.blockage === 'object' ? {
@@ -3823,6 +3829,7 @@ function renderTrackPregnancy(viewModel) {
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">性别</span><span class="bs-bt-track-list-value">${escapeHtml(item?.gender || '未知')}</span></div>
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">体重倍率</span><span class="bs-bt-track-list-value">${escapeHtml(formatFixedDisplay(item?.weight, 2))}</span></div>
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">胎位角</span><span class="bs-bt-track-list-value">${escapeHtml(`${formatIntegerDisplay(item?.tendencyAngle)}°`)}</span></div>
+                <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">位置</span><span class="bs-bt-track-list-value">${escapeHtml(`${item?.positionText || '宫内自由'}${item?.isPresenting ? '（先露）' : ''}`)}</span></div>
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">亲和</span><span class="bs-bt-track-list-value">${escapeHtml(formatIntegerDisplay(item?.affinity))}</span></div>
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">胎教</span><span class="bs-bt-track-list-value">${escapeHtml((Array.isArray(item?.talents) ? item.talents : []).map((talent) => { const level = Number(talent.level) || 0; return `${talent.name}(${level > 0 ? '+' : ''}${level})`; }).join('、') || '无')}</span></div>
               </div>`,
@@ -4343,6 +4350,12 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
   const modifierMultiplierValue = escapeHtml(modifierDraftActive ? debugGestationModifierDraft.multiplier : String(gestationModifier.multiplier ?? 1));
   const modifierDescriptionValue = escapeHtml(modifierDraftActive ? debugGestationModifierDraft.description : (gestationModifier.description || ''));
   const fetalActivityTextValue = escapeHtml(debugFetalActivityDraft.owner === selectedTrackName ? debugFetalActivityDraft.text : '');
+  // 胎位调试列出全部胎儿（含未揭晓的），下标即完整阵列下标
+  const positionFetusOptions = implantedFetuses.map((fetus) =>
+    `<option value="${fetus.index}">胎 ${fetus.index + 1}｜${escapeHtml(fetus.positionText)}${fetus.isPresenting ? '（先露）' : ''}｜${Math.round(fetus.tendencyAngle)}°</option>`
+  ).join('');
+  const descentOptions = [['', '保持不变'], ['-3', '-3 顶到宫顶'], ['-2', '-2 宫内自由'], ['-1', '-1 子宫低位'], ['0', '0 入盆'], ['1', '1 进入产道'], ['2', '2 着冠'], ['3', '3 先露部已出']]
+    .map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
   const debugRacePalette = () => '';
   return `
     <div class="bs-bt-track-section">
@@ -4545,6 +4558,33 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
         <button type="button" class="menu_button" data-debug-action="fetal-activity">触发活动</button>
       </fieldset>
       <div class="bs-bt-track-debug-hint">${canTriggerFetalActivity ? '内容会追加写入 secondly，作为下一段故事可自然承接的胎儿活动事件。' : '只有已有胎儿且仍在妊娠或产程中的角色可以触发。'}</div>
+    </div>
+    <div class="bs-bt-track-section" style="margin-top: 10px;">
+      <div class="bs-bt-track-section-title">胎位与下降调试</div>
+      <fieldset class="bs-bt-track-debug-form"${implantedFetuses.length > 0 ? '' : ' disabled'}>
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">胎儿</span>
+          <select id="bs-bt-debug-position-fetus" class="text_pole">${positionFetusOptions}</select>
+        </label>
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">胎位角（留空不变）</span>
+          <input id="bs-bt-debug-position-angle" class="text_pole" type="number" min="0" max="360" step="1" placeholder="0 头位／180 臀位／90 横位" />
+        </label>
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">下降位置</span>
+          <select id="bs-bt-debug-position-descent" class="text_pole">${descentOptions}</select>
+        </label>
+        <label class="bs-bt-debug-identical-option">
+          <input id="bs-bt-debug-position-presenting" type="checkbox" />
+          <span><strong>设为先露胎</strong><small>只在入口以后或第二产程才会保持锁定。</small></span>
+        </label>
+        <label class="bs-bt-debug-identical-option">
+          <input id="bs-bt-debug-position-pathological" type="checkbox" />
+          <span><strong>允许病理状态</strong><small>真实分娩模式下，让这一胎与已在入口的先露胎一起卡在入口 0。</small></span>
+        </label>
+        <button type="button" class="menu_button" data-debug-action="set-fetal-position">应用</button>
+      </fieldset>
+      <div class="bs-bt-track-debug-hint">${implantedFetuses.length > 0 ? '设定后仍会按阶段上限与入口容量协调：超出范围的位置会被夹回，一般操作造不出不可能的状态。' : '需要已着床的胎儿。'}</div>
     </div>
     ${fetalTalentHtml}
     <div class="bs-bt-track-section" style="margin-top: 10px;">
@@ -4789,6 +4829,33 @@ function setSelectedTrackProdromal(ctx, progressPercent) {
   globalThis.toastr?.success?.(`[BS BioTracker] 已将 ${selectedTrackName} 的产兆前驱进度设为 ${Math.round(Number(progressPercent) || 0)}%`);
 }
 
+function setSelectedTrackFetalPosition(ctx, scope) {
+  if (!selectedTrackName) return;
+  const read = (id) => scope.querySelector(id);
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const result = applyToolCall(chatState, {
+    name: 'bsDebugSetFetalPosition',
+    arguments: {
+      female: selectedTrackName,
+      fetusIndex: Number(read('#bs-bt-debug-position-fetus')?.value),
+      tendencyAngle: read('#bs-bt-debug-position-angle')?.value ?? '',
+      descentStage: read('#bs-bt-debug-position-descent')?.value ?? '',
+      makePresenting: Boolean(read('#bs-bt-debug-position-presenting')?.checked),
+      allowPathologicalState: Boolean(read('#bs-bt-debug-position-pathological')?.checked),
+    },
+  });
+  if (!result?.applied) {
+    globalThis.toastr?.warning?.(result?.message || '[BS BioTracker] 胎位调试失败');
+    return;
+  }
+  recordChatStateSnapshot(ctx, chatState, { reason: 'debug_set_fetal_position' });
+  saveSettings(ctx);
+  renderStatusPanel(ctx);
+  renderFullStatePage(ctx);
+  globalThis.toastr?.success?.(`[BS BioTracker] ${result.message}`);
+}
+
 function triggerSelectedTrackFetalActivity(ctx, activityText) {
   if (!selectedTrackName) return;
   const text = String(activityText || '').trim();
@@ -5016,6 +5083,9 @@ function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(c
       const activityText = root.querySelector('#bs-bt-debug-fetal-activity')?.value || '';
       triggerSelectedTrackFetalActivity(ctx, activityText);
     }),
+  );
+  root.querySelectorAll('[data-debug-action="set-fetal-position"]').forEach((node) =>
+    node.addEventListener('click', () => setSelectedTrackFetalPosition(ctx, root)),
   );
   root.querySelectorAll('[data-debug-action="set-phase"]').forEach((node) =>
     node.addEventListener('click', () => {
@@ -5468,6 +5538,9 @@ function renderStatusPanel(ctx) {
       setSelectedTrackProdromal(ctx, progressPercent);
     }),
   );
+  content.querySelectorAll('[data-debug-action="set-fetal-position"]').forEach((node) =>
+    node.addEventListener('click', () => setSelectedTrackFetalPosition(ctx, content)),
+  );
   content.querySelectorAll('[data-debug-action="fetal-activity"]').forEach((node) =>
     node.addEventListener('click', () => {
       const activityText = content.querySelector('#bs-bt-debug-fetal-activity')?.value || '';
@@ -5835,6 +5908,11 @@ function validateManualCharacterState(next, currentName) {
   if (typeof profile.base?.days === 'number' && profile.base.days < 0) errors.push('profile.base.days 不能是负数。');
   if (typeof profile.base?.vitalityLevel === 'number' && (profile.base.vitalityLevel < 1 || profile.base.vitalityLevel > 7)) errors.push('profile.base.vitalityLevel 必须在 1 到 7 之间。');
   if (typeof profile.base?.psyStressLevel === 'number' && (profile.base.psyStressLevel < 1 || profile.base.psyStressLevel > 7)) errors.push('profile.base.psyStressLevel 必须在 1 到 7 之间。');
+  (Array.isArray(profile.pregnant?.fetuses) ? profile.pregnant.fetuses : []).forEach((fetus, index) => {
+    const value = fetus?.descentStage;
+    if (value === undefined || value === null) return;
+    if (!Number.isInteger(value) || value < -3 || value > 3) errors.push(`profile.pregnant.fetuses[${index}].descentStage 必须是 -3 到 3 的整数。`);
+  });
 
   if (errors.length > 0) return { ok: false, errors };
 

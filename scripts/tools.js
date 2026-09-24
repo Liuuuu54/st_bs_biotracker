@@ -3714,6 +3714,24 @@ function isShoulderDystocia(profile, fetus) {
   return clampNumber(profile?.base?.vitality, 0, 9999, 100) <= 0;
 }
 
+const DESCENT_STAGE_TEXT = Object.freeze({
+  '-3': '顶到宫顶', '-2': '宫内自由', '-1': '子宫低位', 0: '入盆', 1: '进入产道', 2: '着冠', 3: '先露部已出',
+});
+
+/**
+ * 给提示词与追踪页用的紧凑位置文字；数值、座标与内部编号都不外露。
+ * 卡住的状况直接写进文字，让叙事知道这一胎现在动不了。
+ */
+export function describeFetalPosition(pregnant, fetus) {
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  if (fetus?.pendingImplantation) return '待着床';
+  if (getEnclosingHost(fetus, fetuses)) return '在宿主胎儿体内';
+  if (fetus?.shoulderDystocia) return '先露部已出，肩部卡住';
+  const depth = getDescentStage(fetus);
+  if (fetus?.inletIntruder && depth === DESCENT_INLET) return '与另一胎一起卡在入口';
+  return DESCENT_STAGE_TEXT[depth] || '宫内自由';
+}
+
 /** 下降最深者；同值取 embryoId 较小者（稳定、与阵列顺序无关） */
 function pickDeepestFetus(fetuses) {
   if (fetuses.length === 0) return null;
@@ -6971,6 +6989,51 @@ function applyDebugFetalActivity(chatState, args) {
   return { applied: true, message: `bsDebugFetalActivity applied to ${female}.` };
 }
 
+/**
+ * 调试：直接设定某一胎的角度、下降位置与先露身分（不对 Tracker 开放）。
+ * fetusIndex 是完整阵列的下标（完整变量页看得到全部胎儿，包括未揭晓的）。
+ * 设定后仍经过 reconcileFetalDescent：超出阶段上限、入口容量的值会被夹回，一般操作造不出不可能的状态。
+ * allowPathologicalState：真实分娩模式下，让这一胎作为病理性第二胎一起卡在入口 0（先露胎须已在 0）。
+ */
+function applyDebugSetFetalPosition(chatState, args) {
+  const female = String(args?.female || '').trim();
+  const character = chatState.characters?.[female];
+  const skip = (reason) => ({ applied: false, message: `bsDebugSetFetalPosition skipped for ${female || '(empty)'}: ${reason}` });
+  if (!female || !character) return skip('unknown character.');
+  const next = cloneValue(character);
+  const profile = next.profile || {};
+  const pregnant = profile.pregnant || {};
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const target = Number.isInteger(Number(args?.fetusIndex)) ? fetuses[Number(args.fetusIndex)] : null;
+  if (!target) return skip('invalid fetusIndex.');
+  if (target.pendingImplantation) return skip('that embryo is not implanted and has no position.');
+  const hasAngle = args?.tendencyAngle !== undefined && args?.tendencyAngle !== null && args?.tendencyAngle !== '' && Number.isFinite(Number(args.tendencyAngle));
+  const hasDescent = args?.descentStage !== undefined && args?.descentStage !== null && args?.descentStage !== '' && Number.isFinite(Number(args.descentStage));
+  if (hasDescent && getEnclosingHost(target, fetuses)) return skip('that fetus is inside its host and follows the host position.');
+
+  if (hasAngle) target.tendencyAngle = wrapAngle(Number(args.tendencyAngle));
+  if (hasDescent) target.descentStage = Math.max(DESCENT_TOP, Math.min(DESCENT_CROWNED_OUT, Math.round(Number(args.descentStage))));
+  if (args?.makePresenting) pregnant.presentingEmbryoId = target.embryoId;
+  if (args?.allowPathologicalState) {
+    const presenting = fetuses.find((fetus) => fetus.embryoId === pregnant.presentingEmbryoId);
+    if (!isRealisticLabor(profile)) return skip('pathological inlet states only exist in realistic labor mode.');
+    if (!presenting || presenting === target || getDescentStage(presenting) !== DESCENT_INLET) {
+      return skip('a different presenting fetus must already be engaged at the inlet (0).');
+    }
+    target.descentStage = DESCENT_INLET;
+    target.inletIntruder = true;
+  }
+  profile.pregnant = pregnant;
+  reconcileFetalDescent(profile);
+  next.profile = profile;
+  chatState.characters[female] = syncCharacterStageFromProfile(next);
+  const settled = chatState.characters[female].profile.pregnant.fetuses.find((fetus) => fetus.embryoId === target.embryoId);
+  return {
+    applied: true,
+    message: `bsDebugSetFetalPosition applied to ${female}: ${describeFetalPosition(chatState.characters[female].profile.pregnant, settled)}, ${Math.round(Number(settled?.tendencyAngle) || 0)}°.`,
+  };
+}
+
 function applyDebugSetProdromal(chatState, args) {
   const female = String(args?.female || '').trim();
   const character = chatState.characters?.[female];
@@ -7070,6 +7133,7 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsDebugSetGestationModifier') return applyDebugSetGestationModifier(chatState, args);
   if (name === 'bsDebugFetalActivity') return applyDebugFetalActivity(chatState, args);
   if (name === 'bsDebugSetProdromal') return applyDebugSetProdromal(chatState, args);
+  if (name === 'bsDebugSetFetalPosition') return applyDebugSetFetalPosition(chatState, args);
   return { applied: false, message: `Unsupported tool: ${name}` };
 }
 
