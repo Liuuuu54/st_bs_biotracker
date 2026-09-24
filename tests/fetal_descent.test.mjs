@@ -296,3 +296,46 @@ test('产兆前驱走完后多出来的时间带进第一产程', () => {
   assert.equal(P(chatState).base.stage, '第一产程');
   assert.ok(Math.abs(P(chatState).pregnant.laborHours - 2) < 1e-6, `第一产程已走 ${P(chatState).pregnant.laborHours} 小时`);
 });
+
+// ── 模式规则与大胎 ───────────────────────────────────────
+test('非真实模式：宫缩再弱也不会出现零进度回合；真实模式保留停滞', () => {
+  Math.random = () => 0; // 停滞骰必中
+  const gentle = laboringAt('胎体下降', [fetus(1, { descentStage: 1 })], { presentingEmbryoId: 1 });
+  P(gentle).base.uterinePressure = 1;
+  passHours(gentle, 0.1);
+  assert.ok(P(gentle).pregnant.effectiveLaborHours > 0, '非真实模式照样推进');
+
+  const realistic = laboringAt('胎体下降', [fetus(1, { descentStage: 1 })], { presentingEmbryoId: 1 });
+  P(realistic).immune.realisticLabor = true;
+  P(realistic).base.uterinePressure = 1;
+  passHours(realistic, 0.1);
+  assert.equal(P(realistic).pregnant.effectiveLaborHours, 0);
+  assert.match(String(P(realistic).notify.secondly), /产程进展停滞/);
+});
+
+test('大胎活力修正：1.5 以下不受影响；活力为 0 时 1.75 减半、2.0 以上只剩 0.25；活力 200 完全支撑', () => {
+  Math.random = () => 0.99;
+  const gainOf = (weight, vitality) => {
+    const chatState = laboringAt('胎体下降', [fetus(1, { descentStage: 1, weight })], { presentingEmbryoId: 1 });
+    P(chatState).base.vitality = vitality;
+    passHours(chatState, 0.05);
+    return P(chatState).pregnant.effectiveLaborHours;
+  };
+  const baseline = gainOf(1, 0);
+  const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: ${actual} ≠ ${expected}`);
+  near(gainOf(1.5, 0), baseline, '1.5');
+  near(gainOf(1.75, 0), baseline * 0.5, '1.75');
+  near(gainOf(2.5, 0), baseline * 0.25, '2.5');
+  near(gainOf(2.5, 200), baseline, '活力 200');
+});
+
+test('大胎修正不作用于间歇期与第一产程', () => {
+  Math.random = () => 0.99;
+  const interval = (weight) => {
+    const chatState = laboringAt('间歇期', [fetus(1, { descentStage: -1, weight })]);
+    P(chatState).base.vitality = 0;
+    passHours(chatState, 0.05);
+    return P(chatState).pregnant.effectiveLaborHours;
+  };
+  assert.equal(interval(2.5), interval(1));
+});

@@ -4184,7 +4184,28 @@ function processLabor(profile, tick, female) {
   return stageChanged;
 }
 
-/** 以目前的宫缩倍率，走到当前产程阶段门槛还需要多少原始小时（多给一点点，确保越过门槛） */
+/**
+ * 大胎的活力修正：只作用于第二产程的胎体下降与娩出。胎重 1.5 以下不受影响，
+ * 1.5–2.0 平滑增加对活力的需求，2.0 以上达到完整修正；活力 200 可完全支撑，
+ * 活力不足只会减速、最低保留 0.25 倍进度，不另立硬停滞（胎重本身的时间倍率另计）。
+ */
+function getOversizeVitalityMultiplier(profile, stage, phase) {
+  if (stage !== '第二产程' || (phase !== '胎体下降' && phase !== '胎体娩出')) return 1;
+  const fetus = getPresentingFetus(profile?.pregnant);
+  const oversizeRatio = clampNumber((clampNumber(fetus?.weight, 0.33, 3.0, 1.0) - 1.5) / 0.5, 0, 1, 0);
+  if (oversizeRatio <= 0) return 1;
+  const vitalityRatio = clampNumber(clampNumber(profile?.base?.vitality, 0, 9999, 100) / 200, 0, 1, 0.5);
+  return Math.max(0.25, 1 - (oversizeRatio * (1 - vitalityRatio)));
+}
+
+/** 每一原始小时换算成多少有效产程小时：宫缩倍率 × 大胎活力修正（不含性欲倍率） */
+function getLaborProgressMultiplier(profile, stage, phase) {
+  const currentPressure = clampNumber(profile?.base?.uterinePressure, 0, getUterinePressureCap(profile), 0);
+  const pressureMultiplier = stage === '第三产程' ? 1 : Math.max(0.5, Math.min(1.5, 0.5 + (currentPressure / 150)));
+  return pressureMultiplier * getOversizeVitalityMultiplier(profile, stage, phase);
+}
+
+/** 以目前的推进倍率，走到当前产程阶段门槛还需要多少原始小时（多给一点点，确保越过门槛） */
 function getLaborSegmentHours(profile, libidoMultiplier) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
@@ -4192,9 +4213,7 @@ function getLaborSegmentHours(profile, libidoMultiplier) {
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const phase = getLaborPhaseForStage(stage, String(pregnant.laborPhase || ''));
   const threshold = resolveLaborPhaseHours(profile, stage, phase, fetuses);
-  const currentPressure = clampNumber(base.uterinePressure, 0, getUterinePressureCap(profile), 0);
-  const pressureMultiplier = stage === '第三产程' ? 1 : Math.max(0.5, Math.min(1.5, 0.5 + (currentPressure / 150)));
-  const rate = Math.max(1e-6, libidoMultiplier * pressureMultiplier);
+  const rate = Math.max(1e-6, libidoMultiplier * getLaborProgressMultiplier(profile, stage, phase));
   const needed = Math.max(0, threshold - clampNumber(pregnant.effectiveLaborHours, 0, 9999, 0));
   return (needed / rate) + 1e-6;
 }
@@ -4236,7 +4255,8 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
   currentStageHours += rawHours;
   pregnant.laborHours = currentStageHours;
 
-  if (firstSegment && currentPressure < stallThreshold && !isThirdStageWithNoFetuses) {
+  // 宫缩微弱的零进度回合只在真实分娩模式出现；非真实模式每次有效推进都至少取得进度
+  if (firstSegment && realisticLabor && currentPressure < stallThreshold && !isThirdStageWithNoFetuses) {
     const currentRatio = pressureCap > 0 ? (currentPressure / pressureCap) : 0;
     const chanceToStall = Math.max(0, Math.min(1, 1 - currentRatio));
     if (Math.random() < chanceToStall) {
@@ -4307,10 +4327,7 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
     }
   }
 
-  const pressureMultiplier = stage === '第三产程'
-    ? 1
-    : Math.max(0.5, Math.min(1.5, 0.5 + (currentPressure / 150)));
-  const effectiveHoursGain = baseEffectiveHours * pressureMultiplier;
+  const effectiveHoursGain = baseEffectiveHours * getLaborProgressMultiplier(profile, stage, phase);
   currentEffectiveHours += effectiveHoursGain;
   pregnant.effectiveLaborHours = currentEffectiveHours;
   updateLaborPain(profile, stage, phase, currentEffectiveHours / threshold, Boolean(realisticObstruction));
