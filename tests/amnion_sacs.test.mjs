@@ -1,5 +1,6 @@
 // 每胎各自的羊膜：fetus.amnionDurability，同卵组共用一个胎囊。
-// 孕期高宫压随机磨一个胎囊；第一产程按下降位置分摊总扣量（守恒）；第二产程只磨先露胎囊。
+// 孕期高宫压随机磨一个胎囊；第一产程每个胎囊都承受全部胎儿的总负担（按下降深度递减），
+// 胎数越多破得越快；第二产程只磨先露胎囊。孕中孕内胎有自己的胎囊，破了就被宿主生出来。
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
@@ -55,12 +56,47 @@ test('省略 fetusIndex 时破先露胎的胎囊', () => {
   assert.deepEqual(amnion(chatState), [100, 0]);
 });
 
-test('孕中孕内胎与待着床胚胎没有自己的母体胎囊，不能被指定破水', () => {
-  const chatState = setup('第一产程', [fetus(1), fetus(2, { nestedInEmbryoId: 1 })]);
-  const result = rupture(chatState, 1);
-  assert.equal(result.applied, false);
-  assert.match(result.message, /no maternal sac/);
+test('待着床胚胎还没有胎囊', () => {
+  const chatState = setup('第一产程', [fetus(1), fetus(2, { pendingImplantation: true })]);
   assert.equal(getFetusAmnionDurability(P(chatState).pregnant, P(chatState).pregnant.fetuses[1]), null);
+});
+
+test('孕中孕内胎破囊＝被宿主在宫内生出来：解绑但保留血缘，不算母亲破水、不发动产程', () => {
+  const chatState = setup('产兆前驱', [fetus(1, { descentStage: -1 }), fetus(2, { nestedInEmbryoId: 1 })], { pressure: 1 });
+  const result = rupture(chatState, 1);
+  assert.equal(result.applied, true, result.message);
+  const [host, inner] = P(chatState).pregnant.fetuses;
+  assert.equal(host.amnionDurability, 100, '宿主的胎囊不受影响');
+  assert.equal(inner.amnionDurability, 0);
+  assert.equal(inner.nestedReleased, true);
+  assert.equal(inner.nestedInEmbryoId, 1, '血缘保留给族谱');
+  assert.equal(inner.descentStage, -1, '保留解绑当下与宿主相同的位置');
+  assert.equal(P(chatState).base.stage, '产兆前驱', '内胎破囊不会发动产程');
+});
+
+test('内胎胎囊没破：宿主出生时一起娩出，族谱记为宿主的孩子', () => {
+  Math.random = () => 0.99;
+  const chatState = setup('第二产程', [fetus(1), fetus(2, { nestedInEmbryoId: 1, fathers: '乙' }), fetus(3)], {
+    pressure: 120, pregnant: { laborPhase: '胎体娩出', laborBirthNumber: 1, presentingEmbryoId: 1 },
+  });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 24 } });
+  const children = P(chatState).children;
+  assert.deepEqual(children.map((child) => child.fathers).sort(), ['乙', '父1']);
+  const host = children.find((child) => child.fathers === '父1');
+  const inner = children.find((child) => child.fathers === '乙');
+  assert.equal(inner.nestedInChildId, host.id);
+  assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.embryoId), [3]);
+  assert.match(P(chatState).notify.secondly, /一并娩出/);
+});
+
+test('内胎已被生出（胎囊破）：宿主出生时不会被带走，之后自己竞争先露', () => {
+  Math.random = () => 0.99;
+  const chatState = setup('第二产程', [fetus(1), fetus(2, { nestedInEmbryoId: 1, amnionDurability: 0 })], {
+    pressure: 120, pregnant: { laborPhase: '胎体娩出', laborBirthNumber: 1, presentingEmbryoId: 1 },
+  });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 24 } });
+  assert.deepEqual(P(chatState).children.map((child) => child.fathers), ['父1']);
+  assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.embryoId), [2]);
 });
 
 test('孕期高宫压只随机磨一个胎囊，按该胎自己的负担扣且不会磨穿', () => {
@@ -74,7 +110,7 @@ test('孕期高宫压只随机磨一个胎囊，按该胎自己的负担扣且�
   assert.equal(second, 99);
 });
 
-test('第一产程的磨损按胎囊平均分摊，总扣量守恒；同卵组只算一个胎囊', () => {
+test('第一产程每个胎囊都承受全部胎儿的总负担；同卵组只算一个胎囊', () => {
   Math.random = () => 0.99; // 避开宫缩微弱的停滞
   const chatState = setup('第一产程', [fetus(1), fetus(2, { identicalGroup: 2 }), fetus(3, { identicalGroup: 2 })], {
     pressure: 120, pregnant: { laborPhase: '潜伏期' },
@@ -82,10 +118,19 @@ test('第一产程的磨损按胎囊平均分摊，总扣量守恒；同卵组�
   applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 2 } });
   const [single, twinA, twinB] = amnion(chatState);
   assert.equal(twinA, twinB, '同卵组同步');
-  assert.equal(single, twinA, '两个胎囊平均分');
-  const total = (100 - single) + (100 - twinA);
+  assert.equal(single, twinA, '深度相同时每个胎囊扣得一样多');
   const drain = P(chatState).pregnant.fetalEnergyDrain;
-  assert.ok(Math.abs(total - Math.max(1, drain) * 2 * 0.35) < 1e-6, `总扣量 ${total}`);
+  assert.ok(Math.abs((100 - single) - Math.max(1, drain) * 2 * 0.35) < 1e-6, `每个胎囊都吃满总扣量：${100 - single}`);
+});
+
+test('多胎挤在同一子宫：三胎的每个胎囊比单胎磨得快', () => {
+  Math.random = () => 0.99;
+  const wearOf = (count) => {
+    const chatState = setup('第一产程', Array.from({ length: count }, (_, i) => fetus(i + 1)), { pressure: 120, pregnant: { laborPhase: '潜伏期' } });
+    applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 2 } });
+    return 100 - amnion(chatState)[0];
+  };
+  assert.ok(wearOf(3) > wearOf(1) * 2.5, `单胎 ${wearOf(1)}，三胎 ${wearOf(3)}`);
 });
 
 test('第二产程只磨先露胎的胎囊', () => {

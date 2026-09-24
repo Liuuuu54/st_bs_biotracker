@@ -2733,9 +2733,7 @@ const NUTRITION_WEEKLY_CAP = 0.03;
 const NUTRITION_POSITION_FACTORS = Object.freeze({ '-3': 1.5, '-2': 1.0, '-1': 0.8, 0: 0.6 });
 
 function getNutritionPositionFactor(fetus, fetuses, surplus) {
-  const host = fetus?.nestedInEmbryoId !== undefined && fetus?.nestedInEmbryoId !== null
-    ? fetuses.find((candidate) => candidate?.embryoId === fetus.nestedInEmbryoId)
-    : null;
+  const host = getEnclosingHost(fetus, fetuses);
   const stage = Number((host || fetus)?.descentStage);
   if (!Number.isFinite(stage)) return 1;
   const factor = NUTRITION_POSITION_FACTORS[Math.round(stage)];
@@ -3126,12 +3124,12 @@ function applyAmnionDurabilityFromPressure(profile, finalPressure, female) {
   const warningThreshold = pressureCap * 0.33;
   if (finalPressure <= warningThreshold) return;
 
-  // 随机抽一个实际胎囊受损，只按该胎（同卵组则全组合计）自己的负担扣；
+  // 随机抽一个实际胎囊受损；多胎的总负担一起压在它上面，胎数越多扣得越重。
   // 产程前任何磨损都只让羊膜变薄，不会磨穿
   const sacs = getAmnionSacs(pregnant);
   if (sacs.length > 0) {
     const sac = sacs[Math.min(sacs.length - 1, Math.floor(Math.random() * sacs.length))];
-    const drain = Math.max(1, sac.members.reduce((sum, fetus) => sum + getFetusEnergyDrain(profile, fetus), 0));
+    const drain = Math.max(1, clampNumber(pregnant.fetalEnergyDrain, 0, 9999, 1));
     setSacDurability(sac, Math.max(1, getSacDurability(sac) - drain));
   }
   profile.pregnant = pregnant;
@@ -3427,17 +3425,37 @@ function applyChildbirthInternal(profile, female, isNatural) {
   return true;
 }
 
+// ── 孕中孕的空间关系 ─────────────────────────────────
+// nestedInEmbryoId 记的是血缘（内胎的母亲是宿主），永远保留给族谱用。
+// 空间上是否还在宿主体内另看 nestedReleased：内胎胎囊破了，就代表宿主在母体宫内
+// 把它生了出来，从此成为独立胎儿、自己竞争先露；没破的话两胎一起娩出。
+
+/** 内胎仍包在宿主体内时回传宿主；已被生出（胎囊破）或宿主已不在时回传 null */
+function getEnclosingHost(fetus, fetuses) {
+  const hostId = fetus?.nestedInEmbryoId;
+  if (hostId === undefined || hostId === null || fetus?.nestedReleased) return null;
+  return fetuses.find((candidate) => candidate?.embryoId === hostId) || null;
+}
+
+/** 胎囊已破的内胎解绑：保留当下的位置，之后与其他胎儿一样活动与竞争入口 */
+function releaseRupturedNestedFetuses(pregnant) {
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  for (const fetus of fetuses) {
+    const host = getEnclosingHost(fetus, fetuses);
+    if (!host || clampNumber(fetus?.amnionDurability, -100, 100, 100) > 0) continue;
+    fetus.nestedReleased = true;
+    if (Number.isFinite(Number(host.descentStage))) fetus.descentStage = Number(host.descentStage);
+  }
+}
+
 // ── 胎囊 ─────────────────────────────────────────────
 // 羊膜耐久存在每胎的 fetus.amnionDurability。同一 identicalGroup 共用一个胎囊：
-// 扣一次、结果同步给整组。待着床胚胎还没有胎囊；孕中孕内胎包在宿主里面，
-// 宿主还在时不承受母体层面的磨损。
+// 扣一次、结果同步给整组。待着床胚胎还没有胎囊；孕中孕内胎有自己的胎囊，
+// 它一破，内胎就被宿主生出来（见 releaseRupturedNestedFetuses）。
 const AMNION_INTACT = 100;
 
-function hasMaternalSac(fetus, fetuses) {
-  if (fetus?.pendingImplantation) return false;
-  const hostId = fetus?.nestedInEmbryoId;
-  if (hostId === undefined || hostId === null) return true;
-  return !fetuses.some((candidate) => candidate?.embryoId === hostId);
+function hasMaternalSac(fetus) {
+  return !fetus?.pendingImplantation;
 }
 
 function getAmnionSacs(pregnant) {
@@ -3445,7 +3463,7 @@ function getAmnionSacs(pregnant) {
   const sacs = [];
   const byGroup = new Map();
   for (const fetus of fetuses) {
-    if (!hasMaternalSac(fetus, fetuses)) continue;
+    if (!hasMaternalSac(fetus)) continue;
     const group = Number(fetus?.identicalGroup);
     if (Number.isInteger(group) && group > 0) {
       if (byGroup.has(group)) {
@@ -3481,9 +3499,10 @@ function ensureAmnionMetadata(pregnant) {
     if (!Number.isFinite(Number(fetus?.amnionDurability))) fetus.amnionDurability = AMNION_INTACT;
   }
   for (const sac of getAmnionSacs(pregnant)) setSacDurability(sac, getSacDurability(sac));
+  releaseRupturedNestedFetuses(pregnant);
 }
 
-/** 这一胎所在胎囊的耐久；没有自己的母体胎囊（待着床、孕中孕内胎）时回传 null */
+/** 这一胎所在胎囊的耐久；还没着床（没有胎囊）时回传 null */
 export function getFetusAmnionDurability(pregnant, fetus) {
   const sac = getSacOfFetus(pregnant, fetus);
   return sac ? getSacDurability(sac) : null;
@@ -3506,18 +3525,19 @@ function isSacVisible(sac) {
 }
 
 /**
- * 把一次事件的总扣量按下降位置分给这些胎囊，合计等于原本的总扣量，
- * 不因胎数增加而放大。floor 是这一阶段不准磨穿的下限（产程前为 1）。
+ * 一次事件的磨损：total 是全部胎儿负担的合计，多胎挤在同一个子宫里，
+ * 每个胎囊都承受这份总压力——下降最深的吃满，较高位的按深度比例递减，
+ * 所以胎数越多、每个胎囊破得越快。floor 是这一阶段不准磨穿的下限（产程前为 1）。
  * 回传这一次被磨破的胎囊。
  */
 function distributeAmnionWear(sacs, total, floor = -100) {
   const weights = sacs.map(getSacWearWeight);
-  const sum = weights.reduce((acc, value) => acc + value, 0);
+  const deepest = Math.max(1, ...weights);
   const ruptured = [];
   sacs.forEach((sac, index) => {
     const current = getSacDurability(sac);
     if (current <= 0) return;
-    const next = Math.max(floor, current - (total * weights[index]) / Math.max(sum, 1));
+    const next = Math.max(floor, current - (total * weights[index]) / deepest);
     setSacDurability(sac, next);
     if (next <= 0) ruptured.push(sac);
   });
@@ -3545,6 +3565,7 @@ function applyLaborAmnionWear(profile, female, options = {}) {
   const multiplier = clampNumber(options.multiplier, 0.1, 10, 1);
   const sacs = stage === '第二产程' ? [presentingSac].filter(Boolean) : getAmnionSacs(pregnant);
   const ruptured = distributeAmnionWear(sacs, drainBase * multiplier);
+  releaseRupturedNestedFetuses(pregnant);
   profile.pregnant = pregnant;
 
   // 未揭晓的异期胎破水不通报，免得剧透
@@ -3591,13 +3612,11 @@ function resolveVisibleFetus(fetuses, fetusIndex) {
 
 /**
  * 先露胎可以竞争的对象：待着床的胚胎还没接上母体，
- * 孕中孕内胎只要宿主还在就跟着宿主，不单独占用入口。
+ * 孕中孕内胎只要还包在宿主体内就跟着宿主，不单独占用入口。
  */
 function isPresentingCandidate(fetus, fetuses) {
   if (fetus?.pendingImplantation) return false;
-  const hostId = fetus?.nestedInEmbryoId;
-  if (hostId === undefined || hostId === null) return true;
-  return !fetuses.some((candidate) => candidate?.embryoId === hostId);
+  return !getEnclosingHost(fetus, fetuses);
 }
 
 /**
@@ -3621,15 +3640,28 @@ function selectPresentingFetus(pregnant) {
   return fetus;
 }
 
-/** 按先露胎的身分移除出生的那一胎；不再用 shift() 把最左侧误当成出生目标 */
+/**
+ * 按先露胎的身分移除出生的那一胎；不再用 shift() 把最左侧误当成出生目标。
+ * 仍包在它体内的孕中孕内胎（胎囊没破）在同一次娩出里一起生下来。
+ * 回传这次娩出的全部胎儿，先露胎排第一；没有可娩出的回传空阵列。
+ */
 function removePresentingFetus(pregnant) {
   const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
   const baby = selectPresentingFetus(pregnant);
-  if (!baby) return null;
-  pregnant.fetuses = fetuses.filter((fetus) => fetus !== baby);
+  if (!baby) return [];
+  const enclosed = fetuses.filter((fetus) => getEnclosingHost(fetus, fetuses) === baby);
+  const born = [baby, ...enclosed];
+  pregnant.fetuses = fetuses.filter((fetus) => !born.includes(fetus));
   pregnant.fetusesCount = pregnant.fetuses.length;
   pregnant.presentingEmbryoId = null;
-  return baby;
+  return born;
+}
+
+/** 一起娩出的孕中孕内胎（胎囊没破）写进通知：先露胎之外的每一胎 */
+function describeEnclosedBirths(born) {
+  const enclosed = born.slice(1);
+  if (enclosed.length === 0) return '';
+  return `，体内还包着${enclosed.map((fetus) => `${String(fetus?.fathers || '未知')}的孩子（${String(fetus?.gender || '未知')}）`).join('、')}，一并娩出`;
 }
 
 /** 先露引用必须指向现存胎儿；融合、减胎、流产或妊娠结束后立即清空 */
@@ -3926,11 +3958,13 @@ function processLabor(profile, tick, female) {
       applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true });
       let father = '未知';
       let gender = '未知';
-      const baby = removePresentingFetus(pregnant);
-      if (baby) {
-        father = String(baby?.fathers || '未知');
-        gender = String(baby?.gender || '未知');
-        appendChildrenFromFetuses(profile, [baby]);
+      let enclosedNote = '';
+      const born = removePresentingFetus(pregnant);
+      if (born.length > 0) {
+        father = String(born[0]?.fathers || '未知');
+        gender = String(born[0]?.gender || '未知');
+        enclosedNote = describeEnclosedBirths(born);
+        appendChildrenFromFetuses(profile, born);
         updateFetalEnergyDrain(profile);
       }
       const remaining = pregnant.fetuses;
@@ -3943,14 +3977,14 @@ function processLabor(profile, tick, female) {
         profile.notify = {
           ...notify,
           firstly: `${female}进入了第三产程`,
-          secondly: `${female}产程突然加速，生下了${father}的孩子，性别为${gender}，正在娩出胎盘`,
+          secondly: `${female}产程突然加速，生下了${father}的孩子，性别为${gender}${enclosedNote}，正在娩出胎盘`,
         };
       } else {
         beginLaborPhase(pregnant, '胎体下降', clampNumber(pregnant.laborBirthNumber, 1, 99, 1) + 1);
         updateLaborPain(profile, '第二产程', '胎体下降', 0);
         profile.notify = {
           ...notify,
-          secondly: `${female}产程突然加速，生下了${father}的孩子，性别为${gender}，仍有${remaining.length}胎待产`,
+          secondly: `${female}产程突然加速，生下了${father}的孩子，性别为${gender}${enclosedNote}，仍有${remaining.length}胎待产`,
         };
       }
       return base.stage !== stage;
@@ -4052,11 +4086,12 @@ function processLabor(profile, tick, female) {
       };
       return false;
     }
-    const baby = removePresentingFetus(pregnant);
-    if (baby) {
-      const father = String(baby?.fathers || '未知');
-      const gender = String(baby?.gender || '未知');
-      appendChildrenFromFetuses(profile, [baby]);
+    const born = removePresentingFetus(pregnant);
+    if (born.length > 0) {
+      const father = String(born[0]?.fathers || '未知');
+      const gender = String(born[0]?.gender || '未知');
+      const enclosedNote = describeEnclosedBirths(born);
+      appendChildrenFromFetuses(profile, born);
       updateFetalEnergyDrain(profile);
       const remaining = pregnant.fetuses;
       if (remaining.length === 0) {
@@ -4067,7 +4102,7 @@ function processLabor(profile, tick, female) {
         profile.notify = {
           ...notify,
           firstly: `${female}进入了第三产程·供养器官娩出`,
-          secondly: `${female}生下了${father}的孩子，性别为${gender}，正在娩出胎盘`,
+          secondly: `${female}生下了${father}的孩子，性别为${gender}${enclosedNote}，正在娩出胎盘`,
         };
       } else {
         beginLaborPhase(pregnant, '间歇期', pregnant.laborBirthNumber);
@@ -4075,7 +4110,7 @@ function processLabor(profile, tick, female) {
         profile.notify = {
           ...notify,
           firstly: `${female}进入了第二产程·第${pregnant.laborBirthNumber}胎后间歇期`,
-          secondly: `${female}生下了${father}的孩子，性别为${gender}，仍有${remaining.length}胎待产`,
+          secondly: `${female}生下了${father}的孩子，性别为${gender}${enclosedNote}，仍有${remaining.length}胎待产`,
         };
       }
       return base.stage !== stage;
@@ -4364,10 +4399,23 @@ function applyRuptureMembranes(chatState, args) {
   }
   const sac = getSacOfFetus(pregnant, target);
   if (!sac) {
-    return { applied: false, message: `bsRuptureMembranes skipped for ${female}: that fetus has no maternal sac of its own (nested or not implanted).` };
+    return { applied: false, message: `bsRuptureMembranes skipped for ${female}: that fetus is not implanted and has no sac yet.` };
   }
   if (getSacDurability(sac) <= 0) {
     return { applied: false, message: `bsRuptureMembranes skipped for ${female}: already ruptured.` };
+  }
+
+  // 孕中孕内胎的胎囊在宿主体内：破了是宿主在宫内把它生出来，不是母亲破水，
+  // 不需要宫压门槛，也不会因此发动产程
+  const host = getEnclosingHost(target, fetuses);
+  if (host) {
+    setSacDurability(sac, 0);
+    releaseRupturedNestedFetuses(pregnant);
+    profile.pregnant = pregnant;
+    profile.notify = { ...notify, secondly: `${female}腹中那一胎体内的胎膜破了，里面的孩子脱离出来，成为独立的一胎` };
+    next.profile = profile;
+    chatState.characters[female] = syncCharacterStageFromProfile(next);
+    return { applied: true, message: `bsRuptureMembranes applied to ${female}: nested fetus released from its host.` };
   }
 
   if (inPrelabor) {
@@ -6351,7 +6399,12 @@ export function applyToolCall(chatState, call) {
   }
   const result = dispatchToolCall(chatState, call);
   syncAllNutritionBurst(chatState);
-  for (const character of Object.values(chatState?.characters || {})) reconcilePresentingReference(character?.profile?.pregnant);
+  for (const character of Object.values(chatState?.characters || {})) {
+    const pregnant = character?.profile?.pregnant;
+    if (!pregnant || typeof pregnant !== 'object') continue;
+    releaseRupturedNestedFetuses(pregnant);
+    reconcilePresentingReference(pregnant);
+  }
   return result;
 }
 
