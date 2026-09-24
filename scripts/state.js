@@ -435,6 +435,8 @@ export function normalizeCharacterPsychologyState(characterState) {
     delete pregnant.nutrition;
     // 分娩胎次改由 presentingEmbryoId 指认、laborBirthNumber 计数
     delete pregnant.laborFetusIndex;
+    // 羊膜改为每胎各自的 fetus.amnionDurability（同卵共用胎囊）
+    delete pregnant.amnionDurability;
   }
   if (pregnant?.blockage?.key === 'stool') pregnant.blockage.key = 'excretion';
   if (pregnant?.blockage?.key === 'urine') {
@@ -755,7 +757,6 @@ export function createDefaultFemaleState(name = '') {
         prodromalDelayProgressHours: 0,
         fetusesCount: 0,
         fetalEnergyDrain: 0,
-        amnionDurability: 0,
         blockage: null,
         acceleration: null,
         expansion: null,
@@ -1630,7 +1631,6 @@ function createSnapshotCharacterBaseline(name = '') {
         prodromalDelayProgressHours: 0,
         fetusesCount: 0,
         fetalEnergyDrain: 0,
-        amnionDurability: 0,
         blockage: null,
         acceleration: null,
         expansion: null,

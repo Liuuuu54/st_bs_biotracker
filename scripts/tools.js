@@ -538,11 +538,13 @@ export const TOOL_DEFINITIONS = Object.freeze([
   {
     name: 'bsRuptureMembranes',
     description: '让角色破水（羊膜破裂）。只有在产兆前驱且宫压已达上限的 66%，或已在第一／第二产程时才会生效；条件不足会被拒绝，此时叙事不得写成已经破水。'
-      + '产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用本工具，让叙事与系统状态一致；系统未确认破水前不要擅自描写破水。',
+      + '产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用本工具，让叙事与系统状态一致；系统未确认破水前不要擅自描写破水。'
+      + '每一胎有各自的羊膜（同卵共用胎囊时一起破）：可用 fetusIndex（fetuses 列表下标，从 0 起算）指定要破的那一胎；省略时破正在下降或即将娩出的那一胎。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
+        fetusIndex: { type: 'integer' },
       },
       required: ['female'],
       additionalProperties: false,
@@ -812,7 +814,7 @@ function finishWombReturn(profile, overflowDays, name, notify) {
   const startDays = 1 + carried;
   pregnant.pregnantDays = startDays;
   pregnant.effectivePregnantDays = startDays * speed;
-  pregnant.amnionDurability = 100;
+  for (const fetus of Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []) fetus.amnionDurability = AMNION_INTACT;
   pregnant.fetusesCount = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.length : 0;
   base.stage = '孕早期';
   base.days = startDays;
@@ -1644,21 +1646,21 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
   };
 }
 
-function updateFetalEnergyDrain(profile) {
-  const fetuses = Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : [];
+/** 单胎对母体的负担；fetalEnergyDrain 是全部胎儿的合计 */
+function getFetusEnergyDrain(profile, fetus) {
   const effectivePregnantDays = clampNumber(profile?.pregnant?.effectivePregnantDays, 0, 9999, 0);
   const motherBreedTolerance = clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0);
-  profile.pregnant.fetalEnergyDrain = fetuses.reduce((sum, fetus) => {
-    const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
-    // 每胎用自己的孕龄：异期复孕时晚到那胎不该按先来者的进度计算负担。
-    // 既有胎儿没有 conceivedAtDays，算出来就是共用时钟，行为不变。
-    const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
-    const ageInDays = ownAge * weight;
-    const fetalAgeWeeks = ageInDays / 7;
-    const fetalLoad = fetalAgeWeeks / 40;
-    const fetusEnergyDrain = fetalLoad / motherBreedTolerance;
-    return sum + fetusEnergyDrain;
-  }, 0);
+  const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
+  // 每胎用自己的孕龄：异期复孕时晚到那胎不该按先来者的进度计算负担。
+  // 既有胎儿没有 conceivedAtDays，算出来就是共用时钟，行为不变。
+  const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
+  const fetalLoad = (ownAge * weight) / 7 / 40;
+  return fetalLoad / motherBreedTolerance;
+}
+
+function updateFetalEnergyDrain(profile) {
+  const fetuses = Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : [];
+  profile.pregnant.fetalEnergyDrain = fetuses.reduce((sum, fetus) => sum + getFetusEnergyDrain(profile, fetus), 0);
 }
 
 function getEmbryoTypeModifiers(embryoType) {
@@ -2277,7 +2279,7 @@ function processSimpleConception(profile, tick, notify, name) {
         base.fertilizationDays = 0;
         pregnant.pregnantDays = obstetricPregnantDays;
         pregnant.effectivePregnantDays = obstetricPregnantDays * gestationSpeed;
-        pregnant.amnionDurability = 100;
+        for (const fetus of pregnant.fetuses) fetus.amnionDurability = AMNION_INTACT;
         profile.experience = {
           ...(profile.experience || {}),
           pregnantExperience: clampNumber(profile?.experience?.pregnantExperience, 0, 999, 0) + 1,
@@ -3087,7 +3089,7 @@ function updateAdvisoryNotify(profile, female) {
 
   const stage = String(base.stage || '');
   if (['临产期', '逾期', '产兆前驱', '第一产程', '第二产程'].includes(stage)) {
-    const amnion = clampNumber(pregnant.amnionDurability, -100, 100, 0);
+    const amnion = clampNumber(getPresentingAmnionDurability(pregnant), -100, 100, 0);
     if (amnion > 0) {
       // 陈述句会被当成背景资讯忽略，必须写成禁令：设定上产程前羊膜恒不破，
       // 模型却很常自行写出破水，导致叙事与系统状态脱节。
@@ -3124,12 +3126,14 @@ function applyAmnionDurabilityFromPressure(profile, finalPressure, female) {
   const warningThreshold = pressureCap * 0.33;
   if (finalPressure <= warningThreshold) return;
 
-  const currentDurability = clampNumber(pregnant.amnionDurability, 0, 100, 100);
-  const drain = Math.max(1, clampNumber(pregnant.fetalEnergyDrain, 0, 9999, 1));
-  const minDurability = LABOR_STAGES.includes(stage) ? 0 : 1;
-  const nextDurability = Math.max(minDurability, currentDurability - drain);
-
-  pregnant.amnionDurability = nextDurability;
+  // 随机抽一个实际胎囊受损，只按该胎（同卵组则全组合计）自己的负担扣；
+  // 产程前任何磨损都只让羊膜变薄，不会磨穿
+  const sacs = getAmnionSacs(pregnant);
+  if (sacs.length > 0) {
+    const sac = sacs[Math.min(sacs.length - 1, Math.floor(Math.random() * sacs.length))];
+    const drain = Math.max(1, sac.members.reduce((sum, fetus) => sum + getFetusEnergyDrain(profile, fetus), 0));
+    setSacDurability(sac, Math.max(1, getSacDurability(sac) - drain));
+  }
   profile.pregnant = pregnant;
 
   const notify = profile.notify || {};
@@ -3257,7 +3261,6 @@ function clearPregnancyState(profile) {
   pregnant.fetuses = [];
   pregnant.fetusesCount = 0;
   pregnant.fetalEnergyDrain = 0;
-  pregnant.amnionDurability = 0;
   pregnant.blockage = null;
   pregnant.acceleration = null;
   pregnant.expansion = null;
@@ -3424,33 +3427,134 @@ function applyChildbirthInternal(profile, female, isNatural) {
   return true;
 }
 
+// ── 胎囊 ─────────────────────────────────────────────
+// 羊膜耐久存在每胎的 fetus.amnionDurability。同一 identicalGroup 共用一个胎囊：
+// 扣一次、结果同步给整组。待着床胚胎还没有胎囊；孕中孕内胎包在宿主里面，
+// 宿主还在时不承受母体层面的磨损。
+const AMNION_INTACT = 100;
+
+function hasMaternalSac(fetus, fetuses) {
+  if (fetus?.pendingImplantation) return false;
+  const hostId = fetus?.nestedInEmbryoId;
+  if (hostId === undefined || hostId === null) return true;
+  return !fetuses.some((candidate) => candidate?.embryoId === hostId);
+}
+
+function getAmnionSacs(pregnant) {
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  const sacs = [];
+  const byGroup = new Map();
+  for (const fetus of fetuses) {
+    if (!hasMaternalSac(fetus, fetuses)) continue;
+    const group = Number(fetus?.identicalGroup);
+    if (Number.isInteger(group) && group > 0) {
+      if (byGroup.has(group)) {
+        byGroup.get(group).members.push(fetus);
+        continue;
+      }
+      const sac = { members: [fetus] };
+      byGroup.set(group, sac);
+      sacs.push(sac);
+    } else {
+      sacs.push({ members: [fetus] });
+    }
+  }
+  return sacs;
+}
+
+function getSacDurability(sac) {
+  return Math.min(...sac.members.map((fetus) => clampNumber(fetus?.amnionDurability, -100, 100, AMNION_INTACT)));
+}
+
+function setSacDurability(sac, value) {
+  for (const fetus of sac.members) fetus.amnionDurability = value;
+}
+
+function getSacOfFetus(pregnant, fetus) {
+  if (!fetus) return null;
+  return getAmnionSacs(pregnant).find((sac) => sac.members.includes(fetus)) || null;
+}
+
+/** 缺值的胎儿补成完整胎囊；同卵组若数值不一致，以较破的那个为准同步 */
+function ensureAmnionMetadata(pregnant) {
+  for (const fetus of Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : []) {
+    if (!Number.isFinite(Number(fetus?.amnionDurability))) fetus.amnionDurability = AMNION_INTACT;
+  }
+  for (const sac of getAmnionSacs(pregnant)) setSacDurability(sac, getSacDurability(sac));
+}
+
+/** 这一胎所在胎囊的耐久；没有自己的母体胎囊（待着床、孕中孕内胎）时回传 null */
+export function getFetusAmnionDurability(pregnant, fetus) {
+  const sac = getSacOfFetus(pregnant, fetus);
+  return sac ? getSacDurability(sac) : null;
+}
+
+/** 先露胎的胎囊耐久：提示与追踪页据此判断「是否已破水」。没有胎囊可看时回传 null */
+export function getPresentingAmnionDurability(pregnant) {
+  const sac = getSacOfFetus(pregnant, getPresentingFetus(pregnant)) || getAmnionSacs(pregnant)[0];
+  return sac ? getSacDurability(sac) : null;
+}
+
+/** 下降越深的胎囊分到越多磨损；descentStage 建立前一律视为 -2，等于平均分 */
+function getSacWearWeight(sac) {
+  const depth = Math.max(...sac.members.map((fetus) => (Number.isFinite(Number(fetus?.descentStage)) ? Number(fetus.descentStage) : -2)));
+  return Math.max(1, depth + 4);
+}
+
+function isSacVisible(sac) {
+  return sac.members.some(isFetusKnownToCharacter);
+}
+
+/**
+ * 把一次事件的总扣量按下降位置分给这些胎囊，合计等于原本的总扣量，
+ * 不因胎数增加而放大。floor 是这一阶段不准磨穿的下限（产程前为 1）。
+ * 回传这一次被磨破的胎囊。
+ */
+function distributeAmnionWear(sacs, total, floor = -100) {
+  const weights = sacs.map(getSacWearWeight);
+  const sum = weights.reduce((acc, value) => acc + value, 0);
+  const ruptured = [];
+  sacs.forEach((sac, index) => {
+    const current = getSacDurability(sac);
+    if (current <= 0) return;
+    const next = Math.max(floor, current - (total * weights[index]) / Math.max(sum, 1));
+    setSacDurability(sac, next);
+    if (next <= 0) ruptured.push(sac);
+  });
+  return ruptured;
+}
+
+/**
+ * 产程中的羊膜磨损与强制破膜。
+ * - forceRupture：scope='presenting' 只破当前先露胎囊（快速娩出），'all' 破全部（第三产程收尾）。
+ * - 第一产程：总扣量按下降位置分给全部胎囊；第二产程只磨先露胎囊。
+ */
 function applyLaborAmnionWear(profile, female, options = {}) {
   const pregnant = profile.pregnant || {};
-  const notify = profile.notify || {};
-  const forceRupture = Boolean(options.forceRupture);
-  const silent = Boolean(options.silent);
-  const currentDurability = clampNumber(pregnant.amnionDurability, -100, 100, 0);
+  const stage = String(profile?.base?.stage || '');
+  const presentingSac = getSacOfFetus(pregnant, getPresentingFetus(pregnant));
 
-  if (forceRupture) {
-    if (currentDurability > 0) pregnant.amnionDurability = 0;
+  if (options.forceRupture) {
+    const targets = options.scope === 'all' ? getAmnionSacs(pregnant) : [presentingSac].filter(Boolean);
+    for (const sac of targets) if (getSacDurability(sac) > 0) setSacDurability(sac, 0);
     profile.pregnant = pregnant;
     return false;
   }
 
   const drainBase = Math.max(1, clampNumber(pregnant.fetalEnergyDrain, 0, 9999, 1));
   const multiplier = clampNumber(options.multiplier, 0.1, 10, 1);
-  const nextDurability = currentDurability - (drainBase * multiplier);
-  const ruptured = currentDurability > 0 && nextDurability <= 0;
-  pregnant.amnionDurability = nextDurability;
+  const sacs = stage === '第二产程' ? [presentingSac].filter(Boolean) : getAmnionSacs(pregnant);
+  const ruptured = distributeAmnionWear(sacs, drainBase * multiplier);
   profile.pregnant = pregnant;
 
-  if (ruptured && !silent) {
+  // 未揭晓的异期胎破水不通报，免得剧透
+  if (ruptured.some(isSacVisible) && !options.silent) {
     profile.notify = {
-      ...notify,
+      ...(profile.notify || {}),
       secondly: `${female}破水了`,
     };
   }
-  return ruptured;
+  return ruptured.length > 0;
 }
 
 function getProdromalInitialHours(profile) {
@@ -3803,11 +3907,12 @@ function processLabor(profile, tick, female) {
     }
   } else if (currentPressure >= pressureCap && !realisticLabor) {
     if (stage === '第一产程') {
-      applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true });
       base.uterinePressure = pressureCap * 0.5;
       base.stage = '第二产程';
       base.days = 0;
       beginLaborPhase(pregnant, '胎体下降', 1);
+      // 快速进入第二产程只破刚锁定的先露胎囊，不再全体破膜
+      applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true });
       updateLaborPain(profile, '第二产程', '胎体下降', 0);
       profile.notify = {
         ...notify,
@@ -3852,7 +3957,7 @@ function processLabor(profile, tick, female) {
     }
 
     if (stage === '第三产程') {
-      applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true });
+      applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true, scope: 'all' });
       return applyChildbirthInternal(profile, female, true);
     }
   }
@@ -3870,7 +3975,7 @@ function processLabor(profile, tick, female) {
   } else if (stage === '第二产程') {
     applyLaborAmnionWear(profile, female, { multiplier: rawHours * 0.75 });
   } else if (stage === '第三产程') {
-    applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true });
+    applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true, scope: 'all' });
   }
   if (pregnant.effectiveLaborHours <= threshold) {
     if (stage === '第二产程' && realisticObstruction && phase === '胎体娩出') {
@@ -4251,7 +4356,17 @@ function applyRuptureMembranes(chatState, args) {
     };
   }
 
-  if (clampNumber(pregnant.amnionDurability, -100, 100, 0) <= 0) {
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const fetusIndex = args?.fetusIndex;
+  const target = fetusIndex === undefined ? getPresentingFetus(pregnant) : resolveVisibleFetus(fetuses, fetusIndex);
+  if (!target) {
+    return { applied: false, message: `bsRuptureMembranes skipped for ${female}: invalid fetusIndex.` };
+  }
+  const sac = getSacOfFetus(pregnant, target);
+  if (!sac) {
+    return { applied: false, message: `bsRuptureMembranes skipped for ${female}: that fetus has no maternal sac of its own (nested or not implanted).` };
+  }
+  if (getSacDurability(sac) <= 0) {
     return { applied: false, message: `bsRuptureMembranes skipped for ${female}: already ruptured.` };
   }
 
@@ -4266,7 +4381,7 @@ function applyRuptureMembranes(chatState, args) {
     }
   }
 
-  pregnant.amnionDurability = 0;
+  setSacDurability(sac, 0);
   profile.pregnant = pregnant;
 
   if (inPrelabor) {
@@ -4354,10 +4469,8 @@ function applyLaborResistance(profile, female) {
       fetus.tendencyAngle = wrapAngle(currentAngle + randomInt(-90, 90));
     }
 
-    if (clampNumber(pregnant.amnionDurability, 0, 100, 100) > 0) {
-      const drain = Math.max(1, fetalEnergyDrain || 1);
-      pregnant.amnionDurability = Math.max(1, clampNumber(pregnant.amnionDurability, 0, 100, 100) - drain);
-    }
+    // 一轮的总扣量按下降位置分给各胎囊；产兆前驱只会磨薄、不会磨穿
+    distributeAmnionWear(getAmnionSacs(pregnant), Math.max(1, fetalEnergyDrain || 1), 1);
   }
 
   const initialHours = getProdromalInitialHours(profile);
@@ -5986,7 +6099,7 @@ function applyDebugInjectPregnancy(chatState, args) {
   pregnant.prodromalOriginStage = null;
   pregnant.prodromalRemainingHours = 0;
   pregnant.prodromalDelayProgressHours = 0;
-  pregnant.amnionDurability = equivalentDays === 0 ? 0 : 100;
+  for (const fetus of Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []) fetus.amnionDurability = AMNION_INTACT;
   pregnant.pregnantDays = 0;
   pregnant.effectivePregnantDays = equivalentDays === 0 ? 0 : equivalentDays;
 
@@ -6231,7 +6344,10 @@ export function applyToolCall(chatState, call) {
   // 先让每个母体的编号计数器越过现存号码，再执行可能移除胎儿的操作；
   // 否则从未发过号的母体减胎后，会把被移除那胎的号码重发给下一个新胎
   for (const character of Object.values(chatState?.characters || {})) {
-    if (character?.profile?.pregnant && typeof character.profile.pregnant === 'object') syncEmbryoCounter(character.profile.pregnant);
+    if (character?.profile?.pregnant && typeof character.profile.pregnant === 'object') {
+      syncEmbryoCounter(character.profile.pregnant);
+      ensureAmnionMetadata(character.profile.pregnant);
+    }
   }
   const result = dispatchToolCall(chatState, call);
   syncAllNutritionBurst(chatState);

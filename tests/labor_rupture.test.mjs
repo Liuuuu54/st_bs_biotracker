@@ -20,9 +20,8 @@ function makeChatState(overrides = {}) {
     pregnantDays: 266,
     effectivePregnantDays: 266,
     fetusesCount: 1,
-    fetuses: [{ fathers: '莱昂', gender: '女', embryoType: '胎生', tendencyAngle: 0, affinity: 0 }],
+    fetuses: [{ embryoId: 1, fathers: '莱昂', gender: '女', embryoType: '胎生', tendencyAngle: 0, affinity: 0, amnionDurability: 100 }],
     fetalEnergyDrain: 1,
-    amnionDurability: 100,
     prodromalRemainingHours: 48,
     prodromalDelayProgressHours: 0,
     ...overrides.pregnant,
@@ -45,6 +44,8 @@ function makeChatState(overrides = {}) {
 const character = (chatState) => chatState.characters['艾拉'];
 const pregnantOf = (chatState) => character(chatState).profile.pregnant;
 const baseOf = (chatState) => character(chatState).profile.base;
+// 羊膜是每胎各一个；这里只有一胎
+const amnionOf = (chatState) => pregnantOf(chatState).fetuses[0].amnionDurability;
 
 test('realistic labor clamps a delay that would exceed the cumulative cap', () => {
   // 上限＝初始时长（48h）。已累计 46h，本次抵抗成功本来 +6h，只能再吃到 2h。
@@ -127,7 +128,7 @@ test('rupture in the prodromal stage is refused when uterine pressure is too low
 
   assert.equal(result.applied, false);
   assert.match(result.message, /pressure too low/);
-  assert.equal(pregnantOf(chatState).amnionDurability, 100, '被拒绝时不得改动羊膜');
+  assert.equal(amnionOf(chatState), 100, '被拒绝时不得改动羊膜');
   assert.equal(baseOf(chatState).stage, '产兆前驱');
 });
 
@@ -143,7 +144,7 @@ test('only the prodromal stage may rupture before labor', () => {
 
     assert.equal(result.applied, false, `${stage} 不该允许破水`);
     assert.match(result.message, /cannot rupture/);
-    assert.equal(pregnantOf(chatState).amnionDurability, 100);
+    assert.equal(amnionOf(chatState), 100);
     assert.equal(baseOf(chatState).stage, stage, '被拒绝时不得改动阶段');
   }
 });
@@ -157,7 +158,7 @@ test('a sanctioned rupture breaks the membranes and starts the first labor stage
   });
 
   assert.equal(result.applied, true);
-  assert.equal(pregnantOf(chatState).amnionDurability, 0);
+  assert.equal(amnionOf(chatState), 0);
   assert.equal(baseOf(chatState).stage, '第一产程', '破水后不该还停在产兆前驱');
   assert.equal(pregnantOf(chatState).prodromalRemainingHours, 0, '前驱状态要清干净');
 });
@@ -172,12 +173,13 @@ test('rupturing during labor does not restart the stage', () => {
 
   // 已在产程内：不需要宫压门槛，也不该把阶段拉回第一产程
   assert.equal(result.applied, true);
-  assert.equal(pregnantOf(chatState).amnionDurability, 0);
+  assert.equal(amnionOf(chatState), 0);
   assert.equal(baseOf(chatState).stage, '第二产程');
 });
 
 test('a second rupture call is rejected instead of silently reapplying', () => {
-  const chatState = makeChatState({ base: { stage: '第一产程' }, pregnant: { amnionDurability: 0 } });
+  const chatState = makeChatState({ base: { stage: '第一产程' } });
+  pregnantOf(chatState).fetuses[0].amnionDurability = 0;
 
   const result = applyToolCall(chatState, {
     name: 'bsRuptureMembranes',

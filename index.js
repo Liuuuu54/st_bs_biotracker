@@ -56,7 +56,7 @@ import {
 import { buildMainFlowPrompt, resetPoller, runTracker, getPollWaitStatus } from './scripts/tracker.js';
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
-import { getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
+import { getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
@@ -3414,7 +3414,8 @@ function buildTrackCharacterViewModel(character) {
       prodromalOriginStage: pregnant.prodromalOriginStage ?? null,
       prodromalRemainingHours: Number(pregnant.prodromalRemainingHours) || 0,
       prodromalDelayProgressHours: Number(pregnant.prodromalDelayProgressHours) || 0,
-      amnionDurability: Number(pregnant.amnionDurability) || 0,
+      // 羊膜是每胎各一：追踪页的膜耐性条显示先露胎（正在下降或即将娩出那胎）的胎囊
+      amnionDurability: getPresentingAmnionDurability(pregnant) ?? 0,
       // 未揭晓的异期胎在追踪页也藏起来，与提示词一致；完整变量页仍看得到
       fetuses: Array.isArray(pregnant.fetuses) ? pregnant.fetuses.filter(isFetusKnownToCharacter).map((fetus) => ({
         ...fetus,
@@ -5822,7 +5823,6 @@ function validateManualCharacterState(next, currentName) {
     ['profile', 'pregnant', 'prodromalDelayProgressHours'],
     ['profile', 'pregnant', 'fetusesCount'],
     ['profile', 'pregnant', 'fetalEnergyDrain'],
-    ['profile', 'pregnant', 'amnionDurability'],
   ];
   for (const path of numericPaths) {
     let current = next;

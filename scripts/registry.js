@@ -1407,7 +1407,7 @@ function normalizeRegisteredPregnancy(profile) {
       gestationModifierMultiplier,
     });
   }
-  pregnant.amnionDurability = 100;
+  for (const fetus of pregnant.fetuses) fetus.amnionDurability = 100;
   // 必须排在 effectivePregnantDays 算出来之后：受精点要夹进这次妊娠的范围，
   // 揭晓与否也要拿它跟门槛比
   normalizeRegisteredFetusTags(pregnant);

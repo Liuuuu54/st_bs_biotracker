@@ -1,7 +1,7 @@
 import { callOpenAICompatible, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCallsResult, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
+import { applyToolCallsResult, getFetusAmnionDurability, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import {
   buildRecentMessages,
   buildSignature,
@@ -755,6 +755,33 @@ function getPromptFacingMetabolismSymptoms(pregnant = {}) {
   return result;
 }
 
+function getAmnionTag(durability) {
+  if (durability <= 0) return '已破';
+  if (durability <= 33) return '膜危';
+  if (durability <= 66) return '膜薄';
+  return '完整';
+}
+
+/**
+ * 每胎羊膜的精确耐久只留在引擎与 UI。可见胎囊全部相同时只送一个 amnionDurability；
+ * 出现差异时不送母体层数值，改在「非完整」的胎儿上标 膜薄／膜危／已破。
+ */
+function getPromptFacingAmnion(pregnant, visibleFetuses) {
+  const values = new Map();
+  for (const fetus of visibleFetuses) {
+    const durability = getFetusAmnionDurability(pregnant, fetus);
+    if (durability !== null) values.set(fetus, Math.round(durability));
+  }
+  const distinct = new Set(values.values());
+  if (distinct.size <= 1) return { uniform: distinct.size === 1 ? [...distinct][0] : null, tags: new Map() };
+  const tags = new Map();
+  for (const [fetus, durability] of values) {
+    const tag = getAmnionTag(durability);
+    if (tag !== '完整') tags.set(fetus, tag);
+  }
+  return { uniform: null, tags };
+}
+
 function getPromptFacingLaborState(base = {}, pregnant = {}) {
   const stage = String(base.stage || '');
   if (stage !== '产兆前驱' && !LABOR_STAGES.includes(stage)) return {};
@@ -852,18 +879,23 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
   if (!sendPregnantState) {
     delete profile.pregnant;
   } else if (Array.isArray(pregnant.fetuses)) {
+    const visibleFetuses = pregnant.fetuses.filter(isFetusKnownToCharacter);
+    const amnion = getPromptFacingAmnion(pregnant, visibleFetuses);
     profile.pregnant = {
       pregnantDays: Number.isFinite(Number(pregnant.pregnantDays)) ? Number(pregnant.pregnantDays) : 0,
       effectivePregnantDays: Number.isFinite(Number(pregnant.effectivePregnantDays)) ? Number(pregnant.effectivePregnantDays) : 0,
       ...getPromptFacingLaborState(base, pregnant),
-      amnionDurability: Number.isFinite(Number(pregnant.amnionDurability)) ? Number(pregnant.amnionDurability) : 0,
+      ...(amnion.uniform === null ? {} : { amnionDurability: amnion.uniform }),
       ...(hasFetuses && !immune.metabolism ? { nutrition: getPregnancyNutritionTotal(pregnant) } : {}),
       ...(immune.metabolism ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
-      fetuses: pregnant.fetuses.filter(isFetusKnownToCharacter).map((fetus) => {
-        const { embryoId: _embryoId, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, ...visibleFetus } = fetus;
+      fetuses: visibleFetuses.map((fetus) => {
+        const {
+          embryoId: _embryoId, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion, ...visibleFetus
+        } = fetus;
         return {
           ...visibleFetus,
           ...(LABOR_STAGES.includes(String(base.stage || '')) && fetus.embryoId === pregnant.presentingEmbryoId ? { presenting: true } : {}),
+          ...(amnion.tags.has(fetus) ? { amnion: amnion.tags.get(fetus) } : {}),
           tendencyAngleText: getTendencyAngleText(fetus?.tendencyAngle),
           race: undefined,
         };
@@ -874,7 +906,6 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
       pregnantDays: Number.isFinite(Number(pregnant.pregnantDays)) ? Number(pregnant.pregnantDays) : 0,
       effectivePregnantDays: Number.isFinite(Number(pregnant.effectivePregnantDays)) ? Number(pregnant.effectivePregnantDays) : 0,
       ...getPromptFacingLaborState(base, pregnant),
-      amnionDurability: Number.isFinite(Number(pregnant.amnionDurability)) ? Number(pregnant.amnionDurability) : 0,
       ...(immune.metabolism ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
       fetuses: [],
     };
