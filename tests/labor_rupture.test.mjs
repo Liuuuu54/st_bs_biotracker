@@ -1,4 +1,4 @@
-// 产兆前驱的真实产程约束，以及唯一受控的破水入口。
+// 产兆前驱的真实产程约束（托高 lift 延后分娩的上限），以及唯一受控的破水入口。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -48,22 +48,22 @@ const baseOf = (chatState) => character(chatState).profile.base;
 const amnionOf = (chatState) => pregnantOf(chatState).fetuses[0].amnionDurability;
 
 test('realistic labor clamps a delay that would exceed the cumulative cap', () => {
-  // 上限＝初始时长（48h）。已累计 46h，本次抵抗成功本来 +6h，只能再吃到 2h。
+  // 上限＝初始时长（48h）。已累计 46h，这次托高本来 +24h（T/2），只能再吃到 2h。
   const chatState = makeChatState({
     realisticLabor: true,
     pregnant: { prodromalDelayProgressHours: 46, prodromalRemainingHours: 48 },
-    base: { vitality: 9999, uterinePressure: 1 }, // 让抵抗判定必定成功
+    base: { vitality: 9999, uterinePressure: 1 }, // 活力充足，托高必定撑得住
   });
 
   const result = applyToolCall(chatState, {
-    name: 'bsMaternalFetalInteraction',
-    arguments: { female: '艾拉', direction: 'maternal' },
+    name: 'bsAssistFetalPosition',
+    arguments: { female: '艾拉', action: 'lift' },
   });
 
   assert.equal(result.applied, true);
   const after = pregnantOf(chatState);
   assert.equal(after.prodromalDelayProgressHours, 48, '累计延后正好卡在上限');
-  assert.equal(after.prodromalRemainingHours, 50, '只吃到上限剩余的 2 小时，而不是完整的 6 小时');
+  assert.equal(after.prodromalRemainingHours, 50, '只吃到上限剩余的 2 小时，而不是完整的 24 小时');
   assert.equal(baseOf(chatState).stage, '产兆前驱');
 });
 
@@ -76,12 +76,14 @@ test('realistic labor refuses any further delay once the cap is reached', () => 
   const before = pregnantOf(chatState).prodromalRemainingHours;
 
   const result = applyToolCall(chatState, {
-    name: 'bsMaternalFetalInteraction',
-    arguments: { female: '艾拉', direction: 'maternal' },
+    name: 'bsAssistFetalPosition',
+    arguments: { female: '艾拉', action: 'lift' },
   });
 
-  assert.equal(result.applied, true);
-  assert.equal(pregnantOf(chatState).prodromalRemainingHours, before, '到顶后抵抗成功也不再往后推');
+  assert.equal(result.applied, false, '到顶后托高被拒绝');
+  assert.match(result.message, /can no longer be postponed/);
+  assert.equal(pregnantOf(chatState).prodromalRemainingHours, before, '被拒绝时不得改动剩余时间');
+  assert.equal(baseOf(chatState).vitality, 9999, '被拒绝时不扣活力');
   assert.equal(pregnantOf(chatState).prodromalDelayProgressHours, 48);
 });
 
@@ -94,8 +96,8 @@ test('realistic labor never regresses out of labor even when fully resisted', ()
   });
 
   applyToolCall(chatState, {
-    name: 'bsMaternalFetalInteraction',
-    arguments: { female: '艾拉', direction: 'maternal' },
+    name: 'bsAssistFetalPosition',
+    arguments: { female: '艾拉', action: 'lift' },
   });
 
   assert.equal(baseOf(chatState).stage, '产兆前驱', '分娩只能延后，不能取消');
@@ -109,8 +111,8 @@ test('without realistic labor a fully resisted prodromal still regresses by preg
   });
 
   applyToolCall(chatState, {
-    name: 'bsMaternalFetalInteraction',
-    arguments: { female: '艾拉', direction: 'maternal' },
+    name: 'bsAssistFetalPosition',
+    arguments: { female: '艾拉', action: 'lift' },
   });
 
   // 依妊娠天数退回对应阶段，而不是停在产兆前驱

@@ -564,8 +564,28 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
+    name: 'bsAssistFetalPosition',
+    description: '剧情明确出现人工、器械或魔法的胎位操作时才调用；自然胎动与下降由 bsPassedTime 自动处理，不要为了「肚子下沉」「胎儿踢了一下」之类的描写调用。'
+      + 'fetusIndex 是 fetuses 列表下标（从 0 起算），省略时作用于正在下降／即将娩出的那一胎。每个动作都要通过检查才会生效，被拒绝时状态完全不变，叙事不得写成已成功。'
+      + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位）；已入盆的胎儿只能小幅校正，肩难产时可不给角度直接转动肩部解开卡点。'
+      + 'lift：把胎儿往上托回一格；产兆前驱托高领头胎儿会把分娩延后，这是要跟宫缩对抗的，母体活力不足会被拒绝，并带来一阵剧痛。产程中只能托回和另一胎一起卡在入口的那一胎。'
+      + 'descend：把胎儿往下推送一格；产兆前驱推送领头胎儿会缩短前驱，时间归零即进入第一产程；正式产程中不能用。'
+      + '所有操作都会带来瞬时的疼痛（产程中）或心理压力（孕期），描写不得超过系统给出的疼痛等级。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        female: { type: 'string' },
+        action: { type: 'string', enum: ['rotate', 'lift', 'descend'] },
+        fetusIndex: { type: 'integer' },
+        targetAngle: { type: 'number' },
+      },
+      required: ['female', 'action'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'bsMaternalFetalInteraction',
-    description: '处理母体与胎儿之间的互动。每名角色在每个新小时内最多成功互动一次；在 bsPassedTime 推进满下一小时之前，重复调用会被跳过。direction=fetal 表示胎儿对母体的亲近或排斥，必须传 change，并调整随机一胎的 affinity。direction=maternal 表示母体安抚胎儿，不使用 change；系统会随机判定 affinity 变化。母胎互动不影响供养力。若当前处于产兆前驱且 direction=maternal，则改为分娩抵抗判定。',
+    description: '处理母体与胎儿之间的互动。每名角色在每个新小时内最多成功互动一次；在 bsPassedTime 推进满下一小时之前，重复调用会被跳过。direction=fetal 表示胎儿对母体的亲近或排斥，必须传 change，并调整随机一胎的 affinity。direction=maternal 表示母体安抚胎儿，不使用 change；系统会随机判定 affinity 变化。母胎互动不影响供养力，也不改变胎位、下降或产程时间；要托高或推送胎儿请用 bsAssistFetalPosition。',
     input_schema: {
       type: 'object',
       properties: {
@@ -761,6 +781,7 @@ function getWombReturnHost(character) {
  */
 const WOMB_FROZEN_BLOCKED_TOOLS = new Set([
   'bsSetMenstrualPhases',
+  'bsAssistFetalPosition',
   'bsAddSperm',
   'bsDrainSperm',
   'bsImplantEmbryo',
@@ -3248,8 +3269,8 @@ function updateAdvisoryNotify(profile, female) {
 
   if (stage === '产兆前驱') {
     reminders.push(Boolean(profile?.immune?.realisticLabor)
-      ? `${female}正处于产兆前驱阶段，可使用 bsMaternalFetalInteraction（direction=maternal）尝试延后分娩；真实产程下分娩只能延后、无法取消，累计延后到上限后必然进入产程`
-      : `${female}正处于产兆前驱阶段，可优先使用 bsMaternalFetalInteraction（direction=maternal）尝试延后分娩`);
+      ? `${female}正处于产兆前驱阶段；若剧情明确把胎儿往上托，可用 bsAssistFetalPosition（action=lift）延后分娩，需要足够活力；真实产程下分娩只能延后、无法取消，累计延后到上限后必然进入产程`
+      : `${female}正处于产兆前驱阶段；若剧情明确把胎儿往上托，可用 bsAssistFetalPosition（action=lift）延后分娩，需要足够活力`);
   }
 
   profile.notify = {
@@ -3691,7 +3712,7 @@ export function getLaborObstruction(profile) {
  * 条件缺一不成立；成立后留下持久标记，普通时间推进不会移除胎儿或新增孩子。
  */
 function isShoulderDystocia(profile, fetus) {
-  if (!isRealisticLabor(profile)) return false;
+  if (!isRealisticLabor(profile) || fetus?.shoulderRelieved) return false;
   if (String(fetus?.embryoType || '胎生') !== '胎生' || !isHeadPresentation(fetus)) return false;
   if (getDescentStage(fetus) !== DESCENT_CROWNED_OUT) return false;
   const pressureCap = getUterinePressureCap(profile);
@@ -4258,6 +4279,8 @@ function updateLaborPain(profile, stage, phase, progress = 0, obstruction = fals
   pain += (4 - clampNumber(base.vitalityLevel, 1, 7, 4)) * toleranceWeight;
   pain += ((clampNumber(base.psyStressLevel, 1, 7, 4) - 4) * 0.5) * toleranceWeight;
   if (obstruction) pain += 1.5;
+  // 助产操作留下的瞬时痛感，每小时减半（见 decayAssistPainBoost）
+  pain += clampNumber(pregnant.assistPainBoost, 0, ASSIST_PAIN_BOOST_CAP, 0);
   pregnant.laborPain = Math.round(clampNumber(pain, 0, 10, 0) * 10) / 10;
   profile.pregnant = pregnant;
   return pregnant.laborPain;
@@ -4982,115 +5005,236 @@ function applyChildbirth(chatState, args) {
   return { applied: true, message: `bsChildbirth applied to ${female}.` };
 }
 
-function applyLaborResistance(profile, female) {
+// ── 产兆前驱的时间位移 ──────────────────────────────────
+/**
+ * 把产兆前驱剩余时间加减 deltaHours（托高 +T/2、促降 -T/2），领头胎儿的位置随之推导。
+ * 真实产程：分娩只能延后、不能取消，累计延后上限为初始时长的 100%。
+ * 非真实产程：累计延后满一个初始时长就退回对应的妊娠阶段。剩余时间归零即进入第一产程。
+ * 回传 { outcome: 'first_stage' | 'regressed' | 'shifted' | 'capped', deltaHours, remainingHours }。
+ */
+function shiftProdromalTime(profile, female, deltaHours) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const notify = profile.notify || {};
-  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  if (String(base.stage || '') !== '产兆前驱') {
-    profile.notify = {
-      ...notify,
-      thirdly: `${female}不在产兆前驱阶段，无法执行抵抗判定`,
-    };
-    return { applied: false, message: `bsMaternalFetalInteraction skipped for ${female}: not in prodromal stage.` };
-  }
-  const realisticLabor = Boolean(profile?.immune?.realisticLabor);
-  const vitality = clampNumber(base.vitality, 0, 9999, 100);
-  const uterinePressure = clampNumber(base.uterinePressure, 0, 9999, 0);
-  const fetalEnergyDrain = clampNumber(pregnant.fetalEnergyDrain, 0, 9999, 0);
-  const birthDifficulty = clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
-  const breedTolerance = clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1);
-  const judgeCount = Math.max(1, Math.round(fetalEnergyDrain + birthDifficulty - breedTolerance));
-  let successCount = 0;
-  let failureCount = 0;
-
-  for (let round = 0; round < judgeCount; round += 1) {
-    const threshold = randomInt(0, Math.max(0, Math.floor(uterinePressure)));
-    const passed = vitality > threshold;
-    if (passed) successCount += 1;
-    else failureCount += 1;
-
-    // 已入盆的胎儿不能再自由旋转：大幅转动只落在还在高位、自己占位的胎儿身上
-    const highFetuses = fetuses.filter((candidate) => isImplantedFetus(candidate) && !getEnclosingHost(candidate, fetuses)
-      && getDescentStage(candidate) < DESCENT_INLET);
-    if (highFetuses.length > 0) {
-      const fetus = highFetuses[randomInt(0, highFetuses.length - 1)];
-      const currentAngle = Number.isFinite(Number(fetus?.tendencyAngle))
-        ? Number(fetus.tendencyAngle)
-        : randomInt(0, 360);
-      fetus.tendencyAngle = wrapAngle(currentAngle + randomInt(-90, 90));
-    }
-
-    // 一轮的总扣量按下降位置分给各胎囊；产兆前驱只会磨薄、不会磨穿
-    distributeAmnionWear(getAmnionSacs(pregnant), Math.max(1, fetalEnergyDrain || 1), 1);
-  }
-
+  const realisticLabor = isRealisticLabor(profile);
   const initialHours = getProdromalInitialHours(profile);
-  const rawDeltaHours = (successCount * 6) - (failureCount * 12);
-  let deltaHours = Math.max(rawDeltaHours, -(initialHours * 0.75));
-
-  // 真实产程：分娩只能延后、不能取消。累计延后上限为初始时长的 100%，
-  // 到顶后再怎么抵抗成功也不会继续往后推，也不会退回妊娠阶段。
   const currentProgress = Math.max(0, clampNumber(pregnant.prodromalDelayProgressHours, 0, 9999, 0));
-  const delayCapped = realisticLabor && deltaHours > 0;
-  if (delayCapped) {
-    const delayCap = initialHours * REALISTIC_PRODROMAL_DELAY_CAP_RATIO;
-    deltaHours = Math.max(0, Math.min(deltaHours, delayCap - currentProgress));
+  let delta = deltaHours;
+  if (realisticLabor && delta > 0) {
+    delta = Math.max(0, Math.min(delta, (initialHours * REALISTIC_PRODROMAL_DELAY_CAP_RATIO) - currentProgress));
+    if (delta <= 0) return { outcome: 'capped', deltaHours: 0, remainingHours: clampNumber(pregnant.prodromalRemainingHours, 0, 9999, initialHours) };
   }
-  const atDelayCap = delayCapped && deltaHours <= 0;
-
-  const remainingHours = clampNumber(pregnant.prodromalRemainingHours, 0, 9999, initialHours) + deltaHours;
-  const progressHours = Math.max(0, currentProgress + deltaHours);
+  const remainingHours = clampNumber(pregnant.prodromalRemainingHours, 0, 9999, initialHours) + delta;
+  const progressHours = Math.max(0, currentProgress + delta);
   pregnant.prodromalRemainingHours = Math.max(0, remainingHours);
   pregnant.prodromalDelayProgressHours = progressHours;
   updateLaborPain(profile, '产兆前驱', null, 1 - (Math.max(0, remainingHours) / initialHours));
-  pregnant.fetuses = fetuses;
-  profile.pregnant = pregnant;
+
   if (remainingHours <= 0) {
     base.stage = '第一产程';
     base.days = 0;
     beginLaborPhase(pregnant, '潜伏期', 0);
     updateLaborPain(profile, '第一产程', '潜伏期', 0);
     clearProdromalState(pregnant);
-    profile.notify = {
-      ...notify,
-      firstly: `${female}进入了第一产程`,
-      secondly: `${female}的产兆前驱时间耗尽，进入分娩`,
-      thirdly: `${female}的抵抗判定为${successCount}次成功、${failureCount}次失败，未能继续延后分娩`,
-    };
-    return { applied: true, message: `bsMaternalFetalInteraction applied to ${female}: prodromal duration exhausted.` };
+    profile.notify = { ...notify, firstly: `${female}进入了第一产程`, secondly: `${female}的产兆前驱提前结束，正式进入分娩` };
+    return { outcome: 'first_stage', deltaHours: delta, remainingHours: 0 };
   }
-
-  // 真实产程下分娩不可取消：即使抵抗再成功，也不会退回妊娠阶段
   if (progressHours >= initialHours && !realisticLabor) {
     const target = derivePregnancyStageState(clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0), 1);
-    const reducedPressure = Math.floor(uterinePressure * 0.25);
     base.stage = target.stage;
     base.days = target.days;
-    base.uterinePressure = reducedPressure;
+    base.uterinePressure = Math.floor(clampNumber(base.uterinePressure, 0, 9999, 0) * 0.25);
     pregnant.laborPhase = null;
     pregnant.laborBirthNumber = 0;
     pregnant.presentingEmbryoId = null;
     pregnant.laborHours = 0;
     pregnant.effectiveLaborHours = 0;
     pregnant.laborPain = 0;
+    pregnant.assistPainBoost = 0;
     clearProdromalState(pregnant);
-    profile.notify = {
-      ...notify,
-      firstly: `${female}进入了${target.stage}`,
-      secondly: `${female}的分娩前兆缓解，回到${target.stage}`,
-      thirdly: `${female}的抵抗判定为${successCount}次成功、${failureCount}次失败，成功延缓分娩`,
-    };
-    return { applied: true, message: `bsMaternalFetalInteraction applied to ${female}: labor resisted.` };
+    profile.notify = { ...notify, firstly: `${female}进入了${target.stage}`, secondly: `${female}的分娩前兆缓解，回到${target.stage}` };
+    return { outcome: 'regressed', deltaHours: delta, remainingHours };
+  }
+  return { outcome: 'shifted', deltaHours: delta, remainingHours };
+}
+
+// ── 助产与明确的胎位操作 ────────────────────────────────
+// 通过检查就必定成功；难度完全由检查条件与活力门槛表现。
+// 托高是跟宫缩对抗，要母体撑得住：活力不足就拒绝，状态完全不变。
+const ASSIST_PAIN_BOOST_CAP = 5;
+const ASSIST_ACTIONS = Object.freeze(['rotate', 'lift', 'descend', 'rupture', 'extract']);
+/** 各动作的瞬时痛感（产程相关阶段）；孕期改为心理压力 × 2 */
+const ASSIST_PAIN = Object.freeze({ lift: 2, descend: 1.5, rotate: 2, extract: 3, rupture: 0.5 });
+/** 活力消耗倍率：托高吃满，顺着宫缩促降与转位减半，外力完成的拉出与破水不扣 */
+const ASSIST_VITALITY_SHARE = Object.freeze({ lift: 1, descend: 0.5, rotate: 0.5, extract: 0, rupture: 0 });
+/** 已入盆或在产道中的胎儿只能小幅转动 */
+const ENGAGED_ROTATION_LIMIT = 30;
+
+function getTendencyAngleLabel(angle) {
+  const normalized = wrapAngle(angle);
+  if (normalized <= 15 || normalized >= 345) return '头位';
+  if (normalized >= 165 && normalized <= 195) return '臀位';
+  if (isTransversePosition(normalized)) return '横位';
+  return `斜位（${Math.round(normalized)}°）`;
+}
+
+function getAssistVitalityCost(profile, fetus, action) {
+  const share = ASSIST_VITALITY_SHARE[action] || 0;
+  if (share <= 0) return 0;
+  const pressureCap = getUterinePressureCap(profile);
+  const pressureRatio = clampNumber(profile?.base?.uterinePressure, 0, pressureCap, 0) / Math.max(pressureCap, 1);
+  const depthFactor = getDescentStage(fetus) >= DESCENT_INLET ? 1.5 : 1.0;
+  return Math.round(10 * clampNumber(fetus?.weight, 0.33, 3.0, 1.0) * (1 + pressureRatio) * depthFactor * share * 10) / 10;
+}
+
+function isLaborRelatedStage(stage) {
+  return stage === '产兆前驱' || LABOR_STAGES.includes(stage);
+}
+
+/**
+ * 操作留下的负担：产程相关阶段叠加瞬时痛感（上限 +5，并立即反映在 laborPain），
+ * 孕期平时不发送 laborPain，改为提高心理压力。
+ */
+function applyAssistStrain(profile, action) {
+  const amount = ASSIST_PAIN[action] || 0;
+  if (amount <= 0) return;
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  if (isLaborRelatedStage(String(base.stage || ''))) {
+    const before = clampNumber(pregnant.assistPainBoost, 0, ASSIST_PAIN_BOOST_CAP, 0);
+    const after = Math.min(ASSIST_PAIN_BOOST_CAP, before + amount);
+    pregnant.assistPainBoost = after;
+    pregnant.laborPain = Math.round(clampNumber(clampNumber(pregnant.laborPain, 0, 10, 0) + (after - before), 0, 10, 0) * 10) / 10;
+  } else {
+    const stressCap = getPsyStressInitByLevel(base.psyStressLevel) * 2;
+    base.psyStress = clampNumber(clampNumber(base.psyStress, 0, 9999, 0) + (amount * 2), 0, stressCap, base.psyStress || 0);
+  }
+}
+
+/** 瞬时痛感随时间消退：每小时减半，太小就归零 */
+function decayAssistPainBoost(profile, deltaMinutes) {
+  const pregnant = profile?.pregnant;
+  if (!pregnant || !(deltaMinutes > 0)) return;
+  const boost = clampNumber(pregnant.assistPainBoost, 0, ASSIST_PAIN_BOOST_CAP, 0) * (0.5 ** (deltaMinutes / 60));
+  pregnant.assistPainBoost = boost < 0.05 ? 0 : Math.round(boost * 100) / 100;
+}
+
+/** 省略 fetusIndex 时的目标：先露胎，否则前驱领头胎儿，否则最深者 */
+function resolveAssistTarget(pregnant, fetusIndex) {
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  if (fetusIndex !== undefined && fetusIndex !== null) return resolveVisibleFetus(fetuses, fetusIndex);
+  const free = getFreeFetuses(pregnant).filter(isFetusKnownToCharacter);
+  return free.find((fetus) => fetus.embryoId === pregnant.presentingEmbryoId)
+    || free.find((fetus) => fetus.embryoId === pregnant.prodromalLeadEmbryoId)
+    || pickDeepestFetus(free);
+}
+
+function applyAssistFetalPosition(chatState, args) {
+  const female = String(args?.female || '').trim();
+  const action = String(args?.action || '').trim();
+  const character = chatState.characters?.[female];
+  const skip = (reason) => ({ applied: false, message: `bsAssistFetalPosition skipped for ${female || '(empty)'}: ${reason}` });
+  if (!female || !character) return skip('unknown character.');
+  if (!ASSIST_ACTIONS.includes(action)) return skip(`unknown action ${action || '(empty)'}.`);
+
+  const next = cloneValue(character);
+  const profile = next.profile || {};
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const stage = String(base.stage || '');
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  if (fetuses.length === 0 || !(PREGNANCY_STAGES.includes(stage) || stage === '产兆前驱' || stage === '第一产程' || stage === '第二产程')) {
+    return skip(`stage ${stage || '(none)'} has no fetus that can be positioned.`);
+  }
+  reconcileFetalDescent(profile);
+  const target = resolveAssistTarget(pregnant, args?.fetusIndex);
+  if (!target) return skip('invalid fetusIndex.');
+  if (target.pendingImplantation) return skip('that embryo is not implanted yet.');
+  if (getEnclosingHost(target, fetuses)) return skip('that fetus is still inside its host fetus and moves with it; act on the host instead.');
+
+  const visible = fetuses.filter(isFetusKnownToCharacter);
+  const label = `第${visible.indexOf(target) + 1}胎`;
+  const depth = getDescentStage(target);
+  const obstruction = getLaborObstruction(profile);
+  const isProdromalLead = stage === '产兆前驱' && target.embryoId === pregnant.prodromalLeadEmbryoId;
+  const shoulderStuck = Boolean(target.shoulderDystocia);
+
+  // 活力门槛：肩难产发生时母体活力已归零，转动肩部是助产者的手法，不向母体收取活力
+  const cost = action === 'rotate' && shoulderStuck ? 0 : getAssistVitalityCost(profile, target, action);
+  const vitality = clampNumber(base.vitality, 0, 9999, 0);
+  const requireVitality = () => (vitality < cost
+    ? skip(`not enough vitality (needs ${cost}, has ${Math.round(vitality * 10) / 10}); the body cannot sustain this maneuver right now.`)
+    : null);
+
+  let summary = '';
+  if (action === 'rotate') {
+    const hasAngle = args?.targetAngle !== undefined && args?.targetAngle !== null && Number.isFinite(Number(args.targetAngle));
+    if (!hasAngle && !shoulderStuck) return skip('rotate needs targetAngle (0/360 head-down, 180 breech, 90/270 transverse).');
+    const current = Number.isFinite(Number(target.tendencyAngle)) ? wrapAngle(target.tendencyAngle) : 0;
+    const desired = hasAngle ? wrapAngle(Number(args.targetAngle)) : current;
+    if (!shoulderStuck && depth >= DESCENT_INLET && angleDistance(current, desired) > ENGAGED_ROTATION_LIMIT) {
+      return skip(`the fetus is already engaged; it can only be corrected by up to ${ENGAGED_ROTATION_LIMIT} degrees.`);
+    }
+    const lacking = requireVitality();
+    if (lacking) return lacking;
+    target.tendencyAngle = desired;
+    if (shoulderStuck) {
+      delete target.shoulderDystocia;
+      target.shoulderRelieved = true;
+      summary = `${female}的${label}经转动解开了卡住的肩部`;
+    } else {
+      summary = `${female}的${label}被转到${getTendencyAngleLabel(desired)}`;
+    }
+  } else if (action === 'lift') {
+    if (depth >= 1) return skip('the fetus is already in the birth canal and cannot be pushed back.');
+    const inletConflict = obstruction && (obstruction.type === 'inlet_crowding' || obstruction.type === 'twin_lock')
+      && obstruction.embryoIds.includes(target.embryoId);
+    if ((stage === '第一产程' || stage === '第二产程') && depth >= DESCENT_INLET && !inletConflict) {
+      return skip('during labor only a fetus stuck together with another at the pelvic inlet can be pushed back.');
+    }
+    if (!isProdromalLead && depth <= DESCENT_TOP) return skip('the fetus is already at the top of the uterus.');
+    const lacking = requireVitality();
+    if (lacking) return lacking;
+    if (isProdromalLead) {
+      const shift = shiftProdromalTime(profile, female, getProdromalInitialHours(profile) / 2);
+      if (shift.outcome === 'capped') return skip('realistic labor has already been delayed as far as it can go; labor can no longer be postponed.');
+      summary = shift.outcome === 'regressed'
+        ? `${female}的${label}被托回高处，分娩前兆随之平息`
+        : `${female}的${label}被向上托回，产兆前驱延后约${Math.round(shift.deltaHours)}小时（剩余约${Math.ceil(shift.remainingHours)}小时）`;
+    } else {
+      target.descentStage = depth - 1;
+      delete target.inletIntruder;
+      summary = `${female}的${label}被向上托回`;
+    }
+  } else if (action === 'descend') {
+    if (stage === '第一产程' || stage === '第二产程') return skip('during labor descent is driven by contractions; use time passing instead.');
+    if (!isProdromalLead && depth >= getDescentCap(stage === '产兆前驱' ? '孕晚期' : stage)) {
+      return skip(`the fetus cannot descend any further in ${stage}.`);
+    }
+    const lacking = requireVitality();
+    if (lacking) return lacking;
+    if (isProdromalLead) {
+      const shift = shiftProdromalTime(profile, female, -getProdromalInitialHours(profile) / 2);
+      summary = shift.outcome === 'first_stage'
+        ? `${female}的${label}被推下入盆，分娩正式开始`
+        : `${female}的${label}被向下推送，产兆前驱缩短约${Math.round(-shift.deltaHours)}小时（剩余约${Math.ceil(shift.remainingHours)}小时）`;
+    } else {
+      target.descentStage = depth + 1;
+      summary = `${female}的${label}被向下推送`;
+    }
+  } else {
+    return skip(`action ${action} is not available yet.`);
   }
 
-  profile.notify = {
-    ...notify,
-    thirdly: atDelayCap
-      ? `${female}的抵抗判定为${successCount}次成功、${failureCount}次失败，但分娩已无法再延后，剩余约${Math.ceil(remainingHours)}小时`
-      : `${female}的抵抗判定为${successCount}次成功、${failureCount}次失败，产兆前驱时间变动${deltaHours >= 0 ? '+' : ''}${deltaHours.toFixed(1)}小时，剩余约${Math.ceil(remainingHours)}小时`,
-  };
-  return { applied: true, message: `bsMaternalFetalInteraction applied to ${female}: prodromal duration adjusted.` };
+  if (cost > 0) base.vitality = Math.max(0, vitality - cost);
+  applyAssistStrain(profile, action);
+  reconcileFetalDescent(profile);
+  profile.base = base;
+  profile.pregnant = pregnant;
+  profile.notify = { ...(profile.notify || {}), secondly: summary };
+  next.profile = profile;
+  chatState.characters[female] = syncCharacterStageFromProfile(next);
+  return { applied: true, message: `bsAssistFetalPosition ${action} applied to ${female}.` };
 }
 
 function applyMaternalFetalInteraction(chatState, args) {
@@ -5121,19 +5265,6 @@ function applyMaternalFetalInteraction(chatState, args) {
   if (interactionCooldown.maternalFetalInteractionUsed) {
     return { applied: false, message: `bsMaternalFetalInteraction skipped for ${female}: already changed during this story hour.` };
   }
-  if (direction === 'maternal' && stage === '产兆前驱') {
-    const result = applyLaborResistance(profile, female);
-    if (result.applied) {
-      profile.cooldown = {
-        ...(profile.cooldown || {}),
-        maternalFetalInteractionUsed: true,
-      };
-    }
-    next.profile = profile;
-    chatState.characters[female] = syncCharacterStageFromProfile(next);
-    return result;
-  }
-
   const pregnant = profile.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   if (fetuses.length === 0) {
@@ -5382,6 +5513,7 @@ function applyTimeToCharacter(character, tick) {
   const oldStage = stage;
 
   if (deltaDays <= 0) return { character: next, stageChanged: false, oldStage, newStage: stage };
+  decayAssistPainBoost(profile, tick.deltaMinutes);
 
   processSimpleConception(profile, tick, notify, next.name);
   stage = String(base.stage || stage);
@@ -6953,6 +7085,7 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsWombReturn') return applyWombReturn(chatState, args);
   if (name === 'bsChildbirth') return applyChildbirth(chatState, args);
   if (name === 'bsMaternalFetalInteraction') return applyMaternalFetalInteraction(chatState, args);
+  if (name === 'bsAssistFetalPosition') return applyAssistFetalPosition(chatState, args);
   if (name === 'bsDebugInjectPregnancy') return applyDebugInjectPregnancy(chatState, args);
   if (name === 'bsDebugClearContainers') return applyDebugClearContainers(chatState, args);
   if (name === 'bsDebugSetGestationModifier') return applyDebugSetGestationModifier(chatState, args);

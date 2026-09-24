@@ -104,7 +104,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '跨日、重大事件或 notify 提醒时，可用 bsWriteDiary 为角色追加主观日记。',
   '月经阶段、排卵期、假孕期切换用 bsSetMenstrualPhases；不要用它覆盖正在进行的受精、真妊娠或产程。',
   '流产用 bsAbortion；立即结束分娩用 bsChildbirth；角色在场状态变化用 bsSetCharacterPresence，参数必须为 female 和 isPresent（布尔值 true/false，不要使用 isHere）。角色明确回到当前场景、重新同行或参与当前互动时应设为 true；明确离开、失联或转为幕外时才设为 false。',
-  '母胎互动用 bsMaternalFetalInteraction；每名角色在每个新小时内仅允许一次成功的母胎互动变化，重复调用会被跳过。direction=fetal 时须传 change，表示胎儿对母体的亲近或排斥并改变 affinity。direction=maternal 时不传 change，表示母体安抚胎儿，系统随机判定 affinity 变化。母胎互动不影响营养。若处于产兆前驱则表示分娩抵抗。',
+  '母胎互动用 bsMaternalFetalInteraction；每名角色在每个新小时内仅允许一次成功的母胎互动变化，重复调用会被跳过。direction=fetal 时须传 change，表示胎儿对母体的亲近或排斥并改变 affinity。direction=maternal 时不传 change，表示母体安抚胎儿，系统随机判定 affinity 变化。母胎互动不影响营养，也不改变胎位或产程。剧情明确出现人工胎位操作（转位、托高延后分娩、推送）时用 bsAssistFetalPosition。',
   '不要编造怀孕天数、胎数、流产、分娩或其他高影响事件。',
 ].join('\n');
 
