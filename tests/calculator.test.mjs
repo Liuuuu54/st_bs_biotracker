@@ -95,17 +95,17 @@ test('implantation calculator reports deadline and vitality chance', () => {
   assert.equal(calculateRaceImplantationDays('人类'), 6);
 });
 
-test('offspring calculator keeps singleton clutches fixed and previews prolific pure species', () => {
+test('offspring calculator keeps companion-free species at 0 and previews prolific pure species', () => {
   const human = calculateOffspringPreview({ eggRace: '人类', spermRace: '人类', spermValue: 999 });
-  assert.deepEqual(human.clutchRange, { min: 1, typical: 1, max: 1 });
+  assert.deepEqual(human.companionRange, { min: 0, typical: 0, max: 0 });
 
   const tentacle = calculateOffspringPreview({ eggRace: '触手怪', spermRace: '触手怪', spermValue: 20 });
   assert.equal(tentacle.fetusRace, '触手怪');
-  assert.equal(tentacle.clutchSizeMean, 10);
-  assert.deepEqual(tentacle.clutchRange, { min: 9, typical: 10, max: 11 });
+  assert.equal(tentacle.companionEggsMean, 9);
+  assert.deepEqual(tentacle.companionRange, { min: 8, typical: 9, max: 10 });
 
   const dog = calculateOffspringPreview({ eggRace: '狗头人', spermRace: '狗头人', spermValue: 20 });
-  assert.deepEqual(dog.clutchRange, { min: 2, typical: 2, max: 2 }, 'range mirrors rounding of [0.9, 1.1)');
+  assert.deepEqual(dog.companionRange, { min: 1, typical: 1, max: 1 }, 'range mirrors rounding of [0.9, 1.1)');
   assert.equal(calculateOffspringPreview({ eggRace: '史萊姆', spermRace: '史萊姆' }).genderRatio, null);
 
   const hybrid = calculateOffspringPreview({

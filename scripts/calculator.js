@@ -1,13 +1,13 @@
 import {
   deriveFetusRace,
-  getClutchSizeMeanByRace,
+  getCompanionEggsMeanByRace,
   getDerivedTypeInheritanceProfile,
   getEmbryoTypeByRace,
   getFetusInheritanceTag,
   getMergedRacePhysiologyProfile,
   getRaceComponents,
   getRaceInheritanceMode,
-  getSpermDoseClutchMultiplier,
+  getSpermDoseCompanionMultiplier,
   getSpermDoseDifficultyBonus,
 } from './race_config.js';
 import { MENSTRUAL_STAGE_DAYS, MENSTRUAL_STAGES } from './stage_config.js';
@@ -170,16 +170,18 @@ export function calculateOffspringPreview({
 } = {}) {
   const fetusRace = deriveFetusRace(eggRace, spermRace);
   const embryoType = getEmbryoTypeByRace(fetusRace);
-  const clutchSizeMean = getClutchSizeMeanByRace(fetusRace);
-  const clutchMultiplier = getSpermDoseClutchMultiplier(spermValue);
-  const adjustedMean = clutchSizeMean <= 1 ? 1 : clutchSizeMean * clutchMultiplier;
-  const clutchRange = clutchSizeMean <= 1
-    ? { min: 1, typical: 1, max: 1 }
+  // 伴生卵在「整群＝伴生卵＋1」的尺度上乘倍率与波动，取整后再减一，与正式抽取一致
+  const companionEggsMean = getCompanionEggsMeanByRace(fetusRace);
+  const companionMultiplier = getSpermDoseCompanionMultiplier(spermValue);
+  const adjustedClutch = (companionEggsMean + 1) * companionMultiplier;
+  const toEggs = (clutch) => Math.max(0, Math.min(12499, clutch - 1));
+  const companionRange = companionEggsMean <= 0
+    ? { min: 0, typical: 0, max: 0 }
     : {
-      min: Math.max(1, Math.min(12500, Math.round(adjustedMean * 0.9))),
-      typical: Math.max(1, Math.min(12500, Math.round(adjustedMean))),
+      min: toEggs(Math.round(adjustedClutch * 0.9)),
+      typical: toEggs(Math.round(adjustedClutch)),
       // 正式抽取为 [0.9, 1.1)，上界不含 1.1；这里列出实际可抽到的最大整数。
-      max: Math.max(1, Math.min(12500, Math.ceil((adjustedMean * 1.1) + 0.5) - 1)),
+      max: toEggs(Math.ceil((adjustedClutch * 1.1) + 0.5) - 1),
     };
   const profile = getMergedRacePhysiologyProfile(fetusRace) || {};
   const eggProfile = getMergedRacePhysiologyProfile(eggRace) || {};
@@ -237,10 +239,9 @@ export function calculateOffspringPreview({
     conceptionStage,
     breedWeightRatio,
     fetalWeightRange,
-    clutchSizeMean,
-    clutchMultiplier,
-    adjustedClutchMean: adjustedMean,
-    clutchRange,
+    companionEggsMean,
+    companionMultiplier,
+    companionRange,
   };
 }
 

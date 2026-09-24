@@ -54,7 +54,7 @@ import {
   getDerivedTypeMetabolismExemptions,
   getEmbryoTypeByRace,
   getMergedRacePhysiologyProfile,
-  rollClutchSizeForRace,
+  rollCompanionEggCount,
   parseRaceDescriptor,
   getRaceDescriptorComponents,
 } from './race_config.js';
@@ -390,7 +390,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     name: 'bsAddSperm',
     description: '记录可受孕生殖道内的插入、精液沉积与拔出；口交、肛交、体外射精、隔着保险套、手淫或单纯体表接触一律不要调用。'
       + 'action=insert／withdraw 时 amount=0；只有 insert 后才能以 action=deposit 沉积正数精液，沉积后若要再次射精须重新 insert。不同来源 insert 会直接交棒。'
-      + 'amount 建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；当下有效量越高，本次受孕越容易且高产物种的卵群可能越大，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
+      + 'amount 建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
       + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
     input_schema: {
       type: 'object',
@@ -483,7 +483,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + '胚胎种族依遗传母方推导而非承载者，所以虫母的卵放进人类宿主仍是虫族血统。'
       + 'race 与 fatherRace 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔。母系 derivedType 永远来自承载者；父系优先取 fatherRace，未写时才取 race。'
       + 'provider 若尚未注册，用 race 指明遗传母方种族；父方种族预设与遗传母方同族，跨种族时用 fatherRace 指明。'
-      + 'count 只表示要建立几张胎儿卡、也就是几名可能写入族谱的有效后代候选，绝不表示故事中植入了几枚卵。一个十枚卵但仅有一名有效后代的卵群必须传 count=1；该卡的 clutchSize 由系统依种族另行决定。'
+      + 'count 只表示要建立几张胎儿卡、也就是几名可能写入族谱的有效后代候选，绝不表示故事中植入了几枚卵。一个十枚卵但仅有一名有效后代的卵群必须传 count=1；其余九枚是该卡的伴生卵（companionEggCount），由系统依种族另行决定。'
       + '工具加入的是尚未着床的受精卵，可在同一着床窗口重复调用；第一颗会启动共用 fertilizationDays，之后由 bsPassedTime 推进并统一着床。孕早期且仍在异期复孕窗口时也可追加，此时新胎同时标记代孕与异期复孕；其余妊娠阶段不可加入。自然受孕请勿使用本工具。',
     input_schema: {
       type: 'object',
@@ -495,7 +495,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
           type: 'integer',
           minimum: 1,
           maximum: 50,
-          description: '建立的胎儿卡／有效后代候选数，不是卵群中的卵枚数。一般一个卵群传 1；clutchSize 由系统另算。',
+          description: '建立的胎儿卡／有效后代候选数，不是卵的枚数。一般一个卵群传 1；伴生卵（companionEggCount）由系统另算。',
         },
         race: { type: 'string' },
         fatherRace: { type: 'string' },
@@ -941,8 +941,8 @@ function applyWombReturn(chatState, args) {
     fatherDerivedType,
     gender: deriveFetusGender(fetusRace),
     embryoType: deriveFetusEmbryoType(fetusRace),
-    // 回归者本身就是唯一的有效个体，不套用物种高产卵群。
-    clutchSize: 1,
+    // 回归者本身就是唯一的有效个体，没有伴生卵。
+    companionEggCount: 0,
     // 刚进去时是一个成人的体积，之后随回归期线性回落到 1.0
     weight: WOMB_RETURN_PEAK_WEIGHT,
     tendencyAngle: randomInt(0, 360),
@@ -1282,11 +1282,27 @@ function updateDerivedTypeProgress(profile, tick) {
   profile.pregnant = pregnant;
 }
 
+/** 这一胎的伴生卵数；0 表示没有 */
+function getCompanionEggCount(fetus) {
+  return Math.max(0, Math.floor(Number(fetus?.companionEggCount) || 0));
+}
+
+/**
+ * 同卵分裂不是新的独立受精，不重新抽伴生卵：把原卡的数量以整数平分给整组，
+ * 余数给排在前面的，总和保持不变。
+ */
+function shareCompanionEggs(group) {
+  const total = group.reduce((sum, fetus) => sum + getCompanionEggCount(fetus), 0);
+  const each = Math.floor(total / group.length);
+  group.forEach((fetus, index) => { fetus.companionEggCount = each + (index < total % group.length ? 1 : 0); });
+}
+
 function cloneIdenticalFetus(fetus) {
   return {
     ...fetus,
     embryoId: null,
     nutrition: 0,
+    companionEggCount: 0,
     fusionCheckedWith: [],
     providerSources: Array.isArray(fetus?.providerSources) ? [...fetus.providerSources] : undefined,
     chimera: fetus?.chimera ? cloneValue(fetus.chimera) : undefined,
@@ -1441,14 +1457,8 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
     fatherDerivedType,
     gender,
     embryoType,
-    // 胎生／胎转卵生的硬规则优先；其余嵌合保留较大的既成卵群，不重新抽签。
-    clutchSize: embryoType === '胎生' || embryoType === '胎转卵生'
-      ? 1
-      : Math.max(
-        1,
-        Math.floor(Number(fetusA?.clutchSize) || 1),
-        Math.floor(Number(fetusB?.clutchSize) || 1),
-      ),
+    // 嵌合不是新的独立受精：不重新抽签，承接两边伴生卵的总和
+    companionEggCount: getCompanionEggCount(fetusA) + getCompanionEggCount(fetusB),
     weight: (clampNumber(fetusA?.weight, 0.33, 3, 1) + clampNumber(fetusB?.weight, 0.33, 3, 1)) / 2,
     nutrition: (Number(fetusA?.nutrition) || 0) + (Number(fetusB?.nutrition) || 0),
     tendencyAngle: randomInt(0, 360),
@@ -1581,13 +1591,16 @@ function applyIdenticalSplit(profile, batch = null) {
       baseFetus.identicalGroup = baseFetus.embryoId;
       baseFetus.tags = sanitizeFetusTagList([...(baseFetus.tags || []), 'identical']);
     }
+    const group = [baseFetus];
     while (targetCount > 1) {
       const clone = cloneIdenticalFetus(baseFetus);
       clone.embryoId = allocateEmbryoId(pregnant);
       clone.identicalGroup = baseFetus.identicalGroup;
       result.push(clone);
+      group.push(clone);
       targetCount -= 1;
     }
+    if (group.length > 1) shareCompanionEggs(group);
   }
   pregnant.fetuses = result;
   pregnant.fetusesCount = result.length;
@@ -1608,6 +1621,7 @@ function forceIdenticalTwinSplit(profile, batch = null) {
     const twin = cloneIdenticalFetus(fetus);
     twin.embryoId = allocateEmbryoId(pregnant);
     twin.identicalGroup = fetus.identicalGroup;
+    shareCompanionEggs([fetus, twin]);
     result.push(twin);
   }
   pregnant.fetuses = result;
@@ -1645,7 +1659,7 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     gender,
     embryoType: deriveFetusEmbryoType(fetusRace),
     // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
-    clutchSize: rollClutchSizeForRace(fetusRace, Math.random, sperm?.value),
+    companionEggCount: rollCompanionEggCount(fetusRace, Math.random, sperm?.value),
     weight: getConceptionWeight(cycleStage, gender, weightRatio),
     tendencyAngle: randomInt(0, 360),
     affinity: derivedSeed.affinity,
@@ -3462,8 +3476,8 @@ function appendChildrenFromFetuses(profile, fetuses) {
       derivedType: childDerivedType,
       age: 0,
       birthWeightRatio: clampNumber(fetus?.weight, 0.33, 3.0, 1.0),
-      // 卵群只留下出生背景；无论几枚，祖谱仍只新增这一名有效后代。
-      birthClutchSize: Math.max(1, Math.floor(Number(fetus?.clutchSize) || 1)),
+      // 伴生卵只留下出生背景；无论几枚，祖谱仍只新增这一名有效后代。
+      birthCompanionEggCount: getCompanionEggCount(fetus),
       birthAffinity: clampNumber(fetus?.affinity, -50, 50, 0),
       talents: normalizeTalentList(fetus?.talents ?? fetus?.inheritedTalents),
     });
@@ -3544,11 +3558,8 @@ function applyChildbirthInternal(profile, female, isNatural) {
   const experience = profile.experience || {};
   const runtime = profile.__runtimeRef || null;
   const remainingFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((item) => ({ ...item })) : [];
-  const clutchEggs = remainingFetuses.reduce(
-    (sum, fetus) => sum + Math.max(1, Math.floor(Number(fetus?.clutchSize) || 1)),
-    0,
-  );
-  const hasMultipleEggClutch = clutchEggs > remainingFetuses.length;
+  const companionEggs = remainingFetuses.reduce((sum, fetus) => sum + getCompanionEggCount(fetus), 0);
+  const companionNote = companionEggs > 0 ? `，并排出${companionEggs}枚伴生卵` : '';
   if (remainingFetuses.length > 0) appendChildrenFromFetuses(profile, remainingFetuses);
   clearPregnancyState(profile);
   if (runtime) restorePregnancyPhysiology(profile, runtime);
@@ -3562,12 +3573,8 @@ function applyChildbirthInternal(profile, female, isNatural) {
     firstly: `${female}进入了产后恢复`,
     secondly: remainingFetuses.length > 0
       ? (isNatural
-        ? (hasMultipleEggClutch
-          ? `${female}自然分娩，产下合计${clutchEggs}枚卵，记录${remainingFetuses.length}名有效后代`
-          : `${female}自然分娩，生下了${remainingFetuses.length}个孩子`)
-        : (hasMultipleEggClutch
-          ? `${female}通过手术分娩，取出合计${clutchEggs}枚卵，记录${remainingFetuses.length}名有效后代`
-          : `${female}通过手术分娩，生下了${remainingFetuses.length}个孩子`))
+        ? `${female}自然分娩，生下了${remainingFetuses.length}个孩子${companionNote}`
+        : `${female}通过手术分娩，生下了${remainingFetuses.length}个孩子${companionNote}`)
       : (isNatural
         ? `${female}完成了自然分娩，进入产后恢复`
         : `${female}完成了手术分娩，进入产后恢复`),
@@ -4100,7 +4107,8 @@ function deliverPresentingFetus(profile, female, notify, { lead = '' } = {}) {
   if (born.length === 0) return false;
   const father = String(born[0]?.fathers || '未知');
   const gender = String(born[0]?.gender || '未知');
-  const enclosedNote = describeEnclosedBirths(born);
+  const companionEggs = born.reduce((sum, fetus) => sum + getCompanionEggCount(fetus), 0);
+  const enclosedNote = `${describeEnclosedBirths(born)}${companionEggs > 0 ? `，同时排出${companionEggs}枚伴生卵` : ''}`;
   appendChildrenFromFetuses(profile, born);
   updateFetalEnergyDrain(profile);
   const remaining = pregnant.fetuses;

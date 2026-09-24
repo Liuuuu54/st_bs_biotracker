@@ -18,7 +18,7 @@ import {
   getRaceComponents,
   getRaceDescriptorComponents,
   parseRaceDescriptor,
-  rollClutchSizeForRace,
+  rollCompanionEggCount,
 } from './race_config.js';
 import {
   DEFAULT_WARDROBE_PREP_PROMPT,
@@ -589,7 +589,7 @@ async function buildRegistryPayload(ctx, settings, chatState, options = {}) {
       derivedType: options.sourceChildContext.child?.derivedType ?? null,
       age: options.sourceChildContext.child?.age ?? null,
       birthWeightRatio: options.sourceChildContext.child?.birthWeightRatio ?? null,
-      birthClutchSize: options.sourceChildContext.child?.birthClutchSize ?? null,
+      birthCompanionEggCount: options.sourceChildContext.child?.birthCompanionEggCount ?? null,
       birthAffinity: options.sourceChildContext.child?.birthAffinity ?? null,
       talents: normalizeTalentList(options.sourceChildContext.child?.talents).map((talent) => {
         const definition = resolveSkillDefinition(chatState.skillCatalog, talent.skillId);
@@ -837,8 +837,8 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- pregnant.pregnantDays: 这次妊娠的孕龄天数，等同产科从末次月经/本族等价周期起点计算的孕周天数；若资料写“孕8周/怀孕8周”填 56，若明确写“受孕后8周/胚胎发育8周”，需再加上本族等价排卵前偏移。',
     '- 不要填写 pregnant.effectivePregnantDays；系统会依据孕龄、角色种族妊娠速度与 bio.gestationModifierMultiplier 自动换算有效妊娠天数。',
     '- pregnant.fetusesCount: 这次怀孕的怀胎数',
-    '- pregnant.fetuses: 每个胎儿包含 fathers、provider、race、gender、embryoType；也可填写 clutchSize、weight、tendencyAngle、affinity',
-    '- clutchSize: 一张胎儿卡代表的整群卵／幼体数量，不是 fetusesCount。整群只有该卡对应的一名个体能成功长大繁衍，所以不要按卵数建立多张胎儿卡或多个孩子；不确定时省略，由系统依种族抽取。胎生与胎转卵生恒为 1。',
+    '- pregnant.fetuses: 每个胎儿包含 fathers、provider、race、gender、embryoType；也可填写 companionEggCount、weight、tendencyAngle、affinity',
+    '- companionEggCount: 这一胎伴随的背景卵数量（伴生卵），它们不会发育，也不建立胎儿卡或孩子；不是 fetusesCount。一整群十枚卵、只有一名能长大时，就是一张胎儿卡加 9 枚伴生卵。不确定时省略，由系统依种族抽取。胎生与胎转卵生恒为 0。',
     '- 胎儿可带 tags 标注特殊来历，只接受这几个：identical（同卵）、superfetation（异期复孕）、nested（孕中孕）、rebirth（胎内回归）。代孕不必标——给了 provider 就会自动识别。写不出对应支撑栏位的标签会被撤销，宁可不标也不要留一个指向虚空的关系。',
     '- 嵌合体不必标 tags——给了 chimera 就会自动识别。chimera = { sourceCount: 融合前的受精卵数, fatherSources: [父方名字…], maternalSources: [遗传母方名字…], genderSources: [各来源的性别…] }；父方与母方名字加起来不足两个会被撤销，因为那不成其为嵌合。',
     '- identical：同卵的几胎都标上即可，系统会自动把它们归为同一组；只标一胎会被撤销。',
@@ -914,7 +914,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '          "race": "string|null",',
     '          "gender": "string|null",',
     '          "embryoType": "string|null",',
-    '          "clutchSize": 1,',
+    '          "companionEggCount": 0,',
     '          "weight": 1.0,',
     '          "tendencyAngle": 0,',
     '          "affinity": 0',
@@ -1088,9 +1088,9 @@ function sanitizeChildren(value) {
         fatherDerivedType: item.fatherDerivedType ?? null,
         age: item.age ?? null,
         birthWeightRatio: Number.isFinite(Number(item.birthWeightRatio)) ? clampNumber(item.birthWeightRatio, 0.33, 3.0, 1.0) : null,
-        birthClutchSize: Number.isFinite(Number(item.birthClutchSize))
-          ? Math.max(1, Math.min(12500, Math.round(Number(item.birthClutchSize))))
-          : 1,
+        birthCompanionEggCount: Number.isFinite(Number(item.birthCompanionEggCount))
+          ? Math.max(0, Math.min(12499, Math.round(Number(item.birthCompanionEggCount))))
+          : 0,
         birthAffinity: Number.isFinite(Number(item.birthAffinity)) ? clampNumber(item.birthAffinity, -50, 50, 0) : null,
         id: item.id ?? createChildId(),
         registeredAs: item.registeredAs ?? null,
@@ -1137,8 +1137,8 @@ function sanitizePregnant(value) {
           fatherDerivedType: item.fatherDerivedType ?? parsed.derivedType ?? null,
           gender: item.gender ?? null,
           embryoType: item.embryoType ?? null,
-          clutchSize: Number.isFinite(Number(item.clutchSize))
-            ? Math.max(1, Math.min(12500, Math.round(Number(item.clutchSize))))
+          companionEggCount: Number.isFinite(Number(item.companionEggCount))
+            ? Math.max(0, Math.min(12499, Math.round(Number(item.companionEggCount))))
             : undefined,
           // 嵌合体：多套来源无法从别处推导，模型不给就等于没有这回事
           chimera: sanitizeChimera(item.chimera),
@@ -1371,17 +1371,17 @@ function normalizeRegisteredPregnancy(profile) {
       ? (explicitFatherRace === motherRace ? motherRace : deriveRegisteredFetusRace(motherRace, explicitFatherRace))
       : (fetus?.race ? parseRaceDescriptor(fetus.race).race || motherRace : motherRace);
     const embryoType = fetus?.embryoType || getEmbryoTypeByRace(fetusRace);
-    const clutchSize = embryoType === '胎生' || embryoType === '胎转卵生'
-      ? 1
-      : (Number.isFinite(Number(fetus?.clutchSize))
-        ? Math.max(1, Math.min(12500, Math.round(Number(fetus.clutchSize))))
-        : rollClutchSizeForRace(fetusRace));
+    const companionEggCount = embryoType === '胎生' || embryoType === '胎转卵生'
+      ? 0
+      : (Number.isFinite(Number(fetus?.companionEggCount))
+        ? Math.max(0, Math.min(12499, Math.round(Number(fetus.companionEggCount))))
+        : rollCompanionEggCount(fetusRace));
     return {
       ...fetus,
       race: fetusRace,
       fatherRace,
       embryoType,
-      clutchSize,
+      companionEggCount,
       weight: Number.isFinite(Number(fetus?.weight)) ? clampNumber(fetus.weight, 0.33, 3.0, 1.0) : 1.0,
       tendencyAngle: Number.isFinite(Number(fetus?.tendencyAngle)) ? clampNumber(fetus.tendencyAngle, 0, 360, 0) : randomInt(0, 360),
       affinity: Number.isFinite(Number(fetus?.affinity)) ? clampNumber(fetus.affinity, -50, 50, 0) : 0,

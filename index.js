@@ -266,12 +266,12 @@ const RACE_PHYSIOLOGY_FIELD_LABELS = Object.freeze({
   impregnationDifficulty: '受精难度',
   orgasmOvulationAmount: '额外排卵倾向',
   identicalProbability: '同卵多胎概率(%)',
-  clutchSizeMean: '典型卵群数量',
+  companionEggsMean: '典型伴生卵数量',
   genderRatio: '男胎比例',
 });
 const RACE_PHYSIOLOGY_FIELD_HINTS = Object.freeze({
   genderRatio: '0-100；空白=双性，-1=无性',
-  clutchSizeMean: '一张胎儿卡代表的典型卵数；1=单卵群',
+  companionEggsMean: '每名有效后代伴随的背景卵数；0=没有伴生卵',
 });
 const EDITABLE_RACE_PHYSIOLOGY_FIELDS = Object.freeze(RACE_PHYSIOLOGY_FIELDS.filter((field) => field !== 'recoveryDays'));
 const RACE_INTRODUCTION_LABEL = '物种短敘述';
@@ -973,7 +973,7 @@ function syncRegisterChildSourceFields(ctx) {
     });
     const birthInfo = [
       Number.isFinite(Number(child.birthWeightRatio)) ? `出生胎重倍率 ${formatFixedDisplay(child.birthWeightRatio, 2)}` : '',
-      Number(child.birthClutchSize) > 1 ? `出生卵群 ${Math.round(Number(child.birthClutchSize))}枚（有效后代 1）` : '',
+      Number(child.birthCompanionEggCount) > 0 ? `出生伴生卵 ${Math.round(Number(child.birthCompanionEggCount))}枚` : '',
       Number.isFinite(Number(child.birthAffinity)) ? `出生亲和 ${formatIntegerDisplay(child.birthAffinity)}` : '',
     ].filter(Boolean);
     summary.textContent = `${source.motherName}的孩子 ${source.childIndex + 1}；${[...birthInfo, `天赋：${talentNames.join('、') || '无'}`].join('；')}`;
@@ -1661,12 +1661,11 @@ function scrollEncyclopediaToTop() {
 }
 
 function getRacePhysiologyFieldStep(field) {
-  if (field === 'orgasmOvulationAmount' || field === 'genderRatio' || field === 'clutchSizeMean') return '1';
+  if (field === 'orgasmOvulationAmount' || field === 'genderRatio' || field === 'companionEggsMean') return '1';
   return '0.01';
 }
 
 function getRacePhysiologyFieldMin(field) {
-  if (field === 'clutchSizeMean') return '1';
   return field === 'genderRatio' ? '-1' : '0';
 }
 
@@ -1770,7 +1769,7 @@ function renderRacePhysiologyEditor(race) {
     input.min = getRacePhysiologyFieldMin(field);
     if (field === 'genderRatio') input.max = '100';
     if (field === 'identicalProbability') input.max = '100';
-    if (field === 'clutchSizeMean') input.max = '10000';
+    if (field === 'companionEggsMean') input.max = '9999';
     input.dataset.racePhysiologyField = field;
     input.value = getRacePhysiologyInputValue(race, field);
     input.placeholder = RACE_PHYSIOLOGY_FIELD_HINTS[field] || '';
@@ -1811,7 +1810,7 @@ function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
     else {
       const num = Number(input.value);
       if (!Number.isFinite(num)) continue;
-      value = (field === 'orgasmOvulationAmount' || field === 'genderRatio' || field === 'clutchSizeMean') ? Math.round(num) : num;
+      value = (field === 'orgasmOvulationAmount' || field === 'genderRatio' || field === 'companionEggsMean') ? Math.round(num) : num;
     }
     const baseValue = builtin[field];
     const changed = value === null ? baseValue !== null : Math.abs(Number(value) - Number(baseValue)) > 0.0001;
@@ -3825,7 +3824,7 @@ function renderTrackPregnancy(viewModel) {
           }
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">父方种族</span><span class="bs-bt-track-list-value">${escapeHtml(formatRaceLabel(item?.fatherRace, item?.fatherDerivedType))}</span></div>
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">胚型</span><span class="bs-bt-track-list-value">${escapeHtml(item?.embryoType || '未知')}</span></div>
-                ${Number(item?.clutchSize) > 1 ? `<div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">卵群</span><span class="bs-bt-track-list-value">${escapeHtml(`${Math.round(Number(item.clutchSize))} 枚（有效后代 1）`)}</span></div>` : ''}
+                ${Number(item?.companionEggCount) > 0 ? `<div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">伴生卵</span><span class="bs-bt-track-list-value">${escapeHtml(`${Math.round(Number(item.companionEggCount))} 枚`)}</span></div>` : ''}
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">性别</span><span class="bs-bt-track-list-value">${escapeHtml(item?.gender || '未知')}</span></div>
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">体重倍率</span><span class="bs-bt-track-list-value">${escapeHtml(formatFixedDisplay(item?.weight, 2))}</span></div>
                 <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">胎位角</span><span class="bs-bt-track-list-value">${escapeHtml(`${formatIntegerDisplay(item?.tendencyAngle)}°`)}</span></div>

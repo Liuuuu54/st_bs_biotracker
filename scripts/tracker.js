@@ -898,6 +898,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
           ...visibleFetus,
           ...(LABOR_STAGES.includes(String(base.stage || '')) && fetus.embryoId === pregnant.presentingEmbryoId ? { presenting: true } : {}),
           positionText: describeFetalPosition(pregnant, fetus),
+          // 没有伴生卵就不送，省 token 也免得模型以为要描写 0 枚卵
+          companionEggCount: Number(fetus?.companionEggCount) > 0 ? Number(fetus.companionEggCount) : undefined,
           ...(amnion.tags.has(fetus) ? { amnion: amnion.tags.get(fetus) } : {}),
           tendencyAngleText: getTendencyAngleText(fetus?.tendencyAngle),
           race: undefined,

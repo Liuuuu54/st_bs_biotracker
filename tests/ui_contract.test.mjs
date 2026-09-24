@@ -58,7 +58,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(html, /id="bs-bt-race-palette-modal"[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(html, /class="bs-bt-calculator-rule-note">硬规则：/);
   assert.doesNotMatch(calculatorUi, /lines\.push\('前提：/);
-  assert.match(calculatorUi, /if \(result\.clutchSizeMean > 1\)/);
+  assert.match(calculatorUi, /if \(result\.companionEggsMean > 0\)/);
   assert.match(calculatorUi, /raceAnchor\.dataset\.racePaletteAnchor/);
   assert.match(calculatorUi, /heading\.append\(order, amountLabel\)/);
   assert.match(calculatorUi, /controls\.append\(racePicker, input, remove\)/);

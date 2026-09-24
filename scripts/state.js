@@ -437,6 +437,8 @@ export function normalizeCharacterPsychologyState(characterState) {
     delete pregnant.laborFetusIndex;
     // 羊膜改为每胎各自的 fetus.amnionDurability（同卵共用胎囊）
     delete pregnant.amnionDurability;
+    // 卵群改为每胎的伴生卵 companionEggCount（不含有效后代本身）
+    for (const fetus of Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []) delete fetus?.clutchSize;
   }
   if (pregnant?.blockage?.key === 'stool') pregnant.blockage.key = 'excretion';
   if (pregnant?.blockage?.key === 'urine') {

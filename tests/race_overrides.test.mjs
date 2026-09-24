@@ -16,13 +16,13 @@ test('覆写键正规化成基名，旧键合并后不丢栏位', () => {
   const normalized = normalizeRaceOverrideMap({
     ' 人类 ': { gestationSpeciesSpeed: 2 },
     '人类-实验体': { birthDifficulty: 3 },
-    '兽耳族-兔': { clutchSizeMean: 4 },
-    '': { clutchSizeMean: 9 },
+    '兽耳族-兔': { companionEggsMean: 4 },
+    '': { companionEggsMean: 9 },
     史莱姆: null,
   });
   assert.deepEqual(Object.keys(normalized).sort(), ['人类', '兽耳族']);
   assert.deepEqual(normalized['人类'], { gestationSpeciesSpeed: 2, birthDifficulty: 3 });
-  assert.deepEqual(normalized['兽耳族'], { clutchSizeMean: 4 });
+  assert.deepEqual(normalized['兽耳族'], { companionEggsMean: 4 });
 });
 
 test('衍生覆写键同样收敛到基名与别名', () => {
@@ -34,9 +34,9 @@ test('清除一笔覆写会连同所有同基名的旧键一起删掉', () => {
   const overrides = {
     '人类': { gestationSpeciesSpeed: 2 },
     '人类-实验体': { birthDifficulty: 3 },
-    '兽耳族': { clutchSizeMean: 4 },
+    '兽耳族': { companionEggsMean: 4 },
   };
-  assert.deepEqual(removeRaceOverrideEntry(overrides, '人类'), { '兽耳族': { clutchSizeMean: 4 } });
+  assert.deepEqual(removeRaceOverrideEntry(overrides, '人类'), { '兽耳族': { companionEggsMean: 4 } });
   assert.deepEqual(removeRaceOverrideEntry(overrides, ''), overrides, '空名不应误删');
   assert.deepEqual(removeDerivedOverrideEntry({ 修炼: { inheritanceSpeed: 2 } }, '修行'), {});
 });

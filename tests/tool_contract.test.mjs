@@ -47,12 +47,12 @@ test('bsSetCharacterPresence 的 isPresent：schema 与实作一致要求必填'
   assert.equal(call(one(), 'bsSetCharacterPresence', { female: 'A', isPresent: false }).applied, true);
 });
 
-test('bsImplantEmbryo.count 明确是胎儿卡数而非卵群枚数', () => {
+test('bsImplantEmbryo.count 明确是胎儿卡数而非卵的枚数', () => {
   const tool = toolOf('bsImplantEmbryo');
   assert.match(tool.description, /count 只表示要建立几张胎儿卡/);
   assert.match(tool.description, /十枚卵.*count=1/);
   assert.match(tool.input_schema.properties.count.description, /有效后代候选数/);
-  assert.match(tool.input_schema.properties.count.description, /不是卵群中的卵枚数/);
+  assert.match(tool.input_schema.properties.count.description, /不是卵的枚数/);
 });
 
 test('bsAddSperm 以 insert / deposit / withdraw 驱动插入状态机', () => {

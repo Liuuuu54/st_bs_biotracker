@@ -1,4 +1,4 @@
-import { AMORPHOUS_RACES, DERIVED_TYPE_RACES, METOVIVIPAROUS_RACES, OVIPAROUS_RACES, OVOVIVIPAROUS_RACES, VIVIPAROUS_RACES, deriveFetusRace, getClutchSizeMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile } from './race_config.js';
+import { AMORPHOUS_RACES, DERIVED_TYPE_RACES, METOVIVIPAROUS_RACES, OVIPAROUS_RACES, OVOVIVIPAROUS_RACES, VIVIPAROUS_RACES, deriveFetusRace, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile } from './race_config.js';
 
 /**
  * 提示词插值防线：剥离换行、闭合标签与控制字符——race/derivedType 等用户可控字符串
@@ -31,12 +31,12 @@ export function buildWorldBaselineBlock(value) {
   return text ? `[世界基准]\n${text}` : '';
 }
 
-export const CLUTCH_SIZE_DEFINITION_PROMPT = [
-  '[卵群资料定义]',
-  '- clutchSize 是一张胎儿卡所代表的整群卵／幼体数量，不是 fetusesCount，也不是最后建立的孩子人数。',
-  '- 这群中只有该胎儿卡对应的一个个体能成功长大并繁衍；剧情可描写产下整群卵，但分娩与族谱只建立一名有效后代，不要为每枚卵新增胎儿卡或孩子。',
-  '- 胎生与胎转卵生恒为 1。其他胚型是否高产由种族的典型卵群数量决定，不能只因属于卵生、卵胎生或不定型就自行增加。',
-  '- 自然受精时，当下胜出精源的有效精液量会影响卵群：20 为标准量，10／30／40 分别约为 0.75／1.25／1.5 倍，再叠加约 ±10% 生理波动。受精不会因此扣除或清空可见精液残留。',
+export const COMPANION_EGGS_DEFINITION_PROMPT = [
+  '[伴生卵定义]',
+  '- 每张胎儿卡代表一名能成功长大并繁衍的有效后代；companionEggCount 是它伴随的背景卵数量（伴生卵），不会发育，也不会成为胎儿卡或孩子。',
+  '- 剧情可描写产下整群卵（有效后代加上伴生卵），但分娩与族谱只建立那一名有效后代，不要为每枚卵新增胎儿卡或孩子。',
+  '- 胎生与胎转卵生恒为 0。其他胚型有没有伴生卵由种族的典型伴生卵数量决定，不能只因属于卵生、卵胎生或不定型就自行增加。',
+  '- 自然受精时，当下胜出精源的有效精液量会影响整群规模：20 为标准量，10／30／40 分别约为 0.75／1.25／1.5 倍，再叠加约 ±10% 生理波动。受精不会因此扣除或清空可见精液残留。',
 ].join('\n');
 
 /**
@@ -290,7 +290,7 @@ function buildSingleRacePhysiologyBlock(race) {
     `- 承载耐受: ${getBreedToleranceText(profile.breedTolerance)}（数值 ${formatNumber(profile.breedTolerance)}；越高则孕期越不被削弱）`,
     `- 受精难度: ${getImpregnationDifficultyText(profile.impregnationDifficulty)}`,
     `- 遗传核型: ${getInheritanceModeText(race)}`,
-    `- 典型卵群数量: ${formatNumber(getClutchSizeMeanByRace(race))}（自然受精会依有效精液量调整后再作约 ±10% 波动；均值 1 恒为 1）`,
+    `- 典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race))}（每名有效后代伴随的背景卵；自然受精会依有效精液量调整后再作约 ±10% 波动；均值 0 恒为 0）`,
     `- 多产性: ${getProlificacyText(profile.orgasmOvulationAmount, profile.identicalProbability)}；额外排卵倾向 ${formatNumber(profile.orgasmOvulationAmount)}，同卵多胎概率 ${formatNumber(profile.identicalProbability)}%`,
     `- 性别比: ${getGenderRatioText(profile.genderRatio)}`,
   ].filter(Boolean).join('\n');
@@ -313,7 +313,7 @@ function buildHybridAverageBlock(race) {
     `- 平均分娩难度: ${getBirthDifficultyText(merged.birthDifficulty)}`,
     `- 平均承载耐受: ${getBreedToleranceText(merged.breedTolerance)}`,
     `- 平均受精难度: ${getImpregnationDifficultyText(merged.impregnationDifficulty)}`,
-    `- 混血典型卵群数量: ${formatNumber(getClutchSizeMeanByRace(race))}（先由孕期最长的成分决定胚型；胎生／胎转卵生恒为 1，其余以所有成分含 1 做几何平均）`,
+    `- 混血典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race))}（先由孕期最长的成分决定胚型；胎生／胎转卵生恒为 0，其余按整群规模对所有成分做几何平均）`,
     `- 平均多产性参考: ${getProlificacyText(merged.orgasmOvulationAmount, merged.identicalProbability)}；额外排卵倾向 ${formatNumber(merged.orgasmOvulationAmount)}，同卵多胎概率 ${formatNumber(merged.identicalProbability)}%`,
     `- 平均性别比参考: ${getGenderRatioText(merged.genderRatio)}`,
   ].filter(Boolean).join('\n');
@@ -565,7 +565,7 @@ export function buildRacePhysiologyPrompt(payload = {}, { includeAllRelevant = t
     '<bs_race>',
     '以下文本是项目内定义的种族生理设定，请视为高优先级规则。',
     '这些设定用于帮助你理解角色的经期长度、妊娠长度、恢复时间、分娩难度、受精难度、多产性与性别比。',
-    CLUTCH_SIZE_DEFINITION_PROMPT,
+    COMPANION_EGGS_DEFINITION_PROMPT,
     ...blocks,
     ...derivedBlocks,
     ...spermBlocks,
@@ -584,7 +584,7 @@ export function buildRegistryRacePhysiologyPrompt(payload = {}) {
     '<bs_race>',
     '以下文本是本次注册目标角色专用的种族生理设定，请视为高优先级规则。',
     '注册时只参考当前目标角色相关种族，不要混入其他已注册角色的种族设定。',
-    CLUTCH_SIZE_DEFINITION_PROMPT,
+    COMPANION_EGGS_DEFINITION_PROMPT,
     ...blocks,
     ...derivedBlocks,
     '</bs_race>',

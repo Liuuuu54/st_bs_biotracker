@@ -197,11 +197,11 @@ function calculateOffspring() {
     `同卵分裂率：${formatNumber(result.identicalProbability, 2)}%`,
     `初始胎重：${formatNumber(result.fetalWeightRange.min, 3)}～${formatNumber(result.fetalWeightRange.max, 3)}（中心 ${formatNumber(result.fetalWeightRange.typical, 3)}；${result.conceptionStage}）`,
   ];
-  if (result.clutchSizeMean > 1) {
+  if (result.companionEggsMean > 0) {
     lines.push(
-      `纯种卵群均值：${formatNumber(result.clutchSizeMean)}　精液倍率：×${formatNumber(result.clutchMultiplier, 3)}`,
-      `本次卵群预测：${result.clutchRange.min}～${result.clutchRange.max}（中心 ${result.clutchRange.typical}）`,
-      '范围对应正式抽取的 ±10%；祖谱仍只记录其中能成功长大繁育的一位。',
+      `典型伴生卵：${formatNumber(result.companionEggsMean)}　精液倍率：×${formatNumber(result.companionMultiplier, 3)}`,
+      `本次伴生卵预测：${result.companionRange.min}～${result.companionRange.max}（中心 ${result.companionRange.typical}）`,
+      '范围对应正式抽取的 ±10%；伴生卵不会发育，祖谱只记录那一位有效后代。',
     );
   }
   setOutput('bs-bt-calc-offspring-output', lines);

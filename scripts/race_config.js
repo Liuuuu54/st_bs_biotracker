@@ -335,36 +335,37 @@ export const DERIVED_TYPE_METABOLISM_EXEMPTIONS = Object.freeze({
 });
 
 /**
- * 一张胎儿卡所代表的典型卵群大小。默认都是单卵群；胚胎类型本身只代表
- * 「允许多卵」，不会让所有卵生／卵胎生／不定型种族自动变成高产。
+ * 每个独立有效胚胎平均伴随多少颗不会发育成胎儿卡的背景卵（伴生卵）。
+ * 默认 0；胚胎类型本身只代表「允许多卵」，不会让所有卵生／卵胎生／不定型种族自动变成高产。
+ * 数值是旧「典型卵群数量」减一：整群里扣掉唯一能长大的那一名有效后代。
  */
-export const RACE_CLUTCH_SIZE_MEANS = Object.freeze(Object.assign(
-  Object.fromEntries(ALL_BUILTIN_RACES.map((race) => [race, 1])),
+export const RACE_COMPANION_EGGS_MEANS = Object.freeze(Object.assign(
+  Object.fromEntries(ALL_BUILTIN_RACES.map((race) => [race, 0])),
   {
-    "怪鸟类": 4,
-    "植物亚人": 12,
-    "真菌亚人": 20,
-    "社会虫族": 50,
-    "独居虫族": 20,
-    "蜥蜴人": 12,
-    "海蛞蝓族": 30,
-    "龟族": 20,
-    "甲壳族": 50,
-    "宝箱怪": 8,
-    "阿拉克涅": 30,
-    "百足姬": 25,
-    "触手怪": 10,
-    "狗头人": 2,
-    "怪鱼类": 100,
-    "海妖": 16,
-    "蛙人": 100,
-    "水母族": 50,
-    "海马族": 30,
-    "蛇人": 1,
-    "人鱼": 1,
-    "深潜者": 1,
-    "史萊姆": 4,
-    "活体铠甲": 6,
+    "怪鸟类": 3,
+    "植物亚人": 11,
+    "真菌亚人": 19,
+    "社会虫族": 49,
+    "独居虫族": 19,
+    "蜥蜴人": 11,
+    "海蛞蝓族": 29,
+    "龟族": 19,
+    "甲壳族": 49,
+    "宝箱怪": 7,
+    "阿拉克涅": 29,
+    "百足姬": 24,
+    "触手怪": 9,
+    "狗头人": 1,
+    "怪鱼类": 99,
+    "海妖": 15,
+    "蛙人": 99,
+    "水母族": 49,
+    "海马族": 29,
+    "蛇人": 0,
+    "人鱼": 0,
+    "深潜者": 0,
+    "史萊姆": 3,
+    "活体铠甲": 5,
   },
 ));
 
@@ -1109,7 +1110,7 @@ export const RACE_PHYSIOLOGY_FIELDS = Object.freeze([
   "impregnationDifficulty",
   "orgasmOvulationAmount",
   "identicalProbability",
-  "clutchSizeMean",
+  "companionEggsMean",
   "recoveryDays",
   "genderRatio"
 ]);
@@ -1184,7 +1185,7 @@ function sanitizeRacePhysiologyProfilePatch(profile) {
     if (!Number.isFinite(value)) continue;
     if (field === 'genderRatio') result[field] = Math.max(-1, Math.min(100, Math.round(value)));
     else if (field === 'orgasmOvulationAmount') result[field] = Math.max(0, Math.round(value));
-    else if (field === 'clutchSizeMean') result[field] = Math.max(1, Math.min(10000, Math.round(value)));
+    else if (field === 'companionEggsMean') result[field] = Math.max(0, Math.min(9999, Math.round(value)));
     else if (field === 'identicalProbability') result[field] = Math.max(0, Math.min(100, value));
     else result[field] = Math.max(0, value);
   }
@@ -1263,7 +1264,7 @@ export function getBuiltinRacePhysiologyProfile(race) {
   const profile = RACE_PHYSIOLOGY_PROFILES[key];
   return profile ? {
     ...profile,
-    clutchSizeMean: RACE_CLUTCH_SIZE_MEANS[key] || 1,
+    companionEggsMean: RACE_COMPANION_EGGS_MEANS[key] || 0,
     [RACE_INHERITANCE_FIELD]: RACE_INHERITANCE_PROFILES[key] || RACE_INHERITANCE_MODES.NORMAL,
   } : null;
 }
@@ -1282,7 +1283,7 @@ function getEffectiveRacePhysiologyProfileValue(race) {
   if (!builtin) return null;
   return {
     ...builtin,
-    clutchSizeMean: RACE_CLUTCH_SIZE_MEANS[key] || 1,
+    companionEggsMean: RACE_COMPANION_EGGS_MEANS[key] || 0,
     [RACE_INHERITANCE_FIELD]: RACE_INHERITANCE_PROFILES[key] || RACE_INHERITANCE_MODES.NORMAL,
     ...(customRacePhysiologyProfiles[key] || {}),
   };
@@ -1465,7 +1466,7 @@ export function getMergedRacePhysiologyProfile(race) {
 
   const merged = {};
   for (const field of RACE_PHYSIOLOGY_FIELDS) {
-    if (field === 'genderRatio' || field === 'clutchSizeMean') continue;
+    if (field === 'genderRatio' || field === 'companionEggsMean') continue;
     const values = profiles
       .map((profile) => Number(profile[field]))
       .filter((value) => Number.isFinite(value));
@@ -1476,7 +1477,7 @@ export function getMergedRacePhysiologyProfile(race) {
     }
   }
 
-  merged.clutchSizeMean = getClutchSizeMeanByRace(race);
+  merged.companionEggsMean = getCompanionEggsMeanByRace(race);
   merged.genderRatio = mergeGenderRatioValues(profiles.map((profile) => profile.genderRatio));
   // 核型不按生理数值混合；任何复合种族都回归一般遗传。
   merged[RACE_INHERITANCE_FIELD] = RACE_INHERITANCE_MODES.NORMAL;
@@ -1563,42 +1564,47 @@ export function getEmbryoTypeByRace(race) {
 
 /**
  * 混血先沿用既有规则：孕期最长（gestationSpeciesSpeed 最低）的成分决定胚型。
- * 胎生与胎转卵生恒为单卵群；其余类型才让所有成分（包括均值 1）参与几何平均。
+ * 胎生与胎转卵生恒无伴生卵；其余类型在「整群＝伴生卵＋1」的尺度上对所有成分做几何平均再减一，
+ * 与旧的卵群几何平均完全一致（全为 0 的仍是 0）。
  */
-export function getClutchSizeMeanByRace(race) {
+export function getCompanionEggsMeanByRace(race) {
   const embryoType = getEmbryoTypeByRace(race);
-  if (embryoType === '胎生' || embryoType === '胎转卵生') return 1;
+  if (embryoType === '胎生' || embryoType === '胎转卵生') return 0;
   const parts = getRaceComponents(race);
-  if (parts.length === 0) return 1;
-  const values = parts.map((part) => {
+  if (parts.length === 0) return 0;
+  const clutches = parts.map((part) => {
     const profile = getEffectiveRacePhysiologyProfileValue(part);
-    const value = Number(profile?.clutchSizeMean);
-    return Number.isFinite(value) && value >= 1 ? value : 1;
+    const value = Number(profile?.companionEggsMean);
+    return (Number.isFinite(value) && value >= 0 ? value : 0) + 1;
   });
-  if (values.length === 1) return values[0];
-  return Math.exp(values.reduce((sum, value) => sum + Math.log(value), 0) / values.length);
+  const clutch = clutches.length === 1
+    ? clutches[0]
+    : Math.exp(clutches.reduce((sum, value) => sum + Math.log(value), 0) / clutches.length);
+  return Math.max(0, clutch - 1);
 }
 
 /**
- * 精液量 20 视为标准剂量；10／20／30／40 分别对应 0.75／1／1.25／1.5 倍卵群。
+ * 精液量 20 视为标准剂量；10／20／30／40 分别对应 0.75／1／1.25／1.5 倍的整群规模。
  * 这里只读取受精当下的有效量，不代表液体被胚胎消耗。
  */
-export function getSpermDoseClutchMultiplier(spermValue = 20) {
+export function getSpermDoseCompanionMultiplier(spermValue = 20) {
   const dose = Number.isFinite(Number(spermValue)) ? Math.max(0, Number(spermValue)) : 20;
   return Math.max(0.5, Math.min(1.5, 0.5 + (dose / 40)));
 }
 
-/** 总有效精液量动态降低本次受孕难度；标准量 20 为 1 倍，最多提供 2 倍成功率。 */
 export function getSpermDoseDifficultyBonus(totalSperm) {
   const dose = Number.isFinite(Number(totalSperm)) ? Math.max(0, Number(totalSperm)) : 0;
   return Math.max(0.5, Math.min(2, Math.sqrt(dose / 20)));
 }
 
-/** 受孕时抽一次并落盘；均值 1 是硬特例，不受剂量、±10% 波动与整数取整影响。 */
-export function rollClutchSizeForRace(race, random = Math.random, spermValue = 20) {
-  const mean = getClutchSizeMeanByRace(race);
-  if (!Number.isFinite(mean) || mean <= 1) return 1;
+/**
+ * 每个独立受精形成的有效胚胎抽一次并落盘。在「整群＝伴生卵＋1」的尺度上乘精液倍率与 ±10% 波动，
+ * 取整后再减一，分布与旧卵群完全相同。均值 0 是硬特例：任何浮动或倍率都不会凭空产生伴生卵。
+ */
+export function rollCompanionEggCount(race, random = Math.random, spermValue = 20) {
+  const mean = getCompanionEggsMeanByRace(race);
+  if (!Number.isFinite(mean) || mean <= 0) return 0;
   const variation = 0.9 + (Math.max(0, Math.min(1, Number(random()) || 0)) * 0.2);
-  const raw = mean * getSpermDoseClutchMultiplier(spermValue) * variation;
-  return Math.max(1, Math.min(12500, Math.round(raw)));
+  const clutch = (mean + 1) * getSpermDoseCompanionMultiplier(spermValue) * variation;
+  return Math.max(0, Math.min(12499, Math.round(clutch) - 1));
 }
