@@ -1294,6 +1294,8 @@ function normalizeRegisteredFetusTags(pregnant) {
     if (!Number.isInteger(Number(fetus.embryoId)) || Number(fetus.embryoId) <= 0) fetus.embryoId = index + 1;
     fetus.tags = sanitizeFetusTagList(fetus.tags);
   });
+  // 母体的编号计数器接在现有最大号后面，之后的新胎才不会撞号
+  pregnant.nextEmbryoId = fetuses.reduce((max, fetus) => Math.max(max, Number(fetus.embryoId) || 0), 0) + 1;
 
   // 孕中孕：模型给的是阵列索引（它写不出内部编号），换成宿主的 embryoId
   for (const [index, fetus] of fetuses.entries()) {

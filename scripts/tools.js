@@ -921,7 +921,7 @@ function applyWombReturn(chatState, args) {
   const derivedSeed = getDerivedInheritanceSeed(base.derivedType ? String(base.derivedType) : null, fatherDerivedType);
 
   pregnant.fetuses = [{
-    embryoId: 1,
+    embryoId: allocateEmbryoId(pregnant),
     fusionCheckedWith: [],
     tags: ['rebirth'],
     fathers: returnerName,
@@ -1295,26 +1295,43 @@ function uniqueNonEmptyStrings(values) {
   return result;
 }
 
-function getNextEmbryoId(fetuses) {
+function getMaxEmbryoId(fetuses) {
   return fetuses.reduce((max, fetus) => {
     const value = Number(fetus?.embryoId);
     return Number.isInteger(value) && value > max ? value : max;
-  }, 0) + 1;
+  }, 0);
+}
+
+/**
+ * 发一个新的 embryoId。计数器挂在母体的 pregnant 上、跨胎次不归零，号码永不重用：
+ * 先露胎、孕中孕宿主与出生编号都靠它跨时间指认同一胎，
+ * 若按「现有最大值 + 1」现算，移除一胎后下一个新胎就会接手它的号码。
+ * 所有引用都只在同一母体内部，所以不需要整个聊天共用一个计数器。
+ */
+/** 计数器至少要越过现存的每个号码，手动、注册或调试写入的编号才不会被重发 */
+function syncEmbryoCounter(pregnant) {
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  const stored = Number(pregnant?.nextEmbryoId);
+  pregnant.nextEmbryoId = Math.max(Number.isInteger(stored) && stored > 0 ? stored : 1, getMaxEmbryoId(fetuses) + 1);
+  return pregnant.nextEmbryoId;
+}
+
+function allocateEmbryoId(pregnant) {
+  const id = syncEmbryoCounter(pregnant);
+  pregnant.nextEmbryoId = id + 1;
+  return id;
 }
 
 function ensureEmbryoMetadata(pregnant) {
   const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
   const used = new Set();
-  let nextId = getNextEmbryoId(fetuses);
   for (const fetus of fetuses) {
     let id = Number(fetus?.embryoId);
-    if (!Number.isInteger(id) || id <= 0 || used.has(id)) {
-      id = nextId;
-      nextId += 1;
-    }
+    if (!Number.isInteger(id) || id <= 0 || used.has(id)) id = allocateEmbryoId(pregnant);
     fetus.embryoId = id;
     used.add(id);
   }
+  syncEmbryoCounter(pregnant);
   for (const fetus of fetuses) {
     fetus.fusionCheckedWith = [...new Set(
       (Array.isArray(fetus?.fusionCheckedWith) ? fetus.fusionCheckedWith : [])
@@ -1323,6 +1340,17 @@ function ensureEmbryoMetadata(pregnant) {
     )];
   }
   return fetuses;
+}
+
+/**
+ * 胎儿被融合取代后，把指向旧号码的引用改指新号码，同一笔交易内完成，
+ * 不留短暂悬空的引用。目前只有孕中孕宿主会跨胎指认。
+ */
+function remapEmbryoReferences(pregnant, remap) {
+  if (!remap || remap.size === 0) return;
+  for (const fetus of Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : []) {
+    if (remap.has(fetus?.nestedInEmbryoId)) fetus.nestedInEmbryoId = remap.get(fetus.nestedInEmbryoId);
+  }
 }
 
 function getFetusFatherSources(fetus) {
@@ -1447,7 +1475,7 @@ function applyChimeraFusion(profile, carrierName) {
   shuffleInPlace(pairs);
   const consumed = new Set();
   const fused = [];
-  let nextId = getNextEmbryoId(fetuses);
+  const remap = new Map();
   for (const [fetusA, fetusB] of pairs) {
     fetusA.fusionCheckedWith.push(fetusB.embryoId);
     fetusB.fusionCheckedWith.push(fetusA.embryoId);
@@ -1456,12 +1484,15 @@ function applyChimeraFusion(profile, carrierName) {
     if (probability > 0 && Math.random() < probability / 100) {
       consumed.add(fetusA.embryoId);
       consumed.add(fetusB.embryoId);
-      fused.push(createChimeraFetus(profile, carrierName, fetusA, fetusB, nextId));
-      nextId += 1;
+      const chimera = createChimeraFetus(profile, carrierName, fetusA, fetusB, allocateEmbryoId(pregnant));
+      remap.set(fetusA.embryoId, chimera.embryoId);
+      remap.set(fetusB.embryoId, chimera.embryoId);
+      fused.push(chimera);
     }
   }
   if (fused.length > 0) {
     pregnant.fetuses = [...fetuses.filter((fetus) => !consumed.has(fetus.embryoId)), ...fused];
+    remapEmbryoReferences(pregnant, remap);
     setConceptionCue(profile, 'chimera');
   }
   pregnant.fetusesCount = pregnant.fetuses.length;
@@ -1474,9 +1505,10 @@ function forceChimeraFusion(profile, carrierName, batch) {
   const sources = Array.isArray(batch) ? batch.filter((fetus) => fetuses.includes(fetus)) : [];
   if (sources.length < 2) return null;
   const [fetusA, fetusB] = sources;
-  const chimera = createChimeraFetus(profile, carrierName, fetusA, fetusB, getNextEmbryoId(fetuses));
+  const chimera = createChimeraFetus(profile, carrierName, fetusA, fetusB, allocateEmbryoId(pregnant));
   const consumed = new Set([fetusA, fetusB]);
   pregnant.fetuses = [...fetuses.filter((fetus) => !consumed.has(fetus)), chimera];
+  remapEmbryoReferences(pregnant, new Map([[fetusA.embryoId, chimera.embryoId], [fetusB.embryoId, chimera.embryoId]]));
   pregnant.fetusesCount = pregnant.fetuses.length;
   setConceptionCue(profile, 'chimera');
   return [...sources.filter((fetus) => !consumed.has(fetus)), chimera];
@@ -1511,7 +1543,6 @@ function applyIdenticalSplit(profile, batch = null) {
   const targets = batch ? new Set(batch) : null;
 
   const result = [];
-  let nextId = getNextEmbryoId(fetuses);
   for (const baseFetus of fetuses) {
     if (targets && !targets.has(baseFetus)) {
       result.push(baseFetus);
@@ -1543,9 +1574,8 @@ function applyIdenticalSplit(profile, batch = null) {
     }
     while (targetCount > 1) {
       const clone = cloneIdenticalFetus(baseFetus);
-      clone.embryoId = nextId;
+      clone.embryoId = allocateEmbryoId(pregnant);
       clone.identicalGroup = baseFetus.identicalGroup;
-      nextId += 1;
       result.push(clone);
       targetCount -= 1;
     }
@@ -1561,16 +1591,14 @@ function forceIdenticalTwinSplit(profile, batch = null) {
   if (fetuses.length === 0) return;
   const targets = batch ? new Set(batch) : new Set(fetuses);
   const result = [];
-  let nextId = getNextEmbryoId(fetuses);
   for (const fetus of fetuses) {
     result.push(fetus);
     if (!targets.has(fetus)) continue;
     fetus.identicalGroup = fetus.embryoId;
     fetus.tags = sanitizeFetusTagList([...(fetus.tags || []), 'identical']);
     const twin = cloneIdenticalFetus(fetus);
-    twin.embryoId = nextId;
+    twin.embryoId = allocateEmbryoId(pregnant);
     twin.identicalGroup = fetus.identicalGroup;
-    nextId += 1;
     result.push(twin);
   }
   pregnant.fetuses = result;
@@ -3293,8 +3321,7 @@ function appendChildrenFromFetuses(profile, fetuses) {
 
 /**
  * 把孕中孕孩子的 nestedInEmbryoId 解析成宿主孩子的稳定 id。
- * 从後往前找：embryoId 只在单次妊娠内唯一，跨胎次会重号，
- * 而同一次分娩的两个孩子必定相邻，取最近的那个才对。
+ * embryoId 在同一母体内永不重用；仍从後往前找，是为了兼容计数器上线前的旧孩子纪录。
  */
 function linkNestedChildren(profile) {
   const children = Array.isArray(profile?.children) ? profile.children : [];
@@ -6131,6 +6158,11 @@ function applyDebugSetProdromal(chatState, args) {
 }
 
 export function applyToolCall(chatState, call) {
+  // 先让每个母体的编号计数器越过现存号码，再执行可能移除胎儿的操作；
+  // 否则从未发过号的母体减胎后，会把被移除那胎的号码重发给下一个新胎
+  for (const character of Object.values(chatState?.characters || {})) {
+    if (character?.profile?.pregnant && typeof character.profile.pregnant === 'object') syncEmbryoCounter(character.profile.pregnant);
+  }
   const result = dispatchToolCall(chatState, call);
   syncAllNutritionBurst(chatState);
   return result;
