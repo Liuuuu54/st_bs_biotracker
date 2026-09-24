@@ -237,3 +237,62 @@ test('分娩抵抗的大幅转动只落在高位胎儿，已入盆的领头胎�
   const lead = P(chatState).pregnant.fetuses.find((f) => f.embryoId === 1);
   assert.equal(lead.tendencyAngle, 0);
 });
+
+// ── 第二产程的下降与跨阶段时间 ─────────────────────────────
+const laboringAt = (phase, fetuses, pregnant = {}) => {
+  const chatState = setup('第二产程', fetuses, {
+    laborPhase: phase, laborBirthNumber: 1, pregnantDays: 280, effectivePregnantDays: 280, ...pregnant,
+  });
+  P(chatState).base.uterinePressure = 120;
+  return chatState;
+};
+
+test('间歇期：上一胎出生后由最深的胎儿入盆，下一胎从入口开始，进入胎体下降时到产道 1', () => {
+  Math.random = () => 0.99;
+  const chatState = laboringAt('间歇期', [fetus(1, { descentStage: -2 }), fetus(2, { descentStage: -1 })]);
+  touch(chatState);
+  assert.deepEqual(depths(chatState), [-2, 0]);
+  assert.equal(P(chatState).pregnant.presentingEmbryoId, 2);
+  passHours(chatState, 0.6);
+  assert.equal(P(chatState).pregnant.laborPhase, '胎体下降');
+  assert.deepEqual(depths(chatState), [-2, 1]);
+});
+
+test('胎体娩出时先露胎着冠到 2；走完娩出才经过 3 出生', () => {
+  Math.random = () => 0.99;
+  const chatState = laboringAt('胎体下降', [fetus(1, { descentStage: 1 }), fetus(2)], { presentingEmbryoId: 1 });
+  const phases = [];
+  for (let step = 0; step < 40 && P(chatState).children.length === 0; step += 1) {
+    passHours(chatState, 0.1);
+    phases.push(`${P(chatState).pregnant.laborPhase}:${P(chatState).pregnant.fetuses.find((f) => f.embryoId === 1)?.descentStage ?? 'born'}`);
+  }
+  assert.ok(phases.includes('胎体娩出:2'), phases.join(' '));
+  assert.equal(P(chatState).children.length, 1);
+  assert.ok(!phases.some((entry) => entry.endsWith(':3')), '3 只在出生那一刻短暂经过，不会停留');
+});
+
+test('一次推进跨过多个阶段：剩余时间逐段带下去，单胎可一路生完进入第三产程之后', () => {
+  Math.random = () => 0.99;
+  const chatState = laboringAt('胎体下降', [fetus(1, { descentStage: 1 })], { presentingEmbryoId: 1 });
+  passHours(chatState, 24);
+  assert.equal(P(chatState).children.length, 1);
+  assert.ok(['第三产程', '产后恢复'].includes(P(chatState).base.stage), P(chatState).base.stage);
+});
+
+test('多胎一次推进跨过多次出生：出生通知不被后面的进度覆盖', () => {
+  Math.random = () => 0.99;
+  const chatState = laboringAt('胎体娩出', [fetus(1, { descentStage: 2 }), fetus(2), fetus(3)], { presentingEmbryoId: 1 });
+  passHours(chatState, 1);
+  assert.match(String(P(chatState).notify.secondly), /生下了父1的孩子/);
+});
+
+test('产兆前驱走完后多出来的时间带进第一产程', () => {
+  Math.random = () => 0.99;
+  const chatState = setup('产兆前驱', [fetus(1, { descentStage: -1 })], {
+    prodromalRemainingHours: 1, pregnantDays: 280, effectivePregnantDays: 280,
+  });
+  P(chatState).base.uterinePressure = 120;
+  passHours(chatState, 3);
+  assert.equal(P(chatState).base.stage, '第一产程');
+  assert.ok(Math.abs(P(chatState).pregnant.laborHours - 2) < 1e-6, `第一产程已走 ${P(chatState).pregnant.laborHours} 小时`);
+});

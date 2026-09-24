@@ -3641,8 +3641,10 @@ function reconcileFetalDescent(profile) {
     for (const fetus of active) {
       if (fetus !== lead && fetus.embryoId !== pregnant.presentingEmbryoId) fetus.descentStage = Math.min(fetus.descentStage, DESCENT_LOW);
     }
-  } else if (stage === '第一产程' && !active.some((fetus) => fetus.embryoId === pregnant.presentingEmbryoId && fetus.descentStage >= DESCENT_INLET)) {
-    // 未经完整前驱就进入第一产程（例如前驱早段破水）时，由最深的胎儿立即入盆
+  } else if ((stage === '第一产程' || (stage === '第二产程' && pregnant.laborPhase === '间歇期'))
+    && !active.some((fetus) => fetus.descentStage >= DESCENT_INLET)) {
+    // 第一产程没有胎儿在入口（例如前驱早段破水），或多胎间歇期上一胎刚出生时，
+    // 由最深的胎儿入盆，下一胎从入口开始下降，不直接继承上一胎的进度
     const deepest = pickDeepestFetus(active);
     if (deepest) deepest.descentStage = DESCENT_INLET;
   }
@@ -3827,8 +3829,16 @@ function beginLaborPhase(pregnant, phase, birthNumber = 0) {
   pregnant.laborBirthNumber = birthNumber;
   pregnant.laborHours = 0;
   pregnant.effectiveLaborHours = 0;
-  // 每一胎开始下降时锁定先露胎；之后换位、分裂、插入都不能让它漂移
-  if (phase === '胎体下降') selectPresentingFetus(pregnant);
+  // 每一胎开始下降时锁定先露胎；之后换位、分裂、插入都不能让它漂移。
+  // 第二产程的位置只读 phase 边界：胎体下降进产道 1、胎体娩出着冠 2，
+  // 阶段内的细进度由 effectiveLaborHours / threshold 派生，不另存
+  if (phase === '胎体下降') {
+    const fetus = selectPresentingFetus(pregnant);
+    if (fetus) fetus.descentStage = 1;
+  } else if (phase === '胎体娩出') {
+    const fetus = getPresentingFetus(pregnant);
+    if (fetus) fetus.descentStage = 2;
+  }
 }
 
 /**
@@ -4100,18 +4110,13 @@ function processLabor(profile, tick, female) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const notify = profile.notify || {};
-  const realisticLabor = Boolean(profile?.immune?.realisticLabor);
-  const stage = String(base.stage || '');
-  const rawHours = tick.deltaDays * 24;
+  let stage = String(base.stage || '');
+  let rawHours = tick.deltaDays * 24;
   if (rawHours <= 0) return false;
 
-  const pressureCap = getUterinePressureCap(profile);
-  const currentPressure = clampNumber(base.uterinePressure, 0, pressureCap, 0);
   const libido = clampNumber(base.libido, 0, getLibidoCap(profile), 0);
   const libidoMultiplier = 1 + (libido / Math.max(getLibidoCap(profile), 1)) * 0.25;
-  const baseEffectiveHours = rawHours * libidoMultiplier;
-  let currentStageHours = clampNumber(pregnant.laborHours, 0, 9999, 0);
-  let currentEffectiveHours = clampNumber(pregnant.effectiveLaborHours, 0, 9999, 0);
+  let enteredFirstStage = false;
 
   if (stage === '产兆前驱') {
     const initialHours = getProdromalInitialHours(profile);
@@ -4126,25 +4131,92 @@ function processLabor(profile, tick, female) {
       if (lead && visible.includes(lead)) engageNote = `；第${visible.indexOf(lead) + 1}胎入盆了`;
     }
     updateLaborPain(profile, stage, null, 1 - (Math.max(0, remainingHours) / initialHours));
-    if (remainingHours <= 0) {
-      base.stage = '第一产程';
-      base.days = 0;
-      beginLaborPhase(pregnant, '潜伏期', 0);
-      updateLaborPain(profile, '第一产程', '潜伏期', 0);
-      clearProdromalState(pregnant);
-      profile.notify = {
-        ...notify,
-        firstly: `${female}进入了第一产程`,
-        secondly: `${female}的产兆前驱结束，宫缩进一步加剧，正式进入分娩`,
-      };
-      return true;
+    if (remainingHours > 0) {
+      notify.secondly = `${female}仍处于产兆前驱，距离正式产程约剩${Math.ceil(remainingHours)}小时${engageNote}`;
+      profile.notify = notify;
+      return false;
     }
-    notify.secondly = `${female}仍处于产兆前驱，距离正式产程约剩${Math.ceil(remainingHours)}小时${engageNote}`;
-    profile.notify = notify;
-    return false;
+    base.stage = '第一产程';
+    base.days = 0;
+    beginLaborPhase(pregnant, '潜伏期', 0);
+    updateLaborPain(profile, '第一产程', '潜伏期', 0);
+    clearProdromalState(pregnant);
+    profile.notify = {
+      ...notify,
+      firstly: `${female}进入了第一产程`,
+      secondly: `${female}的产兆前驱结束，宫缩进一步加剧，正式进入分娩`,
+    };
+    // 前驱走完后多出来的时间带进第一产程，不丢弃
+    enteredFirstStage = true;
+    stage = '第一产程';
+    rawHours = -remainingHours;
+    if (rawHours <= 1e-9) return true;
   }
 
   if (!LABOR_STAGES.includes(stage)) return false;
+
+  // 一次推进跨过多个产程阶段时，以剩余原始小时逐段消耗：每一段只给到当前阶段门槛所需的时间，
+  // 完成该阶段的转移、磨损与阻塞检查后，把剩下的时间带进下一阶段。
+  // 宫缩微弱停滞与高宫压快速路径每次推进只在第一段判定一次。
+  let remainingHours = rawHours;
+  let stageChanged = enteredFirstStage;
+  // 每一段都会写通知；跨过多个阶段时接在前一段后面，出生、换阶段等讯息不被下一段的进度覆盖
+  let carried = enteredFirstStage ? { firstly: profile.notify?.firstly, secondly: profile.notify?.secondly } : null;
+  for (let segment = 0; segment < 64 && remainingHours > 1e-9; segment += 1) {
+    if (!LABOR_STAGES.includes(String(base.stage || ''))) break;
+    const segmentHours = Math.min(remainingHours, getLaborSegmentHours(profile, libidoMultiplier));
+    const result = processLaborSegment(profile, female, segmentHours, { firstSegment: segment === 0, libidoMultiplier });
+    remainingHours -= segmentHours;
+    stageChanged = stageChanged || result.stageChanged;
+    if (carried) {
+      const merged = { ...(profile.notify || {}) };
+      for (const key of ['firstly', 'secondly']) {
+        const previous = String(carried[key] || '').trim();
+        const current = String(merged[key] || '').trim();
+        if (previous && current && current !== previous && !current.includes(previous)) merged[key] = `${previous}；${current}`;
+        else if (previous && !current) merged[key] = previous;
+      }
+      profile.notify = merged;
+    }
+    carried = { firstly: profile.notify?.firstly, secondly: profile.notify?.secondly };
+    if (result.halt) break;
+  }
+  return stageChanged;
+}
+
+/** 以目前的宫缩倍率，走到当前产程阶段门槛还需要多少原始小时（多给一点点，确保越过门槛） */
+function getLaborSegmentHours(profile, libidoMultiplier) {
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const stage = String(base.stage || '');
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const phase = getLaborPhaseForStage(stage, String(pregnant.laborPhase || ''));
+  const threshold = resolveLaborPhaseHours(profile, stage, phase, fetuses);
+  const currentPressure = clampNumber(base.uterinePressure, 0, getUterinePressureCap(profile), 0);
+  const pressureMultiplier = stage === '第三产程' ? 1 : Math.max(0.5, Math.min(1.5, 0.5 + (currentPressure / 150)));
+  const rate = Math.max(1e-6, libidoMultiplier * pressureMultiplier);
+  const needed = Math.max(0, threshold - clampNumber(pregnant.effectiveLaborHours, 0, 9999, 0));
+  return (needed / rate) + 1e-6;
+}
+
+/**
+ * 产程中的一段时间。回传 { stageChanged, halt }：halt 表示这段之后不该再继续消耗时间
+ * （宫缩停滞、受阻、阶段内尚未走完、快速路径或产程结束）。
+ */
+function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMultiplier }) {
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const notify = profile.notify || {};
+  const realisticLabor = Boolean(profile?.immune?.realisticLabor);
+  const stage = String(base.stage || '');
+  const pressureCap = getUterinePressureCap(profile);
+  const currentPressure = clampNumber(base.uterinePressure, 0, pressureCap, 0);
+  const baseEffectiveHours = rawHours * libidoMultiplier;
+  let currentStageHours = clampNumber(pregnant.laborHours, 0, 9999, 0);
+  let currentEffectiveHours = clampNumber(pregnant.effectiveLaborHours, 0, 9999, 0);
+  const done = (stageChanged) => ({ stageChanged: Boolean(stageChanged), halt: true });
+  const next = (stageChanged) => ({ stageChanged: Boolean(stageChanged), halt: false });
+
 
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const phase = getLaborPhaseForStage(stage, String(pregnant.laborPhase || ''));
@@ -4164,7 +4236,7 @@ function processLabor(profile, tick, female) {
   currentStageHours += rawHours;
   pregnant.laborHours = currentStageHours;
 
-  if (currentPressure < stallThreshold && !isThirdStageWithNoFetuses) {
+  if (firstSegment && currentPressure < stallThreshold && !isThirdStageWithNoFetuses) {
     const currentRatio = pressureCap > 0 ? (currentPressure / pressureCap) : 0;
     const chanceToStall = Math.max(0, Math.min(1, 1 - currentRatio));
     if (Math.random() < chanceToStall) {
@@ -4174,9 +4246,9 @@ function processLabor(profile, tick, female) {
       };
       pregnant.effectiveLaborHours = currentEffectiveHours;
       updateLaborPain(profile, stage, phase, currentEffectiveHours / threshold, Boolean(realisticObstruction));
-      return false;
+      return done(false);
     }
-  } else if (currentPressure >= pressureCap && !realisticLabor) {
+  } else if (firstSegment && currentPressure >= pressureCap && !realisticLabor) {
     if (stage === '第一产程') {
       base.uterinePressure = pressureCap * 0.5;
       base.stage = '第二产程';
@@ -4190,7 +4262,7 @@ function processLabor(profile, tick, female) {
         firstly: `${female}进入了第二产程`,
         secondly: `${female}宫口开全，产程突然加速`,
       };
-      return true;
+      return done(true);
     }
 
     if (stage === '第二产程') {
@@ -4226,12 +4298,12 @@ function processLabor(profile, tick, female) {
           secondly: `${female}产程突然加速，生下了${father}的孩子，性别为${gender}${enclosedNote}，仍有${remaining.length}胎待产`,
         };
       }
-      return base.stage !== stage;
+      return done(base.stage !== stage);
     }
 
     if (stage === '第三产程') {
       applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true, scope: 'all' });
-      return applyChildbirthInternal(profile, female, true);
+      return done(applyChildbirthInternal(profile, female, true));
     }
   }
 
@@ -4271,7 +4343,7 @@ function processLabor(profile, tick, female) {
       }
     }
     profile.notify = notify;
-    return false;
+    return done(false);
   }
 
   if (stage === '第一产程') {
@@ -4279,20 +4351,20 @@ function processLabor(profile, tick, female) {
       beginLaborPhase(pregnant, '活跃期', 0);
       updateLaborPain(profile, stage, '活跃期', 0);
       profile.notify = { ...notify, firstly: `${female}进入了第一产程·活跃期`, secondly: `${female}的规律宫缩明显加强` };
-      return false;
+      return next(false);
     }
     if (phase === '活跃期') {
       beginLaborPhase(pregnant, '过渡期', 0);
       updateLaborPain(profile, stage, '过渡期', 0);
       profile.notify = { ...notify, firstly: `${female}进入了第一产程·过渡期`, secondly: `${female}的分娩疼痛与压迫感进一步攀升` };
-      return false;
+      return next(false);
     }
     base.stage = '第二产程';
     base.days = 0;
     beginLaborPhase(pregnant, '胎体下降', 1);
     updateLaborPain(profile, '第二产程', '胎体下降', 0);
     profile.notify = { ...notify, firstly: `${female}进入了第二产程·第1胎体下降`, secondly: `${female}开始推动胎儿下降` };
-    return true;
+    return next(true);
   }
 
   if (stage === '第二产程') {
@@ -4302,7 +4374,7 @@ function processLabor(profile, tick, female) {
         ...notify,
         secondly: `${female}因${realisticObstruction}无法自然娩出胎儿`,
       };
-      return false;
+      return done(false);
     }
     if (phase === '胎体下降') {
       beginLaborPhase(pregnant, '胎体娩出', pregnant.laborBirthNumber);
@@ -4312,7 +4384,7 @@ function processLabor(profile, tick, female) {
         firstly: `${female}进入了第二产程·第${pregnant.laborBirthNumber}胎体娩出`,
         secondly: `${female}的第${pregnant.laborBirthNumber}胎开始娩出`,
       };
-      return false;
+      return next(false);
     }
     if (phase === '间歇期') {
       const nextIndex = clampNumber(pregnant.laborBirthNumber, 1, 99, 1) + 1;
@@ -4323,8 +4395,12 @@ function processLabor(profile, tick, female) {
         firstly: `${female}进入了第二产程·第${nextIndex}胎体下降`,
         secondly: `${female}开始推动下一胎下降`,
       };
-      return false;
+      return next(false);
     }
+    // 胎体娩出走完：先露部已出（3），再做胎体完成检查；没受阻就在同一次结算完成出生。
+    // 肩难产等停在 3 的硬阻塞由 F 步接在这里
+    const crowning = getPresentingFetus(pregnant);
+    if (crowning) crowning.descentStage = DESCENT_CROWNED_OUT;
     const born = removePresentingFetus(pregnant);
     if (born.length > 0) {
       const father = String(born[0]?.fathers || '未知');
@@ -4352,13 +4428,13 @@ function processLabor(profile, tick, female) {
           secondly: `${female}生下了${father}的孩子，性别为${gender}${enclosedNote}，仍有${remaining.length}胎待产`,
         };
       }
-      return base.stage !== stage;
+      return next(base.stage !== stage);
     }
     base.stage = '第三产程';
     base.days = 0;
     beginLaborPhase(pregnant, '供养器官娩出', 0);
     updateLaborPain(profile, '第三产程', '供养器官娩出', 0);
-    return true;
+    return next(true);
   }
 
   if (stage === '第三产程') {
@@ -4370,12 +4446,12 @@ function processLabor(profile, tick, female) {
         firstly: `${female}进入了第三产程·产后观察`,
         secondly: `${female}的供养器官已娩出，开始观察产后状态`,
       };
-      return false;
+      return next(false);
     }
-    return applyChildbirthInternal(profile, female, true);
+    return done(applyChildbirthInternal(profile, female, true));
   }
 
-  return false;
+  return done(false);
 }
 
 function applyAbortion(chatState, args) {

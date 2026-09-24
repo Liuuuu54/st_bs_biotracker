@@ -79,7 +79,7 @@ test('内胎胎囊没破：宿主出生时一起娩出，族谱记为宿主的�
   const chatState = setup('第二产程', [fetus(1), fetus(2, { nestedInEmbryoId: 1, fathers: '乙' }), fetus(3)], {
     pressure: 120, pregnant: { laborPhase: '胎体娩出', laborBirthNumber: 1, presentingEmbryoId: 1 },
   });
-  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 24 } });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } }); // 走完这一胎的娩出，停在间歇期
   const children = P(chatState).children;
   assert.deepEqual(children.map((child) => child.fathers).sort(), ['乙', '父1']);
   const host = children.find((child) => child.fathers === '父1');
@@ -94,7 +94,7 @@ test('内胎已被生出（胎囊破）：宿主出生时不会被带走，之�
   const chatState = setup('第二产程', [fetus(1), fetus(2, { nestedInEmbryoId: 1, amnionDurability: 0 })], {
     pressure: 120, pregnant: { laborPhase: '胎体娩出', laborBirthNumber: 1, presentingEmbryoId: 1 },
   });
-  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 24 } });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } }); // 走完这一胎的娩出，停在间歇期
   assert.deepEqual(P(chatState).children.map((child) => child.fathers), ['父1']);
   assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.embryoId), [2]);
 });

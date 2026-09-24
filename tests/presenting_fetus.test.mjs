@@ -41,7 +41,7 @@ const pass = (chatState, hour) => applyToolCall(chatState, { name: 'bsPassedTime
 test('生下的是先露胎，不是阵列第一个；出生后清空先露引用', () => {
   Math.random = () => 0.99;
   const chatState = laboring({ presentingEmbryoId: 2, fetuses: [fetus(1, '甲'), fetus(2, '乙')] });
-  pass(chatState, 24);
+  pass(chatState, 1);
   assert.deepEqual(P(chatState).children.map((child) => child.fathers), ['乙']);
   assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.embryoId), [1]);
   assert.equal(P(chatState).pregnant.laborPhase, '间歇期');
@@ -50,7 +50,7 @@ test('生下的是先露胎，不是阵列第一个；出生后清空先露引�
 test('间歇期结束开始下一胎下降时重新锁定先露胎，出生计数加一', () => {
   Math.random = () => 0.99;
   const chatState = laboring({ phase: '间歇期', fetuses: [fetus(3, '丙'), fetus(4, '丁')] });
-  pass(chatState, 24);
+  pass(chatState, 1);
   assert.equal(P(chatState).pregnant.laborPhase, '胎体下降');
   assert.equal(P(chatState).pregnant.laborBirthNumber, 2);
   assert.equal(P(chatState).pregnant.presentingEmbryoId, 3);
@@ -60,7 +60,7 @@ test('先露胎锁定后，阵列换位不会改变出生对象', () => {
   Math.random = () => 0.99;
   const chatState = laboring({ presentingEmbryoId: 1, fetuses: [fetus(1, '甲'), fetus(2, '乙')] });
   P(chatState).pregnant.fetuses.reverse();
-  pass(chatState, 24);
+  pass(chatState, 1);
   assert.deepEqual(P(chatState).children.map((child) => child.fathers), ['甲']);
 });
 
@@ -82,7 +82,7 @@ test('未锁定时不选孕中孕内胎与待着床胚胎', () => {
       fetus(6, '宿主'),
     ],
   });
-  pass(chatState, 24);
+  pass(chatState, 1);
   assert.equal(P(chatState).pregnant.presentingEmbryoId, 6);
 });
 
