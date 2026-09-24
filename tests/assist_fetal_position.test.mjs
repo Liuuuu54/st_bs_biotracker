@@ -154,3 +154,52 @@ test('母胎互动在产兆前驱不再兼任分娩抵抗：不改剩余时间',
   applyToolCall(chatState, { name: 'bsMaternalFetalInteraction', arguments: { female: 'A', direction: 'maternal' } });
   assert.equal(P(chatState).pregnant.prodromalRemainingHours, 30);
 });
+
+// ── extract：第二产程助产拉出当前先露胎 ─────────────────
+const secondStage = (fetuses, pregnant = {}, over = {}) => setup('第二产程', fetuses, {
+  pregnant: { laborPhase: '胎体下降', laborBirthNumber: 1, presentingEmbryoId: 1, ...pregnant }, ...over,
+});
+
+test('extract：直接生下先露胎，胎膜未破会先破；其余胎儿不受影响，转入间歇期', () => {
+  const chatState = secondStage([fetus(1, { descentStage: 1 }), fetus(2, { descentStage: -1 })]);
+  const result = assist(chatState, 'extract');
+  assert.equal(result.applied, true, result.message);
+  assert.deepEqual(P(chatState).children.map((child) => child.fathers), ['父1']);
+  assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.embryoId), [2]);
+  assert.equal(P(chatState).pregnant.fetuses[0].amnionDurability, 100, '其他胎囊不动');
+  assert.equal(P(chatState).pregnant.laborPhase, '间歇期');
+  assert.match(String(P(chatState).notify.secondly), /经助产拉出/);
+  near(P(chatState).pregnant.assistPainBoost, 3, '拉出 +3');
+});
+
+test('extract 只能用在第二产程、已进产道的先露胎；被拒绝时不改动任何胎囊', () => {
+  const notInCanal = secondStage([fetus(1, { descentStage: 0 })], { laborPhase: '间歇期' });
+  assert.equal(assist(notInCanal, 'extract').applied, false);
+  assert.equal(P(notInCanal).pregnant.fetuses[0].amnionDurability, 100);
+  const otherFetus = secondStage([fetus(1, { descentStage: 1 }), fetus(2, { descentStage: -1 })]);
+  assert.equal(assist(otherFetus, 'extract', { fetusIndex: 1 }).applied, false);
+  const firstStage = setup('第一产程', [fetus(1, { descentStage: 0 })], { pregnant: { laborPhase: '潜伏期', presentingEmbryoId: 1 } });
+  assert.equal(assist(firstStage, 'extract').applied, false);
+});
+
+test('肩难产可以直接 extract 拉出', () => {
+  const chatState = secondStage([fetus(1, { descentStage: 3, shoulderDystocia: true })], { laborPhase: '胎体娩出' }, {
+    base: { vitality: 0, uterinePressure: 150 }, realistic: true,
+  });
+  assert.equal(assist(chatState, 'extract').applied, true);
+  assert.equal(P(chatState).children.length, 1);
+});
+
+test('难产警示会指出可用的助产动作', () => {
+  Math.random = () => 0.99;
+  const chatState = secondStage([fetus(1, { descentStage: -1, tendencyAngle: 90 })], {}, { realistic: true, base: { uterinePressure: 120 } });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } });
+  assert.match(String(P(chatState).notify.firstly), /action=rotate/);
+});
+
+test('旧的 bsRuptureMembranes 已移除', () => {
+  const chatState = setup('第一产程', [fetus(1)], { pregnant: { laborPhase: '潜伏期' } });
+  const result = applyToolCall(chatState, { name: 'bsRuptureMembranes', arguments: { female: 'A' } });
+  assert.equal(result.applied, false);
+  assert.match(result.message, /Unsupported tool/);
+});

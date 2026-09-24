@@ -124,8 +124,8 @@ test('rupture in the prodromal stage is refused when uterine pressure is too low
   const chatState = makeChatState({ base: { stage: '产兆前驱', uterinePressure: 1 } });
 
   const result = applyToolCall(chatState, {
-    name: 'bsRuptureMembranes',
-    arguments: { female: '艾拉' },
+    name: 'bsAssistFetalPosition',
+    arguments: { female: '艾拉', action: 'rupture' },
   });
 
   assert.equal(result.applied, false);
@@ -140,8 +140,8 @@ test('only the prodromal stage may rupture before labor', () => {
     const chatState = makeChatState({ base: { stage, uterinePressure: 9999 } });
 
     const result = applyToolCall(chatState, {
-      name: 'bsRuptureMembranes',
-      arguments: { female: '艾拉' },
+      name: 'bsAssistFetalPosition',
+      arguments: { female: '艾拉', action: 'rupture' },
     });
 
     assert.equal(result.applied, false, `${stage} 不该允许破水`);
@@ -155,8 +155,8 @@ test('a sanctioned rupture breaks the membranes and starts the first labor stage
   const chatState = makeChatState({ base: { stage: '产兆前驱', uterinePressure: 9999 } });
 
   const result = applyToolCall(chatState, {
-    name: 'bsRuptureMembranes',
-    arguments: { female: '艾拉' },
+    name: 'bsAssistFetalPosition',
+    arguments: { female: '艾拉', action: 'rupture' },
   });
 
   assert.equal(result.applied, true);
@@ -169,8 +169,8 @@ test('rupturing during labor does not restart the stage', () => {
   const chatState = makeChatState({ base: { stage: '第二产程', uterinePressure: 1 } });
 
   const result = applyToolCall(chatState, {
-    name: 'bsRuptureMembranes',
-    arguments: { female: '艾拉' },
+    name: 'bsAssistFetalPosition',
+    arguments: { female: '艾拉', action: 'rupture' },
   });
 
   // 已在产程内：不需要宫压门槛，也不该把阶段拉回第一产程
@@ -184,8 +184,8 @@ test('a second rupture call is rejected instead of silently reapplying', () => {
   pregnantOf(chatState).fetuses[0].amnionDurability = 0;
 
   const result = applyToolCall(chatState, {
-    name: 'bsRuptureMembranes',
-    arguments: { female: '艾拉' },
+    name: 'bsAssistFetalPosition',
+    arguments: { female: '艾拉', action: 'rupture' },
   });
 
   assert.equal(result.applied, false);
@@ -202,11 +202,11 @@ test('the rupture reminder only points at the tool in stages that can actually r
   // 临产期／逾期调用必被拒，提示它去调等于教它做一件必定失败的事
   for (const stage of ['临产期', '逾期']) {
     const text = reminderFor(stage);
-    assert.doesNotMatch(text, /bsRuptureMembranes/, `${stage} 不该提示调用破水工具`);
+    assert.doesNotMatch(text, /action=rupture/, `${stage} 不该提示调用破水工具`);
     assert.match(text, /必须先进入产兆前驱/);
   }
   // 真的能破水的阶段才指向工具
   for (const stage of ['产兆前驱', '第一产程']) {
-    assert.match(reminderFor(stage), /bsRuptureMembranes/, `${stage} 应指向破水工具`);
+    assert.match(reminderFor(stage), /bsAssistFetalPosition（action=rupture）/, `${stage} 应指向破水工具`);
   }
 });

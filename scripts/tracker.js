@@ -700,16 +700,9 @@ export function hasBreedingPsychology(existingState = {}) {
   });
 }
 
-/** 与 applyRuptureMembranes 允许的阶段一致：更早的阶段羊膜恒不破 */
 function hasAnyFetus(existingState = {}) {
   return Object.values(existingState || {}).some((item) => (
     Array.isArray(item?.profile?.pregnant?.fetuses) && item.profile.pregnant.fetuses.length > 0
-  ));
-}
-
-function hasRupturableStage(existingState = {}) {
-  return Object.values(existingState || {}).some((item) => (
-    ['产兆前驱', '第一产程', '第二产程'].includes(String(item?.profile?.base?.stage || ''))
   ));
 }
 
@@ -720,8 +713,6 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
   const hiddenTools = new Set();
   if (!diaryEnabled) hiddenTools.add('bsWriteDiary');
   if (!psychologyEnabled) hiddenTools.add('bsUpdatePsychology');
-  // 破水只在产兆前驱与前两个产程有意义；平时挂着只是占用模型的注意力
-  if (!hasRupturableStage(existingState)) hiddenTools.add('bsRuptureMembranes');
   // 胎位操作只对体内有胎儿的角色有意义
   if (!hasAnyFetus(existingState)) hiddenTools.add('bsAssistFetalPosition');
   if (!wardrobeEnabled) {

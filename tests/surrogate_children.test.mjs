@@ -515,22 +515,15 @@ test('a failed fusion pair is checked only once', () => {
   }
   assert.equal(chatState.characters['孕母'].profile.pregnant.fetuses.length, 2, '同一对不可在下一天重抽');
 });
-test('the rupture tool is hidden until someone can actually rupture', async () => {
+test('the fetal assist tool (rotate/lift/descend/rupture/extract) is hidden while nobody carries a fetus', async () => {
   const { getTrackerToolDefinitions } = await import('../scripts/tracker.js');
   const settings = { diaryRecentLimit: 0 };
   const names = (existing) => getTrackerToolDefinitions(settings, existing).map((tool) => tool.name);
 
-  // 平时挂着只是占用模型注意力，且执行层本来就会拒绝
-  assert.equal(names({ 艾拉: { profile: { base: { stage: '卵泡期' } } } }).includes('bsRuptureMembranes'), false);
-  assert.equal(names({ 艾拉: { profile: { base: { stage: '孕晚期' } } } }).includes('bsRuptureMembranes'), false);
-
-  for (const stage of ['产兆前驱', '第一产程', '第二产程']) {
-    assert.equal(
-      names({ 艾拉: { profile: { base: { stage } } } }).includes('bsRuptureMembranes'),
-      true,
-      `${stage} 应提供破水工具`,
-    );
-  }
+  // 平时挂着只是占用模型注意力；破水也并进了这个工具，不再有独立的 bsRuptureMembranes
+  assert.equal(names({ 艾拉: { profile: { base: { stage: '卵泡期' }, pregnant: { fetuses: [] } } } }).includes('bsAssistFetalPosition'), false);
+  assert.equal(names({ 艾拉: { profile: { base: { stage: '孕晚期' }, pregnant: { fetuses: [{ embryoId: 1 }] } } } }).includes('bsAssistFetalPosition'), true);
+  assert.equal(names({ 艾拉: { profile: { base: { stage: '第一产程' }, pregnant: { fetuses: [{ embryoId: 1 }] } } } }).includes('bsRuptureMembranes'), false);
 });
 
 test('only surrogate children are offered for manual reassignment', async () => {

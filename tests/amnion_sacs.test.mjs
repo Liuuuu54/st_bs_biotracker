@@ -39,7 +39,7 @@ function setup(stage, fetuses, { pressure = 10, pregnant = {} } = {}) {
 const P = (chatState) => chatState.characters.A.profile;
 const amnion = (chatState) => P(chatState).pregnant.fetuses.map((f) => Math.round(f.amnionDurability * 100) / 100);
 const rupture = (chatState, fetusIndex) => applyToolCall(chatState, {
-  name: 'bsRuptureMembranes', arguments: { female: 'A', ...(fetusIndex === undefined ? {} : { fetusIndex }) },
+  name: 'bsAssistFetalPosition', arguments: { female: 'A', action: 'rupture', ...(fetusIndex === undefined ? {} : { fetusIndex }) },
 });
 
 test('指定 fetusIndex 只破那一胎；同卵组共用胎囊一起破', () => {

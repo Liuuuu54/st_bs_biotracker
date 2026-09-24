@@ -536,21 +536,6 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
-    name: 'bsRuptureMembranes',
-    description: '让角色破水（羊膜破裂）。只有在产兆前驱且宫压已达上限的 66%，或已在第一／第二产程时才会生效；条件不足会被拒绝，此时叙事不得写成已经破水。'
-      + '产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用本工具，让叙事与系统状态一致；系统未确认破水前不要擅自描写破水。'
-      + '每一胎有各自的羊膜（同卵共用胎囊时一起破）：可用 fetusIndex（fetuses 列表下标，从 0 起算）指定要破的那一胎；省略时破正在下降或即将娩出的那一胎。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        female: { type: 'string' },
-        fetusIndex: { type: 'integer' },
-      },
-      required: ['female'],
-      additionalProperties: false,
-    },
-  },
-  {
     name: 'bsChildbirth',
     description: '让角色立即结束分娩并进入产后恢复，并把剩余胎儿转为 children 记录。外部直接调用视为手术产；产程自然结束时则记为自然产。'
       + '只有角色已着床进入妊娠阶段（孕早期起，含产兆前驱与各产程）才能调用；月经阶段、着床前、回归期都会被拒绝，此时不得叙述成已经生产。',
@@ -570,12 +555,14 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位）；已入盆的胎儿只能小幅校正，肩难产时可不给角度直接转动肩部解开卡点。'
       + 'lift：把胎儿往上托回一格；产兆前驱托高领头胎儿会把分娩延后，这是要跟宫缩对抗的，母体活力不足会被拒绝，并带来一阵剧痛。产程中只能托回和另一胎一起卡在入口的那一胎。'
       + 'descend：把胎儿往下推送一格；产兆前驱推送领头胎儿会缩短前驱，时间归零即进入第一产程；正式产程中不能用。'
+      + 'rupture：破水（每一胎有各自的羊膜，同卵共囊一起破）。只有在产兆前驱且宫压已达上限的 66%，或已在第一／第二产程时才会生效；产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用，系统未确认前不要擅自描写破水。孕中孕内胎的胎膜破了代表它被宿主在宫内生出来，不算母亲破水。'
+      + 'extract：第二产程中把正在产道里下降或娩出的那一胎直接助产拉出（胎膜未破会先破）；肩难产时也可以用。只生这一胎，不会结束其余胎儿的分娩；要一次结束全部请用 bsChildbirth。'
       + '所有操作都会带来瞬时的疼痛（产程中）或心理压力（孕期），描写不得超过系统给出的疼痛等级。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
-        action: { type: 'string', enum: ['rotate', 'lift', 'descend'] },
+        action: { type: 'string', enum: ['rotate', 'lift', 'descend', 'rupture', 'extract'] },
         fetusIndex: { type: 'integer' },
         targetAngle: { type: 'number' },
       },
@@ -787,7 +774,6 @@ const WOMB_FROZEN_BLOCKED_TOOLS = new Set([
   'bsImplantEmbryo',
   'bsAbortion',
   'bsChildbirth',
-  'bsRuptureMembranes',
   'bsMaternalFetalInteraction',
   'bsExcreteMetabolism',
   'bsUpdatePsychology',
@@ -3260,7 +3246,7 @@ function updateAdvisoryNotify(profile, female) {
       // 提示它去调等于教它做一件必定失败的事。
       const canRupture = RUPTURE_ALLOWED_PRELABOR_STAGES.includes(stage) || ['第一产程', '第二产程'].includes(stage);
       reminders.push(canRupture
-        ? `${female}尚未破水（膜耐性还有${Math.round(amnion)}%）：禁止描写破水、羊水流出或羊膜破裂。若剧情确实需要破水，必须先调用 bsRuptureMembranes，成功后才可如此描写`
+        ? `${female}尚未破水（膜耐性还有${Math.round(amnion)}%）：禁止描写破水、羊水流出或羊膜破裂。若剧情确实需要破水，必须先调用 bsAssistFetalPosition（action=rupture），成功后才可如此描写`
         : `${female}尚未破水（膜耐性还有${Math.round(amnion)}%）：禁止描写破水、羊水流出或羊膜破裂。此阶段无法破水，必须先进入产兆前驱`);
     } else if (stage !== '第三产程') {
       reminders.push(`${female}已破水`);
@@ -3637,6 +3623,14 @@ const INLET_INTRUSION_AFFINITY = -25;
 const INLET_INTRUSION_PRESSURE_RATIO = 0.66;
 /** 入口拥挤（未互锁）在前驱与第一产程中每小时自行退开一胎的机率；互锁不会自己解开 */
 const INLET_CROWDING_SELF_RESOLVE_CHANCE = 0.1;
+
+/** 各类硬阻塞可用的助产解法，写进难产警示 */
+const OBSTRUCTION_ADVICE = Object.freeze({
+  transverse: '可用 bsAssistFetalPosition（action=rotate）把胎儿转成头位或臀位，',
+  inlet_crowding: '可用 bsAssistFetalPosition（action=lift）把其中一胎托回，',
+  twin_lock: '可用 bsAssistFetalPosition（action=lift）托回其中一胎或（action=rotate）解开互锁，',
+  shoulder_dystocia: '可用 bsAssistFetalPosition（action=rotate）转动肩部或（action=extract）助产拉出，',
+});
 
 function isRealisticLabor(profile) {
   return Boolean(profile?.immune?.realisticLabor);
@@ -4076,6 +4070,44 @@ function removePresentingFetus(pregnant) {
   return born;
 }
 
+/**
+ * 第二产程娩出当前先露胎（连同仍包在它体内的孕中孕内胎），登记孩子，
+ * 再转入间歇期或第三产程。自然娩出与助产拉出（extract）共用。
+ * 回传是否真的生下了胎儿。
+ */
+function deliverPresentingFetus(profile, female, notify, { lead = '' } = {}) {
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const born = removePresentingFetus(pregnant);
+  if (born.length === 0) return false;
+  const father = String(born[0]?.fathers || '未知');
+  const gender = String(born[0]?.gender || '未知');
+  const enclosedNote = describeEnclosedBirths(born);
+  appendChildrenFromFetuses(profile, born);
+  updateFetalEnergyDrain(profile);
+  const remaining = pregnant.fetuses;
+  if (remaining.length === 0) {
+    base.stage = '第三产程';
+    base.days = 0;
+    beginLaborPhase(pregnant, '供养器官娩出', 0);
+    updateLaborPain(profile, '第三产程', '供养器官娩出', 0);
+    profile.notify = {
+      ...notify,
+      firstly: `${female}进入了第三产程·供养器官娩出`,
+      secondly: `${lead}${female}生下了${father}的孩子，性别为${gender}${enclosedNote}，正在娩出胎盘`,
+    };
+  } else {
+    beginLaborPhase(pregnant, '间歇期', pregnant.laborBirthNumber);
+    updateLaborPain(profile, '第二产程', '间歇期', 0);
+    profile.notify = {
+      ...notify,
+      firstly: `${female}进入了第二产程·第${pregnant.laborBirthNumber}胎后间歇期`,
+      secondly: `${lead}${female}生下了${father}的孩子，性别为${gender}${enclosedNote}，仍有${remaining.length}胎待产`,
+    };
+  }
+  return true;
+}
+
 /** 一起娩出的孕中孕内胎（胎囊没破）写进通知：先露胎之外的每一胎 */
 function describeEnclosedBirths(born) {
   const enclosed = born.slice(1);
@@ -4425,7 +4457,7 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
   const presentingFetus = stage === '第二产程' ? getPresentingFetus(pregnant) : null;
   const obstruction = getLaborObstruction(profile);
   if (obstruction) {
-    notify.firstly = `${female}发生难产警示：${obstruction.message}，建议使用 bsChildbirth 进行手术产`;
+    notify.firstly = `${female}发生难产警示：${obstruction.message}，${OBSTRUCTION_ADVICE[obstruction.type] || ''}或使用 bsChildbirth 进行手术产`;
   }
   const threshold = resolveLaborPhaseHours(profile, stage, phase, fetuses);
   const stallThreshold = pressureCap * 0.66;
@@ -4606,40 +4638,12 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
       updateLaborPain(profile, stage, phase, 1, true);
       profile.notify = {
         ...notify,
-        firstly: `${female}发生难产警示：胎头已出但肩部卡住（肩难产），建议使用 bsChildbirth 进行手术产`,
+        firstly: `${female}发生难产警示：胎头已出但肩部卡住（肩难产），${OBSTRUCTION_ADVICE.shoulder_dystocia}或使用 bsChildbirth 进行手术产`,
         secondly: `${female}的第${pregnant.laborBirthNumber}胎胎头已经娩出，但肩部卡住，无法自然完成分娩`,
       };
       return done(false);
     }
-    const born = removePresentingFetus(pregnant);
-    if (born.length > 0) {
-      const father = String(born[0]?.fathers || '未知');
-      const gender = String(born[0]?.gender || '未知');
-      const enclosedNote = describeEnclosedBirths(born);
-      appendChildrenFromFetuses(profile, born);
-      updateFetalEnergyDrain(profile);
-      const remaining = pregnant.fetuses;
-      if (remaining.length === 0) {
-        base.stage = '第三产程';
-        base.days = 0;
-        beginLaborPhase(pregnant, '供养器官娩出', 0);
-        updateLaborPain(profile, '第三产程', '供养器官娩出', 0);
-        profile.notify = {
-          ...notify,
-          firstly: `${female}进入了第三产程·供养器官娩出`,
-          secondly: `${female}生下了${father}的孩子，性别为${gender}${enclosedNote}，正在娩出胎盘`,
-        };
-      } else {
-        beginLaborPhase(pregnant, '间歇期', pregnant.laborBirthNumber);
-        updateLaborPain(profile, stage, '间歇期', 0);
-        profile.notify = {
-          ...notify,
-          firstly: `${female}进入了第二产程·第${pregnant.laborBirthNumber}胎后间歇期`,
-          secondly: `${female}生下了${father}的孩子，性别为${gender}${enclosedNote}，仍有${remaining.length}胎待产`,
-        };
-      }
-      return next(base.stage !== stage);
-    }
+    if (deliverPresentingFetus(profile, female, notify)) return next(base.stage !== stage);
     base.stage = '第三产程';
     base.days = 0;
     beginLaborPhase(pregnant, '供养器官娩出', 0);
@@ -4893,89 +4897,46 @@ const RUPTURE_PRESSURE_RATIO = 0.66;
  * 这里给出唯一一条受控入口：条件足够才破，并直接推进第一产程；
  * 条件不足则明确拒绝，让模型知道该改写叙事而不是继续假设已破水。
  */
-function applyRuptureMembranes(chatState, args) {
-  const female = String(args?.female || '').trim();
-  const character = chatState.characters?.[female];
-  if (!female || !character) {
-    return { applied: false, message: `bsRuptureMembranes skipped: unknown character ${female || '(empty)'}.` };
-  }
-
-  const next = cloneValue(character);
-  const profile = next.profile || {};
+/**
+ * 破水：只在产兆前驱（宫压达上限 66%）与第一、第二产程开放，破指定胎儿的胎囊（同卵共囊一起破）。
+ * 设定上产程前羊膜恒 ≥ 1，模型却常自行写出破水；这里是唯一受控的入口，条件不足就明确拒绝。
+ * 孕中孕内胎的胎囊在宿主体内：破了是宿主在宫内把它生出来，不算母亲破水、不需宫压门槛、不发动产程。
+ * 回传 { applied, message, summary }；成功时已改写 profile。
+ */
+function ruptureFetalSac(profile, female, target) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const notify = profile.notify || {};
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const stage = String(base.stage || '');
   const inPrelabor = RUPTURE_ALLOWED_PRELABOR_STAGES.includes(stage);
   const inLabor = ['第一产程', '第二产程'].includes(stage);
-
-  if (!inPrelabor && !inLabor) {
-    return {
-      applied: false,
-      message: `bsRuptureMembranes skipped for ${female}: stage ${stage || '(none)'} cannot rupture; do not narrate rupture yet.`,
-    };
-  }
-
-  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  const fetusIndex = args?.fetusIndex;
-  const target = fetusIndex === undefined ? getPresentingFetus(pregnant) : resolveVisibleFetus(fetuses, fetusIndex);
-  if (!target) {
-    return { applied: false, message: `bsRuptureMembranes skipped for ${female}: invalid fetusIndex.` };
-  }
+  const reject = (reason) => ({ applied: false, message: `bsAssistFetalPosition skipped for ${female}: ${reason}` });
+  if (!inPrelabor && !inLabor) return reject(`stage ${stage || '(none)'} cannot rupture; do not narrate rupture yet.`);
   const sac = getSacOfFetus(pregnant, target);
-  if (!sac) {
-    return { applied: false, message: `bsRuptureMembranes skipped for ${female}: that fetus is not implanted and has no sac yet.` };
-  }
-  if (getSacDurability(sac) <= 0) {
-    return { applied: false, message: `bsRuptureMembranes skipped for ${female}: already ruptured.` };
-  }
+  if (!sac) return reject('that fetus is not implanted and has no sac yet.');
+  if (getSacDurability(sac) <= 0) return reject('already ruptured.');
 
-  // 孕中孕内胎的胎囊在宿主体内：破了是宿主在宫内把它生出来，不是母亲破水，
-  // 不需要宫压门槛，也不会因此发动产程
-  const host = getEnclosingHost(target, fetuses);
-  if (host) {
+  if (getEnclosingHost(target, fetuses)) {
     setSacDurability(sac, 0);
     releaseRupturedNestedFetuses(pregnant);
-    profile.pregnant = pregnant;
-    profile.notify = { ...notify, secondly: `${female}腹中那一胎体内的胎膜破了，里面的孩子脱离出来，成为独立的一胎` };
-    next.profile = profile;
-    chatState.characters[female] = syncCharacterStageFromProfile(next);
-    return { applied: true, message: `bsRuptureMembranes applied to ${female}: nested fetus released from its host.` };
+    return { applied: true, summary: `${female}腹中那一胎体内的胎膜破了，里面的孩子脱离出来，成为独立的一胎` };
   }
-
   if (inPrelabor) {
     const pressureCap = getUterinePressureCap(profile);
-    const currentPressure = clampNumber(base.uterinePressure, 0, pressureCap, 0);
-    if (currentPressure < pressureCap * RUPTURE_PRESSURE_RATIO) {
-      return {
-        applied: false,
-        message: `bsRuptureMembranes skipped for ${female}: uterine pressure too low to rupture; do not narrate rupture yet.`,
-      };
+    if (clampNumber(base.uterinePressure, 0, pressureCap, 0) < pressureCap * RUPTURE_PRESSURE_RATIO) {
+      return reject('uterine pressure too low to rupture; do not narrate rupture yet.');
     }
   }
-
   setSacDurability(sac, 0);
-  profile.pregnant = pregnant;
-
-  if (inPrelabor) {
-    base.stage = '第一产程';
-    base.days = 0;
-    beginLaborPhase(pregnant, '潜伏期', 0);
-    updateLaborPain(profile, '第一产程', '潜伏期', 0);
-    clearProdromalState(pregnant);
-    profile.notify = {
-      ...notify,
-      firstly: `${female}进入了第一产程`,
-      secondly: `${female}破水了，分娩正式开始`,
-    };
-  } else {
-    profile.notify = { ...notify, secondly: `${female}破水了` };
-  }
-
-  profile.base = base;
-  next.profile = profile;
-  chatState.characters[female] = syncCharacterStageFromProfile(next);
-  return { applied: true, message: `bsRuptureMembranes applied to ${female}.` };
+  if (!inPrelabor) return { applied: true, summary: `${female}破水了` };
+  base.stage = '第一产程';
+  base.days = 0;
+  beginLaborPhase(pregnant, '潜伏期', 0);
+  updateLaborPain(profile, '第一产程', '潜伏期', 0);
+  clearProdromalState(pregnant);
+  profile.notify = { ...notify, firstly: `${female}进入了第一产程` };
+  return { applied: true, summary: `${female}破水了，分娩正式开始` };
 }
 
 function applyChildbirth(chatState, args) {
@@ -5150,7 +5111,10 @@ function applyAssistFetalPosition(chatState, args) {
   const target = resolveAssistTarget(pregnant, args?.fetusIndex);
   if (!target) return skip('invalid fetusIndex.');
   if (target.pendingImplantation) return skip('that embryo is not implanted yet.');
-  if (getEnclosingHost(target, fetuses)) return skip('that fetus is still inside its host fetus and moves with it; act on the host instead.');
+  // 内胎的胎囊可以单独破（等于被宿主生出来），其他操作都跟着宿主
+  if (action !== 'rupture' && getEnclosingHost(target, fetuses)) {
+    return skip('that fetus is still inside its host fetus and moves with it; act on the host instead.');
+  }
 
   const visible = fetuses.filter(isFetusKnownToCharacter);
   const label = `第${visible.indexOf(target) + 1}胎`;
@@ -5222,8 +5186,24 @@ function applyAssistFetalPosition(chatState, args) {
       target.descentStage = depth + 1;
       summary = `${female}的${label}被向下推送`;
     }
-  } else {
-    return skip(`action ${action} is not available yet.`);
+  } else if (action === 'rupture') {
+    const result = ruptureFetalSac(profile, female, target);
+    if (!result.applied) return result;
+    summary = result.summary;
+  } else if (action === 'extract') {
+    if (stage !== '第二产程') return skip('extract is only possible during the second stage of labor.');
+    if (target.embryoId !== pregnant.presentingEmbryoId || depth < 1) {
+      return skip('only the fetus currently descending in the birth canal (presenting, stage 1 or deeper) can be extracted.');
+    }
+    // 胎囊未破时先在同一次操作中破掉（同卵共囊一起）
+    const sac = getSacOfFetus(pregnant, target);
+    if (sac && getSacDurability(sac) > 0) setSacDurability(sac, 0);
+    applyAssistStrain(profile, action);
+    deliverPresentingFetus(profile, female, profile.notify || {}, { lead: '经助产拉出，' });
+    reconcileFetalDescent(profile);
+    next.profile = profile;
+    chatState.characters[female] = syncCharacterStageFromProfile(next);
+    return { applied: true, message: `bsAssistFetalPosition extract applied to ${female}.` };
   }
 
   if (cost > 0) base.vitality = Math.max(0, vitality - cost);
@@ -7081,7 +7061,6 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsExcreteMetabolism') return applyExcreteMetabolism(chatState, args);
   if (name === 'bsAbortion') return applyAbortion(chatState, args);
   if (name === 'bsImplantEmbryo') return applyImplantEmbryo(chatState, args);
-  if (name === 'bsRuptureMembranes') return applyRuptureMembranes(chatState, args);
   if (name === 'bsWombReturn') return applyWombReturn(chatState, args);
   if (name === 'bsChildbirth') return applyChildbirth(chatState, args);
   if (name === 'bsMaternalFetalInteraction') return applyMaternalFetalInteraction(chatState, args);
