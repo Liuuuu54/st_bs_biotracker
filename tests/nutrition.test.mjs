@@ -254,3 +254,17 @@ test('周结算：单周变化封顶，亏空再深也不会跌穿', () => {
   near(settle([fetusAt({ nutrition: 1000 })])[0].weight, Math.exp(0.03), '盈余封顶');
   near(settle([fetusAt({ nutrition: -1000 })])[0].weight, Math.exp(-0.03), '亏损封顶');
 });
+
+test('分池：三胎以上时中间最差、两端最好（中间 0.9、两端 1.2）', () => {
+  const chatState = gainOnce([fetusAt({ embryoId: 1 }), fetusAt({ embryoId: 2 }), fetusAt({ embryoId: 3 })]);
+  const [left, middle, right] = P(chatState).pregnant.fetuses;
+  near(left.nutrition, right.nutrition, '两端对称');
+  near(middle.nutrition / left.nutrition, 0.9 / 1.2, '中间与两端的比例');
+  const [lossLeft, lossMiddle] = P(loseOnce([fetusAt({ embryoId: 1 }), fetusAt({ embryoId: 2 }), fetusAt({ embryoId: 3 })])).pregnant.fetuses;
+  assert.ok(Math.abs(lossMiddle.nutrition) > Math.abs(lossLeft.nutrition), '亏损时中间先亏');
+});
+
+test('分池：双胎没有中间，左右位置不影响分配', () => {
+  const [a, b] = P(gainOnce([fetusAt({ embryoId: 1 }), fetusAt({ embryoId: 2 })])).pregnant.fetuses;
+  near(a.nutrition, b.nutrition, '双胎平分');
+});

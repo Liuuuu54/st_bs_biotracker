@@ -1860,12 +1860,153 @@ function calculatePositionDifficulty(angle, fetus) {
   return 1.33;
 }
 
+// ── 自然胎动 ─────────────────────────────────────────
+// 每胎每个时间单位（孕期为一天）判定一次，最多产生一类意图：上下移动、左右换位，
+// 没有位移的那天才照原有规则转动角度。先依快照逐胎产生意图，再统一结算，
+// 阵列遍历先后不会让谁天然占便宜；最后交给 reconcileFetalDescent 夹上限与容量。
+
+/** 各孕期阶段一天内产生位移（上下或左右）的机率；多胎时再乘 1/√胎数，表示挤 */
+const FETAL_MOVE_CHANCE = Object.freeze({ 孕早期: 0.6, 孕中期: 0.5, 孕晚期: 0.35, 临产期: 0.25, 逾期: 0.15 });
+/** 位移中上下移动所占比例，其余为左右换位 */
+const FETAL_VERTICAL_SHARE = 0.6;
+/** 越接近足月越倾向往下 */
+const FETAL_DOWNWARD_MATURITY_BIAS = Object.freeze({ 孕晚期: 0.1, 临产期: 0.15, 逾期: 0.15 });
+
+/** 能自行活动的胎儿：已着床、没被包在宿主体内、还没入盆 */
+function canMoveFreely(fetus, fetuses) {
+  return !fetus?.pendingImplantation && !getEnclosingHost(fetus, fetuses) && getDescentStage(fetus) < DESCENT_INLET;
+}
+
+function rollFetalDownward(profile, stage) {
+  const pressureCap = getUterinePressureCap(profile);
+  const pressureRatio = clampNumber(profile?.base?.uterinePressure, 0, pressureCap, 0) / Math.max(pressureCap, 1);
+  const chance = clampNumber(0.5 + (pressureRatio * 0.25) + (FETAL_DOWNWARD_MATURITY_BIAS[stage] || 0), 0.1, 0.9, 0.5);
+  return Math.random() < chance;
+}
+
+/** 原有的孕期角度规则：多胎时按胎重占比决定这天转不转得动 */
+function driftPregnancyAngle(fetus, stage, gestationSpeed, totalWeight, fetusCount) {
+  if (stage === '逾期') return;
+  const successRate = fetusCount > 1 ? clampNumber(fetus?.weight, 0.33, 3.0, 1.0) / Math.max(totalWeight, 0.33) : 1;
+  if (Math.random() > successRate) return;
+  const currentAngle = wrapAngle(fetus.tendencyAngle);
+  if (stage === '孕早期') {
+    fetus.tendencyAngle = wrapAngle(currentAngle + (randomInt(-45, 45) * gestationSpeed));
+  } else if (stage === '孕中期') {
+    fetus.tendencyAngle = wrapAngle(currentAngle + (randomInt(-30, 30) * gestationSpeed));
+  } else if (stage === '孕晚期') {
+    if (currentAngle >= 0 && currentAngle <= 180) {
+      fetus.tendencyAngle = Math.max(0, currentAngle - (randomInt(1, 5) * gestationSpeed));
+    } else {
+      const shifted = currentAngle + (randomInt(1, 5) * gestationSpeed);
+      fetus.tendencyAngle = shifted >= 360 ? 0 : shifted;
+    }
+    if (fetus.tendencyAngle === 0 || fetus.tendencyAngle === 360) {
+      fetus.tendencyAngle = wrapAngle(Number(fetus.tendencyAngle || 0) + (randomInt(-2, 2) * gestationSpeed));
+    }
+  } else if (stage === '临产期') {
+    const targetAngle = calculateNearestMainPosition(currentAngle);
+    let diff = targetAngle - currentAngle;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    if (angleDistance(currentAngle, targetAngle) > 15) {
+      fetus.tendencyAngle = wrapAngle(currentAngle + (Math.sign(diff) * randomInt(1, 3) * gestationSpeed));
+    }
+  }
+}
+
+function isHeadDown(angle) {
+  const normalized = wrapAngle(angle);
+  return normalized <= 15 || normalized >= 345;
+}
+
+/** 一个时间单位的胎动。回传这一轮值得通报的位置事件 */
+function stepFetalActivity(profile, stage, gestationSpeed) {
+  const fetuses = profile.pregnant.fetuses;
+  const movers = fetuses.filter((fetus) => canMoveFreely(fetus, fetuses));
+  if (movers.length === 0) return [];
+  for (const fetus of movers) {
+    if (!Number.isFinite(Number(fetus?.tendencyAngle))) fetus.tendencyAngle = randomInt(0, 360);
+  }
+
+  // 第一阶段：依快照逐胎产生意图，这时还不改动任何东西
+  const moveChance = (FETAL_MOVE_CHANCE[stage] || 0) / Math.sqrt(movers.length);
+  const intents = movers.map((fetus) => {
+    if (Math.random() >= moveChance) return { fetus, type: 'angle' };
+    const index = fetuses.indexOf(fetus);
+    const neighbors = [fetuses[index - 1], fetuses[index + 1]].filter((other) => other && movers.includes(other));
+    if (neighbors.length > 0 && Math.random() >= FETAL_VERTICAL_SHARE) {
+      return { fetus, type: 'lateral', with: neighbors[randomInt(0, neighbors.length - 1)] };
+    }
+    return { fetus, type: 'vertical', step: rollFetalDownward(profile, stage) ? 1 : -1 };
+  });
+
+  // 第二阶段：统一结算。角度与上下互不冲突；换位依快照的左右顺序处理，
+  // 每胎一轮最多换一次，对象已换过就放弃
+  const events = [];
+  const cap = getDescentCap(stage);
+  const totalWeight = fetuses.reduce((sum, fetus) => sum + clampNumber(fetus?.weight, 0.33, 3.0, 1.0), 0);
+  if (stage === '孕晚期' && movers.length > 1) {
+    // 原有规则：随机挑一个已转成头位、这轮没有位移的胎儿，按胎重占比决定会不会被挤歪
+    const heads = intents.filter((intent) => intent.type === 'angle' && isHeadDown(intent.fetus.tendencyAngle));
+    if (heads.length > 0) {
+      const target = heads[randomInt(0, heads.length - 1)].fetus;
+      const successRate = clampNumber(target?.weight, 0.33, 3.0, 1.0) / Math.max(totalWeight, 0.33);
+      if (Math.random() > successRate) {
+        target.tendencyAngle = wrapAngle(Number(target.tendencyAngle || 0) + (randomInt(-15, 15) * gestationSpeed));
+      }
+    }
+  }
+  const swapped = new Set();
+  for (const intent of intents) {
+    const { fetus } = intent;
+    if (intent.type === 'angle') {
+      driftPregnancyAngle(fetus, stage, gestationSpeed, totalWeight, fetuses.length);
+    } else if (intent.type === 'vertical') {
+      const before = getDescentStage(fetus);
+      const after = Math.max(DESCENT_TOP, Math.min(cap, before + intent.step));
+      fetus.descentStage = after;
+      if (after !== before && (after === DESCENT_TOP || after === DESCENT_LOW)) events.push({ fetus, descentStage: after });
+    } else if (!swapped.has(fetus) && !swapped.has(intent.with)) {
+      const a = fetuses.indexOf(fetus);
+      const b = fetuses.indexOf(intent.with);
+      [fetuses[a], fetuses[b]] = [fetuses[b], fetuses[a]];
+      swapped.add(fetus);
+      swapped.add(intent.with);
+    }
+  }
+  return events;
+}
+
+/**
+ * 把这一轮的位置事件汇整成一句，追加在 notify.secondly 之后，不覆盖既有讯息。
+ * 胎儿标号用结算后的可见列表；未揭晓的胎儿不出现，免得剧透。
+ */
+function appendFetalActivityNotice(profile, female, events) {
+  const visible = profile.pregnant.fetuses.filter(isFetusKnownToCharacter);
+  const latest = new Map();
+  for (const event of events) {
+    if (!visible.includes(event.fetus)) continue;
+    latest.delete(event.fetus);
+    latest.set(event.fetus, event.descentStage);
+  }
+  // 事件之后又离开了该位置的不必再报
+  for (const [fetus, descentStage] of latest) if (getDescentStage(fetus) !== descentStage) latest.delete(fetus);
+  if (latest.size === 0) return;
+  const phrases = [...latest].slice(0, 3).map(([fetus, descentStage]) => (
+    `第${visible.indexOf(fetus) + 1}胎${descentStage === DESCENT_TOP ? '顶到了宫顶' : '下降到子宫低位'}`
+  ));
+  if (latest.size > 3) phrases.push(`另有${latest.size - 3}胎位置改变`);
+  const notify = profile.notify || {};
+  const current = String(notify.secondly || '').trim();
+  const message = `${female}腹中${phrases.join('，')}`;
+  profile.notify = { ...notify, secondly: current ? `${current}；${message}` : message };
+}
+
 function updateFetalPositions(profile, tick, female) {
-  const base = profile.base || {};
+  const stage = String(profile?.base?.stage || '');
   const pregnant = profile.pregnant || {};
-  const stage = String(base.stage || '');
-  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  if (fetuses.length === 0) return;
+  if (!Array.isArray(pregnant.fetuses) || pregnant.fetuses.length === 0 || !PREGNANCY_STAGES.includes(stage)) return;
 
   const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, 20, 1);
   // 逐日步进的上限：bsPassedTime 可以叠出十几万天，逐日推进会拖死 UI。
@@ -1873,122 +2014,16 @@ function updateFetalPositions(profile, tick, female) {
   // 正常剧情不会触到；只有荒谬的时间跳跃才会被截断。
   const MAX_DAILY_STEPS = 3650;
   const iterations = Math.min(MAX_DAILY_STEPS, Math.max(0, tick.passedDays));
-  if (iterations <= 0 || !PREGNANCY_STAGES.includes(stage)) return;
+  if (iterations <= 0) return;
 
+  reconcileFetalDescent(profile);
+  const events = [];
   for (let step = 0; step < iterations; step += 1) {
-    const totalWeight = fetuses.reduce((sum, fetus) => sum + clampNumber(fetus?.weight, 0.33, 3.0, 1.0), 0);
-    if (stage === '孕晚期' && fetuses.length > 1) {
-      const positionedIndexes = [];
-      for (let index = 0; index < fetuses.length; index += 1) {
-        const fetus = fetuses[index];
-        if (!Number.isFinite(Number(fetus?.tendencyAngle))) fetus.tendencyAngle = randomInt(0, 360);
-        const angle = wrapAngle(fetus.tendencyAngle);
-        if ((angle >= 0 && angle <= 15) || (angle >= 345 && angle <= 360)) positionedIndexes.push(index);
-      }
-      if (positionedIndexes.length > 0) {
-        const targetIndex = positionedIndexes[randomInt(0, positionedIndexes.length - 1)];
-        const targetFetus = fetuses[targetIndex];
-        const adjustmentSuccessRate = clampNumber(targetFetus?.weight, 0.33, 3.0, 1.0) / Math.max(totalWeight, 0.33);
-        if (Math.random() > adjustmentSuccessRate) {
-          targetFetus.tendencyAngle = wrapAngle(Number(targetFetus.tendencyAngle || 0) + (randomInt(-15, 15) * gestationSpeed));
-        }
-      }
-    }
-
-    for (const fetus of fetuses) {
-      if (!Number.isFinite(Number(fetus?.tendencyAngle))) fetus.tendencyAngle = randomInt(0, 360);
-      if (stage === '逾期') continue;
-
-      let adjustmentSuccessRate = 1;
-      if (fetuses.length > 1) {
-        adjustmentSuccessRate = clampNumber(fetus?.weight, 0.33, 3.0, 1.0) / Math.max(totalWeight, 0.33);
-      }
-      if (Math.random() > adjustmentSuccessRate) continue;
-
-      const currentAngle = wrapAngle(fetus.tendencyAngle);
-      if (stage === '孕早期') {
-        fetus.tendencyAngle = wrapAngle(currentAngle + (randomInt(-45, 45) * gestationSpeed));
-      } else if (stage === '孕中期') {
-        fetus.tendencyAngle = wrapAngle(currentAngle + (randomInt(-30, 30) * gestationSpeed));
-      } else if (stage === '孕晚期') {
-        if (currentAngle >= 0 && currentAngle <= 180) {
-          fetus.tendencyAngle = Math.max(0, currentAngle - (randomInt(1, 5) * gestationSpeed));
-        } else {
-          const shifted = currentAngle + (randomInt(1, 5) * gestationSpeed);
-          fetus.tendencyAngle = shifted >= 360 ? 0 : shifted;
-        }
-        if (fetus.tendencyAngle === 0 || fetus.tendencyAngle === 360) {
-          fetus.tendencyAngle = wrapAngle(Number(fetus.tendencyAngle || 0) + (randomInt(-2, 2) * gestationSpeed));
-        }
-      } else if (stage === '临产期') {
-        const targetAngle = calculateNearestMainPosition(currentAngle);
-        const diffRaw = targetAngle - currentAngle;
-        let diff = diffRaw;
-        if (diff > 180) diff -= 360;
-        if (diff < -180) diff += 360;
-        if (angleDistance(currentAngle, targetAngle) > 15) {
-          fetus.tendencyAngle = wrapAngle(currentAngle + (Math.sign(diff) * randomInt(1, 3) * gestationSpeed));
-        }
-      }
-    }
-
-    if (fetuses.length > 1) {
-      const originalOrder = fetuses.slice();
-      if (stage === '孕早期' || stage === '孕中期') {
-        shuffleInPlace(fetuses);
-      } else if (stage === '孕晚期') {
-        const oblique = [];
-        const total = fetuses.reduce((sum, fetus) => sum + clampNumber(fetus?.weight, 0.33, 3.0, 1.0), 0);
-        for (let index = fetuses.length - 1; index >= 0; index -= 1) {
-          const fetus = fetuses[index];
-          if (isObliquePosition(fetus?.tendencyAngle || 0, fetus)) {
-            oblique.push({
-              index,
-              fetus,
-              rate: clampNumber(fetus?.weight, 0.33, 3.0, 1.0) / Math.max(total, 0.33),
-            });
-          }
-        }
-        // 按身分移除，不能用收集当时的 index：每搬动一胎阵列就位移一次，
-        // 后面那些 entry.index 全部失效。用旧索引会删掉别人再把自己插回去，
-        // 结果是一胎被消灭、另一胎被复制两份（双胞胎的父方、种族、性别、标签
-        // 就此互相覆盖，连族谱一起错）。
-        for (const entry of oblique) {
-          if (Math.random() >= entry.rate) continue;
-          const currentIndex = fetuses.indexOf(entry.fetus);
-          if (currentIndex < 0) continue;
-          fetuses.splice(currentIndex, 1);
-          fetuses.splice(randomInt(0, fetuses.length), 0, entry.fetus);
-        }
-      } else if (stage === '临产期') {
-        const total = fetuses.reduce((sum, fetus) => sum + clampNumber(fetus?.weight, 0.33, 3.0, 1.0), 0);
-        if (fetuses.length > 1) {
-          const firstRate = clampNumber(fetuses[0]?.weight, 0.33, 3.0, 1.0) / Math.max(total, 0.33);
-          if (Math.random() < firstRate) {
-            [fetuses[0], fetuses[1]] = [fetuses[1], fetuses[0]];
-          }
-        }
-        if (fetuses.length > 2) {
-          const lastIndex = fetuses.length - 1;
-          const lastRate = clampNumber(fetuses[lastIndex]?.weight, 0.33, 3.0, 1.0) / Math.max(total, 0.33);
-          if (Math.random() < lastRate) {
-            [fetuses[lastIndex], fetuses[lastIndex - 1]] = [fetuses[lastIndex - 1], fetuses[lastIndex]];
-          }
-        }
-      }
-      const orderChanged = fetuses.some((fetus, index) => fetus !== originalOrder[index]);
-      if (orderChanged) {
-        profile.notify = {
-          ...(profile.notify || {}),
-          secondly: `${female}的胚胎分布发生了变化`,
-        };
-      }
-    }
+    events.push(...stepFetalActivity(profile, stage, gestationSpeed));
+    reconcileFetalDescent(profile);
   }
-
-  pregnant.fetuses = fetuses;
-  pregnant.fetusesCount = fetuses.length;
-  profile.pregnant = pregnant;
+  pregnant.fetusesCount = pregnant.fetuses.length;
+  appendFetalActivityNotice(profile, female, events);
 }
 
 function updateProdromalFetalPositions(profile, tick) {
@@ -2729,15 +2764,28 @@ function applyHourlyPregnancyMetabolism(profile, tick) {
 const NUTRITION_WEIGHT_SCALE = 0.0005;
 // 单周（按有效孕程）胎重变化上限，同样乘妊娠变速，快孕期种族一周走完多周孕程不被卡住。
 const NUTRITION_WEEKLY_CAP = 0.03;
-// 越靠宫顶供养越好；亏损时取倒数，宫顶胎受保护、低位胎先亏。descentStage 尚未建立时为 1。
+// 越靠宫顶供养越好；亏损时取倒数，宫顶胎受保护、低位胎先亏。
 const NUTRITION_POSITION_FACTORS = Object.freeze({ '-3': 1.5, '-2': 1.0, '-1': 0.8, 0: 0.6 });
+// 三胎以上时的左右位置：中间最挤、供血被两侧瓜分（窝生哺乳类的实况），两端最好
+const NUTRITION_LATERAL_CENTER = 0.9;
+const NUTRITION_LATERAL_EDGE = 1.2;
+
+/** 阵列顺序就是子宫内由左至右；被包着的内胎与待着床胚胎不占位置 */
+function getLateralNutritionFactor(anchor, fetuses) {
+  const occupants = fetuses.filter((fetus) => !fetus?.pendingImplantation && !getEnclosingHost(fetus, fetuses));
+  if (occupants.length < 3) return 1;
+  const index = occupants.indexOf(anchor);
+  if (index < 0) return 1;
+  const center = (occupants.length - 1) / 2;
+  return NUTRITION_LATERAL_CENTER + ((NUTRITION_LATERAL_EDGE - NUTRITION_LATERAL_CENTER) * Math.abs(index - center)) / center;
+}
 
 function getNutritionPositionFactor(fetus, fetuses, surplus) {
-  const host = getEnclosingHost(fetus, fetuses);
-  const stage = Number((host || fetus)?.descentStage);
-  if (!Number.isFinite(stage)) return 1;
-  const factor = NUTRITION_POSITION_FACTORS[Math.round(stage)];
-  if (!factor) return 0;
+  const anchor = getEnclosingHost(fetus, fetuses) || fetus;
+  const stage = Number(anchor?.descentStage);
+  const vertical = Number.isFinite(stage) ? NUTRITION_POSITION_FACTORS[Math.round(stage)] : 1;
+  if (!vertical) return 0;
+  const factor = vertical * getLateralNutritionFactor(anchor, fetuses);
   return surplus ? factor : 1 / factor;
 }
 

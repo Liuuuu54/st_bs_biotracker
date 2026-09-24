@@ -96,3 +96,65 @@ test('产兆前驱中先露胎被托回负值区域就释放锁定，由仍在�
   touch(chatState);
   assert.equal(P(chatState).pregnant.presentingEmbryoId, 2);
 });
+
+// ── 自然胎动（孕期每天一次） ─────────────────────────────
+const seeded = (seed) => () => {
+  seed = (seed * 1103515245 + 12345) % 2147483648;
+  return seed / 2147483648;
+};
+const passDays = (chatState, day) => applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day } });
+
+test('孕期胎动：位置始终在宫顶 -3 与子宫低位 -1 之间，且真的会上下移动', () => {
+  const seen = new Set();
+  for (let seed = 1; seed <= 5; seed += 1) {
+    Math.random = seeded(seed);
+    const chatState = setup('孕中期', [fetus(1), fetus(2), fetus(3)], { pregnantDays: 120, effectivePregnantDays: 120 });
+    for (let day = 0; day < 20; day += 1) {
+      passDays(chatState, 1);
+      for (const value of depths(chatState)) {
+        assert.ok(value >= -3 && value <= -1, `越界：${value}`);
+        seen.add(value);
+      }
+    }
+  }
+  assert.deepEqual([...seen].sort(), [-1, -2, -3], '宫顶、宫内、低位都该出现过');
+});
+
+test('一直掷出「往下」时一天只降一格，停在子宫低位并通报', () => {
+  Math.random = () => 0;
+  const chatState = setup('孕晚期', [fetus(1, { descentStage: -3 })], { pregnantDays: 220, effectivePregnantDays: 220 });
+  passDays(chatState, 1);
+  assert.deepEqual(depths(chatState), [-2], '一天最多跨一格');
+  passDays(chatState, 3);
+  assert.deepEqual(depths(chatState), [-1]);
+  assert.match(String(P(chatState).notify.secondly), /第1胎下降到子宫低位/);
+});
+
+test('左右换位只交换阵列位置，胎儿的身分与资料不变；不再发出「胚胎分布发生了变化」', () => {
+  const orders = new Set();
+  for (let seed = 11; seed <= 20; seed += 1) {
+    Math.random = seeded(seed);
+    const originals = [fetus(1), fetus(2, { fathers: '乙' }), fetus(3, { fathers: '丙' })];
+    const chatState = setup('孕早期', originals, { pregnantDays: 40, effectivePregnantDays: 40 });
+    passDays(chatState, 10);
+    const now = P(chatState).pregnant.fetuses;
+    orders.add(now.map((f) => f.embryoId).join(','));
+    assert.deepEqual(now.map((f) => f.embryoId).sort(), [1, 2, 3]);
+    for (const f of now) assert.equal(f.fathers, f.embryoId === 1 ? '父1' : (f.embryoId === 2 ? '乙' : '丙'));
+    assert.doesNotMatch(JSON.stringify(P(chatState).notify), /胚胎分布发生了变化/);
+  }
+  assert.ok(orders.size > 1, '十个种子里至少要出现一次换位');
+});
+
+test('被包着的内胎与未揭晓胎儿不单独活动；未揭晓胎儿的位置事件不会出现在通知里', () => {
+  Math.random = () => 0;
+  const chatState = setup('孕晚期', [
+    fetus(1, { descentStage: -2 }),
+    fetus(2, { nestedInEmbryoId: 1 }),
+    fetus(3, { descentStage: -2, conceivedAtDays: 100, tags: ['superfetation'] }),
+  ], { pregnantDays: 220, effectivePregnantDays: 220 });
+  passDays(chatState, 1);
+  assert.deepEqual(depths(chatState), [-1, -1, -1], '内胎跟宿主一起到了低位');
+  assert.match(String(P(chatState).notify.secondly), /第1胎下降到子宫低位/);
+  assert.doesNotMatch(String(P(chatState).notify.secondly), /第2胎/);
+});
