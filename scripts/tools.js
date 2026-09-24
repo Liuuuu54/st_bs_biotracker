@@ -3437,6 +3437,83 @@ function getEnclosingHost(fetus, fetuses) {
   return fetuses.find((candidate) => candidate?.embryoId === hostId) || null;
 }
 
+// ── 下降阶段 ─────────────────────────────────────────
+// fetus.descentStage 是粗粒度的空间深度，阶段内的连续位置由产程进度派生，不另存：
+// -3 宫顶、-2 宫内自由、-1 子宫低位、0 入盆、1 进入产道、2 着冠、3 先露部已出。
+const DESCENT_TOP = -3;
+const DESCENT_START = -2;
+const DESCENT_LOW = -1;
+const DESCENT_INLET = 0;
+const DESCENT_CROWNED_OUT = 3;
+
+/**
+ * 母体阶段决定一般胎儿最多能降到哪里（上限，不是固定值）。
+ * 孕期各阶段都只到子宫低位，产兆前驱起才能入盆，第二产程才进产道。
+ * 异期胎的「自身孕龄上限」在孕期同样是 -1，与母体上限一致，因此不另算。
+ */
+function getDescentCap(stage) {
+  if (stage === '第二产程' || stage === '第三产程') return DESCENT_CROWNED_OUT;
+  if (stage === '产兆前驱' || stage === '第一产程') return DESCENT_INLET;
+  return DESCENT_LOW;
+}
+
+function getDescentStage(fetus) {
+  const value = Number(fetus?.descentStage);
+  return Number.isFinite(value) ? value : DESCENT_START;
+}
+
+/**
+ * 所有位置变更后都要经过这里，维持空间不变量：
+ * 1. 待着床的胚胎没有位置；包在宿主体内的内胎与宿主同步。
+ * 2. 其余胎儿夹在 [-3, 母体阶段上限]，缺值者从 -2（宫内自由）起算。
+ * 3. 有胎儿到达入口（>=0）而尚无先露胎时，锁定下降最深者（同值取 embryoId 较小者）。
+ * 4. 入口以后（>=0）只容先露胎一胎；其他越界者退回子宫低位 -1。
+ *    病理性的双胎同时入盆由 F 步的硬阻塞判定另行开放。
+ */
+function reconcileFetalDescent(profile) {
+  const pregnant = profile?.pregnant;
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  if (fetuses.length === 0) return;
+  const cap = getDescentCap(String(profile?.base?.stage || ''));
+
+  const active = [];
+  for (const fetus of fetuses) {
+    if (fetus?.pendingImplantation) {
+      delete fetus.descentStage;
+      continue;
+    }
+    if (getEnclosingHost(fetus, fetuses)) continue;
+    fetus.descentStage = Math.max(DESCENT_TOP, Math.min(cap, Math.round(getDescentStage(fetus))));
+    active.push(fetus);
+  }
+
+  let presenting = active.find((fetus) => fetus.embryoId === pregnant.presentingEmbryoId) || null;
+  // 先露锁定只在入口以后成立：退回负值区域（托高、退回妊娠阶段）就释放，之后重新竞争。
+  // 第二、三产程例外——每胎开始胎体下降时即锁定，E 步接上产程下降前它可能还在高位。
+  const inBirthStage = cap >= DESCENT_CROWNED_OUT;
+  if (presenting && !inBirthStage && presenting.descentStage < DESCENT_INLET) presenting = null;
+  if (!presenting && !inBirthStage) pregnant.presentingEmbryoId = null;
+  if (!presenting) {
+    const engaged = active.filter((fetus) => fetus.descentStage >= DESCENT_INLET);
+    if (engaged.length > 0) {
+      presenting = engaged.reduce((best, fetus) => (
+        fetus.descentStage > best.descentStage
+        || (fetus.descentStage === best.descentStage && Number(fetus.embryoId) < Number(best.embryoId))
+          ? fetus : best
+      ));
+      pregnant.presentingEmbryoId = presenting.embryoId;
+    }
+  }
+  for (const fetus of active) {
+    if (fetus !== presenting && fetus.descentStage >= DESCENT_INLET) fetus.descentStage = DESCENT_LOW;
+  }
+
+  for (const fetus of fetuses) {
+    const host = getEnclosingHost(fetus, fetuses);
+    if (host && !fetus.pendingImplantation) fetus.descentStage = getDescentStage(host);
+  }
+}
+
 /** 胎囊已破的内胎解绑：保留当下的位置，之后与其他胎儿一样活动与竞争入口 */
 function releaseRupturedNestedFetuses(pregnant) {
   const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
@@ -5072,6 +5149,7 @@ function applyTimeToCharacter(character, tick) {
     maternalFetalInteractionUsed: tick.passedHours > 0 ? false : Boolean(cooldown.maternalFetalInteractionUsed),
   };
   accrueNutritionBurst(profile, tick.deltaMinutes);
+  reconcileFetalDescent(profile);
   updateAdvisoryNotify(profile, next.name);
   if (tick.passedDays > 0) {
     appendNotifyReminder(profile.notify || notify, '已跨入新的一天；若角色有值得沉淀的经历、心境、关系或身体变化，可调用 bsWriteDiary 写入主观日记');
@@ -6404,6 +6482,7 @@ export function applyToolCall(chatState, call) {
     if (!pregnant || typeof pregnant !== 'object') continue;
     releaseRupturedNestedFetuses(pregnant);
     reconcilePresentingReference(pregnant);
+    reconcileFetalDescent(character.profile);
   }
   return result;
 }
