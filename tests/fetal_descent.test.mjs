@@ -339,3 +339,141 @@ test('大胎修正不作用于间歇期与第一产程', () => {
   };
   assert.equal(interval(2.5), interval(1));
 });
+
+// ── 真实分娩模式的硬阻塞 ─────────────────────────────────
+const realisticAt = (stage, fetuses, pregnant = {}) => {
+  const chatState = setup(stage, fetuses, { pregnantDays: 280, effectivePregnantDays: 280, ...pregnant });
+  P(chatState).immune.realisticLabor = true;
+  P(chatState).base.uterinePressure = 120;
+  return chatState;
+};
+
+test('横位：真实模式下前驱领头的胎生横位胎停在子宫低位、入不了盆；非真实模式照常入盆', () => {
+  const realistic = realisticAt('产兆前驱', [fetus(1, { tendencyAngle: 90 })], { prodromalRemainingHours: 10 });
+  touch(realistic);
+  assert.deepEqual(depths(realistic), [-1]);
+  assert.equal(P(realistic).pregnant.presentingEmbryoId, null);
+  const gentle = setup('产兆前驱', [fetus(1, { tendencyAngle: 90 })], { prodromalRemainingHours: 10, pregnantDays: 280, effectivePregnantDays: 280 });
+  touch(gentle);
+  assert.deepEqual(depths(gentle), [0]);
+});
+
+test('横位只挡胎生与卵胎生：卵生横位照常入盆', () => {
+  const chatState = realisticAt('产兆前驱', [fetus(1, { tendencyAngle: 90, embryoType: '卵生' })], { prodromalRemainingHours: 10 });
+  touch(chatState);
+  assert.deepEqual(depths(chatState), [0]);
+});
+
+test('横位进入第二产程：胎体下降不推进、发出难产警示', () => {
+  Math.random = () => 0.99;
+  const chatState = realisticAt('第二产程', [fetus(1, { tendencyAngle: 90, descentStage: -1 })], {
+    laborPhase: '胎体下降', laborBirthNumber: 1, presentingEmbryoId: 1,
+  });
+  passHours(chatState, 5);
+  assert.equal(P(chatState).pregnant.effectiveLaborHours, 0);
+  assert.ok(depths(chatState)[0] <= 0);
+  assert.equal(P(chatState).children.length, 0);
+  assert.match(String(P(chatState).notify.firstly), /横位/);
+});
+
+// 间歇期：先露胎在入口 0，另一胎在 -1；Math.random 恒为 0 → 必定产生往下的意图
+const crowdingSetup = (over = {}) => realisticAt('第二产程', [
+  fetus(1, { descentStage: 0, tendencyAngle: 0, weight: 1 }),
+  fetus(2, { descentStage: -1, tendencyAngle: 0, weight: 0.9, affinity: -30, ...over }),
+], { laborPhase: '间歇期', laborBirthNumber: 1, presentingEmbryoId: 1 });
+
+test('病理性同时入盆：胎重相近、排斥母体、宫压够强时第二胎挤进入口，胎体下降停住', () => {
+  Math.random = () => 0;
+  const chatState = crowdingSetup();
+  passHours(chatState, 3);
+  assert.deepEqual(depths(chatState), [0, 0]);
+  assert.equal(P(chatState).pregnant.laborPhase, '胎体下降');
+  assert.equal(P(chatState).pregnant.effectiveLaborHours, 0);
+  assert.match(String(P(chatState).notify.firstly), /两胎同时挤在骨盆入口/);
+});
+
+test('角度相对时升级为双胎互锁', () => {
+  Math.random = () => 0;
+  const chatState = crowdingSetup({ tendencyAngle: 180 });
+  passHours(chatState, 1);
+  assert.deepEqual(depths(chatState), [0, 0]);
+  assert.match(String(P(chatState).notify.firstly), /胎位互锁/);
+});
+
+for (const [label, over] of [['affinity = -24', { affinity: -24 }], ['胎重差距过大', { weight: 0.6 }]]) {
+  test(`病理性入盆的门槛未达（${label}）时留在子宫低位`, () => {
+    Math.random = () => 0;
+    const chatState = crowdingSetup(over);
+    passHours(chatState, 1);
+    assert.equal(depths(chatState)[1], -1);
+  });
+}
+
+test('宫压未达上限 66% 时不会病理性入盆', () => {
+  Math.random = () => 0;
+  const chatState = crowdingSetup();
+  P(chatState).base.uterinePressure = 90; // 上限 150 的 60%
+  passHours(chatState, 1);
+  assert.equal(depths(chatState)[1], -1);
+});
+
+test('入口拥挤在第一产程可自行退开一胎；互锁不会自己解开', () => {
+  Math.random = () => 0;
+  const crowded = realisticAt('第一产程', [
+    fetus(1, { descentStage: 0 }), fetus(2, { descentStage: 0, inletIntruder: true, affinity: 0 }),
+  ], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
+  passHours(crowded, 1);
+  assert.deepEqual(depths(crowded), [0, -1]);
+
+  Math.random = () => 0.05; // 低于自行解开的 10%，但不会产生新的位移
+  const locked = realisticAt('第一产程', [
+    fetus(1, { descentStage: 0 }), fetus(2, { descentStage: 0, inletIntruder: true, affinity: 0, tendencyAngle: 180 }),
+  ], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
+  passHours(locked, 3);
+  assert.deepEqual(depths(locked), [0, 0]);
+});
+
+test('关闭真实模式时清掉阻塞标记，多出来的入口占用退回低位', () => {
+  const chatState = setup('第一产程', [
+    fetus(1, { descentStage: 0 }), fetus(2, { descentStage: 0, inletIntruder: true }),
+  ], { laborPhase: '潜伏期', presentingEmbryoId: 1, pregnantDays: 280, effectivePregnantDays: 280 });
+  touch(chatState);
+  assert.deepEqual(depths(chatState), [0, -1]);
+  assert.equal('inletIntruder' in P(chatState).pregnant.fetuses[1], false);
+});
+
+const shoulderSetup = (over = {}, base = {}) => {
+  const chatState = realisticAt('第二产程', [fetus(1, { descentStage: 2, tendencyAngle: 0, ...over })], {
+    laborPhase: '胎体娩出', laborBirthNumber: 1, presentingEmbryoId: 1,
+  });
+  Object.assign(P(chatState).base, { uterinePressure: 150, vitality: 0, ...base });
+  return chatState;
+};
+
+test('肩难产：胎生头位、到 3、宫压达上限、活力为 0 → 停在 3 不会出生，之后推进也不会', () => {
+  Math.random = () => 0.99;
+  const chatState = shoulderSetup();
+  passHours(chatState, 2);
+  assert.deepEqual(depths(chatState), [3]);
+  assert.equal(P(chatState).children.length, 0);
+  assert.match(String(P(chatState).notify.firstly), /肩难产/);
+  P(chatState).base.vitality = 100;
+  passHours(chatState, 5);
+  assert.equal(P(chatState).children.length, 0, '成立后普通时间推进解不开');
+});
+
+for (const [label, over, base, realistic] of [
+  ['活力未归零', {}, { vitality: 1 }, true],
+  ['宫压未达上限', {}, { uterinePressure: 149 }, true],
+  ['非头位', { tendencyAngle: 180 }, {}, true],
+  ['卵生', { embryoType: '卵生' }, {}, true],
+  ['非真实模式', {}, {}, false],
+]) {
+  test(`肩难产条件缺一不成立（${label}）：照常出生`, () => {
+    Math.random = () => 0.99;
+    const chatState = shoulderSetup(over, base);
+    P(chatState).immune.realisticLabor = realistic;
+    passHours(chatState, 2);
+    assert.equal(P(chatState).children.length, 1);
+  });
+}

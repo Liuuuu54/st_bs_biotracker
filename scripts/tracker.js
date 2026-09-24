@@ -892,7 +892,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
         const {
           embryoId: _embryoId, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion,
           // 位置在 I 步改为紧凑的文字摘要再送；数值与解绑旗标先不外露
-          descentStage: _descentStage, nestedReleased: _nestedReleased, ...visibleFetus
+          descentStage: _descentStage, nestedReleased: _nestedReleased,
+          inletIntruder: _inletIntruder, shoulderDystocia: _shoulderDystocia, ...visibleFetus
         } = fetus;
         return {
           ...visibleFetus,

@@ -1804,15 +1804,6 @@ function isTransversePosition(angle) {
   return (normalized >= 75 && normalized <= 105) || (normalized >= 255 && normalized <= 285);
 }
 
-function getRealisticLaborObstruction(fetuses) {
-  if (!Array.isArray(fetuses) || fetuses.length === 0) return null;
-  const firstAngle = Number.isFinite(Number(fetuses[0]?.tendencyAngle)) ? wrapAngle(fetuses[0].tendencyAngle) : 0;
-  if (isTransversePosition(firstAngle)) return '首位胎儿呈横位';
-  if (fetuses.length < 2) return null;
-  const secondAngle = Number.isFinite(Number(fetuses[1]?.tendencyAngle)) ? wrapAngle(fetuses[1].tendencyAngle) : 0;
-  if (Math.abs(angleDistance(firstAngle, secondAngle) - 180) <= 15) return '前两胎胎位互锁';
-  return null;
-}
 
 function calculatePositionDifficulty(angle, fetus) {
   const normalized = wrapAngle(angle);
@@ -2073,6 +2064,10 @@ function stepLaborFetalActivity(profile, stage) {
     return { fetus, type: 'vertical', step: rollLaborDownward(profile) ? 1 : -1 };
   });
 
+  // 真实模式的病理性突破：先露胎已在入口 0，另一胎同一小时由 -1 往下，
+  // 且胎重相近、对母体明显排斥、宫压够强时，它也挤进入口。同一结算只允许编号最小的一胎尝试
+  const intruder = pickInletIntruder(profile, stage, intents);
+
   // 第二阶段：统一结算；非领头胎儿在产程中最多到子宫低位，入口由协调函数把关
   const events = [];
   const swapped = new Set();
@@ -2081,6 +2076,11 @@ function stepLaborFetalActivity(profile, stage) {
     if (intent.type === 'angle') {
       correctTowardMainPosition(fetus, correction);
     } else if (intent.type === 'vertical') {
+      if (fetus === intruder) {
+        fetus.descentStage = DESCENT_INLET;
+        fetus.inletIntruder = true;
+        continue;
+      }
       const before = getDescentStage(fetus);
       const after = Math.max(DESCENT_TOP, Math.min(DESCENT_LOW, before + intent.step));
       fetus.descentStage = after;
@@ -2094,7 +2094,41 @@ function stepLaborFetalActivity(profile, stage) {
     }
   }
   for (const fetus of engaged) correctTowardMainPosition(fetus, correction / 2);
+
+  // 入口拥挤（未互锁）在前驱与第一产程中可能自行解开：挤进来的那胎退回低位
+  if ((stage === '产兆前驱' || stage === '第一产程')) {
+    const obstruction = getLaborObstruction(profile);
+    if (obstruction?.type === 'inlet_crowding' && Math.random() < INLET_CROWDING_SELF_RESOLVE_CHANCE) {
+      const retreating = fetuses.find((fetus) => fetus.embryoId === obstruction.embryoIds[1]);
+      if (retreating) {
+        retreating.descentStage = DESCENT_LOW;
+        delete retreating.inletIntruder;
+      }
+    }
+  }
   return events;
+}
+
+function pickInletIntruder(profile, stage, intents) {
+  if (!isRealisticLabor(profile) || !OBSTRUCTION_STAGES.includes(stage)) return null;
+  const pregnant = profile.pregnant;
+  const fetuses = pregnant.fetuses;
+  const presenting = fetuses.find((fetus) => fetus.embryoId === pregnant.presentingEmbryoId);
+  if (!presenting || getDescentStage(presenting) !== DESCENT_INLET) return null;
+  if (fetuses.some((fetus) => fetus.inletIntruder && getDescentStage(fetus) === DESCENT_INLET)) return null;
+  const pressureCap = getUterinePressureCap(profile);
+  if (clampNumber(profile?.base?.uterinePressure, 0, pressureCap, 0) < pressureCap * INLET_INTRUSION_PRESSURE_RATIO) return null;
+  const presentingWeight = clampNumber(presenting.weight, 0.33, 3.0, 1.0);
+  const candidates = intents
+    .filter((intent) => intent.type === 'vertical' && intent.step > 0 && getDescentStage(intent.fetus) === DESCENT_LOW)
+    .map((intent) => intent.fetus)
+    .filter((fetus) => {
+      const weight = clampNumber(fetus.weight, 0.33, 3.0, 1.0);
+      return Math.min(weight, presentingWeight) / Math.max(weight, presentingWeight) >= INLET_INTRUSION_WEIGHT_RATIO
+        && clampNumber(fetus.affinity, -50, 50, 0) <= INLET_INTRUSION_AFFINITY;
+    })
+    .sort((left, right) => Number(left.embryoId) - Number(right.embryoId));
+  return candidates[0] || null;
 }
 
 function advanceLaborFetalActivity(profile, tick, female) {
@@ -3572,6 +3606,99 @@ function getDescentStage(fetus) {
   return Number.isFinite(value) ? value : DESCENT_START;
 }
 
+// ── 真实分娩模式的硬阻塞 ─────────────────────────────
+// 只在真实分娩模式成立；关闭时不建立、也不保留任何会让产程停住的结构性阻塞。
+// 结果是结构化的 { type, embryoIds, message, hardBlock }，通知、调试、助产工具与未来 SVG 共用。
+const OBSTRUCTION_STAGES = Object.freeze(['产兆前驱', '第一产程', '第二产程']);
+/** 病理性双胎同时入盆的门槛 */
+const INLET_INTRUSION_WEIGHT_RATIO = 0.85;
+const INLET_INTRUSION_AFFINITY = -25;
+const INLET_INTRUSION_PRESSURE_RATIO = 0.66;
+/** 入口拥挤（未互锁）在前驱与第一产程中每小时自行退开一胎的机率；互锁不会自己解开 */
+const INLET_CROWDING_SELF_RESOLVE_CHANCE = 0.1;
+
+function isRealisticLabor(profile) {
+  return Boolean(profile?.immune?.realisticLabor);
+}
+
+/** 横位只对胎生与卵胎生构成硬阻塞；其余胚型的横位只影响难度（calculatePositionDifficulty） */
+function isHardTransverse(fetus) {
+  const embryoType = String(fetus?.embryoType || '胎生');
+  if (embryoType !== '胎生' && embryoType !== '卵胎生') return false;
+  return isTransversePosition(Number.isFinite(Number(fetus?.tendencyAngle)) ? fetus.tendencyAngle : 0);
+}
+
+function isInterlockedPair(first, second) {
+  const a = Number.isFinite(Number(first?.tendencyAngle)) ? wrapAngle(first.tendencyAngle) : 0;
+  const b = Number.isFinite(Number(second?.tendencyAngle)) ? wrapAngle(second.tendencyAngle) : 0;
+  return Math.abs(angleDistance(a, b) - 180) <= 15;
+}
+
+function isHeadPresentation(fetus) {
+  const angle = Number.isFinite(Number(fetus?.tendencyAngle)) ? wrapAngle(fetus.tendencyAngle) : 0;
+  return angle <= 15 || angle >= 345;
+}
+
+/** 正要通过入口的那一胎：已锁定的先露胎、前驱领头胎儿，否则是最深者 */
+function getInletCandidate(profile, active) {
+  const pregnant = profile.pregnant;
+  return active.find((fetus) => fetus.embryoId === pregnant.presentingEmbryoId)
+    || active.find((fetus) => fetus.embryoId === pregnant.prodromalLeadEmbryoId)
+    || pickDeepestFetus(active);
+}
+
+function getFreeFetuses(pregnant) {
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  return fetuses.filter((fetus) => !fetus?.pendingImplantation && !getEnclosingHost(fetus, fetuses));
+}
+
+/**
+ * 当前的硬阻塞（依位置、角度与胚型判定，不另掷骰）：
+ * - shoulder_dystocia：先露胎已在 3 并留下肩难产标记，直到助产或手术产处理。
+ * - inlet_crowding／twin_lock：病理性第二胎也挤进入口 0；角度相对（±15°）为互锁。
+ * - transverse：正要通过入口的胎儿（<=0）为胎生／卵胎生横位，只能停在子宫低位。
+ */
+export function getLaborObstruction(profile) {
+  if (!isRealisticLabor(profile)) return null;
+  if (!OBSTRUCTION_STAGES.includes(String(profile?.base?.stage || ''))) return null;
+  const pregnant = profile.pregnant || {};
+  const active = getFreeFetuses(pregnant);
+  if (active.length === 0) return null;
+  const presenting = active.find((fetus) => fetus.embryoId === pregnant.presentingEmbryoId) || null;
+
+  if (presenting?.shoulderDystocia) {
+    return { type: 'shoulder_dystocia', embryoIds: [presenting.embryoId], message: '胎头已出但肩部卡住（肩难产）', hardBlock: true };
+  }
+  const intruder = active.find((fetus) => fetus.inletIntruder && getDescentStage(fetus) === DESCENT_INLET);
+  if (intruder && presenting && getDescentStage(presenting) === DESCENT_INLET) {
+    const locked = isInterlockedPair(presenting, intruder);
+    return {
+      type: locked ? 'twin_lock' : 'inlet_crowding',
+      embryoIds: [presenting.embryoId, intruder.embryoId],
+      message: locked ? '两胎同时卡在骨盆入口且胎位互锁' : '两胎同时挤在骨盆入口',
+      hardBlock: true,
+    };
+  }
+  const candidate = getInletCandidate(profile, active);
+  if (candidate && getDescentStage(candidate) <= DESCENT_INLET && isHardTransverse(candidate)) {
+    return { type: 'transverse', embryoIds: [candidate.embryoId], message: '领头的胎儿呈横位，无法入盆', hardBlock: true };
+  }
+  return null;
+}
+
+/**
+ * 肩难产：真实模式、胎生头位的先露胎刚到 3，宫压已达上限而活力归零。
+ * 条件缺一不成立；成立后留下持久标记，普通时间推进不会移除胎儿或新增孩子。
+ */
+function isShoulderDystocia(profile, fetus) {
+  if (!isRealisticLabor(profile)) return false;
+  if (String(fetus?.embryoType || '胎生') !== '胎生' || !isHeadPresentation(fetus)) return false;
+  if (getDescentStage(fetus) !== DESCENT_CROWNED_OUT) return false;
+  const pressureCap = getUterinePressureCap(profile);
+  if (clampNumber(profile?.base?.uterinePressure, 0, pressureCap, 0) < pressureCap) return false;
+  return clampNumber(profile?.base?.vitality, 0, 9999, 100) <= 0;
+}
+
 /** 下降最深者；同值取 embryoId 较小者（稳定、与阵列顺序无关） */
 function pickDeepestFetus(fetuses) {
   if (fetuses.length === 0) return null;
@@ -3623,6 +3750,8 @@ function reconcileFetalDescent(profile) {
   const stage = String(profile?.base?.stage || '');
   const cap = getDescentCap(stage);
 
+  const realistic = isRealisticLabor(profile);
+
   const active = [];
   for (const fetus of fetuses) {
     if (fetus?.pendingImplantation) {
@@ -3645,8 +3774,21 @@ function reconcileFetalDescent(profile) {
     && !active.some((fetus) => fetus.descentStage >= DESCENT_INLET)) {
     // 第一产程没有胎儿在入口（例如前驱早段破水），或多胎间歇期上一胎刚出生时，
     // 由最深的胎儿入盆，下一胎从入口开始下降，不直接继承上一胎的进度
-    const deepest = pickDeepestFetus(active);
+    const deepest = pickDeepestFetus(realistic ? active.filter((fetus) => !isHardTransverse(fetus)) : active);
     if (deepest) deepest.descentStage = DESCENT_INLET;
+  }
+
+  if (!realistic) {
+    // 关闭真实分娩模式：清掉结构性阻塞的标记，不移动任何胎儿（多出来的入口占用由容量规则收回）
+    for (const fetus of fetuses) {
+      delete fetus.inletIntruder;
+      delete fetus.shoulderDystocia;
+    }
+  } else {
+    // 真实模式：胎生／卵胎生横位最多停在子宫低位，不能入盆
+    for (const fetus of active) {
+      if (fetus.descentStage === DESCENT_INLET && isHardTransverse(fetus)) fetus.descentStage = DESCENT_LOW;
+    }
   }
 
   let presenting = active.find((fetus) => fetus.embryoId === pregnant.presentingEmbryoId) || null;
@@ -3659,8 +3801,30 @@ function reconcileFetalDescent(profile) {
     presenting = pickDeepestFetus(active.filter((fetus) => fetus.descentStage >= DESCENT_INLET));
     if (presenting) pregnant.presentingEmbryoId = presenting.embryoId;
   }
+  // 入口以后只容先露胎；唯一的例外是真实模式的病理性入侵者，它只能与仍在 0 的先露胎一起卡在入口
+  let intruderKept = false;
   for (const fetus of active) {
-    if (fetus !== presenting && fetus.descentStage >= DESCENT_INLET) fetus.descentStage = DESCENT_LOW;
+    if (fetus === presenting || fetus.descentStage < DESCENT_INLET) {
+      if (fetus.descentStage < DESCENT_INLET) delete fetus.inletIntruder;
+      continue;
+    }
+    const mayIntrude = realistic && fetus.inletIntruder && !intruderKept && fetus.descentStage === DESCENT_INLET
+      && presenting && presenting.descentStage === DESCENT_INLET;
+    if (mayIntrude) {
+      intruderKept = true;
+      continue;
+    }
+    fetus.descentStage = DESCENT_LOW;
+    delete fetus.inletIntruder;
+  }
+
+  // 第二产程的位置只读 phase 边界：胎体下降进产道 1、胎体娩出着冠 2；
+  // 受入口阻塞时先露胎留在原地，肩难产停在 3。阶段内细进度由 effectiveLaborHours / threshold 派生
+  if (stage === '第二产程' && presenting && !presenting.shoulderDystocia) {
+    const obstruction = getLaborObstruction(profile);
+    const inletBlocked = obstruction && obstruction.type !== 'shoulder_dystocia';
+    if (pregnant.laborPhase === '胎体下降' && !inletBlocked) presenting.descentStage = Math.max(presenting.descentStage, 1);
+    if (pregnant.laborPhase === '胎体娩出') presenting.descentStage = Math.max(presenting.descentStage, 2);
   }
 
   for (const fetus of fetuses) {
@@ -3830,15 +3994,8 @@ function beginLaborPhase(pregnant, phase, birthNumber = 0) {
   pregnant.laborHours = 0;
   pregnant.effectiveLaborHours = 0;
   // 每一胎开始下降时锁定先露胎；之后换位、分裂、插入都不能让它漂移。
-  // 第二产程的位置只读 phase 边界：胎体下降进产道 1、胎体娩出着冠 2，
-  // 阶段内的细进度由 effectiveLaborHours / threshold 派生，不另存
-  if (phase === '胎体下降') {
-    const fetus = selectPresentingFetus(pregnant);
-    if (fetus) fetus.descentStage = 1;
-  } else if (phase === '胎体娩出') {
-    const fetus = getPresentingFetus(pregnant);
-    if (fetus) fetus.descentStage = 2;
-  }
+  // 对应的下降位置由 reconcileFetalDescent 依阶段推导（受阻时不前进）
+  if (phase === '胎体下降') selectPresentingFetus(pregnant);
 }
 
 /**
@@ -4128,7 +4285,7 @@ function processLabor(profile, tick, female) {
     if (!leadWasEngaged && getProdromalLeadDescent(profile) >= DESCENT_INLET) {
       const lead = pregnant.fetuses.find((fetus) => fetus.embryoId === pregnant.prodromalLeadEmbryoId);
       const visible = pregnant.fetuses.filter(isFetusKnownToCharacter);
-      if (lead && visible.includes(lead)) engageNote = `；第${visible.indexOf(lead) + 1}胎入盆了`;
+      if (lead && visible.includes(lead) && getDescentStage(lead) >= DESCENT_INLET) engageNote = `；第${visible.indexOf(lead) + 1}胎入盆了`;
     }
     updateLaborPain(profile, stage, null, 1 - (Math.max(0, remainingHours) / initialHours));
     if (remainingHours > 0) {
@@ -4241,12 +4398,11 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
   const phase = getLaborPhaseForStage(stage, String(pregnant.laborPhase || ''));
   pregnant.laborPhase = phase;
   if (stage === '第二产程' && clampNumber(pregnant.laborBirthNumber, 0, 99, 0) <= 0) pregnant.laborBirthNumber = 1;
+  reconcileFetalDescent(profile);
   const presentingFetus = stage === '第二产程' ? getPresentingFetus(pregnant) : null;
-  const realisticObstruction = realisticLabor && stage === '第二产程'
-    ? getRealisticLaborObstruction(presentingFetus ? [presentingFetus, ...fetuses.filter((fetus) => fetus !== presentingFetus)] : fetuses)
-    : null;
-  if (realisticObstruction) {
-    notify.firstly = `${female}发生难产警示：${realisticObstruction}，建议使用 bsChildbirth 进行手术产`;
+  const obstruction = getLaborObstruction(profile);
+  if (obstruction) {
+    notify.firstly = `${female}发生难产警示：${obstruction.message}，建议使用 bsChildbirth 进行手术产`;
   }
   const threshold = resolveLaborPhaseHours(profile, stage, phase, fetuses);
   const stallThreshold = pressureCap * 0.66;
@@ -4254,6 +4410,20 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
 
   currentStageHours += rawHours;
   pregnant.laborHours = currentStageHours;
+
+  // 硬阻塞：入口受阻时胎体下降不前进；肩难产停在 3、不会自然娩出。
+  // 普通时间推进解不开，要靠助产或手术产
+  const blocksDescent = stage === '第二产程' && obstruction?.hardBlock
+    && (obstruction.type === 'shoulder_dystocia' || phase === '胎体下降');
+  if (blocksDescent) {
+    pregnant.effectiveLaborHours = obstruction.type === 'shoulder_dystocia' ? threshold : currentEffectiveHours;
+    updateLaborPain(profile, stage, phase, pregnant.effectiveLaborHours / threshold, true);
+    profile.notify = {
+      ...notify,
+      secondly: `${female}因${obstruction.message}，产程持续受阻`,
+    };
+    return done(false);
+  }
 
   // 宫缩微弱的零进度回合只在真实分娩模式出现；非真实模式每次有效推进都至少取得进度
   if (firstSegment && realisticLabor && currentPressure < stallThreshold && !isThirdStageWithNoFetuses) {
@@ -4265,7 +4435,7 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
         secondly: `${female}的子宫收缩微弱，产程进展停滞`,
       };
       pregnant.effectiveLaborHours = currentEffectiveHours;
-      updateLaborPain(profile, stage, phase, currentEffectiveHours / threshold, Boolean(realisticObstruction));
+      updateLaborPain(profile, stage, phase, currentEffectiveHours / threshold, Boolean(obstruction));
       return done(false);
     }
   } else if (firstSegment && currentPressure >= pressureCap && !realisticLabor) {
@@ -4330,7 +4500,7 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
   const effectiveHoursGain = baseEffectiveHours * getLaborProgressMultiplier(profile, stage, phase);
   currentEffectiveHours += effectiveHoursGain;
   pregnant.effectiveLaborHours = currentEffectiveHours;
-  updateLaborPain(profile, stage, phase, currentEffectiveHours / threshold, Boolean(realisticObstruction));
+  updateLaborPain(profile, stage, phase, currentEffectiveHours / threshold, Boolean(obstruction));
 
   if (stage === '第一产程') {
     applyLaborAmnionWear(profile, female, { multiplier: rawHours * 0.35 });
@@ -4340,9 +4510,7 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
     applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true, scope: 'all' });
   }
   if (pregnant.effectiveLaborHours <= threshold) {
-    if (stage === '第二产程' && realisticObstruction && phase === '胎体娩出') {
-      notify.secondly = `${female}因${realisticObstruction}无法自然娩出胎儿，产程持续受阻`;
-    } else if (stage === '第二产程' && presentingFetus) {
+    if (stage === '第二产程' && presentingFetus) {
       const firstFetus = presentingFetus;
       const fetalAngle = Number.isFinite(Number(firstFetus?.tendencyAngle)) ? wrapAngle(firstFetus.tendencyAngle) : 0;
       const positionDifficulty = calculatePositionDifficulty(fetalAngle, firstFetus);
@@ -4385,14 +4553,6 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
   }
 
   if (stage === '第二产程') {
-    if (realisticObstruction && phase === '胎体娩出') {
-      pregnant.effectiveLaborHours = threshold;
-      profile.notify = {
-        ...notify,
-        secondly: `${female}因${realisticObstruction}无法自然娩出胎儿`,
-      };
-      return done(false);
-    }
     if (phase === '胎体下降') {
       beginLaborPhase(pregnant, '胎体娩出', pregnant.laborBirthNumber);
       updateLaborPain(profile, stage, '胎体娩出', 0);
@@ -4414,10 +4574,20 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
       };
       return next(false);
     }
-    // 胎体娩出走完：先露部已出（3），再做胎体完成检查；没受阻就在同一次结算完成出生。
-    // 肩难产等停在 3 的硬阻塞由 F 步接在这里
+    // 胎体娩出走完：先露部已出（3），再做胎体完成检查；没受阻就在同一次结算完成出生
     const crowning = getPresentingFetus(pregnant);
     if (crowning) crowning.descentStage = DESCENT_CROWNED_OUT;
+    if (crowning && isShoulderDystocia(profile, crowning)) {
+      crowning.shoulderDystocia = true;
+      pregnant.effectiveLaborHours = threshold;
+      updateLaborPain(profile, stage, phase, 1, true);
+      profile.notify = {
+        ...notify,
+        firstly: `${female}发生难产警示：胎头已出但肩部卡住（肩难产），建议使用 bsChildbirth 进行手术产`,
+        secondly: `${female}的第${pregnant.laborBirthNumber}胎胎头已经娩出，但肩部卡住，无法自然完成分娩`,
+      };
+      return done(false);
+    }
     const born = removePresentingFetus(pregnant);
     if (born.length > 0) {
       const father = String(born[0]?.fathers || '未知');
