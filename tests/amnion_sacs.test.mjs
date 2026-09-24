@@ -118,9 +118,10 @@ test('第一产程每个胎囊都承受全部胎儿的总负担；同卵组只�
   applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 2 } });
   const [single, twinA, twinB] = amnion(chatState);
   assert.equal(twinA, twinB, '同卵组同步');
-  assert.equal(single, twinA, '深度相同时每个胎囊扣得一样多');
+  // 第一产程一定有一胎入盆（这里是编号最小的 1）：入盆的胎囊吃满总扣量，还在 -2 的减半
   const drain = P(chatState).pregnant.fetalEnergyDrain;
-  assert.ok(Math.abs((100 - single) - Math.max(1, drain) * 2 * 0.35) < 1e-6, `每个胎囊都吃满总扣量：${100 - single}`);
+  assert.ok(Math.abs((100 - single) - Math.max(1, drain) * 2 * 0.35) < 1e-6, `入盆胎囊吃满总扣量：${100 - single}`);
+  assert.ok(Math.abs((100 - twinA) * 2 - (100 - single)) < 1e-6, '高位胎囊按深度减半');
 });
 
 test('多胎挤在同一子宫：三胎的每个胎囊比单胎磨得快', () => {

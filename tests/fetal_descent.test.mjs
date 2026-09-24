@@ -51,8 +51,8 @@ test('孕期最多到子宫低位 -1，不能入盆；最高是宫顶 -3', () =>
   assert.equal(P(chatState).pregnant.presentingEmbryoId, null, '孕期没有胎儿能到入口，不会锁定先露');
 });
 
-test('产兆前驱可入盆至 0；第二产程可到 3', () => {
-  const prodromal = setup('产兆前驱', [fetus(1, { descentStage: 2 })]);
+test('产兆前驱后半段领头胎儿入盆至 0；第二产程可到 3', () => {
+  const prodromal = setup('产兆前驱', [fetus(1, { descentStage: 2 })], { prodromalRemainingHours: 10 });
   touch(prodromal);
   assert.deepEqual(depths(prodromal), [0]);
   const second = setup('第二产程', [fetus(1, { descentStage: 3 })], { laborPhase: '胎体娩出', presentingEmbryoId: 1 });
@@ -61,7 +61,7 @@ test('产兆前驱可入盆至 0；第二产程可到 3', () => {
 });
 
 test('有胎儿到达入口而尚无先露胎时，锁定最深者（同值取编号小者）；入口只容一胎', () => {
-  const chatState = setup('产兆前驱', [fetus(5, { descentStage: 0 }), fetus(3, { descentStage: 0 }), fetus(4, { descentStage: -1 })]);
+  const chatState = setup('第一产程', [fetus(5, { descentStage: 0 }), fetus(3, { descentStage: 0 }), fetus(4, { descentStage: -1 })], { laborPhase: '潜伏期' });
   touch(chatState);
   assert.equal(P(chatState).pregnant.presentingEmbryoId, 3);
   assert.deepEqual(depths(chatState), [-1, 0, -1], '另一胎被挡回子宫低位');
@@ -91,10 +91,20 @@ test('退回妊娠阶段时上限随之收回：入口上的胎儿退到子宫�
   assert.equal(P(chatState).pregnant.presentingEmbryoId, null);
 });
 
-test('产兆前驱中先露胎被托回负值区域就释放锁定，由仍在入口者接手', () => {
-  const chatState = setup('产兆前驱', [fetus(1, { descentStage: -1 }), fetus(2, { descentStage: 0 })], { presentingEmbryoId: 1 });
+test('产兆前驱：剩余时间回到前半段（托高）时领头胎儿退回低位、释放先露锁定；其他胎儿不能抢入口', () => {
+  const chatState = setup('产兆前驱', [fetus(1, { descentStage: -1 }), fetus(2, { descentStage: 0 })], {
+    prodromalRemainingHours: 10, prodromalLeadEmbryoId: 1,
+  });
   touch(chatState);
-  assert.equal(P(chatState).pregnant.presentingEmbryoId, 2);
+  assert.deepEqual(depths(chatState), [0, -1], '领头胎儿入盆，另一胎被挡在低位');
+  assert.equal(P(chatState).pregnant.presentingEmbryoId, 1);
+  P(chatState).pregnant.prodromalRemainingHours = 30;
+  touch(chatState);
+  assert.deepEqual(depths(chatState), [-1, -1]);
+  assert.equal(P(chatState).pregnant.presentingEmbryoId, null);
+  P(chatState).pregnant.prodromalRemainingHours = 60;
+  touch(chatState);
+  assert.deepEqual(depths(chatState), [-2, -1], '剩余超过初始时长：被托回宫内自由');
 });
 
 // ── 自然胎动（孕期每天一次） ─────────────────────────────
@@ -157,4 +167,73 @@ test('被包着的内胎与未揭晓胎儿不单独活动；未揭晓胎儿的�
   assert.deepEqual(depths(chatState), [-1, -1, -1], '内胎跟宿主一起到了低位');
   assert.match(String(P(chatState).notify.secondly), /第1胎下降到子宫低位/);
   assert.doesNotMatch(String(P(chatState).notify.secondly), /第2胎/);
+});
+
+// ── 产兆前驱与产程 ───────────────────────────────────────
+const passHours = (chatState, hour) => applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour } });
+
+test('进入产兆前驱时选定最深的胎儿为领头；前驱时间过半自动入盆并锁定先露、发出通知', () => {
+  Math.random = () => 0.99;
+  const chatState = setup('临产期', [fetus(1, { descentStage: -2 }), fetus(2, { descentStage: -1 })], {
+    pregnantDays: 270, effectivePregnantDays: 270,
+  });
+  P(chatState).base.uterinePressure = 9999;
+  passHours(chatState, 1); // 宫压警告
+  passHours(chatState, 1); // 进入产兆前驱
+  assert.equal(P(chatState).base.stage, '产兆前驱');
+  assert.equal(P(chatState).pregnant.prodromalLeadEmbryoId, 2);
+  assert.deepEqual(depths(chatState), [-2, -1]);
+  passHours(chatState, 30); // 双胎的前驱时长约 52 小时，过半即入盆
+  assert.equal(P(chatState).base.stage, '产兆前驱');
+  assert.equal(depths(chatState)[1], 0);
+  assert.equal(P(chatState).pregnant.presentingEmbryoId, 2);
+  assert.match(String(P(chatState).notify.secondly), /第2胎入盆了/);
+});
+
+test('产程中高位胎儿每小时仍会活动，但不会越过子宫低位；已入盆的先露胎不被取代', () => {
+  const seen = new Set();
+  for (let seed = 1; seed <= 6; seed += 1) {
+    Math.random = seeded(seed);
+    const chatState = setup('第一产程', [fetus(1, { descentStage: 0 }), fetus(2), fetus(3)], {
+      laborPhase: '潜伏期', presentingEmbryoId: 1, pregnantDays: 280, effectivePregnantDays: 280,
+    });
+    P(chatState).base.uterinePressure = 120;
+    for (let hour = 0; hour < 12; hour += 1) {
+      passHours(chatState, 1);
+      if (P(chatState).base.stage !== '第一产程') break;
+      const [lead, ...others] = P(chatState).pregnant.fetuses.slice().sort((a, b) => a.embryoId - b.embryoId);
+      assert.equal(lead.descentStage, 0);
+      for (const other of others) {
+        assert.ok(other.descentStage <= -1);
+        seen.add(other.descentStage);
+      }
+    }
+  }
+  assert.ok(seen.size > 1, '高位胎儿应该有上下活动');
+});
+
+test('产程中斜位胎儿往最近的主胎位转；先露胎转得比较慢', () => {
+  Math.random = () => 0.99; // 不产生位移，只转角度
+  const chatState = setup('第一产程', [fetus(1, { descentStage: 0, tendencyAngle: 40 }), fetus(2, { tendencyAngle: 40 })], {
+    laborPhase: '潜伏期', presentingEmbryoId: 1, pregnantDays: 280, effectivePregnantDays: 280,
+  });
+  P(chatState).base.uterinePressure = 120;
+  passHours(chatState, 1);
+  const [engaged, high] = P(chatState).pregnant.fetuses;
+  const birthDifficulty = P(chatState).bio.birthDifficulty;
+  assert.ok(Math.abs((40 - high.tendencyAngle) - 5 / birthDifficulty) < 1e-6, '高位胎儿每小时 5° ÷ 分娩难度');
+  assert.ok(Math.abs((40 - engaged.tendencyAngle) * 2 - (40 - high.tendencyAngle)) < 1e-6, '先露胎速度减半');
+});
+
+test('分娩抵抗的大幅转动只落在高位胎儿，已入盆的领头胎儿不被转', () => {
+  Math.random = () => 0; // 抵抗判定与转动都走得到
+  const chatState = setup('产兆前驱', [fetus(1, { tendencyAngle: 0 }), fetus(2, { tendencyAngle: 0 })], {
+    prodromalRemainingHours: 10, prodromalLeadEmbryoId: 1,
+  });
+  P(chatState).base.vitality = 0;
+  touch(chatState);
+  const result = applyToolCall(chatState, { name: 'bsMaternalFetalInteraction', arguments: { female: 'A', direction: 'maternal' } });
+  assert.equal(result.applied, true, result.message);
+  const lead = P(chatState).pregnant.fetuses.find((f) => f.embryoId === 1);
+  assert.equal(lead.tendencyAngle, 0);
 });

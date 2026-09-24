@@ -2026,30 +2026,92 @@ function updateFetalPositions(profile, tick, female) {
   appendFetalActivityNotice(profile, female, events);
 }
 
-function updateProdromalFetalPositions(profile, tick) {
-  const base = profile.base || {};
-  const pregnant = profile.pregnant || {};
-  const stage = String(base.stage || '');
-  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  if (fetuses.length === 0 || stage !== '产兆前驱') return;
-  const passedHours = Math.max(0, tick.passedHours);
-  if (passedHours <= 0) return;
+// ── 产兆前驱与产程的每小时胎动 ─────────────────────────
+// 与孕期同一套两阶段引擎，只是改为每小时判定、更偏向垂直移动。
+// 只有还在高位的胎儿能自行活动；前驱领头胎儿的位置由剩余时间推导，也不参与随机位移。
+// 角度：高位胎儿往最近的主胎位靠（5°/小时 ÷ 分娩难度，斜位才转）；
+// 已入盆或在产道里的先露胎只做速度减半的小幅校正。
+const LABOR_FETAL_MOVE_CHANCE = 0.08;
+const LABOR_FETAL_VERTICAL_SHARE = 0.7;
+const LABOR_ACTIVITY_STAGES = Object.freeze(['产兆前驱', '第一产程', '第二产程']);
 
-  const birthDifficulty = clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
-  for (const fetus of fetuses) {
-    const currentAngle = Number.isFinite(Number(fetus?.tendencyAngle)) ? wrapAngle(fetus.tendencyAngle) : randomInt(0, 360);
-    fetus.tendencyAngle = currentAngle;
-    if (!isObliquePosition(currentAngle, fetus)) continue;
-    const targetAngle = calculateNearestMainPosition(currentAngle);
-    let diff = targetAngle - currentAngle;
-    if (diff > 180) diff -= 360;
-    if (diff < -180) diff += 360;
-    const adjustment = Math.min(angleDistance(currentAngle, targetAngle), (passedHours * 5) / birthDifficulty);
-    fetus.tendencyAngle = wrapAngle(currentAngle + (Math.sign(diff) * adjustment));
+function correctTowardMainPosition(fetus, degrees) {
+  const currentAngle = Number.isFinite(Number(fetus?.tendencyAngle)) ? wrapAngle(fetus.tendencyAngle) : randomInt(0, 360);
+  fetus.tendencyAngle = currentAngle;
+  if (!isObliquePosition(currentAngle, fetus)) return;
+  const targetAngle = calculateNearestMainPosition(currentAngle);
+  let diff = targetAngle - currentAngle;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+  fetus.tendencyAngle = wrapAngle(currentAngle + (Math.sign(diff) * Math.min(angleDistance(currentAngle, targetAngle), degrees)));
+}
+
+function rollLaborDownward(profile) {
+  const pressureCap = getUterinePressureCap(profile);
+  const pressureRatio = clampNumber(profile?.base?.uterinePressure, 0, pressureCap, 0) / Math.max(pressureCap, 1);
+  return Math.random() < clampNumber(0.6 + (pressureRatio * 0.3), 0.1, 0.9, 0.6);
+}
+
+function stepLaborFetalActivity(profile, stage) {
+  const pregnant = profile.pregnant;
+  const fetuses = pregnant.fetuses;
+  const correction = 5 / clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
+  const lead = stage === '产兆前驱' ? fetuses.find((fetus) => fetus.embryoId === pregnant.prodromalLeadEmbryoId) : null;
+  const movers = fetuses.filter((fetus) => canMoveFreely(fetus, fetuses) && fetus !== lead);
+  const engaged = fetuses.filter((fetus) => !fetus?.pendingImplantation && !getEnclosingHost(fetus, fetuses)
+    && (fetus === lead || getDescentStage(fetus) >= DESCENT_INLET));
+
+  // 第一阶段：依快照产生意图
+  const moveChance = movers.length > 0 ? LABOR_FETAL_MOVE_CHANCE / Math.sqrt(movers.length) : 0;
+  const intents = movers.map((fetus) => {
+    if (Math.random() >= moveChance) return { fetus, type: 'angle' };
+    const index = fetuses.indexOf(fetus);
+    const neighbors = [fetuses[index - 1], fetuses[index + 1]].filter((other) => other && movers.includes(other));
+    if (neighbors.length > 0 && Math.random() >= LABOR_FETAL_VERTICAL_SHARE) {
+      return { fetus, type: 'lateral', with: neighbors[randomInt(0, neighbors.length - 1)] };
+    }
+    return { fetus, type: 'vertical', step: rollLaborDownward(profile) ? 1 : -1 };
+  });
+
+  // 第二阶段：统一结算；非领头胎儿在产程中最多到子宫低位，入口由协调函数把关
+  const events = [];
+  const swapped = new Set();
+  for (const intent of intents) {
+    const { fetus } = intent;
+    if (intent.type === 'angle') {
+      correctTowardMainPosition(fetus, correction);
+    } else if (intent.type === 'vertical') {
+      const before = getDescentStage(fetus);
+      const after = Math.max(DESCENT_TOP, Math.min(DESCENT_LOW, before + intent.step));
+      fetus.descentStage = after;
+      if (after !== before && (after === DESCENT_TOP || after === DESCENT_LOW)) events.push({ fetus, descentStage: after });
+    } else if (!swapped.has(fetus) && !swapped.has(intent.with)) {
+      const a = fetuses.indexOf(fetus);
+      const b = fetuses.indexOf(intent.with);
+      [fetuses[a], fetuses[b]] = [fetuses[b], fetuses[a]];
+      swapped.add(fetus);
+      swapped.add(intent.with);
+    }
   }
+  for (const fetus of engaged) correctTowardMainPosition(fetus, correction / 2);
+  return events;
+}
 
-  pregnant.fetuses = fetuses;
-  profile.pregnant = pregnant;
+function advanceLaborFetalActivity(profile, tick, female) {
+  const stage = String(profile?.base?.stage || '');
+  const pregnant = profile.pregnant || {};
+  if (!LABOR_ACTIVITY_STAGES.includes(stage) || !Array.isArray(pregnant.fetuses) || pregnant.fetuses.length === 0) return;
+  // 逐小时步进的上限：产程远短于一个月，超长跳跃只是不再线性增加胎动次数
+  const MAX_HOURLY_STEPS = 24 * 30;
+  const iterations = Math.min(MAX_HOURLY_STEPS, Math.max(0, tick.passedHours));
+  if (iterations <= 0) return;
+  reconcileFetalDescent(profile);
+  const events = [];
+  for (let step = 0; step < iterations; step += 1) {
+    events.push(...stepLaborFetalActivity(profile, stage));
+    reconcileFetalDescent(profile);
+  }
+  appendFetalActivityNotice(profile, female, events);
 }
 
 function stageAllowsSpermRetention(stage) {
@@ -3510,6 +3572,42 @@ function getDescentStage(fetus) {
   return Number.isFinite(value) ? value : DESCENT_START;
 }
 
+/** 下降最深者；同值取 embryoId 较小者（稳定、与阵列顺序无关） */
+function pickDeepestFetus(fetuses) {
+  if (fetuses.length === 0) return null;
+  return fetuses.reduce((best, fetus) => (
+    getDescentStage(fetus) > getDescentStage(best)
+    || (getDescentStage(fetus) === getDescentStage(best) && Number(fetus.embryoId) < Number(best.embryoId))
+      ? fetus : best
+  ));
+}
+
+/**
+ * 产兆前驱的领头胎儿：进入前驱时选定并记在 prodromalLeadEmbryoId，
+ * 中途不因别的胎儿刚好也降到低位就换人；原本那胎不在了才重选。
+ */
+function getProdromalLead(profile, active) {
+  const pregnant = profile.pregnant;
+  const current = active.find((fetus) => fetus.embryoId === pregnant.prodromalLeadEmbryoId);
+  if (current) return current;
+  const lead = pickDeepestFetus(active);
+  pregnant.prodromalLeadEmbryoId = lead ? lead.embryoId : null;
+  return lead;
+}
+
+/**
+ * 产兆前驱的助产位置带是 -2 → -1 → 0，每一格对应初始前驱时长 T 的一半：
+ * 剩余 > T 为 -2（被托高过）、T/2~T 为 -1、<= T/2 入盆。
+ * 托高／促降（bsAssistFetalPosition）只需把剩余时间加减 T/2，位置自然跟着一致。
+ */
+function getProdromalLeadDescent(profile) {
+  const initialHours = getProdromalInitialHours(profile);
+  const remaining = clampNumber(profile?.pregnant?.prodromalRemainingHours, 0, 9999, initialHours);
+  if (remaining > initialHours) return DESCENT_START;
+  if (remaining > initialHours / 2) return DESCENT_LOW;
+  return DESCENT_INLET;
+}
+
 /**
  * 所有位置变更后都要经过这里，维持空间不变量：
  * 1. 待着床的胚胎没有位置；包在宿主体内的内胎与宿主同步。
@@ -3522,7 +3620,8 @@ function reconcileFetalDescent(profile) {
   const pregnant = profile?.pregnant;
   const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
   if (fetuses.length === 0) return;
-  const cap = getDescentCap(String(profile?.base?.stage || ''));
+  const stage = String(profile?.base?.stage || '');
+  const cap = getDescentCap(stage);
 
   const active = [];
   for (const fetus of fetuses) {
@@ -3535,6 +3634,19 @@ function reconcileFetalDescent(profile) {
     active.push(fetus);
   }
 
+  if (stage === '产兆前驱') {
+    // 领头胎儿的位置由前驱剩余时间推导；其余胎儿在前驱期最多到子宫低位，不跟它抢入口
+    const lead = getProdromalLead(profile, active);
+    if (lead) lead.descentStage = getProdromalLeadDescent(profile);
+    for (const fetus of active) {
+      if (fetus !== lead && fetus.embryoId !== pregnant.presentingEmbryoId) fetus.descentStage = Math.min(fetus.descentStage, DESCENT_LOW);
+    }
+  } else if (stage === '第一产程' && !active.some((fetus) => fetus.embryoId === pregnant.presentingEmbryoId && fetus.descentStage >= DESCENT_INLET)) {
+    // 未经完整前驱就进入第一产程（例如前驱早段破水）时，由最深的胎儿立即入盆
+    const deepest = pickDeepestFetus(active);
+    if (deepest) deepest.descentStage = DESCENT_INLET;
+  }
+
   let presenting = active.find((fetus) => fetus.embryoId === pregnant.presentingEmbryoId) || null;
   // 先露锁定只在入口以后成立：退回负值区域（托高、退回妊娠阶段）就释放，之后重新竞争。
   // 第二、三产程例外——每胎开始胎体下降时即锁定，E 步接上产程下降前它可能还在高位。
@@ -3542,15 +3654,8 @@ function reconcileFetalDescent(profile) {
   if (presenting && !inBirthStage && presenting.descentStage < DESCENT_INLET) presenting = null;
   if (!presenting && !inBirthStage) pregnant.presentingEmbryoId = null;
   if (!presenting) {
-    const engaged = active.filter((fetus) => fetus.descentStage >= DESCENT_INLET);
-    if (engaged.length > 0) {
-      presenting = engaged.reduce((best, fetus) => (
-        fetus.descentStage > best.descentStage
-        || (fetus.descentStage === best.descentStage && Number(fetus.embryoId) < Number(best.embryoId))
-          ? fetus : best
-      ));
-      pregnant.presentingEmbryoId = presenting.embryoId;
-    }
+    presenting = pickDeepestFetus(active.filter((fetus) => fetus.descentStage >= DESCENT_INLET));
+    if (presenting) pregnant.presentingEmbryoId = presenting.embryoId;
   }
   for (const fetus of active) {
     if (fetus !== presenting && fetus.descentStage >= DESCENT_INLET) fetus.descentStage = DESCENT_LOW;
@@ -3714,6 +3819,7 @@ function clearProdromalState(pregnant) {
   pregnant.prodromalOriginStage = null;
   pregnant.prodromalRemainingHours = 0;
   pregnant.prodromalDelayProgressHours = 0;
+  pregnant.prodromalLeadEmbryoId = null;
 }
 
 function beginLaborPhase(pregnant, phase, birthNumber = 0) {
@@ -3810,6 +3916,7 @@ function enterProdromalStage(profile, female, stage, message) {
   pregnant.prodromalOriginStage = stage;
   pregnant.prodromalRemainingHours = getProdromalInitialHours(profile);
   pregnant.prodromalDelayProgressHours = 0;
+  pregnant.prodromalLeadEmbryoId = null;
   pregnant.laborPain = 0;
   profile.pregnant = pregnant;
   updateLaborPain(profile, '产兆前驱', null, 0);
@@ -4007,10 +4114,17 @@ function processLabor(profile, tick, female) {
   let currentEffectiveHours = clampNumber(pregnant.effectiveLaborHours, 0, 9999, 0);
 
   if (stage === '产兆前驱') {
-    updateProdromalFetalPositions(profile, tick);
     const initialHours = getProdromalInitialHours(profile);
+    const leadWasEngaged = getProdromalLeadDescent(profile) >= DESCENT_INLET;
     const remainingHours = clampNumber(pregnant.prodromalRemainingHours, 0, 9999, initialHours) - rawHours;
     pregnant.prodromalRemainingHours = Math.max(0, remainingHours);
+    reconcileFetalDescent(profile);
+    let engageNote = '';
+    if (!leadWasEngaged && getProdromalLeadDescent(profile) >= DESCENT_INLET) {
+      const lead = pregnant.fetuses.find((fetus) => fetus.embryoId === pregnant.prodromalLeadEmbryoId);
+      const visible = pregnant.fetuses.filter(isFetusKnownToCharacter);
+      if (lead && visible.includes(lead)) engageNote = `；第${visible.indexOf(lead) + 1}胎入盆了`;
+    }
     updateLaborPain(profile, stage, null, 1 - (Math.max(0, remainingHours) / initialHours));
     if (remainingHours <= 0) {
       base.stage = '第一产程';
@@ -4025,7 +4139,7 @@ function processLabor(profile, tick, female) {
       };
       return true;
     }
-    notify.secondly = `${female}仍处于产兆前驱，距离正式产程约剩${Math.ceil(remainingHours)}小时`;
+    notify.secondly = `${female}仍处于产兆前驱，距离正式产程约剩${Math.ceil(remainingHours)}小时${engageNote}`;
     profile.notify = notify;
     return false;
   }
@@ -4633,9 +4747,11 @@ function applyLaborResistance(profile, female) {
     if (passed) successCount += 1;
     else failureCount += 1;
 
-    const randomFetusIndex = pickImplantedFetusIndex(fetuses);
-    if (randomFetusIndex >= 0) {
-      const fetus = fetuses[randomFetusIndex];
+    // 已入盆的胎儿不能再自由旋转：大幅转动只落在还在高位、自己占位的胎儿身上
+    const highFetuses = fetuses.filter((candidate) => isImplantedFetus(candidate) && !getEnclosingHost(candidate, fetuses)
+      && getDescentStage(candidate) < DESCENT_INLET);
+    if (highFetuses.length > 0) {
+      const fetus = highFetuses[randomInt(0, highFetuses.length - 1)];
       const currentAngle = Number.isFinite(Number(fetus?.tendencyAngle))
         ? Number(fetus.tendencyAngle)
         : randomInt(0, 360);
@@ -5105,6 +5221,7 @@ function applyTimeToCharacter(character, tick) {
     }
     if (isHere) applyHourlyPregnancyMetabolism(profile, tick);
     updateDerivedTypeProgress(profile, tick);
+    advanceLaborFetalActivity(profile, tick, next.name);
     const laborChanged = processLabor(profile, tick, next.name);
     stage = String(base.stage || stage);
     days = clampNumber(base.days, 0, 9999, 0);
@@ -5112,6 +5229,7 @@ function applyTimeToCharacter(character, tick) {
   } else if (LABOR_STAGES.includes(stage)) {
     if (isHere) applyHourlyPregnancyMetabolism(profile, tick);
     updateDerivedTypeProgress(profile, tick);
+    advanceLaborFetalActivity(profile, tick, next.name);
     const laborChanged = processLabor(profile, tick, next.name);
     stage = String(base.stage || stage);
     days = clampNumber(base.days, 0, 9999, 0);
