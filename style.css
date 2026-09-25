@@ -5132,3 +5132,54 @@
 .bs-bt-special-body small {
   opacity: 0.8;
 }
+
+/* ── 按压回馈 ─────────────────────────────────────────
+   手机没有 hover，按下去要立刻看得到反应：略缩小、略变暗。
+   减少动态效果时只变暗不缩放；停用中的按钮不触发。 */
+#bs-biotracker-settings :is(.menu_button, .bs-bt-track-tab, .bs-bt-track-character-button, .bs-bt-theme-option, .bs-bt-size-option, .bs-bt-menu-card) {
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 80ms ease-out, filter 80ms ease-out;
+}
+
+#bs-biotracker-settings :is(.menu_button, .bs-bt-track-tab, .bs-bt-track-character-button, .bs-bt-theme-option, .bs-bt-size-option, .bs-bt-menu-card):active:not(:disabled):not([disabled]):not([aria-busy='true']) {
+  transform: scale(0.97);
+  filter: brightness(0.92);
+}
+
+/* 停用中的一般按钮要看得出来不能按 */
+#bs-biotracker-settings .menu_button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 处理中（aria-busy）：不只是停用，还有缓慢移动的斜纹表示正在进行 */
+#bs-biotracker-settings .menu_button[aria-busy='true'] {
+  opacity: 0.85;
+  cursor: progress;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(127, 127, 127, 0.22) 0 8px,
+    transparent 8px 16px
+  );
+  background-size: 22.63px 22.63px;
+  animation: bsbt-busy-stripes 0.8s linear infinite;
+}
+
+@keyframes bsbt-busy-stripes {
+  from { background-position: 0 0; }
+  to { background-position: 22.63px 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #bs-biotracker-settings :is(.menu_button, .bs-bt-track-tab, .bs-bt-track-character-button, .bs-bt-theme-option, .bs-bt-size-option, .bs-bt-menu-card) {
+    transition: filter 80ms ease-out;
+  }
+
+  #bs-biotracker-settings :is(.menu_button, .bs-bt-track-tab, .bs-bt-track-character-button, .bs-bt-theme-option, .bs-bt-size-option, .bs-bt-menu-card):active:not(:disabled):not([disabled]):not([aria-busy='true']) {
+    transform: none;
+  }
+
+  #bs-biotracker-settings .menu_button[aria-busy='true'] {
+    animation: none;
+  }
+}

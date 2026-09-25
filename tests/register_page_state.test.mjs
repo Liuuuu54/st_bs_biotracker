@@ -38,7 +38,7 @@ test('every async register-page action is throttled and restorable', () => {
   }
   // \r?\n：Windows 上 checkout 会把工作区转成 CRLF，裸写 \n 会匹配不到
   const restore = controller.match(/function restorePendingRegistryOperations\(\)[\s\S]*?\r?\n\}\r?\n/)?.[0] || '';
-  assert.match(restore, /button\.disabled = true/);
+  assert.match(restore, /setButtonBusy\(document\.getElementById\(ui\.buttonId\), true, ui\.busyText\)/);
   assert.match(restore, /ui\.setStatus\(message\)/);
 });
 

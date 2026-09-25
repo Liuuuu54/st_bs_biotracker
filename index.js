@@ -307,6 +307,18 @@ const REGISTRY_OP_UI = {
   skill: { buttonId: 'bs-bt-register-skill-generate', busyText: '生成中...', idleText: '生成技能／天赋', setStatus: (message, isError) => setRegisterSkillStatus(message, isError) },
 };
 
+/**
+ * 按钮的「处理中」样子：停用并标上 aria-busy，样式据此画出进行中的纹路；
+ * 给了 text 就同时换上文字
+ */
+function setButtonBusy(button, busy, text) {
+  if (!button) return;
+  button.disabled = Boolean(busy);
+  if (busy) button.setAttribute('aria-busy', 'true');
+  else button.removeAttribute('aria-busy');
+  if (text !== undefined) button.textContent = text;
+}
+
 function isRegistryOperationPending(key) {
   return registryPendingOps.has(key);
 }
@@ -369,11 +381,7 @@ function beginRegistryOperation(key, message) {
   registryPendingOps.set(key, String(message || ''));
   showRegistryBusyToast(key, message);
   if (!ui) return;
-  const button = document.getElementById(ui.buttonId);
-  if (button) {
-    button.disabled = true;
-    button.textContent = ui.busyText;
-  }
+  setButtonBusy(document.getElementById(ui.buttonId), true, ui.busyText);
   ui.setStatus(message);
 }
 
@@ -382,11 +390,7 @@ function endRegistryOperation(key) {
   registryPendingOps.delete(key);
   clearRegistryBusyToast(key);
   if (!ui) return;
-  const button = document.getElementById(ui.buttonId);
-  if (button) {
-    button.disabled = false;
-    button.textContent = ui.idleText;
-  }
+  setButtonBusy(document.getElementById(ui.buttonId), false, ui.idleText);
 }
 
 /** 重开小手机后把进行中的请求还原成「运行中」的样子，而不是一片空白 */
@@ -394,11 +398,7 @@ function restorePendingRegistryOperations() {
   registryPendingOps.forEach((message, key) => {
     const ui = REGISTRY_OP_UI[key];
     if (!ui) return;
-    const button = document.getElementById(ui.buttonId);
-    if (button) {
-      button.disabled = true;
-      button.textContent = ui.busyText;
-    }
+    setButtonBusy(document.getElementById(ui.buttonId), true, ui.busyText);
     if (message) ui.setStatus(message);
   });
 }
@@ -5431,7 +5431,7 @@ function populateModelList(settings) {
 async function connectAndLoadModels(ctx) {
   const settings = getSettings(ctx);
   const button = document.getElementById('bs-bt-connect');
-  if (button) button.disabled = true;
+  setButtonBusy(button, true, '连接中...');
   setConnectStatus('连接中，正在拉取模型...');
   try {
     const models = await fetchModelList(settings);
@@ -5448,7 +5448,7 @@ async function connectAndLoadModels(ctx) {
     setConnectStatus(String(error?.message || error), true);
     globalThis.toastr?.error?.(String(error?.message || error), '[BS BioTracker]');
   } finally {
-    if (button) button.disabled = false;
+    setButtonBusy(button, false, '连接并拉取模型');
   }
 }
 
@@ -7830,10 +7830,17 @@ async function ensureModal(ctx) {
       console.error('[BS BioTracker] renderPromptToggles failed', error);
     });
   });
-  document.getElementById('bs-bt-refresh-presets')?.addEventListener('click', async () => {
-    await refreshTrackerPresetPage(ctx).catch((error) => {
-      console.error('[BS BioTracker] refreshTrackerPresetPage failed', error);
-    });
+  document.getElementById('bs-bt-refresh-presets')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    setButtonBusy(button, true, '刷新中...');
+    try {
+      await refreshTrackerPresetPage(ctx).catch((error) => {
+        console.error('[BS BioTracker] refreshTrackerPresetPage failed', error);
+      });
+    } finally {
+      setButtonBusy(button, false, '刷新预设列表');
+    }
   });
   document.getElementById('bs-bt-race-select')?.addEventListener('change', (event) => {
     selectedRaceEncyclopedia = String(event.target?.value || '');
@@ -8353,8 +8360,7 @@ async function ensureModal(ctx) {
     const button = event.currentTarget;
     if (button.disabled) return;
     try {
-      button.disabled = true;
-      button.textContent = '分析请求发送中...';
+      setButtonBusy(button, true, '分析请求发送中...');
       globalThis.toastr?.info?.('[BS BioTracker] 开始手动发送分析请求...');
       readSettingsFromForm(ctx);
       const result = await runTracker(ctx, trackerDeps, 'manual');
@@ -8366,8 +8372,7 @@ async function ensureModal(ctx) {
         globalThis.toastr?.warning?.('[BS BioTracker] 尚无已注册角色，无法发送追踪请求');
       }
     } finally {
-      button.disabled = false;
-      button.textContent = '立即分析当前对话';
+      setButtonBusy(button, false, '立即分析当前对话');
     }
   });
   document.getElementById('bs-bt-full-state-unregister')?.addEventListener('click', () => {
