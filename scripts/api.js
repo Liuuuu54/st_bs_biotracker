@@ -433,6 +433,56 @@ function createApiDeadlineError(deadlineMs) {
   return error;
 }
 
+const API_USER_ABORT_MARKER = '__bs_biotracker_user_abort__';
+
+export function isApiUserAbortError(error) {
+  return error?.[API_USER_ABORT_MARKER] === true;
+}
+
+function createApiUserAbortError(label) {
+  const error = new Error(`${label || '请求'}已由使用者终止。`);
+  error[API_USER_ABORT_MARKER] = true;
+  return error;
+}
+
+// ---- 进行中的请求 ----
+// 每轮 callOpenAICompatible 都登记自己的总时限控制器，让使用者可以随时终止：
+// 模型陷入超长思维链或网络卡住时，不必等到总时限才解禁。
+const activeApiRequests = new Map();
+let apiRequestSeq = 0;
+
+export const API_FLOW_LABELS = Object.freeze({
+  tracker: '追踪',
+  registry: '注册',
+  breeding: '繁育推演',
+  wardrobe: '衣柜补充',
+  diary: '日记',
+  skill: '技能推演',
+});
+
+/** 目前进行中的请求（不含控制器本身） */
+export function getActiveApiRequests() {
+  return [...activeApiRequests.values()].map(({ id, flow, label, startedAt }) => ({ id, flow, label, startedAt }));
+}
+
+/**
+ * 终止进行中的请求。flow 省略时全部终止。回传终止了几轮。
+ * 终止会中止正在飞的 fetch 并停止后续重试，发起方收到 isApiUserAbortError 的错误。
+ */
+export function abortActiveApiRequests({ flow = null } = {}) {
+  let count = 0;
+  for (const entry of activeApiRequests.values()) {
+    if (flow && entry.flow !== flow) continue;
+    if (entry.userAborted) continue;
+    entry.userAborted = true;
+    try {
+      entry.controller.abort();
+    } catch {}
+    count += 1;
+  }
+  return count;
+}
+
 /**
  * 一整轮分析（含全部重试与各自的 JSON 纠错子请求）的总时限。
  *
@@ -1531,6 +1581,11 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
       } catch {}
     }, deadlineMs);
   }
+  const flow = String(options?.flow || (safePayload?.target_character ? 'registry' : 'tracker'));
+  const requestEntry = overallController
+    ? { id: ++apiRequestSeq, flow, label: API_FLOW_LABELS[flow] || callLabel, startedAt: Date.now(), controller: overallController, userAborted: false }
+    : null;
+  if (requestEntry) activeApiRequests.set(requestEntry.id, requestEntry);
   const runContext = {
     signal: overallController?.signal || null,
     deadlineMs,
@@ -1569,7 +1624,12 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
         `模型没有返回可解析的 JSON（全局尝试 ${globalAttempt + 1}/${GLOBAL_API_MAX_RETRIES + 1}）。原始回覆：${summarizeModelText(retryContent || content)}`,
       );
     }, { label: callLabel, overallSignal: overallController?.signal || null, deadlineMs });
+  } catch (error) {
+    // 使用者按下终止时，底层会以「总时限」的形式中断；这里改回正确的原因
+    if (requestEntry?.userAborted) throw createApiUserAbortError(requestEntry.label);
+    throw error;
   } finally {
     if (overallTimer) clearTimeout(overallTimer);
+    if (requestEntry) activeApiRequests.delete(requestEntry.id);
   }
 }

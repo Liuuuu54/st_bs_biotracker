@@ -1,4 +1,4 @@
-import { fetchModelList } from './scripts/api.js';
+import { abortActiveApiRequests, fetchModelList, isApiUserAbortError } from './scripts/api.js';
 import {
   applyInitialSkillTalentConfig,
   applyRegistryBreedingInference,
@@ -312,9 +312,59 @@ function hasPendingRegistryOperations() {
   return registryPendingOps.size > 0;
 }
 
+// 各注册类流程对应的请求 flow：终止时只中断这个流程自己的请求
+const REGISTRY_OP_FLOWS = Object.freeze({
+  skill: ['skill'],
+  wardrobe: ['wardrobe'],
+  diary: ['diary'],
+  inference: ['breeding'],
+  register: ['registry', 'breeding'],
+});
+const registryBusyToasts = new Map();
+
+/**
+ * 进行中的常驻提示：点一下就终止这个流程的请求。
+ * tapToDismiss 关掉，免得误点只是把提示关了、请求却还在跑
+ */
+function showRegistryBusyToast(key, message) {
+  if (registryBusyToasts.has(key)) return;
+  try {
+    const toast = globalThis.toastr?.info?.(`${String(message || '请求进行中…')}（点此终止）`, '[BS BioTracker]', {
+      timeOut: 0,
+      extendedTimeOut: 0,
+      tapToDismiss: false,
+      onclick: () => {
+        for (const flow of REGISTRY_OP_FLOWS[key] || []) abortActiveApiRequests({ flow });
+      },
+    });
+    if (toast) registryBusyToasts.set(key, toast);
+  } catch {
+    // toastr 缺失时没有常驻提示可显示
+  }
+}
+
+function clearRegistryBusyToast(key) {
+  const toast = registryBusyToasts.get(key);
+  registryBusyToasts.delete(key);
+  if (!toast) return;
+  try {
+    globalThis.toastr?.clear?.(toast);
+  } catch {
+    // 宿主已清空 toastr 时无需处理
+  }
+}
+
+/** 流程失败的提示：使用者主动终止显示为警告，其余才是错误 */
+function toastOperationFailure(error) {
+  const message = String(error?.message || error);
+  if (isApiUserAbortError(error)) globalThis.toastr?.warning?.(message, '[BS BioTracker]');
+  else globalThis.toastr?.error?.(message, '[BS BioTracker]');
+}
+
 function beginRegistryOperation(key, message) {
   const ui = REGISTRY_OP_UI[key];
   registryPendingOps.set(key, String(message || ''));
+  showRegistryBusyToast(key, message);
   if (!ui) return;
   const button = document.getElementById(ui.buttonId);
   if (button) {
@@ -327,6 +377,7 @@ function beginRegistryOperation(key, message) {
 function endRegistryOperation(key) {
   const ui = REGISTRY_OP_UI[key];
   registryPendingOps.delete(key);
+  clearRegistryBusyToast(key);
   if (!ui) return;
   const button = document.getElementById(ui.buttonId);
   if (button) {
@@ -689,7 +740,7 @@ async function generateRegistrySkillSetup(ctx) {
   } catch (error) {
     const message = String(error?.message || error);
     setRegisterSkillStatus(message, true);
-    globalThis.toastr?.error?.(message, '[BS BioTracker]');
+    toastOperationFailure(error);
   } finally {
     endRegistryOperation('skill');
   }
@@ -775,7 +826,7 @@ async function runWardrobePrepInference(ctx) {
     console.error('[BS BioTracker] runRegistryWardrobeInference failed', error);
     const message = String(error?.message || error);
     setWardrobePrepStatus(message, true);
-    globalThis.toastr?.error?.(message, '[BS BioTracker]');
+    toastOperationFailure(error);
   } finally {
     endRegistryOperation('wardrobe');
   }
@@ -870,7 +921,7 @@ async function generateRegistryDiary(ctx) {
   } catch (error) {
     const message = String(error?.message || error);
     setDiaryStatus(message, true);
-    globalThis.toastr?.error?.(message, '[BS BioTracker]');
+    toastOperationFailure(error);
   } finally {
     endRegistryOperation('diary');
   }
@@ -8038,7 +8089,7 @@ async function ensureModal(ctx) {
       setBreedingInferenceEditor('尚未执行繁育推演。直接注册不会生成繁育心理人设。');
       setBreedingInferenceTarget('');
       setBreedingInferenceStatus(message, true);
-      globalThis.toastr?.error?.(message, '[BS BioTracker]');
+      toastOperationFailure(error);
     } finally {
       endRegistryOperation('inference');
     }
@@ -8153,7 +8204,7 @@ async function ensureModal(ctx) {
       console.error('[BS BioTracker] runRegistry failed', error);
       const message = String(error?.message || error);
       setRegisterStatus(message, true);
-      globalThis.toastr?.error?.(message, '[BS BioTracker]');
+      toastOperationFailure(error);
     } finally {
       endRegistryOperation('register');
     }

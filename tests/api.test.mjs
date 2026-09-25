@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
-import { callOpenAICompatible, fetchModelList, isApiDeadlineError, isApiTimeoutError, resolveApiTimeoutMs, resolveOverallDeadlineMs } from '../scripts/api.js';
+import { abortActiveApiRequests, callOpenAICompatible, fetchModelList, getActiveApiRequests, isApiDeadlineError, isApiTimeoutError, isApiUserAbortError, resolveApiTimeoutMs, resolveOverallDeadlineMs } from '../scripts/api.js';
 import { getSettings, normalizeReasoningEffort, normalizeTemperatureMode, resolveUserTemperature } from '../scripts/state.js';
 
 const ORIGINAL_GLOBALS = {
@@ -748,4 +748,45 @@ test('manual 0.2 is fixed like any other value: [0.2, 0.2]', async () => {
   assert.equal(resolveUserTemperature({ temperature: null }), null);
   assert.equal(resolveUserTemperature({}), null);
   assert.equal(resolveUserTemperature({ temperature: 1 }), 1);
+});
+
+// ---- 使用者终止 ----
+function installHangingHost(calls) {
+  installBrowserHost((url, options) => {
+    calls.push({ url, options });
+    return new Promise((_resolve, reject) => {
+      options.signal?.addEventListener('abort', () => {
+        const error = new Error('The operation was aborted.');
+        error.name = 'AbortError';
+        reject(error);
+      });
+    });
+  });
+}
+
+const hangingSettings = { apiUrl: 'https://relay.example.test/v1', apiKey: 'k', model: 'm', apiTimeoutMs: 0 };
+
+test('使用者终止：进行中的请求立刻中断、不重试，错误标记为使用者终止', async () => {
+  const calls = [];
+  installHangingHost(calls);
+  const pending = callOpenAICompatible(hangingSettings, { recent_messages: [] }, 'Return JSON.', { flow: 'diary' });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(getActiveApiRequests().map((request) => [request.flow, request.label]), [['diary', '日记']]);
+  assert.equal(abortActiveApiRequests({ flow: 'diary' }), 1);
+  await assert.rejects(pending, (error) => isApiUserAbortError(error) && !isApiDeadlineError(error) && /日记已由使用者终止/.test(error.message));
+  assert.equal(calls.length, 1, '终止后不再重试');
+  assert.deepEqual(getActiveApiRequests(), [], '结束后从进行中清单移除');
+});
+
+test('只终止指定流程：其他流程的请求照常进行', async () => {
+  const calls = [];
+  installHangingHost(calls);
+  const tracker = callOpenAICompatible(hangingSettings, { recent_messages: [] }, 'Return JSON.', { flow: 'tracker' });
+  const diary = callOpenAICompatible(hangingSettings, { recent_messages: [] }, 'Return JSON.', { flow: 'diary' });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(abortActiveApiRequests({ flow: 'tracker' }), 1);
+  await assert.rejects(tracker, (error) => isApiUserAbortError(error));
+  assert.deepEqual(getActiveApiRequests().map((request) => request.flow), ['diary'], '日记仍在进行');
+  assert.equal(abortActiveApiRequests(), 1, '不指定流程时全部终止');
+  await assert.rejects(diary, (error) => isApiUserAbortError(error));
 });

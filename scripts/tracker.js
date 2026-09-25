@@ -1,4 +1,4 @@
-import { callOpenAICompatible, resolveOverallDeadlineMs } from './api.js';
+import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
 import { applyToolCallsResult, describeFetalPosition, getFetusAmnionDurability, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
@@ -1411,10 +1411,14 @@ let trackerBusyToast = null;
 function showTrackerBusyToast() {
   if (trackerBusyToast) return;
   try {
-    // timeOut/extendedTimeOut = 0：不自动消失，由本轮结束时显式清掉
-    trackerBusyToast = globalThis.toastr?.info?.('追踪更新中…', '[BS BioTracker]', {
+    // timeOut/extendedTimeOut = 0：不自动消失，由本轮结束时显式清掉。
+    // 点一下就终止本轮（模型陷入超长思维链或网络卡住时不必干等总时限）；
+    // tapToDismiss 关掉，免得误点只是把提示关了、请求却还在跑
+    trackerBusyToast = globalThis.toastr?.info?.('追踪更新中…（点此终止）', '[BS BioTracker]', {
       timeOut: 0,
       extendedTimeOut: 0,
+      tapToDismiss: false,
+      onclick: () => abortActiveApiRequests({ flow: 'tracker' }),
     }) || null;
   } catch {
     trackerBusyToast = null;
@@ -1837,7 +1841,9 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     chatState.lastOperationLogs = [];
     saveSettings(ctx);
     deps.renderStatusPanel(ctx);
-    globalThis.toastr?.error?.(String(error?.message || error), '[BS BioTracker]');
+    // 使用者主动终止不是错误；与失败一样在对话没变化前不自动重试，免得刚按掉又自己发出去
+    if (isApiUserAbortError(error)) globalThis.toastr?.warning?.(String(error?.message || error), '[BS BioTracker]');
+    else globalThis.toastr?.error?.(String(error?.message || error), '[BS BioTracker]');
     throw error;
   } finally {
     // 中途放弃（对话被改动）与失败路径都会走到这里，常驻提示不能留在屏幕上
