@@ -162,7 +162,7 @@ test('植入胚胎按遗传卵方与精方核型计算，承载者不混入血�
   const maternalFetus = maternalState.characters['人类宿主'].profile.pregnant.fetuses[0];
   assert.equal(maternalFetus.race, '媚魔');
   assert.deepEqual(maternalFetus.tags, ['gynogenesis']);
-  assert.equal(maternalState.characters['人类宿主'].profile.conceptionCue, 'surrogacy');
+  assert.equal(maternalState.characters['人类宿主'].profile.visualCue.type, 'surrogacy');
 
   const paternalState = state.createEmptyChatState();
   paternalState.characters['精灵宿主'] = makeHost('精灵宿主', '精灵');

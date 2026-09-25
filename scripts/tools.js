@@ -11,8 +11,9 @@ import {
   getPsyStressInitByLevel,
   getSettings,
   getVitalityInitByLevel,
+  getImplantationCueType,
   saveSettings,
-  setConceptionCue,
+  setVisualCue,
   summarizeOperationLogs,
   summarizeRawResult,
   syncCharacterStageFromProfile,
@@ -952,7 +953,7 @@ function applyWombReturn(chatState, args) {
     talents: normalizeTalentList(returnerProfile.talents),
   }];
   pregnant.fetusesCount = 1;
-  setConceptionCue(profile, 'rebirth');
+  setVisualCue(profile, 'rebirth');
 
   // 不能静默把垃圾值当成 0：那会让「传错参数」变成「瞬间完成回归」，
   // 与本档其他工具要求显式传值的做法一致
@@ -1512,7 +1513,7 @@ function applyChimeraFusion(profile, carrierName) {
   if (fused.length > 0) {
     pregnant.fetuses = [...fetuses.filter((fetus) => !consumed.has(fetus.embryoId)), ...fused];
     remapEmbryoReferences(pregnant, remap);
-    setConceptionCue(profile, 'chimera');
+    setVisualCue(profile, 'chimera');
   }
   pregnant.fetusesCount = pregnant.fetuses.length;
 }
@@ -1529,7 +1530,7 @@ function forceChimeraFusion(profile, carrierName, batch) {
   pregnant.fetuses = [...fetuses.filter((fetus) => !consumed.has(fetus)), chimera];
   remapEmbryoReferences(pregnant, new Map([[fetusA.embryoId, chimera.embryoId], [fetusB.embryoId, chimera.embryoId]]));
   pregnant.fetusesCount = pregnant.fetuses.length;
-  setConceptionCue(profile, 'chimera');
+  setVisualCue(profile, 'chimera');
   return [...sources.filter((fetus) => !consumed.has(fetus)), chimera];
 }
 
@@ -2255,7 +2256,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
       if (nestedHost) markNestedFetus(profile, fetus, nestedHost);
       else if (superfetation) markSuperfetationFetus(profile, fetus);
       pregnant.fetuses.push(fetus);
-      setConceptionCue(profile, nestedHost ? 'nested' : 'fertilization');
+      setVisualCue(profile, nestedHost ? 'nested' : 'fertilization');
       notify.secondly = nestedHost
         ? `${name}体内的一胎之中又结出了新的受精卵`
         : (superfetation ? `${name}在妊娠中再度受精` : `${name}受精成功`);
@@ -2383,6 +2384,7 @@ function processSimpleConception(profile, tick, notify, name) {
     // 而取 min 封顶又会把高潮诱发排卵已经排出的卵砍掉
     if (stage === '排卵期' && fullDays > 0 && !(profile.cooldown || {}).naturalOvulationUsed) {
       base.eggs = clampNumber(base.eggs, 0, 99, 0) + getNaturalOvulationTotal(profile);
+      setVisualCue(profile, 'ovulation');
       profile.cooldown = { ...(profile.cooldown || {}), naturalOvulationUsed: true };
     }
 
@@ -2429,6 +2431,7 @@ function processSimpleConception(profile, tick, notify, name) {
         pregnant.fetalEnergyDrain = 0;
         base.fertilizationDays = 0;
         notify.secondly = `${name}因身体虚弱，胚胎著床失败`;
+        setVisualCue(profile, 'implantationFailed');
       } else {
         const obstetricPregnantDays = base.fertilizationDays + getObstetricPregnancyOffsetDays(profile);
         const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, 20, 1);
@@ -2445,6 +2448,7 @@ function processSimpleConception(profile, tick, notify, name) {
           pregnantExperience: clampNumber(profile?.experience?.pregnantExperience, 0, 999, 0) + 1,
         };
         notify.firstly = `${name}进入了孕早期`;
+        setVisualCue(profile, getImplantationCueType(pregnant.fetuses[0]?.embryoType));
       }
     }
   } else if (!isPregnancyStage(stage)) {
@@ -4945,7 +4949,7 @@ function applyImplantEmbryo(chatState, args) {
       ? `${female}在孕早期追加了${count}个来自${provider}的代孕异期胚胎，正等待共同著床窗口`
       : `${female}加入了${count}个来自${provider}的受精卵，正等待共同著床窗口`,
   };
-  setConceptionCue(profile, 'surrogacy');
+  setVisualCue(profile, 'surrogacy');
 
   next.profile = profile;
   chatState.characters[female] = syncCharacterStageFromProfile(next);
@@ -5428,6 +5432,7 @@ function maybeTriggerOrgasmOvulation(character) {
   const amount = Math.max(0, clampNumber(bio.orgasmOvulationAmount, 0, 100, 1));
   const eggResult = applyEggGain(profile, amount);
   if (!eggResult.applied) return false;
+  setVisualCue(profile, 'orgasmOvulation');
   base.libido = 0;
   profile.cooldown = {
     ...cooldown,
@@ -6424,6 +6429,7 @@ function applyAddSperm(chatState, args) {
     base.penetrationSource = male;
     base.latestSexDays = 0;
     next.profile.base = base;
+    setVisualCue(next.profile, 'insert');
     const experience = { ...(next.profile?.experience || {}), latestSexPartner: male };
     if (experience.virginity === null || experience.virginity === undefined) experience.virginity = male;
     next.profile.experience = experience;
@@ -6480,6 +6486,7 @@ function applyAddSperm(chatState, args) {
   }
   next.profile.experience = experience;
   applyOdorGain(next.profile, Math.min(18, 4 + Math.log10(Math.max(1, amount)) * 4));
+  setVisualCue(next.profile, 'ejaculate');
   chatState.characters[female] = next;
   return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent.` };
 }
@@ -6799,7 +6806,7 @@ function applyDebugInjectPregnancy(chatState, args) {
   if (forceIdentical) forceIdenticalTwinSplit(profile, injectedBatch);
   pregnant.fetusesCount = pregnant.fetuses.length;
   if (!forceChimera) {
-    setConceptionCue(profile, mode === 'womb_return'
+    setVisualCue(profile, mode === 'womb_return'
       ? 'rebirth'
       : mode === 'surrogacy'
         ? 'surrogacy'
@@ -7190,9 +7197,6 @@ export function applyToolCallsResult(ctx, result) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const toolCalls = Array.isArray(result?.tool_calls) ? result.tool_calls : [];
-  for (const character of Object.values(chatState.characters || {})) {
-    if (character?.profile) setConceptionCue(character.profile, null);
-  }
   const logs = [];
   for (const call of toolCalls) {
     const normalizedCall = {

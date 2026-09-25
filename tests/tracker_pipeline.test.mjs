@@ -176,7 +176,7 @@ test('a simulated model response drives the full apply pipeline and refreshes th
   );
 });
 
-test('conceptionCue lasts for one tracker result and never enters the model payload', () => {
+test('visualCue keeps only the latest event with a rising seq, survives later rounds and never enters the model payload', () => {
   const ctx = makeContext();
   const settings = state.getSettings(ctx);
   const first = applyToolCallsResult(ctx, {
@@ -186,13 +186,17 @@ test('conceptionCue lasts for one tracker result and never enters the model payl
     }],
   });
   assert.equal(first.logs[0].applied, true, first.logs[0].message);
-  assert.equal(settings.chatStates[CHAT_KEY].characters['艾拉'].profile.conceptionCue, 'surrogacy');
-  state.setConceptionCue(settings.chatStates[CHAT_KEY].characters['艾拉'].profile, 'fertilization');
-  assert.equal(settings.chatStates[CHAT_KEY].characters['艾拉'].profile.conceptionCue, 'surrogacy', 'lower-priority cue cannot hide the more specific image');
-  assert.equal(buildTrackerPayload(ctx, settings).existing_state['艾拉'].profile.conceptionCue, undefined);
+  const profile = () => settings.chatStates[CHAT_KEY].characters['艾拉'].profile;
+  assert.deepEqual(profile().visualCue, { type: 'surrogacy', seq: 1 });
+  assert.equal(buildTrackerPayload(ctx, settings).existing_state['艾拉'].profile.visualCue, undefined);
 
   applyToolCallsResult(ctx, { tool_calls: [] });
-  assert.equal(settings.chatStates[CHAT_KEY].characters['艾拉'].profile.conceptionCue, null);
+  assert.deepEqual(profile().visualCue, { type: 'surrogacy', seq: 1 }, 'kept until the UI plays it');
+
+  state.setVisualCue(profile(), 'fertilization');
+  assert.deepEqual(profile().visualCue, { type: 'fertilization', seq: 2 }, 'a later event replaces it');
+  assert.equal(state.setVisualCue(profile(), 'unknown'), null);
+  assert.deepEqual(profile().visualCue, { type: 'fertilization', seq: 2 });
 });
 
 test('empty description patches are a no-op instead of wiping the field', () => {

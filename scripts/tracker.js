@@ -965,7 +965,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
   if (immune.metabolism) profile.immune = { metabolism: true };
   else delete profile.immune;
   delete profile.cooldown;
-  delete profile.conceptionCue;
+  delete profile.visualCue;
   if (immune.metabolism) delete profile.metabolism;
   if (!hasBreedingPsychology({ current: item })) delete profile.psychology;
   profile.diary = getRecentDiaryEntries(item?.profile || {}, diaryLimit);

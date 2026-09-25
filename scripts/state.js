@@ -338,25 +338,33 @@ function normalizeOutfitState(value, wardrobe) {
   };
 }
 
-export const CONCEPTION_CUE_VALUES = Object.freeze([
-  'fertilization', 'surrogacy', 'rebirth', 'chimera', 'nested',
+// ---- 画面事件 ----
+// 子宫图的特写演出只播「最近一个」事件：每个角色只记最后一笔 { type, seq }，
+// seq 单调递增，介面记住自己播到第几号，比它新才播。不随追踪轮次清空，也不进 prompt。
+export const VISUAL_CUE_TYPES = Object.freeze([
+  'insert', 'ejaculate', 'ovulation', 'orgasmOvulation',
+  'fertilization', 'surrogacy', 'nested', 'chimera', 'rebirth',
+  'implantationPlacental', 'implantationEgg', 'implantationAmorphous', 'implantationFailed',
 ]);
-const CONCEPTION_CUE_PRIORITY = Object.freeze({
-  fertilization: 1, surrogacy: 2, nested: 3, chimera: 4, rebirth: 5,
-});
 
-export function setConceptionCue(profile, value) {
-  if (!profile || typeof profile !== 'object') return null;
-  if (value === null || value === undefined) {
-    profile.conceptionCue = null;
-    return profile.conceptionCue;
-  }
-  if (!CONCEPTION_CUE_VALUES.includes(value)) return profile.conceptionCue ?? null;
-  const current = CONCEPTION_CUE_VALUES.includes(profile.conceptionCue) ? profile.conceptionCue : null;
-  profile.conceptionCue = !current || CONCEPTION_CUE_PRIORITY[value] >= CONCEPTION_CUE_PRIORITY[current]
-    ? value
-    : current;
-  return profile.conceptionCue;
+export function setVisualCue(profile, type) {
+  if (!profile || typeof profile !== 'object' || !VISUAL_CUE_TYPES.includes(type)) return null;
+  const seq = Number.isInteger(profile.visualCue?.seq) ? profile.visualCue.seq + 1 : 1;
+  profile.visualCue = { type, seq };
+  return profile.visualCue;
+}
+
+/** 着床演出只分三类：靠胎盘（胎生、胎转卵生）、结卵（卵生、卵胎生）、不定型 */
+export function getImplantationCueType(embryoType) {
+  const type = String(embryoType || '').trim();
+  if (type === '卵生' || type === '卵胎生') return 'implantationEgg';
+  if (type === '不定型') return 'implantationAmorphous';
+  return 'implantationPlacental';
+}
+
+function normalizeVisualCue(value) {
+  if (!value || typeof value !== 'object' || !VISUAL_CUE_TYPES.includes(value.type)) return null;
+  return Number.isInteger(value.seq) && value.seq > 0 ? { type: value.type, seq: value.seq } : null;
 }
 
 export function normalizeCharacterPsychologyState(characterState) {
@@ -366,8 +374,7 @@ export function normalizeCharacterPsychologyState(characterState) {
   characterState.profile.skills = normalizeSkillList(characterState.profile.skills);
   characterState.profile.talents = normalizeTalentList(characterState.profile.talents);
   characterState.profile.skillHistory = normalizeSkillHistory(characterState.profile.skillHistory);
-  const conceptionCue = characterState.profile.conceptionCue;
-  characterState.profile.conceptionCue = CONCEPTION_CUE_VALUES.includes(conceptionCue) ? conceptionCue : null;
+  characterState.profile.visualCue = normalizeVisualCue(characterState.profile.visualCue);
   characterState.profile.base = characterState.profile.base && typeof characterState.profile.base === 'object'
     ? characterState.profile.base
     : {};
@@ -706,7 +713,7 @@ export function createDefaultFemaleState(name = '') {
     name: String(name || '').trim(),
     initialized: false,
     profile: {
-      conceptionCue: null,
+      visualCue: null,
       cooldown: {
         orgasmOvulationUsed: false,
         naturalOvulationUsed: false,
@@ -1599,7 +1606,7 @@ function createSnapshotCharacterBaseline(name = '') {
     name: String(name || '').trim(),
     initialized: false,
     profile: {
-      conceptionCue: null,
+      visualCue: null,
       cooldown: {
         orgasmOvulationUsed: false,
         naturalOvulationUsed: false,
