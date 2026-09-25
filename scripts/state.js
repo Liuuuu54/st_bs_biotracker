@@ -341,9 +341,10 @@ function normalizeOutfitState(value, wardrobe) {
 // ---- 画面事件 ----
 // 子宫图的特写演出只播「最近一个」事件：每个角色只记最后一笔 { type, seq }，
 // seq 单调递增，介面记住自己播到第几号，比它新才播。不随追踪轮次清空，也不进 prompt。
+// 异期受孕、孕中孕与孕期追加的代孕胚胎在揭晓前是隐藏的，它们的受孕与着床都不发事件，免得特写剧透。
 export const VISUAL_CUE_TYPES = Object.freeze([
   'insert', 'ejaculate', 'ovulation',
-  'fertilization', 'surrogacy', 'nested', 'chimera', 'rebirth',
+  'fertilization', 'surrogacy', 'chimera', 'rebirth',
   'implantation', 'implantationFailed',
 ]);
 

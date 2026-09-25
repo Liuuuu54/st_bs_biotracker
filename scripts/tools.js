@@ -1529,7 +1529,6 @@ function forceChimeraFusion(profile, carrierName, batch) {
   pregnant.fetuses = [...fetuses.filter((fetus) => !consumed.has(fetus)), chimera];
   remapEmbryoReferences(pregnant, new Map([[fetusA.embryoId, chimera.embryoId], [fetusB.embryoId, chimera.embryoId]]));
   pregnant.fetusesCount = pregnant.fetuses.length;
-  setVisualCue(profile, 'chimera');
   return [...sources.filter((fetus) => !consumed.has(fetus)), chimera];
 }
 
@@ -2255,7 +2254,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
       if (nestedHost) markNestedFetus(profile, fetus, nestedHost);
       else if (superfetation) markSuperfetationFetus(profile, fetus);
       pregnant.fetuses.push(fetus);
-      setVisualCue(profile, nestedHost ? 'nested' : 'fertilization');
+      if (!superfetation) setVisualCue(profile, 'fertilization');
       notify.secondly = nestedHost
         ? `${name}体内的一胎之中又结出了新的受精卵`
         : (superfetation ? `${name}在妊娠中再度受精` : `${name}受精成功`);
@@ -4948,7 +4947,7 @@ function applyImplantEmbryo(chatState, args) {
       ? `${female}在孕早期追加了${count}个来自${provider}的代孕异期胚胎，正等待共同著床窗口`
       : `${female}加入了${count}个来自${provider}的受精卵，正等待共同著床窗口`,
   };
-  setVisualCue(profile, 'surrogacy');
+  if (!isAdditionalSurrogacy) setVisualCue(profile, 'surrogacy');
 
   next.profile = profile;
   chatState.characters[female] = syncCharacterStageFromProfile(next);
@@ -6804,14 +6803,11 @@ function applyDebugInjectPregnancy(chatState, args) {
   const injectedBatch = forceChimera ? forceChimeraFusion(profile, female, fetuses) : fetuses;
   if (forceIdentical) forceIdenticalTwinSplit(profile, injectedBatch);
   pregnant.fetusesCount = pregnant.fetuses.length;
-  if (!forceChimera) {
-    setVisualCue(profile, mode === 'womb_return'
-      ? 'rebirth'
-      : mode === 'surrogacy'
-        ? 'surrogacy'
-        : mode === 'nested'
-          ? 'nested'
-          : 'fertilization');
+  // 异期、孕中孕与孕期追加的代孕都是隐藏胎，不发事件
+  if (!isAdditionalConception) {
+    setVisualCue(profile, forceChimera
+      ? 'chimera'
+      : mode === 'womb_return' ? 'rebirth' : mode === 'surrogacy' ? 'surrogacy' : 'fertilization');
   }
   if (isAdditionalConception) {
     if (!hadPendingImplantation) base.fertilizationDays = 0;

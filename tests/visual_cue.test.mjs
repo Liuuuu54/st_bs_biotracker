@@ -92,3 +92,35 @@ test('正规化丢弃无效的事件纪录', () => {
   const ok = { name: 'A', profile: { visualCue: { type: 'insert', seq: 3, extra: 1 } } };
   assert.deepEqual(state.normalizeCharacterPsychologyState(ok).profile.visualCue, { type: 'insert', seq: 3 });
 });
+
+const implantedFetus = { embryoId: 1, fusionCheckedWith: [], tags: [], fathers: 'M', race: '人类', fatherRace: '人类', gender: '女', embryoType: '胎生', weight: 1, tendencyAngle: 0, affinity: 0 };
+
+test('隐藏胎不发事件：异期受孕、孕中孕、孕期追加的代孕都不剧透', () => {
+  const pregnant = { pregnantDays: 20, effectivePregnantDays: 20, fetusesCount: 1, fetuses: [{ ...implantedFetus }] };
+  for (const [name, args] of [
+    ['bsDebugInjectPregnancy', { mode: 'superfetation', father: 'M' }],
+    ['bsDebugInjectPregnancy', { mode: 'nested', father: 'M', hostFetusIndex: 0 }],
+    ['bsDebugInjectPregnancy', { mode: 'surrogacy', provider: '委托者', father: 'M,N', fetusCount: 2, forceChimera: true }],
+    ['bsImplantEmbryo', { provider: '委托者', race: '人类', fathers: 'M', fatherRace: '人类', count: 1 }],
+  ]) {
+    const chatState = setup('孕早期', { pregnant: structuredClone(pregnant) });
+    const result = call(chatState, name, args);
+    assert.equal(result.applied, true, `${name} ${args.mode || ''}: ${result.message}`);
+    assert.ok(P(chatState).pregnant.fetuses.length > 1, `${name} 应加入新胎`);
+    assert.equal(cue(chatState) ?? null, null, `${name} ${args.mode || ''} 不应留下事件`);
+  }
+});
+
+test('看得见的受孕照常发事件', () => {
+  const normal = setup('卵泡期');
+  assert.equal(call(normal, 'bsDebugInjectPregnancy', { mode: 'normal', father: 'M' }).applied, true);
+  assert.equal(cue(normal)?.type, 'fertilization');
+
+  const chimera = setup('卵泡期');
+  assert.equal(call(chimera, 'bsDebugInjectPregnancy', { mode: 'normal', father: 'M,N', fetusCount: 2, forceChimera: true }).applied, true);
+  assert.equal(cue(chimera)?.type, 'chimera');
+
+  const surrogacy = setup('卵泡期');
+  assert.equal(call(surrogacy, 'bsImplantEmbryo', { provider: '委托者', race: '人类', fathers: 'M', fatherRace: '人类', count: 1 }).applied, true);
+  assert.equal(cue(surrogacy)?.type, 'surrogacy');
+});
