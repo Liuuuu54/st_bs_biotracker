@@ -345,7 +345,7 @@ function normalizeOutfitState(value, wardrobe) {
 export const VISUAL_CUE_TYPES = Object.freeze([
   'insert', 'ejaculate', 'ovulation',
   'fertilization', 'surrogacy', 'chimera', 'rebirth',
-  'implantation', 'implantationFailed',
+  'implantation', 'implantationFailed', 'rupture',
 ]);
 
 export function setVisualCue(profile, type) {

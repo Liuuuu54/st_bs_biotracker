@@ -179,3 +179,26 @@ test('prompt：胎囊一致时只送一个 amnionDurability；不一致时改标
   assert.deepEqual(mixed.fetuses.map((f) => f.amnion ?? null), [null, '膜危', '已破']);
   assert.ok(mixed.fetuses.every((f) => !('amnionDurability' in f)));
 });
+
+test('破水记一笔画面事件：助产破水与产程磨穿都算', () => {
+  const assisted = setup('第一产程', [fetus(1)]);
+  assert.equal(rupture(assisted, 0).applied, true);
+  assert.equal(P(assisted).visualCue?.type, 'rupture');
+
+  const worn = setup('第一产程', [fetus(1, { amnionDurability: 0.2 })], { pregnant: { laborPhase: '潜伏期' } });
+  applyToolCall(worn, { name: 'bsPassedTime', arguments: { hour: 1 } });
+  assert.equal(P(worn).pregnant.fetuses[0].amnionDurability <= 0, true);
+  assert.equal(P(worn).visualCue?.type, 'rupture');
+});
+
+test('未揭晓的隐藏胎破水不记画面事件', () => {
+  const chatState = setup('第一产程', [
+    fetus(1),
+    fetus(2, { amnionDurability: 0.2, conceivedAtDays: 100, tags: ['superfetation'] }),
+  ], { pregnant: { laborPhase: '潜伏期' } });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } });
+  const [visible, hidden] = P(chatState).pregnant.fetuses;
+  assert.equal(hidden.amnionDurability <= 0, true, '隐藏胎的胎囊确实破了');
+  assert.equal(visible.amnionDurability > 0, true);
+  assert.equal(P(chatState).visualCue ?? null, null);
+});

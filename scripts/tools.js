@@ -4003,6 +4003,11 @@ function isSacVisible(sac) {
   return sac.members.some(isFetusKnownToCharacter);
 }
 
+/** 破水的画面事件：破掉的胎囊里有看得见的胎儿才记；未揭晓的隐藏胎破水不记，免得剧透 */
+function cueRupture(profile, sacs) {
+  if (sacs.some(isSacVisible)) setVisualCue(profile, 'rupture');
+}
+
 /**
  * 一次事件的磨损：total 是全部胎儿负担的合计，多胎挤在同一个子宫里，
  * 每个胎囊都承受这份总压力——下降最深的吃满，较高位的按深度比例递减，
@@ -4035,7 +4040,9 @@ function applyLaborAmnionWear(profile, female, options = {}) {
 
   if (options.forceRupture) {
     const targets = options.scope === 'all' ? getAmnionSacs(pregnant) : [presentingSac].filter(Boolean);
-    for (const sac of targets) if (getSacDurability(sac) > 0) setSacDurability(sac, 0);
+    const intact = targets.filter((sac) => getSacDurability(sac) > 0);
+    for (const sac of intact) setSacDurability(sac, 0);
+    cueRupture(profile, intact);
     profile.pregnant = pregnant;
     return false;
   }
@@ -4044,6 +4051,7 @@ function applyLaborAmnionWear(profile, female, options = {}) {
   const multiplier = clampNumber(options.multiplier, 0.1, 10, 1);
   const sacs = stage === '第二产程' ? [presentingSac].filter(Boolean) : getAmnionSacs(pregnant);
   const ruptured = distributeAmnionWear(sacs, drainBase * multiplier);
+  cueRupture(profile, ruptured);
   releaseRupturedNestedFetuses(pregnant);
   profile.pregnant = pregnant;
 
@@ -4988,6 +4996,7 @@ function ruptureFetalSac(profile, female, target) {
 
   if (getEnclosingHost(target, fetuses)) {
     setSacDurability(sac, 0);
+    cueRupture(profile, [sac]);
     releaseRupturedNestedFetuses(pregnant);
     return { applied: true, summary: `${female}腹中那一胎体内的胎膜破了，里面的孩子脱离出来，成为独立的一胎` };
   }
@@ -4998,6 +5007,7 @@ function ruptureFetalSac(profile, female, target) {
     }
   }
   setSacDurability(sac, 0);
+  cueRupture(profile, [sac]);
   if (!inPrelabor) return { applied: true, summary: `${female}破水了` };
   base.stage = '第一产程';
   base.days = 0;
@@ -5266,7 +5276,10 @@ function applyAssistFetalPosition(chatState, args) {
     }
     // 胎囊未破时先在同一次操作中破掉（同卵共囊一起）
     const sac = getSacOfFetus(pregnant, target);
-    if (sac && getSacDurability(sac) > 0) setSacDurability(sac, 0);
+    if (sac && getSacDurability(sac) > 0) {
+      setSacDurability(sac, 0);
+      cueRupture(profile, [sac]);
+    }
     applyAssistStrain(profile, action);
     deliverPresentingFetus(profile, female, profile.notify || {}, { lead: '经助产拉出，' });
     reconcileFetalDescent(profile);
