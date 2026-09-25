@@ -532,3 +532,27 @@ test('调试工具不对 Tracker 开放', () => {
   assert.equal(names.includes('bsDebugSetFetalPosition'), false);
   assert.equal(names.includes('bsAssistFetalPosition'), true);
 });
+
+test('同卵共用胎囊的成员在阵列中必须相邻：被拆开的会收拢到第一个成员的位置', () => {
+  Math.random = () => 0.99;
+  const twin = { identicalGroup: 1, tags: ['identical'] };
+  const chatState = setup('孕中期', [fetus(1, twin), fetus(2), fetus(3, twin), fetus(4)]);
+  touch(chatState);
+  assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.embryoId), [1, 3, 2, 4]);
+});
+
+test('左右换位以胎囊为单位：别的胎儿不会夹进同一胎囊中间，整个胎囊会一起搬', () => {
+  const twin = { identicalGroup: 1, tags: ['identical'] };
+  const orders = new Set();
+  for (let seed = 1; seed <= 30; seed += 1) {
+    Math.random = seeded(seed);
+    const chatState = setup('孕早期', [fetus(1, twin), fetus(2, twin), fetus(3), fetus(4)], { pregnantDays: 40, effectivePregnantDays: 40 });
+    for (let day = 0; day < 10; day += 1) {
+      passDays(chatState, 1);
+      const ids = P(chatState).pregnant.fetuses.map((f) => f.embryoId);
+      assert.equal(Math.abs(ids.indexOf(1) - ids.indexOf(2)), 1, `胎囊被拆开：${ids.join(',')}`);
+      orders.add(ids.join(','));
+    }
+  }
+  assert.ok([...orders].some((order) => order.indexOf('3') < order.indexOf('1')), '整个胎囊应能与旁边的胎儿换位');
+});

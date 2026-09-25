@@ -1932,6 +1932,22 @@ function isHeadDown(angle) {
   return normalized <= 15 || normalized >= 345;
 }
 
+/**
+ * 左右换位。同一胎囊（同卵共用）内的两胎可以互换；跨胎囊时整个胎囊一起搬，
+ * 不会有别的胎儿夹进同一个胎囊中间。两边都得全员可自由活动、这一轮还没换过
+ */
+function swapLateral(fetuses, fetus, other, movers, swapped) {
+  const group = getSharedSacGroup(fetus);
+  const sameSac = group > 0 && group === getSharedSacGroup(other);
+  const own = sameSac ? [fetus] : getSacBlock(fetuses, fetus);
+  const theirs = sameSac ? [other] : getSacBlock(fetuses, other);
+  const all = [...own, ...theirs];
+  if (all.some((member) => swapped.has(member) || !movers.includes(member))) return;
+  const [left, right] = fetuses.indexOf(own[0]) < fetuses.indexOf(theirs[0]) ? [own, theirs] : [theirs, own];
+  fetuses.splice(fetuses.indexOf(left[0]), left.length + right.length, ...right, ...left);
+  for (const member of all) swapped.add(member);
+}
+
 /** 一个时间单位的胎动。回传这一轮值得通报的位置事件 */
 function stepFetalActivity(profile, stage, gestationSpeed) {
   const fetuses = profile.pregnant.fetuses;
@@ -1979,12 +1995,8 @@ function stepFetalActivity(profile, stage, gestationSpeed) {
       const after = Math.max(DESCENT_TOP, Math.min(cap, before + intent.step));
       fetus.descentStage = after;
       if (after !== before && (after === DESCENT_TOP || after === DESCENT_LOW)) events.push({ fetus, descentStage: after });
-    } else if (!swapped.has(fetus) && !swapped.has(intent.with)) {
-      const a = fetuses.indexOf(fetus);
-      const b = fetuses.indexOf(intent.with);
-      [fetuses[a], fetuses[b]] = [fetuses[b], fetuses[a]];
-      swapped.add(fetus);
-      swapped.add(intent.with);
+    } else {
+      swapLateral(fetuses, fetus, intent.with, movers, swapped);
     }
   }
   return events;
@@ -2106,12 +2118,8 @@ function stepLaborFetalActivity(profile, stage) {
       const after = Math.max(DESCENT_TOP, Math.min(DESCENT_LOW, before + intent.step));
       fetus.descentStage = after;
       if (after !== before && (after === DESCENT_TOP || after === DESCENT_LOW)) events.push({ fetus, descentStage: after });
-    } else if (!swapped.has(fetus) && !swapped.has(intent.with)) {
-      const a = fetuses.indexOf(fetus);
-      const b = fetuses.indexOf(intent.with);
-      [fetuses[a], fetuses[b]] = [fetuses[b], fetuses[a]];
-      swapped.add(fetus);
-      swapped.add(intent.with);
+    } else {
+      swapLateral(fetuses, fetus, intent.with, movers, swapped);
     }
   }
   for (const fetus of engaged) correctTowardMainPosition(fetus, correction / 2);
@@ -3787,6 +3795,7 @@ function reconcileFetalDescent(profile) {
   const pregnant = profile?.pregnant;
   const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
   if (fetuses.length === 0) return;
+  gatherSharedSacs(fetuses);
   const stage = String(profile?.base?.stage || '');
   const cap = getDescentCap(stage);
 
@@ -3892,6 +3901,38 @@ const AMNION_INTACT = 100;
 
 function hasMaternalSac(fetus) {
   return !fetus?.pendingImplantation;
+}
+
+/** 共用胎囊的组号；待着床或非同卵为 0 */
+function getSharedSacGroup(fetus) {
+  if (!hasMaternalSac(fetus)) return 0;
+  const group = Number(fetus?.identicalGroup);
+  return Number.isInteger(group) && group > 0 ? group : 0;
+}
+
+/** 与这一胎同一胎囊的全部成员（阵列顺序）；没有共用胎囊时就是自己 */
+function getSacBlock(fetuses, fetus) {
+  const group = getSharedSacGroup(fetus);
+  return group > 0 ? fetuses.filter((other) => getSharedSacGroup(other) === group) : [fetus];
+}
+
+/**
+ * 一个胎囊在子宫里是一整块空间：同一胎囊的成员在阵列（左右顺序）中必须相邻。
+ * 就地收拢到该组第一个成员的位置，组内与其余胎儿的相对顺序不变
+ */
+function gatherSharedSacs(fetuses) {
+  const seen = new Set();
+  const ordered = [];
+  for (const fetus of fetuses) {
+    const group = getSharedSacGroup(fetus);
+    if (group === 0) {
+      ordered.push(fetus);
+    } else if (!seen.has(group)) {
+      seen.add(group);
+      ordered.push(...getSacBlock(fetuses, fetus));
+    }
+  }
+  fetuses.splice(0, fetuses.length, ...ordered);
 }
 
 function getAmnionSacs(pregnant) {
