@@ -792,6 +792,7 @@
               <div class="bs-bt-track-tabs bs-bt-full-state-tabs" id="bs-bt-full-state-tabs">
                 <button type="button" class="bs-bt-track-tab" data-full-state-tab="variables">变量内容</button>
                 <button type="button" class="bs-bt-track-tab" data-full-state-tab="debug">调试工具</button>
+                <button type="button" class="bs-bt-track-tab" data-full-state-tab="history">历史</button>
               </div>
             </div>
 
@@ -819,6 +820,18 @@
               <div class="settings_section bs-bt-action-row">
                 <button id="bs-bt-full-state-unregister" class="menu_button" type="button" disabled>注销当前角色</button>
               </div>
+            </div>
+
+            <div id="bs-bt-full-state-history-panel" class="settings_section" hidden>
+              <div class="bs-bt-status-title">状态回溯（唯读）</div>
+              <label for="bs-bt-history-snapshot">快照</label>
+              <select id="bs-bt-history-snapshot" class="text_pole"></select>
+              <label class="checkbox_label" for="bs-bt-history-diff-only">
+                <input id="bs-bt-history-diff-only" type="checkbox" />
+                <span>只看与目前的差异</span>
+              </label>
+              <pre id="bs-bt-history-output" class="bs-bt-status-box">请选择角色。</pre>
+              <div id="bs-bt-history-status" class="bs-bt-inline-status">只保留最近 24 份楼层快照，仅供查看，不会改动目前状态。</div>
             </div>
 
             <div id="bs-bt-full-state-debug-section" class="settings_section">

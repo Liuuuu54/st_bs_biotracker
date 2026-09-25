@@ -2159,6 +2159,46 @@ function markRestoredSnapshot(chatState, snapshot) {
   });
 }
 
+// ---- 状态回溯（唯读） ----
+// 楼层快照本来就为了重抽、删楼时对账而保存（最近 MAX_CHAT_STATE_SNAPSHOTS 份）。
+// 以下函数只把快照还原成复本给介面查看，不改动任何状态，也不会触发回滚。
+
+/** 快照清单，最新的排最前面 */
+export function listChatStateSnapshots(chatState) {
+  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
+  return snapshots.map((snapshot, index) => ({
+    index,
+    messageCount: Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0,
+    reason: String(snapshot?.reason || 'state'),
+    createdAt: Number(snapshot?.createdAt) || 0,
+  })).reverse();
+}
+
+/** 某份快照当时某个角色的完整状态（复本）；那时还没有这个角色则回传 null */
+export function getSnapshotCharacter(chatState, index, name) {
+  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
+  if (!Number.isInteger(index) || index < 0 || index >= snapshots.length) return null;
+  const payload = materializeSnapshotPayloadAt(snapshots, index);
+  const characters = unpackSnapshotCharacters(payload.characters, payload.charactersFormat || '');
+  const character = characters?.[name];
+  return character ? cloneValue(character) : null;
+}
+
+/** 逐栏位比对两份状态，回传有变化的叶节点 { path, before, after }；阵列以索引为路径 */
+export function diffStateValues(before, after, prefix = '') {
+  const isContainer = (value) => value !== null && typeof value === 'object';
+  if (!isContainer(before) || !isContainer(after) || Array.isArray(before) !== Array.isArray(after)) {
+    return JSON.stringify(before) === JSON.stringify(after) ? [] : [{ path: prefix || '(整体)', before, after }];
+  }
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+  const changes = [];
+  for (const key of keys) {
+    const path = prefix ? (Array.isArray(before) ? `${prefix}[${key}]` : `${prefix}.${key}`) : key;
+    changes.push(...diffStateValues(before[key], after[key], path));
+  }
+  return changes;
+}
+
 export function restoreChatStateFromSnapshot(chatState, snapshot) {
   if (!snapshot) return;
   const snapshotIndex = findSnapshotIndex(chatState, snapshot);

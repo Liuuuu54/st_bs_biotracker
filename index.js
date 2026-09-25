@@ -110,6 +110,9 @@ import {
   MODULE_NAME,
   normalizeCharacterPsychologyState,
   recordChatStateSnapshot,
+  listChatStateSnapshots,
+  getSnapshotCharacter,
+  diffStateValues,
   resolveRegisteredCharacterName,
   sanitizeWorldbookEntryDisplayName,
   saveSettings,
@@ -5749,17 +5752,80 @@ function updateFullStateControls() {
 }
 
 function updateFullStateSubpage() {
-  if (!['variables', 'debug'].includes(selectedFullStateSubpage)) selectedFullStateSubpage = 'variables';
+  if (!FULL_STATE_SUBPAGES.includes(selectedFullStateSubpage)) selectedFullStateSubpage = 'variables';
   const hasSelectedCharacter = Boolean(selectedFullStateName);
   const tabs = document.getElementById('bs-bt-full-state-tabs');
   const varsPanel = document.getElementById('bs-bt-full-state-vars-panel');
   const debugSection = document.getElementById('bs-bt-full-state-debug-section');
+  const historyPanel = document.getElementById('bs-bt-full-state-history-panel');
   if (tabs?.parentElement) tabs.parentElement.hidden = !hasSelectedCharacter;
   if (varsPanel) varsPanel.hidden = !hasSelectedCharacter || selectedFullStateSubpage !== 'variables';
   if (debugSection) debugSection.hidden = !hasSelectedCharacter || selectedFullStateSubpage !== 'debug';
+  if (historyPanel) historyPanel.hidden = !hasSelectedCharacter || selectedFullStateSubpage !== 'history';
   document.querySelectorAll('#bs-bt-full-state-tabs [data-full-state-tab]').forEach((node) => {
     node.classList.toggle('is-active', String(node.getAttribute('data-full-state-tab') || '') === selectedFullStateSubpage);
   });
+}
+
+const FULL_STATE_SUBPAGES = Object.freeze(['variables', 'debug', 'history']);
+// 回溯页目前选的快照；换角色或快照清单变动时回到最新一份
+let selectedHistorySnapshotIndex = null;
+
+function formatHistorySnapshotLabel(entry) {
+  const time = entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '时间不明';
+  return `第 ${entry.messageCount} 楼｜${time}｜${entry.reason}`;
+}
+
+function formatHistoryValue(value) {
+  if (value === undefined) return '（无）';
+  const text = JSON.stringify(value);
+  return text.length > 120 ? `${text.slice(0, 117)}…` : text;
+}
+
+/** 回溯页：唯读显示某份快照当时这个角色的状态，或与目前状态的差异 */
+function renderFullStateHistory(ctx) {
+  const select = document.getElementById('bs-bt-history-snapshot');
+  const output = document.getElementById('bs-bt-history-output');
+  const diffOnly = Boolean(document.getElementById('bs-bt-history-diff-only')?.checked);
+  if (!select || !output) return;
+  if (!selectedFullStateName) {
+    select.innerHTML = '';
+    output.textContent = '请选择角色。';
+    return;
+  }
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const entries = listChatStateSnapshots(chatState);
+  if (entries.length === 0) {
+    select.innerHTML = '';
+    output.textContent = '这个聊天还没有楼层快照。追踪处理过楼层后才会开始保存。';
+    return;
+  }
+  if (!entries.some((entry) => entry.index === selectedHistorySnapshotIndex)) selectedHistorySnapshotIndex = entries[0].index;
+  select.innerHTML = entries.map((entry) => (
+    `<option value="${entry.index}"${entry.index === selectedHistorySnapshotIndex ? ' selected' : ''}>${escapeHtml(formatHistorySnapshotLabel(entry))}</option>`
+  )).join('');
+  const past = getSnapshotCharacter(chatState, selectedHistorySnapshotIndex, selectedFullStateName);
+  if (!past) {
+    output.textContent = `这份快照当时还没有 ${selectedFullStateName} 的资料。`;
+    return;
+  }
+  if (!diffOnly) {
+    output.textContent = JSON.stringify(cloneJsonValue(past), null, 2);
+    return;
+  }
+  const current = chatState.characters?.[selectedFullStateName] || null;
+  // updatedAt、runtime 只是内部记帐（快照也不保存），列出来只会是杂讯
+  const changes = diffStateValues(cloneJsonValue(past), cloneJsonValue(current))
+    .filter((change) => change.path !== 'updatedAt' && !/^runtime(\.|\[|$)/.test(change.path));
+  const LIMIT = 200;
+  output.textContent = changes.length === 0
+    ? '与目前状态完全相同。'
+    : [
+      `共 ${changes.length} 处不同（快照 → 目前）：`,
+      ...changes.slice(0, LIMIT).map((change) => `${change.path}：${formatHistoryValue(change.before)} → ${formatHistoryValue(change.after)}`),
+      ...(changes.length > LIMIT ? [`……另有 ${changes.length - LIMIT} 处未列出`] : []),
+    ].join('\n');
 }
 
 function getFullStateEditorText(character) {
@@ -5780,6 +5846,7 @@ function renderSelectedFullStateEditor(ctx) {
   }
   renderChildMoveControls(ctx);
   updateFullStateControls();
+  renderFullStateHistory(ctx);
 }
 
 function setChildMoveStatus(message, isError = false) {
@@ -7621,12 +7688,18 @@ async function ensureModal(ctx) {
   document.querySelectorAll('#bs-bt-full-state-tabs [data-full-state-tab]').forEach((node) =>
     node.addEventListener('click', () => {
       const nextTab = String(node.getAttribute('data-full-state-tab') || 'variables');
-      if (!['variables', 'debug'].includes(nextTab)) return;
+      if (!FULL_STATE_SUBPAGES.includes(nextTab)) return;
       selectedFullStateSubpage = nextTab;
       updateFullStateSubpage();
       if (nextTab === 'debug') renderFullStatePage(ctx);
+      if (nextTab === 'history') renderFullStateHistory(ctx);
     }),
   );
+  document.getElementById('bs-bt-history-snapshot')?.addEventListener('change', (event) => {
+    selectedHistorySnapshotIndex = Number(event.target?.value);
+    renderFullStateHistory(ctx);
+  });
+  document.getElementById('bs-bt-history-diff-only')?.addEventListener('change', () => renderFullStateHistory(ctx));
   document.querySelectorAll('#bs-biotracker-settings [data-theme-option]').forEach((node) =>
     node.addEventListener('click', () => {
       const nextTheme = node.dataset.themeOption || 'retro';
