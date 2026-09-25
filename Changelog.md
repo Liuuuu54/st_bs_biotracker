@@ -34,7 +34,7 @@
 
 - `bsRuptureMembranes` 已移除，破水改用 `bsAssistFetalPosition`（`action=rupture`，可用 `fetusIndex` 指定胎兒）；角色卡或預設中寫死舊工具名者需要更新。
 - 產兆前驅延後分娩改用 `bsAssistFetalPosition`（`action=lift`），原本機率性的抵抗判定已移除，母胎互動不再有此作用。
-- 舊存檔中的母體層羊膜耐性、母體層供養力、`laborFetusIndex` 與胎兒 `clutchSize` 會在載入時移除，不做換算：妊娠中的舊存檔羊膜回到完整、供養力歸零、伴生卵為 0。
+- 不相容舊存檔：妊娠、分娩相關欄位已改為每胎各自記錄，舊存檔不做轉換，請開新聊天。
 - 種族百科中舊的「典型卵群數量」覆寫不再生效，需以「典型伴生卵數量」重新設定（數值減一）。
 
 ## v0.9.9

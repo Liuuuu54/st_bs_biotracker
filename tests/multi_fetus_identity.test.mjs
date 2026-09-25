@@ -32,7 +32,7 @@ function pregnantWith(count) {
       bio: { birthDifficulty: 1, breedTolerance: 1, identicalProbability: 0 },
       pregnant: {
         pregnantDays: 100, effectivePregnantDays: 100, fetusesCount: count,
-        fetalEnergyDrain: 0.3, amnionDurability: 100, fetuses,
+        fetalEnergyDrain: 0.3, fetuses,
       },
       experience: {}, immune: {}, metabolism: {},
       skills: [], talents: [], children: [], notify: {},

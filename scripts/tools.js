@@ -3488,7 +3488,7 @@ function appendChildrenFromFetuses(profile, fetuses) {
 
 /**
  * 把孕中孕孩子的 nestedInEmbryoId 解析成宿主孩子的稳定 id。
- * embryoId 在同一母体内永不重用；仍从後往前找，是为了兼容计数器上线前的旧孩子纪录。
+ * embryoId 在同一母体内永不重用。
  */
 function linkNestedChildren(profile) {
   const children = Array.isArray(profile?.children) ? profile.children : [];

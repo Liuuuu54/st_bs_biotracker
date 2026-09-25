@@ -153,10 +153,8 @@ test('第一产程宫压达上限快速进入第二产程：只破先露胎囊�
   assert.deepEqual(amnion(chatState), [0, 100]);
 });
 
-test('母体层的 amnionDurability 已移除；缺值的胎儿补成完整胎囊', () => {
-  const chatState = setup('孕中期', [fetus(1, { amnionDurability: undefined })], { pregnant: { amnionDurability: 40 } });
-  const normalized = state.normalizeCharacterPsychologyState(chatState.characters.A);
-  assert.equal('amnionDurability' in normalized.profile.pregnant, false);
+test('缺值的胎儿补成完整胎囊', () => {
+  const chatState = setup('孕中期', [fetus(1, { amnionDurability: undefined })]);
   applyToolCall(chatState, { name: 'bsSetCharacterPresence', arguments: { female: 'A', isPresent: true } });
   assert.equal(P(chatState).pregnant.fetuses[0].amnionDurability, 100);
 });

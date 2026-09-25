@@ -28,7 +28,7 @@ function one({ base = {}, pregnant = {}, metabolism = {}, immune = {} } = {}) {
       bio: { birthDifficulty: 1, breedTolerance: 1, impregnationDifficulty: 1 },
       pregnant: {
         pregnantDays: 120, effectivePregnantDays: 120, fetusesCount: 1,
-        fetalEnergyDrain: 0, amnionDurability: 100, nutritionBurst: {},
+        fetalEnergyDrain: 0, nutritionBurst: {},
         fetuses: [{ embryoId: 1, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight: 1, tendencyAngle: 0, affinity: 0 }],
         ...pregnant,
       },
@@ -149,7 +149,6 @@ test('母胎互动不再改变供养力', () => {
   const chatState = one();
   applyToolCall(chatState, { name: 'bsMaternalFetalInteraction', arguments: { female: 'A', direction: 'maternal' } });
   assert.equal(total(chatState), 0);
-  assert.equal('symptomReliefPending' in P(chatState).pregnant, false);
 });
 
 test('时间推进不再有妊娠症状扣供养力', () => {

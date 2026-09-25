@@ -39,7 +39,7 @@ function one({ effectiveDays = 60, sperm = 150, hosts = [fetus({ weight: 1.6 })]
       },
       pregnant: {
         pregnantDays: effectiveDays, effectivePregnantDays: effectiveDays,
-        fetusesCount: hosts.length, fetalEnergyDrain: 0.2, amnionDurability: 100,
+        fetusesCount: hosts.length, fetalEnergyDrain: 0.2,
         fetuses: hosts,
       },
       experience: {}, immune: {}, metabolism: {},

@@ -168,9 +168,3 @@ test('提示词明确区分伴生卵、胎儿卡与祖谱人数', () => {
   assert.match(TRACKER_VARIABLE_GUIDE_PROMPT, /children\[\*\]\.birthCompanionEggCount/);
   assert.doesNotMatch(TRACKER_VARIABLE_GUIDE_PROMPT, /clutchSize/);
 });
-
-test('旧的 fetus.clutchSize 载入时移除', () => {
-  const character = { name: 'A', profile: { pregnant: { fetuses: [{ embryoId: 1, clutchSize: 10 }] } } };
-  const normalized = state.normalizeCharacterPsychologyState(character);
-  assert.equal('clutchSize' in normalized.profile.pregnant.fetuses[0], false);
-});

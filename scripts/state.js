@@ -429,17 +429,6 @@ export function normalizeCharacterPsychologyState(characterState) {
   if (pregnant && pregnant.expansion === undefined) {
     pregnant.expansion = null;
   }
-  if (pregnant) {
-    delete pregnant.symptomReliefPending;
-    // 供养力改为每胎各记一份（fetus.nutrition），母体层不再保存
-    delete pregnant.nutrition;
-    // 分娩胎次改由 presentingEmbryoId 指认、laborBirthNumber 计数
-    delete pregnant.laborFetusIndex;
-    // 羊膜改为每胎各自的 fetus.amnionDurability（同卵共用胎囊）
-    delete pregnant.amnionDurability;
-    // 卵群改为每胎的伴生卵 companionEggCount（不含有效后代本身）
-    for (const fetus of Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []) delete fetus?.clutchSize;
-  }
   if (pregnant?.blockage?.key === 'stool') pregnant.blockage.key = 'excretion';
   if (pregnant?.blockage?.key === 'urine') {
     if (!pregnant.acceleration) {

@@ -27,7 +27,7 @@ function laboring({ phase = '胎体娩出', presentingEmbryoId = null, fetuses, 
       bio: { birthDifficulty: 1, breedTolerance: 1, gestationSpeciesSpeed: 1 },
       pregnant: {
         pregnantDays: 280, effectivePregnantDays: 280, fetusesCount: fetuses.length, fetuses,
-        fetalEnergyDrain: 1, amnionDurability: 0, laborPhase: phase, laborBirthNumber: birthNumber,
+        fetalEnergyDrain: 1, laborPhase: phase, laborBirthNumber: birthNumber,
         laborHours: 0, effectiveLaborHours: 0, presentingEmbryoId,
       },
       experience: {}, immune: {}, metabolism: {}, skills: [], talents: [], children: [], notify: {},
@@ -92,15 +92,6 @@ test('先露胎被移除（减胎）后引用立即清空，不留悬空编号',
   const result = applyToolCall(chatState, { name: 'bsAbortion', arguments: { female: 'A', fetusIndex: 1 } });
   assert.equal(result.applied, true, result.message);
   assert.equal(P(chatState).pregnant.presentingEmbryoId, null);
-});
-
-test('新建角色不再带 laborFetusIndex；旧栏位载入时移除', () => {
-  const chatState = laboring({ fetuses: [fetus(1, '甲')] });
-  P(chatState).pregnant.laborFetusIndex = 3;
-  const normalized = state.normalizeCharacterPsychologyState(chatState.characters.A);
-  assert.equal('laborFetusIndex' in normalized.profile.pregnant, false);
-  const fresh = state.createEmptyChatState();
-  assert.equal(JSON.stringify(fresh).includes('laborFetusIndex'), false);
 });
 
 test('bsAbortion 的 fetusIndex 按 prompt 可见列表解析，不会减掉未揭晓的异期胎', () => {
