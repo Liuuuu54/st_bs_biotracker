@@ -28,6 +28,7 @@ import {
   getGestationEffectiveSpeed,
   getGestationSpeciesSpeed,
   getCharacterWorldBookName,
+  projectWorldbook,
   getCharacterWorldBookNameViaSTscript,
   getActiveGlobalWorldBookNames,
   getCharacterAdditionalWorldBookNames,
@@ -203,7 +204,7 @@ function worldbookKeywordMatches(entry, activationText) {
 }
 
 function filterRegistryWorldbookEntries(value, excludedNames, settings = null, recentMessages = [], options = {}) {
-  if (!value || typeof value !== 'object') return value;
+  if (!value || typeof value !== 'object') return null;
   const mode = normalizeWorldbookMode(settings?.trackerWorldbookMode);
   const globalBookName = String(options.globalBookName || '').trim();
   // characterScopeLists：附加知识书带书名前缀，但白名单仍走角色侧名单
@@ -230,23 +231,7 @@ function filterRegistryWorldbookEntries(value, excludedNames, settings = null, r
     return true;
   };
 
-  if (Array.isArray(value.entries)) {
-    return {
-      ...value,
-      entries: value.entries.filter(keepEntry),
-    };
-  }
-
-  if (value.entries && typeof value.entries === 'object') {
-    return {
-      ...value,
-      entries: Object.fromEntries(
-        Object.entries(value.entries).filter(([, entry]) => keepEntry(entry)),
-      ),
-    };
-  }
-
-  return value;
+  return projectWorldbook(value, keepEntry);
 }
 
 async function getFilteredGlobalWorldbooks(ctx, settings, recentMessages = []) {

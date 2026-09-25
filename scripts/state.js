@@ -1150,6 +1150,25 @@ export function inheritChatStateFromMatchingChat(ctx, settings) {
   };
 }
 
+/**
+ * 世界书过滤后要送给模型的形状：只挑书名与通过筛选的条目，重新组一个新物件。
+ * 不能用 {...book} 展开原物件——SillyTavern 载入的世界书带着 originalData（完整的原始条目），
+ * 展开会把被排除的条目连同整本书原封不动带进请求。认不得的形状一律不送，宁可少送也不整本外泄。
+ */
+export function projectWorldbook(value, keepEntry) {
+  if (!value || typeof value !== 'object') return null;
+  if (Array.isArray(value)) return value.filter(keepEntry);
+  const nested = value.worldBook && typeof value.worldBook === 'object' ? value.worldBook : null;
+  const source = value.entries ?? nested?.entries;
+  const rawName = typeof value.name === 'string' ? value.name : nested?.name;
+  const named = typeof rawName === 'string' && rawName.trim() ? { name: rawName } : {};
+  if (Array.isArray(source)) return { ...named, entries: source.filter(keepEntry) };
+  if (source && typeof source === 'object') {
+    return { ...named, entries: Object.fromEntries(Object.entries(source).filter(([, entry]) => keepEntry(entry))) };
+  }
+  return null;
+}
+
 function hasWorldBookEntries(value) {
   if (!value || typeof value !== 'object') return false;
   if (Array.isArray(value)) return value.length > 0;
