@@ -99,10 +99,10 @@ test('offspring calculator keeps companion-free species at 0 and previews prolif
   const human = calculateOffspringPreview({ eggRace: '人类', spermRace: '人类', spermValue: 999 });
   assert.deepEqual(human.companionRange, { min: 0, typical: 0, max: 0 });
 
-  const tentacle = calculateOffspringPreview({ eggRace: '触手怪', spermRace: '触手怪', spermValue: 20 });
-  assert.equal(tentacle.fetusRace, '触手怪');
-  assert.equal(tentacle.companionEggsMean, 9);
-  assert.deepEqual(tentacle.companionRange, { min: 8, typical: 9, max: 10 });
+  const fish = calculateOffspringPreview({ eggRace: '怪鱼类', spermRace: '怪鱼类', spermValue: 20 });
+  assert.equal(fish.fetusRace, '怪鱼类');
+  assert.equal(fish.companionEggsMean, 32);
+  assert.deepEqual(fish.companionRange, { min: 29, typical: 32, max: 35 });
 
   const dog = calculateOffspringPreview({ eggRace: '狗头人', spermRace: '狗头人', spermValue: 20 });
   assert.deepEqual(dog.companionRange, { min: 1, typical: 1, max: 1 }, 'range mirrors rounding of [0.9, 1.1)');

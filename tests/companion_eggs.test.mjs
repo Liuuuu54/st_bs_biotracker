@@ -23,9 +23,9 @@ afterEach(() => {
   Math.random = REAL_RANDOM;
 });
 
-test('只有明确列出的种族有伴生卵，其余为 0（数值是旧卵群减一）', () => {
+test('只有明确列出的种族有伴生卵，其余为 0', () => {
   const expected = {
-    触手怪: 9, 宝箱怪: 7, 海妖: 15, 狗头人: 1,
+    触手怪: 3, 宝箱怪: 7, 海妖: 10, 怪鱼类: 32, 狗头人: 1,
     蛇人: 0, 人鱼: 0, 深潜者: 0, 史萊姆: 3,
   };
   for (const [race, mean] of Object.entries(expected)) {
@@ -39,9 +39,9 @@ test('混血先由最长孕期决定胚型，再在整群尺度上做几何平�
   // 人类孕期长于怪鸟类，此混血先落到胎生，伴生卵硬固定为 0。
   assert.equal(getEmbryoTypeByRace('怪鸟类x人类'), '胎生');
   assert.equal(getCompanionEggsMeanByRace('怪鸟类x人类'), 0);
-  // 两者均为卵生：整群 4 与 12 的几何平均再减一，与旧卵群结果一致
+  // 两者均为卵生：整群 4 与 5 的几何平均再减一
   assert.equal(getEmbryoTypeByRace('怪鸟类x蜥蜴人'), '卵生');
-  assert.ok(Math.abs(getCompanionEggsMeanByRace('怪鸟类x蜥蜴人') - (Math.sqrt(4 * 12) - 1)) < 0.000001);
+  assert.ok(Math.abs(getCompanionEggsMeanByRace('怪鸟类x蜥蜴人') - (Math.sqrt(4 * 5) - 1)) < 0.000001);
 });
 
 test('百科覆写会改变伴生卵计算；均值 0 永远不会被随机成 1', () => {
@@ -163,7 +163,7 @@ test('提示词明确区分伴生卵、胎儿卡与祖谱人数', () => {
   });
   assert.match(prompt, /\[伴生卵定义\]/);
   assert.match(prompt, /只建立那一名有效后代/);
-  assert.match(prompt, /典型伴生卵数量: 9/);
+  assert.match(prompt, /典型伴生卵数量: 3/);
   assert.match(TRACKER_VARIABLE_GUIDE_PROMPT, /fetuses\[\*\]\.companionEggCount/);
   assert.match(TRACKER_VARIABLE_GUIDE_PROMPT, /children\[\*\]\.birthCompanionEggCount/);
   assert.doesNotMatch(TRACKER_VARIABLE_GUIDE_PROMPT, /clutchSize/);
