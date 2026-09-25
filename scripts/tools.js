@@ -11,7 +11,6 @@ import {
   getPsyStressInitByLevel,
   getSettings,
   getVitalityInitByLevel,
-  getImplantationCueType,
   saveSettings,
   setVisualCue,
   summarizeOperationLogs,
@@ -2448,7 +2447,7 @@ function processSimpleConception(profile, tick, notify, name) {
           pregnantExperience: clampNumber(profile?.experience?.pregnantExperience, 0, 999, 0) + 1,
         };
         notify.firstly = `${name}进入了孕早期`;
-        setVisualCue(profile, getImplantationCueType(pregnant.fetuses[0]?.embryoType));
+        setVisualCue(profile, 'implantation');
       }
     }
   } else if (!isPregnancyStage(stage)) {

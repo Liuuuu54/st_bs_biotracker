@@ -344,7 +344,7 @@ function normalizeOutfitState(value, wardrobe) {
 export const VISUAL_CUE_TYPES = Object.freeze([
   'insert', 'ejaculate', 'ovulation', 'orgasmOvulation',
   'fertilization', 'surrogacy', 'nested', 'chimera', 'rebirth',
-  'implantationPlacental', 'implantationEgg', 'implantationAmorphous', 'implantationFailed',
+  'implantation', 'implantationFailed',
 ]);
 
 export function setVisualCue(profile, type) {
@@ -352,14 +352,6 @@ export function setVisualCue(profile, type) {
   const seq = Number.isInteger(profile.visualCue?.seq) ? profile.visualCue.seq + 1 : 1;
   profile.visualCue = { type, seq };
   return profile.visualCue;
-}
-
-/** 着床演出只分三类：靠胎盘（胎生、胎转卵生）、结卵（卵生、卵胎生）、不定型 */
-export function getImplantationCueType(embryoType) {
-  const type = String(embryoType || '').trim();
-  if (type === '卵生' || type === '卵胎生') return 'implantationEgg';
-  if (type === '不定型') return 'implantationAmorphous';
-  return 'implantationPlacental';
 }
 
 function normalizeVisualCue(value) {

@@ -68,16 +68,12 @@ function implant(embryoType, vitality = 150) {
   return chatState;
 }
 
-test('着床成功依胚型分三类演出', () => {
+test('着床成功不分胚型，一律记为 implantation', () => {
   Math.random = () => 0.99;
-  for (const [embryoType, expected] of [
-    ['胎生', 'implantationPlacental'], ['胎转卵生', 'implantationPlacental'],
-    ['卵生', 'implantationEgg'], ['卵胎生', 'implantationEgg'],
-    ['不定型', 'implantationAmorphous'],
-  ]) {
+  for (const embryoType of ['胎生', '胎转卵生', '卵生', '卵胎生', '不定型']) {
     const chatState = implant(embryoType);
     assert.equal(P(chatState).base.stage, '孕早期', embryoType);
-    assert.equal(cue(chatState)?.type, expected, embryoType);
+    assert.equal(cue(chatState)?.type, 'implantation', embryoType);
   }
 });
 
