@@ -5431,7 +5431,7 @@ function maybeTriggerOrgasmOvulation(character) {
   const amount = Math.max(0, clampNumber(bio.orgasmOvulationAmount, 0, 100, 1));
   const eggResult = applyEggGain(profile, amount);
   if (!eggResult.applied) return false;
-  setVisualCue(profile, 'orgasmOvulation');
+  setVisualCue(profile, 'ovulation');
   base.libido = 0;
   profile.cooldown = {
     ...cooldown,

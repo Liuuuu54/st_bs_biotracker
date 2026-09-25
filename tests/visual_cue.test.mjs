@@ -43,14 +43,14 @@ test('被拒绝的操作不留事件', () => {
   assert.equal(cue(chatState) ?? null, null);
 });
 
-test('排卵期自然排卵记为 ovulation；高潮额外排卵记为 orgasmOvulation', () => {
+test('自然排卵与高潮额外排卵都记为 ovulation', () => {
   const natural = setup('排卵期');
   applyToolCall(natural, { name: 'bsPassedTime', arguments: { day: 1 } });
   assert.equal(cue(natural)?.type, 'ovulation');
 
   const orgasm = setup('卵泡期');
   assert.equal(call(orgasm, 'bsUpdateCharacterStatus', { options: { libido: 9999 } }).applied, true);
-  assert.equal(cue(orgasm)?.type, 'orgasmOvulation');
+  assert.equal(cue(orgasm)?.type, 'ovulation');
 });
 
 function implant(embryoType, vitality = 150) {
