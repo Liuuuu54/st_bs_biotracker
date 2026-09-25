@@ -209,6 +209,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   contextSize: 12,
   trackerTokenBudget: 4096,
   requireFullDescriptionUpdates: false,
+  wombAnimation: true,
   lukerMultiAgentManualOnly: true,
   diaryRecentLimit: 5,
   diaryWritingPrompt: DEFAULT_DIARY_WRITING_PROMPT,
@@ -904,6 +905,11 @@ export function getSettings(ctx) {
   const requireFullDescriptionUpdates = settings.requireFullDescriptionUpdates === true;
   if (settings.requireFullDescriptionUpdates !== requireFullDescriptionUpdates) {
     settings.requireFullDescriptionUpdates = requireFullDescriptionUpdates;
+    shouldSave = true;
+  }
+  const wombAnimation = settings.wombAnimation !== false;
+  if (settings.wombAnimation !== wombAnimation) {
+    settings.wombAnimation = wombAnimation;
     shouldSave = true;
   }
   const lukerMultiAgentManualOnly = settings.lukerMultiAgentManualOnly !== false;

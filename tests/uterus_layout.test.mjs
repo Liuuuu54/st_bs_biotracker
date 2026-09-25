@@ -141,7 +141,9 @@ test('阻塞的胎儿带出阻塞类型；非真实模式没有阻塞', () => {
     immune: { realisticLabor },
   });
   const layout = computeUterusLayout(stuck(true));
-  assert.deepEqual(layout.obstruction, { type: 'shoulder_dystocia', embryoIds: [1] });
+  assert.equal(layout.obstruction.type, 'shoulder_dystocia');
+  assert.deepEqual(layout.obstruction.embryoIds, [1]);
+  assert.match(layout.obstruction.message, /肩/);
   assert.equal(layout.fetuses.find((item) => item.embryoId === 1).obstruction, 'shoulder_dystocia');
   assert.equal(layout.fetuses.find((item) => item.embryoId === 2).obstruction, null);
   assert.equal(computeUterusLayout(stuck(false)).obstruction, null);

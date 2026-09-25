@@ -59,6 +59,8 @@ import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
 import { describeFetalPosition, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
+import { computeUterusLayout, getSpriteStage } from './scripts/uterus_layout.js';
+import { AFFINITY_WORDS, createUterusRenderer, drawFetusThumb, drawGenderIcon, getAffinityBand } from './scripts/uterus_render.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
 import { appendSkillHistory, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
 import {
@@ -3479,6 +3481,12 @@ function buildTrackCharacterViewModel(character) {
         talents: (Array.isArray(fetus?.talents) ? fetus.talents : []).map(enrichTalent),
       })) : [],
       pregnantBlocks: parseDescriptionBlocks(descriptions.pregnantDescription),
+      womb: computeUterusLayout(profile, {
+        libidoCap: getLibidoCap(stage, profile),
+        pressureCap: getUterinePressureCap(stage, profile),
+        stageProgress: getStageProgressRatio(profile),
+      }),
+      visualCue: profile.visualCue || null,
       showPregnantFields: isPregnantStage(stage),
       showLaborFields: LABOR_STAGES.includes(stage),
       showLaborPainBadge: stage === '产兆前驱' || LABOR_STAGES.includes(stage),
@@ -3821,6 +3829,160 @@ function renderFetusTagRow(fetus) {
   return `<div class="bs-bt-fetus-tags">${chips}</div>`;
 }
 
+// ---- 子宫像素图与胎儿卡 ----
+// 画布与绘制器跨重绘保留：追踪页每次重绘只把同一张画布搬进新的占位，动画不会被打断。
+let wombRenderer = null;
+let wombCanvas = null;
+let wombTheme = '';
+let wombCardsOpen = false;
+const WOMB_SEEN_CUE_KEY = 'bs-bt-womb-seen-cue';
+const WOMB_MAGNIFIER_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 1h5v2H4zM2 3h2v6H2zM9 3h2v6H9zM4 9h5v2H4zM9 9h2v2H9zM11 11h2v2h-2zM13 13h3v3h-3z"/></svg>';
+
+function getStageProgressRatio(profile) {
+  const progress = getStageProgress(profile);
+  const max = Number(progress?.max) || 0;
+  return max > 0 ? Math.max(0, Math.min(1, (Number(progress.value) || 0) / max)) : 0;
+}
+
+/** 胎位只留一个短词：头位、臀位、横位、斜位 */
+function getPresentationWord(angle) {
+  const value = ((Number(angle) || 0) % 360 + 360) % 360;
+  if (value <= 15 || value >= 345) return '头位';
+  if (value >= 165 && value <= 195) return '臀位';
+  if ((value >= 75 && value <= 105) || (value >= 255 && value <= 285)) return '横位';
+  return '斜位';
+}
+
+function renderWombFetusCard(item, index, data) {
+  const layout = data.womb;
+  const drawn = layout.fetuses.find((fetus) => fetus.embryoId === item.embryoId);
+  const inner = layout.fetuses.flatMap((fetus) => fetus.inner).find((fetus) => fetus.embryoId === item.embryoId);
+  const ownAge = Math.max(0, (Number(data.effectivePregnantDays) || 0) - Math.max(0, Number(item?.conceivedAtDays) || 0));
+  const sprite = drawn?.sprite || inner?.sprite || { type: String(item?.embryoType || '胎生'), stage: getSpriteStage(ownAge) };
+  const blocked = drawn?.obstruction ? layout.obstruction?.message : '';
+  const affinity = Number(item?.affinity) || 0;
+  const gender = String(item?.gender || '').trim() || '无';
+  const talents = Array.isArray(item?.talents) ? item.talents : [];
+  const row = (label, value) => `<div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">${escapeHtml(label)}</span><span class="bs-bt-track-list-value">${escapeHtml(value)}</span></div>`;
+  return `<article class="bs-bt-womb-card" data-womb-card="${escapeHtml(item.embryoId)}" data-affinity="${affinity}" tabindex="0" role="button" aria-label="${escapeHtml(`在子宫图上标出胎儿 ${index + 1}`)}">
+      <canvas class="bs-bt-womb-thumb" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}" data-angle="${Number(item?.tendencyAngle) || 0}" aria-hidden="true"></canvas>
+      <div class="bs-bt-womb-card-body">
+        <div class="bs-bt-womb-card-title"><strong>胎儿 ${index + 1}</strong><canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas><span>${escapeHtml(getPresentationWord(item?.tendencyAngle))}</span></div>
+        ${blocked ? `<div class="bs-bt-womb-card-alert">${escapeHtml(blocked)}</div>` : ''}
+        ${renderFetusTagRow(item)}
+        ${row('父方姓名', item?.fathers || '未知')}
+        ${item?.provider ? row('遗传母方', item.provider) : ''}
+        ${item?.chimera ? row('嵌合来源', `${Number(item.chimera.sourceCount) || 2} 颗受精卵`) : ''}
+        ${row('父方种族', formatRaceLabel(item?.fatherRace, item?.fatherDerivedType))}
+        ${row('体重倍率', formatFixedDisplay(item?.weight, 2))}
+        ${row('亲和', AFFINITY_WORDS[getAffinityBand(affinity)])}
+        ${talents.length > 0 ? `<details class="bs-bt-womb-talents"><summary>胎教（${talents.length}）</summary><div class="bs-bt-womb-talent-list">${escapeHtml(talents.map((talent) => { const level = Number(talent.level) || 0; return `${talent.name}(${level > 0 ? '+' : ''}${level})`; }).join('、'))}</div></details>` : ''}
+      </div>
+    </article>`;
+}
+
+function renderWombSection(data, badge) {
+  const cards = data.showPregnantFields ? data.fetuses : [];
+  const toggle = cards.length > 0
+    ? `<button type="button" class="bs-bt-womb-cards-toggle" data-womb-cards-toggle aria-controls="bs-bt-womb-cards" aria-expanded="${wombCardsOpen}" aria-label="查看胎儿卡" title="胎儿卡">${WOMB_MAGNIFIER_SVG}</button>`
+    : '';
+  const panel = cards.length > 0
+    ? `<section id="bs-bt-womb-cards" class="bs-bt-womb-cards" role="region" aria-label="胎儿卡"${wombCardsOpen ? '' : ' hidden'}>${cards.map((item, index) => renderWombFetusCard(item, index, data)).join('')}</section>`
+    : '';
+  return `<div class="bs-bt-track-section bs-bt-womb-section">
+      ${badge ? `<div class="bs-bt-track-section-title">${renderTrackTitle('子宫', badge)}</div>` : ''}
+      <div class="bs-bt-womb" data-womb-host>${toggle}${panel}</div>
+    </div>`;
+}
+
+function readSeenWombCues() {
+  try {
+    const parsed = JSON.parse(globalThis.localStorage?.getItem(WOMB_SEEN_CUE_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function markWombCueSeen(key, seq) {
+  try {
+    const seen = readSeenWombCues();
+    seen[key] = seq;
+    globalThis.localStorage?.setItem(WOMB_SEEN_CUE_KEY, JSON.stringify(seen));
+  } catch {
+    // 无痕模式或储存被封锁时，最多就是事件会重播
+  }
+}
+
+function setWombCardsOpen(host, open) {
+  wombCardsOpen = open;
+  const panel = host.querySelector('#bs-bt-womb-cards');
+  const toggle = host.querySelector('[data-womb-cards-toggle]');
+  if (panel) panel.hidden = !open;
+  toggle?.setAttribute('aria-expanded', String(open));
+}
+
+/** 追踪页重绘后，把子宫画布搬进新占位、画胎儿缩图与性别图标，并在有新事件时播一次特写 */
+function mountWombView(ctx, content, viewModel) {
+  const host = content.querySelector('[data-womb-host]');
+  if (!host) return;
+  const settings = getSettings(ctx);
+  const theme = settings.theme || 'retro';
+  const animated = settings.wombAnimation !== false;
+  if (!wombCanvas) {
+    wombCanvas = document.createElement('canvas');
+    wombCanvas.className = 'bs-bt-womb-canvas';
+    wombCanvas.setAttribute('role', 'img');
+  }
+  host.prepend(wombCanvas);
+  if (!wombRenderer) {
+    wombRenderer = createUterusRenderer(wombCanvas, { themeName: theme, animated });
+    wombTheme = theme;
+  } else {
+    if (theme !== wombTheme) {
+      wombRenderer.setTheme(theme);
+      wombTheme = theme;
+    }
+    wombRenderer.setAnimated(animated);
+  }
+  const layout = viewModel.pregnancy.womb;
+  wombCanvas.setAttribute('aria-label', layout.summary);
+  wombRenderer.setLayout(layout);
+
+  const cue = viewModel.pregnancy.visualCue;
+  if (cue?.seq) {
+    const key = `${getChatKey(ctx)}::${viewModel.name}`;
+    if (!(Number(readSeenWombCues()[key]) >= cue.seq)) {
+      markWombCueSeen(key, cue.seq);
+      wombRenderer.playCue(cue.type);
+    }
+  }
+
+  host.querySelectorAll('canvas[data-sprite-type]').forEach((node) => {
+    drawFetusThumb(node, { type: node.dataset.spriteType, stage: Number(node.dataset.spriteStage) || 0 }, Number(node.dataset.angle) || 0, theme);
+  });
+  host.querySelectorAll('canvas[data-womb-gender]').forEach((node) => drawGenderIcon(node, node.dataset.wombGender));
+  host.querySelector('[data-womb-cards-toggle]')?.addEventListener('click', () => setWombCardsOpen(host, !wombCardsOpen));
+  host.querySelector('#bs-bt-womb-cards')?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    setWombCardsOpen(host, false);
+    host.querySelector('[data-womb-cards-toggle]')?.focus();
+  });
+  host.querySelectorAll('[data-womb-card]').forEach((card) => {
+    const flash = (event) => {
+      if (event.target.closest('summary, details')) return;
+      wombRenderer?.flash(Number(card.dataset.wombCard), Number(card.dataset.affinity) || 0);
+    };
+    card.addEventListener('click', flash);
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        flash(event);
+      }
+    });
+  });
+}
+
 function renderTrackPregnancy(viewModel) {
   const data = viewModel.pregnancy;
   const gestationModifier = data.gestationModifier || {};
@@ -3847,6 +4009,7 @@ function renderTrackPregnancy(viewModel) {
     || Math.abs(Number(gestationModifier.multiplier ?? 1) - 1) > 0.000001,
   );
   return `
+    ${renderWombSection(data, pregnantDaysBadge)}
     ${hasGestationModifier ? `<div class="bs-bt-track-section">
       <div class="bs-bt-track-section-title">妊娠变速效果</div>
       <div class="bs-bt-track-meta">
@@ -3861,36 +4024,7 @@ function renderTrackPregnancy(viewModel) {
       conceptionChance: data.conceptionChance,
     })}
     ${data.showPregnantFields
-      ? `${renderCardCarouselSection(
-            '胎儿信息',
-        data.fetuses,
-        (item, index) => `<div class="bs-bt-track-card">
-                <div class="bs-bt-track-card-title">胎儿 ${index + 1}</div>
-                ${renderFetusTagRow(item)}
-                <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">父方姓名</span><span class="bs-bt-track-list-value">${escapeHtml(item?.fathers || '未知')}</span></div>
-                ${item?.provider
-            ? `<div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">遗传母方</span><span class="bs-bt-track-list-value">${escapeHtml(item.provider)}</span></div>`
-            : ''
-          }
-                ${item?.chimera
-            ? `<div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">嵌合来源</span><span class="bs-bt-track-list-value">${escapeHtml(`${Number(item.chimera.sourceCount) || 2} 颗受精卵`)}</span></div>`
-            : ''
-          }
-                <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">父方种族</span><span class="bs-bt-track-list-value">${escapeHtml(formatRaceLabel(item?.fatherRace, item?.fatherDerivedType))}</span></div>
-                <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">胚型</span><span class="bs-bt-track-list-value">${escapeHtml(item?.embryoType || '未知')}</span></div>
-                ${Number(item?.companionEggCount) > 0 ? `<div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">伴生卵</span><span class="bs-bt-track-list-value">${escapeHtml(`${Math.round(Number(item.companionEggCount))} 枚`)}</span></div>` : ''}
-                <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">性别</span><span class="bs-bt-track-list-value">${escapeHtml(item?.gender || '未知')}</span></div>
-                <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">体重倍率</span><span class="bs-bt-track-list-value">${escapeHtml(formatFixedDisplay(item?.weight, 2))}</span></div>
-                <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">胎位角</span><span class="bs-bt-track-list-value">${escapeHtml(`${formatIntegerDisplay(item?.tendencyAngle)}°`)}</span></div>
-                <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">位置</span><span class="bs-bt-track-list-value">${escapeHtml(`${item?.positionText || '宫内自由'}${item?.isPresenting ? '（先露）' : ''}`)}</span></div>
-                <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">亲和</span><span class="bs-bt-track-list-value">${escapeHtml(formatIntegerDisplay(item?.affinity))}</span></div>
-                <div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">胎教</span><span class="bs-bt-track-list-value">${escapeHtml((Array.isArray(item?.talents) ? item.talents : []).map((talent) => { const level = Number(talent.level) || 0; return `${talent.name}(${level > 0 ? '+' : ''}${level})`; }).join('、') || '无')}</span></div>
-              </div>`,
-        '当前无妊娠胎儿资料',
-        'fetuses',
-        { badge: pregnantDaysBadge },
-      )}
-          ${renderDescriptionGroup('孕态描述', data.pregnantBlocks, pregnantDescriptionOptions)}`
+      ? `          ${renderDescriptionGroup('孕态描述', data.pregnantBlocks, pregnantDescriptionOptions)}`
       : ''
     }
   `;
@@ -5532,6 +5666,7 @@ function renderStatusPanel(ctx) {
   const viewModel = buildTrackCharacterViewModel(current);
   content.innerHTML = renderTrackCharacterContent(viewModel);
   fitSkillNumerals(content);
+  mountWombView(ctx, content, viewModel);
   bindDebugPregnancyDraftControls(content, () => renderStatusPanel(ctx));
   content.querySelectorAll('[data-card-nav]').forEach((node) =>
     node.addEventListener('click', () => {
@@ -6556,6 +6691,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-tracker-token-budget', settings.trackerTokenBudget);
   setValue('bs-bt-require-full-description-updates', settings.requireFullDescriptionUpdates);
   setValue('bs-bt-luker-multi-agent-manual-only', settings.lukerMultiAgentManualOnly);
+  setValue('bs-bt-womb-animation', settings.wombAnimation !== false);
   setValue('bs-bt-diary-recent-limit', settings.diaryRecentLimit);
   setValue('bs-bt-targets', settings.targetNames);
   setValue('bs-bt-tracker-worldbook-mode', normalizeWorldbookMode(settings.trackerWorldbookMode));
@@ -7129,6 +7265,7 @@ function readSettingsFromForm(ctx) {
   settings.trackerTokenBudget = Math.max(500, Math.min(100000, Math.floor(Number(getValue('bs-bt-tracker-token-budget')) || 4096)));
   settings.requireFullDescriptionUpdates = Boolean(document.getElementById('bs-bt-require-full-description-updates')?.checked);
   settings.lukerMultiAgentManualOnly = Boolean(document.getElementById('bs-bt-luker-multi-agent-manual-only')?.checked);
+  settings.wombAnimation = Boolean(document.getElementById('bs-bt-womb-animation')?.checked);
   settings.diaryRecentLimit = Math.max(0, Math.min(20, Math.floor(Number(getValue('bs-bt-diary-recent-limit')) || 0)));
   settings.diaryWritingPrompt = String(getValue('bs-bt-diary-writing-prompt')).trim();
   settings.wardrobePrepPrompt = String(getValue('bs-bt-wardrobe-prep-prompt')).trim();

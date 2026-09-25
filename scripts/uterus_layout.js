@@ -58,7 +58,7 @@ function getEmptyLining(stage, progress) {
 }
 
 /** 胎儿图块阶段：以自身孕龄分孕早、孕中、孕晚 */
-function getSpriteStage(ownAge) {
+export function getSpriteStage(ownAge) {
   if (ownAge < 84) return 0;
   if (ownAge < 189) return 1;
   return 2;
@@ -275,7 +275,7 @@ export function computeUterusLayout(profile, options = {}) {
     fetuses: items,
     sacs,
     hiddenCount: Math.max(0, occupants.length - drawn.length),
-    obstruction: obstruction ? { type: obstruction.type, embryoIds: [...blocked] } : null,
+    obstruction: obstruction ? { type: obstruction.type, embryoIds: [...blocked], message: String(obstruction.message || '') } : null,
     summary,
   };
 }

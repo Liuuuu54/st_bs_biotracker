@@ -5183,3 +5183,118 @@
     animation: none;
   }
 }
+
+/* ── 子宫像素图与胎儿卡 ─────────────────────────────── */
+#bs-biotracker-settings .bs-bt-womb {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#bs-biotracker-settings .bs-bt-womb-canvas {
+  display: block;
+  width: 192px;
+  height: 240px;
+  image-rendering: pixelated;
+  border: 2px solid var(--bsbt-border-color);
+  border-radius: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-womb-cards-toggle {
+  position: absolute;
+  top: 6px;
+  right: calc(50% - 96px + 6px);
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid var(--bsbt-border-color);
+  border-radius: 4px;
+  background: var(--bsbt-lcd-bg);
+  color: var(--bsbt-lcd-text);
+  cursor: pointer;
+}
+
+#bs-biotracker-settings .bs-bt-womb-cards-toggle svg {
+  width: 16px;
+  height: 16px;
+  shape-rendering: crispEdges;
+}
+
+#bs-biotracker-settings .bs-bt-womb-cards-toggle[aria-expanded='true'] {
+  background: var(--bsbt-lcd-text);
+  color: var(--bsbt-lcd-bg);
+}
+
+/* 胎儿卡接在子宫图下方而不是盖在上面：点卡片时要看得到图上的亲和闪光 */
+#bs-biotracker-settings .bs-bt-womb-cards {
+  align-self: stretch;
+  margin-top: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px 10px;
+  border: 2px solid var(--bsbt-border-color);
+  border-radius: 6px;
+  background: var(--bsbt-lcd-bg);
+}
+
+#bs-biotracker-settings .bs-bt-womb-card {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+#bs-biotracker-settings .bs-bt-womb-card:first-child {
+  border-top: 0;
+}
+
+#bs-biotracker-settings .bs-bt-womb-card:focus-visible {
+  outline: 2px solid var(--bsbt-lcd-text);
+  outline-offset: 2px;
+}
+
+#bs-biotracker-settings .bs-bt-womb-thumb {
+  width: 36px;
+  height: 36px;
+  image-rendering: pixelated;
+  border: 1px solid var(--bsbt-border-color);
+}
+
+#bs-biotracker-settings .bs-bt-womb-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-womb-gender {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  background: var(--bsbt-lcd-text);
+  border-radius: 2px;
+}
+
+#bs-biotracker-settings .bs-bt-womb-card-alert {
+  margin-bottom: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 200, 40, 0.3);
+  font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-womb-talents summary {
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+#bs-biotracker-settings .bs-bt-womb-talent-list {
+  padding: 2px 0 2px 12px;
+}
