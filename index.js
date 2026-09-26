@@ -3848,7 +3848,7 @@ const WOMB_MAGNIFIER_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusabl
 const WOMB_REPLAY_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 2h2v12H4zM6 3h2v10H6zM8 4h2v8H8zM10 5h2v6h-2zM12 7h1v2h-1z"/></svg>';
 /**
  * 子宫图下方的阻塞警告用短版并带胎儿编号（与胎儿详细、图上由左到右一致）：
- * 引擎的原文也写进给模型的通知，太长，手机上会换行。入口拥挤写的是挤进来的那一胎
+ * 引擎的原文也写进给模型的通知，太长，手机上会换行
  */
 function getWombObstructionLabel(obstruction, fetuses) {
   const numberOf = (embryoId) => {
@@ -3858,7 +3858,6 @@ function getWombObstructionLabel(obstruction, fetuses) {
   const [first, second] = obstruction.embryoIds || [];
   if (obstruction.type === 'shoulder_dystocia') return `${numberOf(first)}肩部卡住`;
   if (obstruction.type === 'twin_lock') return `${numberOf(first)}${numberOf(second)}互锁卡在入口`;
-  if (obstruction.type === 'inlet_crowding') return `${numberOf(second ?? first)}挤在骨盆入口`;
   if (obstruction.type === 'transverse') return `${numberOf(first)}横位无法入盆`;
   return obstruction.message;
 }
@@ -4862,7 +4861,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
         </label>
         <label class="bs-bt-debug-identical-option">
           <input id="bs-bt-debug-position-pathological" type="checkbox" />
-          <span><strong>允许病理状态</strong><small>真实分娩模式下，让这一胎与已在入口的先露胎一起卡在入口 0。</small></span>
+          <span><strong>允许病理状态</strong><small>真实分娩模式下，让这一胎与已在入口的臀位先露胎互锁（这一胎须为头位）。</small></span>
         </label>
         <button type="button" class="menu_button" data-debug-action="set-fetal-position">应用</button>
       </fieldset>

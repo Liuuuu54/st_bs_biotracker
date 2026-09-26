@@ -126,11 +126,13 @@ test('包在宿主体内的内胎不能单独操作', () => {
   assert.match(result.message, /inside its host/);
 });
 
-test('产程中托回一起卡在入口的那一胎，解开入口拥挤', () => {
+test('双胎互锁：托回无效，把其中一胎转开才解得开，第二胎随即退回子宫低位', () => {
   const chatState = setup('第一产程', [
-    fetus(1, { descentStage: 0 }), fetus(2, { descentStage: 0, inletIntruder: true }),
+    fetus(1, { descentStage: 0, tendencyAngle: 180 }), fetus(2, { descentStage: 0, inletIntruder: true, tendencyAngle: 0 }),
   ], { pregnant: { laborPhase: '潜伏期', presentingEmbryoId: 1 }, realistic: true });
-  const result = assist(chatState, 'lift', { fetusIndex: 1 });
+  assert.equal(assist(chatState, 'lift', { fetusIndex: 1 }).applied, false);
+  assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.descentStage), [0, 0]);
+  const result = assist(chatState, 'rotate', { fetusIndex: 1, targetAngle: 30 });
   assert.equal(result.applied, true, result.message);
   assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.descentStage), [0, -1]);
   assert.equal('inletIntruder' in P(chatState).pregnant.fetuses[1], false);

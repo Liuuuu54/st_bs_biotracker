@@ -553,7 +553,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     description: '剧情明确出现人工、器械或魔法的胎位操作时才调用；自然胎动与下降由 bsPassedTime 自动处理，不要为了「肚子下沉」「胎儿踢了一下」之类的描写调用。'
       + 'fetusIndex 是 fetuses 列表下标（从 0 起算），省略时作用于正在下降／即将娩出的那一胎。每个动作都要通过检查才会生效，被拒绝时状态完全不变，叙事不得写成已成功。'
       + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位），也可以用 backSide 把胎背转到 左前／右前／左后／右后（两者可同时给，至少给一个）；已入盆的胎儿只能小幅校正角度，胎背只能前后对调、不能换左右（例如把枕后位的右后转成右前）；肩难产时可不给角度直接转动肩部解开卡点。'
-      + 'lift：把胎儿往上托回一格；产兆前驱托高领头胎儿会把分娩延后，这是要跟宫缩对抗的，母体活力不足会被拒绝，并带来一阵剧痛。产程中只能托回和另一胎一起卡在入口的那一胎。'
+      + 'lift：把胎儿往上托回一格；产兆前驱托高领头胎儿会把分娩延后，这是要跟宫缩对抗的，母体活力不足会被拒绝，并带来一阵剧痛。产程中已入盆的胎儿不能再托回；双胎互锁只能用 rotate 转开其中一胎。'
       + 'descend：把胎儿往下推送一格；产兆前驱推送领头胎儿会缩短前驱，时间归零即进入第一产程；正式产程中不能用。'
       + 'rupture：破水（每一胎有各自的羊膜，同卵共囊一起破）。只有在产兆前驱且宫压已达上限的 66%，或已在第一／第二产程时才会生效；产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用，系统未确认前不要擅自描写破水。孕中孕内胎的胎膜破了代表它被宿主在宫内生出来，不算母亲破水。'
       + 'extract：第二产程中把正在产道里下降或娩出的那一胎直接助产拉出（胎膜未破会先破）；肩难产时也可以用。只生这一胎，不会结束其余胎儿的分娩；要一次结束全部请用 bsChildbirth。'
@@ -2196,17 +2196,6 @@ function stepLaborFetalActivity(profile, stage) {
     maybeRotateToAnterior(fetus, POSTERIOR_ROTATION_CHANCE[stage] || 0);
   }
 
-  // 入口拥挤（未互锁）在前驱与第一产程中可能自行解开：挤进来的那胎退回低位
-  if ((stage === '产兆前驱' || stage === '第一产程')) {
-    const obstruction = getLaborObstruction(profile);
-    if (obstruction?.type === 'inlet_crowding' && Math.random() < INLET_CROWDING_SELF_RESOLVE_CHANCE) {
-      const retreating = fetuses.find((fetus) => fetus.embryoId === obstruction.embryoIds[1]);
-      if (retreating) {
-        retreating.descentStage = DESCENT_LOW;
-        delete retreating.inletIntruder;
-      }
-    }
-  }
   return events;
 }
 
@@ -2226,7 +2215,8 @@ function pickInletIntruder(profile, stage, intents) {
     .filter((fetus) => {
       const weight = clampNumber(fetus.weight, 0.33, 3.0, 1.0);
       return Math.min(weight, presentingWeight) / Math.max(weight, presentingWeight) >= INLET_INTRUSION_WEIGHT_RATIO
-        && clampNumber(fetus.affinity, -50, 50, 0) <= INLET_INTRUSION_AFFINITY;
+        && clampNumber(fetus.affinity, -50, 50, 0) <= INLET_INTRUSION_AFFINITY
+        && isLockedTwins(presenting, fetus);
     })
     .sort((left, right) => Number(left.embryoId) - Number(right.embryoId));
   return candidates[0] || null;
@@ -3711,14 +3701,11 @@ const OBSTRUCTION_STAGES = Object.freeze(['产兆前驱', '第一产程', '第�
 const INLET_INTRUSION_WEIGHT_RATIO = 0.85;
 const INLET_INTRUSION_AFFINITY = -25;
 const INLET_INTRUSION_PRESSURE_RATIO = 0.66;
-/** 入口拥挤（未互锁）在前驱与第一产程中每小时自行退开一胎的机率；互锁不会自己解开 */
-const INLET_CROWDING_SELF_RESOLVE_CHANCE = 0.1;
 
 /** 各类硬阻塞可用的助产解法，写进难产警示 */
 const OBSTRUCTION_ADVICE = Object.freeze({
   transverse: '可用 bsAssistFetalPosition（action=rotate）把胎儿转成头位或臀位，',
-  inlet_crowding: '可用 bsAssistFetalPosition（action=lift）把其中一胎托回，',
-  twin_lock: '可用 bsAssistFetalPosition（action=lift）托回其中一胎或（action=rotate）解开互锁，',
+  twin_lock: '可用 bsAssistFetalPosition（action=rotate）转动其中一胎解开互锁，',
   shoulder_dystocia: '可用 bsAssistFetalPosition（action=rotate）转动肩部或（action=extract）助产拉出，',
 });
 
@@ -3733,10 +3720,14 @@ function isHardTransverse(fetus) {
   return isTransversePosition(Number.isFinite(Number(fetus?.tendencyAngle)) ? fetus.tendencyAngle : 0);
 }
 
-function isInterlockedPair(first, second) {
-  const a = Number.isFinite(Number(first?.tendencyAngle)) ? wrapAngle(first.tendencyAngle) : 0;
-  const b = Number.isFinite(Number(second?.tendencyAngle)) ? wrapAngle(second.tendencyAngle) : 0;
-  return Math.abs(angleDistance(a, b) - 180) <= 15;
+/**
+ * 双胎互锁（locked twins）只有一种构型：先露胎臀位先下来、第二胎头位，两个下巴互相勾住。
+ * 反过来（先露头位、第二胎臀位）不算，第二胎只会在子宫低位等候
+ */
+function isLockedTwins(presenting, second) {
+  const lead = Number.isFinite(Number(presenting?.tendencyAngle)) ? wrapAngle(presenting.tendencyAngle) : 0;
+  const breech = lead >= 165 && lead <= 195;
+  return breech && isHeadPresentation(second);
 }
 
 function isHeadPresentation(fetus) {
@@ -3760,7 +3751,7 @@ function getFreeFetuses(pregnant) {
 /**
  * 当前的硬阻塞（依位置、角度与胚型判定，不另掷骰）：
  * - shoulder_dystocia：先露胎已在 3 并留下肩难产标记，直到助产或手术产处理。
- * - inlet_crowding／twin_lock：病理性第二胎也挤进入口 0；角度相对（±15°）为互锁。
+ * - twin_lock：臀位先露胎在入口 0，头位的第二胎病理性挤进来与它下巴互勾；不会自己解开，只能转开或手术产。
  * - transverse：正要通过入口的胎儿（<=0）为胎生／卵胎生横位，只能停在子宫低位。
  */
 export function getLaborObstruction(profile) {
@@ -3775,12 +3766,11 @@ export function getLaborObstruction(profile) {
     return { type: 'shoulder_dystocia', embryoIds: [presenting.embryoId], message: '胎头已出但肩部卡住（肩难产）', hardBlock: true };
   }
   const intruder = active.find((fetus) => fetus.inletIntruder && getDescentStage(fetus) === DESCENT_INLET);
-  if (intruder && presenting && getDescentStage(presenting) === DESCENT_INLET) {
-    const locked = isInterlockedPair(presenting, intruder);
+  if (intruder && presenting && getDescentStage(presenting) === DESCENT_INLET && isLockedTwins(presenting, intruder)) {
     return {
-      type: locked ? 'twin_lock' : 'inlet_crowding',
+      type: 'twin_lock',
       embryoIds: [presenting.embryoId, intruder.embryoId],
-      message: locked ? '两胎同时卡在骨盆入口且胎位互锁' : '两胎同时挤在骨盆入口',
+      message: '臀位的先露胎与头位的另一胎在骨盆入口互锁',
       hardBlock: true,
     };
   }
@@ -3818,7 +3808,7 @@ export function describeFetalPosition(pregnant, fetus) {
   if (getEnclosingHost(fetus, fetuses)) return '在宿主胎儿体内';
   if (fetus?.shoulderDystocia) return '先露部已出，肩部卡住';
   const depth = getDescentStage(fetus);
-  if (fetus?.inletIntruder && depth === DESCENT_INLET) return '与另一胎一起卡在入口';
+  if (fetus?.inletIntruder && depth === DESCENT_INLET) return '与另一胎在入口互锁';
   return DESCENT_STAGE_TEXT[depth] || '宫内自由';
 }
 
@@ -3925,7 +3915,8 @@ function reconcileFetalDescent(profile) {
     presenting = pickDeepestFetus(active.filter((fetus) => fetus.descentStage >= DESCENT_INLET));
     if (presenting) pregnant.presentingEmbryoId = presenting.embryoId;
   }
-  // 入口以后只容先露胎；唯一的例外是真实模式的病理性入侵者，它只能与仍在 0 的先露胎一起卡在入口
+  // 入口以后只容先露胎；唯一的例外是真实模式的互锁：头位的第二胎与仍在 0 的臀位先露胎卡在一起。
+  // 互锁一被转开就不成立，第二胎随即退回子宫低位——这正是 rotate 解开互锁的方式
   let intruderKept = false;
   for (const fetus of active) {
     if (fetus === presenting || fetus.descentStage < DESCENT_INLET) {
@@ -3933,7 +3924,7 @@ function reconcileFetalDescent(profile) {
       continue;
     }
     const mayIntrude = realistic && fetus.inletIntruder && !intruderKept && fetus.descentStage === DESCENT_INLET
-      && presenting && presenting.descentStage === DESCENT_INLET;
+      && presenting && presenting.descentStage === DESCENT_INLET && isLockedTwins(presenting, fetus);
     if (mayIntrude) {
       intruderKept = true;
       continue;
@@ -5328,10 +5319,8 @@ function applyAssistFetalPosition(chatState, args) {
     }
   } else if (action === 'lift') {
     if (depth >= 1) return skip('the fetus is already in the birth canal and cannot be pushed back.');
-    const inletConflict = obstruction && (obstruction.type === 'inlet_crowding' || obstruction.type === 'twin_lock')
-      && obstruction.embryoIds.includes(target.embryoId);
-    if ((stage === '第一产程' || stage === '第二产程') && depth >= DESCENT_INLET && !inletConflict) {
-      return skip('during labor only a fetus stuck together with another at the pelvic inlet can be pushed back.');
+    if ((stage === '第一产程' || stage === '第二产程') && depth >= DESCENT_INLET) {
+      return skip('during labor an engaged fetus cannot be pushed back; locked twins can only be turned apart with rotate.');
     }
     if (!isProdromalLead && depth <= DESCENT_TOP) return skip('the fetus is already at the top of the uterus.');
     const lacking = requireVitality();
@@ -7155,7 +7144,7 @@ function applyDebugFetalActivity(chatState, args) {
  * 调试：直接设定某一胎的角度、下降位置与先露身分（不对 Tracker 开放）。
  * fetusIndex 是完整阵列的下标（完整变量页看得到全部胎儿，包括未揭晓的）。
  * 设定后仍经过 reconcileFetalDescent：超出阶段上限、入口容量的值会被夹回，一般操作造不出不可能的状态。
- * allowPathologicalState：真实分娩模式下，让这一胎作为病理性第二胎一起卡在入口 0（先露胎须已在 0）。
+ * allowPathologicalState：真实分娩模式下，让这一胎与已在入口 0 的臀位先露胎互锁（这一胎须为头位）。
  */
 function applyDebugSetFetalPosition(chatState, args) {
   const female = String(args?.female || '').trim();
@@ -7184,6 +7173,9 @@ function applyDebugSetFetalPosition(chatState, args) {
     if (!isRealisticLabor(profile)) return skip('pathological inlet states only exist in realistic labor mode.');
     if (!presenting || presenting === target || getDescentStage(presenting) !== DESCENT_INLET) {
       return skip('a different presenting fetus must already be engaged at the inlet (0).');
+    }
+    if (!isLockedTwins(presenting, target)) {
+      return skip('locked twins need a breech presenting fetus (about 180°) and this fetus head-down (about 0°).');
     }
     target.descentStage = DESCENT_INLET;
     target.inletIntruder = true;

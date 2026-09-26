@@ -378,27 +378,29 @@ test('横位进入第二产程：胎体下降不推进、发出难产警示', ()
 });
 
 // 间歇期：先露胎在入口 0，另一胎在 -1；Math.random 恒为 0 → 必定产生往下的意图
-const crowdingSetup = (over = {}) => realisticAt('第二产程', [
-  fetus(1, { descentStage: 0, tendencyAngle: 0, weight: 1 }),
+// 双胎互锁只有一种构型：臀位的先露胎在入口，头位的第二胎挤进来与它下巴互勾
+const crowdingSetup = (over = {}, leadOver = {}) => realisticAt('第二产程', [
+  fetus(1, { descentStage: 0, tendencyAngle: 180, weight: 1, ...leadOver }),
   fetus(2, { descentStage: -1, tendencyAngle: 0, weight: 0.9, affinity: -30, ...over }),
 ], { laborPhase: '间歇期', laborBirthNumber: 1, presentingEmbryoId: 1 });
 
-test('病理性同时入盆：胎重相近、排斥母体、宫压够强时第二胎挤进入口，胎体下降停住', () => {
+test('双胎互锁：臀位先露胎在入口，头位、胎重相近、排斥母体、宫压够强的第二胎挤进来互锁，胎体下降停住', () => {
   Math.random = () => 0;
   const chatState = crowdingSetup();
   passHours(chatState, 3);
   assert.deepEqual(depths(chatState), [0, 0]);
   assert.equal(P(chatState).pregnant.laborPhase, '胎体下降');
   assert.equal(P(chatState).pregnant.effectiveLaborHours, 0);
-  assert.match(String(P(chatState).notify.firstly), /两胎同时挤在骨盆入口/);
+  assert.match(String(P(chatState).notify.firstly), /互锁/);
 });
 
-test('角度相对时升级为双胎互锁', () => {
-  Math.random = () => 0;
-  const chatState = crowdingSetup({ tendencyAngle: 180 });
-  passHours(chatState, 1);
-  assert.deepEqual(depths(chatState), [0, 0]);
-  assert.match(String(P(chatState).notify.firstly), /胎位互锁/);
+test('构型不对就不会挤进入口：先露头位、或第二胎不是头位时，第二胎留在子宫低位', () => {
+  for (const [label, over, leadOver] of [['先露头位', {}, { tendencyAngle: 0 }], ['第二胎臀位', { tendencyAngle: 180 }, {}]]) {
+    Math.random = () => 0;
+    const chatState = crowdingSetup(over, leadOver);
+    passHours(chatState, 2);
+    assert.equal(depths(chatState)[1], -1, label);
+  }
 });
 
 for (const [label, over] of [['affinity = -24', { affinity: -24 }], ['胎重差距过大', { weight: 0.6 }]]) {
@@ -418,20 +420,20 @@ test('宫压未达上限 66% 时不会病理性入盆', () => {
   assert.equal(depths(chatState)[1], -1);
 });
 
-test('入口拥挤在第一产程可自行退开一胎；互锁不会自己解开', () => {
-  Math.random = () => 0;
-  const crowded = realisticAt('第一产程', [
-    fetus(1, { descentStage: 0 }), fetus(2, { descentStage: 0, inletIntruder: true, affinity: 0 }),
-  ], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
-  passHours(crowded, 1);
-  assert.deepEqual(depths(crowded), [0, -1]);
-
-  Math.random = () => 0.05; // 低于自行解开的 10%，但不会产生新的位移
+test('互锁不会自己解开；没有构成互锁的入侵标记会被协调函数退回子宫低位', () => {
+  Math.random = () => 0.05;
   const locked = realisticAt('第一产程', [
-    fetus(1, { descentStage: 0 }), fetus(2, { descentStage: 0, inletIntruder: true, affinity: 0, tendencyAngle: 180 }),
+    fetus(1, { descentStage: 0, tendencyAngle: 180 }), fetus(2, { descentStage: 0, inletIntruder: true, affinity: 0, tendencyAngle: 0 }),
   ], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
   passHours(locked, 3);
   assert.deepEqual(depths(locked), [0, 0]);
+
+  const loose = realisticAt('第一产程', [
+    fetus(1, { descentStage: 0, tendencyAngle: 0 }), fetus(2, { descentStage: 0, inletIntruder: true, tendencyAngle: 0 }),
+  ], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
+  touch(loose);
+  assert.deepEqual(depths(loose), [0, -1]);
+  assert.equal('inletIntruder' in P(loose).pregnant.fetuses[1], false);
 });
 
 test('关闭真实模式时清掉阻塞标记，多出来的入口占用退回低位', () => {
@@ -493,11 +495,11 @@ function promptFetusesOf(chatState) {
 
 test('prompt：每胎只送位置文字，不送 descentStage 数值与内部旗标；卡住时写明', () => {
   const chatState = realisticAt('第一产程', [
-    fetus(1, { descentStage: 0 }), fetus(2, { descentStage: 0, inletIntruder: true }), fetus(3, { descentStage: -3 }),
+    fetus(1, { descentStage: 0, tendencyAngle: 180 }), fetus(2, { descentStage: 0, inletIntruder: true }), fetus(3, { descentStage: -3 }),
   ], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
   touch(chatState);
   const fetuses = promptFetusesOf(chatState);
-  assert.deepEqual(fetuses.map((f) => f.positionText), ['入盆', '与另一胎一起卡在入口', '顶到宫顶']);
+  assert.deepEqual(fetuses.map((f) => f.positionText), ['入盆', '与另一胎在入口互锁', '顶到宫顶']);
   assert.equal(fetuses[0].presenting, true);
   for (const f of fetuses) {
     for (const key of ['descentStage', 'inletIntruder', 'shoulderDystocia', 'nestedReleased', 'embryoId']) assert.equal(key in f, false, key);
@@ -514,10 +516,12 @@ test('调试工具：设定角度与位置，仍受阶段上限夹回', () => {
   assert.equal(P(chatState).pregnant.fetuses[0].descentStage, -1, '孕期最低只到子宫低位');
 });
 
-test('调试工具：病理状态只在真实模式、且先露胎已在入口时才允许', () => {
-  const gentle = setup('第一产程', [fetus(1, { descentStage: 0 }), fetus(2, { descentStage: -1 })], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
+test('调试工具：病理状态只在真实模式、先露胎已在入口、且构成互锁（先露臀位、这一胎头位）时才允许', () => {
+  const gentle = setup('第一产程', [fetus(1, { descentStage: 0, tendencyAngle: 180 }), fetus(2, { descentStage: -1 })], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
   assert.equal(debugSet(gentle, { fetusIndex: 1, allowPathologicalState: true }).applied, false);
-  const realistic = realisticAt('第一产程', [fetus(1, { descentStage: 0 }), fetus(2, { descentStage: -1 })], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
+  const headFirst = realisticAt('第一产程', [fetus(1, { descentStage: 0 }), fetus(2, { descentStage: -1 })], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
+  assert.equal(debugSet(headFirst, { fetusIndex: 1, allowPathologicalState: true }).applied, false, '先露头位不构成互锁');
+  const realistic = realisticAt('第一产程', [fetus(1, { descentStage: 0, tendencyAngle: 180 }), fetus(2, { descentStage: -1 })], { laborPhase: '潜伏期', presentingEmbryoId: 1 });
   assert.equal(debugSet(realistic, { fetusIndex: 1, allowPathologicalState: true }).applied, true);
   assert.deepEqual(depths(realistic), [0, 0]);
   // 不勾病理状态时，第二胎到入口会被容量规则挡回
