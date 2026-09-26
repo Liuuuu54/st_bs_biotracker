@@ -3836,6 +3836,7 @@ function renderFetusTagRow(fetus) {
 let wombRenderer = null;
 let wombCanvas = null;
 let wombTheme = '';
+let wombThemeColors = {};
 let wombCardsOpen = false;
 let wombCardsScrollTop = 0;
 let wombThumbEmote = null;
@@ -3956,6 +3957,14 @@ function setWombCardsOpen(host, open) {
   toggle?.setAttribute('aria-expanded', String(open));
 }
 
+/** 当下主题的萤幕、文字与边框色，子宫图的配色从这里调出来（深浅模式各自取） */
+function readWombThemeColors() {
+  const root = document.getElementById('bs-biotracker-settings');
+  const style = root ? getComputedStyle(root) : null;
+  const read = (name) => String(style?.getPropertyValue(name) || '').trim();
+  return { screen: read('--bsbt-lcd-bg'), text: read('--bsbt-lcd-text'), border: read('--bsbt-border-color') };
+}
+
 function drawWombThumb(node, emote = null) {
   const sprite = {
     type: node.dataset.spriteType,
@@ -3963,7 +3972,7 @@ function drawWombThumb(node, emote = null) {
     mirror: node.hasAttribute('data-sprite-mirror'),
     posterior: node.hasAttribute('data-sprite-posterior'),
   };
-  drawFetusThumb(node, sprite, Number(node.dataset.angle) || 0, wombTheme, emote);
+  drawFetusThumb(node, sprite, Number(node.dataset.angle) || 0, wombThemeColors, emote);
 }
 
 /**
@@ -3993,7 +4002,8 @@ function mountWombView(ctx, content, viewModel) {
   const host = content.querySelector('[data-womb-host]');
   if (!host) return;
   const settings = getSettings(ctx);
-  const theme = settings.theme || 'retro';
+  const themeColors = readWombThemeColors();
+  const theme = JSON.stringify(themeColors);
   const animated = settings.wombAnimation !== false;
   if (!wombCanvas) {
     wombCanvas = document.createElement('canvas');
@@ -4004,12 +4014,14 @@ function mountWombView(ctx, content, viewModel) {
   if (slot) slot.replaceWith(wombCanvas);
   else host.prepend(wombCanvas);
   if (!wombRenderer) {
-    wombRenderer = createUterusRenderer(wombCanvas, { themeName: theme, animated });
+    wombRenderer = createUterusRenderer(wombCanvas, { theme: themeColors, animated });
     wombTheme = theme;
+    wombThemeColors = themeColors;
   } else {
     if (theme !== wombTheme) {
-      wombRenderer.setTheme(theme);
+      wombRenderer.setTheme(themeColors);
       wombTheme = theme;
+      wombThemeColors = themeColors;
     }
     wombRenderer.setAnimated(animated);
   }

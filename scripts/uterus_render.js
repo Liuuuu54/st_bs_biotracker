@@ -11,23 +11,6 @@ const BASE_PALETTE = Object.freeze({
   blood: '#b94460', lining: '#f3a891', ovaryHot: '#ae4557', ovaryGlow: '#ffd079',
 });
 
-// 配色选项 C：肉色色阶固定，各主题只做轻微的色调偏移（混入比例很小）
-const THEME_TINTS = Object.freeze({
-  retro: ['#b8c46a', 0.14],
-  cultivation: ['#86b88a', 0.12],
-  fantasy: ['#c9a0ff', 0.1],
-  'cyber-egypt': ['#d9b84a', 0.12],
-  wasteland: ['#c8a060', 0.16],
-  sakura: ['#ff9ec4', 0.12],
-  holo: ['#5fd3e0', 0.14],
-  gothic: ['#4a2d63', 0.2],
-  steampunk: ['#b87333', 0.14],
-  eldritch: ['#3fae8c', 0.14],
-  ink: ['#8a8a8a', 0.3],
-  iphone: ['#ffffff', 0],
-  constructivism: ['#d33a2c', 0.1],
-});
-
 const FRAME_MS = 180;
 const CUE_MS = 2400;
 export const EMOTE_MS = 1400;
@@ -47,10 +30,61 @@ export function mixColor(from, to, ratio) {
   return `#${a.map((v, i) => Math.round(v * (1 - t) + b[i] * t).toString(16).padStart(2, '0')).join('')}`;
 }
 
-export function getUterusPalette(themeName) {
-  const [tint, amount] = THEME_TINTS[themeName] || ['#ffffff', 0];
+/** 读 CSS 的颜色字串（#rgb、#rrggbb、rgb()、rgba()）；半透明的叠在黑底上当成实色 */
+function parseCssColor(value) {
+  const text = String(value || '').trim();
+  const rgb = text.match(/^rgba?\(([^)]+)\)$/i);
+  if (rgb) {
+    const [r, g, b, a = 1] = rgb[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+    const alpha = Number.isFinite(a) ? Math.max(0, Math.min(1, a)) : 1;
+    return `#${[r, g, b].map((v) => Math.round((Number(v) || 0) * alpha).toString(16).padStart(2, '0')).join('')}`;
+  }
+  return /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(text) ? text : null;
+}
+
+// 配色选项 C：子宫与胎儿维持肉色，往主题的代表色偏；背景、刻度直接由代表色调出来。
+// 代表色取萤幕、文字、边框三者里最饱和的一个：浅色主题的萤幕近乎白，色相其实在文字色上（例如 sakura 的深粉）。
+// 胎儿、卵、胎囊只偏一半，保持好认；警示黄与羊水不偏
+const FLESH_TINT = 0.16;
+const FETUS_TINT = 0.08;
+const FETUS_KEYS = new Set(['fetus', 'fetusLight', 'egg', 'eggShade', 'sac']);
+const FIXED_KEYS = new Set(['signal', 'water', 'waterLight']);
+
+function chromaOf(hex) {
+  const rgb = hexToRgb(hex);
+  return Math.max(...rgb) - Math.min(...rgb);
+}
+
+/** 保留色相、把最亮的通道缩放到 level，得到亮度一致的颜色 */
+function toBrightness(hex, level) {
+  const rgb = hexToRgb(hex);
+  const top = Math.max(1, ...rgb);
+  return `#${rgb.map((v) => Math.round((v * level) / top).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function pickThemeHue(theme) {
+  const candidates = [theme.screen, theme.text, theme.border].map(parseCssColor).filter(Boolean);
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, color) => (chromaOf(color) > chromaOf(best) ? color : best));
+}
+
+/**
+ * @param theme { screen, text, border }：当下主题的 --bsbt-lcd-bg、--bsbt-lcd-text、--bsbt-border-color；
+ *        给不出来时退回原本的深紫配色
+ */
+export function getUterusPalette(theme = {}) {
+  const hue = pickThemeHue(theme);
   const palette = {};
-  for (const [key, color] of Object.entries(BASE_PALETTE)) palette[key] = amount ? mixColor(color, tint, amount) : color;
+  for (const [key, color] of Object.entries(BASE_PALETTE)) {
+    const amount = !hue || FIXED_KEYS.has(key) ? 0 : FETUS_KEYS.has(key) ? FETUS_TINT : FLESH_TINT;
+    palette[key] = amount ? mixColor(color, hue, amount) : color;
+  }
+  palette.tick = BASE_PALETTE.wallDark;
+  if (hue) {
+    palette.bg = toBrightness(hue, 46);
+    palette.void = toBrightness(hue, 26);
+    palette.tick = toBrightness(hue, 120);
+  }
   return palette;
 }
 
@@ -269,8 +303,8 @@ export function drawAffinityEmote(ctx, band, x, y, t) {
 }
 
 /** 给胎儿详细画缩图（32×32）；emote 有值时在头顶叠一格亲和特效（排斥会让缩图轻微抖动） */
-export function drawFetusThumb(canvas, sprite, angle, themeName, emote = null) {
-  const P = getUterusPalette(themeName);
+export function drawFetusThumb(canvas, sprite, angle, theme, emote = null) {
+  const P = getUterusPalette(theme);
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = P.cavityDeep;
@@ -305,13 +339,13 @@ export const AFFINITY_WORDS = Object.freeze({ 2: '依恋', 1: '亲近', 0: '平�
  * 建立一个子宫图绘制器。canvas 只在建立时设定尺寸一次。
  * @returns {{ setLayout, setTheme, playCue, setAnimated, destroy, canvas }}
  */
-export function createUterusRenderer(canvas, { themeName = 'retro', animated = true } = {}) {
+export function createUterusRenderer(canvas, { theme = {}, animated = true } = {}) {
   canvas.width = UTERUS_CANVAS.width;
   canvas.height = UTERUS_CANVAS.height;
   const ctx = canvas.getContext('2d', { alpha: false });
   ctx.imageSmoothingEnabled = false;
 
-  let P = getUterusPalette(themeName);
+  let P = getUterusPalette(theme);
   let pen = makePen(ctx, P);
   let spriteOf = createSpriteCache(P);
   let layout = null;
@@ -339,8 +373,8 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
     drawCue(tick);
     // 刻度与超出显示数
     for (let i = 0; i < 8; i += 1) {
-      px(4, 35 + i * 8, i % 2 ? 2 : 4, 1, P.wallDark);
-      px(88, 35 + i * 8, i % 2 ? 2 : 4, 1, P.wallDark);
+      px(4, 35 + i * 8, i % 2 ? 2 : 4, 1, P.tick);
+      px(88, 35 + i * 8, i % 2 ? 2 : 4, 1, P.tick);
     }
     if (layout.hiddenCount > 0) pen.glyphs(`+${layout.hiddenCount}`, 80 - String(layout.hiddenCount).length * 4, 112, P.signal);
   }
@@ -858,8 +892,8 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
       layout = next;
       kick();
     },
-    setTheme(name) {
-      P = getUterusPalette(name);
+    setTheme(next) {
+      P = getUterusPalette(next);
       pen = makePen(ctx, P);
       spriteOf = createSpriteCache(P);
       kick();
