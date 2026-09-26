@@ -60,7 +60,7 @@ import { describeFetalPosition, getPresentingAmnionDurability, getPresentingFetu
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, findFetusAt, getSpriteStage } from './scripts/uterus_layout.js';
-import { AFFINITY_WORDS, createUterusRenderer, drawFetusThumb, drawGenderIcon, getAffinityBand } from './scripts/uterus_render.js';
+import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
 import { appendSkillHistory, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
 import {
@@ -3832,18 +3832,18 @@ function renderFetusTagRow(fetus) {
 // ---- 子宫像素图与胎儿详细 ----
 // 画布与绘制器跨重绘保留：追踪页每次重绘只把同一张画布换进新的占位，动画不会被打断。
 // 追踪的轮询每一两秒就会重绘一次，所以占位要跟画布同尺寸（否则页面高度瞬间缩短、捲动位置被拉回），
-// 面板开关、捲动位置、展开的胎儿与胎教、点胎儿跳出的小标签也都要跨重绘保留。
+// 面板开关、捲动位置、展开的胎儿与胎教、缩图上正在播的亲和特效也都要跨重绘保留。
 let wombRenderer = null;
 let wombCanvas = null;
 let wombTheme = '';
 let wombCardsOpen = false;
 let wombCardsScrollTop = 0;
-let wombBubble = null;
 let wombCurrent = null;
+let wombThumbEmote = null;
 const wombOpenFetuses = new Set();
 const wombOpenTalents = new Set();
 const WOMB_SEEN_CUE_KEY = 'bs-bt-womb-seen-cue';
-const WOMB_BUBBLE_MS = 3000;
+const WOMB_EMOTE_FRAME_MS = 120;
 const WOMB_MAGNIFIER_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 1h5v2H4zM2 3h2v6H2zM9 3h2v6H9zM4 9h5v2H4zM9 9h2v2H9zM11 11h2v2h-2zM13 13h3v3h-3z"/></svg>';
 const WOMB_REPLAY_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 2h2v12H4zM6 3h2v10H6zM8 4h2v8H8zM10 5h2v6h-2zM12 7h1v2h-1z"/></svg>';
 const WOMB_CUE_LABELS = Object.freeze({
@@ -3884,11 +3884,9 @@ function renderWombFetusCard(item, index, data) {
   ].join(' · ');
   return `<details class="bs-bt-womb-card" data-womb-fetus="${escapeHtml(id)}"${wombOpenFetuses.has(id) ? ' open' : ''}>
       <summary>
-        <canvas class="bs-bt-womb-thumb" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}" data-angle="${Number(item?.tendencyAngle) || 0}" aria-hidden="true"></canvas>
-        <span class="bs-bt-womb-card-head">
-          <strong class="bs-bt-womb-card-title">胎儿 ${index + 1}<canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas>${escapeHtml(getPresentationWord(item?.tendencyAngle))}${item?.isPresenting ? ' · 先露' : ''}</strong>
-          ${blocked ? `<span class="bs-bt-womb-card-alert">${escapeHtml(blocked)}</span>` : ''}
-        </span>
+        <canvas class="bs-bt-womb-thumb" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}" data-angle="${Number(item?.tendencyAngle) || 0}" data-affinity="${Number(item?.affinity) || 0}" role="button" tabindex="0" aria-label="${escapeHtml(`看胎儿 ${index + 1} 的亲和`)}"></canvas>
+        <strong class="bs-bt-womb-card-title">胎儿${index + 1}<canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas>${escapeHtml(getPresentationWord(item?.tendencyAngle))}${item?.isPresenting ? '<span class="bs-bt-womb-chip">先露</span>' : ''}</strong>
+        ${blocked ? `<span class="bs-bt-womb-card-alert">${escapeHtml(blocked)}</span>` : ''}
       </summary>
       <div class="bs-bt-womb-card-body">
         <span class="bs-bt-womb-card-line">${escapeHtml(summary)}</span>
@@ -3944,48 +3942,40 @@ function setWombCardsOpen(host, open) {
   toggle?.setAttribute('aria-expanded', String(open));
 }
 
-/**
- * 点子宫图上的胎儿，在它上方跳出小标签：编号、位置与亲和。
- * 亲和不画在图上，免得跟阻塞警示框与胎囊膜抢同一圈位置。
- */
-function renderWombBubble() {
-  const host = wombCanvas?.parentElement;
-  host?.querySelector('.bs-bt-womb-bubble')?.remove();
-  if (!host || !wombBubble || Date.now() >= wombBubble.until || !wombCurrent) return;
-  const fetus = wombCurrent.layout.fetuses.find((item) => item.embryoId === wombBubble.embryoId);
-  const info = wombCurrent.info.get(wombBubble.embryoId);
-  if (!fetus || !info) return;
-  const bubble = document.createElement('div');
-  bubble.className = 'bs-bt-womb-bubble';
-  bubble.setAttribute('role', 'status');
-  bubble.textContent = `胎儿 ${info.number} · ${info.position} · ${AFFINITY_WORDS[getAffinityBand(info.affinity)]}`;
-  const scale = wombCanvas.clientWidth / 96;
-  const originX = wombCanvas.offsetLeft + wombCanvas.clientLeft;
-  const anchorX = originX + fetus.x * scale;
-  bubble.style.top = `${wombCanvas.offsetTop + wombCanvas.clientTop + Math.max(4, fetus.y - fetus.size * 0.8) * scale}px`;
-  host.appendChild(bubble);
-  // 标签夹在画框内，箭头仍指向被点的胎儿
-  const width = bubble.offsetWidth;
-  const left = Math.max(originX + 2, Math.min(originX + wombCanvas.clientWidth - width - 2, anchorX - width / 2));
-  bubble.style.left = `${left}px`;
-  bubble.style.setProperty('--bsbt-bubble-arrow', `${Math.max(6, Math.min(width - 6, anchorX - left))}px`);
-  const remaining = wombBubble.until - Date.now();
-  setTimeout(() => {
-    if (wombBubble && Date.now() >= wombBubble.until) {
-      wombBubble = null;
-      bubble.remove();
-    }
-  }, remaining + 20);
-}
-
+/** 点子宫图上的胎儿：在它头上冒出亲和特效 */
 function onWombCanvasClick(event) {
   if (!wombCurrent || !wombCanvas) return;
   const rect = wombCanvas.getBoundingClientRect();
   const x = ((event.clientX - rect.left - wombCanvas.clientLeft) / wombCanvas.clientWidth) * 96;
   const y = ((event.clientY - rect.top - wombCanvas.clientTop) / wombCanvas.clientHeight) * 120;
   const fetus = findFetusAt(wombCurrent.layout, x, y);
-  wombBubble = fetus ? { embryoId: fetus.embryoId, until: Date.now() + WOMB_BUBBLE_MS } : null;
-  renderWombBubble();
+  if (fetus) wombRenderer?.emote(fetus.embryoId, fetus.affinity);
+}
+
+function drawWombThumb(node, emote = null) {
+  drawFetusThumb(node, { type: node.dataset.spriteType, stage: Number(node.dataset.spriteStage) || 0 }, Number(node.dataset.angle) || 0, wombTheme, emote);
+}
+
+/**
+ * 胎儿详细的缩图上播亲和特效。追踪页每一两秒会重绘，缩图会被换掉，
+ * 所以每一帧都重新找当下那张缩图来画，播完再画回原样
+ */
+function playWombThumbEmote(embryoId, affinity) {
+  wombThumbEmote = { embryoId: String(embryoId), band: getAffinityBand(affinity), start: performance.now() };
+  const step = () => {
+    const current = wombThumbEmote;
+    if (!current) return;
+    const node = document.querySelector(`[data-womb-fetus="${CSS.escape(current.embryoId)}"] canvas.bs-bt-womb-thumb`);
+    const t = (performance.now() - current.start) / EMOTE_MS;
+    if (t >= 1) {
+      wombThumbEmote = null;
+      if (node) drawWombThumb(node);
+      return;
+    }
+    if (node) drawWombThumb(node, { band: current.band, t });
+    setTimeout(step, WOMB_EMOTE_FRAME_MS);
+  };
+  step();
 }
 
 /** 追踪页重绘后，把子宫画布换进同尺寸占位、画胎儿缩图与性别图标，并在有新事件时播一次特写 */
@@ -4018,15 +4008,7 @@ function mountWombView(ctx, content, viewModel) {
   wombCanvas.setAttribute('aria-label', layout.summary);
   wombCanvas.classList.toggle('is-pickable', layout.fetuses.length > 0);
   wombRenderer.setLayout(layout);
-  wombCurrent = {
-    layout,
-    info: new Map(viewModel.pregnancy.fetuses.map((fetus, index) => [fetus.embryoId, {
-      number: index + 1,
-      position: `${fetus.positionText || '宫内自由'}${fetus.isPresenting ? '（先露）' : ''}`,
-      affinity: Number(fetus.affinity) || 0,
-    }])),
-  };
-  renderWombBubble();
+  wombCurrent = { layout };
 
   const cue = viewModel.pregnancy.visualCue;
   if (cue?.seq) {
@@ -4041,7 +4023,17 @@ function mountWombView(ctx, content, viewModel) {
   });
 
   host.querySelectorAll('canvas[data-sprite-type]').forEach((node) => {
-    drawFetusThumb(node, { type: node.dataset.spriteType, stage: Number(node.dataset.spriteStage) || 0 }, Number(node.dataset.angle) || 0, theme);
+    drawWombThumb(node);
+    // 点缩图只播特效，不连带展开或收起这一胎
+    const play = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      playWombThumbEmote(node.closest('[data-womb-fetus]')?.dataset.wombFetus, Number(node.dataset.affinity) || 0);
+    };
+    node.addEventListener('click', play);
+    node.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') play(event);
+    });
   });
   host.querySelectorAll('canvas[data-womb-gender]').forEach((node) => drawGenderIcon(node, node.dataset.wombGender));
   host.querySelector('[data-womb-cards-toggle]')?.addEventListener('click', () => setWombCardsOpen(host, !wombCardsOpen));

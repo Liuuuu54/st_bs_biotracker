@@ -30,6 +30,7 @@ const THEME_TINTS = Object.freeze({
 
 const FRAME_MS = 180;
 const CUE_MS = 2400;
+export const EMOTE_MS = 1400;
 const RUPTURE_MS = 2800;
 
 function hexToRgb(hex) {
@@ -215,8 +216,52 @@ function createSpriteCache(P) {
   };
 }
 
-/** 给胎儿卡画缩图（32×32） */
-export function drawFetusThumb(canvas, sprite, angle, themeName) {
+// ---- 亲和特效：点胎儿时在它头上冒出的像素表情，不绕胎儿画圈（免得跟阻塞警示框、胎囊膜混在一起） ----
+const EMOTE_ICONS = Object.freeze({
+  heart: ['.##.##.', '#######', '#######', '.#####.', '..###..', '...#...'],
+  sparkle: ['..#..', '..#..', '#####', '..#..', '..#..'],
+  drop: ['..#..', '.###.', '#####', '#####', '.###.'],
+  anger: ['.#.#.', '##.##', '.....', '##.##', '.#.#.'],
+  dot: ['##', '##'],
+});
+
+const EMOTE_COLORS = Object.freeze({ heart: '#ff6f9c', sparkle: '#ffe27d', drop: '#7fc4ff', anger: '#e8323c', dot: '#ffffff' });
+
+function stamp(ctx, name, x, y) {
+  const rows = EMOTE_ICONS[name];
+  ctx.fillStyle = EMOTE_COLORS[name];
+  const ox = Math.round(x - rows[0].length / 2);
+  const oy = Math.round(y - rows.length / 2);
+  rows.forEach((row, dy) => [...row].forEach((c, dx) => { if (c === '#') ctx.fillRect(ox + dx, oy + dy, 1, 1); }));
+}
+
+/**
+ * 画一格亲和特效。(x, y) 是胎儿头顶，t 是 0～1 的播放进度。
+ * 依恋：三颗爱心往上飘；亲近：一颗爱心加闪光；平淡：「…」依序出现；疏离：汗滴滑下；排斥：怒筋闪动
+ */
+export function drawAffinityEmote(ctx, band, x, y, t) {
+  const rise = Math.round(t * 6);
+  if (band === 2) {
+    [[-6, 0], [0, 0.18], [6, 0.36]].forEach(([dx, delay]) => {
+      const local = t - delay;
+      if (local < 0 || local > 0.8) return;
+      stamp(ctx, 'heart', x + dx, y - 3 - Math.round(local * 10));
+    });
+  } else if (band === 1) {
+    stamp(ctx, 'heart', x, y - 3 - rise);
+    if (Math.floor(t * 8) % 2 === 0) stamp(ctx, 'sparkle', x + 6, y - 7 - rise);
+  } else if (band === 0) {
+    const shown = Math.min(3, Math.floor(t * 4) + 1);
+    for (let i = 0; i < shown; i += 1) stamp(ctx, 'dot', x - 4 + i * 4, y - 4);
+  } else if (band === -1) {
+    stamp(ctx, 'drop', x + 5, y - 5 + Math.round(t * 5));
+  } else if (Math.floor(t * 10) % 3 !== 2) {
+    stamp(ctx, 'anger', x + 4, y - 4);
+  }
+}
+
+/** 给胎儿详细画缩图（32×32）；emote 有值时在头顶叠一格亲和特效（排斥会让缩图轻微抖动） */
+export function drawFetusThumb(canvas, sprite, angle, themeName, emote = null) {
   const P = getUterusPalette(themeName);
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
@@ -224,11 +269,13 @@ export function drawFetusThumb(canvas, sprite, angle, themeName) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const off = createSpriteCache(P)(sprite.type, sprite.stage);
   const base = usesFetalPose(sprite.type, sprite.stage) ? -135 : 0;
+  const shake = emote && emote.band === -2 ? (Math.floor(emote.t * 12) % 2 ? 1 : -1) : 0;
   ctx.save();
-  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.translate(canvas.width / 2 + shake, canvas.height / 2 + (emote ? 3 : 0));
   ctx.rotate(((angle + base) * Math.PI) / 180);
   ctx.drawImage(off, -12, -12, 24, 24);
   ctx.restore();
+  if (emote) drawAffinityEmote(ctx, emote.band, canvas.width / 2, 9, emote.t);
 }
 
 // 亲和五级：≥25 依恋、5～24 亲近、-4～4 平淡、-24～-5 疏离、≤-25 排斥（-25 是病理性挤进入口的门槛）
@@ -245,7 +292,7 @@ export const AFFINITY_WORDS = Object.freeze({ 2: '依恋', 1: '亲近', 0: '平�
 
 /**
  * 建立一个子宫图绘制器。canvas 只在建立时设定尺寸一次。
- * @returns {{ setLayout, setTheme, playCue, setAnimated, destroy, canvas }}
+ * @returns {{ setLayout, setTheme, playCue, emote, setAnimated, destroy, canvas }}
  */
 export function createUterusRenderer(canvas, { themeName = 'retro', animated = true } = {}) {
   canvas.width = UTERUS_CANVAS.width;
@@ -258,6 +305,7 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
   let spriteOf = createSpriteCache(P);
   let layout = null;
   let cue = null;
+  let emote = null;
   let wantsAnimation = animated;
   let visible = true;
   let timer = 0;
@@ -278,6 +326,7 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
     drawFrontWall();
     drawMenstrualFlow(tick);
     drawObstruction(tick);
+    drawEmote(tick);
     drawCue(tick);
     // 刻度与超出显示数
     for (let i = 0; i < 8; i += 1) {
@@ -558,6 +607,15 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
     }
   }
 
+  function drawEmote(tick) {
+    if (!emote) return;
+    const t = (tick - emote.start) / EMOTE_MS;
+    if (t > 1) { emote = null; return; }
+    const fetus = layout.fetuses.find((item) => item.embryoId === emote.embryoId);
+    if (!fetus) return;
+    drawAffinityEmote(ctx, emote.band, fetus.x, Math.max(6, fetus.y - Math.round(fetus.size * 0.8)), t);
+  }
+
   // ---- 事件演出 ----
   function shaft(tip) {
     const { womb, tract } = layout;
@@ -761,7 +819,7 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
   }
 
   function needsTicking() {
-    return Boolean(cue) || (wantsMotion() && visible);
+    return Boolean(cue || emote) || (wantsMotion() && visible);
   }
 
   function loop() {
@@ -807,6 +865,11 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
       kick();
     },
     /** 事件演出不受「关闭动画」影响：它只播一次，是资讯而不是装饰；减少动态效果时则跳过 */
+    /** 点胎儿时的亲和特效 */
+    emote(embryoId, affinity) {
+      emote = { embryoId, band: getAffinityBand(affinity), start: performance.now() };
+      kick();
+    },
     playCue(type) {
       if (reducedMotion) return false;
       cue = { type, start: performance.now() };
