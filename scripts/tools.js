@@ -550,7 +550,8 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAssistFetalPosition',
-    description: '剧情明确出现人工、器械或魔法的胎位操作时才调用；自然胎动与下降由 bsPassedTime 自动处理，不要为了「肚子下沉」「胎儿踢了一下」之类的描写调用。'
+    description: '剧情明确出现人工、器械或魔法的胎位操作，或胎儿有意识地自己转身、往上缩、往下钻、踢破胎膜时才调用；自然胎动与下降由 bsPassedTime 自动处理，不要为了「肚子下沉」「胎儿踢了一下」之类的描写调用。'
+      + 'actor=fetus 表示这一胎自己动（任何胎儿都可以）：不消耗母体活力，但母体一样承受疼痛或心理压力；胎儿不能把自己拉出来（extract），也解不开自己卡住的肩膀。其余限制与外力操作相同。省略 actor 即为外力操作。'
       + 'fetusIndex 是 fetuses 列表下标（从 0 起算），省略时作用于正在下降／即将娩出的那一胎。每个动作都要通过检查才会生效，被拒绝时状态完全不变，叙事不得写成已成功。'
       + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位），也可以用 backSide 把胎背转到 左前／右前／左后／右后（两者可同时给，至少给一个）；已入盆的胎儿只能小幅校正角度，胎背只能前后对调、不能换左右（例如把枕后位的右后转成右前）；肩难产时可不给角度直接转动肩部解开卡点。'
       + 'lift：把胎儿往上托回一格；产兆前驱托高领头胎儿会把分娩延后，这是要跟宫缩对抗的，母体活力不足会被拒绝，并带来一阵剧痛。产程中已入盆的胎儿不能再托回；双胎互锁只能用 rotate 转开其中一胎。'
@@ -566,6 +567,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         fetusIndex: { type: 'integer' },
         targetAngle: { type: 'number' },
         backSide: { type: 'string', enum: ['左前', '右前', '左后', '右后'] },
+        actor: { type: 'string', enum: ['assist', 'fetus'] },
       },
       required: ['female', 'action'],
       additionalProperties: false,
@@ -5281,6 +5283,11 @@ function applyAssistFetalPosition(chatState, args) {
   const skip = (reason) => ({ applied: false, message: `bsAssistFetalPosition skipped for ${female || '(empty)'}: ${reason}` });
   if (!female || !character) return skip('unknown character.');
   if (!ASSIST_ACTIONS.includes(action)) return skip(`unknown action ${action || '(empty)'}.`);
+  const actor = String(args?.actor || 'assist').trim();
+  if (!['assist', 'fetus'].includes(actor)) return skip(`unknown actor ${actor}; use assist or fetus.`);
+  // 胎儿自己动：力气是它的，不向母体收活力；但母体一样会痛
+  const bySelf = actor === 'fetus';
+  if (bySelf && action === 'extract') return skip('a fetus cannot pull itself out; extract needs an assistant.');
 
   const next = cloneValue(character);
   const profile = next.profile || {};
@@ -5307,8 +5314,12 @@ function applyAssistFetalPosition(chatState, args) {
   const isProdromalLead = stage === '产兆前驱' && target.embryoId === pregnant.prodromalLeadEmbryoId;
   const shoulderStuck = Boolean(target.shoulderDystocia);
 
-  // 活力门槛：肩难产发生时母体活力已归零，转动肩部是助产者的手法，不向母体收取活力
-  const cost = action === 'rotate' && shoulderStuck ? 0 : getAssistVitalityCost(profile, target, action);
+  if (bySelf && action === 'rotate' && shoulderStuck) {
+    return skip('the fetus cannot free its own stuck shoulder; it needs an assistant to rotate or extract it.');
+  }
+
+  // 活力门槛：肩难产发生时母体活力已归零，转动肩部是助产者的手法，不向母体收取活力；胎儿自己动也不收
+  const cost = bySelf || (action === 'rotate' && shoulderStuck) ? 0 : getAssistVitalityCost(profile, target, action);
   const vitality = clampNumber(base.vitality, 0, 9999, 0);
   const requireVitality = () => (vitality < cost
     ? skip(`not enough vitality (needs ${cost}, has ${Math.round(vitality * 10) / 10}); the body cannot sustain this maneuver right now.`)
@@ -5342,7 +5353,7 @@ function applyAssistFetalPosition(chatState, args) {
       summary = `${female}的${label}经转动解开了卡住的肩部`;
     } else {
       const parts = [hasAngle ? getTendencyAngleLabel(desired) : '', desiredBack ? `胎背朝${desiredBack}` : ''].filter(Boolean);
-      summary = `${female}的${label}被转到${parts.join('、')}`;
+      summary = `${female}的${label}${bySelf ? '自己转到' : '被转到'}${parts.join('、')}`;
     }
   } else if (action === 'lift') {
     if (depth >= 1) return skip('the fetus is already in the birth canal and cannot be pushed back.');
@@ -5355,13 +5366,14 @@ function applyAssistFetalPosition(chatState, args) {
     if (isProdromalLead) {
       const shift = shiftProdromalTime(profile, female, getProdromalInitialHours(profile) / 2);
       if (shift.outcome === 'capped') return skip('realistic labor has already been delayed as far as it can go; labor can no longer be postponed.');
+      const moved = bySelf ? '自己往上缩回' : '被向上托回';
       summary = shift.outcome === 'regressed'
-        ? `${female}的${label}被托回高处，分娩前兆随之平息`
-        : `${female}的${label}被向上托回，产兆前驱延后约${Math.round(shift.deltaHours)}小时（剩余约${Math.ceil(shift.remainingHours)}小时）`;
+        ? `${female}的${label}${bySelf ? '自己缩回高处' : '被托回高处'}，分娩前兆随之平息`
+        : `${female}的${label}${moved}，产兆前驱延后约${Math.round(shift.deltaHours)}小时（剩余约${Math.ceil(shift.remainingHours)}小时）`;
     } else {
       target.descentStage = depth - 1;
       delete target.inletIntruder;
-      summary = `${female}的${label}被向上托回`;
+      summary = `${female}的${label}${bySelf ? '自己往上缩回' : '被向上托回'}`;
     }
   } else if (action === 'descend') {
     if (stage === '第一产程' || stage === '第二产程') return skip('during labor descent is driven by contractions; use time passing instead.');
@@ -5373,16 +5385,16 @@ function applyAssistFetalPosition(chatState, args) {
     if (isProdromalLead) {
       const shift = shiftProdromalTime(profile, female, -getProdromalInitialHours(profile) / 2);
       summary = shift.outcome === 'first_stage'
-        ? `${female}的${label}被推下入盆，分娩正式开始`
-        : `${female}的${label}被向下推送，产兆前驱缩短约${Math.round(-shift.deltaHours)}小时（剩余约${Math.ceil(shift.remainingHours)}小时）`;
+        ? `${female}的${label}${bySelf ? '自己钻下入盆' : '被推下入盆'}，分娩正式开始`
+        : `${female}的${label}${bySelf ? '自己往下钻' : '被向下推送'}，产兆前驱缩短约${Math.round(-shift.deltaHours)}小时（剩余约${Math.ceil(shift.remainingHours)}小时）`;
     } else {
       target.descentStage = depth + 1;
-      summary = `${female}的${label}被向下推送`;
+      summary = `${female}的${label}${bySelf ? '自己往下钻' : '被向下推送'}`;
     }
   } else if (action === 'rupture') {
     const result = ruptureFetalSac(profile, female, target);
     if (!result.applied) return result;
-    summary = result.summary;
+    summary = bySelf ? `${female}的${label}自己踢破了胎膜；${result.summary}` : result.summary;
   } else if (action === 'extract') {
     if (stage !== '第二产程') return skip('extract is only possible during the second stage of labor.');
     if (target.embryoId !== pregnant.presentingEmbryoId || depth < 1) {
@@ -5410,7 +5422,7 @@ function applyAssistFetalPosition(chatState, args) {
   profile.notify = { ...(profile.notify || {}), secondly: summary };
   next.profile = profile;
   chatState.characters[female] = syncCharacterStageFromProfile(next);
-  return { applied: true, message: `bsAssistFetalPosition ${action} applied to ${female}.` };
+  return { applied: true, message: `bsAssistFetalPosition ${action}${bySelf ? ' (by the fetus itself)' : ''} applied to ${female}.` };
 }
 
 function applyMaternalFetalInteraction(chatState, args) {
@@ -5459,14 +5471,10 @@ function applyMaternalFetalInteraction(chatState, args) {
 
     const psyStress = clampNumber(profile?.base?.psyStress, 0, 9999, 0);
     const success = Math.random() >= Math.min(1, psyStress / 200);
+    // 失败只是没安抚到，胎位不受影响
     if (success) {
       const currentAffinity = clampNumber(selectedFetus?.affinity, -50, 50, 0);
       selectedFetus.affinity = clampNumber(currentAffinity + maternalChangeValue, -50, 50, 0);
-    } else {
-      const currentAngle = Number.isFinite(Number(selectedFetus?.tendencyAngle))
-        ? Number(selectedFetus.tendencyAngle)
-        : randomInt(0, 360);
-      selectedFetus.tendencyAngle = wrapAngle(currentAngle + randomInt(-10, 10));
     }
     pregnant.fetuses = fetuses;
     pregnant.fetusesCount = fetuses.length;
@@ -5479,7 +5487,7 @@ function applyMaternalFetalInteraction(chatState, args) {
       ...(profile.notify || {}),
       secondly: success
         ? `${female}安抚了第${selectedIndex + 1}胎，亲密度${maternalChangeDisplay}了`
-        : `${female}尝试安抚第${selectedIndex + 1}胎，但因心理压力过大而失败，胎位角度发生了微小转动`,
+        : `${female}尝试安抚第${selectedIndex + 1}胎，但因心理压力过大而失败，胎儿没有回应`,
     };
     next.profile = profile;
     chatState.characters[female] = next;

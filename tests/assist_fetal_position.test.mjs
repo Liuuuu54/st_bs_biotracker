@@ -205,3 +205,64 @@ test('旧的 bsRuptureMembranes 已移除', () => {
   assert.equal(result.applied, false);
   assert.match(result.message, /Unsupported tool/);
 });
+
+// ── actor=fetus：胎儿自己动 ─────────────────────────────
+test('胎儿自己转身：不耗母体活力，母体一样心理压力上升；讯息写明是自己转的', () => {
+  const chatState = setup('孕晚期', [fetus(1, { tendencyAngle: 180, descentStage: -2 })], { base: { vitality: 0 } });
+  const stressBefore = P(chatState).base.psyStress;
+  const result = assist(chatState, 'rotate', { fetusIndex: 0, targetAngle: 0, backSide: '左后', actor: 'fetus' });
+  assert.equal(result.applied, true, result.message);
+  assert.equal(P(chatState).pregnant.fetuses[0].tendencyAngle, 0);
+  assert.equal(P(chatState).pregnant.fetuses[0].backSide, '左后');
+  assert.equal(P(chatState).base.vitality, 0);
+  assert.ok(P(chatState).base.psyStress > stressBefore);
+  assert.match(String(P(chatState).notify.secondly), /自己转到/);
+  assert.equal(assist(chatState, 'rotate', { fetusIndex: 0, targetAngle: 180 }).applied, false, '外力转位仍要母体活力');
+});
+
+test('胎儿自己往上缩、往下钻；产兆前驱领头胎儿自己缩回会延后分娩', () => {
+  const chatState = setup('孕晚期', [fetus(1, { descentStage: -1 })], { base: { vitality: 0 } });
+  assert.equal(assist(chatState, 'lift', { fetusIndex: 0, actor: 'fetus' }).applied, true);
+  assert.equal(P(chatState).pregnant.fetuses[0].descentStage, -2);
+  assert.equal(assist(chatState, 'descend', { fetusIndex: 0, actor: 'fetus' }).applied, true);
+  assert.equal(P(chatState).pregnant.fetuses[0].descentStage, -1);
+  assert.match(String(P(chatState).notify.secondly), /自己往下钻/);
+
+  const prodromal = setup('产兆前驱', [fetus(1)], { base: { vitality: 0 }, pregnant: { prodromalRemainingHours: 30, prodromalLeadEmbryoId: 1 } });
+  assert.equal(assist(prodromal, 'lift', { actor: 'fetus' }).applied, true);
+  assert.ok(P(prodromal).pregnant.prodromalRemainingHours > 30);
+});
+
+test('胎儿不能自己 extract，也解不开自己的肩难产；其余限制与外力相同', () => {
+  const stuck = setup('第二产程', [fetus(1, { descentStage: 3, shoulderDystocia: true, amnionDurability: 0 })], {
+    pregnant: { laborPhase: '胎体娩出', laborBirthNumber: 1, presentingEmbryoId: 1 }, realistic: true,
+  });
+  assert.equal(assist(stuck, 'extract', { actor: 'fetus' }).applied, false);
+  assert.equal(assist(stuck, 'rotate', { actor: 'fetus' }).applied, false);
+  assert.equal(P(stuck).pregnant.fetuses[0].shoulderDystocia, true);
+
+  const engaged = setup('第一产程', [fetus(1, { descentStage: 0, tendencyAngle: 0 })], {
+    pregnant: { laborPhase: '潜伏期', presentingEmbryoId: 1 },
+  });
+  assert.equal(assist(engaged, 'rotate', { actor: 'fetus', targetAngle: 180 }).applied, false, '入盆后一样只能小幅转动');
+  assert.equal(assist(engaged, 'lift', { actor: 'fetus' }).applied, false, '产程中入盆后一样不能退回');
+  assert.equal(assist(engaged, 'rotate', { actor: 'nobody', targetAngle: 10 }).applied, false);
+});
+
+test('互锁的第二胎可以自己转开，退回子宫低位', () => {
+  const chatState = setup('第一产程', [
+    fetus(1, { descentStage: 0, tendencyAngle: 180 }), fetus(2, { descentStage: 0, inletIntruder: true, tendencyAngle: 0 }),
+  ], { pregnant: { laborPhase: '潜伏期', presentingEmbryoId: 1 }, realistic: true, base: { vitality: 0 } });
+  const result = assist(chatState, 'rotate', { fetusIndex: 1, targetAngle: 30, actor: 'fetus' });
+  assert.equal(result.applied, true, result.message);
+  assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.descentStage), [0, -1]);
+});
+
+test('胎儿自己踢破胎膜：门槛与外力破水相同', () => {
+  const early = setup('孕晚期', [fetus(1)]);
+  assert.equal(assist(early, 'rupture', { actor: 'fetus' }).applied, false);
+  const labor = setup('第一产程', [fetus(1, { descentStage: 0 })], { pregnant: { laborPhase: '潜伏期', presentingEmbryoId: 1 } });
+  assert.equal(assist(labor, 'rupture', { actor: 'fetus' }).applied, true);
+  assert.equal(P(labor).pregnant.fetuses[0].amnionDurability, 0);
+  assert.match(String(P(labor).notify.secondly), /自己踢破了胎膜/);
+});

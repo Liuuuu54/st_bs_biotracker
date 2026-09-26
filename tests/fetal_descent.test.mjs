@@ -226,17 +226,17 @@ test('产程中斜位胎儿往最近的主胎位转；先露胎转得比较慢',
   assert.ok(Math.abs((40 - engaged.tendencyAngle) * 2 - (40 - high.tendencyAngle)) < 1e-6, '先露胎速度减半');
 });
 
-test('分娩抵抗的大幅转动只落在高位胎儿，已入盆的领头胎儿不被转', () => {
-  Math.random = () => 0; // 抵抗判定与转动都走得到
+test('母体安抚失败不改任何一胎的胎位', () => {
+  Math.random = () => 0; // 心理压力拉满，安抚必定失败
   const chatState = setup('产兆前驱', [fetus(1, { tendencyAngle: 0 }), fetus(2, { tendencyAngle: 0 })], {
     prodromalRemainingHours: 10, prodromalLeadEmbryoId: 1,
   });
-  P(chatState).base.vitality = 0;
   touch(chatState);
+  P(chatState).base.psyStress = 400;
   const result = applyToolCall(chatState, { name: 'bsMaternalFetalInteraction', arguments: { female: 'A', direction: 'maternal' } });
   assert.equal(result.applied, true, result.message);
-  const lead = P(chatState).pregnant.fetuses.find((f) => f.embryoId === 1);
-  assert.equal(lead.tendencyAngle, 0);
+  assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.tendencyAngle), [0, 0]);
+  assert.match(String(P(chatState).notify.secondly), /没有回应/);
 });
 
 // ── 第二产程的下降与跨阶段时间 ─────────────────────────────
