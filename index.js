@@ -59,7 +59,7 @@ import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
 import { describeFetalPosition, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
-import { computeUterusLayout, findFetusAt, getSpriteStage } from './scripts/uterus_layout.js';
+import { computeUterusLayout, getSpriteStage } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
 import { appendSkillHistory, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
@@ -3838,7 +3838,6 @@ let wombCanvas = null;
 let wombTheme = '';
 let wombCardsOpen = false;
 let wombCardsScrollTop = 0;
-let wombCurrent = null;
 let wombThumbEmote = null;
 const wombOpenFetuses = new Set();
 const wombOpenTalents = new Set();
@@ -3877,14 +3876,13 @@ function renderWombFetusCard(item, index, data) {
   const gender = String(item?.gender || '').trim() || '无';
   const talents = Array.isArray(item?.talents) ? item.talents : [];
   const id = String(item.embryoId);
-  const summary = [
-    item?.fathers || '未知',
-    formatRaceLabel(item?.fatherRace, item?.fatherDerivedType),
-    `胎重 ${formatFixedDisplay(item?.weight, 2)}×`,
-  ].join(' · ');
+  const summary = [item?.fathers || '未知', formatRaceLabel(item?.fatherRace, item?.fatherDerivedType)].join(' · ');
   return `<details class="bs-bt-womb-card" data-womb-fetus="${escapeHtml(id)}"${wombOpenFetuses.has(id) ? ' open' : ''}>
       <summary>
-        <canvas class="bs-bt-womb-thumb" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}" data-angle="${Number(item?.tendencyAngle) || 0}" data-affinity="${Number(item?.affinity) || 0}" role="button" tabindex="0" aria-label="${escapeHtml(`看胎儿 ${index + 1} 的亲和`)}"></canvas>
+        <span class="bs-bt-womb-thumb-col">
+          <canvas class="bs-bt-womb-thumb" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}" data-angle="${Number(item?.tendencyAngle) || 0}" data-affinity="${Number(item?.affinity) || 0}" role="button" tabindex="0" aria-label="${escapeHtml(`看胎儿 ${index + 1} 的亲和`)}"></canvas>
+          <span class="bs-bt-womb-weight" title="胎重倍率">${escapeHtml(formatFixedDisplay(item?.weight, 2))}×</span>
+        </span>
         <strong class="bs-bt-womb-card-title">胎儿${index + 1}<canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas>${escapeHtml(getPresentationWord(item?.tendencyAngle))}${item?.isPresenting ? '<span class="bs-bt-womb-chip">先露</span>' : ''}</strong>
         ${blocked ? `<span class="bs-bt-womb-card-alert">${escapeHtml(blocked)}</span>` : ''}
       </summary>
@@ -3942,16 +3940,6 @@ function setWombCardsOpen(host, open) {
   toggle?.setAttribute('aria-expanded', String(open));
 }
 
-/** 点子宫图上的胎儿：在它头上冒出亲和特效 */
-function onWombCanvasClick(event) {
-  if (!wombCurrent || !wombCanvas) return;
-  const rect = wombCanvas.getBoundingClientRect();
-  const x = ((event.clientX - rect.left - wombCanvas.clientLeft) / wombCanvas.clientWidth) * 96;
-  const y = ((event.clientY - rect.top - wombCanvas.clientTop) / wombCanvas.clientHeight) * 120;
-  const fetus = findFetusAt(wombCurrent.layout, x, y);
-  if (fetus) wombRenderer?.emote(fetus.embryoId, fetus.affinity);
-}
-
 function drawWombThumb(node, emote = null) {
   drawFetusThumb(node, { type: node.dataset.spriteType, stage: Number(node.dataset.spriteStage) || 0 }, Number(node.dataset.angle) || 0, wombTheme, emote);
 }
@@ -3989,7 +3977,6 @@ function mountWombView(ctx, content, viewModel) {
     wombCanvas = document.createElement('canvas');
     wombCanvas.className = 'bs-bt-womb-canvas';
     wombCanvas.setAttribute('role', 'img');
-    wombCanvas.addEventListener('click', onWombCanvasClick);
   }
   const slot = host.querySelector('[data-womb-slot]');
   if (slot) slot.replaceWith(wombCanvas);
@@ -4006,9 +3993,7 @@ function mountWombView(ctx, content, viewModel) {
   }
   const layout = viewModel.pregnancy.womb;
   wombCanvas.setAttribute('aria-label', layout.summary);
-  wombCanvas.classList.toggle('is-pickable', layout.fetuses.length > 0);
   wombRenderer.setLayout(layout);
-  wombCurrent = { layout };
 
   const cue = viewModel.pregnancy.visualCue;
   if (cue?.seq) {

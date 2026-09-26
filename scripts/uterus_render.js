@@ -216,7 +216,7 @@ function createSpriteCache(P) {
   };
 }
 
-// ---- 亲和特效：点胎儿时在它头上冒出的像素表情，不绕胎儿画圈（免得跟阻塞警示框、胎囊膜混在一起） ----
+// ---- 亲和特效：只在胎儿详细点缩图时，在缩图里的胎儿头上冒出像素表情 ----
 const EMOTE_ICONS = Object.freeze({
   heart: ['.##.##.', '#######', '#######', '.#####.', '..###..', '...#...'],
   sparkle: ['..#..', '..#..', '#####', '..#..', '..#..'],
@@ -292,7 +292,7 @@ export const AFFINITY_WORDS = Object.freeze({ 2: '依恋', 1: '亲近', 0: '平�
 
 /**
  * 建立一个子宫图绘制器。canvas 只在建立时设定尺寸一次。
- * @returns {{ setLayout, setTheme, playCue, emote, setAnimated, destroy, canvas }}
+ * @returns {{ setLayout, setTheme, playCue, setAnimated, destroy, canvas }}
  */
 export function createUterusRenderer(canvas, { themeName = 'retro', animated = true } = {}) {
   canvas.width = UTERUS_CANVAS.width;
@@ -305,7 +305,6 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
   let spriteOf = createSpriteCache(P);
   let layout = null;
   let cue = null;
-  let emote = null;
   let wantsAnimation = animated;
   let visible = true;
   let timer = 0;
@@ -326,7 +325,6 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
     drawFrontWall();
     drawMenstrualFlow(tick);
     drawObstruction(tick);
-    drawEmote(tick);
     drawCue(tick);
     // 刻度与超出显示数
     for (let i = 0; i < 8; i += 1) {
@@ -607,15 +605,6 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
     }
   }
 
-  function drawEmote(tick) {
-    if (!emote) return;
-    const t = (tick - emote.start) / EMOTE_MS;
-    if (t > 1) { emote = null; return; }
-    const fetus = layout.fetuses.find((item) => item.embryoId === emote.embryoId);
-    if (!fetus) return;
-    drawAffinityEmote(ctx, emote.band, fetus.x, Math.max(6, fetus.y - Math.round(fetus.size * 0.8)), t);
-  }
-
   // ---- 事件演出 ----
   function shaft(tip) {
     const { womb, tract } = layout;
@@ -819,7 +808,7 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
   }
 
   function needsTicking() {
-    return Boolean(cue || emote) || (wantsMotion() && visible);
+    return Boolean(cue) || (wantsMotion() && visible);
   }
 
   function loop() {
@@ -865,11 +854,6 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
       kick();
     },
     /** 事件演出不受「关闭动画」影响：它只播一次，是资讯而不是装饰；减少动态效果时则跳过 */
-    /** 点胎儿时的亲和特效 */
-    emote(embryoId, affinity) {
-      emote = { embryoId, band: getAffinityBand(affinity), start: performance.now() };
-      kick();
-    },
     playCue(type) {
       if (reducedMotion) return false;
       cue = { type, start: performance.now() };

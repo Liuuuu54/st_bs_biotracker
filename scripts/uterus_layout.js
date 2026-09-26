@@ -57,24 +57,6 @@ function getEmptyLining(stage, progress) {
   return table[stage] ?? 6;
 }
 
-/** 点子宫图时找被点到的胎儿：取离点击处最近、且落在图块范围内的那一胎；没点到回传 null */
-export function findFetusAt(layout, x, y) {
-  let best = null;
-  let bestDistance = Infinity;
-  for (const fetus of layout?.fetuses || []) {
-    const halfW = Math.max(3, fetus.size * fetus.squeeze * 0.8);
-    const halfH = Math.max(3, fetus.size * 0.8);
-    const dx = (x - fetus.x) / halfW;
-    const dy = (y - fetus.y) / halfH;
-    const distance = dx * dx + dy * dy;
-    if (distance <= 1 && distance < bestDistance) {
-      best = fetus;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
 /** 胎儿图块阶段：以自身孕龄分孕早、孕中、孕晚 */
 export function getSpriteStage(ownAge) {
   if (ownAge < 84) return 0;

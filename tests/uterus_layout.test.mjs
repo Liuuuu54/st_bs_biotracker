@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { computeUterusLayout, findFetusAt, MAX_DRAWN_FETUSES, quantizeAngle, wombRadius } from '../scripts/uterus_layout.js';
+import { computeUterusLayout, MAX_DRAWN_FETUSES, quantizeAngle, wombRadius } from '../scripts/uterus_layout.js';
 
 const fetus = (embryoId, over = {}) => ({
   embryoId, fusionCheckedWith: [], tags: [], fathers: `父${embryoId}`, race: '人类', fatherRace: '人类',
@@ -153,11 +153,4 @@ test('阻塞的胎儿带出阻塞类型；非真实模式没有阻塞', () => {
   assert.equal(layout.fetuses.find((item) => item.embryoId === 1).obstruction, 'shoulder_dystocia');
   assert.equal(layout.fetuses.find((item) => item.embryoId === 2).obstruction, null);
   assert.equal(computeUterusLayout(stuck(false)).obstruction, null);
-});
-
-test('点子宫图找得到被点的胎儿；点空白处回传 null', () => {
-  const layout = computeUterusLayout(profile('孕晚期', [fetus(1, { descentStage: -3 }), fetus(2, { descentStage: -1 })], { days: 240 }));
-  for (const item of layout.fetuses) assert.equal(findFetusAt(layout, item.x, item.y)?.embryoId, item.embryoId);
-  assert.equal(findFetusAt(layout, 1, 1), null);
-  assert.equal(findFetusAt(computeUterusLayout(profile('卵泡期', [], { days: 0 })), 48, 60), null);
 });
