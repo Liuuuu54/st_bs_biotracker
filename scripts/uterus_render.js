@@ -31,7 +31,6 @@ const THEME_TINTS = Object.freeze({
 const FRAME_MS = 180;
 const CUE_MS = 2400;
 const RUPTURE_MS = 2800;
-const FLASH_MS = 1400;
 
 function hexToRgb(hex) {
   const value = String(hex || '').trim().replace('#', '');
@@ -232,7 +231,7 @@ export function drawFetusThumb(canvas, sprite, angle, themeName) {
   ctx.restore();
 }
 
-// 亲和闪光五级：≥25 暖色柔光、5～24 暖色、-4～4 白光、-24～-5 冷色、≤-25 暗红不规则连闪
+// 亲和五级：≥25 依恋、5～24 亲近、-4～4 平淡、-24～-5 疏离、≤-25 排斥（-25 是病理性挤进入口的门槛）
 export function getAffinityBand(affinity) {
   const value = Number(affinity) || 0;
   if (value >= 25) return 2;
@@ -246,7 +245,7 @@ export const AFFINITY_WORDS = Object.freeze({ 2: '依恋', 1: '亲近', 0: '平�
 
 /**
  * 建立一个子宫图绘制器。canvas 只在建立时设定尺寸一次。
- * @returns {{ setLayout, setTheme, playCue, flash, setAnimated, destroy, canvas }}
+ * @returns {{ setLayout, setTheme, playCue, setAnimated, destroy, canvas }}
  */
 export function createUterusRenderer(canvas, { themeName = 'retro', animated = true } = {}) {
   canvas.width = UTERUS_CANVAS.width;
@@ -259,7 +258,6 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
   let spriteOf = createSpriteCache(P);
   let layout = null;
   let cue = null;
-  let flash = null;
   let wantsAnimation = animated;
   let visible = true;
   let timer = 0;
@@ -280,7 +278,6 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
     drawFrontWall();
     drawMenstrualFlow(tick);
     drawObstruction(tick);
-    drawFlash(tick);
     drawCue(tick);
     // 刻度与超出显示数
     for (let i = 0; i < 8; i += 1) {
@@ -561,33 +558,6 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
     }
   }
 
-  function drawFlash(tick) {
-    if (!flash) return;
-    const elapsed = tick - flash.start;
-    if (elapsed > FLASH_MS) { flash = null; return; }
-    const fetus = layout.fetuses.find((item) => item.embryoId === flash.embryoId);
-    if (!fetus) return;
-    const r = Math.max(3, Math.round(fetus.size * 0.75));
-    const p = elapsed / FLASH_MS;
-    let color = null;
-    let halo = false;
-    let jagged = false;
-    if (flash.band === 2) { color = p < 0.5 ? mixColor(P.fetus, P.ovaryGlow, p * 2) : mixColor(P.ovaryGlow, P.fetus, (p - 0.5) * 2); halo = p > 0.2 && p < 0.8; }
-    else if (flash.band === 1) color = p < 0.6 ? P.ovaryGlow : null;
-    else if (flash.band === 0) color = p < 0.4 ? '#ffffff' : null;
-    else if (flash.band === -1) color = p < 0.25 ? P.water : null;
-    else { color = [0, 1, 0, 1, 1, 0, 1, 0][Math.floor(p * 8)] ? P.blood : null; jagged = true; }
-    if (!color) return;
-    pen.ring(fetus.x, fetus.y, Math.round(r * fetus.squeeze) + 1, r + 1, color, jagged ? [0, 0] : null);
-    if (jagged) {
-      for (let a = 0; a < 360; a += 30) {
-        const rad = (a * Math.PI) / 180;
-        pen.px(fetus.x + Math.cos(rad) * (r + 3), fetus.y + Math.sin(rad) * (r + 3), 1, 1, color);
-      }
-    }
-    if (halo) pen.ring(fetus.x, fetus.y, Math.round(r * fetus.squeeze) + 3, r + 3, mixColor(color, P.bg, 0.5));
-  }
-
   // ---- 事件演出 ----
   function shaft(tip) {
     const { womb, tract } = layout;
@@ -791,7 +761,7 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
   }
 
   function needsTicking() {
-    return Boolean(cue || flash) || (wantsMotion() && visible);
+    return Boolean(cue) || (wantsMotion() && visible);
   }
 
   function loop() {
@@ -842,11 +812,6 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
       cue = { type, start: performance.now() };
       kick();
       return true;
-    },
-    flash(embryoId, affinity) {
-      if (reducedMotion) return;
-      flash = { embryoId, band: getAffinityBand(affinity), start: performance.now() };
-      kick();
     },
     destroy() {
       if (timer) clearTimeout(timer);
