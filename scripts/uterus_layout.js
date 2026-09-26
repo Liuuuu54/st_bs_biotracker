@@ -3,7 +3,7 @@
 // 几何沿用 Sol 6 试作：子宫在画框中央随孕程从小长到大，胎儿按左右顺序排格、
 // 按下降位置分高度，再做有轮数上限的推挤。
 import { LABOR_STAGES } from './stage_config.js';
-import { describeFetalPosition, getLaborObstruction, isFetusKnownToCharacter } from './tools.js';
+import { describeFetalPosition, getLaborObstruction, getPregnancyPressureRisk, isFetusKnownToCharacter } from './tools.js';
 
 export const UTERUS_CANVAS = Object.freeze({ width: 96, height: 120 });
 export const MAX_DRAWN_FETUSES = 5;
@@ -293,6 +293,7 @@ export function computeUterusLayout(profile, options = {}) {
     sacs,
     hiddenCount: Math.max(0, occupants.length - drawn.length),
     obstruction: obstruction ? { type: obstruction.type, embryoIds: [...blocked], message: String(obstruction.message || '') } : null,
+    pressureRisk: getPregnancyPressureRisk(profile),
     summary,
   };
 }

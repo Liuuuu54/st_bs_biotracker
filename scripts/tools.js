@@ -4310,6 +4310,33 @@ function shouldKeepPregnancyPressureWarning(profile) {
   return currentPressure >= (pressureCap * 0.5);
 }
 
+/**
+ * 宫压危机的当下风险，给子宫图的警告用；门槛与 applyPressureCrisis、maybeStartLabor 一致。
+ * 孕早、孕中：宫压过半会流产；孕晚：早产（进入产兆前驱）；临产、逾期：发动产程。
+ * imminent：已经警告过（下次时间推进仍未缓解就会发生），或临产、逾期宫压已达 66%（下一小时就发动）。
+ * 受流产免疫保护的不算风险，但逾期的危机与临产、逾期 66% 的自然发动不受免疫阻挡
+ */
+export function getPregnancyPressureRisk(profile) {
+  const stage = String(profile?.base?.stage || '');
+  if (!PREGNANCY_STAGES.includes(stage)) return null;
+  const pressureCap = getUterinePressureCap(profile);
+  const ratio = clampNumber(profile?.base?.uterinePressure, 0, pressureCap, 0) / Math.max(pressureCap, 1);
+  // 临产、逾期宫压达 66% 时下一小时就自然发动，不看流产免疫
+  const termOnset = (stage === '临产期' || stage === '逾期') && ratio >= 0.66;
+  if (!termOnset && (ratio < 0.5 || (profile?.immune?.miscarriage && stage !== '逾期'))) return null;
+  const type = stage === '孕早期' || stage === '孕中期' ? 'miscarriage' : stage === '孕晚期' ? 'preterm' : 'labor';
+  const imminent = termOnset || Boolean(profile?.cooldown?.pregnancyPressureWarning);
+  const outcome = { miscarriage: '流产', preterm: '早产', labor: '发动产程' }[type];
+  return {
+    type,
+    imminent,
+    ratio,
+    message: imminent
+      ? `宫压已达上限的 ${Math.round(ratio * 100)}%，下次时间推进仍未缓解就会${outcome}`
+      : `宫压已达上限的 ${Math.round(ratio * 100)}%，有${outcome}的风险`,
+  };
+}
+
 function applyPressureCrisis(profile, runtime, female) {
   const base = profile?.base || {};
   const pregnant = profile?.pregnant || {};

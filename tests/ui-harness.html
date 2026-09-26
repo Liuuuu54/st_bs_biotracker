@@ -13,7 +13,7 @@
 <body>
 <div id="harness-info">
   <b>BioTracker UI Harness</b>（mock 宿主，非真实 SillyTavern）<br>
-  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件）、贝拉（产后恢复，pregFit 生效）、琪拉（四胎孕晚期）、妲拉（肩难产）、妮拉（双胎互锁）、茉拉（刚受精）。
+  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件）、贝拉（产后恢复，pregFit 生效）、琪拉（四胎孕晚期）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、茉拉（刚受精）。
 </div>
 <script type="module">
   const CHAT_KEY = 'ui-harness-chat';
@@ -183,6 +183,17 @@
               { embryoId: 1, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 0.95, tendencyAngle: 180, affinity: 5, amnionDurability: 40, descentStage: 0, talents: [] },
               { embryoId: 2, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 0.95, tendencyAngle: 0, affinity: -30, amnionDurability: 60, descentStage: 0, inletIntruder: true, talents: [] },
             ],
+          },
+        },
+      }),
+      // 子宫图测试：孕中期宫压过高且已警告过（子宫图下方闪烁「宫压未缓解，即将流产」）
+      莎拉: makeCharacter('莎拉', {
+        base: { stage: '孕中期', days: 40, age: 24, eggs: 0, uterinePressure: 999 },
+        profile: {
+          cooldown: { pregnancyPressureWarning: true },
+          pregnant: {
+            pregnantDays: 130, effectivePregnantDays: 130,
+            fetuses: [{ embryoId: 1, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '男', weight: 1.0, tendencyAngle: 90, affinity: -20, talents: [] }],
           },
         },
       }),

@@ -3861,6 +3861,28 @@ function getWombObstructionLabel(obstruction, fetuses) {
   if (obstruction.type === 'transverse') return `${numberOf(first)}横位无法入盆`;
   return obstruction.message;
 }
+/** 宫压危机的短版警告：还有一次缓冲的写风险，下次推进就会发生的写即将 */
+function getWombPressureLabel(risk) {
+  const labels = {
+    miscarriage: ['宫压过高，有流产风险', '宫压未缓解，即将流产'],
+    preterm: ['宫压过高，有早产风险', '宫压未缓解，即将早产'],
+    labor: ['宫压过高，产程将发动', '宫压已达临界，即将发动'],
+  };
+  return (labels[risk.type] || labels.labor)[risk.imminent ? 1 : 0];
+}
+
+/** 子宫图下方的警告：产程阻塞优先，其次是宫压危机（两者分属产程与妊娠，实际上不会同时出现） */
+function renderWombAlert(data) {
+  const { obstruction, pressureRisk } = data.womb;
+  if (obstruction) {
+    return `<div class="bs-bt-womb-alert" role="alert" title="${escapeHtml(obstruction.message)}">${escapeHtml(getWombObstructionLabel(obstruction, data.fetuses))}</div>`;
+  }
+  if (pressureRisk) {
+    return `<div class="bs-bt-womb-alert${pressureRisk.imminent ? ' is-imminent' : ''}" role="alert" title="${escapeHtml(pressureRisk.message)}">${escapeHtml(getWombPressureLabel(pressureRisk))}</div>`;
+  }
+  return '';
+}
+
 const WOMB_CUE_LABELS = Object.freeze({
   insert: '插入', ejaculate: '射精', ovulation: '排卵', fertilization: '受精', surrogacy: '代孕植入',
   chimera: '嵌合融合', rebirth: '胎内回归', implantation: '着床', implantationFailed: '着床失败', rupture: '破水',
@@ -3925,7 +3947,7 @@ function renderWombSection(data, badge) {
   return `<div class="bs-bt-track-section bs-bt-womb-section">
       ${badge ? `<div class="bs-bt-track-section-title">${renderTrackTitle('子宫', badge)}</div>` : ''}
       <div class="bs-bt-womb" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${toggle}${replay}${panel}</div>
-      ${data.womb.obstruction ? `<div class="bs-bt-womb-alert" role="alert" title="${escapeHtml(data.womb.obstruction.message)}">${escapeHtml(getWombObstructionLabel(data.womb.obstruction, data.fetuses))}</div>` : ''}
+      ${renderWombAlert(data)}
     </div>`;
 }
 

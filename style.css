@@ -5366,7 +5366,7 @@
   opacity: 0.85;
 }
 
-/* 阻塞警告写在子宫图底下，反白配色跟着主题走；一律单行，万一过长就截断 */
+/* 阻塞与宫压警告写在子宫图底下，反白配色跟着主题走；一律单行，万一过长就截断 */
 #bs-biotracker-settings .bs-bt-womb-alert {
   margin: 8px auto 0;
   padding: 3px 10px;
@@ -5382,6 +5382,22 @@
   text-align: center;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* 宫压危机下次推进就会发生：警告闪烁 */
+#bs-biotracker-settings .bs-bt-womb-alert.is-imminent {
+  animation: bs-bt-womb-alert-blink 1s steps(2, jump-none) infinite;
+}
+
+@keyframes bs-bt-womb-alert-blink {
+  from { opacity: 1; }
+  to { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #bs-biotracker-settings .bs-bt-womb-alert.is-imminent {
+    animation: none;
+  }
 }
 
 #bs-biotracker-settings .bs-bt-womb-card .bs-bt-fetus-tags {

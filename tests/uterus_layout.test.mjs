@@ -161,3 +161,18 @@ test('胎背朝右的图块镜像；胎背朝后的脸朝外', () => {
   ], { days: 230 }));
   assert.deepEqual(layout.fetuses.map((item) => [item.sprite.mirror, item.sprite.posterior]), [[false, false], [true, false], [false, true], [true, true]]);
 });
+
+test('宫压危机带出警告：孕早中期流产、孕晚期早产、临产发动；警告过后标为即将；流产免疫不算', () => {
+  const at = (stage, days, over = {}) => computeUterusLayout({
+    ...profile(stage, [fetus(1)], { days, base: { uterinePressure: 999 } }),
+    ...over,
+  }).pressureRisk;
+  assert.equal(computeUterusLayout(profile('孕中期', [fetus(1)], { days: 140 })).pressureRisk, null);
+  assert.deepEqual([at('孕中期', 140).type, at('孕中期', 140).imminent], ['miscarriage', false]);
+  assert.equal(at('孕中期', 140, { cooldown: { pregnancyPressureWarning: true } }).imminent, true);
+  assert.equal(at('孕晚期', 230).type, 'preterm');
+  assert.deepEqual([at('临产期', 270).type, at('临产期', 270).imminent], ['labor', true]);
+  assert.equal(at('孕中期', 140, { immune: { miscarriage: true } }), null);
+  assert.equal(at('临产期', 270, { immune: { miscarriage: true } }).imminent, true, '66% 的自然发动不受免疫阻挡');
+  assert.equal(computeUterusLayout(profile('卵泡期', [], { days: 0, base: { uterinePressure: 999 } })).pressureRisk, null);
+});

@@ -192,6 +192,7 @@ test('破水记一笔画面事件：助产破水与产程磨穿都算', () => {
 });
 
 test('未揭晓的隐藏胎破水不记画面事件', () => {
+  Math.random = () => 0.99; // 避开宫缩微弱的停滞与胎位随机变动
   const chatState = setup('第一产程', [
     fetus(1),
     fetus(2, { amnionDurability: 0.2, conceivedAtDays: 100, tags: ['superfetation'] }),
