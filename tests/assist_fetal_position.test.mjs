@@ -266,3 +266,75 @@ test('胎儿自己踢破胎膜：门槛与外力破水相同', () => {
   assert.equal(P(labor).pregnant.fetuses[0].amnionDurability, 0);
   assert.match(String(P(labor).notify.secondly), /自己踢破了胎膜/);
 });
+
+// ── 插入的推顶：产兆前驱与产程中顶到最前面的胎儿 ─────────
+const sperm = (chatState, action, amount = 0) => applyToolCall(chatState, {
+  name: 'bsAddSperm', arguments: { female: 'A', male: 'M', race: '人类', action, amount },
+});
+const canalAt = (phase, depth, over = {}, opts = {}) => setup('第二产程', [fetus(1, { descentStage: depth, affinity: 0, ...over })], {
+  pregnant: { laborPhase: phase, laborBirthNumber: 1, presentingEmbryoId: 1, effectiveLaborHours: 50 }, ...opts,
+});
+
+test('产道里的先露胎被插入顶回：产程进度倒退、亲和下降、痛、胎膜磨损', () => {
+  const chatState = canalAt('胎体下降', 1);
+  const result = sperm(chatState, 'insert');
+  assert.equal(result.applied, true);
+  const pregnant = P(chatState).pregnant;
+  assert.ok(pregnant.effectiveLaborHours < 50);
+  assert.equal(pregnant.fetuses[0].affinity, -1);
+  assert.equal(pregnant.assistPainBoost, 2);
+  assert.equal(pregnant.fetuses[0].amnionDurability, 75);
+  assert.equal(pregnant.fetuses[0].descentStage, 1, '位置由阶段推导，仍在产道');
+  assert.match(String(P(chatState).notify.secondly), /往回顶.*倒退/);
+  assert.match(result.message, /倒退/);
+});
+
+test('真实分娩模式倒退较多；着冠时比产道倒退更多，胎膜可能被顶破', () => {
+  const lostOf = (chatState) => 50 - P(chatState).pregnant.effectiveLaborHours;
+  const gentle = canalAt('胎体下降', 1);
+  const realistic = canalAt('胎体下降', 1, {}, { realistic: true });
+  sperm(gentle, 'insert');
+  sperm(realistic, 'insert');
+  assert.ok(lostOf(realistic) > lostOf(gentle));
+
+  const crowned = canalAt('胎体娩出', 2, { amnionDurability: 40 });
+  sperm(crowned, 'insert');
+  assert.equal(P(crowned).pregnant.fetuses[0].affinity, -2);
+  assert.equal(P(crowned).pregnant.fetuses[0].amnionDurability, 0);
+  assert.equal(P(crowned).visualCue?.type, 'rupture');
+  assert.match(String(P(crowned).notify.secondly), /着冠.*顶破/);
+});
+
+test('第一产程只入盆时只会痛；先露部已出或肩难产时不作用', () => {
+  const inlet = setup('第一产程', [fetus(1, { descentStage: 0 })], {
+    pregnant: { laborPhase: '活跃期', presentingEmbryoId: 1, effectiveLaborHours: 3 },
+  });
+  sperm(inlet, 'insert');
+  assert.equal(P(inlet).pregnant.effectiveLaborHours, 3);
+  assert.equal(P(inlet).pregnant.assistPainBoost, 1);
+  assert.equal(P(inlet).pregnant.fetuses[0].affinity, -0.5);
+
+  const stuck = canalAt('胎体娩出', 3, { shoulderDystocia: true }, { realistic: true });
+  sperm(stuck, 'insert');
+  assert.equal(P(stuck).pregnant.fetuses[0].affinity, 0);
+  assert.equal(P(stuck).pregnant.effectiveLaborHours, 50);
+});
+
+test('产兆前驱：插入把领头胎儿往上顶、延后前驱；射精催熟子宫颈、缩短前驱', () => {
+  const chatState = setup('产兆前驱', [fetus(1)], { pregnant: { prodromalRemainingHours: 30, prodromalLeadEmbryoId: 1 } });
+  sperm(chatState, 'insert');
+  const afterInsert = P(chatState).pregnant.prodromalRemainingHours;
+  assert.ok(afterInsert > 30);
+  assert.equal(P(chatState).pregnant.fetuses[0].affinity, -0.5);
+  sperm(chatState, 'deposit', 20);
+  assert.ok(P(chatState).pregnant.prodromalRemainingHours < afterInsert);
+  assert.match(String(P(chatState).notify.secondly), /子宫颈成熟/);
+});
+
+test('非妊娠或孕期中的插入不碰胎儿', () => {
+  const chatState = setup('孕晚期', [fetus(1, { descentStage: -1 })]);
+  const result = sperm(chatState, 'insert');
+  assert.equal(result.applied, true);
+  assert.equal(P(chatState).pregnant.fetuses[0].affinity, 0);
+  assert.equal(P(chatState).notify.secondly, undefined);
+});

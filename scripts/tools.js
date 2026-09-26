@@ -391,7 +391,8 @@ export const TOOL_DEFINITIONS = Object.freeze([
     description: '记录可受孕生殖道内的插入、精液沉积与拔出；口交、肛交、体外射精、隔着保险套、手淫或单纯体表接触一律不要调用。'
       + 'action=insert／withdraw 时 amount=0；只有 insert 后才能以 action=deposit 沉积正数精液，沉积后若要再次射精须重新 insert。不同来源 insert 会直接交棒。'
       + 'amount 建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
-      + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。',
+      + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。'
+      + '产兆前驱与产程中插入会顶到最前面的胎儿：前驱时把领头胎儿往上顶、延后前驱；第二产程把产道里的先露胎往回顶、产程进度倒退，着冠时倒退更多且可能顶破胎膜；第一产程只会痛。被顶的胎儿亲和下降。产兆前驱中射精则会缩短前驱。结果写在回传讯息里，描写须与之一致。',
     input_schema: {
       type: 'object',
       properties: {
@@ -5243,8 +5244,11 @@ function isLaborRelatedStage(stage) {
  * 孕期平时不发送 laborPain，改为提高心理压力。
  */
 function applyAssistStrain(profile, action) {
-  const amount = ASSIST_PAIN[action] || 0;
-  if (amount <= 0) return;
+  applyStrain(profile, ASSIST_PAIN[action] || 0);
+}
+
+function applyStrain(profile, amount) {
+  if (!(amount > 0)) return;
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   if (isLaborRelatedStage(String(base.stage || ''))) {
@@ -5264,6 +5268,105 @@ function decayAssistPainBoost(profile, deltaMinutes) {
   if (!pregnant || !(deltaMinutes > 0)) return;
   const boost = clampNumber(pregnant.assistPainBoost, 0, ASSIST_PAIN_BOOST_CAP, 0) * (0.5 ** (deltaMinutes / 60));
   pregnant.assistPainBoost = boost < 0.05 ? 0 : Math.round(boost * 100) / 100;
+}
+
+// ── 插入对胎儿的推顶 ─────────────────────────────────────
+// 产兆前驱与产程中，每次 insert 都会顶到最前面的那一胎：前驱领头胎儿被往上顶（延后前驱），
+// 产道里的先露胎被顶回（扣掉这段产程的进度），着冠时扣得更多、更痛、更伤胎膜。
+// 第一产程只入盆（宫颈未全开）只会痛；先露部已出或肩难产时没有东西可推。
+// 被顶的胎儿亲和下降。真实分娩模式倒退得较多。
+// 反过来，产兆前驱中射进的精液会催熟子宫颈，缩短前驱。
+const INSERT_PUSHBACK = Object.freeze({
+  prodromal: { delayShare: 0.25, pain: 1, affinity: -0.5 },
+  inlet: { pain: 1, affinity: -0.5 },
+  canal: { progressShare: 0.3, pain: 2, wear: 25, affinity: -1 },
+  crowned: { progressShare: 0.5, pain: 3, wear: 50, affinity: -2 },
+});
+/** 非真实分娩模式的产程倒退打折 */
+const GENTLE_PUSHBACK_FACTOR = 0.6;
+/** 产兆前驱中每次射精缩短前驱的比例（占初始时长） */
+const PRODROMAL_SEMEN_SHARE = 0.125;
+
+function lowerAffinity(fetus, amount) {
+  fetus.affinity = clampNumber(clampNumber(fetus.affinity, -50, 50, 0) + amount, -50, 50, 0);
+}
+
+function getFetusLabel(pregnant, fetus) {
+  const visible = (Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : []).filter(isFetusKnownToCharacter);
+  const index = visible.indexOf(fetus);
+  return index >= 0 ? `第${index + 1}胎` : '胎儿';
+}
+
+/** 插入时的推顶；回传要写进通知的句子，没有作用时回传空字串 */
+function applyInsertionPushback(profile, female) {
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const stage = String(base.stage || '');
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+
+  if (stage === '产兆前驱') {
+    const lead = fetuses.find((fetus) => fetus.embryoId === pregnant.prodromalLeadEmbryoId);
+    if (!lead) return '';
+    const rule = INSERT_PUSHBACK.prodromal;
+    const label = getFetusLabel(pregnant, lead);
+    const shift = shiftProdromalTime(profile, female, getProdromalInitialHours(profile) * rule.delayShare);
+    applyStrain(profile, rule.pain);
+    lowerAffinity(lead, rule.affinity);
+    if (shift.outcome === 'regressed') return `${female}腹中领头的${label}被插入顶了回去，分娩前兆随之平息`;
+    if (shift.outcome === 'capped') return `${female}腹中领头的${label}被插入顶到，但分娩已延后到上限，无法再推迟`;
+    return `${female}腹中领头的${label}被插入往上顶，产兆前驱延后约${Math.round(shift.deltaHours)}小时（剩余约${Math.ceil(shift.remainingHours)}小时）`;
+  }
+  if (stage !== '第一产程' && stage !== '第二产程') return '';
+
+  reconcileFetalDescent(profile);
+  const presenting = fetuses.find((fetus) => fetus.embryoId === pregnant.presentingEmbryoId);
+  if (!presenting || presenting.shoulderDystocia) return '';
+  const depth = getDescentStage(presenting);
+  if (depth < DESCENT_INLET || depth >= DESCENT_CROWNED_OUT) return '';
+  const label = getFetusLabel(pregnant, presenting);
+  const phase = String(pregnant.laborPhase || '');
+
+  if (stage === '第一产程' || depth === DESCENT_INLET || !['胎体下降', '胎体娩出'].includes(phase)) {
+    const rule = INSERT_PUSHBACK.inlet;
+    applyStrain(profile, rule.pain);
+    lowerAffinity(presenting, rule.affinity);
+    return `${female}被插入时隔着子宫颈顶到入盆的${label}，一阵剧痛`;
+  }
+
+  const crowned = depth >= 2;
+  const rule = crowned ? INSERT_PUSHBACK.crowned : INSERT_PUSHBACK.canal;
+  const threshold = resolveLaborPhaseHours(profile, stage, phase, fetuses);
+  const factor = isRealisticLabor(profile) ? 1 : GENTLE_PUSHBACK_FACTOR;
+  const progress = clampNumber(pregnant.effectiveLaborHours, 0, 9999, 0);
+  const lost = Math.min(progress, threshold * rule.progressShare * factor);
+  pregnant.effectiveLaborHours = progress - lost;
+  applyStrain(profile, rule.pain);
+  lowerAffinity(presenting, rule.affinity);
+  const parts = [crowned
+    ? `${female}被插入时顶到已着冠的${label}胎头，把它往回顶`
+    : `${female}被插入时把产道里的${label}往回顶`];
+  parts.push(lost > 0.05 ? `产程进度倒退约${lost.toFixed(1)}小时` : '这段产程才刚开始，没再倒退');
+
+  const sac = getSacOfFetus(pregnant, presenting);
+  if (sac && getSacDurability(sac) > 0) {
+    const worn = getSacDurability(sac) - rule.wear;
+    if (worn > 0) {
+      setSacDurability(sac, worn);
+    } else {
+      const rupture = ruptureFetalSac(profile, female, presenting);
+      if (rupture.applied) parts.push(`胎膜被顶破，${rupture.summary}`);
+    }
+  }
+  return parts.join('，');
+}
+
+/** 产兆前驱中沉积的精液催熟子宫颈，缩短前驱；回传通知句子或空字串 */
+function applyProdromalSemenRipening(profile, female) {
+  const pregnant = profile.pregnant || {};
+  if (String(profile?.base?.stage || '') !== '产兆前驱' || !pregnant.prodromalLeadEmbryoId) return '';
+  const shift = shiftProdromalTime(profile, female, -getProdromalInitialHours(profile) * PRODROMAL_SEMEN_SHARE);
+  if (shift.outcome === 'first_stage') return `${female}体内的精液刺激子宫颈成熟，分娩正式开始`;
+  return `${female}体内的精液刺激子宫颈成熟，产兆前驱缩短约${Math.round(-shift.deltaHours)}小时（剩余约${Math.ceil(shift.remainingHours)}小时）`;
 }
 
 /** 省略 fetusIndex 时的目标：先露胎，否则前驱领头胎儿，否则最深者 */
@@ -6566,12 +6669,13 @@ function applyAddSperm(chatState, args) {
     const experience = { ...(next.profile?.experience || {}), latestSexPartner: male };
     if (experience.virginity === null || experience.virginity === undefined) experience.virginity = male;
     next.profile.experience = experience;
-    chatState.characters[female] = next;
+    const pushback = applyInsertionPushback(next.profile, female);
+    if (pushback) next.profile.notify = { ...(next.profile.notify || {}), secondly: pushback };
+    chatState.characters[female] = pushback ? syncCharacterStageFromProfile(next) : next;
+    const handoff = currentState !== 'idle' && currentSource && currentSource !== male;
     return {
       applied: true,
-      message: currentState !== 'idle' && currentSource && currentSource !== male
-        ? `bsAddSperm insert applied to ${female}: ${currentSource} → ${male} handoff, penetrationState=inserted.`
-        : `bsAddSperm insert applied to ${female}: penetrationState=inserted.`,
+      message: `bsAddSperm insert applied to ${female}: ${handoff ? `${currentSource} → ${male} handoff, ` : ''}penetrationState=inserted.${pushback ? ` ${pushback}。` : ''}`,
     };
   }
 
@@ -6620,8 +6724,10 @@ function applyAddSperm(chatState, args) {
   next.profile.experience = experience;
   applyOdorGain(next.profile, Math.min(18, 4 + Math.log10(Math.max(1, amount)) * 4));
   setVisualCue(next.profile, 'ejaculate');
-  chatState.characters[female] = next;
-  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent.` };
+  const ripening = applyProdromalSemenRipening(next.profile, female);
+  if (ripening) next.profile.notify = { ...(next.profile.notify || {}), secondly: ripening };
+  chatState.characters[female] = ripening ? syncCharacterStageFromProfile(next) : next;
+  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent.${ripening ? ` ${ripening}。` : ''}` };
 }
 
 function applyDrainSperm(chatState, args) {

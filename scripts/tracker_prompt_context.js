@@ -94,6 +94,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- bsMaternalFetalInteraction 的 direction=fetal 表示胎儿对母体的亲近或排斥，须传 change 来改变 affinity；direction=maternal 表示母体安抚胎儿，不传 change，系统会随机决定 affinity 变化。母胎互动不影响供养力，也不改变胎位或产程时间。每名角色每个新小时仅能成功生效一次。',
   '- bsAssistFetalPosition 只在剧情明确出现人工、器械或魔法的胎位操作时调用（转位 rotate、托高 lift、推送 descend、破水 rupture、助产拉出 extract）。产兆前驱托高领头胎儿会延后分娩、推送会缩短前驱；托高要跟宫缩对抗，活力不足会被拒绝。每次操作都会带来一阵剧痛（反映在 laborPain），孕期则提高心理压力。',
   '- 胎儿有意识地自己转身、往上缩、往下钻或踢破胎膜时，用 bsAssistFetalPosition 加 actor=fetus：不耗母体活力，母体照样会痛；胎儿不能自己 extract，也解不开自己卡住的肩膀。普通的胎动、踢一下不要调用。',
+  '- 产兆前驱与产程中的插入（bsAddSperm insert）会把最前面的胎儿往回顶：前驱延后、产道里的胎儿产程倒退（着冠时更多，可能顶破胎膜），并降低它的亲和；产兆前驱中射精会缩短前驱。依回传讯息描写，不要写成顺产。',
   '- blockage: 当日妊娠阻塞状态，格式为 {key, severity}。key 可为 excretion/hunger/sleep/milk/odor/companionship/fluxPositive/fluxNegative；它会让对应需求的 bsExcreteMetabolism 排解不顺畅。',
   '- acceleration: 当日妊娠快积状态，格式同 blockage；它会让对应需求更快累积。',
   '- expansion: 当日妊娠扩容状态，格式同 blockage；它会将对应普通需求上限从 150 扩为 200，或将对应方向的 flux 上限从 ±150 扩为 ±200。blockage、acceleration 与 expansion 不会同时落在同一项需求上。非衍生角色不会出现 fluxPositive/fluxNegative；衍生角色不会出现其 derivedType 已抵免的普通需求。',
