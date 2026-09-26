@@ -1,7 +1,7 @@
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCallsResult, describeFetalPosition, getFetusAmnionDurability, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
+import { applyToolCallsResult, describeBackSide, describeFetalPosition, getFetusAmnionDurability, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import {
   buildRecentMessages,
   buildSignature,
@@ -892,13 +892,14 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
         const {
           embryoId: _embryoId, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion,
           // 位置只送紧凑的文字摘要（positionText）；数值、解绑与阻塞旗标不外露
-          descentStage: _descentStage, nestedReleased: _nestedReleased,
+          descentStage: _descentStage, nestedReleased: _nestedReleased, backSide: _backSide,
           inletIntruder: _inletIntruder, shoulderDystocia: _shoulderDystocia, shoulderRelieved: _shoulderRelieved, ...visibleFetus
         } = fetus;
         return {
           ...visibleFetus,
           ...(LABOR_STAGES.includes(String(base.stage || '')) && fetus.embryoId === pregnant.presentingEmbryoId ? { presenting: true } : {}),
           positionText: describeFetalPosition(pregnant, fetus),
+          ...(describeBackSide(fetus) ? { backSideText: describeBackSide(fetus) } : {}),
           // 没有伴生卵就不送，省 token 也免得模型以为要描写 0 枚卵
           companionEggCount: Number(fetus?.companionEggCount) > 0 ? Number(fetus.companionEggCount) : undefined,
           ...(amnion.tags.has(fetus) ? { amnion: amnion.tags.get(fetus) } : {}),

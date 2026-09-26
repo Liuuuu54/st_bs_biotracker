@@ -946,6 +946,7 @@ function applyWombReturn(chatState, args) {
     // 刚进去时是一个成人的体积，之后随回归期线性回落到 1.0
     weight: WOMB_RETURN_PEAK_WEIGHT,
     tendencyAngle: randomInt(0, 360),
+    backSide: randomBackSide(),
     affinity: derivedSeed.affinity,
     maternalDerivedTypeProgress: derivedSeed.progress,
     // 天赋跟着回归者走，技能不传：身体是新的，资质是旧的
@@ -1297,6 +1298,49 @@ function shareCompanionEggs(group) {
   group.forEach((fetus, index) => { fetus.companionEggCount = each + (index < total % group.length ? 1 : 0); });
 }
 
+// ---- 胎背方位 ----
+// 胎背朝向母体的哪一侧：左右一轴、前后一轴，组成产科的四种枕位（左前 LOA、右前 ROA、左后 LOP、右后 ROP）。
+// 与 tendencyAngle（剖面上的旋转）互相独立：同一个头位可以胎背朝左前，也可以朝右后。
+export const BACK_SIDES = Object.freeze(['左前', '右前', '左后', '右后']);
+
+function randomBackSide() {
+  return BACK_SIDES[randomInt(0, BACK_SIDES.length - 1)];
+}
+
+function normalizeBackSide(value) {
+  return BACK_SIDES.includes(value) ? value : null;
+}
+
+/** 镜像：左右对调、前后不变（同卵分裂出的那一胎） */
+function mirrorBackSide(side) {
+  const value = normalizeBackSide(side) || randomBackSide();
+  return `${value[0] === '左' ? '右' : '左'}${value[1]}`;
+}
+
+export function isPosteriorBack(fetus) {
+  return String(fetus?.backSide || '').endsWith('后');
+}
+
+/** 缺胎背方位的胎儿（注册、手动编辑写入的）补一个随机值；只补同一格式内的缺值 */
+function ensureBackSideMetadata(pregnant) {
+  for (const fetus of Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : []) {
+    if (!normalizeBackSide(fetus?.backSide)) fetus.backSide = randomBackSide();
+  }
+}
+
+/**
+ * 胎背方位的描写。纵产式（头位、臀位、斜位）直接说左前、右后；
+ * 横位时胎儿横躺，左右那一轴变成朝上或朝下，前后照旧
+ */
+export function describeBackSide(fetus) {
+  const side = normalizeBackSide(fetus?.backSide);
+  if (!side) return '';
+  const angle = ((Number(fetus?.tendencyAngle) || 0) % 360 + 360) % 360;
+  const transverse = (angle >= 75 && angle <= 105) || (angle >= 255 && angle <= 285);
+  if (!transverse) return `胎背朝${side}`;
+  return `胎背朝${side[0] === '左' ? '上' : '下'}、偏${side[1]}`;
+}
+
 function cloneIdenticalFetus(fetus) {
   return {
     ...fetus,
@@ -1307,6 +1351,8 @@ function cloneIdenticalFetus(fetus) {
     providerSources: Array.isArray(fetus?.providerSources) ? [...fetus.providerSources] : undefined,
     chimera: fetus?.chimera ? cloneValue(fetus.chimera) : undefined,
     tendencyAngle: randomInt(0, 360),
+    // 镜像双胞胎：左右相反、前后相同
+    backSide: mirrorBackSide(fetus?.backSide),
     affinity: 0,
   };
 }
@@ -1462,6 +1508,7 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
     weight: (clampNumber(fetusA?.weight, 0.33, 3, 1) + clampNumber(fetusB?.weight, 0.33, 3, 1)) / 2,
     nutrition: (Number(fetusA?.nutrition) || 0) + (Number(fetusB?.nutrition) || 0),
     tendencyAngle: randomInt(0, 360),
+    backSide: normalizeBackSide(fetusA?.backSide) || randomBackSide(),
     affinity: derivedSeed.affinity,
     maternalDerivedTypeProgress: derivedSeed.progress,
     chimera: {
@@ -1661,6 +1708,7 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     companionEggCount: rollCompanionEggCount(fetusRace, Math.random, sperm?.value),
     weight: getConceptionWeight(cycleStage, gender, weightRatio),
     tendencyAngle: randomInt(0, 360),
+    backSide: randomBackSide(),
     affinity: derivedSeed.affinity,
     maternalDerivedTypeProgress: derivedSeed.progress,
   };
@@ -7141,6 +7189,7 @@ export function applyToolCall(chatState, call) {
     if (character?.profile?.pregnant && typeof character.profile.pregnant === 'object') {
       syncEmbryoCounter(character.profile.pregnant);
       ensureAmnionMetadata(character.profile.pregnant);
+      ensureBackSideMetadata(character.profile.pregnant);
     }
   }
   const result = dispatchToolCall(chatState, call);
@@ -7151,6 +7200,7 @@ export function applyToolCall(chatState, call) {
     releaseRupturedNestedFetuses(pregnant);
     reconcilePresentingReference(pregnant);
     reconcileFetalDescent(character.profile);
+    ensureBackSideMetadata(pregnant);
   }
   return result;
 }

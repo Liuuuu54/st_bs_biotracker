@@ -63,7 +63,7 @@ import {
   normalizeWardrobeItem,
   sanitizeWearState,
 } from './wardrobe_config.js';
-import { calculateDerivedInheritanceProgress } from './tools.js';
+import { BACK_SIDES, calculateDerivedInheritanceProgress } from './tools.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
 const DEBUG_LAST_REGISTRY_RESULT_KEY = '__bs_biotracker_debug_last_registry_result__';
@@ -822,7 +822,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- pregnant.pregnantDays: 这次妊娠的孕龄天数，等同产科从末次月经/本族等价周期起点计算的孕周天数；若资料写“孕8周/怀孕8周”填 56，若明确写“受孕后8周/胚胎发育8周”，需再加上本族等价排卵前偏移。',
     '- 不要填写 pregnant.effectivePregnantDays；系统会依据孕龄、角色种族妊娠速度与 bio.gestationModifierMultiplier 自动换算有效妊娠天数。',
     '- pregnant.fetusesCount: 这次怀孕的怀胎数',
-    '- pregnant.fetuses: 每个胎儿包含 fathers、provider、race、gender、embryoType；也可填写 companionEggCount、weight、tendencyAngle、affinity',
+    '- pregnant.fetuses: 每个胎儿包含 fathers、provider、race、gender、embryoType；也可填写 companionEggCount、weight、tendencyAngle、backSide、affinity',
     '- companionEggCount: 这一胎伴随的背景卵数量（伴生卵），它们不会发育，也不建立胎儿卡或孩子；不是 fetusesCount。一整群十枚卵、只有一名能长大时，就是一张胎儿卡加 9 枚伴生卵。不确定时省略，由系统依种族抽取。胎生与胎转卵生恒为 0。',
     '- 胎儿可带 tags 标注特殊来历，只接受这几个：identical（同卵）、superfetation（异期复孕）、nested（孕中孕）、rebirth（胎内回归）。代孕不必标——给了 provider 就会自动识别。写不出对应支撑栏位的标签会被撤销，宁可不标也不要留一个指向虚空的关系。',
     '- 嵌合体不必标 tags——给了 chimera 就会自动识别。chimera = { sourceCount: 融合前的受精卵数, fatherSources: [父方名字…], maternalSources: [遗传母方名字…], genderSources: [各来源的性别…] }；父方与母方名字加起来不足两个会被撤销，因为那不成其为嵌合。',
@@ -833,6 +833,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- revealed：这一胎角色本人知不知道。省略时系统按孕龄自动判定（异期复孕进孕中期才知道、孕中孕要到孕晚期）；想让角色暂时不知情就明确给 false。',
     '- provider: 代孕母方、寄生等提供者名称，正常情况下为 null',
     '- weight: 胎儿体重/发育量倍率，范围 0.33-3.0；不确定可省略，系统会补 1.0',
+    '- backSide: 胎背朝母体哪一侧，只能是 左前／右前／左后／右后 之一（左后、右后即枕后位，胎儿的脸朝母体腹侧）；资料没写就省略，系统会随机补值。',
     '- tendencyAngle: 胎位/趋向角度，范围 0-360；不确定可省略，系统会随机补值。角度映射必须固定为：0/360=正常头位/正位，180=完全臀位/倒位，90或270=横位；不要把 180 写成头位',
     '- affinity: 胎儿对母体的亲和/排斥倾向，范围 -50 到 50；正值亲和，负值排斥，不确定可省略',
     '示例：',
@@ -902,6 +903,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '          "companionEggCount": 0,',
     '          "weight": 1.0,',
     '          "tendencyAngle": 0,',
+    '          "backSide": "左前",',
     '          "affinity": 0',
     '        }',
     '      ]',
@@ -1130,6 +1132,7 @@ function sanitizePregnant(value) {
           maternalDerivedTypeProgress: Number.isFinite(Number(item.maternalDerivedTypeProgress)) ? clampNumber(item.maternalDerivedTypeProgress, -100, 100, 0) : undefined,
           weight: Number.isFinite(Number(item.weight)) ? clampNumber(item.weight, 0.33, 3.0, 1.0) : undefined,
           tendencyAngle: Number.isFinite(Number(item.tendencyAngle)) ? clampNumber(item.tendencyAngle, 0, 360, 0) : undefined,
+          backSide: BACK_SIDES.includes(item.backSide) ? item.backSide : undefined,
           affinity: Number.isFinite(Number(item.affinity)) ? clampNumber(item.affinity, -50, 50, 0) : undefined,
           // 特殊来历：让角色卡开场就能是同卵双胞胎、异期复孕、孕中孕或胎内回归。
           // 只放行目录内的标签，支撑栏位在 normalizeRegisteredFetusTags 里对齐。
@@ -1369,6 +1372,7 @@ function normalizeRegisteredPregnancy(profile) {
       companionEggCount,
       weight: Number.isFinite(Number(fetus?.weight)) ? clampNumber(fetus.weight, 0.33, 3.0, 1.0) : 1.0,
       tendencyAngle: Number.isFinite(Number(fetus?.tendencyAngle)) ? clampNumber(fetus.tendencyAngle, 0, 360, 0) : randomInt(0, 360),
+      backSide: BACK_SIDES.includes(fetus?.backSide) ? fetus.backSide : BACK_SIDES[randomInt(0, BACK_SIDES.length - 1)],
       affinity: Number.isFinite(Number(fetus?.affinity)) ? clampNumber(fetus.affinity, -50, 50, 0) : 0,
     };
   });
