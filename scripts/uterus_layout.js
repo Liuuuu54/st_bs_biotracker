@@ -57,6 +57,20 @@ function getEmptyLining(stage, progress) {
   return table[stage] ?? 6;
 }
 
+/**
+ * 胎儿图块规格：胚型、孕期，以及胎背方位决定的镜像与朝向。
+ * 胎背朝右的左右翻转；胎背朝后（枕后位）时脸朝外，画出眼睛与嘴，朝前时看到背脊
+ */
+export function getFetusSpriteSpec(fetus, ownAge) {
+  const backSide = String(fetus?.backSide || '');
+  return {
+    type: String(fetus?.embryoType || '胎生'),
+    stage: getSpriteStage(ownAge),
+    mirror: backSide.startsWith('右'),
+    posterior: backSide.endsWith('后'),
+  };
+}
+
 /** 胎儿图块阶段：以自身孕龄分孕早、孕中、孕晚 */
 export function getSpriteStage(ownAge) {
   if (ownAge < 84) return 0;
@@ -174,7 +188,7 @@ export function computeUterusLayout(profile, options = {}) {
       descent,
       ownAge,
       angle: quantizeAngle(fetus.tendencyAngle),
-      sprite: { type: String(fetus.embryoType || '胎生'), stage: getSpriteStage(ownAge) },
+      sprite: getFetusSpriteSpec(fetus, ownAge),
       sacKey: getSharedSacKey(fetus),
       amnion: clamp(finite(fetus.amnionDurability, 100), -100, 100),
       presenting: fetus === presenting,
@@ -229,7 +243,7 @@ export function computeUterusLayout(profile, options = {}) {
       embryoId: fetus.embryoId,
       index: visible.indexOf(fetus),
       size: Math.max(2, Math.round(host.size * 0.45)),
-      sprite: { type: String(fetus.embryoType || '胎生'), stage: getSpriteStage(ownAge) },
+      sprite: getFetusSpriteSpec(fetus, ownAge),
       angle: quantizeAngle(fetus.tendencyAngle),
     });
   }

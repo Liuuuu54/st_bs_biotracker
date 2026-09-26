@@ -108,8 +108,8 @@ test('各胚型与自身孕龄选到对应的图块；异期胎按自己的孕�
     fetus(2, { embryoType: '不定型', conceivedAtDays: 150, revealed: true, tags: ['superfetation'] }),
   ], { days: 230 }));
   const [egg, amorphous] = layout.fetuses;
-  assert.deepEqual(egg.sprite, { type: '卵生', stage: 2 });
-  assert.deepEqual(amorphous.sprite, { type: '不定型', stage: 0 });
+  assert.deepEqual([egg.sprite.type, egg.sprite.stage], ['卵生', 2]);
+  assert.deepEqual([amorphous.sprite.type, amorphous.sprite.stage], ['不定型', 0]);
   assert.ok(amorphous.size < egg.size, '晚到的异期胎较小');
 });
 
@@ -153,4 +153,11 @@ test('阻塞的胎儿带出阻塞类型；非真实模式没有阻塞', () => {
   assert.equal(layout.fetuses.find((item) => item.embryoId === 1).obstruction, 'shoulder_dystocia');
   assert.equal(layout.fetuses.find((item) => item.embryoId === 2).obstruction, null);
   assert.equal(computeUterusLayout(stuck(false)).obstruction, null);
+});
+
+test('胎背朝右的图块镜像；胎背朝后的脸朝外', () => {
+  const layout = computeUterusLayout(profile('孕晚期', [
+    fetus(1, { backSide: '左前' }), fetus(2, { backSide: '右前' }), fetus(3, { backSide: '左后' }), fetus(4, { backSide: '右后' }),
+  ], { days: 230 }));
+  assert.deepEqual(layout.fetuses.map((item) => [item.sprite.mirror, item.sprite.posterior]), [[false, false], [true, false], [false, true], [true, true]]);
 });

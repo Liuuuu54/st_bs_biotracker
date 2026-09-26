@@ -171,3 +171,15 @@ test('真实分娩模式下枕后位产程较慢、较痛；非真实模式没�
   const casualAnterior = run('右前', false);
   assert.equal(casual.effectiveLaborHours, casualAnterior.effectiveLaborHours);
 });
+
+test('调试工具可以直接设定胎背方位（不受入盆限制），乱写会被拒绝', () => {
+  const chatState = setup('第一产程', [fetus(1, { backSide: '右后', descentStage: 0 })], {
+    pregnantDays: 280, effectivePregnantDays: 280, laborPhase: '潜伏期', presentingEmbryoId: 1,
+  });
+  const debug = (backSide) => applyToolCall(chatState, { name: 'bsDebugSetFetalPosition', arguments: { female: 'A', fetusIndex: 0, backSide } });
+  assert.equal(debug('左前').applied, true);
+  assert.equal(P(chatState).pregnant.fetuses[0].backSide, '左前');
+  assert.equal(debug('斜上').applied, false);
+  assert.equal(debug('').applied, true, '留空表示不变');
+  assert.equal(P(chatState).pregnant.fetuses[0].backSide, '左前');
+});

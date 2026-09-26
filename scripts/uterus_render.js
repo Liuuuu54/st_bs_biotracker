@@ -126,7 +126,7 @@ function makePen(ctx, P) {
 }
 
 // ---- 胎儿图块：5 胚型 × 3 孕期，画在 32×32 的离屏画布上并快取 ----
-function paintSprite(ctx, P, type, stage) {
+function paintSprite(ctx, P, type, stage, posterior = false) {
   const { px, ellipse, line, ring } = makePen(ctx, P);
   const s = 10;
   const cx = 16;
@@ -181,7 +181,15 @@ function paintSprite(ctx, P, type, stage) {
     ellipse(cx + 1, cy + 1, s * 0.48, s * 0.48, P.fetus);
     ellipse(cx - 4, cy - 4, s * 0.42, s * 0.42, P.fetusLight);
     ellipse(cx - 5, cy - 5, s * 0.23, s * 0.2, P.shine);
-    px(cx - 6, cy - 3, 1, 1, P.cavityDeep);
+    if (posterior) {
+      // 枕后位：脸朝外，看得到眼睛与嘴
+      px(cx - 6, cy - 3, 1, 1, P.cavityDeep);
+      px(cx - 3, cy - 2, 1, 1, P.cavityDeep);
+      px(cx - 5, cy - 1, 2, 1, P.wallDark);
+    } else {
+      // 枕前位：背朝外，沿着背画一排脊椎点
+      for (const [dx, dy] of [[-1, -6], [1, -5], [3, -3], [5, -1], [6, 1]]) px(cx + dx, cy + dy, 1, 1, P.wallDark);
+    }
     line(cx + 2, cy + 3, cx + 5, cy + 6, P.fetusLight);
     line(cx - 1, cy + 6, cx - 4, cy + 7, P.fetusLight);
     line(cx + 5, cy + 6, cx + 7, cy + 2, P.fetusLight);
@@ -201,15 +209,15 @@ function usesFetalPose(type, stage) {
 
 function createSpriteCache(P) {
   const cache = new Map();
-  return (type, stage) => {
-    const key = `${type}|${stage}`;
+  return (type, stage, posterior = false) => {
+    const key = `${type}|${stage}|${posterior ? 'P' : 'A'}`;
     if (!cache.has(key)) {
       const off = document.createElement('canvas');
       off.width = 32;
       off.height = 32;
       const ctx = off.getContext('2d');
       ctx.imageSmoothingEnabled = false;
-      paintSprite(ctx, P, type, stage);
+      paintSprite(ctx, P, type, stage, posterior);
       cache.set(key, off);
     }
     return cache.get(key);
@@ -267,12 +275,15 @@ export function drawFetusThumb(canvas, sprite, angle, themeName, emote = null) {
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = P.cavityDeep;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const off = createSpriteCache(P)(sprite.type, sprite.stage);
+  const off = createSpriteCache(P)(sprite.type, sprite.stage, Boolean(sprite.posterior));
   const base = usesFetalPose(sprite.type, sprite.stage) ? -135 : 0;
   const shake = emote && emote.band === -2 ? (Math.floor(emote.t * 12) % 2 ? 1 : -1) : 0;
   ctx.save();
   ctx.translate(canvas.width / 2 + shake, canvas.height / 2 + (emote ? 3 : 0));
-  ctx.rotate(((angle + base) * Math.PI) / 180);
+  // 先转到胎位角（此时胎儿头脚轴是直的），在这里镜像，最后才补斜向构图的 base
+  ctx.rotate((angle * Math.PI) / 180);
+  if (sprite.mirror) ctx.scale(-1, 1);
+  ctx.rotate((base * Math.PI) / 180);
   ctx.drawImage(off, -12, -12, 24, 24);
   ctx.restore();
   if (emote) drawAffinityEmote(ctx, emote.band, canvas.width / 2, 9, emote.t);
@@ -537,13 +548,17 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
   }
 
   function drawSprite(x, y, size, sprite, angle, squeeze = 1) {
-    const off = spriteOf(sprite.type, sprite.stage);
+    const off = spriteOf(sprite.type, sprite.stage, Boolean(sprite.posterior));
     const base = usesFetalPose(sprite.type, sprite.stage) ? -135 : 0;
     const w = Math.max(1, Math.round((32 * size * squeeze) / 10));
     const h = Math.max(1, Math.round((32 * size) / 10));
     ctx.save();
     ctx.translate(Math.round(x), Math.round(y));
-    ctx.rotate(((angle + base) * Math.PI) / 180);
+    // 胎背朝右的镜像：先转到胎位角（此时胎儿头脚轴是直的）在这里翻，最后才补斜向构图的 base，
+    // 否则会沿斜轴翻、头的方向跟着偏掉 90°
+    ctx.rotate((angle * Math.PI) / 180);
+    if (sprite.mirror) ctx.scale(-1, 1);
+    ctx.rotate((base * Math.PI) / 180);
     ctx.drawImage(off, -Math.round(w / 2), -Math.round(h / 2), w, h);
     ctx.restore();
   }

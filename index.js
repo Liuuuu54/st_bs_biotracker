@@ -56,10 +56,10 @@ import {
 import { buildMainFlowPrompt, resetPoller, runTracker, getPollWaitStatus } from './scripts/tracker.js';
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
-import { describeFetalPosition, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
+import { describeBackSide, describeFetalPosition, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
 import { applyToolCall } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
-import { computeUterusLayout, getSpriteStage } from './scripts/uterus_layout.js';
+import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
 import { appendSkillHistory, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
@@ -3878,7 +3878,7 @@ function renderWombFetusCard(item, index, data) {
   const drawn = layout.fetuses.find((fetus) => fetus.embryoId === item.embryoId);
   const inner = layout.fetuses.flatMap((fetus) => fetus.inner).find((fetus) => fetus.embryoId === item.embryoId);
   const ownAge = Math.max(0, (Number(data.effectivePregnantDays) || 0) - Math.max(0, Number(item?.conceivedAtDays) || 0));
-  const sprite = drawn?.sprite || inner?.sprite || { type: String(item?.embryoType || '胎生'), stage: getSpriteStage(ownAge) };
+  const sprite = drawn?.sprite || inner?.sprite || getFetusSpriteSpec(item, ownAge);
   const gender = String(item?.gender || '').trim() || '无';
   const talents = Array.isArray(item?.talents) ? item.talents : [];
   const id = String(item.embryoId);
@@ -3886,13 +3886,14 @@ function renderWombFetusCard(item, index, data) {
   return `<details class="bs-bt-womb-card" data-womb-fetus="${escapeHtml(id)}"${wombOpenFetuses.has(id) ? ' open' : ''}>
       <summary>
         <span class="bs-bt-womb-thumb-col">
-          <canvas class="bs-bt-womb-thumb${item?.isPresenting ? ' is-presenting' : ''}" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}" data-angle="${Number(item?.tendencyAngle) || 0}" data-affinity="${Number(item?.affinity) || 0}" role="button" tabindex="0" aria-label="${escapeHtml(`看胎儿 ${index + 1}${item?.isPresenting ? '（先露）' : ''}的亲和`)}"${item?.isPresenting ? ' title="先露"' : ''}></canvas>
+          <canvas class="bs-bt-womb-thumb${item?.isPresenting ? ' is-presenting' : ''}" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}"${sprite.mirror ? ' data-sprite-mirror' : ''}${sprite.posterior ? ' data-sprite-posterior' : ''} data-angle="${Number(item?.tendencyAngle) || 0}" data-affinity="${Number(item?.affinity) || 0}" role="button" tabindex="0" aria-label="${escapeHtml(`看胎儿 ${index + 1}${item?.isPresenting ? '（先露）' : ''}的亲和`)}"${item?.isPresenting ? ' title="先露"' : ''}></canvas>
           <span class="bs-bt-womb-weight" title="胎重倍率">${escapeHtml(formatFixedDisplay(item?.weight, 2))}×</span>
         </span>
         <strong class="bs-bt-womb-card-title">胎儿${index + 1}<canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas>${escapeHtml(getPresentationWord(item?.tendencyAngle))}</strong>
       </summary>
       <div class="bs-bt-womb-card-body">
         <span class="bs-bt-womb-card-line">${escapeHtml(summary)}</span>
+        ${describeBackSide(item) ? `<span class="bs-bt-womb-card-line">${escapeHtml(describeBackSide(item))}</span>` : ''}
         ${item?.provider ? `<span class="bs-bt-womb-card-line">${escapeHtml(`遗传母方 ${item.provider}`)}</span>` : ''}
         ${renderFetusTagRow(item)}
         ${talents.length > 0 ? `<details class="bs-bt-womb-talents" data-womb-talents="${escapeHtml(id)}"${wombOpenTalents.has(id) ? ' open' : ''}><summary>胎教（${talents.length}）</summary><span class="bs-bt-womb-card-line">${escapeHtml(talents.map((talent) => { const level = Number(talent.level) || 0; return `${talent.name}(${level > 0 ? '+' : ''}${level})`; }).join('、'))}</span></details>` : ''}
@@ -3947,7 +3948,13 @@ function setWombCardsOpen(host, open) {
 }
 
 function drawWombThumb(node, emote = null) {
-  drawFetusThumb(node, { type: node.dataset.spriteType, stage: Number(node.dataset.spriteStage) || 0 }, Number(node.dataset.angle) || 0, wombTheme, emote);
+  const sprite = {
+    type: node.dataset.spriteType,
+    stage: Number(node.dataset.spriteStage) || 0,
+    mirror: node.hasAttribute('data-sprite-mirror'),
+    posterior: node.hasAttribute('data-sprite-posterior'),
+  };
+  drawFetusThumb(node, sprite, Number(node.dataset.angle) || 0, wombTheme, emote);
 }
 
 /**
@@ -4821,6 +4828,10 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
           <input id="bs-bt-debug-position-angle" class="text_pole" type="number" min="0" max="360" step="1" placeholder="0 头位／180 臀位／90 横位" />
         </label>
         <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">胎背方位</span>
+          <select id="bs-bt-debug-position-back" class="text_pole"><option value="">保持不变</option><option value="左前">左前</option><option value="右前">右前</option><option value="左后">左后（枕后位）</option><option value="右后">右后（枕后位）</option></select>
+        </label>
+        <label class="bs-bt-track-debug-field">
           <span class="bs-bt-track-debug-label">下降位置</span>
           <select id="bs-bt-debug-position-descent" class="text_pole">${descentOptions}</select>
         </label>
@@ -5090,6 +5101,7 @@ function setSelectedTrackFetalPosition(ctx, scope) {
       female: selectedTrackName,
       fetusIndex: Number(read('#bs-bt-debug-position-fetus')?.value),
       tendencyAngle: read('#bs-bt-debug-position-angle')?.value ?? '',
+      backSide: read('#bs-bt-debug-position-back')?.value ?? '',
       descentStage: read('#bs-bt-debug-position-descent')?.value ?? '',
       makePresenting: Boolean(read('#bs-bt-debug-position-presenting')?.checked),
       allowPathologicalState: Boolean(read('#bs-bt-debug-position-pathological')?.checked),

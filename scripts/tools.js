@@ -7173,7 +7173,10 @@ function applyDebugSetFetalPosition(chatState, args) {
   const hasDescent = args?.descentStage !== undefined && args?.descentStage !== null && args?.descentStage !== '' && Number.isFinite(Number(args.descentStage));
   if (hasDescent && getEnclosingHost(target, fetuses)) return skip('that fetus is inside its host and follows the host position.');
 
+  const backSide = normalizeBackSide(String(args?.backSide ?? '').trim());
+  if (String(args?.backSide ?? '').trim() && !backSide) return skip(`backSide must be one of ${BACK_SIDES.join('/')}.`);
   if (hasAngle) target.tendencyAngle = wrapAngle(Number(args.tendencyAngle));
+  if (backSide) target.backSide = backSide;
   if (hasDescent) target.descentStage = Math.max(DESCENT_TOP, Math.min(DESCENT_CROWNED_OUT, Math.round(Number(args.descentStage))));
   if (args?.makePresenting) pregnant.presentingEmbryoId = target.embryoId;
   if (args?.allowPathologicalState) {
@@ -7192,7 +7195,7 @@ function applyDebugSetFetalPosition(chatState, args) {
   const settled = chatState.characters[female].profile.pregnant.fetuses.find((fetus) => fetus.embryoId === target.embryoId);
   return {
     applied: true,
-    message: `bsDebugSetFetalPosition applied to ${female}: ${describeFetalPosition(chatState.characters[female].profile.pregnant, settled)}, ${Math.round(Number(settled?.tendencyAngle) || 0)}°.`,
+    message: `bsDebugSetFetalPosition applied to ${female}: ${describeFetalPosition(chatState.characters[female].profile.pregnant, settled)}, ${Math.round(Number(settled?.tendencyAngle) || 0)}°, ${describeBackSide(settled)}.`,
   };
 }
 
