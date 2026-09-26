@@ -3845,13 +3845,22 @@ const WOMB_SEEN_CUE_KEY = 'bs-bt-womb-seen-cue';
 const WOMB_EMOTE_FRAME_MS = 120;
 const WOMB_MAGNIFIER_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 1h5v2H4zM2 3h2v6H2zM9 3h2v6H9zM4 9h5v2H4zM9 9h2v2H9zM11 11h2v2h-2zM13 13h3v3h-3z"/></svg>';
 const WOMB_REPLAY_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 2h2v12H4zM6 3h2v10H6zM8 4h2v8H8zM10 5h2v6h-2zM12 7h1v2h-1z"/></svg>';
-// 子宫图下方的阻塞警告用短版：引擎的原文也写进给模型的通知，太长，手机上会换行
-const WOMB_OBSTRUCTION_LABELS = Object.freeze({
-  shoulder_dystocia: '肩难产：肩部卡住',
-  twin_lock: '双胎互锁卡在入口',
-  inlet_crowding: '两胎挤在骨盆入口',
-  transverse: '横位，无法入盆',
-});
+/**
+ * 子宫图下方的阻塞警告用短版并带胎儿编号（与胎儿详细、图上由左到右一致）：
+ * 引擎的原文也写进给模型的通知，太长，手机上会换行。入口拥挤写的是挤进来的那一胎
+ */
+function getWombObstructionLabel(obstruction, fetuses) {
+  const numberOf = (embryoId) => {
+    const index = fetuses.findIndex((fetus) => fetus.embryoId === embryoId);
+    return index >= 0 ? `${index + 1}胎` : '';
+  };
+  const [first, second] = obstruction.embryoIds || [];
+  if (obstruction.type === 'shoulder_dystocia') return `${numberOf(first)}肩部卡住`;
+  if (obstruction.type === 'twin_lock') return `${numberOf(first)}${numberOf(second)}互锁卡在入口`;
+  if (obstruction.type === 'inlet_crowding') return `${numberOf(second ?? first)}挤在骨盆入口`;
+  if (obstruction.type === 'transverse') return `${numberOf(first)}横位无法入盆`;
+  return obstruction.message;
+}
 const WOMB_CUE_LABELS = Object.freeze({
   insert: '插入', ejaculate: '射精', ovulation: '排卵', fertilization: '受精', surrogacy: '代孕植入',
   chimera: '嵌合融合', rebirth: '胎内回归', implantation: '着床', implantationFailed: '着床失败', rupture: '破水',
@@ -3916,7 +3925,7 @@ function renderWombSection(data, badge) {
   return `<div class="bs-bt-track-section bs-bt-womb-section">
       ${badge ? `<div class="bs-bt-track-section-title">${renderTrackTitle('子宫', badge)}</div>` : ''}
       <div class="bs-bt-womb" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${toggle}${replay}${panel}</div>
-      ${data.womb.obstruction ? `<div class="bs-bt-womb-alert" role="alert" title="${escapeHtml(data.womb.obstruction.message)}">${escapeHtml(WOMB_OBSTRUCTION_LABELS[data.womb.obstruction.type] || data.womb.obstruction.message)}</div>` : ''}
+      ${data.womb.obstruction ? `<div class="bs-bt-womb-alert" role="alert" title="${escapeHtml(data.womb.obstruction.message)}">${escapeHtml(getWombObstructionLabel(data.womb.obstruction, data.fetuses))}</div>` : ''}
     </div>`;
 }
 
