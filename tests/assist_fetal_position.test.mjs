@@ -281,7 +281,7 @@ test('产道里的先露胎被插入顶回：产程进度倒退、亲和下降�
   assert.equal(result.applied, true);
   const pregnant = P(chatState).pregnant;
   assert.ok(pregnant.effectiveLaborHours < 50);
-  assert.equal(pregnant.fetuses[0].affinity, -1);
+  assert.equal(pregnant.fetuses[0].affinity, -5);
   assert.equal(pregnant.assistPainBoost, 2);
   assert.equal(pregnant.fetuses[0].amnionDurability, 75);
   assert.equal(pregnant.fetuses[0].descentStage, 1, '位置由阶段推导，仍在产道');
@@ -299,7 +299,7 @@ test('真实分娩模式倒退较多；着冠时比产道倒退更多，胎膜�
 
   const crowned = canalAt('胎体娩出', 2, { amnionDurability: 40 });
   sperm(crowned, 'insert');
-  assert.equal(P(crowned).pregnant.fetuses[0].affinity, -2);
+  assert.equal(P(crowned).pregnant.fetuses[0].affinity, -8);
   assert.equal(P(crowned).pregnant.fetuses[0].amnionDurability, 0);
   assert.equal(P(crowned).visualCue?.type, 'rupture');
   assert.match(String(P(crowned).notify.secondly), /着冠.*顶破/);
@@ -312,7 +312,7 @@ test('第一产程只入盆时只会痛；先露部已出或肩难产时不作�
   sperm(inlet, 'insert');
   assert.equal(P(inlet).pregnant.effectiveLaborHours, 3);
   assert.equal(P(inlet).pregnant.assistPainBoost, 1);
-  assert.equal(P(inlet).pregnant.fetuses[0].affinity, -0.5);
+  assert.equal(P(inlet).pregnant.fetuses[0].affinity, -3);
 
   const stuck = canalAt('胎体娩出', 3, { shoulderDystocia: true }, { realistic: true });
   sperm(stuck, 'insert');
@@ -325,7 +325,7 @@ test('产兆前驱：插入把领头胎儿往上顶、延后前驱；射精催�
   sperm(chatState, 'insert');
   const afterInsert = P(chatState).pregnant.prodromalRemainingHours;
   assert.ok(afterInsert > 30);
-  assert.equal(P(chatState).pregnant.fetuses[0].affinity, -0.5);
+  assert.equal(P(chatState).pregnant.fetuses[0].affinity, -2);
   sperm(chatState, 'deposit', 20);
   assert.ok(P(chatState).pregnant.prodromalRemainingHours < afterInsert);
   assert.match(String(P(chatState).notify.secondly), /子宫颈成熟/);

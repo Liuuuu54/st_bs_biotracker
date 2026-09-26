@@ -5274,13 +5274,13 @@ function decayAssistPainBoost(profile, deltaMinutes) {
 // 产兆前驱与产程中，每次 insert 都会顶到最前面的那一胎：前驱领头胎儿被往上顶（延后前驱），
 // 产道里的先露胎被顶回（扣掉这段产程的进度），着冠时扣得更多、更痛、更伤胎膜。
 // 第一产程只入盆（宫颈未全开）只会痛；先露部已出或肩难产时没有东西可推。
-// 被顶的胎儿亲和下降。真实分娩模式倒退得较多。
+// 被顶的胎儿亲和重挫（反正快出生了，扣重一点才有感）。真实分娩模式倒退得较多。
 // 反过来，产兆前驱中射进的精液会催熟子宫颈，缩短前驱。
 const INSERT_PUSHBACK = Object.freeze({
-  prodromal: { delayShare: 0.25, pain: 1, affinity: -0.5 },
-  inlet: { pain: 1, affinity: -0.5 },
-  canal: { progressShare: 0.3, pain: 2, wear: 25, affinity: -1 },
-  crowned: { progressShare: 0.5, pain: 3, wear: 50, affinity: -2 },
+  prodromal: { delayShare: 0.25, pain: 1, affinity: -2 },
+  inlet: { pain: 1, affinity: -3 },
+  canal: { progressShare: 0.3, pain: 2, wear: 25, affinity: -5 },
+  crowned: { progressShare: 0.5, pain: 3, wear: 50, affinity: -8 },
 });
 /** 非真实分娩模式的产程倒退打折 */
 const GENTLE_PUSHBACK_FACTOR = 0.6;
