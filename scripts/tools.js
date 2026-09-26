@@ -552,7 +552,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     name: 'bsAssistFetalPosition',
     description: '剧情明确出现人工、器械或魔法的胎位操作时才调用；自然胎动与下降由 bsPassedTime 自动处理，不要为了「肚子下沉」「胎儿踢了一下」之类的描写调用。'
       + 'fetusIndex 是 fetuses 列表下标（从 0 起算），省略时作用于正在下降／即将娩出的那一胎。每个动作都要通过检查才会生效，被拒绝时状态完全不变，叙事不得写成已成功。'
-      + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位）；已入盆的胎儿只能小幅校正，肩难产时可不给角度直接转动肩部解开卡点。'
+      + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位），也可以用 backSide 把胎背转到 左前／右前／左后／右后（两者可同时给，至少给一个）；已入盆的胎儿只能小幅校正角度，胎背只能前后对调、不能换左右（例如把枕后位的右后转成右前）；肩难产时可不给角度直接转动肩部解开卡点。'
       + 'lift：把胎儿往上托回一格；产兆前驱托高领头胎儿会把分娩延后，这是要跟宫缩对抗的，母体活力不足会被拒绝，并带来一阵剧痛。产程中只能托回和另一胎一起卡在入口的那一胎。'
       + 'descend：把胎儿往下推送一格；产兆前驱推送领头胎儿会缩短前驱，时间归零即进入第一产程；正式产程中不能用。'
       + 'rupture：破水（每一胎有各自的羊膜，同卵共囊一起破）。只有在产兆前驱且宫压已达上限的 66%，或已在第一／第二产程时才会生效；产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用，系统未确认前不要擅自描写破水。孕中孕内胎的胎膜破了代表它被宿主在宫内生出来，不算母亲破水。'
@@ -565,6 +565,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         action: { type: 'string', enum: ['rotate', 'lift', 'descend', 'rupture', 'extract'] },
         fetusIndex: { type: 'integer' },
         targetAngle: { type: 'number' },
+        backSide: { type: 'string', enum: ['左前', '右前', '左后', '右后'] },
       },
       required: ['female', 'action'],
       additionalProperties: false,
@@ -1995,6 +1996,25 @@ function swapLateral(fetuses, fetus, other, movers, swapped) {
   for (const member of all) swapped.add(member);
 }
 
+// 胎背翻身：孕期每天、没有位移的那天才可能翻；胎儿越大越难翻
+const FETAL_ROLL_CHANCE = Object.freeze({ 孕早期: 0.1, 孕中期: 0.06, 孕晚期: 0.03, 临产期: 0.02, 逾期: 0.01 });
+// 产兆前驱与产程中，还在高位自由活动的胎儿每小时
+const LABOR_FETAL_ROLL_CHANCE = 0.01;
+// 已入盆的枕后位胎儿每小时自然转成枕前位（左右不变）；现实中多数枕后位会在产程中自己转正
+const POSTERIOR_ROTATION_CHANCE = Object.freeze({ 产兆前驱: 0.03, 第一产程: 0.08, 第二产程: 0.05 });
+
+function maybeRollBackSide(fetus, chance) {
+  if (!(chance > 0) || Math.random() >= chance) return;
+  const current = normalizeBackSide(fetus.backSide);
+  const options = BACK_SIDES.filter((side) => side !== current);
+  fetus.backSide = options[randomInt(0, options.length - 1)];
+}
+
+function maybeRotateToAnterior(fetus, chance) {
+  if (!isPosteriorBack(fetus) || !(chance > 0) || Math.random() >= chance) return;
+  fetus.backSide = `${fetus.backSide[0]}前`;
+}
+
 /** 一个时间单位的胎动。回传这一轮值得通报的位置事件 */
 function stepFetalActivity(profile, stage, gestationSpeed) {
   const fetuses = profile.pregnant.fetuses;
@@ -2037,6 +2057,7 @@ function stepFetalActivity(profile, stage, gestationSpeed) {
     const { fetus } = intent;
     if (intent.type === 'angle') {
       driftPregnancyAngle(fetus, stage, gestationSpeed, totalWeight, fetuses.length);
+      maybeRollBackSide(fetus, FETAL_ROLL_CHANCE[stage] || 0);
     } else if (intent.type === 'vertical') {
       const before = getDescentStage(fetus);
       const after = Math.max(DESCENT_TOP, Math.min(cap, before + intent.step));
@@ -2155,6 +2176,7 @@ function stepLaborFetalActivity(profile, stage) {
     const { fetus } = intent;
     if (intent.type === 'angle') {
       correctTowardMainPosition(fetus, correction);
+      maybeRollBackSide(fetus, LABOR_FETAL_ROLL_CHANCE);
     } else if (intent.type === 'vertical') {
       if (fetus === intruder) {
         fetus.descentStage = DESCENT_INLET;
@@ -2169,7 +2191,10 @@ function stepLaborFetalActivity(profile, stage) {
       swapLateral(fetuses, fetus, intent.with, movers, swapped);
     }
   }
-  for (const fetus of engaged) correctTowardMainPosition(fetus, correction / 2);
+  for (const fetus of engaged) {
+    correctTowardMainPosition(fetus, correction / 2);
+    maybeRotateToAnterior(fetus, POSTERIOR_ROTATION_CHANCE[stage] || 0);
+  }
 
   // 入口拥挤（未互锁）在前驱与第一产程中可能自行解开：挤进来的那胎退回低位
   if ((stage === '产兆前驱' || stage === '第一产程')) {
@@ -4436,6 +4461,7 @@ function updateLaborPain(profile, stage, phase, progress = 0, obstruction = fals
   pain += (4 - clampNumber(base.vitalityLevel, 1, 7, 4)) * toleranceWeight;
   pain += ((clampNumber(base.psyStressLevel, 1, 7, 4) - 4) * 0.5) * toleranceWeight;
   if (obstruction) pain += 1.5;
+  if (isPosteriorPresentingLabor(profile, stage)) pain += POSTERIOR_PAIN_BONUS;
   // 助产操作留下的瞬时痛感，每小时减半（见 decayAssistPainBoost）
   pain += clampNumber(pregnant.assistPainBoost, 0, ASSIST_PAIN_BOOST_CAP, 0);
   pregnant.laborPain = Math.round(clampNumber(pain, 0, 10, 0) * 10) / 10;
@@ -4539,7 +4565,20 @@ function getOversizeVitalityMultiplier(profile, stage, phase) {
 function getLaborProgressMultiplier(profile, stage, phase) {
   const currentPressure = clampNumber(profile?.base?.uterinePressure, 0, getUterinePressureCap(profile), 0);
   const pressureMultiplier = stage === '第三产程' ? 1 : Math.max(0.5, Math.min(1.5, 0.5 + (currentPressure / 150)));
-  return pressureMultiplier * getOversizeVitalityMultiplier(profile, stage, phase);
+  return pressureMultiplier * getOversizeVitalityMultiplier(profile, stage, phase) * getPosteriorMultiplier(profile, stage);
+}
+
+// 枕后位（胎背朝后）：真实分娩模式下第一、第二产程的有效进度打折，疼痛略高
+const POSTERIOR_PROGRESS_MULTIPLIER = 0.8;
+const POSTERIOR_PAIN_BONUS = 0.8;
+
+function isPosteriorPresentingLabor(profile, stage) {
+  if (!isRealisticLabor(profile) || (stage !== '第一产程' && stage !== '第二产程')) return false;
+  return isPosteriorBack(getPresentingFetus(profile?.pregnant || {}));
+}
+
+function getPosteriorMultiplier(profile, stage) {
+  return isPosteriorPresentingLabor(profile, stage) ? POSTERIOR_PROGRESS_MULTIPLIER : 1;
 }
 
 /** 以目前的推进倍率，走到当前产程阶段门槛还需要多少原始小时（多给一点点，确保越过门槛） */
@@ -5260,21 +5299,32 @@ function applyAssistFetalPosition(chatState, args) {
   let summary = '';
   if (action === 'rotate') {
     const hasAngle = args?.targetAngle !== undefined && args?.targetAngle !== null && Number.isFinite(Number(args.targetAngle));
-    if (!hasAngle && !shoulderStuck) return skip('rotate needs targetAngle (0/360 head-down, 180 breech, 90/270 transverse).');
+    const hasBackSide = args?.backSide !== undefined && args?.backSide !== null && String(args.backSide).trim() !== '';
+    const desiredBack = hasBackSide ? normalizeBackSide(String(args.backSide).trim()) : null;
+    if (hasBackSide && !desiredBack) return skip(`backSide must be one of ${BACK_SIDES.join('/')}.`);
+    if (!hasAngle && !desiredBack && !shoulderStuck) {
+      return skip('rotate needs targetAngle (0/360 head-down, 180 breech, 90/270 transverse) or backSide.');
+    }
     const current = Number.isFinite(Number(target.tendencyAngle)) ? wrapAngle(target.tendencyAngle) : 0;
     const desired = hasAngle ? wrapAngle(Number(args.targetAngle)) : current;
     if (!shoulderStuck && depth >= DESCENT_INLET && angleDistance(current, desired) > ENGAGED_ROTATION_LIMIT) {
       return skip(`the fetus is already engaged; it can only be corrected by up to ${ENGAGED_ROTATION_LIMIT} degrees.`);
     }
+    // 入盆后胎背左右已经固定，只能前后对调（例如枕后位转成枕前位）
+    if (desiredBack && depth >= DESCENT_INLET && normalizeBackSide(target.backSide) && desiredBack[0] !== target.backSide[0]) {
+      return skip('the fetus is already engaged; its back can only be turned between anterior and posterior on the same side.');
+    }
     const lacking = requireVitality();
     if (lacking) return lacking;
     target.tendencyAngle = desired;
+    if (desiredBack) target.backSide = desiredBack;
     if (shoulderStuck) {
       delete target.shoulderDystocia;
       target.shoulderRelieved = true;
       summary = `${female}的${label}经转动解开了卡住的肩部`;
     } else {
-      summary = `${female}的${label}被转到${getTendencyAngleLabel(desired)}`;
+      const parts = [hasAngle ? getTendencyAngleLabel(desired) : '', desiredBack ? `胎背朝${desiredBack}` : ''].filter(Boolean);
+      summary = `${female}的${label}被转到${parts.join('、')}`;
     }
   } else if (action === 'lift') {
     if (depth >= 1) return skip('the fetus is already in the birth canal and cannot be pushed back.');

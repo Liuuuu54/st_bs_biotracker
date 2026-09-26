@@ -102,3 +102,72 @@ test('注册：给了合法方位就沿用，没给或乱写就随机补', () =>
   assert.equal(sides[0], '右后');
   for (const side of sides) assert.ok(BACK_SIDES.includes(side));
 });
+
+// ── 胎背会动，也会影响产程 ─────────────────────────────
+const assist = (chatState, args) => applyToolCall(chatState, { name: 'bsAssistFetalPosition', arguments: { female: 'A', action: 'rotate', ...args } });
+
+test('助产 rotate 可以单独转胎背；乱写或什么都没给会被拒绝', () => {
+  const chatState = setup('孕晚期', [fetus(1, { backSide: '左后' })], { pregnantDays: 240, effectivePregnantDays: 240 });
+  assert.equal(assist(chatState, { fetusIndex: 0, backSide: '右前' }).applied, true);
+  assert.equal(P(chatState).pregnant.fetuses[0].backSide, '右前');
+  assert.equal(assist(chatState, { fetusIndex: 0, backSide: '正中' }).applied, false);
+  assert.equal(assist(chatState, { fetusIndex: 0 }).applied, false);
+  assert.equal(P(chatState).pregnant.fetuses[0].backSide, '右前');
+});
+
+test('已入盆的胎儿胎背只能前后对调，不能换左右', () => {
+  const chatState = setup('第一产程', [fetus(1, { backSide: '右后', descentStage: 0 })], {
+    pregnantDays: 280, effectivePregnantDays: 280, laborPhase: '潜伏期', presentingEmbryoId: 1,
+  });
+  assert.equal(assist(chatState, { backSide: '左前' }).applied, false);
+  assert.equal(P(chatState).pregnant.fetuses[0].backSide, '右后');
+  assert.equal(assist(chatState, { backSide: '右前' }).applied, true);
+  assert.equal(P(chatState).pregnant.fetuses[0].backSide, '右前');
+});
+
+test('孕期没有位移的日子偶尔会翻身，结果永远是合法值', () => {
+  let seed = 7;
+  Math.random = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const chatState = setup('孕早期', [fetus(1, { backSide: '左前' })], { pregnantDays: 20, effectivePregnantDays: 20 });
+  const seen = new Set();
+  for (let day = 0; day < 40; day += 1) {
+    applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 1 } });
+    const side = P(chatState).pregnant.fetuses[0].backSide;
+    assert.ok(BACK_SIDES.includes(side));
+    seen.add(side);
+  }
+  assert.ok(seen.size > 1, '孕早期四十天里应该至少翻过一次身');
+});
+
+function labor({ backSide, realistic = true }) {
+  const chatState = setup('第一产程', [fetus(1, { backSide, descentStage: 0 })], {
+    pregnantDays: 280, effectivePregnantDays: 280, laborPhase: '活跃期', presentingEmbryoId: 1, effectiveLaborHours: 0, laborHours: 0,
+  });
+  P(chatState).immune = { realisticLabor: realistic };
+  P(chatState).base.uterinePressure = 60;
+  return chatState;
+}
+
+test('已入盆的枕后位会在产程中自己转成枕前位，左右不变', () => {
+  Math.random = () => 0;
+  const chatState = labor({ backSide: '左后' });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } });
+  assert.equal(P(chatState).pregnant.fetuses[0].backSide, '左前');
+});
+
+test('真实分娩模式下枕后位产程较慢、较痛；非真实模式没有差别', () => {
+  Math.random = () => 0.99;
+  const run = (backSide, realistic) => {
+    const chatState = labor({ backSide, realistic });
+    applyToolCall(chatState, { name: 'bsPassedTime', arguments: { minute: 30 } });
+    return P(chatState).pregnant;
+  };
+  const anterior = run('右前', true);
+  const posterior = run('右后', true);
+  assert.ok(Math.abs(posterior.effectiveLaborHours / anterior.effectiveLaborHours - 0.8) < 0.01,
+    `${posterior.effectiveLaborHours} / ${anterior.effectiveLaborHours}`);
+  assert.ok(posterior.laborPain > anterior.laborPain);
+  const casual = run('右后', false);
+  const casualAnterior = run('右前', false);
+  assert.equal(casual.effectiveLaborHours, casualAnterior.effectiveLaborHours);
+});
