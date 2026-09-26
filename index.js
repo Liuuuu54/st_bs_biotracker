@@ -3865,14 +3865,13 @@ function getPresentationWord(angle) {
   return '斜位';
 }
 
-/** 每胎一个可折叠的段落：标题列（缩图、编号、性别、胎位、阻塞）常驻，其余展开才看；胎教再折一层 */
+/** 每胎一个可折叠的段落：标题列（缩图、胎重、编号、性别、胎位）常驻，其余展开才看；胎教再折一层。先露胎的缩图换上醒目外框 */
 function renderWombFetusCard(item, index, data) {
   const layout = data.womb;
   const drawn = layout.fetuses.find((fetus) => fetus.embryoId === item.embryoId);
   const inner = layout.fetuses.flatMap((fetus) => fetus.inner).find((fetus) => fetus.embryoId === item.embryoId);
   const ownAge = Math.max(0, (Number(data.effectivePregnantDays) || 0) - Math.max(0, Number(item?.conceivedAtDays) || 0));
   const sprite = drawn?.sprite || inner?.sprite || { type: String(item?.embryoType || '胎生'), stage: getSpriteStage(ownAge) };
-  const blocked = drawn?.obstruction ? layout.obstruction?.message : '';
   const gender = String(item?.gender || '').trim() || '无';
   const talents = Array.isArray(item?.talents) ? item.talents : [];
   const id = String(item.embryoId);
@@ -3880,11 +3879,10 @@ function renderWombFetusCard(item, index, data) {
   return `<details class="bs-bt-womb-card" data-womb-fetus="${escapeHtml(id)}"${wombOpenFetuses.has(id) ? ' open' : ''}>
       <summary>
         <span class="bs-bt-womb-thumb-col">
-          <canvas class="bs-bt-womb-thumb" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}" data-angle="${Number(item?.tendencyAngle) || 0}" data-affinity="${Number(item?.affinity) || 0}" role="button" tabindex="0" aria-label="${escapeHtml(`看胎儿 ${index + 1} 的亲和`)}"></canvas>
+          <canvas class="bs-bt-womb-thumb${item?.isPresenting ? ' is-presenting' : ''}" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}" data-angle="${Number(item?.tendencyAngle) || 0}" data-affinity="${Number(item?.affinity) || 0}" role="button" tabindex="0" aria-label="${escapeHtml(`看胎儿 ${index + 1}${item?.isPresenting ? '（先露）' : ''}的亲和`)}"${item?.isPresenting ? ' title="先露"' : ''}></canvas>
           <span class="bs-bt-womb-weight" title="胎重倍率">${escapeHtml(formatFixedDisplay(item?.weight, 2))}×</span>
         </span>
-        <strong class="bs-bt-womb-card-title">胎儿${index + 1}<canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas>${escapeHtml(getPresentationWord(item?.tendencyAngle))}${item?.isPresenting ? '<span class="bs-bt-womb-chip">先露</span>' : ''}</strong>
-        ${blocked ? `<span class="bs-bt-womb-card-alert">${escapeHtml(blocked)}</span>` : ''}
+        <strong class="bs-bt-womb-card-title">胎儿${index + 1}<canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas>${escapeHtml(getPresentationWord(item?.tendencyAngle))}</strong>
       </summary>
       <div class="bs-bt-womb-card-body">
         <span class="bs-bt-womb-card-line">${escapeHtml(summary)}</span>
@@ -3910,6 +3908,7 @@ function renderWombSection(data, badge) {
   return `<div class="bs-bt-track-section bs-bt-womb-section">
       ${badge ? `<div class="bs-bt-track-section-title">${renderTrackTitle('子宫', badge)}</div>` : ''}
       <div class="bs-bt-womb" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${toggle}${replay}${panel}</div>
+      ${data.womb.obstruction?.message ? `<div class="bs-bt-womb-alert" role="alert">${escapeHtml(data.womb.obstruction.message)}</div>` : ''}
     </div>`;
 }
 

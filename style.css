@@ -5315,21 +5315,14 @@
   white-space: nowrap;
 }
 
-/* 阻塞原因独占一整列，不跟标题挤 */
-#bs-biotracker-settings .bs-bt-womb-card > summary .bs-bt-womb-card-alert {
-  grid-column: 1 / -1;
-}
-
-#bs-biotracker-settings .bs-bt-womb-chip {
-  padding: 0 4px;
-  border: 1px solid currentColor;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 400;
-}
-
 #bs-biotracker-settings .bs-bt-womb-thumb {
   cursor: pointer;
+}
+
+/* 先露胎：缩图换上金色外框，不占标题列的宽度 */
+#bs-biotracker-settings .bs-bt-womb-thumb.is-presenting {
+  border: 2px solid #e8b84a;
+  box-shadow: 0 0 0 1px var(--bsbt-border-color);
 }
 
 #bs-biotracker-settings .bs-bt-womb-card-title::after {
@@ -5373,13 +5366,18 @@
   opacity: 0.85;
 }
 
-#bs-biotracker-settings .bs-bt-womb-card-alert {
-  display: block;
-  margin: 2px 0;
-  padding: 1px 4px;
-  border-radius: 3px;
+/* 阻塞警告写在子宫图底下 */
+#bs-biotracker-settings .bs-bt-womb-alert {
+  margin: 8px auto 0;
+  padding: 3px 8px;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  border: 2px solid #b8902a;
+  border-radius: 4px;
   background: rgba(255, 200, 40, 0.35);
   font-weight: 700;
+  text-align: center;
 }
 
 #bs-biotracker-settings .bs-bt-womb-card .bs-bt-fetus-tags {
