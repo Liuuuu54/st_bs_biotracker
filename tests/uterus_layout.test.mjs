@@ -44,6 +44,12 @@ test('未揭晓的异期胎与待着床胚胎不出现在版面里', () => {
   assert.match(layout.summary, /1 胎/);
 });
 
+test('月经周期里还没着床的受精卵不画', () => {
+  const layout = computeUterusLayout(profile('黄体期', [fetus(1)], { days: 0 }));
+  assert.equal(layout.fetuses.length, 0);
+  assert.equal(layout.emptyStage, '黄体期');
+});
+
 test('超过 5 胎只画 5 个，其余以 hiddenCount 回传；先露胎一定在内', () => {
   const fetuses = Array.from({ length: 7 }, (_, i) => fetus(i + 1));
   const layout = computeUterusLayout(profile('第一产程', fetuses, {

@@ -13,7 +13,7 @@
 <body>
 <div id="harness-info">
   <b>BioTracker UI Harness</b>（mock 宿主，非真实 SillyTavern）<br>
-  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件）、贝拉（产后恢复，pregFit 生效）。
+  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件）、贝拉（产后恢复，pregFit 生效）、琪拉（四胎孕晚期）、妲拉（肩难产）、妮拉（入口拥挤）、茉拉（刚受精）。
 </div>
 <script type="module">
   const CHAT_KEY = 'ui-harness-chat';
@@ -155,6 +155,45 @@
           outfit: {
             mainItemId: 1, accessoryItemIds: [2], transientItems: [], wearState: '整齐',
             pregFit: { pregWearPressure: 3.3, gap: { masking: 2.7, support: 4.7, capacity: 4.7, convenience: 2.7 } },
+          },
+        },
+      }),
+      // 子宫图测试：真实分娩模式的肩难产（第 1 胎卡在产道口，会出现闪烁警示框与「!」）
+      妲拉: makeCharacter('妲拉', {
+        base: { stage: '第二产程', days: 0, age: 25, eggs: 0, vitality: 0, uterinePressure: 150 },
+        profile: {
+          immune: { realisticLabor: true },
+          pregnant: {
+            pregnantDays: 280, effectivePregnantDays: 280, laborPhase: '胎体娩出', laborBirthNumber: 1, presentingEmbryoId: 1,
+            fetuses: [
+              { embryoId: 1, fathers: '莱昂', fatherRace: '人类', embryoType: '胎生', gender: '男', weight: 1.2, tendencyAngle: 0, affinity: 10, amnionDurability: 0, descentStage: 3, shoulderDystocia: true, talents: [] },
+              { embryoId: 2, fathers: '莱昂', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 1.0, tendencyAngle: 180, affinity: -10, amnionDurability: 70, descentStage: -1, talents: [] },
+            ],
+          },
+        },
+      }),
+      // 子宫图测试：两胎同时挤在骨盆入口（第一产程，真实分娩模式）
+      妮拉: makeCharacter('妮拉', {
+        base: { stage: '第一产程', days: 0, age: 23, eggs: 0, uterinePressure: 120 },
+        profile: {
+          immune: { realisticLabor: true },
+          pregnant: {
+            pregnantDays: 275, effectivePregnantDays: 275, laborPhase: '活跃期', presentingEmbryoId: 1,
+            fetuses: [
+              { embryoId: 1, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 0.95, tendencyAngle: 0, affinity: 5, amnionDurability: 40, descentStage: 0, talents: [] },
+              { embryoId: 2, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 0.95, tendencyAngle: 0, affinity: -30, amnionDurability: 60, descentStage: 0, inletIntruder: true, talents: [] },
+            ],
+          },
+        },
+      }),
+      // 子宫图测试：刚受精（打开妊娠分页会播一次受精特写，之后可按右下角重播）
+      茉拉: makeCharacter('茉拉', {
+        base: { stage: '黄体期', days: 1, age: 22, eggs: 0, fertilizationDays: 0.3, sperms: [{ male: '凯', race: '人类', derivedType: null, value: 35 }] },
+        profile: {
+          visualCue: { type: 'fertilization', seq: 1 },
+          pregnant: {
+            pregnantDays: 0, effectivePregnantDays: 0,
+            fetuses: [{ embryoId: 1, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 1.0, tendencyAngle: 0, affinity: 0, talents: [] }],
           },
         },
       }),

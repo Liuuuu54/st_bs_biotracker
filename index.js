@@ -3830,13 +3830,24 @@ function renderFetusTagRow(fetus) {
 }
 
 // ---- 子宫像素图与胎儿卡 ----
-// 画布与绘制器跨重绘保留：追踪页每次重绘只把同一张画布搬进新的占位，动画不会被打断。
+// 画布与绘制器跨重绘保留：追踪页每次重绘只把同一张画布换进新的占位，动画不会被打断。
+// 追踪的轮询每一两秒就会重绘一次，所以占位要跟画布同尺寸（否则页面高度瞬间缩短、捲动位置被拉回），
+// 胎儿卡面板的开关、捲动位置与展开的胎教也要跨重绘保留。
 let wombRenderer = null;
 let wombCanvas = null;
 let wombTheme = '';
 let wombCardsOpen = false;
+let wombCardsScrollTop = 0;
+let wombPeekUntil = 0;
+const wombOpenTalents = new Set();
 const WOMB_SEEN_CUE_KEY = 'bs-bt-womb-seen-cue';
+const WOMB_PEEK_MS = 1400;
 const WOMB_MAGNIFIER_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 1h5v2H4zM2 3h2v6H2zM9 3h2v6H9zM4 9h5v2H4zM9 9h2v2H9zM11 11h2v2h-2zM13 13h3v3h-3z"/></svg>';
+const WOMB_REPLAY_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 2h2v12H4zM6 3h2v10H6zM8 4h2v8H8zM10 5h2v6h-2zM12 7h1v2h-1z"/></svg>';
+const WOMB_CUE_LABELS = Object.freeze({
+  insert: '插入', ejaculate: '射精', ovulation: '排卵', fertilization: '受精', surrogacy: '代孕植入',
+  chimera: '嵌合融合', rebirth: '胎内回归', implantation: '着床', implantationFailed: '着床失败', rupture: '破水',
+});
 
 function getStageProgressRatio(profile) {
   const progress = getStageProgress(profile);
@@ -3853,6 +3864,7 @@ function getPresentationWord(angle) {
   return '斜位';
 }
 
+/** Sol 6 式紧凑卡片：缩图＋标题一行＋摘要一行，其余按需要才出现 */
 function renderWombFetusCard(item, index, data) {
   const layout = data.womb;
   const drawn = layout.fetuses.find((fetus) => fetus.embryoId === item.embryoId);
@@ -3863,35 +3875,46 @@ function renderWombFetusCard(item, index, data) {
   const affinity = Number(item?.affinity) || 0;
   const gender = String(item?.gender || '').trim() || '无';
   const talents = Array.isArray(item?.talents) ? item.talents : [];
-  const row = (label, value) => `<div class="bs-bt-track-list-row"><span class="bs-bt-track-list-label">${escapeHtml(label)}</span><span class="bs-bt-track-list-value">${escapeHtml(value)}</span></div>`;
-  return `<article class="bs-bt-womb-card" data-womb-card="${escapeHtml(item.embryoId)}" data-affinity="${affinity}" tabindex="0" role="button" aria-label="${escapeHtml(`在子宫图上标出胎儿 ${index + 1}`)}">
+  const embryoId = escapeHtml(item.embryoId);
+  const summary = [
+    item?.fathers || '未知',
+    formatRaceLabel(item?.fatherRace, item?.fatherDerivedType),
+    `胎重 ${formatFixedDisplay(item?.weight, 2)}×`,
+    AFFINITY_WORDS[getAffinityBand(affinity)],
+  ].join(' · ');
+  const origin = [
+    item?.provider ? `遗传母方 ${item.provider}` : '',
+    item?.chimera ? `嵌合 ${Number(item.chimera.sourceCount) || 2} 颗受精卵` : '',
+  ].filter(Boolean).join(' · ');
+  return `<article class="bs-bt-womb-card" data-womb-card="${embryoId}" data-affinity="${affinity}" tabindex="0" role="button" aria-label="${escapeHtml(`在子宫图上标出胎儿 ${index + 1}`)}">
       <canvas class="bs-bt-womb-thumb" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}" data-angle="${Number(item?.tendencyAngle) || 0}" aria-hidden="true"></canvas>
       <div class="bs-bt-womb-card-body">
-        <div class="bs-bt-womb-card-title"><strong>胎儿 ${index + 1}</strong><canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas><span>${escapeHtml(getPresentationWord(item?.tendencyAngle))}</span></div>
-        ${blocked ? `<div class="bs-bt-womb-card-alert">${escapeHtml(blocked)}</div>` : ''}
+        <strong class="bs-bt-womb-card-title">胎儿 ${index + 1}<canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas>${escapeHtml(getPresentationWord(item?.tendencyAngle))}${item?.isPresenting ? ' · 先露' : ''}</strong>
+        <span class="bs-bt-womb-card-line">${escapeHtml(summary)}</span>
+        ${origin ? `<span class="bs-bt-womb-card-line">${escapeHtml(origin)}</span>` : ''}
+        ${blocked ? `<span class="bs-bt-womb-card-alert">${escapeHtml(blocked)}</span>` : ''}
         ${renderFetusTagRow(item)}
-        ${row('父方姓名', item?.fathers || '未知')}
-        ${item?.provider ? row('遗传母方', item.provider) : ''}
-        ${item?.chimera ? row('嵌合来源', `${Number(item.chimera.sourceCount) || 2} 颗受精卵`) : ''}
-        ${row('父方种族', formatRaceLabel(item?.fatherRace, item?.fatherDerivedType))}
-        ${row('体重倍率', formatFixedDisplay(item?.weight, 2))}
-        ${row('亲和', AFFINITY_WORDS[getAffinityBand(affinity)])}
-        ${talents.length > 0 ? `<details class="bs-bt-womb-talents"><summary>胎教（${talents.length}）</summary><div class="bs-bt-womb-talent-list">${escapeHtml(talents.map((talent) => { const level = Number(talent.level) || 0; return `${talent.name}(${level > 0 ? '+' : ''}${level})`; }).join('、'))}</div></details>` : ''}
+        ${talents.length > 0 ? `<details class="bs-bt-womb-talents" data-womb-talents="${embryoId}"${wombOpenTalents.has(String(item.embryoId)) ? ' open' : ''}><summary>胎教（${talents.length}）</summary><span class="bs-bt-womb-card-line">${escapeHtml(talents.map((talent) => { const level = Number(talent.level) || 0; return `${talent.name}(${level > 0 ? '+' : ''}${level})`; }).join('、'))}</span></details>` : ''}
       </div>
     </article>`;
 }
 
 function renderWombSection(data, badge) {
   const cards = data.showPregnantFields ? data.fetuses : [];
+  const cue = data.visualCue;
   const toggle = cards.length > 0
     ? `<button type="button" class="bs-bt-womb-cards-toggle" data-womb-cards-toggle aria-controls="bs-bt-womb-cards" aria-expanded="${wombCardsOpen}" aria-label="查看胎儿卡" title="胎儿卡">${WOMB_MAGNIFIER_SVG}</button>`
     : '';
+  const replay = cue?.type && WOMB_CUE_LABELS[cue.type]
+    ? `<button type="button" class="bs-bt-womb-replay" data-womb-replay="${escapeHtml(cue.type)}" aria-label="${escapeHtml(`重播最近的特写：${WOMB_CUE_LABELS[cue.type]}`)}" title="${escapeHtml(`重播：${WOMB_CUE_LABELS[cue.type]}`)}">${WOMB_REPLAY_SVG}</button>`
+    : '';
+  const peeking = Date.now() < wombPeekUntil ? ' is-peeking' : '';
   const panel = cards.length > 0
-    ? `<section id="bs-bt-womb-cards" class="bs-bt-womb-cards" role="region" aria-label="胎儿卡"${wombCardsOpen ? '' : ' hidden'}>${cards.map((item, index) => renderWombFetusCard(item, index, data)).join('')}</section>`
+    ? `<section id="bs-bt-womb-cards" class="bs-bt-womb-cards${peeking}" role="region" aria-label="胎儿卡"${wombCardsOpen ? '' : ' hidden'}><h3>胎儿卡</h3>${cards.map((item, index) => renderWombFetusCard(item, index, data)).join('')}</section>`
     : '';
   return `<div class="bs-bt-track-section bs-bt-womb-section">
       ${badge ? `<div class="bs-bt-track-section-title">${renderTrackTitle('子宫', badge)}</div>` : ''}
-      <div class="bs-bt-womb" data-womb-host>${toggle}${panel}</div>
+      <div class="bs-bt-womb" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${toggle}${replay}${panel}</div>
     </div>`;
 }
 
@@ -3922,7 +3945,25 @@ function setWombCardsOpen(host, open) {
   toggle?.setAttribute('aria-expanded', String(open));
 }
 
-/** 追踪页重绘后，把子宫画布搬进新占位、画胎儿缩图与性别图标，并在有新事件时播一次特写 */
+/** 淡出期间重绘出来的新面板也要按时恢复，否则会一直停在半透明 */
+function scheduleWombPeekEnd(panel) {
+  const remaining = wombPeekUntil - Date.now();
+  if (remaining <= 0) {
+    panel.classList.remove('is-peeking');
+    return;
+  }
+  // 计时器可能比 Date.now() 早一两毫秒触发，到时再检查一次，没到就续等
+  setTimeout(() => scheduleWombPeekEnd(panel), remaining + 20);
+}
+
+/** 点卡片时面板暂时淡出，让底下子宫图上的亲和闪光看得到 */
+function peekWombCards(panel) {
+  wombPeekUntil = Date.now() + WOMB_PEEK_MS;
+  panel.classList.add('is-peeking');
+  scheduleWombPeekEnd(panel);
+}
+
+/** 追踪页重绘后，把子宫画布换进同尺寸占位、画胎儿缩图与性别图标，并在有新事件时播一次特写 */
 function mountWombView(ctx, content, viewModel) {
   const host = content.querySelector('[data-womb-host]');
   if (!host) return;
@@ -3934,7 +3975,9 @@ function mountWombView(ctx, content, viewModel) {
     wombCanvas.className = 'bs-bt-womb-canvas';
     wombCanvas.setAttribute('role', 'img');
   }
-  host.prepend(wombCanvas);
+  const slot = host.querySelector('[data-womb-slot]');
+  if (slot) slot.replaceWith(wombCanvas);
+  else host.prepend(wombCanvas);
   if (!wombRenderer) {
     wombRenderer = createUterusRenderer(wombCanvas, { themeName: theme, animated });
     wombTheme = theme;
@@ -3957,20 +4000,34 @@ function mountWombView(ctx, content, viewModel) {
       wombRenderer.playCue(cue.type);
     }
   }
+  host.querySelector('[data-womb-replay]')?.addEventListener('click', (event) => {
+    wombRenderer?.playCue(String(event.currentTarget.dataset.wombReplay || ''));
+  });
 
   host.querySelectorAll('canvas[data-sprite-type]').forEach((node) => {
     drawFetusThumb(node, { type: node.dataset.spriteType, stage: Number(node.dataset.spriteStage) || 0 }, Number(node.dataset.angle) || 0, theme);
   });
   host.querySelectorAll('canvas[data-womb-gender]').forEach((node) => drawGenderIcon(node, node.dataset.wombGender));
   host.querySelector('[data-womb-cards-toggle]')?.addEventListener('click', () => setWombCardsOpen(host, !wombCardsOpen));
-  host.querySelector('#bs-bt-womb-cards')?.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    setWombCardsOpen(host, false);
-    host.querySelector('[data-womb-cards-toggle]')?.focus();
-  });
+  const panel = host.querySelector('#bs-bt-womb-cards');
+  if (panel) {
+    scheduleWombPeekEnd(panel);
+    panel.scrollTop = wombCardsScrollTop;
+    panel.addEventListener('scroll', () => { wombCardsScrollTop = panel.scrollTop; });
+    panel.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      setWombCardsOpen(host, false);
+      host.querySelector('[data-womb-cards-toggle]')?.focus();
+    });
+  }
+  host.querySelectorAll('[data-womb-talents]').forEach((node) => node.addEventListener('toggle', () => {
+    if (node.open) wombOpenTalents.add(node.dataset.wombTalents);
+    else wombOpenTalents.delete(node.dataset.wombTalents);
+  }));
   host.querySelectorAll('[data-womb-card]').forEach((card) => {
     const flash = (event) => {
       if (event.target.closest('summary, details')) return;
+      if (panel) peekWombCards(panel);
       wombRenderer?.flash(Number(card.dataset.wombCard), Number(card.dataset.affinity) || 0);
     };
     card.addEventListener('click', flash);

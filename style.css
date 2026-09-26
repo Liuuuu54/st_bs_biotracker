@@ -5188,23 +5188,27 @@
 #bs-biotracker-settings .bs-bt-womb {
   position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  justify-content: center;
 }
 
+/* 占位与画布同尺寸：追踪页重绘时页面高度不变，捲动位置才不会被拉回 */
+#bs-biotracker-settings .bs-bt-womb-slot,
 #bs-biotracker-settings .bs-bt-womb-canvas {
   display: block;
   width: 192px;
   height: 240px;
-  image-rendering: pixelated;
+  box-sizing: content-box;
   border: 2px solid var(--bsbt-border-color);
   border-radius: 4px;
 }
 
-#bs-biotracker-settings .bs-bt-womb-cards-toggle {
+#bs-biotracker-settings .bs-bt-womb-canvas {
+  image-rendering: pixelated;
+}
+
+#bs-biotracker-settings .bs-bt-womb-cards-toggle,
+#bs-biotracker-settings .bs-bt-womb-replay {
   position: absolute;
-  top: 6px;
-  right: calc(50% - 96px + 6px);
   z-index: 3;
   display: grid;
   place-items: center;
@@ -5218,7 +5222,19 @@
   cursor: pointer;
 }
 
-#bs-biotracker-settings .bs-bt-womb-cards-toggle svg {
+/* 胎儿卡按钮在左上，特写小窗在右上 */
+#bs-biotracker-settings .bs-bt-womb-cards-toggle {
+  top: 6px;
+  left: calc(50% - 96px + 6px);
+}
+
+#bs-biotracker-settings .bs-bt-womb-replay {
+  bottom: 6px;
+  right: calc(50% - 96px + 6px);
+}
+
+#bs-biotracker-settings .bs-bt-womb-cards-toggle svg,
+#bs-biotracker-settings .bs-bt-womb-replay svg {
   width: 16px;
   height: 16px;
   shape-rendering: crispEdges;
@@ -5229,30 +5245,45 @@
   color: var(--bsbt-lcd-bg);
 }
 
-/* 胎儿卡接在子宫图下方而不是盖在上面：点卡片时要看得到图上的亲和闪光 */
+/* Sol 6 式：浮在子宫图上、按钮下方的紧凑面板 */
 #bs-biotracker-settings .bs-bt-womb-cards {
-  align-self: stretch;
-  margin-top: 8px;
-  max-height: 260px;
+  position: absolute;
+  top: 42px;
+  left: calc(50% - 96px + 6px);
+  z-index: 4;
+  width: 184px;
+  max-height: 200px;
   overflow-y: auto;
-  padding: 6px 10px;
+  padding: 8px 10px;
+  box-sizing: border-box;
   border: 2px solid var(--bsbt-border-color);
-  border-radius: 6px;
   background: var(--bsbt-lcd-bg);
+  color: var(--bsbt-lcd-text);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45);
+  font-size: 11px;
+  line-height: 1.45;
+  transition: opacity 0.15s ease-out;
+}
+
+/* 点卡片时面板暂时淡出，看得到底下的亲和闪光 */
+#bs-biotracker-settings .bs-bt-womb-cards.is-peeking {
+  opacity: 0.12;
+}
+
+#bs-biotracker-settings .bs-bt-womb-cards h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
 }
 
 #bs-biotracker-settings .bs-bt-womb-card {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr);
   gap: 8px;
-  align-items: start;
-  padding: 8px 0;
-  border-top: 1px solid rgba(0, 0, 0, 0.2);
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.25);
   cursor: pointer;
-}
-
-#bs-biotracker-settings .bs-bt-womb-card:first-child {
-  border-top: 0;
 }
 
 #bs-biotracker-settings .bs-bt-womb-card:focus-visible {
@@ -5261,8 +5292,8 @@
 }
 
 #bs-biotracker-settings .bs-bt-womb-thumb {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   image-rendering: pixelated;
   border: 1px solid var(--bsbt-border-color);
 }
@@ -5270,31 +5301,36 @@
 #bs-biotracker-settings .bs-bt-womb-card-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: 4px;
+  font-size: 12px;
 }
 
 #bs-biotracker-settings .bs-bt-womb-gender {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   image-rendering: pixelated;
   background: var(--bsbt-lcd-text);
   border-radius: 2px;
 }
 
+#bs-biotracker-settings .bs-bt-womb-card-line {
+  display: block;
+  opacity: 0.85;
+}
+
 #bs-biotracker-settings .bs-bt-womb-card-alert {
-  margin-bottom: 4px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(255, 200, 40, 0.3);
+  display: block;
+  margin: 2px 0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 200, 40, 0.35);
   font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-womb-card .bs-bt-fetus-tags {
+  margin: 2px 0;
 }
 
 #bs-biotracker-settings .bs-bt-womb-talents summary {
   cursor: pointer;
-  padding: 2px 0;
-}
-
-#bs-biotracker-settings .bs-bt-womb-talent-list {
-  padding: 2px 0 2px 12px;
 }

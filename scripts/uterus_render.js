@@ -611,10 +611,10 @@ export function createUterusRenderer(canvas, { themeName = 'retro', animated = t
     }
   }
 
-  // 小窗特写：左上角，约占画面一半；k 把 Sol 6 的 38×38 构图等比放大
+  // 小窗特写：右上角，约占画面一半（左上角留给胎儿卡按钮）；k 把 Sol 6 的 38×38 构图等比放大
   function cueInset(type, elapsed) {
     const { px, ellipse, ring, line } = pen;
-    const x = 3;
+    const x = UTERUS_CANVAS.width - 3 - 48;
     const y = 3;
     const W = 48;
     const H = 52;

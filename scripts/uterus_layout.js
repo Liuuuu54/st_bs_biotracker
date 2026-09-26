@@ -89,8 +89,11 @@ export function computeUterusLayout(profile, options = {}) {
   const gestating = GESTATION_STAGES.includes(stage);
   const days = gestating ? effectiveDays : 0;
 
-  // 看得见、已着床的胎儿；被包在宿主体内的内胎另外挂在宿主身上
-  const visible = allFetuses.filter((fetus) => fetus && !fetus.pendingImplantation && isFetusKnownToCharacter(fetus));
+  // 看得见、已着床的胎儿；被包在宿主体内的内胎另外挂在宿主身上。
+  // 一般受孕在着床前没有 pendingImplantation 标记，靠「还在月经周期阶段」判断，所以只在妊娠阶段取胎儿
+  const visible = gestating
+    ? allFetuses.filter((fetus) => fetus && !fetus.pendingImplantation && isFetusKnownToCharacter(fetus))
+    : [];
   const isEnclosed = (fetus) => Boolean(fetus.nestedInEmbryoId) && !fetus.nestedReleased
     && visible.some((host) => host.embryoId === fetus.nestedInEmbryoId);
   const occupants = visible.filter((fetus) => !isEnclosed(fetus));
