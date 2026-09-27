@@ -979,6 +979,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
     delete profile.wardrobe;
     delete profile.outfit;
   }
+  // 孕态描述只在妊娠相关阶段有用；月经阶段照送等于每人白占一两百 token
+  if (!sendPregnantState && profile.descriptions) delete profile.descriptions.pregnantDescription;
 
   delete profile.bio;
   // immune 只留 metabolism 一项：prompt 据此不发本人的需求与衍生需求说明
@@ -1052,14 +1054,36 @@ function buildOffscreenCharacterState(item, diaryLimit = 0, wardrobeOn = true) {
   };
 }
 
+/** 空值要保留的栏位：outfit.mainItemId=null 表示「衣着未记录」，与省略不同 */
+const KEEP_EMPTY_KEYS = new Set(['mainItemId']);
+
+/**
+ * 删掉值为 null、空字串、空阵列或空物件的栏位（递回）；阵列元素本身不删，下标不变。
+ * 多人时这些预设空值每人都要占几十 token，省略即代表「无」
+ */
+function pruneEmptyFields(value) {
+  if (Array.isArray(value)) return value.map(pruneEmptyFields);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const next = pruneEmptyFields(raw);
+    const empty = next === null || next === undefined || next === ''
+      || (Array.isArray(next) && next.length === 0)
+      || (typeof next === 'object' && next !== null && !Array.isArray(next) && Object.keys(next).length === 0);
+    if (empty && !KEEP_EMPTY_KEYS.has(key)) continue;
+    out[key] = next;
+  }
+  return out;
+}
+
 function buildTrackerStateView(existingState, settings = null) {
   const characterCount = Object.keys(existingState || {}).length;
   const diaryLimit = getDiaryRecentLimit(settings, characterCount);
   const wardrobeOn = hasWardrobeContent(existingState);
   return Object.fromEntries(
     Object.entries(existingState).map(([name, item]) => {
-      if (item?.profile?.base?.isHere === false) return [name, buildOffscreenCharacterState(item, diaryLimit, wardrobeOn)];
-      return [name, buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn)];
+      if (item?.profile?.base?.isHere === false) return [name, pruneEmptyFields(buildOffscreenCharacterState(item, diaryLimit, wardrobeOn))];
+      return [name, pruneEmptyFields(buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn))];
     }),
   );
 }

@@ -288,3 +288,25 @@ test('着衣系统是扩充：全员衣着未记录时不送衣柜工具、说�
   assert.equal(on.available_tools.some((tool) => tool.name === 'bsChangeOutfit'), true);
   assert.equal('outfit' in on.existing_state['艾拉'].profile, true, '开启后未记录的角色也送，才能直接换装');
 });
+
+test('状态视图省略空值与非妊娠期的孕态描述；outfit.mainItemId=null 保留', () => {
+  const ctx = makeContext();
+  const settings = state.getSettings(ctx);
+  const aila = settings.chatStates[CHAT_KEY].characters['艾拉'];
+  aila.profile.descriptions = { normalDescription: '外貌|黑发;;', pregnantDescription: '孕态|隆起;;' };
+  aila.profile.base.derivedType = null;
+  aila.profile.base.sperms = [];
+  aila.profile.outfit.mainItemId = null;
+  const sent = buildTrackerPayload(ctx, settings).existing_state['艾拉'].profile;
+  assert.equal(sent.descriptions.normalDescription, '外貌|黑发;;');
+  assert.equal('pregnantDescription' in sent.descriptions, false, '卵泡期不送孕态描述');
+  assert.equal('derivedType' in sent.base, false);
+  assert.equal('sperms' in sent.base, false);
+  assert.equal('children' in sent, false);
+  assert.equal(sent.outfit.mainItemId, null, '衣着未记录的 null 要保留');
+
+  aila.profile.base.stage = '孕中期';
+  aila.profile.pregnant = { pregnantDays: 140, effectivePregnantDays: 140, fetuses: [] };
+  const pregnant = buildTrackerPayload(ctx, settings).existing_state['艾拉'].profile;
+  assert.equal(pregnant.descriptions.pregnantDescription, '孕态|隆起;;');
+});

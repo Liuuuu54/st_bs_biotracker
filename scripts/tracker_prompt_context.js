@@ -52,6 +52,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- bio 与 immune 大多属于内部运行参数，tracker 默认不会完整发给你；但与剧情表达直接相关的少数 bio 字段可以发送。',
   '- 若角色带有 immune.metabolism=true，则 metabolism、pregnant.nutrition 与 blockage/acceleration/expansion 都不会发给你，本人的衍生需求说明也不发，因为该角色不受代谢累积影响；不要为她调用 bsExcreteMetabolism。',
   '- 若角色带有 offscreen=true，表示该角色当前不在场，existing_state 只提供精简状态，不代表角色不存在。',
+  '- 值为 null、空字串、空列表或空物件的字段一律省略，省略即代表「无」（例如没有 sperms、没有 children、derivedType 不存在）；唯一例外是 outfit.mainItemId=null，会保留以表示衣着未记录。',
   '',
   '[base]',
   '- isHere: 是否在场。false 时角色仍会随时间推进，但幕外角色只发送少量状态给你。',
@@ -214,7 +215,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- gap 表示衣物该维度扣除孕期压力后的余裕。一般 gap 约 3 以上表示仍有余裕；0 到 2 表示开始吃紧；-1 到 -3 表示明显冲突；-4 以下表示该维度严重失效。按具体维度叙述：masking 失效是轮廓、孕肚或胸腹变化难藏；support 失效是承托不足、下坠、晃动或重心负担外溢；capacity 失效是版型固定、尺寸死、腰腹胸臀被迫撑紧或扣合困难；convenience 失效是行动、穿脱、如厕或排解需求明显受阻。不要把 gap 数值直接写进叙事，除非是调试说明。',
   '',
   '[descriptions]',
-  '- normalDescription / pregnantDescription 为文字描述栏位。',
+  '- normalDescription / pregnantDescription 为文字描述栏位；pregnantDescription 只在妊娠相关阶段（有胎儿、孕期、产兆前驱、产程、产后恢复、假孕期）发送，其余阶段不要更新它。',
   '- 两者格式固定为：字段名|描述内容;;字段名|描述内容;;...字段名|描述内容;;',
   '- 使用 bsSetDescription 前，必须逐一检查该描述栏位全部既有子字段；未传入的子字段会保留旧值，且仅代表它已检查并确认完全不变。不得为了简短而省略受本轮剧情、姿势、衣着、表情、身体状态或环境影响的字段。',
   '- 不要新增角色原本没有的描述子字段；只能更新 existing_state 中该角色该 descriptions 已存在的字段名。唯一例外：当本提示词包含 [pregnantDescription 初始化] 段时，可为其中点名角色的空 pregnantDescription 建立规范内的首批子字段。',
@@ -384,6 +385,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
   const profiles = Object.values(existingState || {}).map((item) => item?.profile || {});
   const lines = [
     '[状态字段速读]',
+    '- 值为空的字段一律省略，省略即代表「无」。',
     '- base：vitality 活力、psyStress 情压，体质与精神倾向看 *LevelText；libido 性欲；uterinePressure 宫压（上限随孕程提高，越高越接近流产或分娩）；eggs 可受精卵数；sperms 为体内残留精液，value 每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。',
   ];
   if (profiles.some((profile) => profile.metabolism)) {
