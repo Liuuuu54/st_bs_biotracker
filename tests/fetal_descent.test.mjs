@@ -384,7 +384,7 @@ const crowdingSetup = (over = {}, leadOver = {}) => realisticAt('第二产程', 
   fetus(2, { descentStage: -1, tendencyAngle: 0, weight: 0.9, affinity: -30, ...over }),
 ], { laborPhase: '间歇期', laborBirthNumber: 1, presentingEmbryoId: 1 });
 
-test('双胎互锁：臀位先露胎在入口，头位、胎重相近、排斥母体、宫压够强的第二胎挤进来互锁，胎体下降停住', () => {
+test('双胎互锁：臀位先露胎在入口，头位、胎重相近、宫压够强的第二胎挤进来互锁，胎体下降停住；不看亲和', () => {
   Math.random = () => 0;
   const chatState = crowdingSetup();
   passHours(chatState, 3);
@@ -392,6 +392,11 @@ test('双胎互锁：臀位先露胎在入口，头位、胎重相近、排斥�
   assert.equal(P(chatState).pregnant.laborPhase, '胎体下降');
   assert.equal(P(chatState).pregnant.effectiveLaborHours, 0);
   assert.match(String(P(chatState).notify.firstly), /互锁/);
+
+  Math.random = () => 0;
+  const fond = crowdingSetup({ affinity: 40 });
+  passHours(fond, 3);
+  assert.deepEqual(depths(fond), [0, 0], '亲近母体的第二胎一样会互锁');
 });
 
 test('构型不对就不会挤进入口：先露头位、或第二胎不是头位时，第二胎留在子宫低位', () => {
@@ -403,7 +408,7 @@ test('构型不对就不会挤进入口：先露头位、或第二胎不是头�
   }
 });
 
-for (const [label, over] of [['affinity = -24', { affinity: -24 }], ['胎重差距过大', { weight: 0.6 }]]) {
+for (const [label, over] of [['胎重差距过大', { weight: 0.6 }]]) {
   test(`病理性入盆的门槛未达（${label}）时留在子宫低位`, () => {
     Math.random = () => 0;
     const chatState = crowdingSetup(over);

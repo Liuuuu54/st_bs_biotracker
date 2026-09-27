@@ -2169,7 +2169,7 @@ function stepLaborFetalActivity(profile, stage) {
   });
 
   // 真实模式的病理性突破：先露胎已在入口 0，另一胎同一小时由 -1 往下，
-  // 且胎重相近、对母体明显排斥、宫压够强时，它也挤进入口。同一结算只允许编号最小的一胎尝试
+  // 且胎重相近、宫压够强时，它也挤进入口（互锁只看构型，不看亲和）。同一结算只允许编号最小的一胎尝试
   const intruder = pickInletIntruder(profile, stage, intents);
 
   // 第二阶段：统一结算；非领头胎儿在产程中最多到子宫低位，入口由协调函数把关
@@ -2218,7 +2218,6 @@ function pickInletIntruder(profile, stage, intents) {
     .filter((fetus) => {
       const weight = clampNumber(fetus.weight, 0.33, 3.0, 1.0);
       return Math.min(weight, presentingWeight) / Math.max(weight, presentingWeight) >= INLET_INTRUSION_WEIGHT_RATIO
-        && clampNumber(fetus.affinity, -50, 50, 0) <= INLET_INTRUSION_AFFINITY
         && isLockedTwins(presenting, fetus);
     })
     .sort((left, right) => Number(left.embryoId) - Number(right.embryoId));
@@ -3702,7 +3701,6 @@ function getDescentStage(fetus) {
 const OBSTRUCTION_STAGES = Object.freeze(['产兆前驱', '第一产程', '第二产程']);
 /** 病理性双胎同时入盆的门槛 */
 const INLET_INTRUSION_WEIGHT_RATIO = 0.85;
-const INLET_INTRUSION_AFFINITY = -25;
 const INLET_INTRUSION_PRESSURE_RATIO = 0.66;
 
 /** 各类硬阻塞可用的助产解法，写进难产警示 */
