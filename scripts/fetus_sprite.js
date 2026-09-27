@@ -1,23 +1,49 @@
-// 胎儿像素图：以几何部件描述，依实际要画的大小、方向、镜像与挤压直接栅格化成像素格，
+// 子宫图的胎儿、卵与不定型：以几何部件描述，依实际要画的大小、方向、镜像与挤压直接栅格化成像素格，
 // 不缩放、不旋转点阵图，所以 8 个方向与任何尺寸都是干净的原生像素。只产生色调代号，
 // 颜色由渲染层依主题色盘决定；没有 DOM 依赖，可在 node 里测。
 //
-// 造型比例取自扁平胎儿图示：浅色大圆头压在一块倾斜的椭圆身体上，手脚各一截往前伸的短肢，
+// 胎儿的造型比例取自扁平胎儿图示：浅色大圆头压在一块倾斜的椭圆身体上，手脚各一截往前伸的短肢，
 // 胎生有一段脐带从腹部弯出。没有外框，只靠色调分部件。孕早期是大头拖一截弯尾巴的胚胎。
 // 设计座标：头朝下、胎背在左、手脚与脸朝右；angle 0 即头位，镜像代表胎背朝右。
 
-// 这些胚型阶段是胎儿形态，改用本模组；其余（卵、不定型）仍走原本的画法
-export function usesFetusSprite(type, stage) {
+// 胎儿形态的胚型阶段；其余阶段是卵（卵生全期、卵胎生孕早、胎转卵生孕晚）或不定型
+export function isFetalForm(type, stage) {
   if (type === '胎生') return true;
   if (type === '卵胎生') return stage >= 1;
   if (type === '胎转卵生') return stage <= 1;
   return false;
 }
 
+const KNOWN_TYPES = new Set(['胎生', '卵生', '卵胎生', '胎转卵生', '不定型']);
+
+/** 胎转卵生孕晚的羊膜已经硬化、紧贴在蛋上（画在卵的图块里），外面不再有羊水囊；其余有囊的阶段照常画 */
+export function hasFluidSac(type, stage) {
+  return !(type === '胎转卵生' && stage === 2);
+}
+
+
+
 const circle = (x, y, r) => ({ kind: 'circle', x, y, r });
 const ellipse = (x, y, rx, ry, deg) => ({ kind: 'ellipse', x, y, rx, ry, deg });
 const capsule = (x0, y0, x1, y1, r) => ({ kind: 'capsule', x0, y0, x1, y1, r });
 const polyline = (points, r, minPx = 0) => ({ kind: 'polyline', points, r, minPx });
+const polygon = (points) => ({ kind: 'polygon', points });
+// 网格：落在外形里、又落在两组斜线上的点；线宽至少约一像素
+const lattice = (shape, period, width, keep = null) => ({ kind: 'lattice', shape, period, width, keep });
+// 贴在蛋形外缘的一圈膜：蛋形外、往外 px 像素以内
+const film = (shape, px, keep = null) => ({ kind: 'film', shape, px, keep });
+// 蛋形：上下两半各自的纵半径，尖端朝上
+const egg = (x, y, rx, ryTop, ryBottom) => ({ kind: 'egg', x, y, rx, ryTop, ryBottom });
+
+/** 把部件缩放后平移（放进卵里当影子用） */
+function placePrim(prim, k, ox, oy) {
+  const P = (x, y) => [ox + x * k, oy + y * k];
+  if (prim.kind === 'circle') return circle(ox + prim.x * k, oy + prim.y * k, prim.r * k);
+  if (prim.kind === 'ellipse') return ellipse(ox + prim.x * k, oy + prim.y * k, prim.rx * k, prim.ry * k, prim.deg);
+  if (prim.kind === 'capsule') return capsule(ox + prim.x0 * k, oy + prim.y0 * k, ox + prim.x1 * k, oy + prim.y1 * k, prim.r * k);
+  if (prim.kind === 'polyline') return polyline(prim.points.map(([x, y]) => P(x, y)), prim.r * k, prim.minPx);
+  return prim;
+}
 
 function segDist2(px, py, x0, y0, x1, y1) {
   const dx = x1 - x0;
@@ -31,6 +57,32 @@ function segDist2(px, py, x0, y0, x1, y1) {
 function inside(prim, x, y, scale) {
   if (prim.kind === 'circle') return (x - prim.x) ** 2 + (y - prim.y) ** 2 <= prim.r ** 2;
   if (prim.kind === 'capsule') return segDist2(x, y, prim.x0, prim.y0, prim.x1, prim.y1) <= prim.r ** 2;
+  if (prim.kind === 'film') {
+    if (inside(prim.shape, x, y, scale) || (prim.keep && !prim.keep(x, y))) return false;
+    const d = prim.px / scale;
+    const grown = { ...prim.shape, rx: prim.shape.rx + d, ryTop: prim.shape.ryTop + d, ryBottom: prim.shape.ryBottom + d };
+    return inside(grown, x, y, scale);
+  }
+  if (prim.kind === 'lattice') {
+    if (!inside(prim.shape, x, y, scale) || (prim.keep && !prim.keep(x, y))) return false;
+    const w = Math.max(prim.width, 0.9 / scale) / prim.period;
+    const frac = (v) => v - Math.floor(v);
+    return frac((x + y) / prim.period) < w || frac((x - y) / prim.period) < w;
+  }
+  if (prim.kind === 'polygon') {
+    let hit = false;
+    const pts = prim.points;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i, i += 1) {
+      const [xi, yi] = pts[i];
+      const [xj, yj] = pts[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+    }
+    return hit;
+  }
+  if (prim.kind === 'egg') {
+    const ry = y < prim.y ? prim.ryTop : prim.ryBottom;
+    return ((x - prim.x) / prim.rx) ** 2 + ((y - prim.y) / ry) ** 2 <= 1;
+  }
   if (prim.kind === 'ellipse') {
     const a = (prim.deg * Math.PI) / 180;
     const dx = x - prim.x;
@@ -122,12 +174,111 @@ function eggEmbryoModel() {
   };
 }
 
-function getModel(type, stage) {
+/**
+ * 卵：尖端朝上的蛋形，浅色壳、右下一阶暗面、左上一点高光。
+ * 卵生与胎转卵生的胚胎是产后（恢复期）才孵的，卵在子宫里看不到胎儿，只看得到卵本身长成：
+ * 孕早软壳透出一颗亮黄蛋黄，孕中壳变厚、蛋黄只剩影子，孕晚硬壳长成、不透明、带几点斑纹。
+ * 卵胎生是在子宫里孵的，它的孕早卵看得到蛋黄与一点小胚胎
+ */
+function eggModel(type, stage) {
+  const w = 0.76;
+  const parts = [['eggShell', [egg(0.38, 0.54, 0.38, 0.54, 0.46)]]];
+  if (type === '卵胎生') {
+    const embryo = embryoModel({ cord: false });
+    const k = 0.3;
+    parts.push(['yolk', [circle(0.38, 0.62, 0.15)]]);
+    parts.push(...embryo.parts.map(([, prims]) => ['ghost', prims.map((prim) => placePrim(prim, k, 0.38 - (embryo.w * k) / 2, 0.5 - k / 2))]));
+  } else if (stage === 0) {
+    parts.push(['yolk', [circle(0.38, 0.58, 0.19)]]);
+  } else if (stage === 1) {
+    parts.push(['ghost', [circle(0.38, 0.6, 0.17)]]);
+  } else {
+    parts.push(['speck', [circle(0.56, 0.36, 0.035), circle(0.26, 0.62, 0.03), circle(0.5, 0.74, 0.04), circle(0.62, 0.58, 0.028), circle(0.34, 0.86, 0.03)]]);
+  }
+  parts.push(['shine', [circle(0.2, 0.3, 0.05), circle(0.24, 0.24, 0.035)]]);
+  return { w, h: 1, parts, head: null, eyeSide: [], eyesFront: [], mouth: null };
+}
+
+/** 羊膜耐久分四级，与羊水囊的膜线同一套：完整、变薄、撕开、已破 */
+export function membraneLevel(durability) {
+  const d = Number.isFinite(Number(durability)) ? Number(durability) : 100;
+  if (d <= 0) return 'none';
+  if (d < 30) return 'torn';
+  if (d < 60) return 'thin';
+  return 'full';
+}
+
+// 固定的伪随机：同一格每次结果相同，缺口才不会闪
+const hash01 = (a, b) => {
+  const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+  return v - Math.floor(v);
+};
+
+/**
+ * 胎转卵生孕晚：和卵生一样的蛋形，壳上一层菱形的结晶格（永远都在）；
+ * 硬化的羊膜是另外一层，紧贴在蛋上——整颗蒙一层偏冷的膜色、外缘贴一圈膜线。
+ * 膜表示羊膜耐久：完整时整颗蒙着、变薄时一块一块缺、撕开时靠宫口那端（下方）露出殼、破了就只剩带结晶格的蛋壳。
+ * 外面不再有羊水囊。胚胎产后才孵，看不到里面
+ */
+function latticeEggModel(level = 'full') {
+  const shape = egg(0.38, 0.54, 0.38, 0.54, 0.46);
+  const period = 0.2;
+  const parts = [['eggShell', [shape]]];
+  if (level !== 'none') {
+    const covered = (x, y) => {
+      if (level === 'torn' && y > 0.62) return false;
+      if (level === 'full') return true;
+      const patch = hash01(Math.floor((x + y) / (period * 1.5)), Math.floor((x - y) / (period * 1.5)));
+      return patch > (level === 'thin' ? 0.35 : 0.5);
+    };
+    const rim = (x, y) => {
+      if (level === 'torn' && y > 0.62) return false;
+      if (level === 'full') return true;
+      const deg = Math.floor(((Math.atan2(y - 0.54, x - 0.38) * 180) / Math.PI + 360) / 14);
+      return hash01(deg, 7) > (level === 'thin' ? 0.3 : 0.45);
+    };
+    parts.push(['eggFilm', [lattice(shape, 1e9, 1e9, covered)]]);
+    parts.push([level === 'full' ? 'membrane' : 'membraneThin', [film(shape, 1, rim)]]);
+  }
+  parts.push(['lattice', [lattice(shape, period, 0.03)]]);
+  parts.push(['shine', [circle(0.2, 0.3, 0.05), circle(0.24, 0.24, 0.035)]]);
+  return { w: 0.76, h: 1, parts, head: null, eyeSide: [], eyesFront: [], mouth: null };
+}
+
+/**
+ * 不定型当史莱姆：圆顶平底的一团，左上一道光泽、中间一块半透明的亮核、两只眼。
+ * 孕早一滴小史莱姆，孕中旁边分出一小滴，孕晚更大、底下垂两条黏液、旁边留一小滴
+ */
+function amorphousModel(stage) {
+  const blob = [egg(0.46, 0.66, 0.4, 0.56, 0.3)];
+  // 孕晚长出一对兔子短耳
+  if (stage === 2) blob.push(capsule(0.34, 0.2, 0.26, 0.02, 0.07), capsule(0.58, 0.2, 0.66, 0.02, 0.07));
+  if (stage >= 1) blob.push(egg(0.9, 0.84, 0.1, 0.13, 0.08));
+  if (stage === 2) blob.push(capsule(0.3, 0.9, 0.28, 1, 0.055), circle(0.28, 1, 0.07), capsule(0.58, 0.92, 0.6, 0.98, 0.045), circle(0.6, 0.99, 0.055));
+  return {
+    w: 1,
+    h: 1,
+    parts: [
+      ['blob', blob],
+      ['core', [ellipse(0.5, 0.62, 0.2, 0.16, 0)]],
+      ['shine', [capsule(0.2, 0.46, 0.26, 0.3, 0.035), circle(0.32, 0.22, 0.03)]],
+    ],
+    head: [0.46, 0.6, 0.3],
+    eyeSide: [[0.38, 0.6], [0.54, 0.6]],
+    eyesFront: [[0.38, 0.6], [0.54, 0.6]],
+    mouth: null,
+  };
+}
+
+function getModel(type, stage, membrane) {
+  if (type === '不定型') return { model: amorphousModel(stage), deco: null };
+  if (type === '胎转卵生' && stage === 2) return { model: latticeEggModel(membraneLevel(membrane)), deco: null };
+  if (!isFetalForm(type, stage)) return { model: eggModel(type, stage), deco: null };
   if (type === '卵胎生' && stage === 1) return { model: eggEmbryoModel(), deco: null };
   // 卵胎生在卵里长大，没有脐带
   const cord = type !== '卵胎生';
   const model = stage === 0 ? embryoModel({ cord }) : fetusModel({ cord });
-  // 胎转卵生孕早：外面零散几块壳；孕中：壳已围成完整一圈。卵胎生孕晚：破壳后留几片碎壳
+  // 胎转卵生孕早：外面零散几段网格壳；孕中：围成完整一圈（孕晚包成网格纹的卵）。卵胎生孕晚：破壳后留几片碎壳
   let deco = null;
   if (type === '胎转卵生') deco = stage === 0 ? 'shellPieces' : 'shellRing';
   else if (type === '卵胎生') deco = 'shards';
@@ -142,8 +293,9 @@ const SHELL_PIECES = [[10, 40], [110, 140], [200, 225], [290, 318]];
  * 回传 { width, height, anchorX, anchorY, cells }：cells[y][x] 是色调代号或 null，
  * 胎儿中心落在 (anchorX, anchorY)
  */
-export function buildFetusGrid({ type = '胎生', stage = 2, height = 20, angle = 0, mirror = false, posterior = false, squeeze = 1 } = {}) {
-  const { model, deco } = getModel(type, stage);
+export function buildFetusGrid({ type = '胎生', stage = 2, height = 20, angle = 0, mirror = false, posterior = false, squeeze = 1, membrane = 100 } = {}) {
+  // 认不得的胚型当胎生画
+  const { model, deco } = getModel(KNOWN_TYPES.has(type) ? type : '胎生', stage, membrane);
   const scale = Math.max(4, height);
   const a = (angle * Math.PI) / 180;
   const cos = Math.cos(a);
@@ -184,16 +336,18 @@ export function buildFetusGrid({ type = '胎生', stage = 2, height = 20, angle 
     }
   }
 
-  // 身体只在右下贴外面的地方压一阶暗面（光固定从左上来，不随胎位转），其余平涂
+  // 身体、卵壳、不定型的外缘只在右下贴外面的地方压一阶暗面（光固定从左上来，不随胎位转），其余平涂
+  const SHADE_OF = { body: 'shade', eggShell: 'shellShade', eggFilm: 'filmShade', blob: 'blobShade' };
   const at = (x, y) => (y >= 0 && y < rows && x >= 0 && x < width ? cells[y][x] : null);
   const shaded = [];
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      if (cells[y][x] !== 'body') continue;
-      if (!at(x + 1, y + 1) || (!at(x + 1, y) && !at(x, y + 1))) shaded.push([x, y]);
+      const shade = SHADE_OF[cells[y][x]];
+      if (!shade) continue;
+      if (!at(x + 1, y + 1) || (!at(x + 1, y) && !at(x, y + 1))) shaded.push([x, y, shade]);
     }
   }
-  for (const [x, y] of shaded) cells[y][x] = 'shade';
+  for (const [x, y, shade] of shaded) cells[y][x] = shade;
 
   const plot = (x, y, tone) => {
     const gx = Math.round(x) - minX;
@@ -203,7 +357,7 @@ export function buildFetusGrid({ type = '胎生', stage = 2, height = 20, angle 
   const plotFloor = (x, y, tone) => plot(Math.floor(x), Math.floor(y), tone);
 
   // 眼睛一律画，才看得出脸朝哪：胎背朝前是侧脸一只闭眼，朝后脸朝外、两只眼加嘴
-  const headPx = model.head[2] * scale;
+  const headPx = model.head ? model.head[2] * scale : 0;
   const eyeLen = headPx >= 5 ? 2 : 1;
   for (const [ex, ey] of (posterior ? model.eyesFront : model.eyeSide) || []) {
     for (let i = 0; i < eyeLen; i += 1) {
@@ -224,7 +378,7 @@ export function buildFetusGrid({ type = '胎生', stage = 2, height = 20, angle 
       for (let deg = from; deg <= to; deg += 2) {
         const r = (deg * Math.PI) / 180;
         const [ox, oy] = fwd(cx + Math.cos(r) * rx, cy + Math.sin(r) * ry);
-        plotFloor(ox, oy, deg % 16 === 0 ? 'shellLight' : 'shell');
+        plotFloor(ox, oy, deg % 16 === 0 ? 'eggShell' : 'membrane');
       }
     }
   } else if (deco === 'shards') {

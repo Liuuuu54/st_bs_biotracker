@@ -1,7 +1,7 @@
 // 子宫像素图的绘制层：把 computeUterusLayout 的结果画到 96×120 的画布上。
 // 画法沿用 Sol 6 试作。只画、不算版面；动画以每 180 毫秒一帧推进，
 // 只在画面可见时跑，系统设定减少动态效果或关闭动画时只画静态图。
-import { buildFetusGrid, usesFetusSprite } from './fetus_sprite.js';
+import { buildFetusGrid, hasFluidSac, membraneLevel } from './fetus_sprite.js';
 import { quantizeAngle, UTERUS_CANVAS, wombRadius } from './uterus_layout.js';
 
 const BASE_PALETTE = Object.freeze({
@@ -160,45 +160,9 @@ function makePen(ctx, P) {
   return { px, ellipse, line, ring, glyphs };
 }
 
-// ---- 卵与不定型的图块：画在 32×32 的离屏画布上并快取；胎儿形态的阶段改由 fetus_sprite.js 栅格化 ----
-function paintSprite(ctx, P, type, stage) {
-  const { px, ellipse, line } = makePen(ctx, P);
-  const s = 10;
-  const cx = 16;
-  const cy = 16;
-  if (type === '卵生' || (type === '卵胎生' && stage === 0) || (type === '胎转卵生' && stage === 2)) {
-    ellipse(cx, cy, s * 0.72, s * 0.89, P.eggShade);
-    ellipse(cx - 1, cy - 1, s * 0.65, s * 0.8, P.egg);
-    ellipse(cx - 2, cy - 3, s * 0.36, s * 0.48, P.fetusLight);
-    if (type === '卵胎生') { ellipse(cx - 2, cy, 2, 2, P.fetus); px(cx - 3, cy - 1, 1, 1, P.shine); }
-    if (stage > 0) {
-      for (let a = 220; a < 330; a += 22) {
-        const r = (a * Math.PI) / 180;
-        px(cx + Math.cos(r) * s * 0.58, cy + Math.sin(r) * s * 0.75, 2, 1, P.shine);
-      }
-    }
-    if (stage === 2) { line(cx - 3, cy - 2, cx, cy + 1, P.wallDark); line(cx, cy + 1, cx + 3, cy - 2, P.wallDark); }
-    if (type === '胎转卵生') { line(cx - 5, cy - 2, cx - 1, cy + 2, P.wallDark); line(cx + 1, cy + 2, cx + 5, cy - 3, P.wallDark); }
-  } else if (type === '不定型') {
-    ellipse(cx, cy, s * 0.72, s * 0.65, P.wall);
-    ellipse(cx - 3, cy - 1, s * 0.43, s * 0.53, P.fetus);
-    ellipse(cx + 3, cy + 2, s * 0.43, s * 0.44, P.fetusLight);
-    for (let a = 0; a < 360; a += 60) {
-      const r = (a * Math.PI) / 180;
-      px(cx + Math.cos(r) * s * 0.8, cy + Math.sin(r) * s * 0.72, 2, 2, P.shine);
-    }
-    px(cx - 3, cy - 2, 1, 1, P.cavityDeep);
-    px(cx + 3, cy, 1, 1, P.cavityDeep);
-    if (stage === 1) { ellipse(cx + 5, cy - 4, 2, 2, P.fetusLight); px(cx + 6, cy - 5, 1, 1, P.shine); }
-    if (stage === 2) {
-      line(cx - 6, cy + 4, cx - 9, cy + 6, P.wallLight);
-      line(cx + 5, cy - 4, cx + 9, cy - 7, P.wallLight);
-      ellipse(cx, cy - 6, 2, 2, P.shine);
-    }
-  }
-}
+// ---- 胎儿、卵与不定型都由 fetus_sprite.js 栅格化成色调代号，这里只负责上色与快取 ----
 
-/** 胎儿形态的色调代号 → 主题颜色；没有外框，只靠头浅、身体深一阶分部件 */
+/** 色调代号 → 主题颜色；没有外框，只靠色调分部件 */
 function fetusTones(P) {
   return {
     head: mixColor(P.fetus, P.fetusLight, 0.55),
@@ -209,36 +173,39 @@ function fetusTones(P) {
     shell: P.eggShade,
     shellLight: P.egg,
     gap: P.cavity,
+    // 整颗卵的壳（碎壳与成形中的壳另用 shell）
+    eggShell: P.egg,
+    shellShade: mixColor(P.egg, P.eggShade, 0.45),
+    yolk: mixColor(P.fetusLight, P.signal, 0.4),
+    ghost: mixColor(P.egg, P.eggShade, 0.32),
+    speck: mixColor(P.egg, P.eggShade, 0.6),
+    shine: mixColor(P.egg, '#ffffff', 0.55),
+    // 不定型
+    blob: mixColor(P.fetus, P.wall, 0.4),
+    blobShade: mixColor(mixColor(P.fetus, P.wall, 0.4), P.wallDark, 0.35),
+    core: mixColor(P.fetusLight, P.shine, 0.3),
+    // 胎转卵生：蛋壳上的结晶格；硬化后贴在蛋上的羊膜（蒙在殼上的膜色与外缘膜线，与羊水囊膜线同色）
+    lattice: mixColor(P.eggShade, P.water, 0.3),
+    eggFilm: mixColor(P.egg, P.water, 0.3),
+    filmShade: mixColor(mixColor(P.egg, P.water, 0.3), P.eggShade, 0.45),
+    membrane: mixColor(P.water, P.cavity, 0.2),
+    membraneThin: mixColor(P.water, P.cavity, 0.55),
   };
 }
 
 const FETUS_CACHE_LIMIT = 160;
 
 /**
- * 图块快取。卵与不定型沿用 32×32 图块；胎儿形态依大小、方向、镜像、朝向、挤压直接栅格化，
- * 回传 { canvas, anchorX, anchorY }，画的时候不再旋转缩放
+ * 图块快取：依大小、方向、镜像、朝向、挤压、贴卵羊膜与空隙色直接栅格化，
+ * 回传 { canvas, anchorX, anchorY, bounds }，画的时候不再旋转缩放
  */
 function createSpriteCache(P) {
-  const legacy = new Map();
   const fetal = new Map();
   const tones = fetusTones(P);
   return {
-    legacy(type, stage) {
-      const key = `${type}|${stage}`;
-      if (!legacy.has(key)) {
-        const off = document.createElement('canvas');
-        off.width = 32;
-        off.height = 32;
-        const ctx = off.getContext('2d');
-        ctx.imageSmoothingEnabled = false;
-        paintSprite(ctx, P, type, stage);
-        legacy.set(key, off);
-      }
-      return legacy.get(key);
-    },
     fetus(spec) {
       const gap = spec.gap || tones.gap;
-      const key = [spec.type, spec.stage, spec.height, spec.angle, spec.mirror ? 1 : 0, spec.posterior ? 1 : 0, spec.squeeze.toFixed(2), gap].join('|');
+      const key = [spec.type, spec.stage, spec.height, spec.angle, spec.mirror ? 1 : 0, spec.posterior ? 1 : 0, spec.squeeze.toFixed(2), membraneLevel(spec.membrane), gap].join('|');
       if (!fetal.has(key)) {
         if (fetal.size >= FETUS_CACHE_LIMIT) fetal.clear();
         const grid = buildFetusGrid(spec);
@@ -329,19 +296,9 @@ export function drawFetusThumb(canvas, sprite, angle, theme, emote = null) {
   const shake = emote && emote.band === -2 ? (Math.floor(emote.t * 12) % 2 ? 1 : -1) : 0;
   const cx = Math.round(canvas.width / 2 + shake);
   const cy = Math.round(canvas.height / 2 + (emote ? 3 : 0));
-  const sprites = createSpriteCache(P);
-  if (usesFetusSprite(sprite.type, sprite.stage)) {
-    const spec = { type: sprite.type, stage: sprite.stage, height: 20, angle: quantizeAngle(angle), mirror: Boolean(sprite.mirror), posterior: Boolean(sprite.posterior), squeeze: 1 };
-    const { canvas: off, anchorX, anchorY } = sprites.fetus(spec);
-    ctx.drawImage(off, cx - anchorX, cy - anchorY);
-  } else {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate((angle * Math.PI) / 180);
-    if (sprite.mirror) ctx.scale(-1, 1);
-    ctx.drawImage(sprites.legacy(sprite.type, sprite.stage), -12, -12, 24, 24);
-    ctx.restore();
-  }
+  const spec = { type: sprite.type, stage: sprite.stage, height: 20, angle: quantizeAngle(angle), mirror: Boolean(sprite.mirror), posterior: Boolean(sprite.posterior), squeeze: 1 };
+  const { canvas: off, anchorX, anchorY } = createSpriteCache(P).fetus(spec);
+  ctx.drawImage(off, cx - anchorX, cy - anchorY);
   if (emote) drawAffinityEmote(ctx, emote.band, canvas.width / 2, 9, emote.t);
 }
 
@@ -577,30 +534,19 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     return wantsMotion() ? Math.floor((tick + fetus.index * 450) / 1200) % 2 : 0;
   }
 
-  function fetusSpec(size, sprite, angle, squeeze = 1, gap = null) {
+  function fetusSpec(size, sprite, angle, squeeze = 1, gap = null, membrane = 100) {
     return {
       type: sprite.type, stage: sprite.stage, height: fetusHeightFor(size), angle,
       mirror: Boolean(sprite.mirror), posterior: Boolean(sprite.posterior), squeeze: Math.round(squeeze * 20) / 20,
+      membrane,
       ...(gap ? { gap } : {}),
     };
   }
 
-  function drawSprite(x, y, size, sprite, angle, squeeze = 1, gap = null) {
-    if (usesFetusSprite(sprite.type, sprite.stage)) {
-      // 胎儿形态：依大小、胎位角、胎背方位与挤压直接栅格化，1:1 贴上，不做旋转缩放
-      const { canvas: off, anchorX, anchorY } = spriteOf.fetus(fetusSpec(size, sprite, angle, squeeze, gap));
-      ctx.drawImage(off, Math.round(x) - anchorX, Math.round(y) - anchorY);
-      return;
-    }
-    const off = spriteOf.legacy(sprite.type, sprite.stage);
-    const w = Math.max(1, Math.round((32 * size * squeeze) / 10));
-    const h = Math.max(1, Math.round((32 * size) / 10));
-    ctx.save();
-    ctx.translate(Math.round(x), Math.round(y));
-    ctx.rotate((angle * Math.PI) / 180);
-    if (sprite.mirror) ctx.scale(-1, 1);
-    ctx.drawImage(off, -Math.round(w / 2), -Math.round(h / 2), w, h);
-    ctx.restore();
+  function drawSprite(x, y, size, sprite, angle, squeeze = 1, gap = null, membrane = 100) {
+    // 依大小、胎位角、胎背方位与挤压直接栅格化，1:1 贴上，不做旋转缩放；membrane 给贴在卵上的羊膜用
+    const { canvas: off, anchorX, anchorY } = spriteOf.fetus(fetusSpec(size, sprite, angle, squeeze, gap, membrane));
+    ctx.drawImage(off, Math.round(x) - anchorX, Math.round(y) - anchorY);
   }
 
   // ---- 羊膜囊（水泡）：实心的羊水色加一条连续膜线，贴合实际画出的胎儿，由后往前与胎儿交替画 ----
@@ -622,8 +568,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     let y1 = -Infinity;
     for (const fetus of members) {
       const y = fetus.y + (breaths.get(fetus.embryoId) || 0);
-      let b = { x0: -fetus.size, y0: -fetus.size, x1: fetus.size, y1: fetus.size };
-      if (usesFetusSprite(fetus.sprite.type, fetus.sprite.stage)) b = spriteOf.fetus(fetusSpec(fetus.size, fetus.sprite, fetus.angle, fetus.squeeze)).bounds;
+      const b = spriteOf.fetus(fetusSpec(fetus.size, fetus.sprite, fetus.angle, fetus.squeeze)).bounds;
       x0 = Math.min(x0, Math.round(fetus.x) + b.x0);
       x1 = Math.max(x1, Math.round(fetus.x) + b.x1);
       y0 = Math.min(y0, Math.round(y) + b.y0);
@@ -681,10 +626,12 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       const sac = sacOf.get(fetus.embryoId);
       if (sac && !drawnSacs.has(sac)) {
         const members = layout.fetuses.filter((item) => sac.embryoIds.includes(item.embryoId));
-        drawnSacs.set(sac, drawBubble(bubbleGeometry(members, breaths), sac.durability));
+        // 胎转卵生孕晚的羊膜已硬化、贴在卵上（画在卵里），没有羊水囊可画
+        const fluid = members.some((item) => hasFluidSac(item.sprite.type, item.sprite.stage));
+        drawnSacs.set(sac, fluid ? drawBubble(bubbleGeometry(members, breaths), sac.durability) : null);
       }
       const y = fetus.y + breaths.get(fetus.embryoId);
-      drawSprite(fetus.x, y, fetus.size, fetus.sprite, fetus.angle, fetus.squeeze, (sac && drawnSacs.get(sac)) || null);
+      drawSprite(fetus.x, y, fetus.size, fetus.sprite, fetus.angle, fetus.squeeze, (sac && drawnSacs.get(sac)) || null, sac ? sac.durability : fetus.amnion);
       fetus.inner.forEach((inner, k) => {
         // 孕中孕：宿主体内的小水泡
         const ix = fetus.x + k * 2;
