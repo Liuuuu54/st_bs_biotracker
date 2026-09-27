@@ -93,7 +93,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- nutrition: 妊娠供养力盈余/赤字，由需求照料累积：任一需求在「高」时用 bsExcreteMetabolism 彻底处理到「无」约 +1，只处理一半不算；拖到「爆」约 -1，停在爆每满 24 小时再扣一次；「满」不增不减。点数会按种族与妊娠负担折算，所以常见小数。正值代表供养充足，负值代表供养亏空。这是全部胎儿的合计：系统每次计分当下就按各胎孕龄与位置拆给每一胎，每周各自换算成胎重后归零。',
   '- bsMaternalFetalInteraction 的 direction=fetal 表示胎儿对母体的亲近或排斥，须传 change 来改变 affinity；direction=maternal 表示母体安抚胎儿，不传 change，系统会随机决定 affinity 变化。母胎互动不影响供养力，也不改变胎位或产程时间。每名角色每个新小时仅能成功生效一次。',
   '- bsAssistFetalPosition 只在剧情明确出现人工、器械或魔法的胎位操作时调用（转位 rotate、托高 lift、推送 descend、破水 rupture、助产拉出 extract）。产兆前驱托高领头胎儿会延后分娩、推送会缩短前驱；托高要跟宫缩对抗，活力不足会被拒绝。每次操作都会带来一阵剧痛（反映在 laborPain），孕期则提高心理压力。',
-  '- 胎儿有意识地自己转身、往上缩、往下钻或踢破胎膜时，用 bsAssistFetalPosition 加 actor=fetus：不耗母体活力，母体照样会痛；胎儿不能自己 extract，也解不开自己卡住的肩膀。普通的胎动、踢一下不要调用。',
+  '- 胎儿有意识地自己转身、往上缩、往下钻或踢破胎膜时，用 bsAssistFetalPosition 加 actor=fetus：不耗母体活力，母体照样会痛；胎儿不能自己 extract，也解不开自己卡住的肩膀；入盆后只能小幅转动（30° 以内）、胎背只能前后对调，产程中不能自己缩回或往下钻，但可以踢破胎膜、互锁的那一胎可以自己转开。普通的胎动、踢一下不要调用。',
   '- 产兆前驱与产程中的插入（bsAddSperm insert）会把最前面的胎儿往回顶：前驱延后、产道里的胎儿产程倒退（着冠时更多，可能顶破胎膜），并降低它的亲和；产兆前驱中射精会缩短前驱。依回传讯息描写，不要写成顺产。',
   '- blockage: 当日妊娠阻塞状态，格式为 {key, severity}。key 可为 excretion/hunger/sleep/milk/odor/companionship/fluxPositive/fluxNegative；它会让对应需求的 bsExcreteMetabolism 排解不顺畅。',
   '- acceleration: 当日妊娠快积状态，格式同 blockage；它会让对应需求更快累积。',
