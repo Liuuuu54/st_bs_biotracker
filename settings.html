@@ -13,14 +13,17 @@
       <div class="bs-bt-screen-header">
         <span id="bs-bt-time">--:--</span>
         <span id="bs-bt-title">HOME</span>
-        <span id="bs-bt-status-icons" class="bs-bt-status-icons" aria-label="battery status" tabindex="0">
+        <div class="bs-bt-header-actions">
+          <button class="bs-bt-help-button" type="button" data-nav-view="help" title="使用说明" aria-label="打开使用说明">?</button>
+          <span id="bs-bt-status-icons" class="bs-bt-status-icons" aria-label="battery status" tabindex="0">
           <svg class="bs-bt-battery-icon" viewBox="0 0 30 14" fill="none" xmlns="http://www.w3.org/2000/svg"
             aria-hidden="true">
             <rect x="1" y="1" width="24" height="12" rx="2" stroke="currentColor" stroke-width="2"></rect>
             <rect id="bs-bt-battery-fill" x="4" y="4" width="16" height="6" rx="1" fill="currentColor"></rect>
             <rect x="26" y="4" width="3" height="6" rx="1" fill="currentColor"></rect>
           </svg>
-        </span>
+          </span>
+        </div>
       </div>
 
       <div class="bs-bt-screen-content" id="bs-bt-viewport">
@@ -64,6 +67,56 @@
                 <span class="bs-bt-home-tile__label">主题</span>
               </button>
             </div>
+          </div>
+        </section>
+
+        <section id="bs-bt-view-help" class="bs-bt-view bs-bt-help" data-view="help">
+          <div class="bs-bt-panel">
+            <h2>使用说明</h2>
+            <p>BS BioTracker 会为已注册角色保存状态，并根据对话更新。初次使用按下面的顺序操作即可。</p>
+            <p>想了解完整的状态与生理机制，请看 <a href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/README.md" target="_blank" rel="noopener noreferrer">docs/mechanics 机制说明</a>。</p>
+
+            <details open>
+              <summary>首次设置</summary>
+              <ol>
+                <li>按设备下方的齿轮键进入 SYSTEM，填写 API Base URL、API Key 与模型名称，并选择对应的 API 格式。</li>
+                <li>可按「连接并拉取模型」选择模型；若服务不提供模型列表，直接填写模型名称。</li>
+                <li>勾选「启用异步生理状态追踪」，按「保存设置」。模型应能稳定输出结构化结果。</li>
+              </ol>
+            </details>
+
+            <details>
+              <summary>注册与第一次追踪</summary>
+              <ol>
+                <li>回首页打开「注册」，填写角色名和种族；可在「注册」分页面补充设定，再执行注册。</li>
+                <li>想先建立角色专属繁育心理时，可先在「推演」分页面执行繁育推演；直接注册也可以。</li>
+                <li>打开「追踪」，按「立即分析当前对话」测试一次。完成后点选角色查看结果。</li>
+              </ol>
+            </details>
+
+            <details>
+              <summary>日常查看与时间推进</summary>
+              <p>「追踪」的角色页面有概览、描述、妊娠、经历和心情分栏。异步追踪会在 SYSTEM 设定的触发时机分析新对话，也可随时手动分析。</p>
+              <p>需要让生理时间前进时，进入「变量」填写年、月、周、天、时、分，再执行全角色时间推进。推进前请确认输入的时间跨度。</p>
+            </details>
+
+            <details>
+              <summary>其他入口</summary>
+              <ul>
+                <li>「预设」管理追踪器使用的预设；「排除」控制送给追踪器的世界书条目。</li>
+                <li>「技能」管理技能图鉴；「衣柜」管理已备装角色的衣物和穿着。</li>
+                <li>「变量」可查看状态、历史与调试工具；「百科」提供种族资料与计算工具；「主题」调整界面。</li>
+              </ul>
+            </details>
+
+            <details>
+              <summary>常见问题</summary>
+              <ul>
+                <li>拉不到模型列表：在 SYSTEM 手动填写模型名称，并检查 API 格式和 Base URL。</li>
+                <li>注册或追踪失败：先确认 API 可用、模型能输出结构化结果，再查看「追踪」中的最新工具调用。</li>
+                <li>从 0.x 升级：v1.0.0 不转换旧存档，请开新聊天。</li>
+              </ul>
+            </details>
           </div>
         </section>
 
