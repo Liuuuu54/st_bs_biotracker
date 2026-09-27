@@ -399,6 +399,17 @@ test('双胎互锁：臀位先露胎在入口，头位、胎重相近、宫压�
   assert.deepEqual(depths(fond), [0, 0], '亲近母体的第二胎一样会互锁');
 });
 
+test('构型成立也只有 20% 的机率卡上：没抽中时第二胎留在子宫低位', () => {
+  const rolls = [0, 0, 0, 0.3];
+  let i = 0;
+  // 前几次让它产生往下的位移，最后判定互锁时抽到 0.3（≥ 0.2）
+  Math.random = () => rolls[Math.min(i++, rolls.length - 1)];
+  const chatState = crowdingSetup();
+  passHours(chatState, 1);
+  assert.equal(depths(chatState)[1], -1);
+  assert.equal('inletIntruder' in P(chatState).pregnant.fetuses[1], false);
+});
+
 test('构型不对就不会挤进入口：先露头位、或第二胎不是头位时，第二胎留在子宫低位', () => {
   for (const [label, over, leadOver] of [['先露头位', {}, { tendencyAngle: 0 }], ['第二胎臀位', { tendencyAngle: 180 }, {}]]) {
     Math.random = () => 0;

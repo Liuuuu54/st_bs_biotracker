@@ -2221,7 +2221,9 @@ function pickInletIntruder(profile, stage, intents) {
         && isLockedTwins(presenting, fetus);
     })
     .sort((left, right) => Number(left.embryoId) - Number(right.embryoId));
-  return candidates[0] || null;
+  // 构型对了也不是每次都会卡上：每次尝试 20%
+  if (!candidates[0] || Math.random() >= INLET_INTRUSION_CHANCE) return null;
+  return candidates[0];
 }
 
 function advanceLaborFetalActivity(profile, tick, female) {
@@ -3702,6 +3704,8 @@ const OBSTRUCTION_STAGES = Object.freeze(['产兆前驱', '第一产程', '第�
 /** 病理性双胎同时入盆的门槛 */
 const INLET_INTRUSION_WEIGHT_RATIO = 0.85;
 const INLET_INTRUSION_PRESSURE_RATIO = 0.66;
+/** 构型成立时，第二胎每次往下挤真的卡进入口形成互锁的机率 */
+const INLET_INTRUSION_CHANCE = 0.2;
 
 /** 各类硬阻塞可用的助产解法，写进难产警示 */
 const OBSTRUCTION_ADVICE = Object.freeze({
