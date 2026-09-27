@@ -30,6 +30,14 @@ createServer(async (req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('not found');
   }
+}).on('error', (error) => {
+  // 端口被占用多半是另一个 harness（例如编辑器的预览）已经在跑：直接用它，或换个端口
+  if (error.code === 'EADDRINUSE') {
+    console.error(`端口 ${PORT} 已被占用：harness 可能已在 http://localhost:${PORT}/ 运行。`);
+    console.error(`要另开一个，请指定其他端口，例如：node tests/ui_server.mjs ${PORT + 1}`);
+    process.exit(1);
+  }
+  throw error;
 }).listen(PORT, () => {
   console.log(`BioTracker UI harness: http://localhost:${PORT}/`);
 });
