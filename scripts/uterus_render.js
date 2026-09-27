@@ -237,7 +237,8 @@ function createSpriteCache(P) {
       return legacy.get(key);
     },
     fetus(spec) {
-      const key = [spec.type, spec.stage, spec.height, spec.angle, spec.mirror ? 1 : 0, spec.posterior ? 1 : 0, spec.squeeze.toFixed(2)].join('|');
+      const gap = spec.gap || tones.gap;
+      const key = [spec.type, spec.stage, spec.height, spec.angle, spec.mirror ? 1 : 0, spec.posterior ? 1 : 0, spec.squeeze.toFixed(2), gap].join('|');
       if (!fetal.has(key)) {
         if (fetal.size >= FETUS_CACHE_LIMIT) fetal.clear();
         const grid = buildFetusGrid(spec);
@@ -246,17 +247,23 @@ function createSpriteCache(P) {
         off.height = grid.height;
         const ctx = off.getContext('2d');
         const filled = (x, y) => Boolean(grid.cells[y]?.[x]);
+        const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
         grid.cells.forEach((row, y) => row.forEach((tone, x) => {
           if (tone) {
             ctx.fillStyle = tones[tone];
             ctx.fillRect(x, y, 1, 1);
+            box.x0 = Math.min(box.x0, x); box.x1 = Math.max(box.x1, x);
+            box.y0 = Math.min(box.y0, y); box.y1 = Math.max(box.y1, y);
           } else if (filled(x - 1, y) || filled(x + 1, y) || filled(x, y - 1) || filled(x, y + 1)) {
-            // 一圈宫腔色的空隙：在宫腔底上看不出来，叠到别的胎儿上时切出一道缝，多胎才分得开
-            ctx.fillStyle = tones.gap;
+            // 一圈与背景同色的空隙：在底色上看不出来，叠到别的胎儿上时切出一道缝，多胎才分得开。
+            // 背景是羊膜囊时用羊水色，孕早还没有囊或已破水时用宫腔色
+            ctx.fillStyle = gap;
             ctx.fillRect(x, y, 1, 1);
           }
         }));
-        fetal.set(key, { canvas: off, anchorX: grid.anchorX, anchorY: grid.anchorY });
+        // 本体范围（相对于锚点），羊膜囊依它贴合
+        const bounds = { x0: box.x0 - grid.anchorX, y0: box.y0 - grid.anchorY, x1: box.x1 - grid.anchorX, y1: box.y1 - grid.anchorY };
+        fetal.set(key, { canvas: off, anchorX: grid.anchorX, anchorY: grid.anchorY, bounds });
       }
       return fetal.get(key);
     },
@@ -566,44 +573,22 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     }
   }
 
-  function membraneRing(cx, cy, rx, ry, color, coverage, gap) {
-    for (let a = 0; a < 360; a += 3) {
-      if (gap && a >= gap[0] && a <= gap[1]) continue;
-      if (((a / 3) * 37 + 17) % 100 >= coverage * 100) continue;
-      const r = (a * Math.PI) / 180;
-      pen.px(cx + Math.cos(r) * rx, cy + Math.sin(r) * ry, 1, 1, color);
-    }
-  }
-
-  function drawSac(sac, breath) {
-    const resistance = sac.durability;
-    if (resistance <= 0) return;
-    const outer = Math.max(0, Math.min(1, (resistance - 20) / 80));
-    const inner = resistance >= 30 ? 1 : 0.25 + (0.75 * resistance) / 30;
-    const opening = resistance < 30 ? ((30 - resistance) / 30) * 100 : 0;
-    const gap = opening ? [20, 20 + opening] : null;
-    const cy = sac.cy + breath;
-    membraneRing(sac.cx, cy, sac.rx + 1, sac.ry + 1, P.shadow, outer, gap);
-    membraneRing(sac.cx, cy, sac.rx, sac.ry, P.sac, inner, gap);
-    for (let i = 0; i < 8; i += 1) {
-      if ((i * 37 + 13) % 100 >= resistance) continue;
-      const r = ((15 + i * 45) * Math.PI) / 180;
-      pen.px(sac.cx + Math.cos(r) * (sac.rx + 2), cy + Math.sin(r) * (sac.ry + 2), 1, 1, P.sac);
-    }
-  }
-
   function breathOf(fetus, tick) {
     return wantsMotion() ? Math.floor((tick + fetus.index * 450) / 1200) % 2 : 0;
   }
 
-  function drawSprite(x, y, size, sprite, angle, squeeze = 1) {
+  function fetusSpec(size, sprite, angle, squeeze = 1, gap = null) {
+    return {
+      type: sprite.type, stage: sprite.stage, height: fetusHeightFor(size), angle,
+      mirror: Boolean(sprite.mirror), posterior: Boolean(sprite.posterior), squeeze: Math.round(squeeze * 20) / 20,
+      ...(gap ? { gap } : {}),
+    };
+  }
+
+  function drawSprite(x, y, size, sprite, angle, squeeze = 1, gap = null) {
     if (usesFetusSprite(sprite.type, sprite.stage)) {
       // 胎儿形态：依大小、胎位角、胎背方位与挤压直接栅格化，1:1 贴上，不做旋转缩放
-      const spec = {
-        type: sprite.type, stage: sprite.stage, height: fetusHeightFor(size), angle,
-        mirror: Boolean(sprite.mirror), posterior: Boolean(sprite.posterior), squeeze: Math.round(squeeze * 20) / 20,
-      };
-      const { canvas: off, anchorX, anchorY } = spriteOf.fetus(spec);
+      const { canvas: off, anchorX, anchorY } = spriteOf.fetus(fetusSpec(size, sprite, angle, squeeze, gap));
       ctx.drawImage(off, Math.round(x) - anchorX, Math.round(y) - anchorY);
       return;
     }
@@ -618,16 +603,94 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     ctx.restore();
   }
 
+  // ---- 羊膜囊（水泡）：实心的羊水色加一条连续膜线，贴合实际画出的胎儿，由后往前与胎儿交替画 ----
+  function bubbleColors() {
+    return {
+      fluid: mixColor(P.cavity, P.fluidLight, 0.2),
+      thinFluid: mixColor(P.cavity, P.fluidLight, 0.1),
+      // 膜线用偏羊水的冷色，才不会被看成胎儿的轮廓
+      membrane: mixColor(P.water, P.cavity, 0.2),
+      thinMembrane: mixColor(P.water, P.cavity, 0.55),
+    };
+  }
+
+  /** 这个囊的成员实际画出来的范围（含呼吸位移），外扩一点成椭圆 */
+  function bubbleGeometry(members, breaths) {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const fetus of members) {
+      const y = fetus.y + (breaths.get(fetus.embryoId) || 0);
+      let b = { x0: -fetus.size, y0: -fetus.size, x1: fetus.size, y1: fetus.size };
+      if (usesFetusSprite(fetus.sprite.type, fetus.sprite.stage)) b = spriteOf.fetus(fetusSpec(fetus.size, fetus.sprite, fetus.angle, fetus.squeeze)).bounds;
+      x0 = Math.min(x0, Math.round(fetus.x) + b.x0);
+      x1 = Math.max(x1, Math.round(fetus.x) + b.x1);
+      y0 = Math.min(y0, Math.round(y) + b.y0);
+      y1 = Math.max(y1, Math.round(y) + b.y1);
+    }
+    return { cx: (x0 + x1 + 1) / 2, cy: (y0 + y1 + 1) / 2, rx: ((x1 - x0 + 1) / 2) * 1.12 + 1.5, ry: ((y1 - y0 + 1) / 2) * 1.12 + 1.5 };
+  }
+
+  /**
+   * 耐久 ≥ 60 整圈实线；30～60 膜线开始缺口；< 30 底部开口、羊水变淡；≤ 0 已破不画。
+   * 回传这个囊的羊水色，给里面胎儿的空隙用。fill=false 只画膜线（破水演出叠在胎儿上用）
+   */
+  function drawBubble({ cx, cy, rx, ry }, durability, { fill = true } = {}) {
+    if (durability <= 0) return null;
+    const C = bubbleColors();
+    const thin = durability < 30;
+    const fluid = thin ? C.thinFluid : C.fluid;
+    const membrane = durability < 60 ? C.thinMembrane : C.membrane;
+    const opening = thin ? ((30 - durability) / 30) * 120 : 0;
+    const gapRatio = durability >= 60 ? 0 : durability >= 30 ? 0.2 + ((60 - durability) / 30) * 0.3 : 0.5;
+    const inside = (x, y) => ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1;
+    const xa = Math.floor(cx - rx);
+    const xb = Math.ceil(cx + rx);
+    const ya = Math.floor(cy - ry);
+    const yb = Math.ceil(cy + ry);
+    for (let y = ya; y <= yb; y += 1) {
+      for (let x = xa; x <= xb; x += 1) {
+        if (!inside(x, y)) continue;
+        const edge = !inside(x - 1, y) || !inside(x + 1, y) || !inside(x, y - 1) || !inside(x, y + 1);
+        if (!edge) {
+          if (fill) pen.px(x, y, 1, 1, fluid);
+          continue;
+        }
+        // 膜线：底部（朝宫口）开口；变薄时按角度规律留缺口
+        const deg = ((Math.atan2(y + 0.5 - cy, x + 0.5 - cx) * 180) / Math.PI + 360) % 360;
+        const broken = (opening && Math.abs(deg - 90) <= opening / 2)
+          || (gapRatio && ((Math.floor(deg / 9) * 37 + 11) % 100) < gapRatio * 100);
+        if (broken) {
+          if (fill) pen.px(x, y, 1, 1, fluid);
+          continue;
+        }
+        pen.px(x, y, 1, 1, membrane);
+      }
+    }
+    return fluid;
+  }
+
   function drawFetuses(tick) {
     const breaths = new Map(layout.fetuses.map((fetus) => [fetus.embryoId, breathOf(fetus, tick)]));
-    for (const sac of layout.sacs) drawSac(sac, breaths.get(sac.embryoIds[0]) || 0);
+    const sacOf = new Map();
+    for (const sac of layout.sacs) for (const id of sac.embryoIds) sacOf.set(id, sac);
+    const drawnSacs = new Map();
     for (let i = layout.fetuses.length - 1; i >= 0; i -= 1) {
       const fetus = layout.fetuses[i];
+      const sac = sacOf.get(fetus.embryoId);
+      if (sac && !drawnSacs.has(sac)) {
+        const members = layout.fetuses.filter((item) => sac.embryoIds.includes(item.embryoId));
+        drawnSacs.set(sac, drawBubble(bubbleGeometry(members, breaths), sac.durability));
+      }
       const y = fetus.y + breaths.get(fetus.embryoId);
-      drawSprite(fetus.x, y, fetus.size, fetus.sprite, fetus.angle, fetus.squeeze);
+      drawSprite(fetus.x, y, fetus.size, fetus.sprite, fetus.angle, fetus.squeeze, (sac && drawnSacs.get(sac)) || null);
       fetus.inner.forEach((inner, k) => {
-        pen.ring(fetus.x + k * 2, y, inner.size * 0.9 + 1, inner.size * 0.9 + 1, P.sac);
-        drawSprite(fetus.x + k * 2, y, inner.size, inner.sprite, inner.angle);
+        // 孕中孕：宿主体内的小水泡
+        const ix = fetus.x + k * 2;
+        const r = inner.size * 0.9 + 1;
+        const innerFluid = drawBubble({ cx: ix + 0.5, cy: y + 0.5, rx: r, ry: r }, 100);
+        drawSprite(ix, y, inner.size, inner.sprite, inner.angle, 1, innerFluid);
       });
     }
   }
@@ -818,8 +881,8 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     cavityPath();
     ctx.clip();
     if (fetus && elapsed < 850) {
-      membraneRing(fetus.x, fetus.y, rx + 1, ry + 1, P.shadow, 1, [55, 125]);
-      membraneRing(fetus.x, fetus.y, rx, ry, P.sac, 1, [55, 125]);
+      // 破掉的膜：只剩膜线，底部裂开
+      drawBubble(bubbleGeometry([fetus], new Map()), 5, { fill: false });
       pen.px(sourceX - 2, sourceY, 2, 1, P.waterLight);
       pen.px(sourceX + 1, sourceY + 1, 2, 1, P.waterLight);
     }
