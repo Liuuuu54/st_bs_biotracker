@@ -120,17 +120,15 @@ test('v0.9.5 新增种族有完整参数并归入正确的繁殖分组', async (
   assert.ok(getRacePhysiologyProfile('伪人').identicalProbability > getRacePhysiologyProfile('人类').identicalProbability);
 });
 
-test('修行拆成修炼与魔导后，旧存档与繁体写法仍解析得到', async () => {
+test('修炼与魔导的繁体写法、带装饰子项都解析得到', async () => {
   const raceConfig = await import('../scripts/race_config.js');
   const canonical = raceConfig.getDerivedTypeFluxProfile('修炼');
   assert.equal(canonical.fluxName, '炁');
-  // 旧存档写的是 [修行]XXX，不能静默失效
-  assert.equal(raceConfig.getDerivedTypeFluxProfile('修行').fluxName, '炁');
-  assert.equal(raceConfig.getDerivedTypeInheritanceProfile('修行').inheritanceSpeed, 0.8);
-  assert.deepEqual(raceConfig.getDerivedTypeMetabolismExemptions('修行'), ['hunger', 'excretion', 'companionship']);
+  assert.equal(raceConfig.getDerivedTypeInheritanceProfile('修炼').inheritanceSpeed, 0.8);
+  assert.deepEqual(raceConfig.getDerivedTypeMetabolismExemptions('修炼'), ['hunger', 'excretion', 'companionship']);
   // 繁体写法一并映射；带装饰子项也要能解析
   assert.equal(raceConfig.getDerivedTypeFluxProfile('修煉').fluxName, '炁');
-  assert.equal(raceConfig.getDerivedTypeFluxProfile('修行-剑修').fluxName, '炁');
+  assert.equal(raceConfig.getDerivedTypeFluxProfile('修炼-剑修').fluxName, '炁');
   assert.equal(raceConfig.getDerivedTypeFluxProfile('魔導').fluxName, '魔力');
   assert.equal(raceConfig.getDerivedTypeInheritanceProfile('魔导').inheritanceSpeed, 1.0);
 });

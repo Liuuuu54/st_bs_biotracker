@@ -297,7 +297,7 @@ test('failed automatic request is blocked only for the same last message', () =>
   };
   globalThis.SillyTavern = { getContext: () => ctx };
   const chatState = state.createEmptyChatState();
-  chatState.lastFailedSignature = state.buildSignature(ctx, ctx.chat.length);
+  chatState.lastFailedChatSignature = state.buildSignature(ctx, ctx.chat.length);
   assert.equal(isFailedAutoRetryBlocked(ctx, chatState), true);
   ctx.chat.push({ is_user: false, name: 'Alice', mes: 'new reply' });
   assert.equal(isFailedAutoRetryBlocked(ctx, chatState), false);

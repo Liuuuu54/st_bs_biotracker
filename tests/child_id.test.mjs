@@ -45,26 +45,6 @@ test('分娩产生的孩子带上 id 与父系名字', () => {
   assert.equal(children[0].fathers, '凯');
 });
 
-test('存量存档的孩子在读取时补上 id', () => {
-  const ctx = makeCtx('legacy-chat');
-  const settings = getSettings(ctx);
-  settings.chatStates['legacy-chat'] = createEmptyChatState();
-  // 早期存档：孩子没有 id
-  settings.chatStates['legacy-chat'].characters['艾拉'] = {
-    name: '艾拉',
-    initialized: true,
-    profile: { base: {}, children: [{ name: '小龙', fathers: '凯' }, { name: '小凤', fathers: '凯' }] },
-  };
-
-  const chatState = getChatState(ctx, settings);
-  const children = chatState.characters['艾拉'].profile.children;
-  assert.ok(children.every((child) => child.id), '所有存量孩子都应补上 id');
-  assert.equal(new Set(children.map((child) => child.id)).size, children.length, 'id 不该重复');
-  // 已保留的名字与父系不该被迁移动到
-  assert.deepEqual(children.map((child) => child.name), ['小龙', '小凤']);
-  assert.deepEqual(children.map((child) => child.fathers), ['凯', '凯']);
-});
-
 test('已有 id 的孩子重复读取时不会被换掉', () => {
   const ctx = makeCtx('stable-chat');
   const settings = getSettings(ctx);

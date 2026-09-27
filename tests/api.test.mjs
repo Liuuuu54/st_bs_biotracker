@@ -708,32 +708,11 @@ test('manual temperature wins on both primary and retry', async () => {
   );
 });
 
-test('temperature mode migrates stored numbers to manual, fresh stays legacy', () => {
-  const makeCtx = (stored) => {
-    const ctx = {
-      chatId: 'temp-migrate',
-      extensionSettings: { bs_biotracker: { ...stored } },
-      saveSettingsDebounced() {},
-    };
-    globalThis.SillyTavern = { getContext: () => ctx };
-    return ctx;
-  };
-  // 旧版本存的手填数字 → manual（作者三态要求前已配好的用户不断流）
-  const migrated = getSettings(makeCtx({ temperature: 1 }));
-  assert.equal(migrated.temperatureMode, 'manual');
-  assert.equal(migrated.temperature, 1);
-  // 存量 0.2 同样归 manual：manual 档下 0.2 为固定值，不再视同未配置
-  const migratedZeroTwo = getSettings(makeCtx({ temperature: 0.2 }));
-  assert.equal(migratedZeroTwo.temperatureMode, 'manual');
-  assert.equal(migratedZeroTwo.temperature, 0.2);
-  // 幂等：同一份存档再跑一次 getSettings，结果不变、不抖动
-  const ctxDup = makeCtx({ temperature: 0.2 });
-  getSettings(ctxDup);
-  const twice = getSettings(ctxDup);
-  assert.equal(twice.temperatureMode, 'manual');
-  assert.equal(twice.temperature, 0.2);
+test('fresh settings default to legacy temperature mode without a stored temperature', () => {
+  const ctx = { chatId: 'temp-fresh', extensionSettings: { bs_biotracker: {} }, saveSettingsDebounced() {} };
+  globalThis.SillyTavern = { getContext: () => ctx };
   // 新用户／未配过 → legacy＋null，走上游逻辑
-  const fresh = getSettings(makeCtx({}));
+  const fresh = getSettings(ctx);
   assert.equal(fresh.temperatureMode, 'legacy');
   assert.equal(fresh.temperature, null);
 });

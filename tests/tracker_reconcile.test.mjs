@@ -51,15 +51,6 @@ test('auto retry is blocked while the conversation is unchanged, even if an inne
   assert.equal(isFailedAutoRetryBlocked(ctx, chatState), false);
 });
 
-test('legacy chat states without the chat signature keep the old tail behaviour', () => {
-  const ctx = makeCtx([{ is_user: false, name: 'Alice', mes: 'only' }]);
-  globalThis.SillyTavern = { getContext: () => ctx };
-  const chatState = state.createEmptyChatState();
-  chatState.lastFailedChatSignature = '';
-  chatState.lastFailedSignature = state.buildSignature(ctx, ctx.chat.length);
-  assert.equal(isFailedAutoRetryBlocked(ctx, chatState), true);
-});
-
 test('a result whose message was deleted mid-request is discarded instead of applied', async () => {
   const ctx = makeCtx([
     { is_user: false, name: 'Alice', mes: 'kept message' },

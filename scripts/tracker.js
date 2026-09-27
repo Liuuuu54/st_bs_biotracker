@@ -126,11 +126,7 @@ export function isFailedAutoRetryBlocked(ctx, chatState) {
   if (chat.length === 0) return false;
   const currentChatSignature = buildSignature(ctx, chat.length);
   const failedChatSignature = String(chatState?.lastFailedChatSignature || '');
-  if (failedChatSignature) return failedChatSignature === currentChatSignature;
-  // 旧存档没有这个栏位时，沿用原本的尾楼比对
-  const failedSignature = String(chatState?.lastFailedSignature || '');
-  if (!failedSignature) return false;
-  return failedSignature === currentChatSignature;
+  return Boolean(failedChatSignature) && failedChatSignature === currentChatSignature;
 }
 
 function getMvuApi() {
@@ -1666,7 +1662,6 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   result.character_check_coverage = buildCharacterCheckCoverage(payload.tracked_females, result.character_checks);
   applyToolCallsResult(ctx, result);
   chatState.lastProcessedSignature = silentReplacementDuringRun ? postCallSignature : attemptedSignature;
-  chatState.lastFailedSignature = '';
   chatState.lastFailedChatSignature = '';
   settings.hostMutSeqCounter = hostRunState.mutSeq;
   recordChatStateSnapshot(ctx, chatState, {
@@ -1874,7 +1869,6 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   } catch (error) {
     console.error('[BS BioTracker] runTracker failed', error);
     recordTrackerResultDebug(null, error);
-    chatState.lastFailedSignature = chatState.lastAttemptedSignature || buildSignature(ctx, chat.length);
     // 记下失败当下「整段对话」的签名：只要对话没变，自动重试就该被挡住。
     // 失败可能发生在回放的中间楼，只比对尾楼会让轮询无限重发。
     chatState.lastFailedChatSignature = buildSignature(ctx, getHostChat(ctx).length);

@@ -3556,7 +3556,7 @@ function appendChildrenFromFetuses(profile, fetuses) {
       // 伴生卵只留下出生背景；无论几枚，祖谱仍只新增这一名有效后代。
       birthCompanionEggCount: getCompanionEggCount(fetus),
       birthAffinity: clampNumber(fetus?.affinity, -50, 50, 0),
-      talents: normalizeTalentList(fetus?.talents ?? fetus?.inheritedTalents),
+      talents: normalizeTalentList(fetus?.talents),
     });
   }
   profile.children = children;
@@ -6525,7 +6525,7 @@ function applyTrainSkill(chatState, args) {
       const selectedFetus = fetuses[inheritedFetusIndex];
       const affinity = clampNumber(selectedFetus?.affinity, -50, 50, 0);
       inheritedExp = Math.round(skillExp * (Math.abs(affinity) / 50)) * Math.sign(affinity);
-      const fetusTalents = normalizeTalentList(selectedFetus.talents ?? selectedFetus.inheritedTalents);
+      const fetusTalents = normalizeTalentList(selectedFetus.talents);
       let fetusTalent = fetusTalents.find((item) => item.skillId === definition.id);
       if (inheritedExp !== 0 && !fetusTalent) {
         fetusTalent = { skillId: definition.id, level: 0, exp: 0 };
@@ -6534,7 +6534,6 @@ function applyTrainSkill(chatState, args) {
       if (inheritedExp !== 0) {
         Object.assign(fetusTalent, addTalentExperience(fetusTalent, inheritedExp));
         selectedFetus.talents = fetusTalents;
-        delete selectedFetus.inheritedTalents;
       }
     }
     pregnant.fetuses = fetuses;

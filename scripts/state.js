@@ -308,7 +308,7 @@ function normalizePregFitState(value) {
   return {
     pregWearPressure: Math.max(0, Math.min(10, Number(value.pregWearPressure) || 0)),
     gap: {
-      masking: normalizeGap(gapSource.masking ?? gapSource.covering),
+      masking: normalizeGap(gapSource.masking),
       support: normalizeGap(gapSource.support),
       capacity: normalizeGap(gapSource.capacity),
       convenience: normalizeGap(gapSource.convenience),
@@ -399,44 +399,15 @@ export function normalizeCharacterPsychologyState(characterState) {
     }
   }
   if (Array.isArray(characterState.profile.children)) {
-    characterState.profile.children = characterState.profile.children.map((child) => {
-      const next = { ...child, talents: normalizeTalentList(child?.talents ?? child?.inheritedTalents) };
-      delete next.inheritedTalents;
-      return next;
-    });
+    characterState.profile.children = characterState.profile.children.map((child) => ({ ...child, talents: normalizeTalentList(child?.talents) }));
   }
   if (Array.isArray(characterState.profile.pregnant?.fetuses)) {
-    characterState.profile.pregnant.fetuses = characterState.profile.pregnant.fetuses.map((fetus) => {
-      const next = { ...fetus, talents: normalizeTalentList(fetus?.talents ?? fetus?.inheritedTalents) };
-      delete next.inheritedTalents;
-      return next;
-    });
+    characterState.profile.pregnant.fetuses = characterState.profile.pregnant.fetuses.map((fetus) => ({ ...fetus, talents: normalizeTalentList(fetus?.talents) }));
   }
   characterState.profile.wardrobe = normalizeWardrobeState(characterState.profile.wardrobe);
   characterState.profile.outfit = normalizeOutfitState(characterState.profile.outfit, characterState.profile.wardrobe);
   const metabolism = characterState.profile.metabolism;
-  if (metabolism && typeof metabolism === 'object' && !Array.isArray(metabolism)) {
-    if (metabolism.excretion === undefined && (metabolism.urine !== undefined || metabolism.stool !== undefined)) {
-      metabolism.excretion = sanitizeNumber((Number(metabolism.urine) || 0) + (Number(metabolism.stool) || 0), { min: 0, max: 150 }) ?? 0;
-    }
-    if (metabolism.companionship === undefined) metabolism.companionship = 0;
-    delete metabolism.urine;
-    delete metabolism.stool;
-  }
   const pregnant = characterState.profile.pregnant;
-  if (pregnant && pregnant.acceleration === undefined) {
-    pregnant.acceleration = null;
-  }
-  if (pregnant && pregnant.expansion === undefined) {
-    pregnant.expansion = null;
-  }
-  if (pregnant?.blockage?.key === 'stool') pregnant.blockage.key = 'excretion';
-  if (pregnant?.blockage?.key === 'urine') {
-    if (!pregnant.acceleration) {
-      pregnant.acceleration = { ...pregnant.blockage, key: 'excretion' };
-    }
-    pregnant.blockage = null;
-  }
   if (
     pregnant?.blockage?.key
     && pregnant.blockage.key === pregnant.acceleration?.key
@@ -460,10 +431,6 @@ export function normalizeCharacterPsychologyState(characterState) {
       const expandedFlux = (flux > 0 && expansionKey === 'fluxPositive') || (flux < 0 && expansionKey === 'fluxNegative');
       metabolism.flux = sanitizeNumber(flux, { min: expandedFlux ? -200 : -150, max: expandedFlux ? 200 : 150 }) ?? 0;
     }
-  }
-  if (characterState.profile.cooldown && typeof characterState.profile.cooldown === 'object') {
-    delete characterState.profile.cooldown.laborResistanceUsed;
-    delete characterState.profile.cooldown.pregnancySymptomActive;
   }
   return characterState;
 }
@@ -682,7 +649,6 @@ export function createEmptyChatState() {
   return {
     lastAttemptedSignature: '',
     lastProcessedSignature: '',
-    lastFailedSignature: '',
     // 失败当下「整段对话」的签名，用来判断是否该挡下自动重试
     lastFailedChatSignature: '',
     lastRunAt: 0,
@@ -833,15 +799,6 @@ export function getSettings(ctx) {
   let shouldSave = false;
   if (!root[MODULE_NAME]) root[MODULE_NAME] = cloneValue(DEFAULT_SETTINGS);
   const settings = root[MODULE_NAME];
-  if (Object.prototype.hasOwnProperty.call(settings, 'raceCatalogInPrompt')) {
-    if (!Object.prototype.hasOwnProperty.call(settings, 'raceCatalogSelection')) {
-      settings.raceCatalogSelection = settings.raceCatalogInPrompt === false
-        ? { races: [], derivedTypes: [] }
-        : null;
-    }
-    delete settings.raceCatalogInPrompt;
-    shouldSave = true;
-  }
   const useHostChatStore = ['tauritavern', 'luker'].includes(getHostKind());
   if (useHostChatStore) {
     // TT/Luker 下 chatStates 与宿主 sidecar 绑定，属性描述符可能特殊（旧数据/宿主注入）。
@@ -921,11 +878,9 @@ export function getSettings(ctx) {
     settings.registryDescriptionGuides = cloneValue(DEFAULT_REGISTRY_DESCRIPTION_GUIDES);
     shouldSave = true;
   } else {
-    const existingGuides = { ...settings.registryDescriptionGuides };
-    delete existingGuides['close' + 'upDescription'];
     const mergedGuides = {
       ...cloneValue(DEFAULT_REGISTRY_DESCRIPTION_GUIDES),
-      ...existingGuides,
+      ...settings.registryDescriptionGuides,
     };
     if (JSON.stringify(mergedGuides) !== JSON.stringify(settings.registryDescriptionGuides)) shouldSave = true;
     settings.registryDescriptionGuides = mergedGuides;
@@ -947,17 +902,10 @@ export function getSettings(ctx) {
     settings.temperature = normalizedStoredTemperature;
     shouldSave = true;
   }
-  // temperatureMode 迁移：此前版本没有该字段，已存手填数字的用户归为 manual。
-  // 表单在非 manual 档直接存 null，此后存量数字只可能来自旧版本，翻转安全。
-  if (normalizeTemperatureMode(settings.temperatureMode) === 'legacy' && normalizedStoredTemperature !== null) {
-    settings.temperatureMode = 'manual';
+  const normalizedTemperatureMode = normalizeTemperatureMode(settings.temperatureMode);
+  if (settings.temperatureMode !== normalizedTemperatureMode) {
+    settings.temperatureMode = normalizedTemperatureMode;
     shouldSave = true;
-  } else {
-    const normalizedTemperatureMode = normalizeTemperatureMode(settings.temperatureMode);
-    if (settings.temperatureMode !== normalizedTemperatureMode) {
-      settings.temperatureMode = normalizedTemperatureMode;
-      shouldSave = true;
-    }
   }
   if (shouldSave) saveHostSettings(ctx);
   return settings;
@@ -1005,7 +953,7 @@ export function getChatState(ctx, settings) {
   if (!settings.chatStates[chatKey]) settings.chatStates[chatKey] = createEmptyChatState();
   const chatState = settings.chatStates[chatKey];
   let shouldSave = false;
-  // 存量状态迁移：早期 characters 是普通 {}，读取时重建为 null-proto
+  // 存档是 JSON，每次读回来 characters 都是普通物件，要重建为 null-proto（见 createEmptyChatState）
   const rawCharacters = chatState.characters;
   if (!rawCharacters || typeof rawCharacters !== 'object') {
     chatState.characters = Object.create(null);
@@ -1017,17 +965,6 @@ export function getChatState(ctx, settings) {
     }
     chatState.characters = migrated;
     shouldSave = true;
-  }
-  // 存量迁移：早期的孩子记录没有 id，补上后血缘引用才不依赖阵列索引
-  for (const character of Object.values(chatState.characters)) {
-    const children = character?.profile?.children;
-    if (!Array.isArray(children)) continue;
-    for (const child of children) {
-      if (child && typeof child === 'object' && !child.id) {
-        child.id = createChildId();
-        shouldSave = true;
-      }
-    }
   }
   const normalizedSkillCatalog = normalizeSkillCatalog(chatState.skillCatalog);
   if (JSON.stringify(chatState.skillCatalog || []) !== JSON.stringify(normalizedSkillCatalog)) shouldSave = true;
@@ -1053,12 +990,10 @@ export function getChatState(ctx, settings) {
     chatState.lastOperationLogs = sanitizedCurrentPayload.lastOperationLogs;
     shouldSave = true;
   }
-  if (compactChatStateSnapshots(chatState)) shouldSave = true;
   if (chatState.snapshots.length > MAX_CHAT_STATE_SNAPSHOTS) {
     trimChatStateSnapshots(chatState);
     shouldSave = true;
   }
-  if (needsRepackChatStateSnapshots(chatState) && repackChatStateSnapshots(chatState)) shouldSave = true;
   if (shouldSave) saveSettings(ctx);
   const canRestoreSnapshot = getHostKind() !== 'tauritavern' || hasAbsoluteHostChatView(ctx);
   const latestSnapshot = canRestoreSnapshot ? getLatestMatchingSnapshot(ctx, chatState) : null;
@@ -1112,7 +1047,6 @@ export function inheritChatStateFromMatchingChat(ctx, settings) {
 
   for (const [candidateKey, candidateState] of Object.entries(settings.chatStates)) {
     if (candidateKey === chatKey || !candidateState || typeof candidateState !== 'object') continue;
-    compactChatStateSnapshots(candidateState);
     const candidateSnapshots = Array.isArray(candidateState.snapshots) ? candidateState.snapshots : [];
     for (const snapshot of candidateSnapshots) {
       const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0;
@@ -1590,16 +1524,6 @@ function isSnapshotBoundaryIntact(ctx, snapshot, messageCount) {
   return recorded === current;
 }
 
-function buildMessageDigestFromSignatures(signatures, endIndexExclusive = null) {
-  const list = Array.isArray(signatures) ? signatures : [];
-  const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(list.length, endIndexExclusive)) : list.length;
-  let hash = MESSAGE_DIGEST_SEED;
-  for (let index = 0; index < end; index += 1) {
-    hash = foldMessageSignatureDigest(hash, list[index]);
-  }
-  return hash.toString(16).padStart(8, '0');
-}
-
 function createSnapshotCharacterBaseline(name = '') {
   return {
     name: String(name || '').trim(),
@@ -1772,17 +1696,14 @@ function packSnapshotCharacters(characters) {
   return packed;
 }
 
-function unpackSnapshotCharacters(characters, format = '') {
+/** 快照里的角色一律存成「相对预设角色的差异」（default_delta_v1），这里还原 */
+function unpackSnapshotCharacters(characters) {
   if (!characters || typeof characters !== 'object') return {};
   const unpacked = {};
   for (const [name, item] of Object.entries(characters)) {
-    if (format === 'default_delta_v1') {
-      const baseline = createSnapshotCharacterBaseline(name);
-      const restored = applyStateDeltaPatch(baseline, item && typeof item === 'object' ? item : {});
-      unpacked[name] = normalizeCharacterPsychologyState(restored);
-      continue;
-    }
-    unpacked[name] = normalizeCharacterPsychologyState(cloneValue(item));
+    const baseline = createSnapshotCharacterBaseline(name);
+    const restored = applyStateDeltaPatch(baseline, item && typeof item === 'object' ? item : {});
+    unpacked[name] = normalizeCharacterPsychologyState(restored);
   }
   return unpacked;
 }
@@ -1968,7 +1889,6 @@ function shouldStoreFullSnapshot(snapshotIndex, fullPayload, deltaPatch) {
 function trimChatStateSnapshots(chatState) {
   if (!Array.isArray(chatState?.snapshots)) return;
   if (chatState.snapshots.length <= MAX_CHAT_STATE_SNAPSHOTS) return;
-  compactChatStateSnapshots(chatState);
   const startIndex = chatState.snapshots.length - MAX_CHAT_STATE_SNAPSHOTS;
   const materializedFirstPayload = materializeSnapshotPayloadAt(chatState.snapshots, startIndex);
   chatState.snapshots = chatState.snapshots.slice(startIndex);
@@ -2058,82 +1978,6 @@ function createStoredSnapshotState(snapshots, payload, metadata = {}, cache = ne
   };
 }
 
-function compactChatStateSnapshots(chatState) {
-  if (!Array.isArray(chatState?.snapshots)) return false;
-  let changed = false;
-  for (const snapshot of chatState.snapshots) {
-    if (!snapshot || typeof snapshot !== 'object') continue;
-    if (!Number.isInteger(snapshot.messageCount)) {
-      snapshot.messageCount = Array.isArray(snapshot.messageSignatures) ? snapshot.messageSignatures.length : 0;
-      changed = true;
-    }
-    if (!snapshot.messageDigest && Array.isArray(snapshot.messageSignatures)) {
-      snapshot.messageDigest = buildMessageDigestFromSignatures(snapshot.messageSignatures, snapshot.messageCount);
-      changed = true;
-    }
-    if (!snapshot.snapshotMode) {
-      snapshot.snapshotMode = snapshot.stateDelta ? 'patch' : 'full';
-      changed = true;
-    }
-    if (Array.isArray(snapshot.messageSignatures)) {
-      delete snapshot.messageSignatures;
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-function needsRepackChatStateSnapshots(chatState) {
-  if (!Array.isArray(chatState?.snapshots) || chatState.snapshots.length === 0) return false;
-  return chatState.snapshots.some((snapshot) => {
-    if (!snapshot || typeof snapshot !== 'object') return false;
-    if (!snapshot.snapshotMode) return true;
-    if (Array.isArray(snapshot.messageSignatures)) return true;
-    return false;
-  });
-}
-
-function repackChatStateSnapshots(chatState) {
-  if (!Array.isArray(chatState?.snapshots) || chatState.snapshots.length === 0) return false;
-  compactChatStateSnapshots(chatState);
-
-  const originalSnapshots = chatState.snapshots;
-  const sourceCache = new Map();
-  const repackedSnapshots = [];
-  const repackedCache = new Map();
-  let changed = false;
-
-  for (let index = 0; index < originalSnapshots.length; index += 1) {
-    const snapshot = originalSnapshots[index];
-    const payload = materializeSnapshotPayloadAt(originalSnapshots, index, sourceCache);
-    const stored = createStoredSnapshotState(repackedSnapshots, payload, {
-      messageCount: snapshot?.messageCount,
-      messageDigest: snapshot?.messageDigest,
-      boundarySignature: snapshot?.boundarySignature,
-      reason: snapshot?.reason,
-      createdAt: snapshot?.createdAt,
-      anchorVersion: snapshot?.anchorVersion,
-      tailMessageId: snapshot?.tailMessageId,
-      tailSwipeId: snapshot?.tailSwipeId,
-      tailName: snapshot?.tailName,
-      hostMutSeq: snapshot?.hostMutSeq,
-      replacementStamp: snapshot?.replacementStamp,
-    }, repackedCache);
-    repackedSnapshots.push(stored);
-    repackedCache.set(repackedSnapshots.length - 1, cloneValue(payload));
-
-    if (
-      stored.snapshotMode !== snapshot?.snapshotMode
-      || JSON.stringify(stored.stateSnapshot ?? stored.stateDelta ?? null) !== JSON.stringify(snapshot?.stateSnapshot ?? snapshot?.stateDelta ?? null)
-    ) {
-      changed = true;
-    }
-  }
-
-  if (changed) chatState.snapshots = repackedSnapshots;
-  return changed;
-}
-
 function getSnapshotRuntimeKey(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return '';
   return [
@@ -2174,7 +2018,7 @@ export function getSnapshotCharacter(chatState, index, name) {
   const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
   if (!Number.isInteger(index) || index < 0 || index >= snapshots.length) return null;
   const payload = materializeSnapshotPayloadAt(snapshots, index);
-  const characters = unpackSnapshotCharacters(payload.characters, payload.charactersFormat || '');
+  const characters = unpackSnapshotCharacters(payload.characters);
   const character = characters?.[name];
   return character ? cloneValue(character) : null;
 }
@@ -2208,7 +2052,7 @@ export function restoreChatStateFromSnapshot(chatState, snapshot) {
   if (payload.skillBaselinePrompt !== undefined) chatState.skillBaselinePrompt = String(payload.skillBaselinePrompt || '');
   if (payload.skillCatalog !== undefined) chatState.skillCatalog = normalizeSkillCatalog(payload.skillCatalog);
   if (payload.nextSkillId !== undefined) chatState.nextSkillId = normalizeNextSkillId(chatState.skillCatalog, payload.nextSkillId);
-  chatState.characters = unpackSnapshotCharacters(payload.characters, payload.charactersFormat || '');
+  chatState.characters = unpackSnapshotCharacters(payload.characters);
   chatState.lastRawResult = payload.lastRawResult || null;
   chatState.lastOperationLogs = Array.isArray(payload.lastOperationLogs) ? payload.lastOperationLogs : [];
 }
@@ -2243,7 +2087,6 @@ export function recordChatStateSnapshot(ctx, chatState, options = {}) {
 }
 
 export function getLatestMatchingSnapshot(ctx, chatState, messageCount = null) {
-  compactChatStateSnapshots(chatState);
   const chatLength = getHostChat(ctx).length;
   const requestedCount = Number.isInteger(messageCount)
     ? Math.max(0, Math.min(chatLength, messageCount))

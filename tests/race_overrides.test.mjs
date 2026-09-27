@@ -26,7 +26,7 @@ test('覆写键正规化成基名，旧键合并后不丢栏位', () => {
 });
 
 test('衍生覆写键同样收敛到基名与别名', () => {
-  const normalized = normalizeDerivedOverrideMap({ 修行: { inheritanceSpeed: 2 }, '血族-初拥': { inheritanceSpeed: 3 } });
+  const normalized = normalizeDerivedOverrideMap({ 修煉: { inheritanceSpeed: 2 }, '血族-初拥': { inheritanceSpeed: 3 } });
   assert.deepEqual(Object.keys(normalized).sort(), ['修炼', '血族']);
 });
 
@@ -38,7 +38,7 @@ test('清除一笔覆写会连同所有同基名的旧键一起删掉', () => {
   };
   assert.deepEqual(removeRaceOverrideEntry(overrides, '人类'), { '兽耳族': { companionEggsMean: 4 } });
   assert.deepEqual(removeRaceOverrideEntry(overrides, ''), overrides, '空名不应误删');
-  assert.deepEqual(removeDerivedOverrideEntry({ 修炼: { inheritanceSpeed: 2 } }, '修行'), {});
+  assert.deepEqual(removeDerivedOverrideEntry({ 修炼: { inheritanceSpeed: 2 } }, '修煉'), {});
 });
 
 test('清掉覆写后人类回到内建参数', () => {

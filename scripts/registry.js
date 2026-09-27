@@ -1081,7 +1081,7 @@ function sanitizeChildren(value) {
         birthAffinity: Number.isFinite(Number(item.birthAffinity)) ? clampNumber(item.birthAffinity, -50, 50, 0) : null,
         id: item.id ?? createChildId(),
         registeredAs: item.registeredAs ?? null,
-        talents: normalizeTalentList(item.talents ?? item.inheritedTalents),
+        talents: normalizeTalentList(item.talents),
       };
     });
 }
@@ -1141,7 +1141,7 @@ function sanitizePregnant(value) {
           identicalGroup: Number.isFinite(Number(item.identicalGroup)) ? Math.floor(Number(item.identicalGroup)) : undefined,
           nestedInIndex: Number.isFinite(Number(item.nestedInIndex)) ? Math.floor(Number(item.nestedInIndex)) : undefined,
           revealed: item.revealed === undefined ? undefined : Boolean(item.revealed),
-          talents: normalizeTalentList(item.talents ?? item.inheritedTalents),
+          talents: normalizeTalentList(item.talents),
         };
       })
     : [];
