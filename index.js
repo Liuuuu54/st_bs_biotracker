@@ -3979,11 +3979,11 @@ function setWombCardsOpen(host, open) {
 }
 
 /** 当下主题的萤幕、文字与边框色，子宫图的配色从这里调出来（深浅模式各自取） */
-function readWombThemeColors() {
+function readWombThemeColors(themeName) {
   const root = document.getElementById('bs-biotracker-settings');
   const style = root ? getComputedStyle(root) : null;
   const read = (name) => String(style?.getPropertyValue(name) || '').trim();
-  return { screen: read('--bsbt-lcd-bg'), text: read('--bsbt-lcd-text'), border: read('--bsbt-border-color') };
+  return { name: String(themeName || 'retro'), screen: read('--bsbt-lcd-bg'), text: read('--bsbt-lcd-text'), border: read('--bsbt-border-color') };
 }
 
 function drawWombThumb(node, emote = null) {
@@ -4023,7 +4023,7 @@ function mountWombView(ctx, content, viewModel) {
   const host = content.querySelector('[data-womb-host]');
   if (!host) return;
   const settings = getSettings(ctx);
-  const themeColors = readWombThemeColors();
+  const themeColors = readWombThemeColors(settings.theme);
   const theme = JSON.stringify(themeColors);
   const animated = settings.wombAnimation !== false;
   if (!wombCanvas) {

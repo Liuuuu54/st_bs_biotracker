@@ -70,11 +70,164 @@ function pickThemeHue(theme) {
 }
 
 /**
- * @param theme { screen, text, border }：当下主题的 --bsbt-lcd-bg、--bsbt-lcd-text、--bsbt-border-color；
- *        给不出来时退回原本的深紫配色
+ * 各主题自己的子宫配色，对应主题的创作背景。只给几组锚点，其余颜色由 themedPalette 推出：
+ * flesh 宫壁（暗、中、亮）、cavity 宫腔（底、深）、fetus 胎儿（底、亮、高光）、egg 卵（壳、暗面）、
+ * membrane 膜线（底、亮）、sac 胎囊、blood 经血与充血、glow 卵巢发光；ink 是眼睛与斑纹的线色，
+ * signal 覆盖警示色，brush 开启水墨的笔触后处理。仿真与废土本来就是单色萤幕，走单色调；iPhone 走肉色写实
+ */
+const THEME_WOMB_PALETTES = Object.freeze({
+  // 修仙：玉器。深绿碧玉的宫壁、羊脂白玉的胎儿、金镶玉的膜，经血用朱砂
+  cultivation: {
+    bg: '#10261f', void: '#0a1a15', tick: '#4db6ac',
+    flesh: ['#245842', '#4f8f6f', '#94c7a6'], cavity: ['#173a30', '#0e271f'],
+    fetus: ['#e6ecd6', '#f6f7ec', '#ffffff'], egg: ['#dfe8cf', '#86ad93'],
+    membrane: ['#c8a94f', '#f0dca0'], sac: '#a8d8c0', blood: '#b8392f', glow: '#f0dca0', ink: '#2f5d49',
+  },
+  // 奇幻：羊皮卷手抄本。皮革与棕红墨的宫壁、羊皮纸的胎儿、金箔的膜
+  fantasy: {
+    bg: '#2b1d14', void: '#1a110b', tick: '#c9a25a',
+    flesh: ['#5e2a20', '#9c4a36', '#d4886a'], cavity: ['#3a2619', '#26170e'],
+    fetus: ['#f2e2bf', '#fbf1d9', '#fffaf0'], egg: ['#efdcb2', '#8b6a3e'],
+    membrane: ['#d4af37', '#f5dc8a'], sac: '#b89a6a', blood: '#8b1e1e', glow: '#f5dc8a', ink: '#4a2c1a',
+  },
+  // 埃及（赛博 2077）：黄蓝霓虹。金黄的宫壁、青色发光的胎儿与膜、深海军蓝的宫腔；警示改桃红，免得撞宫壁的黄
+  'cyber-egypt': {
+    bg: '#06121f', void: '#030a12', tick: '#00f2ff',
+    flesh: ['#7a5a00', '#d4af37', '#fce94f'], cavity: ['#0a2238', '#051626'],
+    fetus: ['#7ff6ff', '#d8feff', '#ffffff'], egg: ['#d4f8ff', '#2e8fa3'],
+    membrane: ['#00f2ff', '#a8fbff'], sac: '#00b8d4', blood: '#ff2a6d', glow: '#fcee0a', ink: '#003a45', signal: '#ff2a6d',
+  },
+  // 樱花（翻盖机）：粉白软绵绵。淡粉的背景与宫腔、白胎儿配粉色阴影、玫瑰色的眼睛，整体低对比
+  sakura: {
+    bg: '#fff0f5', void: '#ffe1eb', tick: '#f48fb1',
+    flesh: ['#ec7fa6', '#f7b3cb', '#fde1eb'], cavity: ['#f8c6d7', '#f2afc6'],
+    fetus: ['#fffafc', '#ffffff', '#ffffff'], egg: ['#fff5f9', '#f3a2bf'],
+    membrane: ['#c48bd8', '#ecd4f5'], sac: '#ffffff', blood: '#e91e63', glow: '#ffffff', ink: '#c2185b', signal: '#ffb300',
+  },
+  // 全息：青色投影，膜带洋红的虹彩
+  holo: {
+    bg: '#020d18', void: '#010710', tick: '#4adfff',
+    flesh: ['#0a5a7a', '#1fa8d0', '#7fe8ff'], cavity: ['#04213a', '#021428'],
+    fetus: ['#c8fbff', '#f2feff', '#ffffff'], egg: ['#bff6ff', '#3a8fb0'],
+    membrane: ['#e27dff', '#ffc8ff'], sac: '#5ad8ff', blood: '#ff4fd8', glow: '#8df7ff', ink: '#0a4a66',
+  },
+  // 哥特：中二吸血鬼。黑底、血红天鹅绒的宫壁、苍白象牙的胎儿、红眼睛、银紫的膜
+  gothic: {
+    bg: '#0d0508', void: '#060204', tick: '#8f3f4b',
+    flesh: ['#4a0d1a', '#8b1a2e', '#c43a4e'], cavity: ['#1a0610', '#0c0308'],
+    fetus: ['#e9dde8', '#fbf4f7', '#ffffff'], egg: ['#e8dde6', '#6b2a44'],
+    membrane: ['#b9a7c9', '#e6dcef'], sac: '#5c1f33', blood: '#b0001e', glow: '#ff3355', ink: '#c8102e',
+  },
+  // 蒸汽：黄铜机械。红铜的宫壁、黄铜象牙的胎儿、铜绿的膜
+  steampunk: {
+    bg: '#1d1510', void: '#120c08', tick: '#d1a85a',
+    flesh: ['#5a2e18', '#a0552b', '#d98a4e'], cavity: ['#2a1c12', '#1a110b'],
+    fetus: ['#f0d9a8', '#fbeccb', '#fff6e0'], egg: ['#e8cf9a', '#8a6a2d'],
+    membrane: ['#3fa38a', '#8fd6c0'], sac: '#b88a3d', blood: '#8a1f12', glow: '#ffcf6b', ink: '#4a2f1f',
+  },
+  // 克系：触手。章鱼紫的宫壁、深渊青黑的宫腔、病态骨白偏绿的胎儿、生物萤光青的膜，经血是紫色体液
+  eldritch: {
+    bg: '#070b0a', void: '#030605', tick: '#68d6c2',
+    flesh: ['#3b2240', '#6e3f78', '#b27ab8'], cavity: ['#0e2422', '#081614'],
+    fetus: ['#cfe3c8', '#e9f5e2', '#f7fff2'], egg: ['#b9d8c6', '#3b5e57'],
+    membrane: ['#68d6c2', '#b8fff0'], sac: '#2e5c54', blood: '#6a2360', glow: '#68d6c2', ink: '#1b3b36',
+  },
+  // 水墨：宣纸底、淡墨的宫腔、浓墨的宫壁，警示用朱砂；另外画完再做一次笔触处理（飞白与晕染）
+  ink: {
+    bg: '#f3ead8', void: '#e6dbc4', tick: '#1f2522',
+    flesh: ['#1f2522', '#4b514c', '#8a8d86'], cavity: ['#dcd3bf', '#cbc2ab'],
+    fetus: ['#faf6ec', '#ffffff', '#ffffff'], egg: ['#f6f0e2', '#8a8d86'],
+    membrane: ['#5c6660', '#9aa39c'], sac: '#b9b3a2', blood: '#b23a2e', glow: '#b23a2e', ink: '#1f2522', signal: '#c0392b', brush: true,
+  },
+  // 建构：苏联构成主义海报。米色海报底、黑宫腔、红宫壁、米白胎儿，大块平涂
+  constructivism: {
+    bg: '#e2dccb', void: '#cfc7b2', tick: '#141414',
+    flesh: ['#141414', '#b62525', '#e0584a'], cavity: ['#2a2a2a', '#141414'],
+    fetus: ['#ece3cf', '#f7f1e3', '#ffffff'], egg: ['#ece3cf', '#8a8577'],
+    membrane: ['#c9c3b3', '#ffffff'], sac: '#b62525', blood: '#b62525', glow: '#ece3cf', ink: '#141414',
+  },
+});
+
+/** 从主题锚点推出整组色盘 */
+function themedPalette(spec) {
+  const [fleshDark, flesh, fleshLight] = spec.flesh;
+  const [cavity, cavityDeep] = spec.cavity;
+  const [fetus, fetusLight, shine] = spec.fetus;
+  return {
+    bg: spec.bg,
+    void: spec.void,
+    tick: spec.tick,
+    frame: mixColor(fleshDark, '#000000', 0.35),
+    wallDark: fleshDark,
+    wall: flesh,
+    wallLight: fleshLight,
+    wallTense: mixColor(flesh, spec.blood, 0.45),
+    shine,
+    cavity,
+    cavityDeep,
+    fluid: mixColor(cavity, fleshLight, 0.45),
+    fluidLight: mixColor(cavity, fetusLight, 0.6),
+    water: spec.membrane[0],
+    waterLight: spec.membrane[1],
+    sac: spec.sac,
+    shadow: mixColor(cavityDeep, fleshDark, 0.5),
+    fetus,
+    fetusLight,
+    egg: spec.egg[0],
+    eggShade: spec.egg[1],
+    signal: spec.signal || BASE_PALETTE.signal,
+    blood: spec.blood,
+    lining: fleshLight,
+    ovaryHot: spec.blood,
+    ovaryGlow: spec.glow,
+    ...(spec.ink ? { ink: spec.ink } : {}),
+    ...(spec.brush ? { brush: true } : {}),
+  };
+}
+
+function luminance(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+// 保留原色的项目：警示黄要一眼看得到，不跟着主题变单色
+const RAMP_FIXED_KEYS = new Set(['signal']);
+// 代表色彩度低于这个值（近乎黑白的主题）就改用灰阶
+const RAMP_GRAY_CHROMA = 40;
+
+/**
+ * 单色调配色：每个颜色依亮度对应到主题代表色的一条明暗色阶（最暗 → 代表色中间调 → 最浅的淡色），
+ * 亮暗关系不变，所以胎儿、宫壁、羊水泡、卵壳仍分得开，整张图变成同一个色系（像 Game Boy）
+ */
+function rampPalette(hue) {
+  const base = chromaOf(hue) < RAMP_GRAY_CHROMA ? '#8c8c8c' : hue;
+  const dark = toBrightness(base, 34);
+  const mid = toBrightness(base, 176);
+  const light = mixColor(toBrightness(base, 255), '#ffffff', 0.72);
+  const palette = {};
+  for (const [key, color] of Object.entries(BASE_PALETTE)) {
+    if (RAMP_FIXED_KEYS.has(key)) {
+      palette[key] = color;
+      continue;
+    }
+    const t = Math.max(0, Math.min(1, (luminance(color) - 0.06) / 0.86));
+    palette[key] = t < 0.5 ? mixColor(dark, mid, t / 0.5) : mixColor(mid, light, (t - 0.5) / 0.5);
+  }
+  palette.bg = toBrightness(base, 46);
+  palette.void = toBrightness(base, 26);
+  palette.tick = toBrightness(base, 120);
+  return palette;
+}
+
+/**
+ * @param theme { name, screen, text, border }：主题名与当下的 --bsbt-lcd-bg、--bsbt-lcd-text、--bsbt-border-color。
+ *        有专属配色的主题用 THEME_WOMB_PALETTES；仿真、废土这类单色萤幕整张换成代表色的单色调；
+ *        iPhone 维持肉色的写实配色（只往代表色轻微偏）。给不出颜色时退回原本的深紫肉色配色
  */
 export function getUterusPalette(theme = {}) {
+  if (THEME_WOMB_PALETTES[theme.name]) return themedPalette(THEME_WOMB_PALETTES[theme.name]);
   const hue = pickThemeHue(theme);
+  if (hue && theme.name && theme.name !== 'iphone') return rampPalette(hue);
   const palette = {};
   for (const [key, color] of Object.entries(BASE_PALETTE)) {
     const amount = !hue || FIXED_KEYS.has(key) ? 0 : FETUS_KEYS.has(key) ? FETUS_TINT : FLESH_TINT;
@@ -87,6 +240,50 @@ export function getUterusPalette(theme = {}) {
     palette.tick = toBrightness(hue, 120);
   }
   return palette;
+}
+
+// ---- 水墨笔触：整张画完后再处理一次 ----
+// 飞白：浓墨像素贴着浅色的地方，按固定规律掉成纸色，像干笔擦过；
+// 晕染：紧贴浓墨的浅色像素往墨色渗一点。规律只看座标，每帧相同，不会闪
+function inkBrush(ctx, P) {
+  const { width, height } = ctx.canvas;
+  const image = ctx.getImageData(0, 0, width, height);
+  const d = image.data;
+  const lum = (i) => (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+  const dark = new Uint8Array(width * height);
+  for (let p = 0; p < width * height; p += 1) dark[p] = lum(p * 4) < 0.4 ? 1 : 0;
+  const paper = hexToRgb(P.bg);
+  const ink = hexToRgb(P.ink || '#1f2522');
+  const noise = (x, y) => {
+    const v = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const p = y * width + x;
+      const i = p * 4;
+      const near = (dx, dy) => {
+        const nx = x + dx;
+        const ny = y + dy;
+        return nx >= 0 && ny >= 0 && nx < width && ny < height ? dark[ny * width + nx] : 0;
+      };
+      const darkNeighbors = near(1, 0) + near(-1, 0) + near(0, 1) + near(0, -1);
+      if (dark[p]) {
+        // 笔画边缘（有浅色邻居）才会飞白
+        if (darkNeighbors < 4 && noise(x, y) < 0.22) {
+          d[i] = Math.round(d[i] * 0.3 + paper[0] * 0.7);
+          d[i + 1] = Math.round(d[i + 1] * 0.3 + paper[1] * 0.7);
+          d[i + 2] = Math.round(d[i + 2] * 0.3 + paper[2] * 0.7);
+        }
+      } else if (darkNeighbors > 0 && noise(y, x) < 0.5) {
+        const t = 0.12 * darkNeighbors;
+        d[i] = Math.round(d[i] * (1 - t) + ink[0] * t);
+        d[i + 1] = Math.round(d[i + 1] * (1 - t) + ink[1] * t);
+        d[i + 2] = Math.round(d[i + 2] * (1 - t) + ink[2] * t);
+      }
+    }
+  }
+  ctx.putImageData(image, 0, 0);
 }
 
 // ---- 像素小字：数字、+、! 用 3×5 点阵，不用 fillText（会被抗锯齿糊掉） ----
@@ -169,7 +366,7 @@ function fetusTones(P) {
     body: P.fetus,
     shade: mixColor(P.fetus, P.wallDark, 0.3),
     cord: mixColor(P.fetus, P.fetusLight, 0.35),
-    face: mixColor(P.fetus, P.cavityDeep, 0.7),
+    face: P.ink || mixColor(P.fetus, P.cavityDeep, 0.7),
     shell: P.eggShade,
     shellLight: P.egg,
     gap: P.cavity,
@@ -178,7 +375,7 @@ function fetusTones(P) {
     shellShade: mixColor(P.egg, P.eggShade, 0.45),
     yolk: mixColor(P.fetusLight, P.signal, 0.4),
     ghost: mixColor(P.egg, P.eggShade, 0.32),
-    speck: mixColor(P.egg, P.eggShade, 0.6),
+    speck: P.ink ? mixColor(P.eggShade, P.ink, 0.4) : mixColor(P.egg, P.eggShade, 0.6),
     shine: mixColor(P.egg, '#ffffff', 0.55),
     // 不定型
     blob: mixColor(P.fetus, P.wall, 0.4),
@@ -356,6 +553,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       px(88, 35 + i * 8, i % 2 ? 2 : 4, 1, P.tick);
     }
     if (layout.hiddenCount > 0) pen.glyphs(`+${layout.hiddenCount}`, 80 - String(layout.hiddenCount).length * 4, 112, P.signal);
+    if (P.brush) inkBrush(ctx, P);
   }
 
   function liningTone() {
