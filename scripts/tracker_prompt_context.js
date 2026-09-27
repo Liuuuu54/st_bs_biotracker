@@ -89,19 +89,13 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- laborPhase: 当前产程内部阶段。第一产程为潜伏期/活跃期/过渡期；第二产程为胎体下降/胎体娩出/间歇期；第三产程为供养器官娩出/产后观察。',
   '- laborBirthNumber: 第二产程正在生第几胎，从 1 起算；其他阶段通常为 0。它是出生计数，不是 fetuses 的下标。正在下降或娩出的那一胎在 fetuses 里带 presenting=true；fetuses 的排列顺序不代表出生顺序。',
   '- laborPain: 当前分娩疼痛程度，范围 0-10。描写疼痛反应不得明显超过此等级；刚进入第一产程时不应写成已达到极限痛苦。',
-  '- amnionDurability: 羊膜耐性（0-100）；过低代表接近或已经破水。每一胎有各自的羊膜（同卵共用一个胎囊）：全部胎囊相同时只给这一个数值；不同时不给这个数值，改在对应胎儿上标 fetuses[*].amnion＝膜薄／膜危／已破，没标的就是完整。破水请用 bsAssistFetalPosition（action=rupture），可用 fetusIndex 指定哪一胎。',
+  '- amnionDurability: 羊膜耐性（0-100）；过低代表接近或已经破水。每一胎有各自的羊膜（同卵共用一个胎囊）：全部胎囊相同时只给这一个数值；不同时不给这个数值，改在对应胎儿上标 fetuses[*].amnion＝膜薄／膜危／已破，没标的就是完整。',
   '- nutrition: 妊娠供养力盈余/赤字，由需求照料累积：任一需求在「高」时用 bsExcreteMetabolism 彻底处理到「无」约 +1，只处理一半不算；拖到「爆」约 -1，停在爆每满 24 小时再扣一次；「满」不增不减。点数会按种族与妊娠负担折算，所以常见小数。正值代表供养充足，负值代表供养亏空。这是全部胎儿的合计：系统每次计分当下就按各胎孕龄与位置拆给每一胎，每周各自换算成胎重后归零。',
-  '- bsMaternalFetalInteraction 的 direction=fetal 表示胎儿对母体的亲近或排斥，须传 change 来改变 affinity；direction=maternal 表示母体安抚胎儿，不传 change，系统会随机决定 affinity 变化。母胎互动不影响供养力，也不改变胎位或产程时间。每名角色每个新小时仅能成功生效一次。',
-  '- bsAssistFetalPosition 只在剧情明确出现人工、器械或魔法的胎位操作时调用（转位 rotate、托高 lift、推送 descend、破水 rupture、助产拉出 extract）。产兆前驱托高领头胎儿会延后分娩、推送会缩短前驱；托高要跟宫缩对抗，活力不足会被拒绝。每次操作都会带来一阵剧痛（反映在 laborPain），孕期则提高心理压力。',
-  '- 胎儿有意识地自己转身、往上缩、往下钻或踢破胎膜时，用 bsAssistFetalPosition 加 actor=fetus：不耗母体活力，母体照样会痛；胎儿不能自己 extract，也解不开自己卡住的肩膀；入盆后只能小幅转动（30° 以内）、胎背只能前后对调，产程中不能自己缩回或往下钻，但可以踢破胎膜、互锁的那一胎可以自己转开。普通的胎动、踢一下不要调用。',
-  '- 产兆前驱与产程中的插入（bsAddSperm insert）会把最前面的胎儿往回顶：前驱延后、产道里的胎儿产程倒退（着冠时更多，可能顶破胎膜），并降低它的亲和；产兆前驱中射精会缩短前驱。依回传讯息描写，不要写成顺产。',
-  '- blockage: 当日妊娠阻塞状态，格式为 {key, severity}。key 可为 excretion/hunger/sleep/milk/odor/companionship/fluxPositive/fluxNegative；它会让对应需求的 bsExcreteMetabolism 排解不顺畅。',
-  '- acceleration: 当日妊娠快积状态，格式同 blockage；它会让对应需求更快累积。',
-  '- expansion: 当日妊娠扩容状态，格式同 blockage；它会将对应普通需求上限从 150 扩为 200，或将对应方向的 flux 上限从 ±150 扩为 ±200。blockage、acceleration 与 expansion 不会同时落在同一项需求上。非衍生角色不会出现 fluxPositive/fluxNegative；衍生角色不会出现其 derivedType 已抵免的普通需求。',
+  '- 胎位操作、胎儿自主活动、母胎互动与插入推顶的规则写在各工具说明里（bsAssistFetalPosition、bsMaternalFetalInteraction、bsAddSperm），依工具回传描写。',
+  '- blockage / acceleration / expansion: 当日妊娠症状，格式为 {key, severity}，含义见 [metabolism]。',
   '- fetuses: 胎儿列表。',
   '- fetuses[*].fathers: 父方对象名称。',
-  '- fetuses[*].provider: 胚胎真正的归属方（代孕委托者、虫母等），自然受孕为 null。单一 provider 的孩子分娩后自动转交；多母源嵌合体以 × 显示并留在孕母名下。要建立外源受精卵请用 bsImplantEmbryo，不要自行编造。',
-  '- bsImplantEmbryo.count 是胎儿卡／有效后代候选数，不是植入卵枚数。若故事是植入一群十枚卵、其中只有一名能成为有效后代，必须传 count=1；其余九枚是系统记在该胎儿卡上的伴生卵（companionEggCount）。',
+  '- fetuses[*].provider: 胚胎真正的归属方（代孕委托者、虫母等），自然受孕为 null。单一 provider 的孩子分娩后自动转交；多母源嵌合体以 × 显示并留在孕母名下。',
   '- fetuses[*].providerSources: 可接收孩子的母源名单。多于一位时孩子默认登记在孕母名下，之后可手动转移给其中一位。',
   '- fetuses[*].chimera: 受精卵早期融合的嵌合资料，包含来源数量、父源、母源与融合前性别。没有融合时不出现。',
   '- fetuses[*].tags: 系统标注的胎儿来历标签（如 chimera/surrogacy/identical），由系统推导或在事件发生当下写入，只读，不要自行增删。本轮出现过的标签会在下方另行说明。',
@@ -115,10 +109,10 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].embryoType: 胚胎型态，如 胎生、卵生、卵胎生、胎转卵生、不定型。',
   '- fetuses[*].companionEggCount: 这一胎伴随的背景卵数量（伴生卵），为 0 时不出现。出生时会随这一胎一起排出，可描写成产下整群卵，但只有这一胎会写入族谱；绝不能按伴生卵自行增加 fetusesCount、胎儿卡或孩子。',
   '- fetuses[*].weight: 胎重系数，標準1.0，范围0.33~3.0。影响妊娠负担、分娩难度与恢复期。',
-  '- fetuses[*].tendencyAngle: 胎位倾向角度，影响孕期/产兆前驱中的调位，以及第二产程胎体下降/娩出的难度；角度映射固定为 0/360=正常头位/正位，180=完全臀位/倒位，90或270=横位，禁止反写；不会阻止第一产程进入第二产程。若 notify 发出难产警示，应优先考虑 bsChildbirth 手术产。',
+  '- fetuses[*].tendencyAngle: 胎位角度，0/360=头位，180=臀位，90或270=横位，禁止反写；影响第二产程的难度。若 notify 发出难产警示，应优先考虑 bsChildbirth 手术产。',
   '- fetuses[*].tendencyAngleText: 系统额外附带的胎位文字说明，如 正位(头位)/倒位(臀位)/横位/斜位。',
-  '- fetuses[*].positionText: 这一胎在子宫里的深度，由系统的胎动与产程自动结算：顶到宫顶／宫内自由／子宫低位／入盆／进入产道／着冠／先露部已出；卡住时会写明（如 与另一胎在入口互锁、肩部卡住、在宿主胎儿体内）。描写胎儿位置、腹部下沉、入盆时须与它一致，不要自行改写；需要人为调整请用 bsAssistFetalPosition。',
-  '- fetuses[*].backSideText: 胎背朝母体哪一侧（左前／右前／左后／右后；横位时写成朝上或朝下、偏前或偏后）。与胎位角度互相独立，由系统的胎动与产程结算；胎背朝后（枕后位）时胎儿的脸朝母体腹侧，真实分娩模式下产程较慢、较痛。描写胎动方向、胎背贴着哪一侧肚皮时须与它一致；需要人为调整请用 bsAssistFetalPosition(action=rotate, backSide)。',
+  '- fetuses[*].positionText: 这一胎在子宫里的深度，由系统的胎动与产程自动结算：顶到宫顶／宫内自由／子宫低位／入盆／进入产道／着冠／先露部已出；卡住时会写明（如 与另一胎在入口互锁、肩部卡住、在宿主胎儿体内）。描写胎儿位置、腹部下沉、入盆时须与它一致，不要自行改写。',
+  '- fetuses[*].backSideText: 胎背朝母体哪一侧（左前／右前／左后／右后；横位时写成朝上或朝下、偏前或偏后）。与胎位角度互相独立，由系统的胎动与产程结算；胎背朝后（枕后位）时胎儿的脸朝母体腹侧，真实分娩模式下产程较慢、较痛。描写胎动方向、胎背贴着哪一侧肚皮时须与它一致。',
   '- fetuses 的排列顺序是子宫里由左至右的相对位置，不代表出生顺序；正在下降或娩出的那一胎带 presenting=true。',
   '- fetuses[*].affinity: 母胎之間的親密度，也会参与 derivedType 进展。',
   '- fetuses[*].maternalDerivedTypeProgress: 与母体(正)/父源(負)衍生同化的进度，范围 -100 到 100。',
@@ -181,6 +175,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- excretion 会在活力增加时累积；以 bsExcreteMetabolism 处理 hunger（进食）会增加部分泄意与少量困意，处理 sleep（睡眠）会增加少量饿意。milk 代表乳意：普通周期中为乳房胀敏或周期不适，黄体期/月经期会随时间累积，排卵期可因性欲波动少量累积；妊娠、假孕或产后恢复时则也涵盖乳胀与泌乳需求。odor 代表需要清理的臭意，companionship 代表渴望陪伴或社交的伴意。',
   '- 时间累积满一周时会进行日常生活结算：基本清洁会清除臭意，日常往来会缓解部分伴意；普通周期进入新一轮卵泡期时，周期型乳意会清零。妊娠、假孕或产后恢复的泌乳型乳意不会因跨周自动清除。',
   '- 只有剧情确实发生陪伴或社交时，才用 options.companionship 缓解伴意；臭意达到高等级时会降低陪伴缓解效果。伴意解除不额外转化为乳意；乳意仍由周期、妊娠/假孕/产后恢复与性欲波动等既有来源产生。',
+  '- pregnant.blockage／acceleration／expansion 是当日妊娠症状，格式为 {key, severity}，key 可为上述需求或 fluxPositive/fluxNegative；三者不会同时落在同一项需求上。',
   '- pregnant.blockage 表示阻塞症状，会降低对应需求的解除效果：',
   '  - excretion: 便秘。',
   '  - hunger: 孕吐恶心、消化不良。',
@@ -381,6 +376,35 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
   return parts.filter(Boolean).join('\n\n');
 }
 
+/**
+ * 主流模型看得到状态 JSON 却没有 tracker 那份变量说明：这里只补它容易读错的数值与标记，
+ * 且只附本轮真的出现的部分（有妊娠才讲胎儿、有衣柜才讲穿着、有心理才讲心理）
+ */
+function buildMainFlowFieldNotes(existingState = {}) {
+  const profiles = Object.values(existingState || {}).map((item) => item?.profile || {});
+  const lines = [
+    '[状态字段速读]',
+    '- base：vitality 活力、psyStress 情压，体质与精神倾向看 *LevelText；libido 性欲；uterinePressure 宫压（上限随孕程提高，越高越接近流产或分娩）；eggs 可受精卵数；sperms 为体内残留精液，value 每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。',
+  ];
+  if (profiles.some((profile) => profile.metabolism)) {
+    lines.push('- metabolism：excretion 泄意、hunger 饿意、sleep 困意、milk 乳意、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；数值越高越急迫（一般上限 150）。');
+  }
+  if (profiles.some((profile) => profile.pregnant)) {
+    lines.push(
+      '- pregnant：pregnantDays 孕龄天数；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；nutrition 供养盈亏，正为充足、负为亏空；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
+      '- fetuses 按子宫里由左到右排列，不代表出生顺序；presenting=true 是正在下降或娩出的那一胎。weight 胎重系数，1.0 为标准；affinity 母胎亲密度 -50～50，负值为排斥；positionText、backSideText、tendencyAngleText 是胎位现况，描写须一致。',
+    );
+  }
+  if (profiles.some((profile) => profile.outfit)) {
+    lines.push('- outfit.currentWearText 是当前穿着；mainItemId=null 表示衣着未记录，不代表裸体。pregFit.gap 低于 0 表示该维度（遮蔽、承托、容身、方便）已被孕期变化压过，只写成体感，不写数字。');
+  }
+  if (profiles.some((profile) => profile.psychology)) {
+    lines.push('- psychology 各项的 *_interpret 是心理解释，优先依它描写。');
+  }
+  lines.push('- notify 是本轮系统事件提示（阶段变化、风险、胎动等），可自然融入叙事，不要照抄。');
+  return lines.join('\n');
+}
+
 export function buildMainFlowStatePrompt(payload = {}) {
   const existingState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {};
   const hasState = Object.keys(existingState).length > 0;
@@ -400,6 +424,8 @@ export function buildMainFlowStatePrompt(payload = {}) {
     '以下内容来自并行运行的角色生理状态追踪支流。',
     '已注册角色状态仅供叙事参考，不要在回复中复述字段、JSON 或本段上下文。',
     '状态为只读；若剧情没有明确触发变化，不要编造与之冲突的生理、心理或关系变化。',
+    '',
+    buildMainFlowFieldNotes(existingState),
     '',
     '[当前已注册角色状态]',
     serializeStateForPrompt(existingState),

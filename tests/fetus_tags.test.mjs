@@ -250,3 +250,18 @@ test('孕中孕的说明讲的是被套的那一颗，不是宿主', () => {
   assert.match(line, /长在另一颗胎儿的体内/);
   assert.ok(!/自身也怀有胎儿/.test(line));
 });
+
+test('主线提示词附上字段速读，只讲本轮真的出现的部分', () => {
+  const plain = buildMainFlowStatePrompt({ existing_state: { A: { name: 'A', profile: { base: { stage: '卵泡期' }, metabolism: { hunger: 10 } } } } });
+  assert.match(plain, /\[状态字段速读\]/);
+  assert.match(plain, /penetrationState/);
+  assert.match(plain, /metabolism：/);
+  assert.doesNotMatch(plain, /presenting=true/, '没怀孕不讲胎儿');
+  assert.doesNotMatch(plain, /currentWearText/, '没衣柜不讲穿着');
+  assert.ok(plain.indexOf('[状态字段速读]') < plain.indexOf('[当前已注册角色状态]'));
+
+  const pregnant = buildMainFlowStatePrompt({ existing_state: { A: { name: 'A', profile: { pregnant: { fetuses: [] }, outfit: { mainItemId: null } } } } });
+  assert.match(pregnant, /presenting=true/);
+  assert.match(pregnant, /laborPain/);
+  assert.match(pregnant, /mainItemId=null 表示衣着未记录/);
+});

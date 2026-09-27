@@ -689,8 +689,22 @@ function getDiaryRecentLimit(settings, characterCount) {
   return characterCount > 1 ? Math.max(1, Math.floor(singleLimit / 2)) : singleLimit;
 }
 
-function hasPreparedWardrobe(existingState = {}) {
-  return Object.values(existingState || {}).some((item) => item && typeof item === 'object');
+/**
+ * 着衣系统是扩充：只要有任何一名角色真的有衣物资料（衣柜里有 id=0 全裸以外的衣物，
+ * 或穿着已记录、有配件或临时衣物）才开启。全员「衣着未记录」时，衣柜工具、变量说明
+ * 与状态里的 wardrobe／outfit 一律不送，省下每轮约 2k token。
+ * 注册辨识出衣着、衣柜补充或手动管理加入衣物后自动开启
+ */
+function hasWardrobeContent(existingState = {}) {
+  return Object.values(existingState || {}).some((item) => {
+    const profile = item?.profile || {};
+    const items = Array.isArray(profile.wardrobe?.items) ? profile.wardrobe.items : [];
+    const outfit = profile.outfit || {};
+    return items.some((entry) => entry && entry.id !== 0)
+      || (outfit.mainItemId !== null && outfit.mainItemId !== undefined)
+      || (Array.isArray(outfit.accessoryItemIds) && outfit.accessoryItemIds.length > 0)
+      || (Array.isArray(outfit.transientItems) && outfit.transientItems.length > 0);
+  });
 }
 
 export function hasBreedingPsychology(existingState = {}) {
@@ -709,7 +723,7 @@ function hasAnyFetus(existingState = {}) {
 
 export function getTrackerToolDefinitions(settings, existingState = {}) {
   const diaryEnabled = Math.max(0, Math.min(20, Math.floor(Number(settings?.diaryRecentLimit) || 0))) > 0;
-  const wardrobeEnabled = hasPreparedWardrobe(existingState);
+  const wardrobeEnabled = hasWardrobeContent(existingState);
   const psychologyEnabled = hasBreedingPsychology(existingState);
   const hiddenTools = new Set();
   if (!diaryEnabled) hiddenTools.add('bsWriteDiary');
@@ -860,7 +874,7 @@ function buildNarrativeWardrobeItem(entry) {
   };
 }
 
-function buildPromptFacingCharacterState(item, diaryLimit = 0) {
+function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true) {
   const next = cloneValue(item);
   const profile = next?.profile || {};
   const base = profile.base || {};
@@ -961,6 +975,11 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
     profile.outfit.transientItems = transientItems.map((entry) => ({ ...buildSlimWardrobeItem(entry), source: entry?.source }));
   }
 
+  if (!wardrobeOn) {
+    delete profile.wardrobe;
+    delete profile.outfit;
+  }
+
   delete profile.bio;
   // immune 只留 metabolism 一项：prompt 据此不发本人的需求与衍生需求说明
   if (immune.metabolism) profile.immune = { metabolism: true };
@@ -978,7 +997,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0) {
   return next;
 }
 
-function buildOffscreenCharacterState(item, diaryLimit = 0) {
+function buildOffscreenCharacterState(item, diaryLimit = 0, wardrobeOn = true) {
   const profile = item?.profile || {};
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
@@ -1009,7 +1028,7 @@ function buildOffscreenCharacterState(item, diaryLimit = 0) {
         },
       } : {}),
       ...(metabolismImmune ? { immune: { metabolism: true } } : {}),
-      ...(profile.wardrobe?.enabled ? {
+      ...(wardrobeOn && profile.wardrobe?.enabled ? {
         wardrobe: {
           enabled: true,
           items: (Array.isArray(profile.wardrobe.items) ? profile.wardrobe.items : []).map(buildSlimWardrobeItem),
@@ -1036,10 +1055,11 @@ function buildOffscreenCharacterState(item, diaryLimit = 0) {
 function buildTrackerStateView(existingState, settings = null) {
   const characterCount = Object.keys(existingState || {}).length;
   const diaryLimit = getDiaryRecentLimit(settings, characterCount);
+  const wardrobeOn = hasWardrobeContent(existingState);
   return Object.fromEntries(
     Object.entries(existingState).map(([name, item]) => {
-      if (item?.profile?.base?.isHere === false) return [name, buildOffscreenCharacterState(item, diaryLimit)];
-      return [name, buildPromptFacingCharacterState(item, diaryLimit)];
+      if (item?.profile?.base?.isHere === false) return [name, buildOffscreenCharacterState(item, diaryLimit, wardrobeOn)];
+      return [name, buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn)];
     }),
   );
 }
@@ -1278,7 +1298,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     world_baseline_prompt: String(settings?.worldBaselinePrompt || '').trim(),
     require_full_description_updates: settings?.requireFullDescriptionUpdates === true,
     ...(psychologyEnabled ? { breeding_psychology_enabled: true } : {}),
-    wardrobe_enabled: hasPreparedWardrobe(existingState),
+    wardrobe_enabled: hasWardrobeContent(existingState),
     recent_messages: recentMessages,
   };
 }

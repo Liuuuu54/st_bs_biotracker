@@ -265,3 +265,26 @@ test('priority names focus the tracker without excluding other registered charac
   assert.match(prompt, /\[逐角色检查清单\]/);
   assert.match(prompt, /每名恰好一笔/);
 });
+
+test('着衣系统是扩充：全员衣着未记录时不送衣柜工具、说明与 wardrobe／outfit；任一角色有衣物就开启', () => {
+  const ctx = makeContext();
+  const settings = state.getSettings(ctx);
+  for (const item of Object.values(settings.chatStates[CHAT_KEY].characters)) {
+    item.profile.wardrobe = { enabled: true, items: [] };
+    item.profile.outfit = { mainItemId: null, accessoryItemIds: [], transientItems: [], wearState: '整齐', pregFit: null };
+  }
+  const off = buildTrackerPayload(ctx, settings);
+  assert.equal(off.wardrobe_enabled, false);
+  assert.equal(off.available_tools.some((tool) => tool.name === 'bsChangeOutfit'), false);
+  assert.doesNotMatch(buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, off), /\[wardrobe \/ outfit\]/);
+  for (const item of Object.values(off.existing_state)) {
+    assert.equal('wardrobe' in item.profile, false);
+    assert.equal('outfit' in item.profile, false);
+  }
+
+  settings.chatStates[CHAT_KEY].characters['贝拉'].profile.outfit.mainItemId = 0; // 明确全裸也算有记录
+  const on = buildTrackerPayload(ctx, settings);
+  assert.equal(on.wardrobe_enabled, true);
+  assert.equal(on.available_tools.some((tool) => tool.name === 'bsChangeOutfit'), true);
+  assert.equal('outfit' in on.existing_state['艾拉'].profile, true, '开启后未记录的角色也送，才能直接换装');
+});
