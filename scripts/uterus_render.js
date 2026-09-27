@@ -1,7 +1,8 @@
 // 子宫像素图的绘制层：把 computeUterusLayout 的结果画到 96×120 的画布上。
 // 画法沿用 Sol 6 试作。只画、不算版面；动画以每 180 毫秒一帧推进，
 // 只在画面可见时跑，系统设定减少动态效果或关闭动画时只画静态图。
-import { UTERUS_CANVAS, wombRadius } from './uterus_layout.js';
+import { buildFetusGrid, usesFetusSprite } from './fetus_sprite.js';
+import { quantizeAngle, UTERUS_CANVAS, wombRadius } from './uterus_layout.js';
 
 const BASE_PALETTE = Object.freeze({
   bg: '#1c1726', void: '#140f1b', frame: '#47283d', wallDark: '#803b58', wall: '#c85f78', wallLight: '#ee9290',
@@ -159,9 +160,9 @@ function makePen(ctx, P) {
   return { px, ellipse, line, ring, glyphs };
 }
 
-// ---- 胎儿图块：5 胚型 × 3 孕期，画在 32×32 的离屏画布上并快取 ----
-function paintSprite(ctx, P, type, stage, posterior = false) {
-  const { px, ellipse, line, ring } = makePen(ctx, P);
+// ---- 卵与不定型的图块：画在 32×32 的离屏画布上并快取；胎儿形态的阶段改由 fetus_sprite.js 栅格化 ----
+function paintSprite(ctx, P, type, stage) {
+  const { px, ellipse, line } = makePen(ctx, P);
   const s = 10;
   const cx = 16;
   const cy = 16;
@@ -178,16 +179,6 @@ function paintSprite(ctx, P, type, stage, posterior = false) {
     }
     if (stage === 2) { line(cx - 3, cy - 2, cx, cy + 1, P.wallDark); line(cx, cy + 1, cx + 3, cy - 2, P.wallDark); }
     if (type === '胎转卵生') { line(cx - 5, cy - 2, cx - 1, cy + 2, P.wallDark); line(cx + 1, cy + 2, cx + 5, cy - 3, P.wallDark); }
-  } else if (type === '卵胎生' && stage === 1) {
-    ellipse(cx, cy, s * 0.75, s * 0.84, P.eggShade);
-    ellipse(cx, cy + 1, s * 0.62, s * 0.7, P.egg);
-    ellipse(cx + 2, cy + 2, s * 0.37, s * 0.37, P.fetus);
-    ellipse(cx - 3, cy - 3, s * 0.32, s * 0.33, P.fetusLight);
-    px(cx - 4, cy - 3, 1, 1, P.cavityDeep);
-    line(cx - 6, cy - 5, cx - 2, cy - 2, P.wallDark);
-    line(cx - 2, cy - 2, cx + 2, cy - 6, P.wallDark);
-    px(cx + 6, cy - 4, 2, 2, P.egg);
-    px(cx - 7, cy + 4, 2, 1, P.eggShade);
   } else if (type === '不定型') {
     ellipse(cx, cy, s * 0.72, s * 0.65, P.wall);
     ellipse(cx - 3, cy - 1, s * 0.43, s * 0.53, P.fetus);
@@ -204,58 +195,77 @@ function paintSprite(ctx, P, type, stage, posterior = false) {
       line(cx + 5, cy - 4, cx + 9, cy - 7, P.wallLight);
       ellipse(cx, cy - 6, 2, 2, P.shine);
     }
-  } else if (stage === 0) {
-    ellipse(cx + 1, cy + 2, s * 0.5, s * 0.47, P.fetus);
-    ellipse(cx - 3, cy - 2, s * 0.37, s * 0.39, P.fetusLight);
-    px(cx - 5, cy - 3, 2, 1, P.shine);
-    px(cx + 4, cy + 4, 2, 2, P.wallDark);
-  } else {
-    // 卷曲的胎儿：大头、弓背、腹部、两截短肢
-    ellipse(cx + 3, cy + 3, s * 0.47, s * 0.48, P.wallDark);
-    ellipse(cx + 1, cy + 1, s * 0.48, s * 0.48, P.fetus);
-    ellipse(cx - 4, cy - 4, s * 0.42, s * 0.42, P.fetusLight);
-    ellipse(cx - 5, cy - 5, s * 0.23, s * 0.2, P.shine);
-    if (posterior) {
-      // 枕后位：脸朝外，看得到眼睛与嘴
-      px(cx - 6, cy - 3, 1, 1, P.cavityDeep);
-      px(cx - 3, cy - 2, 1, 1, P.cavityDeep);
-      px(cx - 5, cy - 1, 2, 1, P.wallDark);
-    } else {
-      // 枕前位：背朝外，沿着背画一排脊椎点
-      for (const [dx, dy] of [[-1, -6], [1, -5], [3, -3], [5, -1], [6, 1]]) px(cx + dx, cy + dy, 1, 1, P.wallDark);
-    }
-    line(cx + 2, cy + 3, cx + 5, cy + 6, P.fetusLight);
-    line(cx - 1, cy + 6, cx - 4, cy + 7, P.fetusLight);
-    line(cx + 5, cy + 6, cx + 7, cy + 2, P.fetusLight);
-    if (stage === 2) { px(cx + 5, cy + 4, 3, 2, P.fetusLight); px(cx - 4, cy + 7, 2, 2, P.wallLight); }
-    if (type === '卵胎生') { px(cx - 7, cy + 6, 2, 1, P.eggShade); px(cx + 7, cy - 5, 2, 1, P.eggShade); }
-    if (type === '胎转卵生') {
-      ring(cx, cy, s * 0.82, s * 0.82, P.eggShade, [45, 135]);
-      for (let j = -2; j <= 2; j += 2) px(cx + j, cy + 7, 1, 1, P.eggShade);
-    }
   }
 }
 
-/** 胎儿图块采用斜向构图；胎生姿态要转 -135° 才是头朝宫口 */
-function usesFetalPose(type, stage) {
-  return type === '胎生' || (type === '卵胎生' && stage === 2) || (type === '胎转卵生' && stage < 2);
+/** 胎儿形态的色调代号 → 主题颜色；没有外框，只靠头浅、身体深一阶分部件 */
+function fetusTones(P) {
+  return {
+    head: mixColor(P.fetus, P.fetusLight, 0.55),
+    body: P.fetus,
+    shade: mixColor(P.fetus, P.wallDark, 0.3),
+    cord: mixColor(P.fetus, P.fetusLight, 0.35),
+    face: mixColor(P.fetus, P.cavityDeep, 0.7),
+    shell: P.eggShade,
+    shellLight: P.egg,
+    gap: P.cavity,
+  };
 }
 
+const FETUS_CACHE_LIMIT = 160;
+
+/**
+ * 图块快取。卵与不定型沿用 32×32 图块；胎儿形态依大小、方向、镜像、朝向、挤压直接栅格化，
+ * 回传 { canvas, anchorX, anchorY }，画的时候不再旋转缩放
+ */
 function createSpriteCache(P) {
-  const cache = new Map();
-  return (type, stage, posterior = false) => {
-    const key = `${type}|${stage}|${posterior ? 'P' : 'A'}`;
-    if (!cache.has(key)) {
-      const off = document.createElement('canvas');
-      off.width = 32;
-      off.height = 32;
-      const ctx = off.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-      paintSprite(ctx, P, type, stage, posterior);
-      cache.set(key, off);
-    }
-    return cache.get(key);
+  const legacy = new Map();
+  const fetal = new Map();
+  const tones = fetusTones(P);
+  return {
+    legacy(type, stage) {
+      const key = `${type}|${stage}`;
+      if (!legacy.has(key)) {
+        const off = document.createElement('canvas');
+        off.width = 32;
+        off.height = 32;
+        const ctx = off.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        paintSprite(ctx, P, type, stage);
+        legacy.set(key, off);
+      }
+      return legacy.get(key);
+    },
+    fetus(spec) {
+      const key = [spec.type, spec.stage, spec.height, spec.angle, spec.mirror ? 1 : 0, spec.posterior ? 1 : 0, spec.squeeze.toFixed(2)].join('|');
+      if (!fetal.has(key)) {
+        if (fetal.size >= FETUS_CACHE_LIMIT) fetal.clear();
+        const grid = buildFetusGrid(spec);
+        const off = document.createElement('canvas');
+        off.width = grid.width;
+        off.height = grid.height;
+        const ctx = off.getContext('2d');
+        const filled = (x, y) => Boolean(grid.cells[y]?.[x]);
+        grid.cells.forEach((row, y) => row.forEach((tone, x) => {
+          if (tone) {
+            ctx.fillStyle = tones[tone];
+            ctx.fillRect(x, y, 1, 1);
+          } else if (filled(x - 1, y) || filled(x + 1, y) || filled(x, y - 1) || filled(x, y + 1)) {
+            // 一圈宫腔色的空隙：在宫腔底上看不出来，叠到别的胎儿上时切出一道缝，多胎才分得开
+            ctx.fillStyle = tones.gap;
+            ctx.fillRect(x, y, 1, 1);
+          }
+        }));
+        fetal.set(key, { canvas: off, anchorX: grid.anchorX, anchorY: grid.anchorY });
+      }
+      return fetal.get(key);
+    },
   };
+}
+
+/** 胎儿本体的像素高度：layout 的 size 以 32 格图块为基准 */
+function fetusHeightFor(size) {
+  return Math.max(6, Math.round((32 * size) / 10 * 0.66));
 }
 
 // ---- 亲和特效：只在胎儿详细点缩图时，在缩图里的胎儿头上冒出像素表情 ----
@@ -309,17 +319,22 @@ export function drawFetusThumb(canvas, sprite, angle, theme, emote = null) {
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = P.cavityDeep;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const off = createSpriteCache(P)(sprite.type, sprite.stage, Boolean(sprite.posterior));
-  const base = usesFetalPose(sprite.type, sprite.stage) ? -135 : 0;
   const shake = emote && emote.band === -2 ? (Math.floor(emote.t * 12) % 2 ? 1 : -1) : 0;
-  ctx.save();
-  ctx.translate(canvas.width / 2 + shake, canvas.height / 2 + (emote ? 3 : 0));
-  // 先转到胎位角（此时胎儿头脚轴是直的），在这里镜像，最后才补斜向构图的 base
-  ctx.rotate((angle * Math.PI) / 180);
-  if (sprite.mirror) ctx.scale(-1, 1);
-  ctx.rotate((base * Math.PI) / 180);
-  ctx.drawImage(off, -12, -12, 24, 24);
-  ctx.restore();
+  const cx = Math.round(canvas.width / 2 + shake);
+  const cy = Math.round(canvas.height / 2 + (emote ? 3 : 0));
+  const sprites = createSpriteCache(P);
+  if (usesFetusSprite(sprite.type, sprite.stage)) {
+    const spec = { type: sprite.type, stage: sprite.stage, height: 20, angle: quantizeAngle(angle), mirror: Boolean(sprite.mirror), posterior: Boolean(sprite.posterior), squeeze: 1 };
+    const { canvas: off, anchorX, anchorY } = sprites.fetus(spec);
+    ctx.drawImage(off, cx - anchorX, cy - anchorY);
+  } else {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((angle * Math.PI) / 180);
+    if (sprite.mirror) ctx.scale(-1, 1);
+    ctx.drawImage(sprites.legacy(sprite.type, sprite.stage), -12, -12, 24, 24);
+    ctx.restore();
+  }
   if (emote) drawAffinityEmote(ctx, emote.band, canvas.width / 2, 9, emote.t);
 }
 
@@ -582,17 +597,23 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   }
 
   function drawSprite(x, y, size, sprite, angle, squeeze = 1) {
-    const off = spriteOf(sprite.type, sprite.stage, Boolean(sprite.posterior));
-    const base = usesFetalPose(sprite.type, sprite.stage) ? -135 : 0;
+    if (usesFetusSprite(sprite.type, sprite.stage)) {
+      // 胎儿形态：依大小、胎位角、胎背方位与挤压直接栅格化，1:1 贴上，不做旋转缩放
+      const spec = {
+        type: sprite.type, stage: sprite.stage, height: fetusHeightFor(size), angle,
+        mirror: Boolean(sprite.mirror), posterior: Boolean(sprite.posterior), squeeze: Math.round(squeeze * 20) / 20,
+      };
+      const { canvas: off, anchorX, anchorY } = spriteOf.fetus(spec);
+      ctx.drawImage(off, Math.round(x) - anchorX, Math.round(y) - anchorY);
+      return;
+    }
+    const off = spriteOf.legacy(sprite.type, sprite.stage);
     const w = Math.max(1, Math.round((32 * size * squeeze) / 10));
     const h = Math.max(1, Math.round((32 * size) / 10));
     ctx.save();
     ctx.translate(Math.round(x), Math.round(y));
-    // 胎背朝右的镜像：先转到胎位角（此时胎儿头脚轴是直的）在这里翻，最后才补斜向构图的 base，
-    // 否则会沿斜轴翻、头的方向跟着偏掉 90°
     ctx.rotate((angle * Math.PI) / 180);
     if (sprite.mirror) ctx.scale(-1, 1);
-    ctx.rotate((base * Math.PI) / 180);
     ctx.drawImage(off, -Math.round(w / 2), -Math.round(h / 2), w, h);
     ctx.restore();
   }
