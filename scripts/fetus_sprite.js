@@ -29,7 +29,7 @@ const capsule = (x0, y0, x1, y1, r) => ({ kind: 'capsule', x0, y0, x1, y1, r });
 const polyline = (points, r, minPx = 0) => ({ kind: 'polyline', points, r, minPx });
 const polygon = (points) => ({ kind: 'polygon', points });
 // 网格：落在外形里、又落在两组斜线上的点；线宽至少约一像素
-const lattice = (shape, period, width, keep = null) => ({ kind: 'lattice', shape, period, width, keep });
+const lattice = (shape, period, width, keep = null, warp = null) => ({ kind: 'lattice', shape, period, width, keep, warp });
 // 贴在蛋形外缘的一圈膜：蛋形外、往外 px 像素以内
 const film = (shape, px, keep = null) => ({ kind: 'film', shape, px, keep });
 // 蛋形：上下两半各自的纵半径，尖端朝上
@@ -67,7 +67,8 @@ function inside(prim, x, y, scale) {
     if (!inside(prim.shape, x, y, scale) || (prim.keep && !prim.keep(x, y))) return false;
     const w = Math.max(prim.width, 0.9 / scale) / prim.period;
     const frac = (v) => v - Math.floor(v);
-    return frac((x + y) / prim.period) < w || frac((x - y) / prim.period) < w;
+    const [gx, gy] = prim.warp ? prim.warp(x, y) : [x, y];
+    return frac((gx + gy) / prim.period) < w || frac((gx - gy) / prim.period) < w;
   }
   if (prim.kind === 'polygon') {
     let hit = false;
@@ -103,7 +104,7 @@ function inside(prim, x, y, scale) {
 // ---- 造型：设计单位里全身高为 1 ----
 
 /** 胎儿：在「头朝上」的 800 格设计图上量得的比例，转 180° 成头朝下 */
-function fetusModel({ cord }) {
+function fetusModel({ cord, nestedHost = false }) {
   const box = { x1: 672, y1: 684, w: 492, h: 564 };
   const X = (x) => (box.x1 - x) / box.h;
   const Y = (y) => (box.y1 - y) / box.h;
@@ -112,7 +113,7 @@ function fetusModel({ cord }) {
   const parts = [];
   if (cord) parts.push(['cord', [polyline([[330, 505], [262, 478], [222, 430], [214, 372], [236, 322]].map(([x, y]) => [X(x), Y(y)]), R(17), 0.55)]]);
   parts.push(['body', [
-    ellipse(X(455), Y(545), R(165), R(124), -48),
+    ellipse(X(455), Y(545), R(165) * (nestedHost ? 1.4 : 1), R(124) * (nestedHost ? 1.28 : 1), -48),
     cap(392, 428, 300, 398, 40), // 手
     cap(335, 585, 218, 598, 44), // 腿
     cap(230, 612, 205, 640, 30), // 脚
@@ -131,9 +132,9 @@ function fetusModel({ cord }) {
 }
 
 /** 孕早期胚胎：大头、一截弯尾巴、两个肢芽、一小段脐带 */
-function embryoModel({ cord }) {
+function embryoModel({ cord, nestedHost = false }) {
   const U = (v) => v / 13;
-  const parts = [['body', [circle(U(5.4), U(2.2), U(1.4)), circle(U(4.4), U(4.6), U(2.2)), circle(U(4.6), U(6.4), U(2.4))]]];
+  const parts = [['body', [circle(U(5.4), U(2.2), U(1.4)), circle(U(4.4), U(4.6), U(nestedHost ? 2.5 : 2.2)), circle(U(4.6), U(6.4), U(2.4))]]];
   if (cord) parts.push(['cord', [polyline([[6.6, 6], [8.6, 5.4], [10.4, 6.2], [11.4, 4.4]].map(([x, y]) => [U(x), U(y)]), U(0.7), 0.5)]]);
   parts.push(['body', [circle(U(7), U(4.2), U(0.95)), circle(U(7.3), U(7.4), U(0.9))]]);
   parts.push(['head', [circle(U(5.6), U(9.2), U(3.6))]]);
@@ -220,7 +221,7 @@ const hash01 = (a, b) => {
  * 膜表示羊膜耐久：完整时整颗蒙着、变薄时一块一块缺、撕开时靠宫口那端（下方）露出殼、破了就只剩带结晶格的蛋壳。
  * 外面不再有羊水囊。胚胎产后才孵，看不到里面
  */
-function latticeEggModel(level = 'full') {
+function latticeEggModel(level = 'full', nestedHost = false) {
   const shape = egg(0.38, 0.54, 0.38, 0.54, 0.46);
   const period = 0.2;
   const parts = [['eggShell', [shape]]];
@@ -240,7 +241,18 @@ function latticeEggModel(level = 'full') {
     parts.push(['eggFilm', [lattice(shape, 1e9, 1e9, covered)]]);
     parts.push([level === 'full' ? 'membrane' : 'membraneThin', [film(shape, 1, rim)]]);
   }
-  parts.push(['lattice', [lattice(shape, period, 0.03)]]);
+  const warp = nestedHost ? (x, y) => {
+    // 只让卵中央的晶格错位；外轮廓、外圈晶格与羊膜仍然完整。
+    const dx = (x - 0.38) / 0.25;
+    const dy = (y - 0.54) / 0.3;
+    const distance = dx * dx + dy * dy;
+    if (distance >= 1) return [x, y];
+    const strength = (1 - distance) ** 2;
+    const row = Math.floor((y - 0.25) / 0.09);
+    const column = Math.floor((x - 0.13) / 0.1);
+    return [x + strength * (row % 2 ? 0.11 : -0.08), y + strength * (column % 2 ? 0.07 : -0.06)];
+  } : null;
+  parts.push(['lattice', [lattice(shape, period, 0.03, null, warp)]]);
   parts.push(['shine', [circle(0.2, 0.3, 0.05), circle(0.24, 0.24, 0.035)]]);
   return { w: 0.76, h: 1, parts, head: null, eyeSide: [], eyesFront: [], mouth: null };
 }
@@ -249,8 +261,8 @@ function latticeEggModel(level = 'full') {
  * 不定型当史莱姆：圆顶平底的一团，左上一道光泽、中间一块半透明的亮核、两只眼。
  * 孕早一滴小史莱姆，孕中旁边分出一小滴，孕晚更大、底下垂两条黏液、旁边留一小滴
  */
-function amorphousModel(stage) {
-  const blob = [egg(0.46, 0.66, 0.4, 0.56, 0.3)];
+function amorphousModel(stage, nestedHost = false) {
+  const blob = [egg(0.46, 0.66, nestedHost ? 0.46 : 0.4, nestedHost ? 0.59 : 0.56, 0.3)];
   // 孕晚长出一对兔子短耳
   if (stage === 2) blob.push(capsule(0.34, 0.2, 0.26, 0.02, 0.07), capsule(0.58, 0.2, 0.66, 0.02, 0.07));
   if (stage >= 1) blob.push(egg(0.9, 0.84, 0.1, 0.13, 0.08));
@@ -270,14 +282,14 @@ function amorphousModel(stage) {
   };
 }
 
-function getModel(type, stage, membrane) {
-  if (type === '不定型') return { model: amorphousModel(stage), deco: null };
-  if (type === '胎转卵生' && stage === 2) return { model: latticeEggModel(membraneLevel(membrane)), deco: null };
+function getModel(type, stage, membrane, nestedHost = false) {
+  if (type === '不定型') return { model: amorphousModel(stage, nestedHost), deco: null };
+  if (type === '胎转卵生' && stage === 2) return { model: latticeEggModel(membraneLevel(membrane), nestedHost), deco: null };
   if (!isFetalForm(type, stage)) return { model: eggModel(type, stage), deco: null };
   if (type === '卵胎生' && stage === 1) return { model: eggEmbryoModel(), deco: null };
   // 卵胎生在卵里长大，没有脐带
   const cord = type !== '卵胎生';
-  const model = stage === 0 ? embryoModel({ cord }) : fetusModel({ cord });
+  const model = stage === 0 ? embryoModel({ cord, nestedHost }) : fetusModel({ cord, nestedHost });
   // 胎转卵生孕早：外面零散几段网格壳；孕中：围成完整一圈（孕晚包成网格纹的卵）。卵胎生孕晚：破壳后留几片碎壳
   let deco = null;
   if (type === '胎转卵生') deco = stage === 0 ? 'shellPieces' : 'shellRing';
@@ -293,9 +305,11 @@ const SHELL_PIECES = [[10, 40], [110, 140], [200, 225], [290, 318]];
  * 回传 { width, height, anchorX, anchorY, cells }：cells[y][x] 是色调代号或 null，
  * 胎儿中心落在 (anchorX, anchorY)
  */
-export function buildFetusGrid({ type = '胎生', stage = 2, height = 20, angle = 0, mirror = false, posterior = false, squeeze = 1, membrane = 100 } = {}) {
+export function buildFetusGrid({ type = '胎生', stage = 2, height = 20, angle = 0, mirror = false, posterior = false, squeeze = 1, membrane = 100, nestedHost = false } = {}) {
   // 认不得的胚型当胎生画
-  const { model, deco } = getModel(KNOWN_TYPES.has(type) ? type : '胎生', stage, membrane);
+  // 胎转卵生的孕中孕直到孕晚结壳才有可见征象。
+  const showNestedHost = nestedHost && (type !== '胎转卵生' || stage === 2);
+  const { model, deco } = getModel(KNOWN_TYPES.has(type) ? type : '胎生', stage, membrane, showNestedHost);
   const scale = Math.max(4, height);
   const a = (angle * Math.PI) / 180;
   const cos = Math.cos(a);
@@ -359,13 +373,28 @@ export function buildFetusGrid({ type = '胎生', stage = 2, height = 20, angle 
   // 眼睛一律画，才看得出脸朝哪：胎背朝前是侧脸一只闭眼，朝后脸朝外、两只眼加嘴
   const headPx = model.head ? model.head[2] * scale : 0;
   const eyeLen = headPx >= 5 ? 2 : 1;
-  for (const [ex, ey] of (posterior ? model.eyesFront : model.eyeSide) || []) {
-    for (let i = 0; i < eyeLen; i += 1) {
-      const [ox, oy] = fwd(ex + i / scale, ey);
-      plotFloor(ox, oy, 'face');
+  const eyes = showNestedHost && type !== '不定型' ? model.eyeSide : (posterior ? model.eyesFront : model.eyeSide);
+  for (const [index, [ex, ey]] of (eyes || []).entries()) {
+    if (showNestedHost) {
+      const arm = (headPx >= 5 ? 1 : 0.7) / scale;
+      // 侧脸一只挤眼；不定型的两眼相向，成为 > <，避免 X 看起来像死亡表情。
+      const direction = type === '不定型' ? (index === 0 ? 1 : -1) : 1;
+      for (const [dx, dy] of [
+        [-direction * 2 * arm, -2 * arm], [-direction * arm, -arm],
+        [0, 0],
+        [-direction * arm, arm], [-direction * 2 * arm, 2 * arm],
+      ]) {
+        const [ox, oy] = fwd(ex + dx, ey + dy);
+        plotFloor(ox, oy, 'face');
+      }
+    } else {
+      for (let i = 0; i < eyeLen; i += 1) {
+        const [ox, oy] = fwd(ex + i / scale, ey);
+        plotFloor(ox, oy, 'face');
+      }
     }
   }
-  if (posterior && model.mouth && headPx >= 4) {
+  if (!showNestedHost && posterior && model.mouth && headPx >= 4) {
     const [ox, oy] = fwd(model.mouth[0], model.mouth[1]);
     plotFloor(ox, oy, 'face');
   }

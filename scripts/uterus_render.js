@@ -1,7 +1,7 @@
 // 子宫像素图的绘制层：把 computeUterusLayout 的结果画到 96×120 的画布上。
 // 画法沿用 Sol 6 试作。只画、不算版面；动画以每 180 毫秒一帧推进，
 // 只在画面可见时跑，系统设定减少动态效果或关闭动画时只画静态图。
-import { buildFetusGrid, hasFluidSac, isFetalForm, membraneLevel } from './fetus_sprite.js';
+import { buildFetusGrid, hasFluidSac, membraneLevel } from './fetus_sprite.js';
 import { quantizeAngle, UTERUS_CANVAS, wombRadius } from './uterus_layout.js';
 
 const BASE_PALETTE = Object.freeze({
@@ -402,7 +402,7 @@ function createSpriteCache(P) {
   return {
     fetus(spec) {
       const gap = spec.gap || tones.gap;
-      const key = [spec.type, spec.stage, spec.height, spec.angle, spec.mirror ? 1 : 0, spec.posterior ? 1 : 0, spec.squeeze.toFixed(2), membraneLevel(spec.membrane), gap].join('|');
+      const key = [spec.type, spec.stage, spec.height, spec.angle, spec.mirror ? 1 : 0, spec.posterior ? 1 : 0, spec.squeeze.toFixed(2), membraneLevel(spec.membrane), spec.nestedHost ? 1 : 0, gap].join('|');
       if (!fetal.has(key)) {
         if (fetal.size >= FETUS_CACHE_LIMIT) fetal.clear();
         const grid = buildFetusGrid(spec);
@@ -761,18 +761,18 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     return wantsMotion() ? Math.floor((tick + fetus.index * 450) / 1200) % 2 : 0;
   }
 
-  function fetusSpec(size, sprite, angle, squeeze = 1, gap = null, membrane = 100) {
+  function fetusSpec(size, sprite, angle, squeeze = 1, gap = null, membrane = 100, nestedHost = false) {
     return {
       type: sprite.type, stage: sprite.stage, height: fetusHeightFor(size), angle,
       mirror: Boolean(sprite.mirror), posterior: Boolean(sprite.posterior), squeeze: Math.round(squeeze * 20) / 20,
-      membrane,
+      membrane, nestedHost,
       ...(gap ? { gap } : {}),
     };
   }
 
-  function drawSprite(x, y, size, sprite, angle, squeeze = 1, gap = null, membrane = 100) {
+  function drawSprite(x, y, size, sprite, angle, squeeze = 1, gap = null, membrane = 100, nestedHost = false) {
     // 依大小、胎位角、胎背方位与挤压直接栅格化，1:1 贴上，不做旋转缩放；membrane 给贴在卵上的羊膜用
-    const { canvas: off, anchorX, anchorY } = spriteOf.fetus(fetusSpec(size, sprite, angle, squeeze, gap, membrane));
+    const { canvas: off, anchorX, anchorY } = spriteOf.fetus(fetusSpec(size, sprite, angle, squeeze, gap, membrane, nestedHost));
     ctx.drawImage(off, Math.round(x) - anchorX, Math.round(y) - anchorY);
   }
 
@@ -797,7 +797,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     let y1 = -Infinity;
     for (const fetus of members) {
       const y = fetus.y + (breaths.get(fetus.embryoId) || 0);
-      const b = spriteOf.fetus(fetusSpec(fetus.size, fetus.sprite, fetus.angle, fetus.squeeze)).bounds;
+      const b = spriteOf.fetus(fetusSpec(fetus.size, fetus.sprite, fetus.angle, fetus.squeeze, null, 100, fetus.inner.length > 0)).bounds;
       x0 = Math.min(x0, Math.round(fetus.x) + b.x0);
       x1 = Math.max(x1, Math.round(fetus.x) + b.x1);
       y0 = Math.min(y0, Math.round(y) + b.y0);
@@ -860,17 +860,9 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
         drawnSacs.set(sac, fluid ? drawBubble(bubbleGeometry(members, breaths), sac.durability) : null);
       }
       const y = fetus.y + breaths.get(fetus.embryoId);
-      drawSprite(fetus.x, y, fetus.size, fetus.sprite, fetus.angle, fetus.squeeze, (sac && drawnSacs.get(sac)) || null, sac ? sac.durability : fetus.amnion);
-      // 孕中孕：内胎在宿主身体里。宿主画成胎儿或半透明的史萊姆时看得到；
-      // 宿主画成蛋（卵生、卵胎生孕早、胎转卵生孕晚）时一样被壳挡住，不画
-      const hostShowsBody = isFetalForm(fetus.sprite.type, fetus.sprite.stage) || fetus.sprite.type === '不定型';
-      if (hostShowsBody) fetus.inner.forEach((inner, k) => {
-        // 孕中孕：宿主体内的小水泡
-        const ix = fetus.x + k * 2;
-        const r = inner.size * 0.9 + 1;
-        const innerFluid = drawBubble({ cx: ix + 0.5, cy: y + 0.5, rx: r, ry: r }, 100);
-        drawSprite(ix, y, inner.size, inner.sprite, inner.angle, 1, innerFluid);
-      });
+      const nestedHost = fetus.inner.length > 0;
+      drawSprite(fetus.x, y, fetus.size, fetus.sprite, fetus.angle, fetus.squeeze, (sac && drawnSacs.get(sac)) || null, sac ? sac.durability : fetus.amnion, nestedHost);
+      // 内胎被宿主身体或蛋壳遮住，只以鼓起的体型和挤眼表情表示孕中孕。
     }
   }
 

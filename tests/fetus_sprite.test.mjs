@@ -48,6 +48,38 @@ test('头位头朝下、臀位头朝上、横位头在左；镜像把头与手�
   assert.ok(plain > 0 && mirrored < 0, '脐带跟着手脚那一侧翻到另一边');
 });
 
+test('孕中孕宿主腹部鼓起，挤眼而非 X；不定型变胖', () => {
+  const plainFetus = buildFetusGrid({ type: '胎生', stage: 2, height: 30 });
+  const carryingFetus = buildFetusGrid({ type: '胎生', stage: 2, height: 30, nestedHost: true });
+  assert.ok(count(carryingFetus, 'body') + count(carryingFetus, 'shade') > count(plainFetus, 'body') + count(plainFetus, 'shade'));
+  assert.ok(count(carryingFetus, 'face') > count(plainFetus, 'face'), '挤眼应比普通眼睛多笔画');
+  const plain = buildFetusGrid({ type: '不定型', stage: 2, height: 30 });
+  const carrying = buildFetusGrid({ type: '不定型', stage: 2, height: 30, nestedHost: true });
+  assert.ok(count(carrying, 'blob') + count(carrying, 'blobShade') > count(plain, 'blob') + count(plain, 'blobShade'));
+  assert.ok(count(carrying, 'face') > count(plain, 'face'), '两只挤眼比普通眼睛多笔画');
+});
+
+test('胎转卵生孕中期外观不变；孕晚期只有中央晶格错位', () => {
+  const mid = { type: '胎转卵生', stage: 1, height: 30 };
+  assert.deepEqual(buildFetusGrid({ ...mid, nestedHost: true }), buildFetusGrid(mid));
+  const late = { type: '胎转卵生', stage: 2, height: 30 };
+  const plain = buildFetusGrid(late);
+  const carrying = buildFetusGrid({ ...late, nestedHost: true });
+  assert.equal(plain.width, carrying.width);
+  assert.equal(plain.height, carrying.height);
+  let central = 0;
+  let outer = 0;
+  plain.cells.forEach((row, y) => row.forEach((tone, x) => {
+    if ((tone === 'lattice') === (carrying.cells[y][x] === 'lattice')) return;
+    const dx = (x - plain.anchorX) / 30 / 0.25;
+    const dy = ((y - plain.anchorY) / 30 + 0.5 - 0.54) / 0.3;
+    if (dx * dx + dy * dy < 1) central += 1;
+    else outer += 1;
+  }));
+  assert.ok(central > 5, `中央晶格变化应可见，实际 ${central} 像素`);
+  assert.equal(outer, 0, '外圈晶格保持原样');
+});
+
 test('斜位也是原生像素：各色调的量与正位相近', () => {
   const straight = buildFetusGrid({ height: 30, angle: 0 });
   const oblique = buildFetusGrid({ height: 30, angle: 45 });
