@@ -3,6 +3,7 @@ import {
   applyInitialSkillTalentConfig,
   applyRegistryBreedingInference,
   applyRegistrySkillSetup,
+  buildSkillSetupEditorValue,
   resolveRegistryChildSource,
   resolveRegistryTargetName,
   runRegistry,
@@ -57,7 +58,7 @@ import { buildMainFlowPrompt, resetPoller, runTracker, getPollWaitStatus } from 
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
 import { describeBackSide, describeFetalPosition, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
-import { applyToolCall } from './scripts/tools.js';
+import { applyToolCall, writeDiaryEntry } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
@@ -303,6 +304,7 @@ function setRegisterStatus(message, isError = false) {
 /** 注册页各异步操作的按钮与状态栏绑定 */
 const REGISTRY_OP_UI = {
   register: { buttonId: 'bs-bt-register-run', busyText: '注册中...', idleText: '注册当前角色', setStatus: (message, isError) => setRegisterStatus(message, isError) },
+  registerBundle: { buttonId: 'bs-bt-register-run-bundle', busyText: '注册中...', idleText: '一次注册（含日记、技能）', setStatus: (message, isError) => setRegisterStatus(message, isError) },
   inference: { buttonId: 'bs-bt-breeding-inference-run', busyText: '推演中...', idleText: '繁育推演', setStatus: (message, isError) => setBreedingInferenceStatus(message, isError) },
   wardrobe: { buttonId: 'bs-bt-wardrobe-prep-run', busyText: '生成中...', idleText: '生成备装', setStatus: (message, isError) => setWardrobePrepStatus(message, isError) },
   diary: { buttonId: 'bs-bt-diary-generate', busyText: '生成中...', idleText: '生成日记', setStatus: (message, isError) => setDiaryStatus(message, isError) },
@@ -933,6 +935,26 @@ async function generateRegistryDiary(ctx) {
   }
 }
 
+/** 一次注册之后：把写入的日记与技能填进日记页、技能页的预览，回传要接在注册状态后面的说明 */
+function describeRegistryBundle(ctx, targetName, report) {
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const diaryEditor = document.getElementById('bs-bt-diary-result');
+  if (diaryEditor && report.diary) diaryEditor.value = JSON.stringify(report.diary, null, 2);
+  const skillEditor = document.getElementById('bs-bt-register-skill-result');
+  if (skillEditor && report.skillsWritten) skillEditor.value = JSON.stringify(buildSkillSetupEditorValue(chatState, targetName), null, 2);
+  const character = chatState.characters?.[targetName];
+  const parts = [];
+  if (report.skillsWritten) {
+    const fetusNote = report.fetusCount > 0 ? `、${report.fetusCount} 个胎儿的天赋` : '';
+    parts.push(`已写入 ${character?.profile?.skills?.length || 0} 项技能、${character?.profile?.talents?.length || 0} 项天赋${fetusNote}`);
+  }
+  parts.push(report.diary ? `已写入日记「${report.diary.time}」` : `日记没有写入（${report.diaryError || '未知原因'}），可到日记页重新生成`);
+  const skipped = Array.isArray(report.skipped) ? report.skipped : [];
+  if (skipped.length > 0) parts.push(`跳过 ${skipped.length} 项对不上的引用：${skipped.join('、')}`);
+  return `${parts.join('；')}。日记页与技能页的预览可再微调后重新写入。`;
+}
+
 function applyRegistryDiary(ctx) {
   const values = getRegisterFormValues();
   const settings = getSettings(ctx);
@@ -949,10 +971,8 @@ function applyRegistryDiary(ctx) {
     setDiaryStatus(`日记 JSON 无法解析：${String(error?.message || error)}`, true);
     return;
   }
-  const result = applyToolCall(chatState, {
-    name: 'bsWriteDiary',
-    arguments: { female: targetName, time: parsed?.time, content: parsed?.content },
-  });
+  // 注册页是使用者亲手改写：同一个故事日已经有日记时直接取代那一篇
+  const result = writeDiaryEntry(chatState, targetName, { time: parsed?.time, content: parsed?.content }, { replaceSameDay: true });
   if (!result?.applied) {
     setDiaryStatus(result?.message || '日记写入失败。', true);
     return;
@@ -8490,9 +8510,9 @@ async function ensureModal(ctx) {
     if (body) body.hidden = !toggle.checked;
     if (toggle.checked) body?.querySelector('input')?.focus();
   });
-  document.getElementById('bs-bt-register-run')?.addEventListener('click', async () => {
+  const registerFromForm = async ({ bundle = false } = {}) => {
     // 注册没有节流会重复发送：小手机关掉再打开时按钮看似可点，实际上上一轮还在跑
-    if (isRegistryOperationPending('register')) {
+    if (isRegistryOperationPending('register') || isRegistryOperationPending('registerBundle')) {
       globalThis.toastr?.info?.('[BS BioTracker] 注册请求正在进行中，请等待完成');
       return;
     }
@@ -8519,11 +8539,21 @@ async function ensureModal(ctx) {
       globalThis.toastr?.error?.(message, '[BS BioTracker]');
       return;
     }
-    beginRegistryOperation('register', breedingInference
-      ? `正在使用繁育推演注册 ${targetName}...`
-      : `正在注册 ${targetName}...`);
+    const busyMessage = `${breedingInference ? `正在使用繁育推演注册 ${targetName}` : `正在注册 ${targetName}`}${bundle ? '（含日记与技能）' : ''}...`;
+    if (bundle) beginRegistryOperation('registerBundle', busyMessage);
+    else beginRegistryOperation('register', busyMessage);
+    // 一次注册：日记页的写作规则与日期、技能页的额外提示随同这次请求送出
+    const bundleOptions = bundle ? {
+      diaryWritingPrompt: String(document.getElementById('bs-bt-diary-writing-prompt')?.value || '').trim(),
+      requestedDate: String(document.getElementById('bs-bt-diary-date')?.value || '').trim(),
+      skillPrompt: String(document.getElementById('bs-bt-register-skill-prompt')?.value || '').trim(),
+    } : null;
+    const bundleReport = {};
     try {
-      const character = await runRegistry(ctx, { targetName, customNotes, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest });
+      const character = await runRegistry(ctx, {
+        targetName, customNotes, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest,
+        ...(bundleOptions ? { bundle: bundleOptions, bundleReport } : {}),
+      });
       renderStatusPanel(ctx);
       renderFullStatePage(ctx);
       renderSkillCatalogPage(ctx);
@@ -8533,10 +8563,12 @@ async function ensureModal(ctx) {
       clearBreedingInferenceDraftFor(character.name);
       // 勾了特殊来历却没产生妊娠时要讲出来：默默当成功，玩家会以为设定生效了
       const missingSpecial = describeMissingSpecialFetus(specialFetusRequest, character);
+      const bundleNote = bundle ? describeRegistryBundle(ctx, character.name, bundleReport) : '';
       setRegisterStatus([
         breedingInference
-          ? `注册完成：${character.name}（已套用繁育推演）。可继续备装或写日记。`
-          : `注册完成：${character.name}。可继续备装或写日记。`,
+          ? `注册完成：${character.name}（已套用繁育推演）。`
+          : `注册完成：${character.name}。`,
+        bundleNote || '可继续备装或写日记。',
         missingSpecial,
       ].filter(Boolean).join(' '));
       globalThis.toastr?.success?.(`[BS BioTracker] 已注册 ${character.name}`);
@@ -8546,9 +8578,12 @@ async function ensureModal(ctx) {
       setRegisterStatus(message, true);
       toastOperationFailure(error);
     } finally {
-      endRegistryOperation('register');
+      if (bundle) endRegistryOperation('registerBundle');
+      else endRegistryOperation('register');
     }
-  });
+  };
+  document.getElementById('bs-bt-register-run')?.addEventListener('click', () => registerFromForm());
+  document.getElementById('bs-bt-register-run-bundle')?.addEventListener('click', () => registerFromForm({ bundle: true }));
   document.querySelector('#bs-bt-view-register .bs-bt-race-picker-wrap')?.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;

@@ -14,6 +14,7 @@ import {
   runRegistry,
   runRegistryBreedingInference,
 } from '../scripts/registry.js';
+import { writeDiaryEntry } from '../scripts/tools.js';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -148,6 +149,86 @@ test('registration keeps the typed name even when the model returns the card nam
   const chatState = state.getChatState(ctx, settings);
   assert.equal(Object.prototype.hasOwnProperty.call(chatState.characters, '露比'), true);
   assert.equal(Object.prototype.hasOwnProperty.call(chatState.characters, '卡片角色'), false, '不该注册成角色卡名');
+});
+
+test('bundled registration writes the character, skills, fetus talents and the first diary from one request', async () => {
+  const ctx = {
+    chatId: 'registry-bundle-chat',
+    name1: 'User',
+    name2: '卡片角色',
+    characterId: 0,
+    characters: [{ name: '卡片角色', description: '角色卡描述', avatar: 'card.png' }],
+    chat: [{ is_user: false, name: '卡片角色', mes: '一段剧情。' }],
+    extensionSettings: {},
+    saveSettingsDebounced() {},
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  settings.apiUrl = 'https://example.test/v1';
+  settings.model = 'test-model';
+  state.getChatState(ctx, settings).skillCatalog = CATALOG.map((item) => ({ ...item }));
+
+  let sentPrompt = '';
+  let sentPayload = null;
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    sentPrompt = body.messages.find((m) => m.role === 'system')?.content || '';
+    sentPayload = JSON.parse(body.messages.find((m) => m.role === 'user')?.content || '{}');
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+          name: '露比',
+          profile: {
+            base: { age: 24 },
+            pregnant: { pregnantDays: 200, fetuses: [{ fathers: '甲', race: '人类', gender: '女' }, { fathers: '甲', race: '人类', gender: '男' }] },
+          },
+          diary: { time: '第一天', content: '今天被登记了。' },
+          skillSetup: {
+            skillDefinitions: [{ name: '胎中新技', description: '只在本次定义的技能。' }],
+            initialSkills: [{ skill: '剑术', level: 2, exp: 0 }],
+            initialTalents: [],
+            fetusTalents: [{ fetusIndex: 1, talents: [{ skill: '胎中新技', level: 1, exp: 0 }] }, { fetusIndex: 5, talents: [] }],
+          },
+        }) } }] });
+      },
+    };
+  };
+
+  const bundleReport = {};
+  const character = await runRegistry(ctx, {
+    targetName: '露比',
+    bundle: { diaryWritingPrompt: '写得简短。', skillPrompt: '她会剑术。' },
+    bundleReport,
+  });
+
+  assert.match(sentPrompt, /附带：第一篇日记与初始技能／天赋/);
+  assert.equal(sentPayload.diary_writing_prompt, '写得简短。');
+  assert.equal(sentPayload.initial_skill_prompt, '她会剑术。');
+  assert.ok(Array.isArray(sentPayload.skill_catalog) && sentPayload.skill_catalog.length === CATALOG.length);
+
+  const chatState = state.getChatState(ctx, settings);
+  assert.equal('diary' in character, false, '附带的栏位不能混进角色资料');
+  assert.deepEqual(character.profile.skills.map((s) => [s.skillId, s.level]), [[1, 2]]);
+  const newId = chatState.skillCatalog.find((item) => item.name === '胎中新技').id;
+  const fetuses = character.profile.pregnant.fetuses;
+  assert.deepEqual(fetuses.map((f) => (f.talents || []).map((t) => t.skillId)), [[], [newId]], '胎儿天赋依输出顺序挂上');
+  assert.deepEqual(character.profile.diary.map((d) => d.time), ['第一天']);
+  assert.equal(bundleReport.fetusCount, 1);
+  assert.deepEqual(bundleReport.skipped, ['胎儿#5']);
+  assert.equal(bundleReport.diary.time, '第一天');
+});
+
+test('a diary rewritten by hand replaces the same story day, while the tracker stays on cooldown', () => {
+  const chatState = state.createEmptyChatState();
+  chatState.characters['艾拉'] = { name: '艾拉', initialized: true, profile: { base: {}, diary: [] } };
+  assert.equal(writeDiaryEntry(chatState, '艾拉', { time: '第一天', content: '初稿' }).applied, true);
+  assert.equal(writeDiaryEntry(chatState, '艾拉', { time: '第一天', content: '重写' }).applied, false, '同一天自动写入仍受冷却');
+  const replaced = writeDiaryEntry(chatState, '艾拉', { time: '第一天', content: '重写' }, { replaceSameDay: true });
+  assert.equal(replaced.applied, true);
+  assert.equal(replaced.replaced, true);
+  assert.deepEqual(chatState.characters['艾拉'].profile.diary.map((d) => d.content), ['重写']);
 });
 
 test('the skill prompt spells out that talents also need a defined skill', () => {

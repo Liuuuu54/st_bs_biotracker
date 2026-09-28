@@ -6029,23 +6029,34 @@ function applyWriteDiary(chatState, args) {
   if (!time) return { applied: false, message: `bsWriteDiary skipped for ${female}: empty time.` };
   if (!content) return { applied: false, message: `bsWriteDiary skipped for ${female}: empty content.` };
 
+  return writeDiaryEntry(chatState, female, { time, content });
+}
+
+/**
+ * 写一篇日记。同一个故事日只能有一篇：追踪模型写的遇到冷却就跳过；
+ * replaceSameDay 给使用者在注册页手动改写用，会直接取代当天那一篇
+ */
+export function writeDiaryEntry(chatState, female, { time, content } = {}, { replaceSameDay = false } = {}) {
+  const character = chatState.characters?.[female];
+  const title = String(time || '').trim();
+  const body = String(content || '').trim();
+  if (!character) return { applied: false, message: `bsWriteDiary skipped: unknown character ${female || '(empty)'}.` };
+  if (!title) return { applied: false, message: `bsWriteDiary skipped for ${female}: empty time.` };
+  if (!body) return { applied: false, message: `bsWriteDiary skipped for ${female}: empty content.` };
   const next = cloneValue(character);
   const profile = next.profile || {};
   profile.diary = Array.isArray(profile.diary) ? profile.diary : [];
   const currentStoryDayIndex = Math.floor(Math.max(0, Number(chatState?.minutesPassed) || 0) / 1440);
-  const existsSameStoryDay = profile.diary.some((entry) => Number(entry?.storyDayIndex) === currentStoryDayIndex);
-  if (existsSameStoryDay) {
+  const sameDayIndex = profile.diary.findIndex((entry) => Number(entry?.storyDayIndex) === currentStoryDayIndex);
+  if (sameDayIndex >= 0 && !replaceSameDay) {
     return { applied: false, message: `bsWriteDiary skipped for ${female}: story day ${currentStoryDayIndex + 1} is still on diary cooldown.` };
   }
-  profile.diary.push({
-    time,
-    content,
-    storyDayIndex: currentStoryDayIndex,
-    createdAt: Date.now(),
-  });
+  const entry = { time: title, content: body, storyDayIndex: currentStoryDayIndex, createdAt: Date.now() };
+  if (sameDayIndex >= 0) profile.diary[sameDayIndex] = entry;
+  else profile.diary.push(entry);
   next.profile = profile;
   chatState.characters[female] = next;
-  return { applied: true, message: `bsWriteDiary applied to ${female}: ${time}.` };
+  return { applied: true, replaced: sameDayIndex >= 0, message: `bsWriteDiary applied to ${female}: ${title}.` };
 }
 
 function applyPassedTime(chatState, args) {

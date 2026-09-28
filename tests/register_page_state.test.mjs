@@ -31,7 +31,7 @@ test('the breeding inference draft is only cleared once the character is registe
 });
 
 test('every async register-page action is throttled and restorable', () => {
-  for (const key of ['register', 'inference', 'wardrobe', 'diary', 'skill']) {
+  for (const key of ['register', 'registerBundle', 'inference', 'wardrobe', 'diary', 'skill']) {
     assert.match(controller, new RegExp(`isRegistryOperationPending\\('${key}'\\)`), `${key} 缺少重复触发保护`);
     assert.match(controller, new RegExp(`beginRegistryOperation\\('${key}'`), `${key} 未登记为进行中`);
     assert.match(controller, new RegExp(`endRegistryOperation\\('${key}'\\)`), `${key} 未在结束时释放`);

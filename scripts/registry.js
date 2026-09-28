@@ -63,7 +63,7 @@ import {
   normalizeWardrobeItem,
   sanitizeWearState,
 } from './wardrobe_config.js';
-import { BACK_SIDES, calculateDerivedInheritanceProgress, isFetusKnownToCharacter } from './tools.js';
+import { BACK_SIDES, calculateDerivedInheritanceProgress, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
 const DEBUG_LAST_REGISTRY_RESULT_KEY = '__bs_biotracker_debug_last_registry_result__';
@@ -654,13 +654,7 @@ export async function runRegistryDiaryInference(ctx, options = {}) {
   payload.existing_character_state = chatState.characters[targetName];
   const systemPrompt = [
     '你是 AIRP 角色主观日记写作者。',
-    '只为 payload.target_character 写一篇事后回顾式日记，不得替其他角色写。',
-    '结合角色资料、现有状态、最近聊天与既有日记，使用第一人称，保持角色语气与认知边界。',
-    '不要把日记写成即时旁白、系统总结或数值清单。',
-    '严格遵守 payload.diary_writing_prompt。',
-    requestedDate
-      ? 'time 必须使用 payload.requested_diary_date。'
-      : 'payload.requested_diary_date 为空时，请依故事上下文自行填写合适的日期标题；不要使用现实系统日期。',
+    ...buildDiaryRuleLines(requestedDate),
     '只输出 JSON：{"time":"日期标题","content":"日记正文"}。',
   ].join('\n');
   const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'diary' });
@@ -1686,15 +1680,21 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
   return chatState.characters[name];
 }
 
-export function buildRegistrySkillSystemPrompt(options = {}) {
+/**
+ * 初始技能／天赋的规则。技能页与「一次注册」共用，两边才不会走样。
+ * fetusSource：'payload' 为技能页（胎儿来自 payload.target_fetuses）；'output' 为一次注册（胎儿是这次输出的 profile.pregnant.fetuses）
+ */
+function buildSkillRuleLines(options = {}) {
   const skillPrompt = String(options.skillPrompt || '').trim();
   const skillBaselinePrompt = String(options.skillBaselinePrompt || '').trim();
   const inheritedTalentsLocked = Boolean(options.inheritedTalentsLocked);
   const emptyCatalog = Boolean(options.emptyCatalog);
   const hasFetuses = Boolean(options.hasFetuses);
+  const fromOutput = options.fetusSource === 'output';
+  const fetusGuide = '依父母双方种族与血统、父方与母方的技能／天赋、胎儿对母体的亲和（正亲和较常长成擅长，负亲和较常长成苦手）与剧情判断。'
+    + '胎儿还没出生，天赋宜浅：通常 level 在 -2 到 2 之间，除非设定明确，否则不要超过 ±3；不是每一胎都需要天赋。'
+    + '规则与 initialTalents 相同：skill 必须能在图鉴或本次 skillDefinitions 中找到。';
   return [
-    '你是 AIRP 角色初始技能与天赋配置器。只处理 payload.target_character。',
-    '根据角色卡、世界书、最近对话、已注册角色状态及用户提示，生成可供用户确认的初始技能／天赋 JSON。',
     skillBaselinePrompt
       ? '严格遵守 payload.skill_baseline_prompt：它是本聊天的高优先级技能基准，决定允许辨识与建立的技能类型。即使图鉴已有被基准排除的技能，也不得因此为角色配置、建立或发展该类技能；既有资料无需删除。'
       : '本聊天未设置额外技能基准，按角色资料与技能图鉴谨慎判断。',
@@ -1712,15 +1712,25 @@ export function buildRegistrySkillSystemPrompt(options = {}) {
     '技能与天赋共用经验曲线 requiredExp(level)=100*level*level；Lv0 形成擅长／苦手 Lv1 均需 100 EXP。',
     inheritedTalentsLocked ? 'payload.existing_skill_setup.talents 是孩子出生后保留的既有天赋，属于固定继承内容。必须参考它们配置技能，不得在 initialTalents 中输出同一技能的不同等级、方向或经验。' : '',
     '没有充分依据的项目不要添加；不得把性格、身体状态或一次性事件滥列为技能。',
-    hasFetuses
-      ? '【胎儿天赋】payload.target_fetuses 是这名角色腹中目前可见的胎儿（fetusIndex 从 0 起算）。可在 fetusTalents 为胎儿配置先天天赋：'
-        + '依父母双方种族与血统、父方与母方的技能／天赋、胎儿对母体的亲和（正亲和较常长成擅长，负亲和较常长成苦手）与剧情判断。'
-        + '胎儿还没出生，天赋宜浅：通常 level 在 -2 到 2 之间，除非设定明确，否则不要超过 ±3；不是每一胎都需要天赋。'
-        + '规则与 initialTalents 相同：skill 必须能在图鉴或本次 skillDefinitions 中找到。某胎若已有 talents，你输出的清单会整份取代它，要保留的请照抄；不想改动的胎儿就不要列出。'
+    hasFetuses && fromOutput
+      ? '【胎儿天赋】若这名角色怀有胎儿，可在 fetusTalents 为胎儿配置先天天赋；fetusIndex 是该胎在你这次输出的 profile.pregnant.fetuses 中的位置（从 0 起算）。' + fetusGuide
+      : '',
+    hasFetuses && !fromOutput
+      ? '【胎儿天赋】payload.target_fetuses 是这名角色腹中目前可见的胎儿（fetusIndex 从 0 起算）。可在 fetusTalents 为胎儿配置先天天赋：' + fetusGuide
+        + '某胎若已有 talents，你输出的清单会整份取代它，要保留的请照抄；不想改动的胎儿就不要列出。'
       : '',
     skillPrompt ? '严格参考 payload.initial_skill_prompt 的额外要求。' : '用户没有提供额外要求，请仅依现有角色资料谨慎判断。',
     `输出前请逐条自检：initialSkills、initialTalents${hasFetuses ? '、fetusTalents' : ''} 里的每一个 skill，都必须能在 payload.skill_catalog 或本次 skillDefinitions 中找到完全相同的名称。`
       + '对不上的条目会被系统丢弃，请在输出前补上定义或删掉该条目。',
+  ].filter(Boolean);
+}
+
+export function buildRegistrySkillSystemPrompt(options = {}) {
+  const hasFetuses = Boolean(options.hasFetuses);
+  return [
+    '你是 AIRP 角色初始技能与天赋配置器。只处理 payload.target_character。',
+    '根据角色卡、世界书、最近对话、已注册角色状态及用户提示，生成可供用户确认的初始技能／天赋 JSON。',
+    ...buildSkillRuleLines({ ...options, fetusSource: 'payload' }),
     '只输出 JSON，不要输出解释或 Markdown。结构必须是：',
     '{',
     '  "skillDefinitions": [{"name":"string","description":"string"}],',
@@ -1734,10 +1744,62 @@ export function buildRegistrySkillSystemPrompt(options = {}) {
   ].filter(Boolean).join('\n');
 }
 
+/** 日记写作规则。日记页与「一次注册」共用 */
+function buildDiaryRuleLines(requestedDate = '') {
+  return [
+    '只为 payload.target_character 写一篇事后回顾式日记，不得替其他角色写。',
+    '结合角色资料、现有状态、最近聊天与既有日记，使用第一人称，保持角色语气与认知边界。',
+    '不要把日记写成即时旁白、系统总结或数值清单。',
+    '严格遵守 payload.diary_writing_prompt。',
+    requestedDate
+      ? 'time 必须使用 payload.requested_diary_date。'
+      : 'payload.requested_diary_date 为空时，请依故事上下文自行填写合适的日期标题；不要使用现实系统日期。',
+  ];
+}
+
+/**
+ * 「一次注册」附加在注册提示词后面的段落：同一次请求顺便产出第一篇日记与初始技能／天赋，
+ * 省下日记与技能各自再送一次角色卡、世界书与聊天的成本
+ */
+export function buildRegistryBundlePrompt(options = {}) {
+  return [
+    '【附带：第一篇日记与初始技能／天赋】',
+    '这次注册同时要产出这名角色的第一篇日记与初始技能／天赋，放在同一个 JSON 的顶层（与 name、profile 并列），两个都必须输出：',
+    '"diary": {"time":"日期标题","content":"日记正文"}',
+    '"skillSetup": {"skillDefinitions":[{"name":"string","description":"string"}],"initialSkills":[{"skill":"技能精确名称或ID","level":1,"exp":0}],"initialTalents":[{"skill":"技能精确名称或ID","level":0,"exp":0}],"fetusTalents":[{"fetusIndex":0,"talents":[{"skill":"技能精确名称或ID","level":1,"exp":0}]}]}',
+    '[日记规则]',
+    ...buildDiaryRuleLines(options.requestedDate),
+    '日记写的是注册当下这名角色的事后回顾，内容必须与你这次输出的 profile 一致（阶段、怀孕与否、衣着、处境）。',
+    '[技能／天赋规则]',
+    ...buildSkillRuleLines({ ...options, hasFetuses: true, fetusSource: 'output' }),
+    'skillSetup 里没有项目的数组也必须输出为空数组。',
+  ].filter(Boolean).join('\n');
+}
+
 /** 角色腹中目前可见的胎儿：已着床、角色自己知道的（未揭晓的异期胎、孕中孕内胎不算）。fetusIndex 依这个顺序 */
 function getVisibleRegistryFetuses(character) {
   const fetuses = Array.isArray(character?.profile?.pregnant?.fetuses) ? character.profile.pregnant.fetuses : [];
   return fetuses.filter((fetus) => isFetusKnownToCharacter(fetus));
+}
+
+/** 把角色目前的技能、天赋与可见胎儿的天赋写成技能页可编辑、可再写入的 JSON（技能以名称表示） */
+export function buildSkillSetupEditorValue(chatState, targetName) {
+  const character = chatState.characters?.[targetName];
+  const catalog = normalizeSkillCatalog(chatState.skillCatalog);
+  const named = (list) => (Array.isArray(list) ? list : []).map((entry) => ({
+    skill: resolveSkillDefinition(catalog, entry.skillId)?.name ?? entry.skillId,
+    level: entry.level,
+    exp: entry.exp,
+  }));
+  const fetusTalents = getVisibleRegistryFetuses(character)
+    .map((fetus, fetusIndex) => ({ fetusIndex, talents: named(normalizeTalentList(fetus.talents)) }))
+    .filter((entry) => entry.talents.length > 0);
+  return {
+    skillDefinitions: [],
+    initialSkills: named(character?.profile?.skills),
+    initialTalents: named(character?.profile?.talents),
+    ...(fetusTalents.length > 0 ? { fetusTalents } : {}),
+  };
 }
 
 function sanitizeRegistrySkillInferenceResult(result) {
@@ -2029,6 +2091,77 @@ export function applyRegistryChildInheritance(chatState, targetName, source = {}
   return { character, source: resolved };
 }
 
+/** 从注册结果拿出一次注册附带的日记与技能（不让它们混进角色资料） */
+function takeRegistryBundle(result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return { diary: null, skillSetup: null };
+  const diary = result.diary && typeof result.diary === 'object' && !Array.isArray(result.diary) ? result.diary : null;
+  const skillSetup = result.skillSetup && typeof result.skillSetup === 'object' && !Array.isArray(result.skillSetup) ? result.skillSetup : null;
+  delete result.diary;
+  delete result.skillSetup;
+  return { diary, skillSetup };
+}
+
+/**
+ * 先把附带的新技能定义登记进工作用图鉴，再把胎儿天赋挂到这次输出的胎儿上（依输出顺序的 fetusIndex）。
+ * 图鉴等注册成功后才写回；定义不合格、名称对不上、胎儿编号不存在的都跳过并回报
+ */
+function prepareBundleSkills(chatState, result, skillSetup, report) {
+  let catalog = normalizeSkillCatalog(chatState.skillCatalog);
+  let nextSkillId = normalizeNextSkillId(catalog, chatState.nextSkillId);
+  report.skipped = Array.isArray(report.skipped) ? report.skipped : [];
+  report.fetusCount = 0;
+  if (!skillSetup) return { catalog, nextSkillId };
+  const definitions = Array.isArray(skillSetup.skillDefinitions) ? skillSetup.skillDefinitions.slice(0, 20) : [];
+  for (const definition of definitions) {
+    const registered = registerSkillDefinition(catalog, definition && typeof definition === 'object' ? definition : {}, nextSkillId);
+    if (!registered.ok) {
+      report.skipped.push(`定义「${String(definition?.name || '(空白)')}」`);
+      continue;
+    }
+    catalog = registered.catalog;
+    nextSkillId = registered.nextSkillId;
+  }
+  const fetuses = Array.isArray(result?.profile?.pregnant?.fetuses) ? result.profile.pregnant.fetuses : [];
+  for (const entry of (Array.isArray(skillSetup.fetusTalents) ? skillSetup.fetusTalents : [])) {
+    const index = Number(entry?.fetusIndex);
+    const fetus = Number.isInteger(index) ? fetuses[index] : null;
+    if (!fetus || typeof fetus !== 'object') {
+      report.skipped.push(`胎儿#${entry?.fetusIndex ?? '(空白)'}`);
+      continue;
+    }
+    const normalized = normalizeInitialSkillTalentConfig({ talents: entry?.talents }, catalog);
+    report.skipped.push(...normalized.skipped);
+    fetus.talents = normalized.talents;
+    report.fetusCount += 1;
+  }
+  return { catalog, nextSkillId };
+}
+
+/** 角色注册完成后，写入附带的技能／天赋与第一篇日记 */
+function applyRegistryBundle(chatState, targetName, bundleOutput, workingSkills, report) {
+  chatState.skillCatalog = workingSkills.catalog;
+  chatState.nextSkillId = workingSkills.nextSkillId;
+  if (bundleOutput.skillSetup) {
+    const skillReport = {};
+    applyRegistrySkillSetup(chatState, targetName, {
+      skillDefinitions: [],
+      initialSkills: Array.isArray(bundleOutput.skillSetup.initialSkills) ? bundleOutput.skillSetup.initialSkills : [],
+      initialTalents: Array.isArray(bundleOutput.skillSetup.initialTalents) ? bundleOutput.skillSetup.initialTalents : [],
+    }, skillReport);
+    report.skipped.push(...(skillReport.skipped || []));
+    report.skillsWritten = true;
+  }
+  const diary = bundleOutput.diary;
+  if (diary && String(diary.time || '').trim() && String(diary.content || '').trim()) {
+    const written = writeDiaryEntry(chatState, targetName, diary, { replaceSameDay: true });
+    if (written.applied) report.diary = { time: String(diary.time).trim(), content: String(diary.content).trim() };
+    else report.diaryError = written.message;
+  } else {
+    report.diaryError = '模型没有给出日记';
+  }
+  return chatState.characters[targetName];
+}
+
 export async function runRegistry(ctx, options = {}) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
@@ -2051,6 +2184,15 @@ export async function runRegistry(ctx, options = {}) {
   const payload = await buildRegistryPayload(ctx, settings, chatState, { ...options, customNotes, declaredRace, sourceChildContext });
   payload.breeding_psychology_enabled = includeBreedingPsychology;
   if (includeBreedingPsychology) payload.breeding_inference = options.breedingInference;
+  // 一次注册：日记与技能的规则、图鉴随同这次请求送出
+  const bundle = options.bundle && typeof options.bundle === 'object' ? options.bundle : null;
+  if (bundle) {
+    payload.skill_baseline_prompt = String(chatState.skillBaselinePrompt || '').trim();
+    payload.skill_catalog = normalizeSkillCatalog(chatState.skillCatalog);
+    payload.initial_skill_prompt = String(bundle.skillPrompt || '').trim();
+    payload.diary_writing_prompt = String(bundle.diaryWritingPrompt || settings.diaryWritingPrompt || DEFAULT_DIARY_WRITING_PROMPT).trim();
+    payload.requested_diary_date = String(bundle.requestedDate || '').trim() || null;
+  }
   try {
     const currentCharacterText = JSON.stringify(payload.current_character) || '';
     const characterWorldBookText = JSON.stringify(payload.character_worldbook) || '';
@@ -2072,7 +2214,15 @@ export async function runRegistry(ctx, options = {}) {
   } catch (error) {
     console.warn('[BS BioTracker][registry] payload size debug failed', error);
   }
-  const systemPrompt = options.systemPrompt || buildRegistrySystemPrompt(settings, { ...options, customNotes, declaredRace, payload, includeBreedingPsychology });
+  const basePrompt = options.systemPrompt || buildRegistrySystemPrompt(settings, { ...options, customNotes, declaredRace, payload, includeBreedingPsychology });
+  const systemPrompt = bundle
+    ? `${basePrompt}\n\n${buildRegistryBundlePrompt({
+      skillPrompt: payload.initial_skill_prompt,
+      skillBaselinePrompt: payload.skill_baseline_prompt,
+      emptyCatalog: payload.skill_catalog.length === 0,
+      requestedDate: payload.requested_diary_date || '',
+    })}`
+    : basePrompt;
   recordRegistryRequestDebug(systemPrompt, payload);
   try {
     const result = await callOpenAICompatible(
@@ -2111,10 +2261,15 @@ export async function runRegistry(ctx, options = {}) {
     // payload 里同时有角色卡与 target_character，模型常把角色卡名当成 name 回传，
     // 于是角色被注册成卡片名而不是输入的名字（重新注册一次又「好了」，其实只是这次没抽到）。
     result.name = targetName;
+    const bundleOutput = bundle ? takeRegistryBundle(result) : null;
+    const bundleReport = options.bundleReport && typeof options.bundleReport === 'object' ? options.bundleReport : {};
+    // 胎儿天赋要趁胎儿还是这次输出的顺序时挂上去：注册的正规化与特殊来历可能调整胎儿阵列
+    const workingSkills = bundleOutput ? prepareBundleSkills(chatState, result, bundleOutput.skillSetup, bundleReport) : null;
     applyRequestedSpecialFetus(result, specialFetus);
     recordRegistryResultDebug(result);
     let character = applyRegistryResult(chatState, result, { allowBreedingPsychology: includeBreedingPsychology });
     if (sourceChildContext) character = applyRegistryChildInheritance(chatState, targetName, requestedSource).character;
+    if (bundleOutput) character = applyRegistryBundle(chatState, targetName, bundleOutput, workingSkills, bundleReport);
     recordChatStateSnapshot(ctx, chatState, { reason: 'registry' });
     saveSettings(ctx);
     return character;
