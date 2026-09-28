@@ -1835,17 +1835,15 @@ function renderRaceCatalogChecklist(settings) {
   if (!container) return;
   const selection = getRaceCatalogSelection(settings);
   const chosen = { race: new Set(selection.races), derived: new Set(selection.derivedTypes) };
-  const filter = String(document.getElementById('bs-bt-catalog-filter')?.value || '').trim().toLowerCase();
   container.innerHTML = getRaceCatalogChecklistGroups().map((group, index) => {
     const picked = group.names.filter((name) => chosen[group.kind].has(name)).length;
-    const visible = group.names.filter((name) => !filter || name.toLowerCase().includes(filter));
     const allPicked = picked === group.names.length;
-    return `<fieldset class="bs-bt-catalog-group"${visible.length === 0 ? ' hidden' : ''}>
+    return `<fieldset class="bs-bt-catalog-group">
       <div class="bs-bt-catalog-group-head">
         <span>${escapeHtml(group.label)} ${picked}/${group.names.length}</span>
         <button class="menu_button" type="button" data-catalog-group="${index}">${allPicked ? '清空本组' : '全选本组'}</button>
       </div>
-      <div class="bs-bt-catalog-options">${group.names.map((name) => `<label title="${escapeHtml(name)}"${visible.includes(name) ? '' : ' hidden'}>
+      <div class="bs-bt-catalog-options">${group.names.map((name) => `<label title="${escapeHtml(name)}">
         <input type="checkbox" data-catalog-kind="${group.kind}" data-catalog-name="${escapeHtml(name)}"${chosen[group.kind].has(name) ? ' checked' : ''}> ${escapeHtml(name)}
       </label>`).join('')}</div>
     </fieldset>`;
@@ -2223,8 +2221,6 @@ function renderRaceEncyclopediaPage(ctx = null) {
   const editButton = document.getElementById('bs-bt-race-open-editor');
   const editorModal = document.getElementById('bs-bt-race-editor-modal');
   const editorTitle = document.getElementById('bs-bt-race-editor-title');
-  const raceCatalogIncluded = document.getElementById('bs-bt-race-catalog-included');
-  const derivedCatalogIncluded = document.getElementById('bs-bt-derived-catalog-included');
   const worldBaselineInput = document.getElementById('bs-bt-world-baseline-prompt');
   if (!countNode || !selectNode || !outputNode || !derivedSelectNode || !derivedOutputNode) return;
 
@@ -2268,9 +2264,6 @@ function renderRaceEncyclopediaPage(ctx = null) {
     if (editButton) editButton.disabled = true;
     closeRacePhysiologyEditor();
   } else {
-    if (raceCatalogIncluded instanceof HTMLInputElement) {
-      raceCatalogIncluded.checked = catalogSelection.races.includes(selectedRaceEncyclopedia);
-    }
     if (editButton) {
       editButton.disabled = false;
       editButton.textContent = getRacePhysiologyOverride(selectedRaceEncyclopedia) ? '编辑覆盖' : '调整参数';
@@ -2289,10 +2282,6 @@ function renderRaceEncyclopediaPage(ctx = null) {
     if (derivedEditButton) derivedEditButton.disabled = true;
     closeDerivedTypeEditor();
     return;
-  }
-
-  if (derivedCatalogIncluded instanceof HTMLInputElement) {
-    derivedCatalogIncluded.checked = catalogSelection.derivedTypes.includes(selectedDerivedEncyclopedia);
   }
 
   if (derivedEditButton) {
@@ -8367,13 +8356,6 @@ async function ensureModal(ctx) {
     racePhysiologyEditorOpen = false;
     renderRaceEncyclopediaPage(ctx);
   });
-  document.getElementById('bs-bt-race-catalog-included')?.addEventListener('change', (event) => {
-    if (!selectedRaceEncyclopedia) return;
-    setRaceCatalogEntryIncluded(ctx, 'race', selectedRaceEncyclopedia, Boolean(event.target?.checked));
-  });
-  document.getElementById('bs-bt-catalog-filter')?.addEventListener('input', () => {
-    renderRaceCatalogChecklist(getSettings(ctx));
-  });
   document.getElementById('bs-bt-catalog-checklist')?.addEventListener('change', (event) => {
     const input = event.target;
     if (!(input instanceof HTMLInputElement) || !input.dataset.catalogName) return;
@@ -8446,10 +8428,6 @@ async function ensureModal(ctx) {
     selectedDerivedEncyclopedia = String(event.target?.value || '');
     derivedTypeEditorOpen = false;
     renderRaceEncyclopediaPage(ctx);
-  });
-  document.getElementById('bs-bt-derived-catalog-included')?.addEventListener('change', (event) => {
-    if (!selectedDerivedEncyclopedia) return;
-    setRaceCatalogEntryIncluded(ctx, 'derived', selectedDerivedEncyclopedia, Boolean(event.target?.checked));
   });
   document.getElementById('bs-bt-derived-open-editor')?.addEventListener('click', () => {
     if (!selectedDerivedEncyclopedia) return;

@@ -4380,10 +4380,6 @@
   border-radius: 8px;
 }
 
-#bs-biotracker-settings .bs-bt-catalog-group[hidden] {
-  display: none;
-}
-
 #bs-biotracker-settings .bs-bt-catalog-group-head {
   display: flex;
   align-items: center;
@@ -4415,10 +4411,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-#bs-biotracker-settings .bs-bt-catalog-options label[hidden] {
-  display: none;
 }
 
 #bs-biotracker-settings .bs-bt-wardrobe-transient {
