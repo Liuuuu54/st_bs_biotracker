@@ -5,6 +5,7 @@ import test from 'node:test';
 import * as state from '../scripts/state.js';
 import { applyToolCall, getLaborObstruction } from '../scripts/tools.js';
 import { DUE_DATE_DAYS, TERM_START_DAYS } from '../scripts/stage_config.js';
+import { applyRegistryResult } from '../scripts/registry.js';
 
 function carrier({ days = 252, weights = [1], readiness = 1, breedTolerance = 1, vitalityLevel = 5, psyStressLevel = 4, isHere = true, stage = '孕晚期', uterinePressure = 0, immune = {}, fetusOver = {} } = {}) {
   const chatState = state.createEmptyChatState();
@@ -138,4 +139,14 @@ test('离场的真实分娩不判硬阻塞：横位领头的胎儿也会自己�
   });
   assert.equal(transverseAtInlet(true)?.type, 'transverse');
   assert.equal(transverseAtInlet(false), null);
+});
+
+test('重新注册带妊娠时丢掉旧的发动体质：胎儿编号会从 1 重编，不能沿用上一次的', () => {
+  const chatState = carrier({ readiness: 9 });
+  const reRegistered = applyRegistryResult(chatState, {
+    name: 'A',
+    profile: { base: { race: '人类' }, pregnant: { pregnantDays: 200, fetuses: [{ fathers: '乙', race: '人类', gender: '男' }] } },
+  });
+  assert.equal(reRegistered.profile.pregnant.fetuses[0].embryoId, 1);
+  assert.equal(reRegistered.profile.pregnant.termReadiness, undefined);
 });

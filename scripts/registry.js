@@ -1729,6 +1729,8 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
       pregnant: {
         ...base.profile.pregnant,
         ...(sanitizedProfile.pregnant || {}),
+        // 注册会从 1 重新编胎儿号，旧的发动体质可能刚好对上同一个编号：这次妊娠重抽
+        ...(sanitizedProfile.pregnant ? { termReadiness: undefined } : {}),
       },
       experience: {
         ...base.profile.experience,
