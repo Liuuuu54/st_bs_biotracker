@@ -60,7 +60,7 @@ import {
 import { buildMainFlowPrompt, resetPoller, runTracker, getPollWaitStatus } from './scripts/tracker.js';
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
-import { describeBackSide, describeFetalPosition, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
+import { describeBackSide, describeFetalPosition, estimateTermOnsetDays, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
 import { applyToolCall, writeDiaryEntry } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
@@ -3644,6 +3644,7 @@ function buildTrackCharacterViewModel(character) {
       age: Number.isFinite(Number(base.age)) ? Math.round(Number(base.age)) : null,
       stage,
       stageProgress: getStageProgress(profile),
+      estimatedOnset: describeEstimatedOnset(profile, gestationEffectiveSpeed),
       stats: [
         {
           label: '活力',
@@ -3828,6 +3829,20 @@ function renderProgressList(items) {
     .join('');
 }
 
+/**
+ * 临产期的预计发动：只写孕周与大约几天后，不外露背后的发动体质。
+ * 推估假设剧情不碰宫压，剧情推高宫压只会更早
+ */
+function describeEstimatedOnset(profile, gestationSpeed) {
+  const onsetDays = estimateTermOnsetDays(profile);
+  if (onsetDays === null) return '';
+  const weeks = Math.floor(onsetDays / 7);
+  const days = Math.round(onsetDays % 7);
+  const current = Number(profile?.pregnant?.effectivePregnantDays) || 0;
+  const realDaysAhead = Math.max(1, Math.round((onsetDays - current) / Math.max(0.1, Number(gestationSpeed) || 1)));
+  return `约 ${weeks} 周 ${days} 天（约 ${realDaysAhead} 天后）`;
+}
+
 function renderTrackTitle(title, badge = '') {
   const badgeHtml = String(badge || '').trim()
     ? `<span class="bs-bt-track-title-badge">${escapeHtml(badge)}</span>`
@@ -3904,6 +3919,7 @@ function renderTrackOverview(viewModel) {
     <div class="bs-bt-track-section${stageSectionClass}"${stageSectionStyle}>
       <div class="bs-bt-track-section-title">${renderTrackTitle('阶段', stageBadge)}</div>
       ${progressHtml}
+      ${viewModel.overview.estimatedOnset ? `<div class="bs-bt-track-meta"><div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">预计发动</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.estimatedOnset)}</span></div></div>` : ''}
     </div>
     <div class="bs-bt-track-section">
       <div class="bs-bt-track-section-title">状态值</div>

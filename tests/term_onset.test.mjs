@@ -3,23 +3,23 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as state from '../scripts/state.js';
-import { applyToolCall } from '../scripts/tools.js';
+import { applyToolCall, estimateTermOnsetDays } from '../scripts/tools.js';
 import { DUE_DATE_DAYS, TERM_START_DAYS } from '../scripts/stage_config.js';
 
-function carrier({ days = 252, weights = [1], readiness = 1, breedTolerance = 1 } = {}) {
+function carrier({ days = 252, weights = [1], readiness = 1, breedTolerance = 1, vitalityLevel = 5, psyStressLevel = 4 } = {}) {
   const chatState = state.createEmptyChatState();
   chatState.characters.A = {
     name: 'A', initialized: true,
     profile: {
       base: {
         stage: '孕晚期', days: 0, isHere: true, age: 24, race: '人类',
-        vitality: 150, libido: 20, uterinePressure: 0, psyStress: 30, vitalityLevel: 5, psyStressLevel: 4,
+        vitality: 150, libido: 20, uterinePressure: 0, psyStress: 30, vitalityLevel, psyStressLevel,
         eggs: 0, sperms: [], fertilizationDays: 0, latestSexDays: -1,
       },
       bio: { birthDifficulty: 1, breedTolerance, impregnationDifficulty: 0.2, identicalProbability: 0 },
       pregnant: {
         pregnantDays: days, effectivePregnantDays: days, fetusesCount: weights.length, fetalEnergyDrain: 0,
-        termReadiness: { embryoId: 1, value: readiness },
+        ...(readiness === null ? {} : { termReadiness: { embryoId: 1, value: readiness } }),
         fetuses: weights.map((weight, index) => ({
           embryoId: index + 1, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight, tendencyAngle: 0, affinity: 0,
         })),
@@ -88,4 +88,35 @@ test('足月累积看肚子实际的量，不受母体承载耐受影响', () =>
   const high = pressureAt(10);
   const normal = pressureAt(1);
   assert.ok(Math.abs(high - normal) / normal < 0.02, `耐受 10：${high}，耐受 1：${normal}`);
+});
+
+test('发动体质在抽的当下套上等级：病弱、极端情绪的母体偏早，其余不变', () => {
+  const realRandom = Math.random;
+  Math.random = () => 0.5;
+  try {
+    const rolled = (vitalityLevel, psyStressLevel) => {
+      const chatState = carrier({ readiness: null, vitalityLevel, psyStressLevel });
+      runTo(chatState, TERM_START_DAYS + 1);
+      return P(chatState).pregnant.termReadiness.value;
+    };
+    const normal = rolled(5, 4);
+    assert.ok(Math.abs(rolled(1, 4) / normal - 1.6) < 1e-9);
+    assert.ok(Math.abs(rolled(2, 7) / normal - 1.3 * 1.5) < 1e-9);
+    assert.equal(rolled(7, 1), normal, '强健与平稳不会让人晚生');
+  } finally {
+    Math.random = realRandom;
+  }
+});
+
+test('预计发动照引擎的顺序推估，临产期前或还没抽体质时不给', () => {
+  assert.equal(estimateTermOnsetDays(P(carrier({ readiness: 2.3 }))), null, '孕晚期不推估');
+  const chatState = carrier({ readiness: 2.3 });
+  runTo(chatState, 266);
+  const estimate = estimateTermOnsetDays(P(chatState));
+  while (!['产兆前驱', '第一产程'].includes(P(chatState).base.stage)) step(chatState);
+  assert.ok(Math.abs(estimate - P(chatState).pregnant.effectivePregnantDays) <= 1, `估 ${estimate}，实际 ${P(chatState).pregnant.effectivePregnantDays}`);
+  const fresh = carrier({ readiness: null, days: 266 });
+  P(fresh).base.stage = '临产期';
+  assert.equal(estimateTermOnsetDays(P(fresh)), null, '没抽过体质不能顺手抽');
+  assert.equal(P(fresh).pregnant.termReadiness, undefined);
 });

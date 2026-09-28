@@ -3083,20 +3083,70 @@ function randomStandardNormal() {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
+// 长期体质与情绪特质只往早偏移：身体虚弱、长期高压的母体较常提早发动；
+// 强健或平稳不会让人明显晚生。「难产体态／安产体态」管生得顺不顺，不管何时发动
+const VITALITY_LEVEL_READINESS = Object.freeze({ 1: 1.6, 2: 1.3 });
+const PSY_STRESS_LEVEL_READINESS = Object.freeze({ 6: 1.25, 7: 1.5 });
+
+function getTermReadinessAnchor(pregnant) {
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  return fetuses.map((fetus) => fetus?.embryoId).find((id) => id !== null && id !== undefined) ?? null;
+}
+
+/** 已抽好的发动体质；这次妊娠还没抽时回 null（界面推估不能顺手抽，否则渲染会改状态） */
+function peekTermReadiness(pregnant) {
+  const stored = pregnant?.termReadiness;
+  if (!stored || typeof stored !== 'object' || stored.embryoId !== getTermReadinessAnchor(pregnant)) return null;
+  const value = Number(stored.value);
+  return Number.isFinite(value) ? value : null;
+}
+
 /**
- * 这一胎的「发动体质」：每次妊娠抽一次，决定不靠剧情时大概几周发动。
+ * 这一胎的「发动体质」：每次妊娠抽一次，决定不靠剧情时大概几周发动，抽的当下套上活力与情压等级。
  * 绑在最早那胎的 embryoId 上，下一次妊娠换了胎儿自然重抽，不必在每个结束妊娠的地方清掉
  */
-function getTermReadiness(pregnant) {
-  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
-  const anchorId = fetuses.map((fetus) => fetus?.embryoId).find((id) => id !== null && id !== undefined) ?? null;
-  const stored = pregnant?.termReadiness;
-  if (stored && typeof stored === 'object' && stored.embryoId === anchorId && Number.isFinite(Number(stored.value))) {
-    return Number(stored.value);
-  }
-  const value = clampNumber(TERM_READINESS_MEDIAN * Math.exp(TERM_READINESS_SPREAD * randomStandardNormal()), 0.5, 15, TERM_READINESS_MEDIAN);
-  pregnant.termReadiness = { embryoId: anchorId, value };
+function getTermReadiness(profile) {
+  const pregnant = profile?.pregnant || {};
+  const stored = peekTermReadiness(pregnant);
+  if (stored !== null) return stored;
+  const base = profile?.base || {};
+  const levelFactor = (VITALITY_LEVEL_READINESS[Math.round(Number(base.vitalityLevel))] || 1)
+    * (PSY_STRESS_LEVEL_READINESS[Math.round(Number(base.psyStressLevel))] || 1);
+  const rolled = TERM_READINESS_MEDIAN * Math.exp(TERM_READINESS_SPREAD * randomStandardNormal()) * levelFactor;
+  const value = clampNumber(rolled, 0.5, 15, TERM_READINESS_MEDIAN);
+  pregnant.termReadiness = { embryoId: getTermReadinessAnchor(pregnant), value };
   return value;
+}
+
+/**
+ * 预计发动日（有效孕日）：照引擎每天的顺序往后推——宫压累积 → 过上限一半先示警、下一天仍未缓解就发动，
+ * 达 66% 当天发动。假设剧情完全不碰宫压、胎重不再变，所以只是「最晚大概何时」；
+ * 临产期前、或这次妊娠还没抽发动体质时回 null
+ */
+export function estimateTermOnsetDays(profile) {
+  const base = profile?.base || {};
+  const stage = String(base.stage || '');
+  if (stage !== '临产期' && stage !== '逾期') return null;
+  const pregnant = profile?.pregnant || {};
+  const readiness = peekTermReadiness(pregnant);
+  if (readiness === null) return null;
+  const start = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+  const bulkPerDay = getFetalBulk(profile) / Math.max(1, start);
+  const capAt = (days) => 50 + (150 - 50) * (Math.max(0, Math.min(10, Math.floor(days / 28))) / 10);
+  let pressure = clampNumber(base.uterinePressure, 0, 9999, 0);
+  let warned = Boolean(profile?.cooldown?.pregnancyPressureWarning) && pressure >= capAt(start) * 0.5;
+  for (let day = start + 1; day <= start + 120; day += 1) {
+    const ramp = 1 + Math.max(0, day - 0.5 - TERM_START_DAYS) / TERM_PRESSURE_RAMP_DAYS;
+    const postTerm = day - 0.5 >= TERM_START_DAYS + PREGNANCY_STAGE_DAYS.临产期 ? POSTTERM_PRESSURE_MULTIPLIER : 1;
+    pressure = Math.min(capAt(day), pressure + bulkPerDay * day * readiness * ramp * postTerm);
+    const cap = capAt(day);
+    if (pressure >= cap * 0.66) return day;
+    if (pressure >= cap * 0.5) {
+      if (warned) return day;
+      warned = true;
+    }
+  }
+  return null;
 }
 
 /**
@@ -3116,7 +3166,7 @@ function applyTermPressure(profile, tick, female) {
   const midpointDays = effectivePregnantDays - elapsed / 2;
   const ramp = 1 + Math.max(0, midpointDays - TERM_START_DAYS) / TERM_PRESSURE_RAMP_DAYS;
   const postTerm = stage === '逾期' ? POSTTERM_PRESSURE_MULTIPLIER : 1;
-  const increment = getFetalBulk(profile) * getTermReadiness(pregnant) * ramp * postTerm * elapsed;
+  const increment = getFetalBulk(profile) * getTermReadiness(profile) * ramp * postTerm * elapsed;
   const pressureCap = getUterinePressureCap(profile);
   base.uterinePressure = clampNumber((base.uterinePressure || 0) + increment, 0, pressureCap, base.uterinePressure || 0);
   profile.base = base;
