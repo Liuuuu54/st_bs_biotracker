@@ -66,7 +66,7 @@ import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
-import { appendSkillHistory, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
+import { appendSkillHistory, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
 import {
   DEFAULT_MAIN_FIT_PROFILE,
   WARDROBE_ACCESSORY_CATEGORY_LABELS,
@@ -535,13 +535,18 @@ function importSkillPreset(ctx, groupKey) {
   const result = importSkillPresetGroup(chatState.skillCatalog, chatState.nextSkillId, groupKey);
   chatState.skillCatalog = result.catalog;
   chatState.nextSkillId = result.nextSkillId;
-  if (result.created > 0) {
+  // 导入调教预设就是选了方向：基准还空着时一并补上，否则注册会照角色卡另建职业技能
+  const baseline = fillTrainingSkillBaseline(chatState.skillBaselinePrompt);
+  chatState.skillBaselinePrompt = baseline.baseline;
+  if (result.created > 0 || baseline.filled) {
     recordChatStateSnapshot(ctx, chatState, { reason: `import_skill_preset_${groupKey}` });
     saveSettings(ctx);
+    resetPoller(ctx, trackerDeps);
     updateMainFlowPrompt(ctx);
   }
   renderSkillCatalogPage(ctx);
-  setSkillCatalogStatus(result.created > 0 ? `已导入 ${result.created} 项预设技能。` : '该组预设已全部存在。');
+  const imported = result.created > 0 ? `已导入 ${result.created} 项预设技能。` : '该组预设已全部存在。';
+  setSkillCatalogStatus(baseline.filled ? `${imported}技能基准原本空着，已一并设为「只追踪调教类技能」，可在上方修改或清空。` : imported);
 }
 
 function setRegisterSkillStatus(message, isError = false) {

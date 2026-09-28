@@ -127,6 +127,20 @@ export function updateSkillDefinition(catalogValue, reference, input = {}) {
   };
 }
 
+/**
+ * 导入预设调教技能时，技能基准还空着就补上这段：光有图鉴不会限定方向，
+ * 角色卡写了职业专长（照明、美术、剑术……）时，注册照规则就会另建那些技能
+ */
+export const TRAINING_SKILL_BASELINE_PROMPT = '本聊天只追踪调教类技能：以技能图鉴中的部位开发与行为倾向为准，优先复用既有项目。'
+  + '不要为角色建立或发展职业、战斗、生活、艺术等一般技能；角色卡里的职业专长与才能只当背景，不列为技能或天赋。';
+
+/** 空的基准才补；已有基准一律不动，回传补上后的基准与是否有补 */
+export function fillTrainingSkillBaseline(currentBaseline) {
+  const current = String(currentBaseline || '').trim();
+  if (current) return { baseline: current, filled: false };
+  return { baseline: TRAINING_SKILL_BASELINE_PROMPT, filled: true };
+}
+
 export function importSkillPresetGroup(catalogValue, nextSkillIdValue, groupKey) {
   const preset = SKILL_PRESET_GROUPS[groupKey];
   let catalog = normalizeSkillCatalog(catalogValue);

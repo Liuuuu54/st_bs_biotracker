@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  fillTrainingSkillBaseline,
   importSkillPresetGroup,
+  TRAINING_SKILL_BASELINE_PROMPT,
   SKILL_PRESET_GROUPS,
   updateSkillDefinition,
 } from '../scripts/skill_config.js';
+import { buildRegistryBundlePrompt, buildRegistrySkillSystemPrompt } from '../scripts/registry.js';
 
 const DEVELOPMENT_NAMES = ['口腔开发', '胸部开发', '性器开发', '子宫开发', '后庭开发', '尿道开发'];
 const BEHAVIOR_NAMES = ['前戏', '侍奉', '自慰', '露出', '拘束', 'M倾向', 'S倾向', '情趣玩具', '多人行为'];
@@ -68,4 +71,19 @@ test('skill definition edits reject empty prompts and duplicate names', () => {
 
   assert.equal(updateSkillDefinition(catalog, 3, { name: '前戏', description: '' }).ok, false);
   assert.equal(updateSkillDefinition(catalog, 3, { name: '自慰', description: '重复名称。' }).ok, false);
+});
+
+test('导入调教预设时技能基准空着才补上，已有基准不动', () => {
+  assert.deepEqual(fillTrainingSkillBaseline(''), { baseline: TRAINING_SKILL_BASELINE_PROMPT, filled: true });
+  assert.deepEqual(fillTrainingSkillBaseline('  只追踪冒险技能  '), { baseline: '只追踪冒险技能', filled: false });
+  assert.match(TRAINING_SKILL_BASELINE_PROMPT, /职业专长与才能只当背景，不列为技能或天赋/);
+});
+
+test('有技能基准时，一次注册与技能页都把它当最高优先规则', () => {
+  for (const prompt of [
+    buildRegistryBundlePrompt({ skillBaselinePrompt: TRAINING_SKILL_BASELINE_PROMPT }),
+    buildRegistrySkillSystemPrompt({ skillBaselinePrompt: TRAINING_SKILL_BASELINE_PROMPT }),
+  ]) {
+    assert.match(prompt, /严格遵守 payload\.skill_baseline_prompt/);
+  }
 });
