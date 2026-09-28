@@ -284,10 +284,8 @@
                 <button id="bs-bt-api-profile-save" class="menu_button" type="button">保存</button>
                 <button id="bs-bt-api-profile-delete" class="menu_button" type="button">删除</button>
               </div>
-              <small>保存当前的 API 地址、格式、Key 与模型名称；选择配置组即套用并保存设置。Key 与其他设置一样存在本机的 SillyTavern 设置档。</small>
+              <small>保存下方到分隔线为止的连接设置（API 地址、格式、Key、模型、温度、思考强度、格式化输出）；选择配置组即套用并保存设置。Key 与其他设置一样存在本机的 SillyTavern 设置档。</small>
             </div>
-
-            <hr class="sysHR" />
 
             <div class="settings_section">
               <label for="bs-bt-api-url">OpenAI 兼容 API Base URL</label>
@@ -362,6 +360,8 @@
               </label>
               <small>请求体附加 response_format.type = json_object，可减少掉格式；不支持该参数的渠道请关闭。</small>
             </div>
+
+            <hr class="sysHR" />
 
             <div class="settings_section">
               <label for="bs-bt-trigger">触发时机</label>

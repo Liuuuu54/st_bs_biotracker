@@ -798,9 +798,14 @@ export function createDefaultFemaleState(name = '') {
 }
 
 const API_PROFILE_LIMIT = 30;
-const API_PROFILE_FIELDS = Object.freeze(['apiUrl', 'apiFormat', 'apiKey', 'model']);
+const API_PROFILE_FIELDS = Object.freeze([
+  'apiUrl', 'apiFormat', 'apiKey', 'model', 'temperatureMode', 'temperature', 'reasoningEffort', 'formattedOutputV4',
+]);
 
-/** 已命名的连接配置组：名称唯一（去头尾空白后比对），只保存端点、格式、Key 与模型 */
+/**
+ * 已命名的连接配置组：名称唯一（去头尾空白后比对）。
+ * 保存系统页分隔线以上的整段连接设定：端点、格式、Key、模型、温度、思考强度与格式化输出
+ */
 export function normalizeApiProfiles(list) {
   const seen = new Set();
   const profiles = [];
@@ -815,6 +820,10 @@ export function normalizeApiProfiles(list) {
       apiFormat: normalizeApiFormat(entry.apiFormat),
       apiKey: String(entry.apiKey || '').trim(),
       model: String(entry.model || '').trim(),
+      temperatureMode: normalizeTemperatureMode(entry.temperatureMode),
+      temperature: resolveUserTemperature(entry),
+      reasoningEffort: normalizeReasoningEffort(entry.reasoningEffort),
+      formattedOutputV4: entry.formattedOutputV4 !== false,
     });
     if (profiles.length >= API_PROFILE_LIMIT) break;
   }
