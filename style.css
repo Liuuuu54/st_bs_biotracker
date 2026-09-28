@@ -1218,6 +1218,12 @@
   display: none;
 }
 
+/* 系统页关掉的扩充系统：入口磁贴与注册分页整个拿掉 */
+#bs-biotracker-settings .bs-bt-home-tile[hidden],
+#bs-biotracker-settings .bs-bt-track-tab[hidden] {
+  display: none;
+}
+
 #bs-biotracker-settings .bs-bt-register-source-section {
   display: grid;
   gap: 6px;

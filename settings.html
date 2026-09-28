@@ -104,7 +104,7 @@
               <summary>其他入口</summary>
               <ul>
                 <li>「预设」管理追踪器使用的预设；「排除」控制送给追踪器的世界书条目。</li>
-                <li>「技能」管理技能图鉴；「衣柜」管理已备装角色的衣物和穿着。</li>
+                <li>「技能」管理技能图鉴；「衣柜」管理已备装角色的衣物和穿着。两者可在系统页整个关闭，关闭后入口隐藏，LLM 也看不到相关工具。</li>
                 <li>「变量」可查看状态、历史与调试工具；「百科」提供种族资料与计算工具；「主题」调整界面。</li>
               </ul>
             </details>
@@ -390,6 +390,17 @@
 
             <div class="settings_section">
               <div class="bs-bt-setting-toggle-row">
+                <input id="bs-bt-wardrobe-system-enabled" type="checkbox" />
+                <label for="bs-bt-wardrobe-system-enabled">着衣系统(衣柜页、备装、注册衣着辨识；关闭后 LLM 看不到衣柜工具、说明与穿着状态，资料保留)</label>
+              </div>
+              <div class="bs-bt-setting-toggle-row">
+                <input id="bs-bt-skill-system-enabled" type="checkbox" />
+                <label for="bs-bt-skill-system-enabled">技能系统(技能页、注册技能页；关闭后 LLM 看不到技能工具、图鉴、说明与技能／天赋状态，资料保留)</label>
+              </div>
+            </div>
+
+            <div class="settings_section">
+              <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-luker-multi-agent-manual-only" type="checkbox" />
                 <label for="bs-bt-luker-multi-agent-manual-only">Luker 多智能体安全模式(关闭自动追踪，编排完成后手动分析)</label>
               </div>
@@ -589,7 +600,8 @@
                 <button id="bs-bt-register-run" class="menu_button" type="button">注册当前角色</button>
                 <button id="bs-bt-register-run-bundle" class="menu_button" type="button">一次注册（含日记、技能）</button>
               </div>
-              <small>「一次注册」在同一个请求里附上日记页的「日记写作规则」与技能页的「额外技能／天赋提示」，注册完成时一并写入第一篇日记与初始技能／天赋（含胎儿天赋），比分三次送出省下重复的角色卡、世界书与聊天。结果会填进日记页与技能页的预览，仍可在那里微调后重新写入。</small>
+              <small id="bs-bt-register-bundle-note-diary" hidden>「一次注册」在同一个请求里附上日记页的「日记写作规则」，注册完成时一并写入第一篇日记，比分两次送出省下重复的角色卡、世界书与聊天。结果会填进日记页的预览，仍可在那里微调后重新写入。</small>
+              <small id="bs-bt-register-bundle-note-skill">「一次注册」在同一个请求里附上日记页的「日记写作规则」与技能页的「额外技能／天赋提示」，注册完成时一并写入第一篇日记与初始技能／天赋（含胎儿天赋），比分三次送出省下重复的角色卡、世界书与聊天。结果会填进日记页与技能页的预览，仍可在那里微调后重新写入。</small>
 
               <hr class="sysHR" />
 

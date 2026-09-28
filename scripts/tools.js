@@ -11,6 +11,8 @@ import {
   getPsyStressInitByLevel,
   getSettings,
   getVitalityInitByLevel,
+  isSkillSystemEnabled,
+  isWardrobeSystemEnabled,
   saveSettings,
   setVisualCue,
   summarizeOperationLogs,
@@ -7449,6 +7451,16 @@ function dispatchToolCall(chatState, call) {
   return { applied: false, message: `Unsupported tool: ${name}` };
 }
 
+const WARDROBE_SYSTEM_TOOLS = new Set(['bsAddWardrobeItem', 'bsRemoveWardrobeItem', 'bsChangeOutfit']);
+const SKILL_SYSTEM_TOOLS = new Set(['bsRegisterSkillDefinition', 'bsTrainSkill']);
+
+/** 系统页关掉的扩充系统：工具本来就不会送给模型，模型若凭空呼叫也不执行 */
+function getDisabledSystemToolMessage(settings, name) {
+  if (WARDROBE_SYSTEM_TOOLS.has(name) && !isWardrobeSystemEnabled(settings)) return `${name} skipped: 着衣系统已在系统页关闭。`;
+  if (SKILL_SYSTEM_TOOLS.has(name) && !isSkillSystemEnabled(settings)) return `${name} skipped: 技能系统已在系统页关闭。`;
+  return '';
+}
+
 export function applyToolCallsResult(ctx, result) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
@@ -7459,7 +7471,10 @@ export function applyToolCallsResult(ctx, result) {
       name: String(call?.name || '').trim(),
       arguments: normalizeToolCallArguments(call?.arguments),
     };
-    const appliedResult = applyToolCall(chatState, normalizedCall);
+    const disabledMessage = getDisabledSystemToolMessage(settings, normalizedCall.name);
+    const appliedResult = disabledMessage
+      ? { applied: false, message: disabledMessage }
+      : applyToolCall(chatState, normalizedCall);
     if (appliedResult?.notify?.text) globalThis.toastr?.info?.(appliedResult.notify.text, '[BS BioTracker]');
     logs.push({
       ...appliedResult,

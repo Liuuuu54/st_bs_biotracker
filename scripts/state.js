@@ -210,6 +210,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   trackerTokenBudget: 4096,
   requireFullDescriptionUpdates: false,
   wombAnimation: true,
+  wardrobeSystemEnabled: true,
+  skillSystemEnabled: true,
   lukerMultiAgentManualOnly: true,
   diaryRecentLimit: 5,
   diaryWritingPrompt: DEFAULT_DIARY_WRITING_PROMPT,
@@ -793,6 +795,16 @@ export function createDefaultFemaleState(name = '') {
   return syncCharacterStageFromProfile(normalizeCharacterPsychologyState(character));
 }
 
+/** 着衣系统总开关：关闭时衣柜页、备装、注册衣着辨识与 tracker 的衣柜工具、说明、状态全部停用，资料保留 */
+export function isWardrobeSystemEnabled(settings) {
+  return settings?.wardrobeSystemEnabled !== false;
+}
+
+/** 技能系统总开关：关闭时技能页、注册技能页与 tracker 的技能工具、图鉴、说明、技能／天赋状态全部停用，资料保留 */
+export function isSkillSystemEnabled(settings) {
+  return settings?.skillSystemEnabled !== false;
+}
+
 export function getSettings(ctx) {
   const root = getHostExtensionSettings(ctx);
   if (!root) throw new Error('[BS BioTracker] host extension settings are unavailable');
@@ -868,6 +880,13 @@ export function getSettings(ctx) {
   if (settings.wombAnimation !== wombAnimation) {
     settings.wombAnimation = wombAnimation;
     shouldSave = true;
+  }
+  for (const key of ['wardrobeSystemEnabled', 'skillSystemEnabled']) {
+    const enabled = settings[key] !== false;
+    if (settings[key] !== enabled) {
+      settings[key] = enabled;
+      shouldSave = true;
+    }
   }
   const lukerMultiAgentManualOnly = settings.lukerMultiAgentManualOnly !== false;
   if (settings.lukerMultiAgentManualOnly !== lukerMultiAgentManualOnly) {

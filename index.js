@@ -89,6 +89,8 @@ import {
   createEmptyChatState,
   DEFAULT_SYSTEM_PROMPT,
   getApiUrlForFormat,
+  isSkillSystemEnabled,
+  isWardrobeSystemEnabled,
   normalizeApiFormat,
   normalizeReasoningEffort,
   normalizeTemperatureMode,
@@ -301,10 +303,33 @@ function setRegisterStatus(message, isError = false) {
   el.dataset.state = isError ? 'error' : 'normal';
 }
 
+/** 系统页的扩充系统总开关；关闭时对应页面、分页与追踪区块一律隐藏 */
+const extensionSystems = { wardrobe: true, skill: true };
+
+function applyExtensionSystemVisibility(settings) {
+  extensionSystems.wardrobe = isWardrobeSystemEnabled(settings);
+  extensionSystems.skill = isSkillSystemEnabled(settings);
+  const toggle = (selector, visible) => {
+    document.querySelectorAll(selector).forEach((node) => { node.hidden = !visible; });
+  };
+  toggle('#bs-biotracker-settings .bs-bt-home-tile[data-nav-view="wardrobe"]', extensionSystems.wardrobe);
+  toggle('#bs-bt-register-tabs [data-register-tab="wardrobe"]', extensionSystems.wardrobe);
+  toggle('#bs-biotracker-settings .bs-bt-home-tile[data-nav-view="skill-catalog"]', extensionSystems.skill);
+  toggle('#bs-bt-register-tabs [data-register-tab="skills"]', extensionSystems.skill);
+  const bundleButton = document.getElementById('bs-bt-register-run-bundle');
+  if (bundleButton && !bundleButton.disabled) bundleButton.textContent = REGISTRY_OP_UI.registerBundle.idleText;
+  toggle('#bs-bt-register-bundle-note-skill', extensionSystems.skill);
+  toggle('#bs-bt-register-bundle-note-diary', !extensionSystems.skill);
+  const activeTab = document.querySelector('#bs-bt-register-tabs [data-register-tab].is-active')?.getAttribute('data-register-tab');
+  if (activeTab === 'wardrobe' || activeTab === 'skills') setRegisterTab(activeTab);
+  const view = document.getElementById(PANEL_ID)?.dataset.view;
+  if (view === 'wardrobe' || view === 'skill-catalog') setView(view);
+}
+
 /** 注册页各异步操作的按钮与状态栏绑定 */
 const REGISTRY_OP_UI = {
   register: { buttonId: 'bs-bt-register-run', busyText: '注册中...', idleText: '注册当前角色', setStatus: (message, isError) => setRegisterStatus(message, isError) },
-  registerBundle: { buttonId: 'bs-bt-register-run-bundle', busyText: '注册中...', idleText: '一次注册（含日记、技能）', setStatus: (message, isError) => setRegisterStatus(message, isError) },
+  registerBundle: { buttonId: 'bs-bt-register-run-bundle', busyText: '注册中...', get idleText() { return extensionSystems.skill ? '一次注册（含日记、技能）' : '一次注册（含日记）'; }, setStatus: (message, isError) => setRegisterStatus(message, isError) },
   inference: { buttonId: 'bs-bt-breeding-inference-run', busyText: '推演中...', idleText: '繁育推演', setStatus: (message, isError) => setBreedingInferenceStatus(message, isError) },
   wardrobe: { buttonId: 'bs-bt-wardrobe-prep-run', busyText: '生成中...', idleText: '生成备装', setStatus: (message, isError) => setWardrobePrepStatus(message, isError) },
   diary: { buttonId: 'bs-bt-diary-generate', busyText: '生成中...', idleText: '生成日记', setStatus: (message, isError) => setDiaryStatus(message, isError) },
@@ -451,7 +476,8 @@ function syncRegisterPageOnOpen(ctx) {
 
 function setRegisterTab(tab) {
   const requested = String(tab || 'inference');
-  const next = ['inference', 'registry', 'wardrobe', 'diary', 'skills'].includes(requested) ? requested : 'inference';
+  const disabled = (requested === 'wardrobe' && !extensionSystems.wardrobe) || (requested === 'skills' && !extensionSystems.skill);
+  const next = disabled ? 'registry' : (['inference', 'registry', 'wardrobe', 'diary', 'skills'].includes(requested) ? requested : 'inference');
   document.querySelectorAll('#bs-bt-register-tabs [data-register-tab]').forEach((node) => {
     node.classList.toggle('is-active', String(node.getAttribute('data-register-tab') || '') === next);
   });
@@ -952,7 +978,7 @@ function describeRegistryBundle(ctx, targetName, report) {
   parts.push(report.diary ? `已写入日记「${report.diary.time}」` : `日记没有写入（${report.diaryError || '未知原因'}），可到日记页重新生成`);
   const skipped = Array.isArray(report.skipped) ? report.skipped : [];
   if (skipped.length > 0) parts.push(`跳过 ${skipped.length} 项对不上的引用：${skipped.join('、')}`);
-  return `${parts.join('；')}。日记页与技能页的预览可再微调后重新写入。`;
+  return `${parts.join('；')}。${report.skillsWritten ? '日记页与技能页' : '日记页'}的预览可再微调后重新写入。`;
 }
 
 function applyRegistryDiary(ctx) {
@@ -3137,7 +3163,7 @@ function getOutfitSummary(outfit = {}) {
 
 function renderWardrobeDescriptionSection(viewModel = {}) {
   const outfitView = viewModel.outfit || {};
-  if (!outfitView.enabled) return '';
+  if (!outfitView.enabled || !extensionSystems.wardrobe) return '';
   const accessories = Array.isArray(outfitView.accessories) ? outfitView.accessories : [];
   const innerNames = accessories.filter((item) => item?.category === 'underwear').map((item) => item.name || item.id);
   const outerNames = accessories.filter((item) => item?.category !== 'underwear').map((item) => item.name || item.id);
@@ -4268,6 +4294,7 @@ function renderTalentChevrons(talentLevel) {
  * 原本走通用轮播一次只显示一张卡，翻页看完既慢也比不出彼此高低。
  */
 function renderTrackSkillSection(viewModel) {
+  if (!extensionSystems.skill) return '';
   // 天赋只作为对应技能格右上角的楔形角标；有天赋无技能则不显示
   const talentBySkillId = new Map(
     (Array.isArray(viewModel.experience.talents) ? viewModel.experience.talents : [])
@@ -6750,7 +6777,10 @@ function applyTheme(settings) {
 function setView(view) {
   const root = document.getElementById(PANEL_ID);
   if (!root) return;
-  const normalizedView = view === 'time-lapse' ? 'full-state' : view;
+  const requestedView = view === 'time-lapse' ? 'full-state' : view;
+  const normalizedView = (requestedView === 'wardrobe' && !extensionSystems.wardrobe) || (requestedView === 'skill-catalog' && !extensionSystems.skill)
+    ? 'home'
+    : requestedView;
   const next = ['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog'].includes(normalizedView) ? normalizedView : 'home';
   if (root.dataset.view !== next && racePaletteState.isOpen) {
     closeRacePalettePopover();
@@ -6834,6 +6864,9 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-require-full-description-updates', settings.requireFullDescriptionUpdates);
   setValue('bs-bt-luker-multi-agent-manual-only', settings.lukerMultiAgentManualOnly);
   setValue('bs-bt-womb-animation', settings.wombAnimation !== false);
+  setValue('bs-bt-wardrobe-system-enabled', isWardrobeSystemEnabled(settings));
+  setValue('bs-bt-skill-system-enabled', isSkillSystemEnabled(settings));
+  applyExtensionSystemVisibility(settings);
   setValue('bs-bt-diary-recent-limit', settings.diaryRecentLimit);
   setValue('bs-bt-targets', settings.targetNames);
   setValue('bs-bt-tracker-worldbook-mode', normalizeWorldbookMode(settings.trackerWorldbookMode));
@@ -7408,6 +7441,9 @@ function readSettingsFromForm(ctx) {
   settings.requireFullDescriptionUpdates = Boolean(document.getElementById('bs-bt-require-full-description-updates')?.checked);
   settings.lukerMultiAgentManualOnly = Boolean(document.getElementById('bs-bt-luker-multi-agent-manual-only')?.checked);
   settings.wombAnimation = Boolean(document.getElementById('bs-bt-womb-animation')?.checked);
+  settings.wardrobeSystemEnabled = Boolean(document.getElementById('bs-bt-wardrobe-system-enabled')?.checked);
+  settings.skillSystemEnabled = Boolean(document.getElementById('bs-bt-skill-system-enabled')?.checked);
+  applyExtensionSystemVisibility(settings);
   settings.diaryRecentLimit = Math.max(0, Math.min(20, Math.floor(Number(getValue('bs-bt-diary-recent-limit')) || 0)));
   settings.diaryWritingPrompt = String(getValue('bs-bt-diary-writing-prompt')).trim();
   settings.wardrobePrepPrompt = String(getValue('bs-bt-wardrobe-prep-prompt')).trim();

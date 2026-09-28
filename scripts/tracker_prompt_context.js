@@ -243,6 +243,7 @@ function buildTrackerMetabolismGuide(payload = null) {
   const fluxNames = collectRelevantFluxNames(payload || {});
   const diaryEnabled = payload?.diary_enabled !== false;
   const wardrobeEnabled = payload?.wardrobe_enabled === true;
+  const skillEnabled = payload?.skill_enabled !== false;
   const breedingPsychologyEnabled = payload?.breeding_psychology_enabled === true;
   let baseGuide = diaryEnabled
     ? TRACKER_VARIABLE_GUIDE_PROMPT
@@ -254,6 +255,14 @@ function buildTrackerMetabolismGuide(payload = null) {
     baseGuide = baseGuide
       .replace('、psychology', '')
       .replace(/\n?\[psychology\][\s\S]*?\n\[skills \/ talents\]/, '\n[skills / talents]');
+  }
+  if (!skillEnabled) {
+    baseGuide = baseGuide
+      .replace(/\n- skill_catalog 是[^\n]*/, '')
+      .replace('、skills、talents', '')
+      .replace(/\n- fetuses\[\*\]\.talents:[^\n]*/, '')
+      .replace(/\n- children\[\*\]\.talents:[^\n]*/, '')
+      .replace(/\n?\[skills \/ talents\][\s\S]*?\n\[children\]/, '\n[children]');
   }
   // 只解释本轮真的出现过的标签，与种族短叙述同规则：没用到就不占 token
   const fetusTagLines = describeFetusTags(collectRelevantFetusTags(payload || {}));
@@ -289,7 +298,7 @@ function collectPregnantDescriptionInitNames(payload = {}) {
 export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = null, payload = null) {
   const diaryEnabled = payload?.diary_enabled !== false;
   const metabolismGuide = buildTrackerMetabolismGuide(payload);
-  const skillBaselinePrompt = String(payload?.skill_baseline_prompt || '').trim();
+  const skillBaselinePrompt = payload?.skill_enabled === false ? '' : String(payload?.skill_baseline_prompt || '').trim();
   const parts = [
     [
       '[bsPassedTime 强制规则]',

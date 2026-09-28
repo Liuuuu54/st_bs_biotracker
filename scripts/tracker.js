@@ -10,6 +10,8 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   getCharacterCard,
   getCharacterWorldBookName,
+  isSkillSystemEnabled,
+  isWardrobeSystemEnabled,
   projectWorldbook,
   getCharacterWorldBookNameViaSTscript,
   getActiveGlobalWorldBookNames,
@@ -685,24 +687,6 @@ function getDiaryRecentLimit(settings, characterCount) {
   return characterCount > 1 ? Math.max(1, Math.floor(singleLimit / 2)) : singleLimit;
 }
 
-/**
- * 着衣系统是扩充：只要有任何一名角色真的有衣物资料（衣柜里有 id=0 全裸以外的衣物，
- * 或穿着已记录、有配件或临时衣物）才开启。全员「衣着未记录」时，衣柜工具、变量说明
- * 与状态里的 wardrobe／outfit 一律不送，省下每轮约 2k token。
- * 注册辨识出衣着、衣柜补充或手动管理加入衣物后自动开启
- */
-function hasWardrobeContent(existingState = {}) {
-  return Object.values(existingState || {}).some((item) => {
-    const profile = item?.profile || {};
-    const items = Array.isArray(profile.wardrobe?.items) ? profile.wardrobe.items : [];
-    const outfit = profile.outfit || {};
-    return items.some((entry) => entry && entry.id !== 0)
-      || (outfit.mainItemId !== null && outfit.mainItemId !== undefined)
-      || (Array.isArray(outfit.accessoryItemIds) && outfit.accessoryItemIds.length > 0)
-      || (Array.isArray(outfit.transientItems) && outfit.transientItems.length > 0);
-  });
-}
-
 export function hasBreedingPsychology(existingState = {}) {
   return Object.values(existingState || {}).some((item) => {
     const stageProfiles = item?.profile?.psychology?.stageProfiles;
@@ -719,7 +703,8 @@ function hasAnyFetus(existingState = {}) {
 
 export function getTrackerToolDefinitions(settings, existingState = {}) {
   const diaryEnabled = Math.max(0, Math.min(20, Math.floor(Number(settings?.diaryRecentLimit) || 0))) > 0;
-  const wardrobeEnabled = hasWardrobeContent(existingState);
+  const wardrobeEnabled = isWardrobeSystemEnabled(settings);
+  const skillEnabled = isSkillSystemEnabled(settings);
   const psychologyEnabled = hasBreedingPsychology(existingState);
   const hiddenTools = new Set();
   if (!diaryEnabled) hiddenTools.add('bsWriteDiary');
@@ -730,6 +715,10 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
     hiddenTools.add('bsAddWardrobeItem');
     hiddenTools.add('bsRemoveWardrobeItem');
     hiddenTools.add('bsChangeOutfit');
+  }
+  if (!skillEnabled) {
+    hiddenTools.add('bsRegisterSkillDefinition');
+    hiddenTools.add('bsTrainSkill');
   }
   return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name));
 }
@@ -1072,14 +1061,34 @@ function pruneEmptyFields(value) {
   return out;
 }
 
+/** 技能系统关闭时，技能、天赋与技能纪录一律不送（角色、胎儿、孩子都一样），资料本身保留 */
+function stripSkillFields(view) {
+  const profile = view?.profile;
+  if (!profile || typeof profile !== 'object') return view;
+  delete profile.skills;
+  delete profile.talents;
+  delete profile.skillHistory;
+  delete profile.childSource;
+  for (const fetus of (Array.isArray(profile.pregnant?.fetuses) ? profile.pregnant.fetuses : [])) {
+    if (fetus && typeof fetus === 'object') delete fetus.talents;
+  }
+  for (const child of (Array.isArray(profile.children) ? profile.children : [])) {
+    if (child && typeof child === 'object') delete child.talents;
+  }
+  return view;
+}
+
 function buildTrackerStateView(existingState, settings = null) {
   const characterCount = Object.keys(existingState || {}).length;
   const diaryLimit = getDiaryRecentLimit(settings, characterCount);
-  const wardrobeOn = hasWardrobeContent(existingState);
+  const wardrobeOn = isWardrobeSystemEnabled(settings);
+  const skillOn = isSkillSystemEnabled(settings);
   return Object.fromEntries(
     Object.entries(existingState).map(([name, item]) => {
-      if (item?.profile?.base?.isHere === false) return [name, pruneEmptyFields(buildOffscreenCharacterState(item, diaryLimit, wardrobeOn))];
-      return [name, pruneEmptyFields(buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn))];
+      const view = item?.profile?.base?.isHere === false
+        ? buildOffscreenCharacterState(item, diaryLimit, wardrobeOn)
+        : buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn);
+      return [name, pruneEmptyFields(skillOn ? view : stripSkillFields(view))];
     }),
   );
 }
@@ -1309,8 +1318,11 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     mainflow_context_snapshot: mainflowContextSnapshot,
     tracked_females: getRegisteredTargetNames(ctx, settings, chatState),
     priority_character_names: getPriorityCharacterNames(ctx, settings, chatState),
-    skill_baseline_prompt: String(chatState.skillBaselinePrompt || '').trim(),
-    skill_catalog: Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [],
+    skill_enabled: isSkillSystemEnabled(settings),
+    ...(isSkillSystemEnabled(settings) ? {
+      skill_baseline_prompt: String(chatState.skillBaselinePrompt || '').trim(),
+      skill_catalog: Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [],
+    } : {}),
     existing_state: buildTrackerStateView(existingState, settings),
     available_tools: getTrackerToolDefinitions(settings, existingState),
     diary_enabled: diaryEnabled,
@@ -1318,7 +1330,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     world_baseline_prompt: String(settings?.worldBaselinePrompt || '').trim(),
     require_full_description_updates: settings?.requireFullDescriptionUpdates === true,
     ...(psychologyEnabled ? { breeding_psychology_enabled: true } : {}),
-    wardrobe_enabled: hasWardrobeContent(existingState),
+    wardrobe_enabled: isWardrobeSystemEnabled(settings),
     recent_messages: recentMessages,
   };
 }

@@ -220,6 +220,75 @@ test('bundled registration writes the character, skills, fetus talents and the f
   assert.equal(bundleReport.diary.time, '第一天');
 });
 
+test('with the skill and wardrobe systems off, bundled registration only adds the diary and drops the outfit', async () => {
+  const ctx = {
+    chatId: 'registry-bundle-off-chat',
+    name1: 'User',
+    name2: '卡片角色',
+    characterId: 0,
+    characters: [{ name: '卡片角色', description: '角色卡描述', avatar: 'card.png' }],
+    chat: [{ is_user: false, name: '卡片角色', mes: '一段剧情。' }],
+    extensionSettings: {},
+    saveSettingsDebounced() {},
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  settings.apiUrl = 'https://example.test/v1';
+  settings.model = 'test-model';
+  settings.skillSystemEnabled = false;
+  settings.wardrobeSystemEnabled = false;
+  state.getChatState(ctx, settings).skillCatalog = CATALOG.map((item) => ({ ...item }));
+
+  let sentPrompt = '';
+  let sentPayload = null;
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    sentPrompt = body.messages.find((m) => m.role === 'system')?.content || '';
+    sentPayload = JSON.parse(body.messages.find((m) => m.role === 'user')?.content || '{}');
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+          name: '露比',
+          profile: {
+            base: { age: 24 },
+            currentOutfit: { main: { name: '旅行斗篷', note: '灰色' } },
+          },
+          diary: { time: '第一天', content: '今天被登记了。' },
+          skillSetup: { skillDefinitions: [], initialSkills: [{ skill: '剑术', level: 2, exp: 0 }], initialTalents: [] },
+        }) } }] });
+      },
+    };
+  };
+
+  const bundleReport = {};
+  const character = await runRegistry(ctx, {
+    targetName: '露比',
+    bundle: { diaryWritingPrompt: '写得简短。', skillPrompt: '她会剑术。' },
+    bundleReport,
+  });
+
+  assert.match(sentPrompt, /附带：第一篇日记】/);
+  assert.doesNotMatch(sentPrompt, /skillSetup|currentOutfit|当前衣着/);
+  assert.equal('skill_catalog' in sentPayload, false);
+  assert.equal('initial_skill_prompt' in sentPayload, false);
+  assert.equal(sentPayload.diary_writing_prompt, '写得简短。');
+  assert.deepEqual(character.profile.skills || [], []);
+  assert.equal(character.profile.outfit?.mainItemId ?? null, null);
+  assert.deepEqual(character.profile.diary.map((d) => d.time), ['第一天']);
+  assert.equal(bundleReport.skillsWritten, undefined);
+});
+
+test('the registry prompt keeps a well-formed JSON sample after the outfit block is dropped', () => {
+  const on = buildRegistrySystemPrompt({ wardrobeSystemEnabled: true }, {});
+  const off = buildRegistrySystemPrompt({ wardrobeSystemEnabled: false }, {});
+  assert.match(on, /currentOutfit/);
+  assert.doesNotMatch(off, /currentOutfit|当前衣着/);
+  assert.match(off, /"pregnantDescription": "string"\n {4}\}\n {2}\}\n\}/);
+  assert.match(off, /角色补充设定】/);
+});
+
 test('a diary rewritten by hand replaces the same story day, while the tracker stays on cooldown', () => {
   const chatState = state.createEmptyChatState();
   chatState.characters['艾拉'] = { name: '艾拉', initialized: true, profile: { base: {}, diary: [] } };

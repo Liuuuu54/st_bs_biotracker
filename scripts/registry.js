@@ -28,6 +28,8 @@ import {
   getGestationEffectiveSpeed,
   getGestationSpeciesSpeed,
   getCharacterWorldBookName,
+  isSkillSystemEnabled,
+  isWardrobeSystemEnabled,
   projectWorldbook,
   getCharacterWorldBookNameViaSTscript,
   getActiveGlobalWorldBookNames,
@@ -610,6 +612,7 @@ async function buildRegistryPayload(ctx, settings, chatState, options = {}) {
 
 export async function runRegistryWardrobeInference(ctx, options = {}) {
   const settings = getSettings(ctx);
+  if (!isWardrobeSystemEnabled(settings)) throw new Error('着衣系统已在系统页关闭');
   const chatState = getChatState(ctx, settings);
   const requestedTargetName = String(options.targetName || '').trim();
   if (!requestedTargetName) throw new Error('备装推演需要 targetName');
@@ -700,6 +703,15 @@ export async function runRegistryBreedingInference(ctx, options = {}) {
 
 
 export function buildRegistrySystemPrompt(settings, options = {}) {
+  const prompt = buildRegistrySystemPromptBody(settings, options);
+  if (isWardrobeSystemEnabled(settings)) return prompt;
+  return prompt
+    .replace(/\n7\. 当前衣着：currentOutfit[^\n]*/, '')
+    .replace(/\n【7\. 当前衣着】[\s\S]*?(?=\n【\d+\. 角色补充设定】)/, '')
+    .replace(/,\n\s*"currentOutfit": \{[\s\S]*?\n {4}\}/, '');
+}
+
+function buildRegistrySystemPromptBody(settings, options = {}) {
   const includeBreedingPsychology = Boolean(options.includeBreedingPsychology);
   const guides = {
     ...DEFAULT_REGISTRY_DESCRIPTION_GUIDES,
@@ -1571,7 +1583,7 @@ function sanitizeRegistryProfile(profile, baseProfile) {
   return sanitized;
 }
 
-export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true } = {}) {
+export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true, allowWardrobe = true } = {}) {
   const name = String(result?.name || '').trim();
   if (!name) throw new Error('注册结果缺少角色名称');
   const current = chatState.characters[name];
@@ -1582,6 +1594,10 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
     delete sanitizedProfile.outfit;
   }
   if (!allowBreedingPsychology) delete sanitizedProfile.psychology;
+  if (!allowWardrobe) {
+    delete sanitizedProfile.wardrobe;
+    delete sanitizedProfile.outfit;
+  }
   const effectiveRace = sanitizedProfile.base?.race ?? base.profile.base.race;
   const mergedRaceProfile = getMergedRacePhysiologyProfile(effectiveRace);
   const basePsychology = normalizeCharacterPsychologyState(base).profile.psychology;
@@ -1762,6 +1778,16 @@ function buildDiaryRuleLines(requestedDate = '') {
  * 省下日记与技能各自再送一次角色卡、世界书与聊天的成本
  */
 export function buildRegistryBundlePrompt(options = {}) {
+  if (options.includeSkills === false) {
+    return [
+      '【附带：第一篇日记】',
+      '这次注册同时要产出这名角色的第一篇日记，放在同一个 JSON 的顶层（与 name、profile 并列），必须输出：',
+      '"diary": {"time":"日期标题","content":"日记正文"}',
+      '[日记规则]',
+      ...buildDiaryRuleLines(options.requestedDate),
+      '日记写的是注册当下这名角色的事后回顾，内容必须与你这次输出的 profile 一致（阶段、怀孕与否、处境）。',
+    ].filter(Boolean).join('\n');
+  }
   return [
     '【附带：第一篇日记与初始技能／天赋】',
     '这次注册同时要产出这名角色的第一篇日记与初始技能／天赋，放在同一个 JSON 的顶层（与 name、profile 并列），两个都必须输出：',
@@ -1818,6 +1844,7 @@ function sanitizeRegistrySkillInferenceResult(result) {
 
 export async function runRegistrySkillInference(ctx, options = {}) {
   const settings = getSettings(ctx);
+  if (!isSkillSystemEnabled(settings)) throw new Error('技能系统已在系统页关闭');
   const chatState = getChatState(ctx, settings);
   const requestedTargetName = String(options.targetName || '').trim();
   if (!requestedTargetName) throw new Error('技能／天赋生成需要 targetName');
@@ -2186,10 +2213,13 @@ export async function runRegistry(ctx, options = {}) {
   if (includeBreedingPsychology) payload.breeding_inference = options.breedingInference;
   // 一次注册：日记与技能的规则、图鉴随同这次请求送出
   const bundle = options.bundle && typeof options.bundle === 'object' ? options.bundle : null;
-  if (bundle) {
+  const bundleSkills = Boolean(bundle) && isSkillSystemEnabled(settings);
+  if (bundleSkills) {
     payload.skill_baseline_prompt = String(chatState.skillBaselinePrompt || '').trim();
     payload.skill_catalog = normalizeSkillCatalog(chatState.skillCatalog);
     payload.initial_skill_prompt = String(bundle.skillPrompt || '').trim();
+  }
+  if (bundle) {
     payload.diary_writing_prompt = String(bundle.diaryWritingPrompt || settings.diaryWritingPrompt || DEFAULT_DIARY_WRITING_PROMPT).trim();
     payload.requested_diary_date = String(bundle.requestedDate || '').trim() || null;
   }
@@ -2217,9 +2247,10 @@ export async function runRegistry(ctx, options = {}) {
   const basePrompt = options.systemPrompt || buildRegistrySystemPrompt(settings, { ...options, customNotes, declaredRace, payload, includeBreedingPsychology });
   const systemPrompt = bundle
     ? `${basePrompt}\n\n${buildRegistryBundlePrompt({
+      includeSkills: bundleSkills,
       skillPrompt: payload.initial_skill_prompt,
       skillBaselinePrompt: payload.skill_baseline_prompt,
-      emptyCatalog: payload.skill_catalog.length === 0,
+      emptyCatalog: !payload.skill_catalog?.length,
       requestedDate: payload.requested_diary_date || '',
     })}`
     : basePrompt;
@@ -2262,12 +2293,16 @@ export async function runRegistry(ctx, options = {}) {
     // 于是角色被注册成卡片名而不是输入的名字（重新注册一次又「好了」，其实只是这次没抽到）。
     result.name = targetName;
     const bundleOutput = bundle ? takeRegistryBundle(result) : null;
+    if (bundleOutput && !bundleSkills) bundleOutput.skillSetup = null;
     const bundleReport = options.bundleReport && typeof options.bundleReport === 'object' ? options.bundleReport : {};
     // 胎儿天赋要趁胎儿还是这次输出的顺序时挂上去：注册的正规化与特殊来历可能调整胎儿阵列
     const workingSkills = bundleOutput ? prepareBundleSkills(chatState, result, bundleOutput.skillSetup, bundleReport) : null;
     applyRequestedSpecialFetus(result, specialFetus);
     recordRegistryResultDebug(result);
-    let character = applyRegistryResult(chatState, result, { allowBreedingPsychology: includeBreedingPsychology });
+    let character = applyRegistryResult(chatState, result, {
+      allowBreedingPsychology: includeBreedingPsychology,
+      allowWardrobe: isWardrobeSystemEnabled(settings),
+    });
     if (sourceChildContext) character = applyRegistryChildInheritance(chatState, targetName, requestedSource).character;
     if (bundleOutput) character = applyRegistryBundle(chatState, targetName, bundleOutput, workingSkills, bundleReport);
     recordChatStateSnapshot(ctx, chatState, { reason: 'registry' });

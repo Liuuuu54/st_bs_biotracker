@@ -266,27 +266,72 @@ test('priority names focus the tracker without excluding other registered charac
   assert.match(prompt, /每名恰好一笔/);
 });
 
-test('着衣系统是扩充：全员衣着未记录时不送衣柜工具、说明与 wardrobe／outfit；任一角色有衣物就开启', () => {
+test('着衣系统总开关：开启时即使全员衣着未记录也送衣柜工具；关闭时工具、说明与 wardrobe／outfit 全不送，模型硬叫也不执行', () => {
   const ctx = makeContext();
   const settings = state.getSettings(ctx);
   for (const item of Object.values(settings.chatStates[CHAT_KEY].characters)) {
     item.profile.wardrobe = { enabled: true, items: [] };
     item.profile.outfit = { mainItemId: null, accessoryItemIds: [], transientItems: [], wearState: '整齐', pregFit: null };
   }
+  const on = buildTrackerPayload(ctx, settings);
+  assert.equal(on.wardrobe_enabled, true);
+  assert.equal(on.available_tools.some((tool) => tool.name === 'bsChangeOutfit'), true);
+  assert.equal('outfit' in on.existing_state['艾拉'].profile, true, '开启后未记录的角色也送，才能直接换装');
+
+  settings.wardrobeSystemEnabled = false;
+  settings.chatStates[CHAT_KEY].characters['贝拉'].profile.outfit.mainItemId = 0;
   const off = buildTrackerPayload(ctx, settings);
   assert.equal(off.wardrobe_enabled, false);
-  assert.equal(off.available_tools.some((tool) => tool.name === 'bsChangeOutfit'), false);
+  assert.equal(off.available_tools.some((tool) => ['bsChangeOutfit', 'bsAddWardrobeItem', 'bsRemoveWardrobeItem'].includes(tool.name)), false);
   assert.doesNotMatch(buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, off), /\[wardrobe \/ outfit\]/);
   for (const item of Object.values(off.existing_state)) {
     assert.equal('wardrobe' in item.profile, false);
     assert.equal('outfit' in item.profile, false);
   }
 
-  settings.chatStates[CHAT_KEY].characters['贝拉'].profile.outfit.mainItemId = 0; // 明确全裸也算有记录
+  const { logs } = applyToolCallsResult(ctx, { tool_calls: [{ name: 'bsChangeOutfit', arguments: { female: '艾拉', mainItemId: 0 } }] });
+  assert.equal(logs[0].applied, false);
+  assert.match(logs[0].message, /着衣系统已在系统页关闭/);
+  assert.equal(settings.chatStates[CHAT_KEY].characters['艾拉'].profile.outfit.mainItemId, null);
+});
+
+test('技能系统总开关：关闭时技能工具、图鉴、基准、说明与角色／胎儿／孩子的技能天赋全不送，模型硬叫也不执行', () => {
+  const ctx = makeContext();
+  const settings = state.getSettings(ctx);
+  const chatState = settings.chatStates[CHAT_KEY];
+  chatState.skillCatalog = [{ id: 1, name: '剑术', description: '用剑战斗' }];
+  chatState.skillBaselinePrompt = '只追踪冒险技能';
+  const aila = chatState.characters['艾拉'];
+  aila.profile.skills = [{ skillId: 1, level: 2, exp: 0 }];
+  aila.profile.talents = [{ skillId: 1, level: 1, exp: 0 }];
+  aila.profile.children = [{ name: '小艾', talents: [{ skillId: 1, level: 1, exp: 0 }] }];
+
   const on = buildTrackerPayload(ctx, settings);
-  assert.equal(on.wardrobe_enabled, true);
-  assert.equal(on.available_tools.some((tool) => tool.name === 'bsChangeOutfit'), true);
-  assert.equal('outfit' in on.existing_state['艾拉'].profile, true, '开启后未记录的角色也送，才能直接换装');
+  assert.equal(on.skill_enabled, true);
+  assert.equal(on.skill_catalog.length, 1);
+  assert.equal(on.available_tools.some((tool) => tool.name === 'bsTrainSkill'), true);
+  const onPrompt = buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, on);
+  assert.match(onPrompt, /\[skills \/ talents\]/);
+  assert.match(onPrompt, /本聊天技能基准/);
+
+  settings.skillSystemEnabled = false;
+  const off = buildTrackerPayload(ctx, settings);
+  assert.equal(off.skill_enabled, false);
+  assert.equal('skill_catalog' in off, false);
+  assert.equal('skill_baseline_prompt' in off, false);
+  assert.equal(off.available_tools.some((tool) => ['bsTrainSkill', 'bsRegisterSkillDefinition'].includes(tool.name)), false);
+  const offProfile = off.existing_state['艾拉'].profile;
+  assert.equal('skills' in offProfile, false);
+  assert.equal('talents' in offProfile, false);
+  assert.equal('talents' in offProfile.children[0], false);
+  const offPrompt = buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, off);
+  assert.doesNotMatch(offPrompt, /\[skills \/ talents\]|skill_catalog|talents|本聊天技能基准/);
+  assert.match(offPrompt, /\[children\]/);
+
+  const { logs } = applyToolCallsResult(ctx, { tool_calls: [{ name: 'bsTrainSkill', arguments: { female: '艾拉', skill: '剑术', skillExp: 500 } }] });
+  assert.equal(logs[0].applied, false);
+  assert.match(logs[0].message, /技能系统已在系统页关闭/);
+  assert.deepEqual(aila.profile.skills, [{ skillId: 1, level: 2, exp: 0 }]);
 });
 
 test('状态视图省略空值与非妊娠期的孕态描述；outfit.mainItemId=null 保留', () => {
