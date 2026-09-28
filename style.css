@@ -4365,6 +4365,24 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+#bs-biotracker-settings .bs-bt-wardrobe-transient {
+  display: grid;
+  gap: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-wardrobe-transient-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-wardrobe-transient-row > .menu_button {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+}
+
 #bs-biotracker-settings .bs-bt-wardrobe-group-head {
   display: flex;
   align-items: center;

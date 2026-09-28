@@ -330,7 +330,9 @@ test('full description update mode adds the strict tracker instruction', () => {
 
 test('wardrobe supplement stays small and uses semantic clothing fields', () => {
   const prompt = buildWardrobePrepSystemPrompt({}, {});
-  assert.equal(prompt.includes('补充少量长期衣物'), true);
+  assert.equal(prompt.includes('一般补充 2-4 项'), true);
+  assert.equal(prompt.includes('只有用户要求整理、汰换、丢掉不合身衣物时才输出 remove'), true);
+  assert.equal(prompt.includes('不得丢掉 payload.existing_outfit 正在穿的衣物'), true);
   assert.equal(prompt.includes('fitProfile'), true);
   assert.equal(prompt.includes('不改变当前穿着'), true);
   assert.equal(prompt.includes('不要输出数值四维'), true);

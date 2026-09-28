@@ -4,6 +4,7 @@ import {
   applyRegistryBreedingInference,
   applyRegistrySkillSetup,
   applyStartingOutfit,
+  applyWardrobePrepResult,
   buildSkillSetupEditorValue,
   resolveRegistryChildSource,
   resolveRegistryTargetName,
@@ -186,7 +187,7 @@ let selectedTrackSubpage = 'overview';
 let selectedTrackCardIndexes = {};
 let selectedWardrobeName = '';
 let selectedWardrobeSubpage = 'characters';
-// 衣柜补充 JSON 属于哪个角色：换人就清掉，免得把别人的补充合并进来
+// 备装 JSON 属于哪个角色：换人就清掉，免得把别人的备装套进来
 let selectedWardrobePrepName = '';
 let selectedWardrobeItemId = 0;
 let selectedSkillDefinitionId = 0;
@@ -350,7 +351,7 @@ const REGISTRY_OP_UI = {
   register: { buttonId: 'bs-bt-register-run', busyText: '注册中...', idleText: '注册当前角色', setStatus: (message, isError) => setRegisterStatus(message, isError) },
   registerBundle: { buttonId: 'bs-bt-register-run-bundle', busyText: '注册中...', get idleText() { return `一次注册（含${getRegisterBundleParts().map((part) => part.label).join('、')}）`; }, setStatus: (message, isError) => setRegisterStatus(message, isError) },
   inference: { buttonId: 'bs-bt-breeding-inference-run', busyText: '推演中...', idleText: '繁育推演', setStatus: (message, isError) => setBreedingInferenceStatus(message, isError) },
-  wardrobe: { buttonId: 'bs-bt-wardrobe-prep-run', busyText: '生成中...', idleText: '生成衣柜补充', setStatus: (message, isError) => setWardrobePrepStatus(message, isError) },
+  wardrobe: { buttonId: 'bs-bt-wardrobe-prep-run', busyText: '生成中...', idleText: '生成备装', setStatus: (message, isError) => setWardrobePrepStatus(message, isError) },
   outfit: { buttonId: 'bs-bt-register-outfit-generate', busyText: '生成中...', idleText: '生成着衣', setStatus: (message, isError) => setRegisterOutfitStatus(message, isError) },
   diary: { buttonId: 'bs-bt-diary-generate', busyText: '生成中...', idleText: '生成日记', setStatus: (message, isError) => setDiaryStatus(message, isError) },
   skill: { buttonId: 'bs-bt-register-skill-generate', busyText: '生成中...', idleText: '生成技能／天赋', setStatus: (message, isError) => setRegisterSkillStatus(message, isError) },
@@ -472,7 +473,7 @@ function resetRegisterPageState() {
   setBreedingInferenceEditor('尚未执行繁育推演。直接注册不会生成繁育心理人设。');
   setBreedingInferenceTarget('');
   setBreedingInferenceStatus('');
-  setWardrobePrepStatus('补充不会覆盖原衣柜或强制换装。');
+  setWardrobePrepStatus('备装不会改变当前穿着；丢掉衣物前可在 JSON 的 remove 里删掉不想丢的。');
   setRegisterOutfitStatus('角色必须先完成注册。写入会把这套衣物收进衣柜并设为当前穿着。');
   setDiaryStatus('角色必须已注册，且同一故事日尚未写过日记。');
   setRegisterStatus('输入名字与 Description 规则后发送注册请求，完成后可在“角色追踪”查看该角色状态变量。');
@@ -853,7 +854,7 @@ function setWardrobePrepStatus(message, isError = false) {
 
 async function runWardrobePrepInference(ctx) {
   if (isRegistryOperationPending('wardrobe')) {
-    globalThis.toastr?.info?.('[BS BioTracker] 衣柜补充正在进行中，请等待完成');
+    globalThis.toastr?.info?.('[BS BioTracker] 备装正在进行中，请等待完成');
     return;
   }
   readSettingsFromForm(ctx);
@@ -862,17 +863,18 @@ async function runWardrobePrepInference(ctx) {
   const targetName = resolveRegisteredCharacterName(chatState, getWardrobePrepTargetName());
   if (!targetName) {
     setWardrobePrepStatus('请先选择一个已注册角色。', true);
-    globalThis.toastr?.warning?.('[BS BioTracker] 衣柜补充需要已注册角色');
+    globalThis.toastr?.warning?.('[BS BioTracker] 备装需要已注册角色');
     return;
   }
   const wardrobePrepPrompt = String(document.getElementById('bs-bt-wardrobe-prep-prompt')?.value || settings.wardrobePrepPrompt || '').trim();
-  beginRegistryOperation('wardrobe', `正在为 ${targetName} 生成衣柜补充...`);
+  beginRegistryOperation('wardrobe', `正在为 ${targetName} 备装...`);
   try {
     const result = await runRegistryWardrobeInference(ctx, { customNotes: '', targetName, wardrobePrepPrompt });
     const editor = document.getElementById('bs-bt-wardrobe-prep-json');
     if (editor) editor.value = JSON.stringify(result, null, 2);
-    setWardrobePrepStatus('衣柜补充生成完成。可以手动微调 JSON，再合并。');
-    globalThis.toastr?.success?.(`[BS BioTracker] 已生成 ${targetName} 的衣柜补充`);
+    const removeNote = result.remove.length > 0 ? `，建议丢掉 ${result.remove.length} 件（不想丢的请从 remove 删掉）` : '';
+    setWardrobePrepStatus(`备装生成完成：新增 ${result.items.length} 件${removeNote}。可以手动微调 JSON，再套用。`);
+    globalThis.toastr?.success?.(`[BS BioTracker] 已生成 ${targetName} 的备装`);
   } catch (error) {
     console.error('[BS BioTracker] runRegistryWardrobeInference failed', error);
     const message = String(error?.message || error);
@@ -891,58 +893,37 @@ function applyWardrobePrep(ctx) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const targetName = resolveRegisteredCharacterName(chatState, getWardrobePrepTargetName());
-  const character = targetName ? chatState.characters?.[targetName] : null;
-  if (!character) {
+  if (!targetName) {
     setWardrobePrepStatus('请先选择一个已注册角色。', true);
-    globalThis.toastr?.warning?.('[BS BioTracker] 衣柜补充需要已注册角色');
+    globalThis.toastr?.warning?.('[BS BioTracker] 备装需要已注册角色');
     return;
   }
   const raw = String(document.getElementById('bs-bt-wardrobe-prep-json')?.value || '').trim();
   if (!raw) {
-    setWardrobePrepStatus('衣柜补充 JSON 为空。', true);
+    setWardrobePrepStatus('备装 JSON 为空。', true);
     return;
   }
-  let parsed;
+  let report;
   try {
-    parsed = JSON.parse(raw);
+    report = applyWardrobePrepResult(chatState, targetName, JSON.parse(raw));
   } catch (error) {
-    setWardrobePrepStatus(`衣柜补充 JSON 无法解析：${String(error?.message || error)}`, true);
+    setWardrobePrepStatus(`备装没有套用：${String(error?.message || error)}`, true);
     return;
   }
-  const items = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed?.wardrobe?.items) ? parsed.wardrobe.items : [];
-  if (items.length === 0) {
-    setWardrobePrepStatus('衣柜补充 JSON 需要 items。', true);
-    return;
-  }
-  const workingState = cloneJsonValue(chatState);
-  const workingCharacter = workingState.characters?.[targetName];
-  if (!workingCharacter?.profile) {
-    setWardrobePrepStatus('衣柜补充目标状态异常。', true);
-    return;
-  }
-  const logs = [];
-  for (const item of items) {
-    if (Number(item?.id) === 0 || String(item?.id || '').trim() === 'nude') continue;
-    logs.push(applyToolCall(workingState, { name: 'bsAddWardrobeItem', arguments: { female: targetName, item } }));
-  }
-  const failed = logs.find((item) => item && item.applied === false);
-  if (failed) {
-    setWardrobePrepStatus(failed.message || '衣柜补充失败。', true);
-    return;
-  }
-  const preparedCharacter = workingState.characters?.[targetName];
-  if (!preparedCharacter?.profile) {
-    setWardrobePrepStatus('衣柜补充目标状态异常。', true);
-    return;
-  }
-  chatState.characters[targetName] = preparedCharacter;
   recordChatStateSnapshot(ctx, chatState, { reason: 'wardrobe_prep' });
   saveSettings(ctx);
   resetPoller(ctx, trackerDeps);
   renderStatusPanel(ctx);
   renderWardrobePage(ctx);
-  setWardrobePrepStatus(`已为 ${targetName} 合并 ${items.length} 项衣柜补充；当前穿着未改变。`);
-  globalThis.toastr?.success?.(`[BS BioTracker] 已补充 ${targetName} 的衣柜`);
+  updateMainFlowPrompt(ctx);
+  const lines = [
+    `已为 ${targetName} 套用备装：新增 ${report.added.length} 件${report.added.length > 0 ? `（${report.added.join('、')}）` : ''}。`,
+    report.removed.length > 0 ? `丢掉 ${report.removed.length} 件：${report.removed.map((entry) => entry.reason ? `${entry.name}（${entry.reason}）` : entry.name).join('、')}。` : '',
+    report.skipped.length > 0 ? `未丢：${report.skipped.join('、')}。` : '',
+    '当前穿着未改变。',
+  ].filter(Boolean);
+  setWardrobePrepStatus(lines.join('\n'));
+  globalThis.toastr?.success?.(`[BS BioTracker] 已套用 ${targetName} 的备装`);
 }
 
 function setRegisterOutfitStatus(message, isError = false) {
@@ -3356,6 +3337,19 @@ function renderWardrobeCharacterPage(character) {
   const items = getWardrobeItems(profile).filter((item) => Number(item?.id) !== 0);
   const mainItems = items.filter((item) => item.slot !== 'accessory');
   const accessoryItems = items.filter((item) => item.slot === 'accessory');
+  // 临时衣物只挂在当前穿着上；选单也要列出来，否则一按「套用当前穿着」就被当成脱掉
+  const transientItems = getTransientOutfitItems(profile).filter((item) => currentIds.has(item.id));
+  const pickMains = [...mainItems, ...transientItems.filter((item) => item.slot !== 'accessory')];
+  const pickAccessories = [...accessoryItems, ...transientItems.filter((item) => item.slot === 'accessory')];
+  const transientIds = new Set(transientItems.map((item) => item.id));
+  const pickLabel = (item) => `${item.name}${transientIds.has(item.id) ? '（临时）' : ''}`;
+  const transientHtml = transientItems.length > 0 ? `<div class="bs-bt-wardrobe-transient">
+    <div class="bs-bt-wardrobe-summary"><b>临时</b>脱下就会消失，要留着请收进衣柜</div>
+    ${transientItems.map((item) => `<div class="bs-bt-wardrobe-transient-row">
+      <span>${escapeHtml(item.name || '未命名')}</span>
+      <button class="menu_button" type="button" data-wardrobe-transient-keep="${escapeHtml(item.id)}">收进衣柜</button>
+    </div>`).join('')}
+  </div>` : '';
   const editingItem = items.find((item) => Number(item.id) === Number(selectedWardrobeItemId)) || null;
   const editForm = editingItem ? `<div class="bs-bt-wardrobe-item-editor">
     <div class="bs-bt-wardrobe-group-title">编辑衣物 #${escapeHtml(editingItem.id)}</div>
@@ -3382,17 +3376,18 @@ function renderWardrobeCharacterPage(character) {
         <div class="bs-bt-wardrobe-current-head"><div class="bs-bt-wardrobe-group-title">当前穿着</div></div>
         <div class="bs-bt-wardrobe-summary"><b>主衣装</b>${escapeHtml(outfit.main?.name || '衣着未记录')}</div>
         <div class="bs-bt-wardrobe-summary"><b>配件</b>${escapeHtml((outfit.accessories || []).length > 0 ? outfit.accessories.map((item) => item.name || item.id).join('、') : '无')}</div>
+        ${transientHtml}
         ${pregFitHtml}
         <div class="bs-bt-wardrobe-outfit-editor">
           <label>主衣装<select id="bs-bt-wardrobe-outfit-main" class="text_pole">
             <option value="unknown"${outfit.main === null ? ' selected' : ''}>衣着未记录</option>
             <option value="0"${Number(outfit.main?.id) === 0 ? ' selected' : ''}>全裸</option>
-            ${mainItems.map((item) => `<option value="${escapeHtml(item.id)}"${Number(outfit.main?.id) === Number(item.id) ? ' selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
+            ${pickMains.map((item) => `<option value="${escapeHtml(item.id)}"${Number(outfit.main?.id) === Number(item.id) ? ' selected' : ''}>${escapeHtml(pickLabel(item))}</option>`).join('')}
           </select></label>
           <label>状态<input id="bs-bt-wardrobe-outfit-state" class="text_pole" type="text" maxlength="12" value="${escapeHtml(outfit.wearState || '整齐')}"></label>
-          <div class="bs-bt-wardrobe-accessory-checks">${accessoryItems.length > 0 ? Object.entries(WARDROBE_ACCESSORY_CATEGORY_LABELS).map(([category, label]) => {
-            const group = accessoryItems.filter((item) => (item.category || 'other') === category);
-            return group.length > 0 ? `<fieldset><legend>${escapeHtml(label)}</legend>${group.map((item) => `<label><input type="checkbox" data-wardrobe-outfit-accessory="${escapeHtml(item.id)}"${currentIds.has(item.id) ? ' checked' : ''}> ${escapeHtml(item.name)}</label>`).join('')}</fieldset>` : '';
+          <div class="bs-bt-wardrobe-accessory-checks">${pickAccessories.length > 0 ? Object.entries(WARDROBE_ACCESSORY_CATEGORY_LABELS).map(([category, label]) => {
+            const group = pickAccessories.filter((item) => (item.category || 'other') === category);
+            return group.length > 0 ? `<fieldset><legend>${escapeHtml(label)}</legend>${group.map((item) => `<label><input type="checkbox" data-wardrobe-outfit-accessory="${escapeHtml(item.id)}"${currentIds.has(item.id) ? ' checked' : ''}> ${escapeHtml(pickLabel(item))}</label>`).join('')}</fieldset>` : '';
           }).join('') : '无配件'}</div>
           <button class="menu_button" type="button" data-wardrobe-outfit-apply>套用当前穿着</button>
         </div>
@@ -7993,6 +7988,23 @@ async function ensureModal(ctx) {
         selectedWardrobeSubpage = 'characters';
         selectedWardrobeItemId = 0;
         renderWardrobePage(ctx);
+      }
+      return;
+    }
+    const keepButton = target.closest('[data-wardrobe-transient-keep]');
+    if (keepButton && selectedWardrobeName) {
+      const profile = getChatState(ctx, getSettings(ctx)).characters?.[selectedWardrobeName]?.profile;
+      const itemId = Number(keepButton.getAttribute('data-wardrobe-transient-keep'));
+      const transient = getTransientOutfitItems(profile).find((item) => Number(item.id) === itemId);
+      if (!transient) return;
+      const { source: _source, ...item } = transient;
+      try {
+        const result = applyManualWardrobeTool(ctx, {
+          name: 'bsAddWardrobeItem', arguments: { female: selectedWardrobeName, item },
+        }, 'manual_wardrobe_transient_keep');
+        globalThis.toastr?.success?.(result.message, '[BS BioTracker]');
+      } catch (error) {
+        globalThis.toastr?.error?.(String(error?.message || error), '[BS BioTracker]');
       }
       return;
     }

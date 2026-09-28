@@ -4,7 +4,7 @@
 
 ## 衣櫃與當前穿著是兩份資料
 
-`profile.wardrobe.items` 存長期擁有的衣物；`profile.outfit` 存此刻主服、配件 ID、暫時衣物、穿著狀態與孕期合身評估。衣櫃預設有不可刪的 `id=0`「全裸」，但當前主服 `mainItemId=null` 表示**衣著未記錄**，`mainItemId=0` 才是**明確全裸**。暫時衣物只存在於目前穿著，脫掉後會從 `transientItems` 移除。[預設值](../../scripts/state.js#L754)、[換裝實作](../../scripts/tools.js#L6257)。
+`profile.wardrobe.items` 存長期擁有的衣物；`profile.outfit` 存此刻主服、配件 ID、暫時衣物、穿著狀態與孕期合身評估。衣櫃預設有不可刪的 `id=0`「全裸」，但當前主服 `mainItemId=null` 表示**衣著未記錄**，`mainItemId=0` 才是**明確全裸**。暫時衣物只存在於目前穿著，脫掉後會從 `transientItems` 移除；要留下就用 `bsAddWardrobeItem` 引用它（或在衣櫃頁按「收進衣櫃」），會轉成長期衣物，id 與穿著不變。[預設值](../../scripts/state.js#L754)、[換裝實作](../../scripts/tools.js#L6257)。
 
 ### 衣物數值
 
@@ -29,9 +29,11 @@
 
 | 工具 | 操作與限制 |
 | --- | --- |
-| [`bsAddWardrobeItem`](../../scripts/tools.js#L6186) | `female`、`item` 必填；`item` 要有 `name`、`note`、`slot`。指定正整數 `id` 更新該 ID；省略 ID 時按名稱更新，找不到才新增。`id=0` 保留。更新會替換整筆正規化衣物。 |
+| [`bsAddWardrobeItem`](../../scripts/tools.js#L6186) | `female`、`item` 必填；`item` 要有 `name`、`note`、`slot`。指定正整數 `id` 更新該 ID；省略 ID 時按名稱更新，找不到才新增。衣櫃裡沒有、但 ID 或名稱對上正在穿的暫時衣物時，改為把它收進衣櫃（槽位以正在穿的為準）。`id=0` 保留。更新會替換整筆正規化衣物。 |
 | [`bsRemoveWardrobeItem`](../../scripts/tools.js#L6220) | `female`、`itemId` 必填；ID 或準確名稱皆可。刪除正在穿的主服會使主服變成未記錄，刪配件則自當前配件清單移除。`id=0` 不可刪。 |
 | [`bsChangeOutfit`](../../scripts/tools.js#L6257) | `female` 必填。可用既有 ID／名稱，也可在 `main`、`accessories` 直接建立並穿上；`scope=owned` 存衣櫃，`temporary` 僅暫存。`accessoryItemIds` 覆蓋整表；`addAccessoryItemIds`／`removeAccessoryItemIds` 在現有清單增減。主服變更時若未指定 `wearState`，預設回「整齊」。無效引用會拒絕整次換裝。 |
+
+衣櫃頁的「備裝」讓模型代入角色整理衣櫃，結果是 `{items, remove}`：`items` 逐件以 `bsAddWardrobeItem` 寫入，`remove` 是要丟的既有衣物 id 與理由。套用時先丟後加，正在穿的、`id=0` 與找不到的丟棄項會跳過並回報，任一新增失敗整份不寫。[備裝套用](../../scripts/registry.js#L553)。
 
 `wearState` 是動態文字標籤，移除 `|`、`;` 與換行並截至 12 個字元；它不改衣物的長期 `note` 或四維數值。[sanitizeWearState](../../scripts/wardrobe_config.js#L113)。
 

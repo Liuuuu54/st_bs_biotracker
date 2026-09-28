@@ -12,7 +12,7 @@ import {
 } from '../scripts/wardrobe_config.js';
 import { applyToolCall, TOOL_DEFINITIONS } from '../scripts/tools.js';
 import { createEmptyChatState, normalizeCharacterPsychologyState } from '../scripts/state.js';
-import { applyRegistryResult, applyStartingOutfit } from '../scripts/registry.js';
+import { applyRegistryResult, applyStartingOutfit, applyWardrobePrepResult } from '../scripts/registry.js';
 
 const REF_ITEMS = [
   { id: 0, name: '全裸', slot: 'main' },
@@ -175,6 +175,56 @@ test('bsChangeOutfit resolves existing and newly-created temporary items by name
   });
   assert.equal(temp.applied, true, temp.message);
   assert.equal(state.characters['艾拉'].profile.outfit.transientItems.some((item) => item.name === '病服'), true);
+});
+
+test('bsAddWardrobeItem keeps a worn temporary item: same id, still worn, now owned', () => {
+  const state = makeWardrobeState();
+  applyToolCall(state, {
+    name: 'bsChangeOutfit',
+    arguments: {
+      female: '艾拉', scope: 'temporary',
+      main: { name: '借来的风衣', note: '深灰长款', fitProfile: { masking: 'high', support: 'normal', capacity: 'loose', convenience: 'normal' } },
+    },
+  });
+  let profile = state.characters['艾拉'].profile;
+  const tempId = profile.outfit.mainItemId;
+  assert.equal(profile.outfit.transientItems.some((item) => item.id === tempId), true);
+
+  // 模型把槽位写错也不能拆散穿着关系
+  const kept = applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { name: '借来的风衣', note: '深灰长款，已送给她', slot: 'accessory' } } });
+  assert.equal(kept.applied, true, kept.message);
+  profile = state.characters['艾拉'].profile;
+  assert.equal(profile.outfit.mainItemId, tempId);
+  assert.equal(profile.outfit.transientItems.length, 0);
+  const owned = profile.wardrobe.items.find((item) => item.id === tempId);
+  assert.equal(owned.slot, 'main');
+  assert.equal(owned.note, '深灰长款，已送给她');
+
+  // 收进衣柜后脱掉也不会消失
+  applyToolCall(state, { name: 'bsChangeOutfit', arguments: { female: '艾拉', mainItemId: '白色连身裙' } });
+  assert.equal(state.characters['艾拉'].profile.wardrobe.items.some((item) => item.id === tempId), true);
+});
+
+test('备装先丢后加：正在穿的与找不到的丢弃项跳过并回报，其余照写', () => {
+  const state = makeWardrobeState();
+  applyToolCall(state, { name: 'bsAddWardrobeItem', arguments: { female: '艾拉', item: { name: '修身牛仔裤', note: '低腰', slot: 'main', fitProfile: { capacity: 'tight' } } } });
+  const report = applyWardrobePrepResult(state, '艾拉', {
+    items: [{ name: '孕妇连衣裙', note: '宽松棉质', slot: 'main', fitProfile: { capacity: 'loose' } }],
+    remove: [
+      { id: 4, reason: '腰围扣不上' },
+      { id: 1, reason: '也穿不下' },
+      { id: 99, reason: '不存在' },
+    ],
+  });
+  const profile = state.characters['艾拉'].profile;
+  assert.deepEqual(report.added, ['孕妇连衣裙']);
+  assert.deepEqual(report.removed, [{ name: '修身牛仔裤', reason: '腰围扣不上' }]);
+  assert.equal(report.skipped.length, 2);
+  assert.equal(profile.wardrobe.items.some((item) => item.name === '修身牛仔裤'), false);
+  assert.equal(profile.wardrobe.items.some((item) => item.name === '白色连身裙'), true, '正在穿的不丢');
+  assert.equal(profile.outfit.mainItemId, 1);
+
+  assert.throws(() => applyWardrobePrepResult(state, '艾拉', { items: [], remove: [] }), /没有要新增或丢掉/);
 });
 
 test('bsChangeOutfit skips unknown references without changing the outfit', () => {

@@ -104,7 +104,7 @@
               <summary>其他入口</summary>
               <ul>
                 <li>「预设」管理追踪器使用的预设；「排除」控制送给追踪器的世界书条目。</li>
-                <li>「技能」管理技能图鉴；「衣柜」管理角色的衣物和穿着，也能让模型补充衣物。两者可在系统页整个关闭，关闭后入口隐藏，LLM 也看不到相关工具。</li>
+                <li>「技能」管理技能图鉴；「衣柜」管理角色的衣物和穿着，也能让模型备装。两者可在系统页整个关闭，关闭后入口隐藏，LLM 也看不到相关工具。</li>
                 <li>「变量」可查看状态、历史与调试工具；「百科」提供种族资料与计算工具；「主题」调整界面。</li>
               </ul>
             </details>
@@ -717,7 +717,7 @@
             <div id="bs-bt-wardrobe-tabs-section" class="settings_section" hidden>
               <div class="bs-bt-track-tabs bs-bt-wardrobe-tabs" id="bs-bt-wardrobe-tabs">
                 <button type="button" class="bs-bt-track-tab is-active" data-wardrobe-tab="characters">衣柜</button>
-                <button type="button" class="bs-bt-track-tab" data-wardrobe-tab="prep">衣柜补充</button>
+                <button type="button" class="bs-bt-track-tab" data-wardrobe-tab="prep">备装</button>
               </div>
             </div>
             <div id="bs-bt-wardrobe-characters-page" class="settings_section">
@@ -734,27 +734,27 @@
             </div>
             <div id="bs-bt-wardrobe-prep-page" hidden>
               <div class="settings_section">
-                <small>让模型为这名角色补充少量长期衣物。只加进衣柜，不覆盖原有衣物，也不改变当前穿着。</small>
+                <small>让模型代入这名角色整理长期衣柜：补充衣物，要求时也会挑出穿不下、不再适合的衣物丢掉。不改变当前穿着，正在穿的不会被丢。</small>
               </div>
 
               <div class="settings_section">
-                <label for="bs-bt-wardrobe-prep-prompt">补充要求（可选）</label>
-                <textarea id="bs-bt-wardrobe-prep-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="例如：补一套正式外出服与一件冬季外套；避免高跟鞋。"></textarea>
+                <label for="bs-bt-wardrobe-prep-prompt">备装要求（可选）</label>
+                <textarea id="bs-bt-wardrobe-prep-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="例如：增加一件符合发条朋克的外套和鞋子；肚子大了，把穿不下的修身衣服丢掉，补两套孕妇装。"></textarea>
               </div>
 
               <div class="settings_section bs-bt-action-row">
-                <button id="bs-bt-wardrobe-prep-run" class="menu_button" type="button">生成衣柜补充</button>
-                <button id="bs-bt-wardrobe-prep-apply" class="menu_button" type="button">合并补充</button>
+                <button id="bs-bt-wardrobe-prep-run" class="menu_button" type="button">生成备装</button>
+                <button id="bs-bt-wardrobe-prep-apply" class="menu_button" type="button">套用备装</button>
               </div>
 
               <div class="settings_section">
-                <label for="bs-bt-wardrobe-prep-json">衣柜补充 JSON</label>
-                <textarea id="bs-bt-wardrobe-prep-json" class="text_pole bs-bt-textarea" rows="16" placeholder="生成后可手动微调再合并。"></textarea>
+                <label for="bs-bt-wardrobe-prep-json">备装 JSON</label>
+                <textarea id="bs-bt-wardrobe-prep-json" class="text_pole bs-bt-textarea" rows="16" placeholder="items 是要新增的衣物，remove 是要丢掉的衣物；生成后可手动微调再套用。"></textarea>
               </div>
 
               <div class="settings_section">
-                <div class="bs-bt-status-title">补充状态</div>
-                <pre id="bs-bt-wardrobe-prep-status" class="bs-bt-status-box">补充不会覆盖原衣柜或强制换装。</pre>
+                <div class="bs-bt-status-title">备装状态</div>
+                <pre id="bs-bt-wardrobe-prep-status" class="bs-bt-status-box">备装不会改变当前穿着；丢掉衣物前可在 JSON 的 remove 里删掉不想丢的。</pre>
               </div>
             </div>
           </div>

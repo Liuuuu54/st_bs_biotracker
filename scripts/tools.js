@@ -143,7 +143,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddWardrobeItem',
-    description: '向单一角色的长期衣柜添加或更新衣物，无需先准备衣柜。main 是一套完整基础衣着，可用 parts 列出组成，fitProfile 使用隐藏四档与支撑/容身/方便档位。accessory 使用 category，effects 最多两项。新增可省略 id；更新传整数 id 或准确名称。note 只写稳定外观与来源。',
+    description: '向单一角色的长期衣柜添加或更新衣物，无需先准备衣柜。main 是一套完整基础衣着，可用 parts 列出组成，fitProfile 使用隐藏四档与支撑/容身/方便档位。accessory 使用 category，effects 最多两项。新增可省略 id；更新传整数 id 或准确名称。以 id 或名称引用正在穿的临时衣物时，会把它转为长期衣物（id 与穿着不变），用于借来的衣服被送下等情况。note 只写稳定外观与来源。',
     input_schema: {
       type: 'object',
       properties: {
@@ -6216,6 +6216,26 @@ function applyAddWardrobeItem(chatState, args) {
     target = resolveWardrobeItemRef(wardrobe.items, item.name) || null;
   }
   if (target && target.id === DEFAULT_WARDROBE_ITEM.id) return { applied: false, message: `bsAddWardrobeItem skipped for ${female}: id=0 is reserved.` };
+  if (!target) {
+    // 引用到正在穿的临时衣物：转为长期收藏，id 与穿着关系都不变
+    const outfit = ensureOutfitState(profile);
+    const transient = resolveWardrobeItemRef(outfit.transientItems, hasExplicitIntegerId ? item.id : item.name);
+    if (transient) {
+      // 槽位以正在穿的为准，否则主件／配件关系会断；槽位不同时按正确槽位重新正规化
+      const promoted = item.slot === transient.slot
+        ? { ...item, id: transient.id }
+        : normalizeWardrobeItem({ ...args.item, id: transient.id, slot: transient.slot });
+      if (!promoted) return { applied: false, message: `bsAddWardrobeItem skipped for ${female}: invalid item.` };
+      outfit.transientItems = outfit.transientItems.filter((entry) => entry.id !== transient.id);
+      wardrobe.items.push(promoted);
+      item.name = promoted.name;
+      item.id = promoted.id;
+      refreshOutfitPregFit(profile);
+      next.profile = profile;
+      chatState.characters[female] = syncCharacterStageFromProfile(next);
+      return { applied: true, message: `bsAddWardrobeItem applied to ${female}: 临时衣物 ${item.name} (id=${item.id}) 已收进衣柜，仍在穿着。` };
+    }
+  }
   if (target) {
     item.id = target.id;
     const existingIndex = wardrobe.items.findIndex((entry) => entry.id === target.id);

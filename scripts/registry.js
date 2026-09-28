@@ -60,7 +60,7 @@ import {
   registerSkillDefinition,
   resolveSkillDefinition,
 } from './skill_config.js';
-import { sanitizeWearState } from './wardrobe_config.js';
+import { resolveWardrobeItemRef, sanitizeWearState } from './wardrobe_config.js';
 import { applyToolCall, BACK_SIDES, calculateDerivedInheritanceProgress, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
@@ -428,15 +428,17 @@ export function buildBreedingInferenceSystemPrompt(settings, options = {}) {
 export function buildWardrobePrepSystemPrompt(settings, options = {}) {
   const userPrompt = String(options.wardrobePrepPrompt || settings?.wardrobePrepPrompt || '').trim();
   return [
-    '你是 AIRP 角色衣柜补充器。只为 payload.target_character 补充少量长期衣物，不重建衣柜，不改变当前穿着。',
+    '你是 AIRP 角色备装器。代入 payload.target_character 的身份、处境与身体状态（payload.existing_state），按用户要求整理她的长期衣柜：补充衣物，必要时汰换穿不下或不再适合的衣物。不改变当前穿着。',
     '根据用户要求选择最必要的项目；用户明确列出要补的项目时只补那些，未指定数量时一般补充 2-4 项，避免为每个角色创建庞大专属衣柜。',
+    '只有用户要求整理、汰换、丢掉不合身衣物时才输出 remove。判断依据是 payload.existing_wardrobe 里衣物的 fitProfile 与角色现况：例如孕中后期 capacity=tight／fitted 的修身衣物通常穿不下，support=none 的衣物撑不住沉重的胸腹。',
+    'remove 只能引用 payload.existing_wardrobe 里既有衣物的 id，并写出 reason；不得丢掉 payload.existing_outfit 正在穿的衣物，也不得引用 id=0。',
     '只输出 JSON，不要输出额外解释。',
-    'JSON 顶层结构必须是：{"items": [...]}。',
+    'JSON 顶层结构必须是：{"items": [...], "remove": [{"id": 1, "reason": "string"}]}。没有要新增或丢掉的就给空数组。',
     'main 是完整基础套装，可附 parts，并使用 fitProfile 档位。accessory 使用 category 与最多两项 effects。',
     'fitProfile：masking=very_low/low/medium/high，support=none/normal/strong，capacity=tight/fitted/stretch/loose，convenience=inconvenient/normal/convenient。',
     'category：underwear/outerwear/footwear/headwear/ornament/support/other。effects：masking/support/capacity/convenience 加 _up 或 _down。',
     'note 只写稳定外观与来源，不写当前反应或怀孕变化。不要输出数值四维。',
-    '[用户补充要求]',
+    '[用户备装要求]',
     userPrompt || '无',
   ].join('\n');
 }
@@ -534,11 +536,54 @@ export async function runRegistryOutfitInference(ctx, options = {}) {
   return sanitizeStartingOutfit(result);
 }
 
-function sanitizeWardrobePrepResult(result) {
-  if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('衣柜补充必须返回 JSON 对象');
+export function sanitizeWardrobePrepResult(result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('备装必须返回 JSON 对象');
   const items = Array.isArray(result?.items) ? result.items : (Array.isArray(result?.wardrobe?.items) ? result.wardrobe.items : []);
-  if (items.length <= 0) throw new Error('衣柜补充缺少 items');
-  return { items };
+  const remove = (Array.isArray(result?.remove) ? result.remove : [])
+    .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    .map((entry) => ({ id: entry.id, reason: String(entry.reason || '').trim() }));
+  if (items.length <= 0 && remove.length <= 0) throw new Error('备装结果没有要新增或丢掉的衣物');
+  return { items, remove };
+}
+
+/**
+ * 把备装结果写进角色衣柜：先丢后加。正在穿的、id=0、衣柜里找不到的丢弃项跳过并回报；
+ * 任一新增失败就整份不写
+ */
+export function applyWardrobePrepResult(chatState, targetName, raw) {
+  const prep = sanitizeWardrobePrepResult(raw);
+  const character = chatState.characters?.[targetName];
+  if (!character?.profile) throw new Error(`备装需要已注册角色：${targetName}`);
+  const outfit = character.profile.outfit || {};
+  const wornIds = new Set([
+    ...(outfit.mainItemId === null || outfit.mainItemId === undefined ? [] : [Number(outfit.mainItemId)]),
+    ...(Array.isArray(outfit.accessoryItemIds) ? outfit.accessoryItemIds.map(Number) : []),
+  ]);
+  const ownedItems = Array.isArray(character.profile.wardrobe?.items) ? character.profile.wardrobe.items : [];
+  const workingState = { ...chatState, characters: { ...chatState.characters } };
+  const report = { added: [], removed: [], skipped: [] };
+  for (const entry of prep.remove) {
+    const target = resolveWardrobeItemRef(ownedItems, entry.id);
+    if (!target || target.id === 0) {
+      report.skipped.push(`找不到衣物 ${JSON.stringify(entry.id ?? null)}`);
+      continue;
+    }
+    if (wornIds.has(target.id)) {
+      report.skipped.push(`${target.name}（正在穿）`);
+      continue;
+    }
+    const result = applyToolCall(workingState, { name: 'bsRemoveWardrobeItem', arguments: { female: targetName, itemId: target.id } });
+    if (!result?.applied) throw new Error(result?.message || `丢掉 ${target.name} 失败`);
+    report.removed.push({ name: target.name, reason: entry.reason });
+  }
+  for (const item of prep.items) {
+    if (Number(item?.id) === 0 || String(item?.id || '').trim() === 'nude') continue;
+    const result = applyToolCall(workingState, { name: 'bsAddWardrobeItem', arguments: { female: targetName, item } });
+    if (!result?.applied) throw new Error(result?.message || '备装新增失败');
+    report.added.push(String(item?.name || '').trim());
+  }
+  chatState.characters[targetName] = workingState.characters[targetName];
+  return report;
 }
 
 async function runBreedingInference(settings, payload, options = {}) {
@@ -704,9 +749,9 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
   if (!isWardrobeSystemEnabled(settings)) throw new Error('着衣系统已在系统页关闭');
   const chatState = getChatState(ctx, settings);
   const requestedTargetName = String(options.targetName || '').trim();
-  if (!requestedTargetName) throw new Error('衣柜补充需要 targetName');
+  if (!requestedTargetName) throw new Error('备装需要 targetName');
   const targetName = resolveRegisteredCharacterName(chatState, requestedTargetName);
-  if (!targetName) throw new Error(`衣柜补充需要已注册角色：${requestedTargetName}`);
+  if (!targetName) throw new Error(`备装需要已注册角色：${requestedTargetName}`);
   const customNotes = String(options.customNotes !== undefined ? options.customNotes : (settings.registryCustomNotes || '')).trim();
   const declaredRace = String(options.declaredRace || '').trim();
   const wardrobePrepPrompt = String(options.wardrobePrepPrompt || settings.wardrobePrepPrompt || '').trim();
