@@ -1737,7 +1737,9 @@ function updateBatteryIndicator(settings = null) {
   const source = usingCachedCount ? String(cache.source || 'local estimate') : 'local estimate';
   const usageRatio = tokenCount / budget;
   const chargeRatio = Math.max(0, 1 - usageRatio);
-  const width = Math.round(16 * chargeRatio);
+  // 外框内缘是 x=2~24，填充从 x=4 起，满格宽 18 才会左右各留 2 的等宽空隙；
+  // 旧的 16 让满格右侧多空 2，看起来像没充满
+  const width = Math.round(18 * chargeRatio);
   fill.setAttribute('width', String(width));
   icons.dataset.batteryState = usageRatio >= 1 ? 'critical' : usageRatio >= 0.75 ? 'low' : usageRatio >= 0.45 ? 'mid' : 'high';
   const tooltipText = input.text
