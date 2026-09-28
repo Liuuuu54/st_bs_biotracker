@@ -1045,12 +1045,20 @@
   color: var(--bsbt-lcd-bg);
 }
 
+/* 单栏必须是 minmax(0, 1fr)：隐式的 auto 栏会被最长的不可断内容（例如端点预览里的长网址）撑宽，
+   整栏输入框跟着变宽，再被 overflow-x: hidden 切掉右缘。不支援 overflow-wrap: anywhere 的浏览器最容易出现 */
 #bs-biotracker-settings .bs-bt-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   width: 100%;
   min-width: 0;
   overflow-x: hidden;
+}
+
+#bs-biotracker-settings #bs-bt-api-endpoint-preview-code {
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 #bs-biotracker-settings .bs-bt-section-title,
