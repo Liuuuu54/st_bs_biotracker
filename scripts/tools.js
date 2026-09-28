@@ -3850,6 +3850,8 @@ function getFreeFetuses(pregnant) {
  */
 export function getLaborObstruction(profile) {
   if (!isRealisticLabor(profile)) return null;
+  // 离场没人能助产或手术产：硬阻塞一律不成立，产程自己走完；回场后恢复判定
+  if (profile?.base?.isHere === false) return null;
   if (!OBSTRUCTION_STAGES.includes(String(profile?.base?.stage || ''))) return null;
   const pregnant = profile.pregnant || {};
   const active = getFreeFetuses(pregnant);
@@ -3881,6 +3883,7 @@ export function getLaborObstruction(profile) {
  */
 function isShoulderDystocia(profile, fetus) {
   if (!isRealisticLabor(profile) || fetus?.shoulderRelieved) return false;
+  if (profile?.base?.isHere === false) return false;
   if (String(fetus?.embryoType || '胎生') !== '胎生' || !isHeadPresentation(fetus)) return false;
   if (getDescentStage(fetus) !== DESCENT_CROWNED_OUT) return false;
   const pressureCap = getUterinePressureCap(profile);
@@ -4392,6 +4395,25 @@ function maybeStartLabor(profile, tick, female) {
   if (currentPressure < pressureCap * 0.66) return false;
 
   enterProdromalStage(profile, female, stage, `${female}开始出现分娩前兆，距离正式产程已经不远`);
+  return true;
+}
+
+/** 离场角色的发动期限：满 44 周一定发动，剧情压低宫压或旧存档卡在逾期都不会一路拖下去 */
+const OFFSCREEN_ONSET_DEADLINE_DAYS = 308;
+
+/**
+ * 离场角色的足月发动：宫压照同一条时间表累积，过上限一半就直接发动，
+ * 不走「示警、下回合才发动」——那是给在场剧情反应用的
+ */
+function maybeStartOffscreenLabor(profile, female) {
+  const base = profile.base || {};
+  const stage = String(base.stage || '');
+  if (!['临产期', '逾期'].includes(stage)) return false;
+  const pressureCap = getUterinePressureCap(profile);
+  const currentPressure = clampNumber(base.uterinePressure, 0, pressureCap, 0);
+  const effectiveDays = clampNumber(profile?.pregnant?.effectivePregnantDays, 0, 9999, 0);
+  if (currentPressure < pressureCap * 0.5 && effectiveDays < OFFSCREEN_ONSET_DEADLINE_DAYS) return false;
+  enterProdromalStage(profile, female, stage, `${female}在场外出现分娩前兆，已进入待产`);
   return true;
 }
 
@@ -5932,17 +5954,20 @@ function applyTimeToCharacter(character, tick) {
     base.stage = stage;
     base.days = days;
     updateFetalPositions(profile, tick, next.name);
-    if (isHere) {
-      applyTermPressure(profile, tick, next.name);
-      applyHourlyPregnancyMetabolism(profile, tick);
-    }
+    // 足月宫压离场也照样累积：离场只是镜头不在，不能让孕周一路走却永远不生
+    applyTermPressure(profile, tick, next.name);
+    if (isHere) applyHourlyPregnancyMetabolism(profile, tick);
     const pressureCrisis = isHere ? applyPressureCrisis(profile, next.runtime || {}, next.name) : { changed: false, warned: false };
     if (pressureCrisis.changed) {
       stage = String(base.stage || stage);
       days = clampNumber(base.days, 0, 9999, 0);
       stageChanged = true;
     }
-    if (isHere && !pressureCrisis.warned && maybeStartLabor(profile, tick, next.name)) {
+    if (!isHere && maybeStartOffscreenLabor(profile, next.name)) {
+      stage = String(base.stage || stage);
+      days = clampNumber(base.days, 0, 9999, 0);
+      stageChanged = true;
+    } else if (isHere && !pressureCrisis.warned && maybeStartLabor(profile, tick, next.name)) {
       stage = String(base.stage || stage);
       days = clampNumber(base.days, 0, 9999, 0);
       stageChanged = true;

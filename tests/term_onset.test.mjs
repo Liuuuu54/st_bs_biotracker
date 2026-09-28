@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as state from '../scripts/state.js';
-import { applyToolCall } from '../scripts/tools.js';
+import { applyToolCall, getLaborObstruction } from '../scripts/tools.js';
 import { DUE_DATE_DAYS, TERM_START_DAYS } from '../scripts/stage_config.js';
 
-function carrier({ days = 252, weights = [1], readiness = 1, breedTolerance = 1, vitalityLevel = 5, psyStressLevel = 4 } = {}) {
+function carrier({ days = 252, weights = [1], readiness = 1, breedTolerance = 1, vitalityLevel = 5, psyStressLevel = 4, isHere = true, stage = '孕晚期', uterinePressure = 0, immune = {}, fetusOver = {} } = {}) {
   const chatState = state.createEmptyChatState();
   chatState.characters.A = {
     name: 'A', initialized: true,
     profile: {
       base: {
-        stage: '孕晚期', days: 0, isHere: true, age: 24, race: '人类',
-        vitality: 150, libido: 20, uterinePressure: 0, psyStress: 30, vitalityLevel, psyStressLevel,
+        stage, days: 0, isHere, age: 24, race: '人类',
+        vitality: 150, libido: 20, uterinePressure, psyStress: 30, vitalityLevel, psyStressLevel,
         eggs: 0, sperms: [], fertilizationDays: 0, latestSexDays: -1,
       },
       bio: { birthDifficulty: 1, breedTolerance, impregnationDifficulty: 0.2, identicalProbability: 0 },
@@ -21,10 +21,10 @@ function carrier({ days = 252, weights = [1], readiness = 1, breedTolerance = 1,
         pregnantDays: days, effectivePregnantDays: days, fetusesCount: weights.length, fetalEnergyDrain: 0,
         ...(readiness === null ? {} : { termReadiness: { embryoId: 1, value: readiness } }),
         fetuses: weights.map((weight, index) => ({
-          embryoId: index + 1, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight, tendencyAngle: 0, affinity: 0,
+          embryoId: index + 1, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight, tendencyAngle: 0, affinity: 0, ...fetusOver,
         })),
       },
-      experience: {}, immune: {}, metabolism: {}, skills: [], talents: [], children: [], notify: {},
+      experience: {}, immune, metabolism: {}, skills: [], talents: [], children: [], notify: {},
     },
   };
   return chatState;
@@ -106,4 +106,36 @@ test('发动体质在抽的当下套上等级：病弱、极端情绪的母体�
   } finally {
     Math.random = realRandom;
   }
+});
+
+const inLabor = (chatState) => ['产兆前驱', '第一产程', '第二产程', '第三产程'].includes(P(chatState).base.stage);
+
+test('离场角色的足月宫压照样累积、过半即发动；再怎么压低也在 44 周前发动', () => {
+  const chatState = carrier({ isHere: false, readiness: 2.3 });
+  for (let i = 0; i < 80 && !inLabor(chatState); i += 1) step(chatState);
+  assert.equal(inLabor(chatState), true, '离场也会自然发动');
+  assert.ok(P(chatState).pregnant.effectivePregnantDays < 294);
+
+  // 旧存档：离场、卡在 50 周、宫压被压到 0
+  const stuck = carrier({ isHere: false, stage: '逾期', days: 350, readiness: 0.5, uterinePressure: 0 });
+  step(stuck);
+  assert.equal(inLabor(stuck), true, '超过期限的下一次推进就发动');
+});
+
+test('离场的真实分娩不判硬阻塞：横位领头的胎儿也会自己生完；回场后阻塞判定恢复', () => {
+  const offscreen = carrier({
+    isHere: false, stage: '逾期', days: 300, readiness: 0.5, uterinePressure: 0,
+    immune: { realisticLabor: true }, fetusOver: { tendencyAngle: 90 },
+  });
+  for (let i = 0; i < 60 && P(offscreen).children.length === 0; i += 1) step(offscreen);
+  assert.equal(P(offscreen).children.length, 1, '离场横位也生得出来');
+
+  // 同一个入口前的横位：在场是硬阻塞，离场不算
+  const transverseAtInlet = (isHere) => getLaborObstruction({
+    immune: { realisticLabor: true },
+    base: { stage: '第二产程', isHere },
+    pregnant: { presentingEmbryoId: 1, fetuses: [{ embryoId: 1, embryoType: '胎生', tendencyAngle: 90, descentStage: 0 }] },
+  });
+  assert.equal(transverseAtInlet(true)?.type, 'transverse');
+  assert.equal(transverseAtInlet(false), null);
 });
