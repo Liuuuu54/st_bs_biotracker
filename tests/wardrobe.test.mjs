@@ -10,7 +10,7 @@ import {
   resolveWardrobeItemRef,
   sanitizeWearState,
 } from '../scripts/wardrobe_config.js';
-import { applyToolCall, calculatePregWearPressure, TOOL_DEFINITIONS } from '../scripts/tools.js';
+import { applyToolCall, calculatePregWearPressure, getFetalBulk, TOOL_DEFINITIONS } from '../scripts/tools.js';
 import { createEmptyChatState, normalizeCharacterPsychologyState } from '../scripts/state.js';
 import { applyRegistryResult, applyStartingOutfit, applyWardrobePrepResult } from '../scripts/registry.js';
 
@@ -395,9 +395,9 @@ function makePregnancyState(stage, days) {
 }
 
 test('pregnancy wear pressure: single term 7, twins 8.5, only triplets at term reach the cap', () => {
-  // fetalEnergyDrain 由游戏逻辑算：每胎 孕龄 × 胎重 / 280（母体承载 1）
-  const at = (days, weights) => calculatePregWearPressure({
-    pregnant: { effectivePregnantDays: days, fetalEnergyDrain: weights.reduce((sum, weight) => sum + (days * weight) / 280, 0) },
+  const at = (days, weights, extra = {}) => calculatePregWearPressure({
+    pregnant: { effectivePregnantDays: days, fetuses: weights.map((weight) => ({ weight, ...extra })) },
+    ...extra.profile,
   });
   assert.equal(at(0, [1]), 0);
   assert.equal(Number(at(280, [1]).toFixed(2)), 7);
@@ -405,6 +405,21 @@ test('pregnancy wear pressure: single term 7, twins 8.5, only triplets at term r
   assert.equal(at(280, [1, 1, 1]), 10);
   assert.ok(at(294, [1.3, 1.3]) < 10, '重双胎逾期两周接近但不顶满');
   assert.ok(at(140, [1]) < at(280, [1]));
+});
+
+test('wear pressure follows the belly, not the carrier tolerance, and counts companion eggs', () => {
+  const pressure = (fetuses, breedTolerance = 1) => calculatePregWearPressure({
+    bio: { breedTolerance },
+    pregnant: { effectivePregnantDays: 280, fetalEnergyDrain: 1 / breedTolerance, fetuses },
+  });
+  // 高耐受的龙娘与低耐受的种族，同样的肚子同样的压力
+  assert.equal(pressure([{ weight: 1 }], 10), pressure([{ weight: 1 }], 1));
+  assert.equal(pressure([{ weight: 1 }], 1 / 3), pressure([{ weight: 1 }], 1));
+  // 伴生卵占肚子：一胎带九颗卵比单胎撑
+  assert.ok(pressure([{ weight: 1, companionEggCount: 9 }]) > pressure([{ weight: 1 }]));
+  assert.equal(Number(getFetalBulk({ pregnant: { effectivePregnantDays: 280, fetuses: [{ weight: 1, companionEggCount: 2 }] } }).toFixed(2)), 1.3);
+  // 异期复孕晚到的那胎按自己的孕龄算
+  assert.equal(getFetalBulk({ pregnant: { effectivePregnantDays: 280, fetuses: [{ weight: 1 }, { weight: 1, conceivedAtDays: 140 }] } }), 1.5);
 });
 
 test('postpartum pregFit pressure declines linearly with recovery progress', () => {

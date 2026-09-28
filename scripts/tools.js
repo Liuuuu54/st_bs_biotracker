@@ -676,22 +676,39 @@ function getOutfitDimensionTotals(profile) {
   return totals;
 }
 
+// 一颗伴生卵占肚子的份量，以足月标准胎为 1；只影响衣着压力，不进代谢负担
+const COMPANION_EGG_BULK = 0.15;
+
 /**
- * 孕期衣着压力。fetalEnergyDrain 本身已随孕龄与胎重成长（足月标准胎 = 1），
- * 孕程项只补「身形随孕周改变」的部分，两项按以下锚点校准：
- * 足月单胎 1.0 = 7、双胎 1.0 = 8.5、三胎 1.0 才碰到上限 10。
- * 旧式的孕程项 ×6 加上胎负担项，单胎足月就有 7.85、重双胎逾期直接顶满。
+ * 肚子实际装了多少：每胎「自身孕龄 × 胎重 / 280」加总，伴生卵按份量随所属那胎一起长大。
+ * 与 fetalEnergyDrain 同源但不除以承载耐受——耐受是「扛不扛得住」，
+ * 衣服合不合身只看肚子多大；除下去会让高耐受的龙娘足月像七个月、低耐受的一胎就撑爆
+ */
+export function getFetalBulk(profile) {
+  const pregnant = profile?.pregnant || {};
+  const effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  return fetuses.reduce((sum, fetus) => {
+    const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
+    const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
+    const eggs = Math.max(0, Math.floor(Number(fetus?.companionEggCount) || 0));
+    return sum + (ownAge / 280) * (weight + eggs * COMPANION_EGG_BULK);
+  }, 0);
+}
+
+/**
+ * 孕期衣着压力 = 基础 + 身形随孕周改变 + 肚子装的量。锚点：
+ * 足月单胎 1.0 = 7、双胎 1.0 = 8.5、三胎 1.0 才碰到上限 10，与母体种族无关
  */
 export function calculatePregWearPressure(profile) {
   const pregnant = profile?.pregnant || {};
   const effectiveDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
   if (effectiveDays <= 0) return 0;
-  const fetalEnergyDrain = clampNumber(pregnant.fetalEnergyDrain, 0, 9999, 0);
   const fullPregnancyDays = Object.values(PREGNANCY_STAGE_DAYS).reduce((sum, value) => sum + (Number(value) || 0), 0) || 280;
   const progress = Math.min(1.25, effectiveDays / fullPregnancyDays);
   const basePressure = 0.5;
   const progressPressure = Math.pow(progress, 1.35) * 5;
-  const fetalPressure = fetalEnergyDrain * 1.5;
+  const fetalPressure = getFetalBulk(profile) * 1.5;
   return clampNumber(basePressure + progressPressure + fetalPressure, 0, 10, 0);
 }
 
