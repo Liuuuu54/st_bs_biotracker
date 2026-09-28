@@ -13,7 +13,7 @@
 <body>
 <div id="harness-info">
   <b>BioTracker UI Harness</b>（mock 宿主，非真实 SillyTavern）<br>
-  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件）、贝拉（产后恢复，pregFit 生效）、琪拉（四胎孕晚期）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、茉拉（刚受精）。
+  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件，精液灌满）、贝拉（产后恢复，pregFit 生效，精液灌满）、琪拉（孕 30 周六胎：五种胚型＋孕中孕，各种胎儿标签，精液浸满）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、茉拉（刚受精）。
 </div>
 <script type="module">
   const CHAT_KEY = 'ui-harness-chat';
@@ -70,13 +70,14 @@
       }),
       长女: makeCharacter('长女', { base: { age: 18 }, profile: { children: [] } }),
       艾拉: makeCharacter('艾拉', {
-        // 三个精液来源、量差明显：验证「精液来源」统一使用占比环
+        // 三个精液来源、量差明显：验证「精液来源」统一使用占比环；
+        // 总量 130 超过卵泡期初段的容量（约 113）：看未孕的「灌满」（子宫微胀、整片到顶、宫口滴漏）
         base: {
           eggs: 2,
           sperms: [
-            { male: '凯', race: '人类', derivedType: null, value: 24 },
-            { male: '无名旅人', race: '西方龙', derivedType: '血族', value: 12 },
-            { male: '古龙', race: '西方龙', derivedType: null, value: 5 },
+            { male: '凯', race: '人类', derivedType: null, value: 70 },
+            { male: '无名旅人', race: '西方龙', derivedType: '血族', value: 40 },
+            { male: '古龙', race: '西方龙', derivedType: null, value: 20 },
           ],
         },
         profile: {
@@ -123,27 +124,44 @@
           outfit: { mainItemId: 1, accessoryItemIds: [3, 4], transientItems: [], wearState: '敞开', pregFit: null },
         },
       }),
+      // 宣传取样：孕 30 周六胎，画面上五胎各是一种胚型（胎生／卵生／卵胎生／胎转卵生／不定型），
+      // 胎生那胎体内再怀一胎孕中孕（包在宿主里一起画，不占五胎上限）。
+      // 标签取样：代孕、胎内回归、异期复孕（带伴生卵）、嵌合、自交＋雌核发生、孕中孕。
+      // 精液远超容量：看怀孕的「浸满」（精液填在羊膜囊之间、膜线沾色、宫口细细滴）
       琪拉: makeCharacter('琪拉', {
-        base: { stage: '孕晚期', days: 152, age: 26, eggs: 0 },
-        descriptions: { pregnantDescription: '孕态|腹部高耸，行动迟缓;;' },
+        base: {
+          stage: '孕晚期', days: 14, age: 26, eggs: 0,
+          sperms: [
+            { male: '莱昂', race: '人类', derivedType: null, value: 180 },
+            { male: '无名旅人', race: '西方龙', derivedType: null, value: 120 },
+          ],
+        },
+        descriptions: { pregnantDescription: '孕态|六胎撑得腹部巨大，几乎站不稳;;' },
         profile: {
           pregnant: {
-            pregnantDays: 152,
-            effectivePregnantDays: 152,
-            amnionDurability: 82,
-            // 双胎：一胎正亲和（擅长方向）、一胎负亲和（苦手方向），验证胎儿天赋显示
-            // 胎儿标签取样：代孕（推导）／嵌合（推导）／同卵一组两胎（落盘）
+            pregnantDays: 210,
+            effectivePregnantDays: 210,
+            nextEmbryoId: 7,
             fetuses: [
-              { embryoId: 1, fathers: '莱昂', fatherRace: '人类', provider: '艾拉', providerSources: ['艾拉'], embryoType: '胎生', gender: '女', weight: 1.05, tendencyAngle: 30, affinity: 60, talents: [{ skillId: 1, level: 2, exp: 40 }] },
-              { embryoId: 2, fathers: '莱昂 × 无名旅人', fatherRace: '人类x西方龙', chimera: { sourceCount: 2, fatherSources: ['莱昂', '无名旅人'], maternalSources: ['琪拉'], genderSources: ['男', '女'] }, embryoType: '胎生', gender: '男', weight: 0.98, tendencyAngle: -20, affinity: -35, talents: [{ skillId: 2, level: -1, exp: -30 }] },
-              { embryoId: 3, fathers: '莱昂', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 1.0, tendencyAngle: 10, affinity: 20, tags: ['identical'], identicalGroup: 3, talents: [] },
-              { embryoId: 4, fathers: '莱昂', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 1.0, tendencyAngle: 15, affinity: 20, tags: ['identical'], identicalGroup: 3, talents: [] },
+              // 胎生・代孕（卵来自艾拉），也是孕中孕的宿主；正亲和验证胎儿天赋
+              { embryoId: 1, fathers: '莱昂', fatherRace: '人类', provider: '艾拉', providerSources: ['艾拉'], race: '精灵x人类', embryoType: '胎生', gender: '女', weight: 1.1, tendencyAngle: 0, affinity: 60, amnionDurability: 90, talents: [{ skillId: 1, level: 2, exp: 40 }] },
+              // 卵生・胎内回归（回到子宫里的鸟人）
+              { embryoId: 2, fathers: '翼', fatherRace: '鸟人', race: '人类x鸟人', embryoType: '卵生', gender: '男', weight: 0.9, tendencyAngle: 45, affinity: 20, amnionDurability: 85, tags: ['rebirth'], talents: [] },
+              // 卵胎生・异期复孕，带三颗伴生卵；孕龄落后一截
+              { embryoId: 3, fathers: '海德', fatherRace: '人鱼', race: '人类x人鱼', embryoType: '卵胎生', gender: '女', weight: 0.85, tendencyAngle: 90, affinity: 10, amnionDurability: 70, conceivedAtDays: 30, companionEggCount: 3, tags: ['superfetation'], revealed: true, talents: [] },
+              // 胎转卵生・嵌合（两位父源融合）；负亲和验证苦手方向
+              { embryoId: 4, fathers: '莱昂 × 无名旅人', fatherRace: '人类x西方龙', chimera: { sourceCount: 2, fatherSources: ['莱昂', '无名旅人'], maternalSources: ['琪拉'], genderSources: ['男', '女'] }, race: '人类x西方龙', embryoType: '胎转卵生', gender: '双', weight: 1.0, tendencyAngle: 180, affinity: -35, amnionDurability: 45, talents: [{ skillId: 2, level: -1, exp: -30 }] },
+              // 不定型・自交＋雌核发生（琪拉自己当父方）
+              { embryoId: 5, fathers: '琪拉', fatherRace: '人类x史萊姆', race: '人类x史萊姆', embryoType: '不定型', gender: '女', weight: 0.8, tendencyAngle: 270, affinity: 5, amnionDurability: 100, tags: ['gynogenesis'], talents: [] },
+              // 孕中孕：长在 1 号体内，母亲是 1 号、父亲是精液来源
+              { embryoId: 6, fathers: '莱昂', fatherRace: '人类', race: '精灵x人类', embryoType: '胎生', gender: '男', weight: 0.6, tendencyAngle: 0, affinity: 0, nestedInEmbryoId: 1, conceivedAtDays: 60, tags: ['superfetation', 'nested'], revealed: true, talents: [] },
             ],
           },
         },
       }),
+      // 产后恢复也灌满：子宫比未孕大、容量约 120 → 100
       贝拉: makeCharacter('贝拉', {
-        base: { stage: '产后恢复', days: 10, age: 27 },
+        base: { stage: '产后恢复', days: 10, age: 27, sperms: [{ male: '凯', race: '人类', derivedType: null, value: 140 }] },
         profile: {
           wardrobe: {
             enabled: true,
