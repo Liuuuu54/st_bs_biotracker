@@ -208,6 +208,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- slot=accessory 是可独立穿脱的内衣、外搭、鞋袜、头饰、饰品或支撑用品。category=underwear/outerwear/footwear/headwear/ornament/support/other；effects 最多两项，使用 masking/support/capacity/convenience 加 _up 或 _down。',
   '- masking 是掩盖身体曲线与孕肚变化，不等于露肤；support 是胸腹腰与重心承托；capacity 是容许体型变化；convenience 是行动、穿脱、如厕、哺乳或排解需求的方便程度。',
   '- 新衣可直接用 bsChangeOutfit 的 main/accessories 建立并穿上：scope=owned 收入长期衣柜，scope=temporary 仅保留到该衣物脱下。bsAddWardrobeItem 只收藏或更新长期衣物，引用正在穿的临时衣物时会把它转为长期衣物（id 与穿着不变）；bsRemoveWardrobeItem 永久删除。衣物可用整数 id 或准确名称引用。',
+  '- 衣柜也要跟着剧情减少：衣物被撕毁报废、丢弃、送人、卖掉、遗失、被没收，或角色明确把穿不下的衣服收起、丢掉时，用 bsRemoveWardrobeItem 删除；只是脱下、换下、弄脏送洗不删。正在穿的衣物被毁时，同轮先用 bsChangeOutfit 换下（或换上别的），再删除。',
   '- accessoryItemIds 覆盖当前配件整表；addAccessoryItemIds/removeAccessoryItemIds 用于增量穿脱。全裸传 mainItemId:0 与 accessoryItemIds:[]。wearState 只是 12 字内的状态标签，不会改变穿了哪些衣物；换主件而未传 wearState 时自动回到整齐。',
   '- recent_messages 出现穿脱、更衣、借穿、被脱除、淋湿、衣衫不整或洗浴后着装时，调用 bsChangeOutfit 使 outfit 与叙事一致。outfit.currentWearText 与 currentItems 只供核对，不要写回，也不要在 descriptions 另建衣着状态。',
   '- 幕外角色也会附精简衣柜名录与当前穿着摘要；重新登场时若衣着改变，应与 bsSetCharacterPresence 同轮换装。衣柜名录始终精简；当前衣物才附稳定外观，内部换算分数只在孕期窗口发送并参与 pregFit。',

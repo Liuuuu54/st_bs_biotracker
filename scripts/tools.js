@@ -179,7 +179,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsRemoveWardrobeItem',
-    description: '从单一角色的长期衣柜永久删除衣物。itemId 可传整数 id 或准确名称。不能删除 id=0 的裸体特殊状态；删除正在穿的主衣装后，当前衣着会变为未记录。',
+    description: '从单一角色的长期衣柜永久删除衣物。剧情中衣物被撕毁报废、丢弃、送人、卖掉、遗失、被没收，或角色明确把穿不下的衣服收起不再穿时调用；只是脱下、换下、弄脏送洗不要删。itemId 可传整数 id 或准确名称。不能删除 id=0 的裸体特殊状态；删除正在穿的主衣装后，当前衣着会变为未记录，所以正在穿的衣物被毁时先用 bsChangeOutfit 换下再删。',
     input_schema: {
       type: 'object',
       properties: {

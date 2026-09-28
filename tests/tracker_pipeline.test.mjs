@@ -276,6 +276,9 @@ test('着衣系统总开关：开启时即使全员衣着未记录也送衣柜�
   const on = buildTrackerPayload(ctx, settings);
   assert.equal(on.wardrobe_enabled, true);
   assert.equal(on.available_tools.some((tool) => tool.name === 'bsChangeOutfit'), true);
+  // 删衣物要有明确触发情境，否则模型想不到用 bsRemoveWardrobeItem
+  assert.match(buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, on), /衣柜也要跟着剧情减少.*撕毁报废.*只是脱下、换下、弄脏送洗不删/);
+  assert.match(on.available_tools.find((tool) => tool.name === 'bsRemoveWardrobeItem').description, /送人、卖掉、遗失/);
   assert.equal('outfit' in on.existing_state['艾拉'].profile, true, '开启后未记录的角色也送，才能直接换装');
 
   settings.wardrobeSystemEnabled = false;
