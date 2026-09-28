@@ -39,6 +39,7 @@ import {
   WARDROBE_DIMENSIONS,
 } from './wardrobe_config.js';
 import {
+  DUE_DATE_DAYS,
   FIRST_STAGE_NATURAL_BIRTH_EXPERIENCE,
   LABOR_STAGES,
   LABOR_STAGE_BASE_HOURS,
@@ -48,6 +49,7 @@ import {
   MENSTRUAL_STAGES,
   PREGNANCY_STAGE_DAYS,
   PREGNANCY_STAGES,
+  TERM_START_DAYS,
 } from './stage_config.js';
 import {
   deriveFetusRace,
@@ -692,7 +694,7 @@ export function getFetalBulk(profile) {
     const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
     const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
     const eggs = Math.max(0, Math.floor(Number(fetus?.companionEggCount) || 0));
-    return sum + (ownAge / 280) * (weight + eggs * COMPANION_EGG_BULK);
+    return sum + (ownAge / DUE_DATE_DAYS) * (weight + eggs * COMPANION_EGG_BULK);
   }, 0);
 }
 
@@ -704,8 +706,8 @@ export function calculatePregWearPressure(profile) {
   const pregnant = profile?.pregnant || {};
   const effectiveDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
   if (effectiveDays <= 0) return 0;
-  const fullPregnancyDays = Object.values(PREGNANCY_STAGE_DAYS).reduce((sum, value) => sum + (Number(value) || 0), 0) || 280;
-  const progress = Math.min(1.25, effectiveDays / fullPregnancyDays);
+  // 以预产期为准，不用各阶段总长：临产期延到 42 周后总长是 294，会把孕程项整体压低
+  const progress = Math.min(1.25, effectiveDays / DUE_DATE_DAYS);
   const basePressure = 0.5;
   const progressPressure = Math.pow(progress, 1.35) * 5;
   const fetalPressure = getFetalBulk(profile) * 1.5;
@@ -1170,7 +1172,7 @@ function getConceptionWeight(stage, gender, weightRatio = 1.0) {
  * 所以下面这些天数不必再乘物种项。
  */
 const SUPERFETATION_STAGE = '孕早期';
-const SUPERFETATION_FULL_TERM_DAYS = 280;
+const SUPERFETATION_FULL_TERM_DAYS = DUE_DATE_DAYS;
 /** 孕早期长度，也就是可以再受精的原始视窗。从阶段表推导，别再写死一次 */
 const SUPERFETATION_RAW_WINDOW_DAYS = Number(PREGNANCY_STAGE_DAYS['孕早期']) || 84;
 /** 孕期受精的机率系数：正常受孕几乎是每天 80%，不压低的话异期会变成常态 */
@@ -3063,24 +3065,67 @@ function applyWeeklyNutrition(profile) {
   return changed;
 }
 
-function applyOverduePressure(profile, tick, female) {
+// 足月自然发动：宫压过上限一半先示警，下次推进仍未缓解就进入产兆前驱（applyPressureCrisis；66% 则当下发动）。
+// 参数用真实引擎逐日推进校准（人类单胎、剧情完全不碰宫压）：中位 39 周 6 天，九成落在 38 周 5 天～42 周 1 天，
+// 约 6% 拖到 42 周；双胎中位约 38 周 5 天、三胎约 38 周 2 天。发动体质抽到下限时约 43 周多也会发动。
+// 剧情推高宫压只会更早
+const TERM_READINESS_MEDIAN = 2.3;
+const TERM_READINESS_SPREAD = 0.5;
+// 临产期内每过 14 个有效日，累积速度多一倍；满 42 周后再乘 2
+const TERM_PRESSURE_RAMP_DAYS = 14;
+const POSTTERM_PRESSURE_MULTIPLIER = 2;
+
+function randomStandardNormal() {
+  let u = 0;
+  let v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+/**
+ * 这一胎的「发动体质」：每次妊娠抽一次，决定不靠剧情时大概几周发动。
+ * 绑在最早那胎的 embryoId 上，下一次妊娠换了胎儿自然重抽，不必在每个结束妊娠的地方清掉
+ */
+function getTermReadiness(pregnant) {
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  const anchorId = fetuses.map((fetus) => fetus?.embryoId).find((id) => id !== null && id !== undefined) ?? null;
+  const stored = pregnant?.termReadiness;
+  if (stored && typeof stored === 'object' && stored.embryoId === anchorId && Number.isFinite(Number(stored.value))) {
+    return Number(stored.value);
+  }
+  const value = clampNumber(TERM_READINESS_MEDIAN * Math.exp(TERM_READINESS_SPREAD * randomStandardNormal()), 0.5, 15, TERM_READINESS_MEDIAN);
+  pregnant.termReadiness = { embryoId: anchorId, value };
+  return value;
+}
+
+/**
+ * 37 周起宫压按肚子实际装的量自行累积（与衣着压力同一个胎量，不除承载耐受，
+ * 否则高耐受的龙娘要拖到 46 周），越接近、越超过预产期累积越快
+ */
+function applyTermPressure(profile, tick, female) {
   const base = profile?.base || {};
   const stage = String(base.stage || '');
-  if (stage !== '逾期' || tick.passedDays <= 0) return;
+  if ((stage !== '临产期' && stage !== '逾期') || tick.passedDays <= 0) return;
 
   const pregnant = profile?.pregnant || {};
-  const fetalEnergyDrain = clampNumber(pregnant.fetalEnergyDrain, 0, 9999, 0);
   const effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
-  const overdueDays = Math.max(0, effectivePregnantDays - 280);
-  const overdueMultiplier = 1 + Math.max(0, overdueDays / 28);
+  const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, 20, 1);
+  const elapsed = Math.min(tick.passedDays * gestationSpeed, Math.max(0, effectivePregnantDays - TERM_START_DAYS));
+  if (elapsed <= 0) return;
+  const midpointDays = effectivePregnantDays - elapsed / 2;
+  const ramp = 1 + Math.max(0, midpointDays - TERM_START_DAYS) / TERM_PRESSURE_RAMP_DAYS;
+  const postTerm = stage === '逾期' ? POSTTERM_PRESSURE_MULTIPLIER : 1;
+  const increment = getFetalBulk(profile) * getTermReadiness(pregnant) * ramp * postTerm * elapsed;
   const pressureCap = getUterinePressureCap(profile);
-  const nextPressure = clampNumber(base.uterinePressure + (fetalEnergyDrain * overdueMultiplier * tick.passedDays), 0, pressureCap, base.uterinePressure || 0);
-  base.uterinePressure = nextPressure;
+  base.uterinePressure = clampNumber((base.uterinePressure || 0) + increment, 0, pressureCap, base.uterinePressure || 0);
   profile.base = base;
-  profile.notify = {
-    ...(profile.notify || {}),
-    secondly: `${female}已逾期，宫缩压力持续增强`,
-  };
+  if (stage === '逾期') {
+    profile.notify = {
+      ...(profile.notify || {}),
+      secondly: `${female}已逾期，宫缩压力持续增强`,
+    };
+  }
 }
 
 function applyNaturalMetabolismRecovery(profile, tick) {
@@ -5869,7 +5914,7 @@ function applyTimeToCharacter(character, tick) {
     base.days = days;
     updateFetalPositions(profile, tick, next.name);
     if (isHere) {
-      applyOverduePressure(profile, tick, next.name);
+      applyTermPressure(profile, tick, next.name);
       applyHourlyPregnancyMetabolism(profile, tick);
     }
     const pressureCrisis = isHere ? applyPressureCrisis(profile, next.runtime || {}, next.name) : { changed: false, warned: false };

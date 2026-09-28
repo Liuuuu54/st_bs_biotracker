@@ -145,7 +145,8 @@ test('孕中孕藏到孕晚期才揭晓，比一般异期胎晚一整个孕中�
   assert.equal(nestedOf(chatState).revealed, undefined, '孕中期还不该揭晓');
   assert.equal(P(chatState).pregnant.fetuses.filter(isFetusKnownToCharacter).length, 1);
 
-  while (P(chatState).pregnant.effectivePregnantDays < 190) step(chatState);
+  while (P(chatState).base.stage === '孕中期') step(chatState);
+  assert.equal(P(chatState).base.stage, '孕晚期');
   assert.equal(nestedOf(chatState).revealed, true, '到孕晚期才揭晓');
   assert.equal(P(chatState).pregnant.fetuses.filter(isFetusKnownToCharacter).length, 2);
 });
