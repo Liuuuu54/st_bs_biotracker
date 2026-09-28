@@ -143,16 +143,17 @@
             effectivePregnantDays: 210,
             nextEmbryoId: 7,
             fetuses: [
-              // 胎生・代孕（卵来自艾拉），也是孕中孕的宿主；正亲和验证胎儿天赋
-              { embryoId: 1, fathers: '莱昂', fatherRace: '人类', provider: '艾拉', providerSources: ['艾拉'], race: '精灵x人类', embryoType: '胎生', gender: '女', weight: 1.1, tendencyAngle: 0, affinity: 60, amnionDurability: 90, talents: [{ skillId: 1, level: 2, exp: 40 }] },
+              // 由左至右、上下错开：卵生（宫顶）→ 胎生（子宫低位，内含孕中孕）→ 胎转卵生（宫顶）→ 卵胎生（子宫低位）→ 不定型（宫内自由）
               // 卵生・胎内回归（回到子宫里的鸟人）
-              { embryoId: 2, fathers: '翼', fatherRace: '鸟人', race: '人类x鸟人', embryoType: '卵生', gender: '男', weight: 0.9, tendencyAngle: 45, affinity: 20, amnionDurability: 85, tags: ['rebirth'], talents: [] },
-              // 卵胎生・异期复孕，带三颗伴生卵；孕龄落后一截
-              { embryoId: 3, fathers: '海德', fatherRace: '人鱼', race: '人类x人鱼', embryoType: '卵胎生', gender: '女', weight: 0.85, tendencyAngle: 90, affinity: 10, amnionDurability: 70, conceivedAtDays: 30, companionEggCount: 3, tags: ['superfetation'], revealed: true, talents: [] },
+              { embryoId: 2, descentStage: -3, fathers: '翼', fatherRace: '鸟人', race: '人类x鸟人', embryoType: '卵生', gender: '男', weight: 0.9, tendencyAngle: 45, affinity: 20, amnionDurability: 85, tags: ['rebirth'], talents: [] },
+              // 胎生・代孕（卵来自艾拉），也是孕中孕的宿主；正亲和验证胎儿天赋
+              { embryoId: 1, descentStage: -1, fathers: '莱昂', fatherRace: '人类', provider: '艾拉', providerSources: ['艾拉'], race: '精灵x人类', embryoType: '胎生', gender: '女', weight: 1.1, tendencyAngle: 0, affinity: 60, amnionDurability: 90, talents: [{ skillId: 1, level: 2, exp: 40 }] },
               // 胎转卵生・嵌合（两位父源融合）；负亲和验证苦手方向
-              { embryoId: 4, fathers: '莱昂 × 无名旅人', fatherRace: '人类x西方龙', chimera: { sourceCount: 2, fatherSources: ['莱昂', '无名旅人'], maternalSources: ['琪拉'], genderSources: ['男', '女'] }, race: '人类x西方龙', embryoType: '胎转卵生', gender: '双', weight: 1.0, tendencyAngle: 180, affinity: -35, amnionDurability: 45, talents: [{ skillId: 2, level: -1, exp: -30 }] },
+              { embryoId: 4, descentStage: -3, fathers: '莱昂 × 无名旅人', fatherRace: '人类x西方龙', chimera: { sourceCount: 2, fatherSources: ['莱昂', '无名旅人'], maternalSources: ['琪拉'], genderSources: ['男', '女'] }, race: '人类x西方龙', embryoType: '胎转卵生', gender: '双', weight: 1.0, tendencyAngle: 180, affinity: -35, amnionDurability: 45, talents: [{ skillId: 2, level: -1, exp: -30 }] },
+              // 卵胎生・异期复孕，带三颗伴生卵；孕龄落后一截
+              { embryoId: 3, descentStage: -1, fathers: '海德', fatherRace: '人鱼', race: '人类x人鱼', embryoType: '卵胎生', gender: '女', weight: 0.85, tendencyAngle: 90, affinity: 10, amnionDurability: 70, conceivedAtDays: 30, companionEggCount: 3, tags: ['superfetation'], revealed: true, talents: [] },
               // 不定型・自交＋雌核发生（琪拉自己当父方）
-              { embryoId: 5, fathers: '琪拉', fatherRace: '人类x史萊姆', race: '人类x史萊姆', embryoType: '不定型', gender: '女', weight: 0.8, tendencyAngle: 270, affinity: 5, amnionDurability: 100, tags: ['gynogenesis'], talents: [] },
+              { embryoId: 5, descentStage: -2, fathers: '琪拉', fatherRace: '人类x史萊姆', race: '人类x史萊姆', embryoType: '不定型', gender: '女', weight: 0.8, tendencyAngle: 270, affinity: 5, amnionDurability: 100, tags: ['gynogenesis'], talents: [] },
               // 孕中孕：长在 1 号体内，母亲是 1 号、父亲是精液来源
               { embryoId: 6, fathers: '莱昂', fatherRace: '人类', race: '精灵x人类', embryoType: '胎生', gender: '男', weight: 0.6, tendencyAngle: 0, affinity: 0, nestedInEmbryoId: 1, conceivedAtDays: 60, tags: ['superfetation', 'nested'], revealed: true, talents: [] },
             ],
