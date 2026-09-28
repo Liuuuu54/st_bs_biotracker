@@ -1,7 +1,7 @@
 // 子宫像素图的绘制层：把 computeUterusLayout 的结果画到 96×120 的画布上。
 // 画法沿用 Sol 6 试作。只画、不算版面；动画以每 180 毫秒一帧推进，
 // 只在画面可见时跑，系统设定减少动态效果或关闭动画时只画静态图。
-import { buildFetusGrid, hasFluidSac, membraneLevel } from './fetus_sprite.js';
+import { buildFetusGrid, hasFluidSac, isFetalForm, membraneLevel } from './fetus_sprite.js';
 import { quantizeAngle, UTERUS_CANVAS, wombRadius } from './uterus_layout.js';
 
 const BASE_PALETTE = Object.freeze({
@@ -861,7 +861,10 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       }
       const y = fetus.y + breaths.get(fetus.embryoId);
       drawSprite(fetus.x, y, fetus.size, fetus.sprite, fetus.angle, fetus.squeeze, (sac && drawnSacs.get(sac)) || null, sac ? sac.durability : fetus.amnion);
-      fetus.inner.forEach((inner, k) => {
+      // 孕中孕：内胎在宿主身体里。宿主画成胎儿或半透明的史萊姆时看得到；
+      // 宿主画成蛋（卵生、卵胎生孕早、胎转卵生孕晚）时一样被壳挡住，不画
+      const hostShowsBody = isFetalForm(fetus.sprite.type, fetus.sprite.stage) || fetus.sprite.type === '不定型';
+      if (hostShowsBody) fetus.inner.forEach((inner, k) => {
         // 孕中孕：宿主体内的小水泡
         const ix = fetus.x + k * 2;
         const r = inner.size * 0.9 + 1;
