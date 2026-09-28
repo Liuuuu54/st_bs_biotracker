@@ -545,6 +545,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     ctx.restore();
     drawFrontWall();
     drawMenstrualFlow(tick);
+    drawSemenLeak(tick);
     drawObstruction(tick);
     drawCue(tick);
     // 刻度与超出显示数
@@ -726,6 +727,30 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       pen.px(x, y, out ? 2 : 1, out ? 2 : 3, P.blood);
       if (out) pen.px(x + 1, y + 1, 1, 1, P.wallLight);
     }
+  }
+
+  // 精液灌满时从宫口缓慢渗出：一轮 4.2 秒，比经血（1.6 秒）与破水演出（2.8 秒）都慢；
+  // 溢出越多同时渗出的滴数越多（1～3）。只是画面，精液量不会因此减少
+  const SEMEN_LEAK_MS = 4200;
+
+  function drawSemenLeak(tick) {
+    if (!layout.semenFull) return;
+    const drops = 1 + Math.round(layout.semenOverflow * 2);
+    const { womb, tract } = layout;
+    const start = womb.bottom + 1;
+    const end = Math.min(119, tract.canalBottom + 5);
+    for (let i = 0; i < drops; i += 1) {
+      const travel = ((wantsMotion() ? tick : 0) / SEMEN_LEAK_MS + i / drops) % 1;
+      // 先慢后快：黏稠的液体在宫口积一下才往下掉
+      const eased = travel * travel;
+      const y = Math.round(start + (end - start) * eased);
+      const x = womb.cx + (i % 2 === 0 ? 0 : (i % 4 === 1 ? 1 : -1));
+      const out = y >= tract.canalBottom;
+      pen.px(x, y, 1, 2, P.fluidLight);
+      if (!out) pen.px(x, y - 1, 1, 1, P.fluid);
+    }
+    // 宫口挂着一小滴
+    pen.px(womb.cx, tract.canalBottom, 1, 1, P.fluidLight);
   }
 
   function breathOf(fetus, tick) {

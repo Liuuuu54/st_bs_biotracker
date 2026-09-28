@@ -176,3 +176,49 @@ test('宫压危机带出警告：孕早中期流产、孕晚期早产、临产�
   assert.equal(at('临产期', 270, { immune: { miscarriage: true } }).imminent, true, '66% 的自然发动不受免疫阻挡');
   assert.equal(computeUterusLayout(profile('卵泡期', [], { days: 0, base: { uterinePressure: 999 } })).pressureRisk, null);
 });
+
+test('精液容量随阶段不同：内膜越厚越小，产后子宫从孕 20 周大缩回原大', () => {
+  const capacity = (stage, stageProgress) => computeUterusLayout(
+    profile(stage, [], { days: 0, base: { sperms: [{ value: 1 }] } }),
+    { stageProgress, pressureCap: 50 },
+  ).semenCapacity;
+  assert.ok(capacity('卵泡期', 0) > capacity('黄体期', 1), '内膜最薄的卵泡期初期装得比黄体期末多');
+  assert.ok(capacity('假孕期', 1) < capacity('卵泡期', 0), '假孕的子宫不变大，内膜厚反而装得少');
+  assert.ok(capacity('产后恢复', 0) > capacity('产后恢复', 0.5), '产后初期子宫大，装得多');
+  assert.ok(capacity('产后恢复', 0.5) > capacity('产后恢复', 1));
+
+  const early = computeUterusLayout(profile('产后恢复', [], { days: 0 }), { stageProgress: 0, pressureCap: 50 });
+  const late = computeUterusLayout(profile('产后恢复', [], { days: 0 }), { stageProgress: 1, pressureCap: 50 });
+  const follicular = computeUterusLayout(profile('卵泡期', [], { days: 0 }), { stageProgress: 0, pressureCap: 50 });
+  assert.ok(early.womb.rx > late.womb.rx, '产后子宫随恢复缩小');
+  assert.equal(late.womb.rx, follicular.womb.rx, '恢复完回到原大');
+});
+
+test('精液达到容量才算灌满：子宫微胀 1 像素、液面到顶；没满时维持原样', () => {
+  const at = (value) => computeUterusLayout(
+    profile('卵泡期', [], { days: 0, base: { sperms: [{ male: '甲', value }] } }),
+    { stageProgress: 0, pressureCap: 50 },
+  );
+  const empty = at(0);
+  const capacity = at(1).semenCapacity;
+  const below = at(capacity - 1);
+  const full = at(capacity);
+  const flooding = at(capacity * 3);
+
+  assert.equal(below.semenFull, false);
+  assert.equal(below.womb.rx, empty.womb.rx);
+  assert.equal(full.semenFull, true);
+  assert.equal(full.womb.rx, empty.womb.rx + 1, '灌满时微胀');
+  assert.equal(full.womb.ry, empty.womb.ry + 1);
+  assert.equal(full.fluidHeight, (full.womb.ry - full.wallInset) * 2, '液面到宫腔顶');
+  assert.equal(full.semenOverflow, 0);
+  assert.equal(flooding.semenOverflow, 1, '溢出量封顶为 1，决定渗出的滴数');
+});
+
+test('怀孕时宫腔大，一般的量灌不满', () => {
+  const layout = computeUterusLayout(
+    profile('孕中期', [fetus(1)], { days: 150, base: { sperms: [{ male: '甲', value: 300 }] } }),
+    { pressureCap: 100 },
+  );
+  assert.equal(layout.semenFull, false);
+});

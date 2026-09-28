@@ -24,6 +24,22 @@ export function wombRadius(womb, y, pad = 0, shift = 0) {
   return Math.max(0, Math.round((womb.rx + pad) * Math.sqrt(1 - n * n) * (n > 0 ? 1 - 0.43 * n : 1)));
 }
 
+/** 产后刚生完的子宫约等于孕 20 周的大小 */
+const POSTPARTUM_START_SIZE_DAYS = 140;
+/** 精液灌满时子宫微胀的像素 */
+const SEMEN_SWELL_PX = 1;
+
+/** 精液在宫腔底部的液面高度（像素）：100 单位在空子宫约 10 像素，子宫越宽摊得越薄 */
+function getSemenFluidHeight(amount, rx) {
+  return 10 * (Math.max(0, amount) / 100) ** 0.7 * (11 / rx) ** 0.7;
+}
+
+/** 当下的精液容量：液面刚好到宫腔顶（高度 = 内腔上下径）所需的量，是 getSemenFluidHeight 的反函数 */
+export function getSemenCapacity(womb, wallInset) {
+  const cavityHeight = Math.max(1, (womb.ry - wallInset) * 2);
+  return Math.round(100 * (cavityHeight / (10 * (11 / womb.rx) ** 0.7)) ** (1 / 0.7));
+}
+
 /** 孕程长大曲线：孕早期几乎不变，之后加速 */
 function getGrowth(days) {
   return clamp(days / FULL_TERM_DAYS, 0, 1) ** 1.7;
@@ -123,21 +139,6 @@ export function computeUterusLayout(profile, options = {}) {
   }
   const drawn = occupants.filter((fetus) => chosen.has(fetus));
 
-  const growth = getGrowth(days);
-  const extra = Math.max(0, drawn.length - 1) * 1.1;
-  const womb = {
-    cx: 48,
-    cy: Math.round(53 + growth * 2),
-    rx: Math.round(11 + growth * 26 + extra),
-    ry: Math.round(12 + growth * 32 + extra * 0.7),
-  };
-  womb.top = womb.cy - womb.ry;
-  womb.bottom = womb.cy + womb.ry;
-
-  const neckLength = getCervicalLength(days);
-  const canalTop = womb.bottom + Math.max(0, neckLength - 5);
-  const tract = { neckTop: womb.bottom - 1, neckLength, canalTop, canalBottom: canalTop + 22 };
-
   const pressureCap = Math.max(1, finite(options.pressureCap, 50));
   const pressureRatio = clamp(finite(base.uterinePressure) / pressureCap, 0, 1);
   const pressureLevel = getPressureLevel(pressureRatio);
@@ -147,15 +148,44 @@ export function computeUterusLayout(profile, options = {}) {
     ? Math.min(9, getEmptyLining(emptyStage, emptyProgress) + pressureLevel)
     : 7 + pressureLevel;
 
+  // 产后子宫刚生完约孕 20 周大，随恢复进度缩回原大（子宫复旧）；假孕的子宫本身不会变大，只是内膜较厚
+  const sizeDays = emptyStage === '产后恢复' ? POSTPARTUM_START_SIZE_DAYS * (1 - emptyProgress) ** 1.5 : days;
+  const growth = getGrowth(sizeDays);
+  const extra = Math.max(0, drawn.length - 1) * 1.1;
+  const womb = {
+    cx: 48,
+    cy: Math.round(53 + growth * 2),
+    rx: Math.round(11 + growth * 26 + extra),
+    ry: Math.round(12 + growth * 32 + extra * 0.7),
+  };
+
+  // 精液：100 单位填满空子宫的底部；子宫越大摊得越薄，怀孕时几乎看不到是预期行为。
+  // 容量＝刚好把宫腔填到顶的量，随子宫大小、内膜厚度与宫压而变，所以每个阶段都不同；
+  // 超过容量时子宫微胀 1 像素并从宫口缓慢渗出（只是画面，精液量不减）
+  const totalSperm = (Array.isArray(base.sperms) ? base.sperms : []).reduce((sum, item) => sum + Math.max(0, finite(item?.value)), 0);
+  const semenCapacity = getSemenCapacity(womb, wallInset);
+  const semenFull = totalSperm > 0 && totalSperm >= semenCapacity;
+  const semenOverflow = semenFull ? clamp((totalSperm - semenCapacity) / semenCapacity, 0, 1) : 0;
+  if (semenFull) {
+    womb.rx += SEMEN_SWELL_PX;
+    womb.ry += SEMEN_SWELL_PX;
+  }
+  womb.top = womb.cy - womb.ry;
+  womb.bottom = womb.cy + womb.ry;
+
+  const neckLength = getCervicalLength(days);
+  const canalTop = womb.bottom + Math.max(0, neckLength - 5);
+  const tract = { neckTop: womb.bottom - 1, neckLength, canalTop, canalBottom: canalTop + 22 };
+
   const libidoCap = Math.max(1, finite(options.libidoCap, 100));
   const libidoHeat = clamp((finite(base.libido) / libidoCap - 0.27) / 0.73, 0, 1);
 
-  // 精液：100 单位填满空子宫的底部；子宫越大摊得越薄，怀孕时几乎看不到是预期行为
-  const totalSperm = (Array.isArray(base.sperms) ? base.sperms : []).reduce((sum, item) => sum + Math.max(0, finite(item?.value)), 0);
   const innerRy = womb.ry - wallInset;
-  const fluidHeight = totalSperm > 0
-    ? Math.min(innerRy * 2, Math.max(1, Math.round(10 * (totalSperm / 100) ** 0.7 * (11 / womb.rx) ** 0.7)))
-    : 0;
+  const fluidHeight = totalSperm <= 0
+    ? 0
+    : semenFull
+      ? innerRy * 2
+      : Math.min(innerRy * 2, Math.max(1, Math.round(getSemenFluidHeight(totalSperm, womb.rx))));
 
   const obstruction = gestating ? getLaborObstruction(profile) : null;
   const blocked = new Set(obstruction?.embryoIds || []);
@@ -288,6 +318,9 @@ export function computeUterusLayout(profile, options = {}) {
     emptyProgress,
     libidoHeat,
     fluidHeight,
+    semenCapacity,
+    semenFull,
+    semenOverflow,
     lateBulge: days >= 189,
     fetuses: items,
     sacs,
