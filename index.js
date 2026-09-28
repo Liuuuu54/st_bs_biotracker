@@ -775,7 +775,8 @@ function writeRegistrySkillSetup(ctx) {
     renderSkillCatalogPage(ctx);
     updateMainFlowPrompt(ctx);
     const skipped = Array.isArray(report.skipped) ? report.skipped : [];
-    const summary = `已写入 ${character.name}：${character.profile.skills.length} 项技能、${character.profile.talents.length} 项天赋。`;
+    const fetusNote = report.fetusCount > 0 ? `，${report.fetusCount} 个胎儿的天赋` : '';
+    const summary = `已写入 ${character.name}：${character.profile.skills.length} 项技能、${character.profile.talents.length} 项天赋${fetusNote}。`;
     // 图鉴里找不到的条目会被跳过而不是整份作废，但要让使用者知道少了什么
     if (skipped.length > 0) {
       setRegisterSkillStatus(`${summary}\n已跳过 ${skipped.length} 项图鉴中找不到的引用：${skipped.join('、')}。请在 skillDefinitions 补上定义后重新写入。`, true);

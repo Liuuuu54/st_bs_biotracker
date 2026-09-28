@@ -63,7 +63,7 @@ import {
   normalizeWardrobeItem,
   sanitizeWearState,
 } from './wardrobe_config.js';
-import { BACK_SIDES, calculateDerivedInheritanceProgress } from './tools.js';
+import { BACK_SIDES, calculateDerivedInheritanceProgress, isFetusKnownToCharacter } from './tools.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
 const DEBUG_LAST_REGISTRY_RESULT_KEY = '__bs_biotracker_debug_last_registry_result__';
@@ -1691,6 +1691,7 @@ export function buildRegistrySkillSystemPrompt(options = {}) {
   const skillBaselinePrompt = String(options.skillBaselinePrompt || '').trim();
   const inheritedTalentsLocked = Boolean(options.inheritedTalentsLocked);
   const emptyCatalog = Boolean(options.emptyCatalog);
+  const hasFetuses = Boolean(options.hasFetuses);
   return [
     '你是 AIRP 角色初始技能与天赋配置器。只处理 payload.target_character。',
     '根据角色卡、世界书、最近对话、已注册角色状态及用户提示，生成可供用户确认的初始技能／天赋 JSON。',
@@ -1711,22 +1712,37 @@ export function buildRegistrySkillSystemPrompt(options = {}) {
     '技能与天赋共用经验曲线 requiredExp(level)=100*level*level；Lv0 形成擅长／苦手 Lv1 均需 100 EXP。',
     inheritedTalentsLocked ? 'payload.existing_skill_setup.talents 是孩子出生后保留的既有天赋，属于固定继承内容。必须参考它们配置技能，不得在 initialTalents 中输出同一技能的不同等级、方向或经验。' : '',
     '没有充分依据的项目不要添加；不得把性格、身体状态或一次性事件滥列为技能。',
+    hasFetuses
+      ? '【胎儿天赋】payload.target_fetuses 是这名角色腹中目前可见的胎儿（fetusIndex 从 0 起算）。可在 fetusTalents 为胎儿配置先天天赋：'
+        + '依父母双方种族与血统、父方与母方的技能／天赋、胎儿对母体的亲和（正亲和较常长成擅长，负亲和较常长成苦手）与剧情判断。'
+        + '胎儿还没出生，天赋宜浅：通常 level 在 -2 到 2 之间，除非设定明确，否则不要超过 ±3；不是每一胎都需要天赋。'
+        + '规则与 initialTalents 相同：skill 必须能在图鉴或本次 skillDefinitions 中找到。某胎若已有 talents，你输出的清单会整份取代它，要保留的请照抄；不想改动的胎儿就不要列出。'
+      : '',
     skillPrompt ? '严格参考 payload.initial_skill_prompt 的额外要求。' : '用户没有提供额外要求，请仅依现有角色资料谨慎判断。',
-    '输出前请逐条自检：initialSkills 与 initialTalents 里的每一个 skill，都必须能在 payload.skill_catalog 或本次 skillDefinitions 中找到完全相同的名称。'
+    `输出前请逐条自检：initialSkills、initialTalents${hasFetuses ? '、fetusTalents' : ''} 里的每一个 skill，都必须能在 payload.skill_catalog 或本次 skillDefinitions 中找到完全相同的名称。`
       + '对不上的条目会被系统丢弃，请在输出前补上定义或删掉该条目。',
     '只输出 JSON，不要输出解释或 Markdown。结构必须是：',
     '{',
     '  "skillDefinitions": [{"name":"string","description":"string"}],',
     '  "initialSkills": [{"skill":"技能精确名称或ID","level":1,"exp":0}],',
-    '  "initialTalents": [{"skill":"技能精确名称或ID","level":0,"exp":0}]',
+    hasFetuses
+      ? '  "initialTalents": [{"skill":"技能精确名称或ID","level":0,"exp":0}],'
+      : '  "initialTalents": [{"skill":"技能精确名称或ID","level":0,"exp":0}]',
+    hasFetuses ? '  "fetusTalents": [{"fetusIndex":0,"talents":[{"skill":"技能精确名称或ID","level":1,"exp":0}]}]' : '',
     '}',
     '没有项目的数组也必须输出为空数组。',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
+}
+
+/** 角色腹中目前可见的胎儿：已着床、角色自己知道的（未揭晓的异期胎、孕中孕内胎不算）。fetusIndex 依这个顺序 */
+function getVisibleRegistryFetuses(character) {
+  const fetuses = Array.isArray(character?.profile?.pregnant?.fetuses) ? character.profile.pregnant.fetuses : [];
+  return fetuses.filter((fetus) => isFetusKnownToCharacter(fetus));
 }
 
 function sanitizeRegistrySkillInferenceResult(result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('技能／天赋生成结果必须是 JSON 对象');
-  const fields = ['skillDefinitions', 'initialSkills', 'initialTalents'];
+  const fields = ['skillDefinitions', 'initialSkills', 'initialTalents', 'fetusTalents'];
   for (const field of fields) {
     if (result[field] !== undefined && !Array.isArray(result[field])) throw new Error(`${field} 必须是数组`);
   }
@@ -1734,6 +1750,7 @@ function sanitizeRegistrySkillInferenceResult(result) {
     skillDefinitions: Array.isArray(result.skillDefinitions) ? result.skillDefinitions : [],
     initialSkills: Array.isArray(result.initialSkills) ? result.initialSkills : [],
     initialTalents: Array.isArray(result.initialTalents) ? result.initialTalents : [],
+    fetusTalents: Array.isArray(result.fetusTalents) ? result.fetusTalents : [],
   };
 }
 
@@ -1761,6 +1778,19 @@ export async function runRegistrySkillInference(ctx, options = {}) {
   };
   const inheritedTalentsLocked = Boolean(chatState.characters[targetName]?.profile?.childSource);
   payload.inherited_talents_locked = inheritedTalentsLocked;
+  const visibleFetuses = getVisibleRegistryFetuses(chatState.characters[targetName]);
+  if (visibleFetuses.length > 0) {
+    payload.target_fetuses = visibleFetuses.map((fetus, fetusIndex) => ({
+      fetusIndex,
+      gender: fetus.gender || null,
+      race: fetus.race || null,
+      fathers: fetus.fathers || null,
+      fatherRace: fetus.fatherRace || null,
+      embryoType: fetus.embryoType || null,
+      affinity: Number.isFinite(Number(fetus.affinity)) ? Number(fetus.affinity) : 0,
+      talents: normalizeTalentList(fetus.talents),
+    }));
+  }
   const systemPrompt = options.skillSystemPrompt
     || buildRegistrySkillSystemPrompt({
       skillPrompt,
@@ -1768,6 +1798,7 @@ export async function runRegistrySkillInference(ctx, options = {}) {
       inheritedTalentsLocked,
       // 图鉴为空＝本次是这个聊天的第一个角色，所有引用都只能来自本次 skillDefinitions
       emptyCatalog: payload.skill_catalog.length === 0,
+      hasFetuses: visibleFetuses.length > 0,
     });
   const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'skill' });
   return sanitizeRegistrySkillInferenceResult(result);
@@ -1835,7 +1866,9 @@ export function applyRegistrySkillSetup(chatState, targetName, result, report = 
   const definitions = result?.skillDefinitions ?? [];
   const initialSkills = result?.initialSkills ?? [];
   const initialTalents = result?.initialTalents ?? [];
+  const fetusTalents = result?.fetusTalents ?? [];
   if (!Array.isArray(definitions)) throw new Error('注册结果的 skillDefinitions 必须是数组');
+  if (!Array.isArray(fetusTalents)) throw new Error('注册结果的 fetusTalents 必须是数组');
   if (!Array.isArray(initialSkills)) throw new Error('注册结果的 initialSkills 必须是数组');
   if (!Array.isArray(initialTalents)) throw new Error('注册结果的 initialTalents 必须是数组');
   if (definitions.length > 20) throw new Error('单次注册最多可新增 20 项技能定义');
@@ -1876,6 +1909,29 @@ export function applyRegistrySkillSetup(chatState, targetName, result, report = 
       ...inheritedTalents,
     ]);
     workingState.characters[name] = character;
+  }
+
+  // 胎儿天赋：只改有列出的胎儿，整份取代；解析不到的技能与对不上的胎儿编号一并回报
+  if (fetusTalents.length > 0) {
+    const visibleFetuses = getVisibleRegistryFetuses(character);
+    const skipped = report && typeof report === 'object' && Array.isArray(report.skipped) ? report.skipped : [];
+    let fetusCount = 0;
+    for (const entry of fetusTalents) {
+      const index = Number(entry?.fetusIndex);
+      const fetus = Number.isInteger(index) ? visibleFetuses[index] : null;
+      if (!fetus) {
+        skipped.push(`胎儿#${entry?.fetusIndex ?? '(空白)'}`);
+        continue;
+      }
+      const normalized = normalizeInitialSkillTalentConfig({ talents: entry?.talents }, workingState.skillCatalog);
+      skipped.push(...normalized.skipped);
+      fetus.talents = normalized.talents;
+      fetusCount += 1;
+    }
+    if (report && typeof report === 'object') {
+      report.skipped = skipped;
+      report.fetusCount = fetusCount;
+    }
   }
 
   chatState.skillCatalog = workingState.skillCatalog;

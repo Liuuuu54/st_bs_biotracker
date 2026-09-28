@@ -60,6 +60,55 @@ test('skipped references are reported to the caller while the rest is written', 
   assert.deepEqual(report.skipped, ['幽灵天赋']);
 });
 
+test('fetus talents map to visible fetuses, replace the listed ones, and report what was skipped', () => {
+  const chatState = state.createEmptyChatState();
+  chatState.skillCatalog = CATALOG.map((item) => ({ ...item }));
+  chatState.nextSkillId = 3;
+  const fetus = (embryoId, over = {}) => ({ embryoId, gender: '女', race: '人类', affinity: 20, talents: [], ...over });
+  chatState.characters['艾拉'] = {
+    name: '艾拉',
+    initialized: true,
+    profile: {
+      base: {},
+      pregnant: {
+        fetuses: [
+          fetus(1, { talents: [{ skillId: 1, level: -1, exp: 0 }] }),
+          // 未揭晓的异期胎：角色看不到，不占 fetusIndex
+          fetus(2, { conceivedAtDays: 60, tags: ['superfetation'] }),
+          fetus(3),
+          fetus(4, { talents: [{ skillId: 2, level: 1, exp: 0 }] }),
+        ],
+      },
+    },
+  };
+
+  const report = {};
+  applyRegistrySkillSetup(chatState, '艾拉', {
+    skillDefinitions: [{ name: '胎中新技', description: '只在本次定义的技能。' }],
+    initialSkills: [],
+    initialTalents: [],
+    fetusTalents: [
+      { fetusIndex: 0, talents: [{ skill: '剑术', level: 2, exp: 0 }] },
+      { fetusIndex: 1, talents: [{ skill: '胎中新技', level: 1, exp: 0 }, { skill: '幽灵天赋', level: 1, exp: 0 }] },
+      { fetusIndex: 9, talents: [{ skill: '剑术', level: 1, exp: 0 }] },
+    ],
+  }, report);
+
+  const fetuses = chatState.characters['艾拉'].profile.pregnant.fetuses;
+  assert.deepEqual(fetuses[0].talents.map((t) => [t.skillId, t.level]), [[1, 2]], '第 0 胎整份取代');
+  assert.deepEqual(fetuses[1].talents, [], '看不到的异期胎不动');
+  const newId = chatState.skillCatalog.find((item) => item.name === '胎中新技').id;
+  assert.deepEqual(fetuses[2].talents.map((t) => t.skillId), [newId], '同批定义的技能也解析得到');
+  assert.deepEqual(fetuses[3].talents.map((t) => [t.skillId, t.level]), [[2, 1]], '没列出的胎儿不动');
+  assert.equal(report.fetusCount, 2);
+  assert.deepEqual(report.skipped, ['幽灵天赋', '胎儿#9']);
+});
+
+test('the skill prompt asks for fetus talents only when the character carries fetuses', () => {
+  assert.match(buildRegistrySkillSystemPrompt({ hasFetuses: true }), /fetusTalents/);
+  assert.doesNotMatch(buildRegistrySkillSystemPrompt({}), /fetusTalents/);
+});
+
 test('the registry prompt pins name to the requested target character', () => {
   const prompt = buildRegistrySystemPrompt({ payload: { target_character: '露比' } });
   assert.match(prompt, /payload\.target_character/);
