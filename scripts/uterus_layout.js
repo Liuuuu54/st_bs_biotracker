@@ -2,14 +2,17 @@
 // 纯函式，不碰 DOM、不写回状态；状态改变时算一次，绘制层每帧只照着画。
 // 几何沿用 Sol 6 试作：子宫在画框中央随孕程从小长到大，胎儿按左右顺序排格、
 // 按下降位置分高度，再做有轮数上限的推挤。
-import { LABOR_STAGES } from './stage_config.js';
+import { LABOR_STAGES, PREGNANCY_STAGE_DAYS } from './stage_config.js';
 import { describeFetalPosition, getLaborObstruction, getPregnancyPressureRisk, isFetusKnownToCharacter } from './tools.js';
 
 export const UTERUS_CANVAS = Object.freeze({ width: 96, height: 120 });
 export const MAX_DRAWN_FETUSES = 5;
 
 const FULL_TERM_DAYS = 280;
-const SAC_VISIBLE_DAYS = 84;
+// 胚胎／中期／后期外形与羊膜囊可见，跟孕期曆的孕中期（14 周）、孕晚期（28 周）起点对齐
+const MID_TRIMESTER_DAYS = PREGNANCY_STAGE_DAYS.孕早期;
+const LATE_TRIMESTER_DAYS = PREGNANCY_STAGE_DAYS.孕早期 + PREGNANCY_STAGE_DAYS.孕中期;
+const SAC_VISIBLE_DAYS = MID_TRIMESTER_DAYS;
 const EMPTY_STAGES = Object.freeze(['月经期', '卵泡期', '排卵期', '黄体期', '产后恢复', '假孕期']);
 const GESTATION_STAGES = Object.freeze(['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '产兆前驱', '回归期', ...LABOR_STAGES]);
 
@@ -113,8 +116,8 @@ export function getFetusSpriteSpec(fetus, ownAge) {
 
 /** 胎儿图块阶段：以自身孕龄分孕早、孕中、孕晚 */
 export function getSpriteStage(ownAge) {
-  if (ownAge < 84) return 0;
-  if (ownAge < 189) return 1;
+  if (ownAge < MID_TRIMESTER_DAYS) return 0;
+  if (ownAge < LATE_TRIMESTER_DAYS) return 1;
   return 2;
 }
 
@@ -314,7 +317,7 @@ export function computeUterusLayout(profile, options = {}) {
   }
 
   // 胎囊：同卵共用一个，外框包住全部成员；孕龄够大才画
-  const sacScale = 0.7 + 0.3 * Math.min(days / 189, 1);
+  const sacScale = 0.7 + 0.3 * Math.min(days / LATE_TRIMESTER_DAYS, 1);
   const sacs = [];
   for (const key of [...new Set(items.map((item) => item.sacKey))]) {
     const members = items.filter((item) => item.sacKey === key);
@@ -357,7 +360,7 @@ export function computeUterusLayout(profile, options = {}) {
     semenFull,
     semenSoaked,
     semenOverflow,
-    lateBulge: days >= 189,
+    lateBulge: days >= LATE_TRIMESTER_DAYS,
     fetuses: items,
     sacs,
     hiddenCount: Math.max(0, occupants.length - drawn.length),
