@@ -10,7 +10,7 @@ import {
   resolveWardrobeItemRef,
   sanitizeWearState,
 } from '../scripts/wardrobe_config.js';
-import { applyToolCall, TOOL_DEFINITIONS } from '../scripts/tools.js';
+import { applyToolCall, calculatePregWearPressure, TOOL_DEFINITIONS } from '../scripts/tools.js';
 import { createEmptyChatState, normalizeCharacterPsychologyState } from '../scripts/state.js';
 import { applyRegistryResult, applyStartingOutfit, applyWardrobePrepResult } from '../scripts/registry.js';
 
@@ -393,6 +393,19 @@ function makePregnancyState(stage, days) {
     },
   };
 }
+
+test('pregnancy wear pressure: single term 7, twins 8.5, only triplets at term reach the cap', () => {
+  // fetalEnergyDrain 由游戏逻辑算：每胎 孕龄 × 胎重 / 280（母体承载 1）
+  const at = (days, weights) => calculatePregWearPressure({
+    pregnant: { effectivePregnantDays: days, fetalEnergyDrain: weights.reduce((sum, weight) => sum + (days * weight) / 280, 0) },
+  });
+  assert.equal(at(0, [1]), 0);
+  assert.equal(Number(at(280, [1]).toFixed(2)), 7);
+  assert.equal(Number(at(280, [1, 1]).toFixed(2)), 8.5);
+  assert.equal(at(280, [1, 1, 1]), 10);
+  assert.ok(at(294, [1.3, 1.3]) < 10, '重双胎逾期两周接近但不顶满');
+  assert.ok(at(140, [1]) < at(280, [1]));
+});
 
 test('postpartum pregFit pressure declines linearly with recovery progress', () => {
   const atDay = (days) => {

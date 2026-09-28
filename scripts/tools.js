@@ -676,7 +676,13 @@ function getOutfitDimensionTotals(profile) {
   return totals;
 }
 
-function calculatePregWearPressure(profile) {
+/**
+ * 孕期衣着压力。fetalEnergyDrain 本身已随孕龄与胎重成长（足月标准胎 = 1），
+ * 孕程项只补「身形随孕周改变」的部分，两项按以下锚点校准：
+ * 足月单胎 1.0 = 7、双胎 1.0 = 8.5、三胎 1.0 才碰到上限 10。
+ * 旧式的孕程项 ×6 加上胎负担项，单胎足月就有 7.85、重双胎逾期直接顶满。
+ */
+export function calculatePregWearPressure(profile) {
   const pregnant = profile?.pregnant || {};
   const effectiveDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
   if (effectiveDays <= 0) return 0;
@@ -684,8 +690,8 @@ function calculatePregWearPressure(profile) {
   const fullPregnancyDays = Object.values(PREGNANCY_STAGE_DAYS).reduce((sum, value) => sum + (Number(value) || 0), 0) || 280;
   const progress = Math.min(1.25, effectiveDays / fullPregnancyDays);
   const basePressure = 0.5;
-  const progressPressure = Math.pow(progress, 1.35) * 6;
-  const fetalPressure = Math.max(0, fetalEnergyDrain - 0.1) * 1.5;
+  const progressPressure = Math.pow(progress, 1.35) * 5;
+  const fetalPressure = fetalEnergyDrain * 1.5;
   return clampNumber(basePressure + progressPressure + fetalPressure, 0, 10, 0);
 }
 
