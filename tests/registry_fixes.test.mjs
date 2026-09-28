@@ -297,6 +297,15 @@ test('plain registration no longer asks for the outfit and keeps a well-formed J
   assert.match(prompt, /角色补充设定】/);
 });
 
+test('outfit prompts ask for fit levels that match the description instead of copyable sample values', () => {
+  const outfit = registry.buildStartingOutfitSystemPrompt({ outfitPrompt: '' });
+  assert.match(outfit, /"capacity":"tight\|fitted\|stretch\|loose"/);
+  assert.doesNotMatch(outfit, /"capacity":"fitted"/);
+  for (const prompt of [outfit, registry.buildWardrobePrepSystemPrompt({}, {}), registry.buildRegistryBundlePrompt({ includeOutfit: true })]) {
+    assert.match(prompt, /孕妇装、罩衫的 capacity 用 stretch 或 loose/);
+  }
+});
+
 test('outfit prompts treat categories as labels and keep the item count small', () => {
   const outfit = registry.buildStartingOutfitSystemPrompt({ outfitPrompt: '' });
   assert.match(outfit, /category 只是分类标签，不是清单/);

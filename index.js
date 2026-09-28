@@ -3536,18 +3536,24 @@ function closeWardrobeItemBubble() {
   document.querySelectorAll('.bs-bt-wardrobe-detail-bubble').forEach((node) => node.remove());
 }
 
+/** 气泡夹在小手机的萤幕内，不以整个浏览器视窗为界，否则会凸出机身外 */
 function positionWardrobeItemBubble(bubble, anchor) {
   if (!bubble || !anchor) return;
+  const screen = document.getElementById('bs-bt-screen');
+  const bounds = screen
+    ? screen.getBoundingClientRect()
+    : { top: 0, left: 0, right: window.innerWidth, bottom: window.innerHeight, width: window.innerWidth };
+  const gap = 8;
+  const margin = 8;
+  bubble.style.maxWidth = `${Math.max(120, Math.floor(bounds.width - margin * 2))}px`;
   const rect = anchor.getBoundingClientRect();
   const bubbleRect = bubble.getBoundingClientRect();
-  const gap = 8;
-  const margin = 10;
   let top = rect.bottom + gap;
   let left = rect.left + Math.min(24, Math.max(0, rect.width * 0.12));
-  if (top + bubbleRect.height > window.innerHeight - margin) top = rect.top - bubbleRect.height - gap;
-  if (top < margin) top = margin;
-  if (left + bubbleRect.width > window.innerWidth - margin) left = window.innerWidth - bubbleRect.width - margin;
-  if (left < margin) left = margin;
+  if (top + bubbleRect.height > bounds.bottom - margin) top = rect.top - bubbleRect.height - gap;
+  if (top < bounds.top + margin) top = bounds.top + margin;
+  if (left + bubbleRect.width > bounds.right - margin) left = bounds.right - bubbleRect.width - margin;
+  if (left < bounds.left + margin) left = bounds.left + margin;
   bubble.style.top = top + 'px';
   bubble.style.left = left + 'px';
 }
@@ -3571,7 +3577,8 @@ function showWardrobeItemBubble(ctx, characterName, itemId, anchor) {
   } else {
     bubble.innerHTML = '<div class="bs-bt-wardrobe-metrics">' + Object.entries(WARDROBE_DIMENSION_LABELS).map(([key, label]) => `<div class="bs-bt-wardrobe-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(WARDROBE_MAIN_LEVEL_LABELS[key]?.[item.fitProfile?.[key]] || '普通')}</strong></div>`).join('') + '</div>';
   }
-  document.body.appendChild(bubble);
+  // 挂在主题根节点底下才吃得到当前主题的配色与字体；挂在 body 会退回预设的绿色萤幕
+  (document.getElementById(PANEL_ID) || document.body).appendChild(bubble);
   positionWardrobeItemBubble(bubble, anchor);
 }
 function buildTrackCharacterViewModel(character) {

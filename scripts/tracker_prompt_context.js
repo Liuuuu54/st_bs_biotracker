@@ -205,6 +205,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- wardrobe.items 是长期衣柜；outfit 是当前穿着。衣柜无需预先准备。',
   '- item 使用整数 id、name、note 与 slot。id=0 是明确全裸；outfit.mainItemId=null 才是衣着未记录，不得把未知推断为裸体。note 只写颜色、材质、版型、长短、固定开口、图案与来源等稳定外观，不写角色感受、怀孕反应或衣物当下状态。',
   '- slot=main 是一次只能穿一套的完整基础衣着；上下装合为一件 main，parts 可列出组成部件。main.fitProfile 使用语意档位：masking=very_low/low/medium/high，support=none/normal/strong，capacity=tight/fitted/stretch/loose，convenience=inconvenient/normal/convenient。',
+  '- fitProfile 必须与衣物的 name、note 一致，逐项判断：宽松、宽大、孕妇装的 capacity 用 stretch 或 loose，修身、紧身、孕前旧衣用 fitted 或 tight；有托腹或承托设计的 support 用 strong。',
   '- slot=accessory 是可独立穿脱的内衣、外搭、鞋袜、头饰、饰品或支撑用品。category=underwear/outerwear/footwear/headwear/ornament/support/other；effects 最多两项，使用 masking/support/capacity/convenience 加 _up 或 _down。',
   '- masking 是掩盖身体曲线与孕肚变化，不等于露肤；support 是胸腹腰与重心承托；capacity 是容许体型变化；convenience 是行动、穿脱、如厕、哺乳或排解需求的方便程度。',
   '- 新衣可直接用 bsChangeOutfit 的 main/accessories 建立并穿上：scope=owned 收入长期衣柜，scope=temporary 仅保留到该衣物脱下。bsAddWardrobeItem 只收藏或更新长期衣物，引用正在穿的临时衣物时会把它转为长期衣物（id 与穿着不变）；bsRemoveWardrobeItem 永久删除。衣物可用整数 id 或准确名称引用。',

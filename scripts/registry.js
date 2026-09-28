@@ -425,6 +425,13 @@ export function buildBreedingInferenceSystemPrompt(settings, options = {}) {
   ].filter(Boolean).join('\n');
 }
 
+// 示例里的档位写成可选项而不是具体值：写具体值时模型常原样照抄，孕妇装也被存成 fitted
+const STARTING_OUTFIT_SAMPLE = '{"nude":false,"main":{"name":"string","note":"string","parts":[],"fitProfile":{"masking":"very_low|low|medium|high","support":"none|normal|strong","capacity":"tight|fitted|stretch|loose","convenience":"inconvenient|normal|convenient"}},"accessories":[{"name":"string","note":"string","category":"underwear|outerwear|footwear|headwear|ornament|support|other","effects":[]}],"wearState":"整齐"}';
+
+/** 衣物四维档位要跟文字描述对得上：新增衣物的三个流程与 tracker 共用 */
+export const WARDROBE_FIT_CONSISTENCY_RULE = 'fitProfile 必须与 name、note 的描述一致，逐项判断，不要照抄示例：写明宽松、宽大、孕妇装、罩衫的 capacity 用 stretch 或 loose，修身、紧身、孕前旧衣用 fitted 或 tight；有托腹或承托设计的 support 用 strong；长款、宽摆能遮住腹部的 masking 用 medium 以上。';
+
+
 export function buildWardrobePrepSystemPrompt(settings, options = {}) {
   const userPrompt = String(options.wardrobePrepPrompt || settings?.wardrobePrepPrompt || '').trim();
   return [
@@ -436,6 +443,7 @@ export function buildWardrobePrepSystemPrompt(settings, options = {}) {
     'JSON 顶层结构必须是：{"items": [...], "remove": [{"id": 1, "reason": "string"}]}。没有要新增或丢掉的就给空数组。',
     'main 是完整基础套装，可附 parts，并使用 fitProfile 档位。accessory 使用 category 与最多两项 effects。',
     'fitProfile：masking=very_low/low/medium/high，support=none/normal/strong，capacity=tight/fitted/stretch/loose，convenience=inconvenient/normal/convenient。',
+    WARDROBE_FIT_CONSISTENCY_RULE,
     'category：underwear/outerwear/footwear/headwear/ornament/support/other。effects：masking/support/capacity/convenience 加 _up 或 _down。',
     'note 只写稳定外观与来源，不写当前反应或怀孕变化。不要输出数值四维。',
     '[用户备装要求]',
@@ -443,7 +451,6 @@ export function buildWardrobePrepSystemPrompt(settings, options = {}) {
   ].join('\n');
 }
 
-const STARTING_OUTFIT_SAMPLE = '{"nude":false,"main":{"name":"string","note":"string","parts":[],"fitProfile":{"masking":"medium","support":"normal","capacity":"fitted","convenience":"normal"}},"accessories":[{"name":"string","note":"string","category":"other","effects":[]}],"wearState":"整齐"}';
 
 /** 起始着衣的规则：单独生成与一次注册共用 */
 function buildStartingOutfitRuleLines(outfitPrompt = '') {
@@ -451,6 +458,7 @@ function buildStartingOutfitRuleLines(outfitPrompt = '') {
     'currentOutfit 是这名角色此刻身上的起始着衣：一套完整基础衣着 main 加上正在穿戴的配件 accessories，不要顺便生成整个衣柜。',
     '依角色卡、世界观与当下处境设计穿着，包括它合不合身：例如已显怀的孕妇仍硬穿孕前的修身衣服时，fitProfile 如实填这件衣服原本的档位（capacity=tight 等），系统会依孕期自动算出它被撑紧的程度；穿着的当下状态写进 wearState。',
     'main 使用 name/note/parts/fitProfile。fitProfile 档位：masking=very_low/low/medium/high，support=none/normal/strong，capacity=tight/fitted/stretch/loose，convenience=inconvenient/normal/convenient。',
+    WARDROBE_FIT_CONSISTENCY_RULE,
     'accessories 的 category 为 underwear/outerwear/footwear/headwear/ornament/support/other，effects 最多两项，使用 masking/support/capacity/convenience 加 _up 或 _down（例如丝袜、孕妇托腹带、外套）。',
     'category 只是分类标签，不是清单：只列有特色、会被描写到，或会影响遮蔽／承托／容身／方便的配件，通常 0～3 件；普通内衣、袜子等没有特色的不必列。',
     'note 只写颜色、材质、版型、长短、图案与来源等稳定外观，不写角色感受、怀孕反应或衣物当下状态。',

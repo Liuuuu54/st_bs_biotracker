@@ -4610,6 +4610,11 @@
   font-size: 0.9em;
 }
 
+/* 气泡被限制在萤幕宽度内，四格一排会挤爆，改成两排 */
+#bs-biotracker-settings .bs-bt-wardrobe-detail-bubble .bs-bt-wardrobe-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 #bs-biotracker-settings .bs-bt-wardrobe-metric,
 .bs-bt-wardrobe-detail-bubble .bs-bt-wardrobe-metric {
   border: 1px solid color-mix(in srgb, var(--bsbt-lcd-text) 14%, transparent);
@@ -4625,8 +4630,10 @@
 .bs-bt-wardrobe-detail-bubble {
   position: fixed;
   z-index: 10050;
-  width: min(320px, calc(100vw - 20px));
+  width: max-content;
+  max-width: min(320px, calc(100vw - 20px));
   max-height: min(420px, calc(100vh - 20px));
+  box-sizing: border-box;
   overflow: auto;
   border: 1px solid color-mix(in srgb, var(--bsbt-lcd-text) 28%, transparent);
   border-radius: 8px;
