@@ -429,7 +429,7 @@ export function buildWardrobePrepSystemPrompt(settings, options = {}) {
   const userPrompt = String(options.wardrobePrepPrompt || settings?.wardrobePrepPrompt || '').trim();
   return [
     '你是 AIRP 角色衣柜补充器。只为 payload.target_character 补充少量长期衣物，不重建衣柜，不改变当前穿着。',
-    '根据用户要求选择最必要的项目；未指定数量时一般补充 2-4 项，避免为每个角色创建庞大专属衣柜。',
+    '根据用户要求选择最必要的项目；用户明确列出要补的项目时只补那些，未指定数量时一般补充 2-4 项，避免为每个角色创建庞大专属衣柜。',
     '只输出 JSON，不要输出额外解释。',
     'JSON 顶层结构必须是：{"items": [...]}。',
     'main 是完整基础套装，可附 parts，并使用 fitProfile 档位。accessory 使用 category 与最多两项 effects。',
@@ -450,6 +450,7 @@ function buildStartingOutfitRuleLines(outfitPrompt = '') {
     '依角色卡、世界观与当下处境设计穿着，包括它合不合身：例如已显怀的孕妇仍硬穿孕前的修身衣服时，fitProfile 如实填这件衣服原本的档位（capacity=tight 等），系统会依孕期自动算出它被撑紧的程度；穿着的当下状态写进 wearState。',
     'main 使用 name/note/parts/fitProfile。fitProfile 档位：masking=very_low/low/medium/high，support=none/normal/strong，capacity=tight/fitted/stretch/loose，convenience=inconvenient/normal/convenient。',
     'accessories 的 category 为 underwear/outerwear/footwear/headwear/ornament/support/other，effects 最多两项，使用 masking/support/capacity/convenience 加 _up 或 _down（例如丝袜、孕妇托腹带、外套）。',
+    'category 只是分类标签，不是清单：只列有特色、会被描写到，或会影响遮蔽／承托／容身／方便的配件，通常 0～3 件；普通内衣、袜子等没有特色的不必列。',
     'note 只写颜色、材质、版型、长短、图案与来源等稳定外观，不写角色感受、怀孕反应或衣物当下状态。',
     'wearState 是 12 字内的穿着状态标签，例如 整齐、扣子绷紧、衣衫不整。',
     '明确全裸时填 nude=true，此时不列 main 与 accessories。',

@@ -297,6 +297,15 @@ test('plain registration no longer asks for the outfit and keeps a well-formed J
   assert.match(prompt, /角色补充设定】/);
 });
 
+test('outfit prompts treat categories as labels and keep the item count small', () => {
+  const outfit = registry.buildStartingOutfitSystemPrompt({ outfitPrompt: '' });
+  assert.match(outfit, /category 只是分类标签，不是清单/);
+  assert.match(outfit, /通常 0～3 件/);
+  const prep = registry.buildWardrobePrepSystemPrompt({}, { wardrobePrepPrompt: '增加一件符合发条朋克的外套和鞋子' });
+  assert.match(prep, /用户明确列出要补的项目时只补那些/);
+  assert.match(prep, /增加一件符合发条朋克的外套和鞋子/);
+});
+
 test('a diary rewritten by hand replaces the same story day, while the tracker stays on cooldown', () => {
   const chatState = state.createEmptyChatState();
   chatState.characters['艾拉'] = { name: '艾拉', initialized: true, profile: { base: {}, diary: [] } };
