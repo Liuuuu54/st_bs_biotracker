@@ -3093,7 +3093,7 @@ function getTermReadinessAnchor(pregnant) {
   return fetuses.map((fetus) => fetus?.embryoId).find((id) => id !== null && id !== undefined) ?? null;
 }
 
-/** 已抽好的发动体质；这次妊娠还没抽时回 null（界面推估不能顺手抽，否则渲染会改状态） */
+/** 已抽好的发动体质；这次妊娠还没抽时回 null */
 function peekTermReadiness(pregnant) {
   const stored = pregnant?.termReadiness;
   if (!stored || typeof stored !== 'object' || stored.embryoId !== getTermReadinessAnchor(pregnant)) return null;
@@ -3116,37 +3116,6 @@ function getTermReadiness(profile) {
   const value = clampNumber(rolled, 0.5, 15, TERM_READINESS_MEDIAN);
   pregnant.termReadiness = { embryoId: getTermReadinessAnchor(pregnant), value };
   return value;
-}
-
-/**
- * 预计发动日（有效孕日）：照引擎每天的顺序往后推——宫压累积 → 过上限一半先示警、下一天仍未缓解就发动，
- * 达 66% 当天发动。假设剧情完全不碰宫压、胎重不再变，所以只是「最晚大概何时」；
- * 临产期前、或这次妊娠还没抽发动体质时回 null
- */
-export function estimateTermOnsetDays(profile) {
-  const base = profile?.base || {};
-  const stage = String(base.stage || '');
-  if (stage !== '临产期' && stage !== '逾期') return null;
-  const pregnant = profile?.pregnant || {};
-  const readiness = peekTermReadiness(pregnant);
-  if (readiness === null) return null;
-  const start = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
-  const bulkPerDay = getFetalBulk(profile) / Math.max(1, start);
-  const capAt = (days) => 50 + (150 - 50) * (Math.max(0, Math.min(10, Math.floor(days / 28))) / 10);
-  let pressure = clampNumber(base.uterinePressure, 0, 9999, 0);
-  let warned = Boolean(profile?.cooldown?.pregnancyPressureWarning) && pressure >= capAt(start) * 0.5;
-  for (let day = start + 1; day <= start + 120; day += 1) {
-    const ramp = 1 + Math.max(0, day - 0.5 - TERM_START_DAYS) / TERM_PRESSURE_RAMP_DAYS;
-    const postTerm = day - 0.5 >= TERM_START_DAYS + PREGNANCY_STAGE_DAYS.临产期 ? POSTTERM_PRESSURE_MULTIPLIER : 1;
-    pressure = Math.min(capAt(day), pressure + bulkPerDay * day * readiness * ramp * postTerm);
-    const cap = capAt(day);
-    if (pressure >= cap * 0.66) return day;
-    if (pressure >= cap * 0.5) {
-      if (warned) return day;
-      warned = true;
-    }
-  }
-  return null;
 }
 
 /**

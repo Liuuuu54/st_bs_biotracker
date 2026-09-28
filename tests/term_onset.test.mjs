@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as state from '../scripts/state.js';
-import { applyToolCall, estimateTermOnsetDays } from '../scripts/tools.js';
+import { applyToolCall } from '../scripts/tools.js';
 import { DUE_DATE_DAYS, TERM_START_DAYS } from '../scripts/stage_config.js';
 
 function carrier({ days = 252, weights = [1], readiness = 1, breedTolerance = 1, vitalityLevel = 5, psyStressLevel = 4 } = {}) {
@@ -106,17 +106,4 @@ test('发动体质在抽的当下套上等级：病弱、极端情绪的母体�
   } finally {
     Math.random = realRandom;
   }
-});
-
-test('预计发动照引擎的顺序推估，临产期前或还没抽体质时不给', () => {
-  assert.equal(estimateTermOnsetDays(P(carrier({ readiness: 2.3 }))), null, '孕晚期不推估');
-  const chatState = carrier({ readiness: 2.3 });
-  runTo(chatState, 266);
-  const estimate = estimateTermOnsetDays(P(chatState));
-  while (!['产兆前驱', '第一产程'].includes(P(chatState).base.stage)) step(chatState);
-  assert.ok(Math.abs(estimate - P(chatState).pregnant.effectivePregnantDays) <= 1, `估 ${estimate}，实际 ${P(chatState).pregnant.effectivePregnantDays}`);
-  const fresh = carrier({ readiness: null, days: 266 });
-  P(fresh).base.stage = '临产期';
-  assert.equal(estimateTermOnsetDays(P(fresh)), null, '没抽过体质不能顺手抽');
-  assert.equal(P(fresh).pregnant.termReadiness, undefined);
 });
