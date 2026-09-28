@@ -23,7 +23,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
     'bs-bt-skill-detail-name', 'bs-bt-skill-detail-description', 'bs-bt-skill-detail-save',
     'bs-bt-skill-preset-development', 'bs-bt-skill-preset-behavior',
     'bs-bt-skill-baseline-prompt', 'bs-bt-skill-baseline-save',
-    'bs-bt-wardrobe-tabs', 'bs-bt-wardrobe-list', 'bs-bt-wardrobe-characters-page', 'bs-bt-wardrobe-add-page', 'bs-bt-wardrobe-prep-page', 'bs-bt-wardrobe-head', 'bs-bt-wardrobe-tabs-section',
+    'bs-bt-wardrobe-tabs', 'bs-bt-wardrobe-list', 'bs-bt-wardrobe-characters-page', 'bs-bt-wardrobe-add-page', 'bs-bt-wardrobe-add-modal', 'bs-bt-wardrobe-prep-page', 'bs-bt-wardrobe-head', 'bs-bt-wardrobe-tabs-section',
     'bs-bt-register-source', 'bs-bt-register-source-summary',
     'bs-bt-world-baseline-prompt', 'bs-bt-world-baseline-save',
   ]) {
@@ -77,7 +77,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.doesNotMatch(html, /id="bs-bt-register-skill-load-child"/);
   assert.doesNotMatch(html, /用自然语言描述角色注册时应具备的技能与天赋/);
   assert.doesNotMatch(html, /选择已备装角色后，可直接调整衣物、当前穿着与穿着状态/);
-  assert.deepEqual([...html.matchAll(/data-wardrobe-tab="([^"]+)"/g)].map((match) => match[1]), ['characters', 'add', 'prep']);
+  assert.deepEqual([...html.matchAll(/data-wardrobe-tab="([^"]+)"/g)].map((match) => match[1]), ['characters', 'prep']);
   assert.match(controller, /skillPrompt/);
   assert.match(controller.slice(0, 500), /applyInitialSkillTalentConfig/);
   assert.doesNotMatch(controller, />查看<\/button>/);
@@ -105,7 +105,8 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /id="bs-bt-wardrobe-edit-note"/);
   assert.match(controller, /manual_wardrobe_item_update/);
   assert.doesNotMatch(controller, /id="bs-bt-wardrobe-item-character"/, '新增衣物归属于正在看的角色，不再另外选');
-  assert.match(controller, /id="bs-bt-wardrobe-item-category-field"[\s\S]*?data-wardrobe-type-field="accessory" hidden/);
+  assert.match(controller, /data-wardrobe-add-slot="\$\{escapeHtml\(slot\)\}"/, '每个分类标题都有加号');
+  assert.match(html, /id="bs-bt-wardrobe-add-modal"[\s\S]*?id="bs-bt-wardrobe-add-page"/, '新增衣物在弹出视窗里');
   assert.match(controller, /id="bs-bt-wardrobe-item-effects-field"[\s\S]*?data-wardrobe-type-field="accessory" hidden/);
   assert.match(controller, /id="bs-bt-wardrobe-item-parts-field"[\s\S]*?data-wardrobe-type-field="main"/);
   assert.match(controller, /<option value="unknown"/);
@@ -158,7 +159,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.doesNotMatch(html, /id="bs-bt-skill-definition-delete-select"/);
   assert.doesNotMatch(html, /id="bs-bt-skill-definition-delete"/);
   assert.match(css, /#bs-bt-skill-catalog-overview\[hidden\][\s\S]*?display:\s*none/);
-  assert.match(css, /#bs-bt-wardrobe-add-page\[hidden\][\s\S]*?display:\s*none/);
+  assert.match(css, /\.bs-bt-race-editor-modal\[hidden\][\s\S]*?display:\s*none/);
   assert.doesNotMatch(controller, /data-wardrobe-initialize/);
   assert.doesNotMatch(controller, /initializeEmptyWardrobe/);
   for (const action of [
