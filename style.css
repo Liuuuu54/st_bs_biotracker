@@ -4365,6 +4365,62 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* 基准页的名录勾选：按胚胎型态分组，一眼勾完本故事会出现的种族 */
+#bs-biotracker-settings .bs-bt-catalog-checklist {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-catalog-group {
+  min-width: 0;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-radius: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-catalog-group[hidden] {
+  display: none;
+}
+
+#bs-biotracker-settings .bs-bt-catalog-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 0.86em;
+}
+
+#bs-biotracker-settings .bs-bt-catalog-group-head > .menu_button {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+  padding: 2px 8px;
+  font-size: 0.92em;
+}
+
+#bs-biotracker-settings .bs-bt-catalog-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 4px 8px;
+}
+
+#bs-biotracker-settings .bs-bt-catalog-options label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#bs-biotracker-settings .bs-bt-catalog-options label[hidden] {
+  display: none;
+}
+
 #bs-biotracker-settings .bs-bt-wardrobe-transient {
   display: grid;
   gap: 6px;

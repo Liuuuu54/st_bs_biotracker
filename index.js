@@ -1822,6 +1822,51 @@ function setRaceCatalogEntryIncluded(ctx, kind, name, included) {
   saveRaceCatalogSelection(ctx, selection);
 }
 
+/** 基准页的名录勾选：异种按胚胎型态分组，衍生类型另成一组；每组可整组勾选或清空 */
+function getRaceCatalogChecklistGroups() {
+  return [
+    ...RACE_ENCYCLOPEDIA_GROUPS.map((group) => ({ kind: 'race', label: group.label, names: group.races })),
+    { kind: 'derived', label: '衍生类型', names: DERIVED_ENCYCLOPEDIA_LIST },
+  ];
+}
+
+function renderRaceCatalogChecklist(settings) {
+  const container = document.getElementById('bs-bt-catalog-checklist');
+  if (!container) return;
+  const selection = getRaceCatalogSelection(settings);
+  const chosen = { race: new Set(selection.races), derived: new Set(selection.derivedTypes) };
+  const filter = String(document.getElementById('bs-bt-catalog-filter')?.value || '').trim().toLowerCase();
+  container.innerHTML = getRaceCatalogChecklistGroups().map((group, index) => {
+    const picked = group.names.filter((name) => chosen[group.kind].has(name)).length;
+    const visible = group.names.filter((name) => !filter || name.toLowerCase().includes(filter));
+    const allPicked = picked === group.names.length;
+    return `<fieldset class="bs-bt-catalog-group"${visible.length === 0 ? ' hidden' : ''}>
+      <div class="bs-bt-catalog-group-head">
+        <span>${escapeHtml(group.label)} ${picked}/${group.names.length}</span>
+        <button class="menu_button" type="button" data-catalog-group="${index}">${allPicked ? '清空本组' : '全选本组'}</button>
+      </div>
+      <div class="bs-bt-catalog-options">${group.names.map((name) => `<label title="${escapeHtml(name)}"${visible.includes(name) ? '' : ' hidden'}>
+        <input type="checkbox" data-catalog-kind="${group.kind}" data-catalog-name="${escapeHtml(name)}"${chosen[group.kind].has(name) ? ' checked' : ''}> ${escapeHtml(name)}
+      </label>`).join('')}</div>
+    </fieldset>`;
+  }).join('');
+}
+
+function toggleRaceCatalogGroup(ctx, index) {
+  const group = getRaceCatalogChecklistGroups()[index];
+  if (!group) return;
+  const selection = getRaceCatalogSelection(getSettings(ctx));
+  const key = group.kind === 'derived' ? 'derivedTypes' : 'races';
+  const values = new Set(selection[key]);
+  const allPicked = group.names.every((name) => values.has(name));
+  for (const name of group.names) {
+    if (allPicked) values.delete(name);
+    else values.add(name);
+  }
+  selection[key] = [...values];
+  saveRaceCatalogSelection(ctx, selection);
+}
+
 function saveWorldBaselinePrompt(ctx, value) {
   const settings = getSettings(ctx);
   settings.worldBaselinePrompt = String(value || '').trim();
@@ -2185,6 +2230,7 @@ function renderRaceEncyclopediaPage(ctx = null) {
 
   countNode.innerHTML = `异种数量：${RACE_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.races.length}）<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.derivedTypes.length}）`;
   renderOverrideInventory(settings);
+  renderRaceCatalogChecklist(settings);
   if (worldBaselineInput && document.activeElement !== worldBaselineInput) {
     worldBaselineInput.value = String(settings?.worldBaselinePrompt || '');
   }
@@ -8324,6 +8370,18 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-race-catalog-included')?.addEventListener('change', (event) => {
     if (!selectedRaceEncyclopedia) return;
     setRaceCatalogEntryIncluded(ctx, 'race', selectedRaceEncyclopedia, Boolean(event.target?.checked));
+  });
+  document.getElementById('bs-bt-catalog-filter')?.addEventListener('input', () => {
+    renderRaceCatalogChecklist(getSettings(ctx));
+  });
+  document.getElementById('bs-bt-catalog-checklist')?.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.dataset.catalogName) return;
+    setRaceCatalogEntryIncluded(ctx, input.dataset.catalogKind === 'derived' ? 'derived' : 'race', input.dataset.catalogName, input.checked);
+  });
+  document.getElementById('bs-bt-catalog-checklist')?.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('[data-catalog-group]') : null;
+    if (button) toggleRaceCatalogGroup(ctx, Number(button.getAttribute('data-catalog-group')));
   });
   document.getElementById('bs-bt-race-catalog-human-only')?.addEventListener('click', () => {
     saveWorldBaselinePrompt(ctx, '');
