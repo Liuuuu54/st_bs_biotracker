@@ -29,15 +29,39 @@ const POSTPARTUM_START_SIZE_DAYS = 140;
 /** 精液灌满时子宫微胀的像素 */
 const SEMEN_SWELL_PX = 1;
 
-/** 精液在宫腔底部的液面高度（像素）：100 单位在空子宫约 10 像素，子宫越宽摊得越薄 */
-function getSemenFluidHeight(amount, rx) {
-  return 10 * (Math.max(0, amount) / 100) ** 0.7 * (11 / rx) ** 0.7;
-}
+const SEMEN_CAPACITY_FLOOR = 25;
+const COMPANION_EGG_SIZE = 0.15;
 
-/** 当下的精液容量：液面刚好到宫腔顶（高度 = 内腔上下径）所需的量，是 getSemenFluidHeight 的反函数 */
-export function getSemenCapacity(womb, wallInset) {
-  const cavityHeight = Math.max(1, (womb.ry - wallInset) * 2);
-  return Math.round(100 * (cavityHeight / (10 * (11 / womb.rx) ** 0.7)) ** (1 / 0.7));
+/**
+ * 当下能装多少精液，以未孕、内膜一般（排卵期）为 100；受孕加成在总量 80 封顶，满了之后只剩画面。
+ * - 未孕：内膜越厚越小，约 75～125。
+ * - 假孕：荷尔蒙让内膜偏厚，85 → 75。
+ * - 产后恢复：子宫虽大但满是恶露，可用空间只略多，120 → 100。
+ * - 怀孕（浸满）：子宫容积 ×（1 − 佔满率）。子宫随孕程与胎重、胎数撑大；
+ *   胎儿与羊膜囊佔去的比例随孕周上升，足月单胎约八成，多胎再多佔一些。足月单胎 1.0 刚好 100。
+ * 宫压越高越小，最多七折。
+ */
+export function getSemenCapacity({ gestating, emptyStage, emptyLining, emptyProgress, days, fetuses, pressureLevel }) {
+  const pressureFactor = 1 - 0.1 * clamp(finite(pressureLevel), 0, 3);
+  let capacity;
+  if (gestating && fetuses.length > 0) {
+    const n = fetuses.length;
+    const t = clamp(days / FULL_TERM_DAYS, 0, 1.25);
+    const averageSize = fetuses.reduce((sum, fetus) => (
+      sum + clamp(finite(fetus?.weight, 1), 0.33, 3) + Math.max(0, Math.floor(finite(fetus?.companionEggCount))) * COMPANION_EGG_SIZE
+    ), 0) / n;
+    const stretch = Math.min(1.6, t * averageSize) ** 1.7 * (1 + 0.45 * (n - 1));
+    const volume = 100 * (1 + 4 * stretch);
+    const occupied = Math.min(0.95, 0.8 * Math.min(1, t) ** 1.5 + 0.05 * (n - 1) * t);
+    capacity = volume * (1 - occupied);
+  } else if (emptyStage === '假孕期') {
+    capacity = 85 - 10 * clamp(emptyProgress, 0, 1);
+  } else if (emptyStage === '产后恢复') {
+    capacity = 120 - 20 * clamp(emptyProgress, 0, 1);
+  } else {
+    capacity = 100 - (finite(emptyLining, 7) - 7) * 12.5;
+  }
+  return Math.max(SEMEN_CAPACITY_FLOOR, Math.round(capacity * pressureFactor));
 }
 
 /** 孕程长大曲线：孕早期几乎不变，之后加速 */
@@ -159,14 +183,26 @@ export function computeUterusLayout(profile, options = {}) {
     ry: Math.round(12 + growth * 32 + extra * 0.7),
   };
 
-  // 精液：100 单位填满空子宫的底部；子宫越大摊得越薄，怀孕时几乎看不到是预期行为。
-  // 容量＝刚好把宫腔填到顶的量，随子宫大小、内膜厚度与宫压而变，所以每个阶段都不同；
-  // 超过容量时子宫微胀 1 像素并从宫口缓慢渗出（只是画面，精液量不减）
+  // 精液：液面按「目前量 ÷ 容量」画，到容量时刚好到宫腔顶。
+  // 未孕到容量是「灌满」：子宫微胀 1 像素、宫口滴漏；怀孕到容量是「浸满」：精液填在羊膜囊之间，
+  // 膜线沾上精液色，子宫不再胀（已撑大，绷紧的是胎儿），宫颈有黏液栓所以滴得更慢更少。只是画面，精液量不减
   const totalSperm = (Array.isArray(base.sperms) ? base.sperms : []).reduce((sum, item) => sum + Math.max(0, finite(item?.value)), 0);
-  const semenCapacity = getSemenCapacity(womb, wallInset);
+  const bodyFetuses = gestating
+    ? allFetuses.filter((fetus) => fetus && !fetus.pendingImplantation && !(fetus.nestedInEmbryoId && !fetus.nestedReleased))
+    : [];
+  const semenCapacity = getSemenCapacity({
+    gestating,
+    emptyStage,
+    emptyLining: emptyStage ? getEmptyLining(emptyStage, emptyProgress) : 7,
+    emptyProgress,
+    days,
+    fetuses: bodyFetuses,
+    pressureLevel,
+  });
   const semenFull = totalSperm > 0 && totalSperm >= semenCapacity;
+  const semenSoaked = semenFull && bodyFetuses.length > 0;
   const semenOverflow = semenFull ? clamp((totalSperm - semenCapacity) / semenCapacity, 0, 1) : 0;
-  if (semenFull) {
+  if (semenFull && !semenSoaked) {
     womb.rx += SEMEN_SWELL_PX;
     womb.ry += SEMEN_SWELL_PX;
   }
@@ -181,11 +217,10 @@ export function computeUterusLayout(profile, options = {}) {
   const libidoHeat = clamp((finite(base.libido) / libidoCap - 0.27) / 0.73, 0, 1);
 
   const innerRy = womb.ry - wallInset;
+  const cavityHeight = Math.max(1, innerRy * 2);
   const fluidHeight = totalSperm <= 0
     ? 0
-    : semenFull
-      ? innerRy * 2
-      : Math.min(innerRy * 2, Math.max(1, Math.round(getSemenFluidHeight(totalSperm, womb.rx))));
+    : Math.max(1, Math.round(cavityHeight * Math.min(1, totalSperm / semenCapacity) ** 0.7));
 
   const obstruction = gestating ? getLaborObstruction(profile) : null;
   const blocked = new Set(obstruction?.embryoIds || []);
@@ -320,6 +355,7 @@ export function computeUterusLayout(profile, options = {}) {
     fluidHeight,
     semenCapacity,
     semenFull,
+    semenSoaked,
     semenOverflow,
     lateBulge: days >= 189,
     fetuses: items,

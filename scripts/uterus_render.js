@@ -729,25 +729,29 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     }
   }
 
-  // 精液灌满时从宫口缓慢渗出：一轮 4.2 秒，比经血（1.6 秒）与破水演出（2.8 秒）都慢；
-  // 溢出越多同时渗出的滴数越多（1～3）。只是画面，精液量不会因此减少
+  // 精液到容量时从宫口缓慢渗出，比经血（1.6 秒）与破水演出（2.8 秒）都慢；溢出越多同时渗出越多。
+  // 未孕灌满：一轮 4.2 秒、最多 3 滴；怀孕浸满：宫颈有黏液栓，一轮 6 秒、最多 2 滴。只是画面，精液量不减
   const SEMEN_LEAK_MS = 4200;
+  const SOAKED_LEAK_MS = 6000;
 
   function drawSemenLeak(tick) {
     if (!layout.semenFull) return;
-    const drops = 1 + Math.round(layout.semenOverflow * 2);
+    const soaked = layout.semenSoaked;
+    const period = soaked ? SOAKED_LEAK_MS : SEMEN_LEAK_MS;
+    const drops = 1 + Math.round(layout.semenOverflow * (soaked ? 1 : 2));
     const { womb, tract } = layout;
     const start = womb.bottom + 1;
     const end = Math.min(119, tract.canalBottom + 5);
     for (let i = 0; i < drops; i += 1) {
-      const travel = ((wantsMotion() ? tick : 0) / SEMEN_LEAK_MS + i / drops) % 1;
+      const travel = ((wantsMotion() ? tick : 0) / period + i / drops) % 1;
       // 先慢后快：黏稠的液体在宫口积一下才往下掉
       const eased = travel * travel;
       const y = Math.round(start + (end - start) * eased);
       const x = womb.cx + (i % 2 === 0 ? 0 : (i % 4 === 1 ? 1 : -1));
       const out = y >= tract.canalBottom;
-      pen.px(x, y, 1, 2, P.fluidLight);
-      if (!out) pen.px(x, y - 1, 1, 1, P.fluid);
+      // 浸满时滴得更细：只有一像素
+      pen.px(x, y, 1, soaked ? 1 : 2, P.fluidLight);
+      if (!out && !soaked) pen.px(x, y - 1, 1, 1, P.fluid);
     }
     // 宫口挂着一小滴
     pen.px(womb.cx, tract.canalBottom, 1, 1, P.fluidLight);
@@ -774,12 +778,14 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
 
   // ---- 羊膜囊（水泡）：实心的羊水色加一条连续膜线，贴合实际画出的胎儿，由后往前与胎儿交替画 ----
   function bubbleColors() {
+    // 精液浸满时，膜线沾上一层精液色，看得出囊外被浸着
+    const soak = layout.semenSoaked ? 0.45 : 0;
     return {
       fluid: mixColor(P.cavity, P.fluidLight, 0.2),
       thinFluid: mixColor(P.cavity, P.fluidLight, 0.1),
       // 膜线用偏羊水的冷色，才不会被看成胎儿的轮廓
-      membrane: mixColor(P.water, P.cavity, 0.2),
-      thinMembrane: mixColor(P.water, P.cavity, 0.55),
+      membrane: mixColor(mixColor(P.water, P.cavity, 0.2), P.fluidLight, soak),
+      thinMembrane: mixColor(mixColor(P.water, P.cavity, 0.55), P.fluidLight, soak),
     };
   }
 
