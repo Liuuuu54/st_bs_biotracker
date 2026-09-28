@@ -88,9 +88,11 @@ import {
   replaceHostEventSubscription,
 } from './scripts/host.js';
 import {
+  applyApiProfile,
   cloneValue,
   createEmptyChatState,
   DEFAULT_SYSTEM_PROMPT,
+  deleteApiProfile,
   getApiUrlForFormat,
   isSkillSystemEnabled,
   isWardrobeSystemEnabled,
@@ -123,6 +125,7 @@ import {
   diffStateValues,
   resolveRegisteredCharacterName,
   sanitizeWorldbookEntryDisplayName,
+  saveApiProfile,
   saveSettings,
   saveSettingsNow,
   THEME_CONFIG,
@@ -5855,6 +5858,18 @@ function bindRacePaletteModal(ctx) {
   });
 }
 
+/** 连接配置组下拉：只列名称，Key 不显示 */
+function renderApiProfileSelect(settings, selectedName = '') {
+  const select = document.getElementById('bs-bt-api-profile-select');
+  if (!select) return;
+  const profiles = Array.isArray(settings.apiProfiles) ? settings.apiProfiles : [];
+  const keep = selectedName || select.value;
+  select.innerHTML = profiles.length > 0
+    ? `<option value="">选择配置组以套用</option>${profiles.map((profile) => `<option value="${escapeHtml(profile.name)}">${escapeHtml(profile.name)}</option>`).join('')}`
+    : '<option value="">尚未保存配置组</option>';
+  select.value = profiles.some((profile) => profile.name === keep) ? keep : '';
+}
+
 function populateModelList(settings) {
   const select = document.getElementById('bs-bt-model-list');
   if (!select) return;
@@ -7002,6 +7017,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-api-url', settings.apiUrl);
   setValue('bs-bt-api-format', normalizeApiFormat(settings.apiFormat));
   setValue('bs-bt-api-key', settings.apiKey);
+  renderApiProfileSelect(settings);
   setValue('bs-bt-model', settings.model);
   setValue('bs-bt-temperature', resolveUserTemperature(settings) ?? '');
   setValue('bs-bt-temperature-mode', normalizeTemperatureMode(settings.temperatureMode));
@@ -8303,6 +8319,55 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-system-button')?.addEventListener('click', () => setView('system'));
   document.getElementById('bs-bt-home-button')?.addEventListener('click', () => setView('home'));
   document.getElementById('bs-bt-track-back')?.addEventListener('click', () => setView('track-list'));
+  document.getElementById('bs-bt-api-profile-select')?.addEventListener('change', (event) => {
+    const name = String(event.target?.value || '');
+    if (!name) return;
+    try {
+      const settings = getSettings(ctx);
+      applyApiProfile(settings, name);
+      saveSettings(ctx);
+      applySettingsToForm(ctx);
+      renderApiProfileSelect(settings, name);
+      const nameInput = document.getElementById('bs-bt-api-profile-name');
+      if (nameInput) nameInput.value = name;
+      setConnectStatus('已切换配置组，需要时重新连接拉取模型');
+      globalThis.toastr?.success?.(`[BS BioTracker] 已套用配置组「${name}」`);
+    } catch (error) {
+      globalThis.toastr?.error?.(String(error?.message || error), '[BS BioTracker]');
+    }
+  });
+  document.getElementById('bs-bt-api-profile-save')?.addEventListener('click', () => {
+    const name = String(document.getElementById('bs-bt-api-profile-name')?.value || '').trim();
+    try {
+      readSettingsFromForm(ctx);
+      const settings = getSettings(ctx);
+      const exists = (settings.apiProfiles || []).some((profile) => profile.name === name);
+      if (exists && globalThis.confirm && !globalThis.confirm(`已有配置组「${name}」，要用当前设置覆盖吗？`)) return;
+      saveApiProfile(settings, name);
+      saveSettings(ctx);
+      renderApiProfileSelect(settings, name);
+      globalThis.toastr?.success?.(`[BS BioTracker] 已${exists ? '覆盖' : '保存'}配置组「${name}」`);
+    } catch (error) {
+      globalThis.toastr?.warning?.(String(error?.message || error), '[BS BioTracker]');
+    }
+  });
+  document.getElementById('bs-bt-api-profile-delete')?.addEventListener('click', () => {
+    const name = String(document.getElementById('bs-bt-api-profile-select')?.value || document.getElementById('bs-bt-api-profile-name')?.value || '').trim();
+    if (!name) {
+      globalThis.toastr?.warning?.('[BS BioTracker] 请先选择要删除的配置组');
+      return;
+    }
+    if (globalThis.confirm && !globalThis.confirm(`确定删除配置组「${name}」？当前连接设置不受影响。`)) return;
+    try {
+      const settings = getSettings(ctx);
+      deleteApiProfile(settings, name);
+      saveSettings(ctx);
+      renderApiProfileSelect(settings);
+      globalThis.toastr?.success?.(`[BS BioTracker] 已删除配置组「${name}」`);
+    } catch (error) {
+      globalThis.toastr?.error?.(String(error?.message || error), '[BS BioTracker]');
+    }
+  });
   document.getElementById('bs-bt-model-list')?.addEventListener('change', (event) => {
     const nextModel = String(event.target?.value || '').trim();
     if (!nextModel) return;

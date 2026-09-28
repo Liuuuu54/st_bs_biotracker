@@ -4365,6 +4365,25 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+#bs-biotracker-settings .bs-bt-api-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-api-profile-row > .text_pole {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+#bs-biotracker-settings .bs-bt-api-profile-row > .menu_button {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+}
+
 /* 基准页的名录勾选：按胚胎型态分组，一眼勾完本故事会出现的种族 */
 #bs-biotracker-settings .bs-bt-catalog-checklist {
   display: grid;

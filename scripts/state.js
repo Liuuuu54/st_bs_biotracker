@@ -195,6 +195,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   apiUrl: '',
   apiFormat: API_FORMATS.OPENAI_COMPAT,
   apiKey: '',
+  apiProfiles: [],
   model: 'gpt-4.1-mini',
   modelOptions: [],
   reasoningEffort: 'auto',
@@ -796,6 +797,61 @@ export function createDefaultFemaleState(name = '') {
   return syncCharacterStageFromProfile(normalizeCharacterPsychologyState(character));
 }
 
+const API_PROFILE_LIMIT = 30;
+const API_PROFILE_FIELDS = Object.freeze(['apiUrl', 'apiFormat', 'apiKey', 'model']);
+
+/** 已命名的连接配置组：名称唯一（去头尾空白后比对），只保存端点、格式、Key 与模型 */
+export function normalizeApiProfiles(list) {
+  const seen = new Set();
+  const profiles = [];
+  for (const entry of (Array.isArray(list) ? list : [])) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const name = String(entry.name || '').trim().slice(0, 40);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    profiles.push({
+      name,
+      apiUrl: String(entry.apiUrl || '').trim(),
+      apiFormat: normalizeApiFormat(entry.apiFormat),
+      apiKey: String(entry.apiKey || '').trim(),
+      model: String(entry.model || '').trim(),
+    });
+    if (profiles.length >= API_PROFILE_LIMIT) break;
+  }
+  return profiles;
+}
+
+/** 以当前连接设定新增或覆盖同名配置组，回传是否为覆盖 */
+export function saveApiProfile(settings, name) {
+  const trimmed = String(name || '').trim().slice(0, 40);
+  if (!trimmed) throw new Error('请先输入配置组名称');
+  const profiles = normalizeApiProfiles(settings.apiProfiles);
+  const index = profiles.findIndex((profile) => profile.name === trimmed);
+  if (index < 0 && profiles.length >= API_PROFILE_LIMIT) throw new Error(`最多保存 ${API_PROFILE_LIMIT} 组`);
+  const profile = { name: trimmed, ...Object.fromEntries(API_PROFILE_FIELDS.map((field) => [field, settings[field]])) };
+  if (index >= 0) profiles[index] = profile;
+  else profiles.push(profile);
+  settings.apiProfiles = normalizeApiProfiles(profiles);
+  return index >= 0;
+}
+
+/** 把配置组套回当前连接设定；换端点后旧的模型列表不再适用，一并清空 */
+export function applyApiProfile(settings, name) {
+  const profile = normalizeApiProfiles(settings.apiProfiles).find((entry) => entry.name === String(name || '').trim());
+  if (!profile) throw new Error('找不到这个配置组');
+  for (const field of API_PROFILE_FIELDS) settings[field] = profile[field];
+  settings.modelOptions = [];
+  return profile;
+}
+
+export function deleteApiProfile(settings, name) {
+  const trimmed = String(name || '').trim();
+  const profiles = normalizeApiProfiles(settings.apiProfiles);
+  const next = profiles.filter((profile) => profile.name !== trimmed);
+  if (next.length === profiles.length) throw new Error('找不到这个配置组');
+  settings.apiProfiles = next;
+}
+
 /** 着衣系统总开关：关闭时衣柜页、注册着衣页与 tracker 的衣柜工具、说明、状态全部停用，资料保留 */
 export function isWardrobeSystemEnabled(settings) {
   return settings?.wardrobeSystemEnabled !== false;
@@ -880,6 +936,11 @@ export function getSettings(ctx) {
   const wombAnimation = settings.wombAnimation !== false;
   if (settings.wombAnimation !== wombAnimation) {
     settings.wombAnimation = wombAnimation;
+    shouldSave = true;
+  }
+  const apiProfiles = normalizeApiProfiles(settings.apiProfiles);
+  if (JSON.stringify(apiProfiles) !== JSON.stringify(settings.apiProfiles)) {
+    settings.apiProfiles = apiProfiles;
     shouldSave = true;
   }
   for (const key of ['wardrobeSystemEnabled', 'skillSystemEnabled']) {

@@ -273,6 +273,19 @@
             </div>
 
             <div class="settings_section">
+              <label for="bs-bt-api-profile-select">连接配置组</label>
+              <select id="bs-bt-api-profile-select" class="text_pole">
+                <option value="">尚未保存配置组</option>
+              </select>
+              <div class="bs-bt-api-profile-row">
+                <input id="bs-bt-api-profile-name" class="text_pole" type="text" maxlength="40" placeholder="配置组名称" />
+                <button id="bs-bt-api-profile-save" class="menu_button" type="button">保存</button>
+                <button id="bs-bt-api-profile-delete" class="menu_button" type="button">删除</button>
+              </div>
+              <small>保存当前的 API 地址、格式、Key 与模型名称；选择配置组即套用并保存设置。Key 与其他设置一样存在本机的 SillyTavern 设置档。</small>
+            </div>
+
+            <div class="settings_section">
               <label for="bs-bt-api-url">OpenAI 兼容 API Base URL</label>
               <input id="bs-bt-api-url" class="text_pole" type="text" placeholder="https://api.example.com/v1" />
               <small id="bs-bt-api-endpoint-preview" class="bs-bt-inline-status" style="display:block;margin-top:4px;opacity:0.85;">端点预览：<code id="bs-bt-api-endpoint-preview-code">—</code></small>
