@@ -23,7 +23,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
     'bs-bt-skill-detail-name', 'bs-bt-skill-detail-description', 'bs-bt-skill-detail-save',
     'bs-bt-skill-preset-development', 'bs-bt-skill-preset-behavior',
     'bs-bt-skill-baseline-prompt', 'bs-bt-skill-baseline-save',
-    'bs-bt-wardrobe-tabs', 'bs-bt-wardrobe-list', 'bs-bt-wardrobe-characters-page', 'bs-bt-wardrobe-add-page', 'bs-bt-wardrobe-prep-page', 'bs-bt-wardrobe-prep-character',
+    'bs-bt-wardrobe-tabs', 'bs-bt-wardrobe-list', 'bs-bt-wardrobe-characters-page', 'bs-bt-wardrobe-add-page', 'bs-bt-wardrobe-prep-page', 'bs-bt-wardrobe-head', 'bs-bt-wardrobe-tabs-section',
     'bs-bt-register-source', 'bs-bt-register-source-summary',
     'bs-bt-world-baseline-prompt', 'bs-bt-world-baseline-save',
   ]) {
@@ -104,7 +104,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /data-wardrobe-item-edit/);
   assert.match(controller, /id="bs-bt-wardrobe-edit-note"/);
   assert.match(controller, /manual_wardrobe_item_update/);
-  assert.match(controller, /id="bs-bt-wardrobe-item-character"/);
+  assert.doesNotMatch(controller, /id="bs-bt-wardrobe-item-character"/, '新增衣物归属于正在看的角色，不再另外选');
   assert.match(controller, /id="bs-bt-wardrobe-item-category-field"[\s\S]*?data-wardrobe-type-field="accessory" hidden/);
   assert.match(controller, /id="bs-bt-wardrobe-item-effects-field"[\s\S]*?data-wardrobe-type-field="accessory" hidden/);
   assert.match(controller, /id="bs-bt-wardrobe-item-parts-field"[\s\S]*?data-wardrobe-type-field="main"/);

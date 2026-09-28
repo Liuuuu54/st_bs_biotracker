@@ -186,6 +186,8 @@ let selectedTrackSubpage = 'overview';
 let selectedTrackCardIndexes = {};
 let selectedWardrobeName = '';
 let selectedWardrobeSubpage = 'characters';
+// 衣柜补充 JSON 属于哪个角色：换人就清掉，免得把别人的补充合并进来
+let selectedWardrobePrepName = '';
 let selectedWardrobeItemId = 0;
 let selectedSkillDefinitionId = 0;
 let selectedRaceEncyclopedia = '';
@@ -882,7 +884,7 @@ async function runWardrobePrepInference(ctx) {
 }
 
 function getWardrobePrepTargetName() {
-  return String(document.getElementById('bs-bt-wardrobe-prep-character')?.value || '').trim();
+  return selectedWardrobeName;
 }
 
 function applyWardrobePrep(ctx) {
@@ -3373,10 +3375,6 @@ function renderWardrobeCharacterPage(character) {
   `;
   return `
     <div class="bs-bt-wardrobe-character">
-      <div class="bs-bt-wardrobe-character-title">
-        <button class="menu_button" type="button" data-wardrobe-back>返回衣柜</button>
-      </div>
-      <div class="bs-bt-wardrobe-page-title">${escapeHtml(character?.name || '未命名')}</div>
       <div class="bs-bt-wardrobe-current">
         <div class="bs-bt-wardrobe-current-head"><div class="bs-bt-wardrobe-group-title">当前穿着</div></div>
         <div class="bs-bt-wardrobe-summary"><b>主衣装</b>${escapeHtml(outfit.main?.name || '衣着未记录')}</div>
@@ -3403,8 +3401,7 @@ function renderWardrobeCharacterPage(character) {
   `;
 }
 
-function renderWardrobeAddPage(characters = []) {
-  const options = characters.map((character) => `<option value="${escapeHtml(character?.name || '')}">${escapeHtml(character?.name || '未命名')}</option>`).join('');
+function renderWardrobeAddPage() {
   const levelSelect = (dimension, label) => `<label data-wardrobe-type-field="main">${escapeHtml(label)}<select id="bs-bt-wardrobe-item-${dimension}" class="text_pole">${Object.entries(WARDROBE_MAIN_LEVEL_LABELS[dimension]).map(([value, text]) => `<option value="${value}"${DEFAULT_MAIN_FIT_PROFILE[dimension] === value ? ' selected' : ''}>${escapeHtml(text)}</option>`).join('')}</select></label>`;
   return `<div class="bs-bt-wardrobe-add-form">
     <label>名称<input id="bs-bt-wardrobe-item-name" class="text_pole" type="text"></label>
@@ -3414,8 +3411,7 @@ function renderWardrobeAddPage(characters = []) {
     <label id="bs-bt-wardrobe-item-parts-field" class="bs-bt-wardrobe-editor-wide" data-wardrobe-type-field="main">组成部件（逗号分隔）<input id="bs-bt-wardrobe-item-parts" class="text_pole" type="text"></label>
     ${levelSelect('masking', '隐藏')}${levelSelect('support', '支撑')}${levelSelect('capacity', '容身')}${levelSelect('convenience', '方便')}
     <fieldset id="bs-bt-wardrobe-item-effects-field" class="bs-bt-wardrobe-editor-wide" data-wardrobe-type-field="accessory" hidden><legend>配件效果（最多两项）</legend>${Object.entries(WARDROBE_ACCESSORY_EFFECTS).map(([value, definition]) => `<label><input type="checkbox" data-wardrobe-item-effect="${value}"> ${escapeHtml(definition.label)}</label>`).join('')}</fieldset>
-    <label class="bs-bt-wardrobe-editor-wide">分配给角色<select id="bs-bt-wardrobe-item-character" class="text_pole"${characters.length === 0 ? ' disabled' : ''}>${options || '<option value="">尚无注册角色</option>'}</select></label>
-    <button class="menu_button bs-bt-wardrobe-editor-wide" type="button" data-wardrobe-item-save${characters.length === 0 ? ' disabled' : ''}>新增衣物</button>
+    <button class="menu_button bs-bt-wardrobe-editor-wide" type="button" data-wardrobe-item-save>新增衣物</button>
     <div id="bs-bt-wardrobe-add-status" class="bs-bt-inline-status bs-bt-wardrobe-editor-wide"></div>
   </div>`;
 }
@@ -3450,42 +3446,40 @@ function renderWardrobePage(ctx) {
   const prepPage = document.getElementById('bs-bt-wardrobe-prep-page');
   if (!container || !addPage || !charactersPage) return;
   const characters = Object.values(chatState.characters || {});
-  const showAddPage = selectedWardrobeSubpage === 'add';
-  const showPrepPage = selectedWardrobeSubpage === 'prep';
+  // 先选角色，再在该角色底下看衣柜、新增衣物或补充衣柜
+  const selected = characters.find((character) => character?.name === selectedWardrobeName) || null;
+  if (!selected) {
+    selectedWardrobeName = '';
+    selectedWardrobeSubpage = 'characters';
+  }
+  const head = document.getElementById('bs-bt-wardrobe-head');
+  const tabsSection = document.getElementById('bs-bt-wardrobe-tabs-section');
+  const headName = document.getElementById('bs-bt-wardrobe-head-name');
+  if (head) head.hidden = !selected;
+  if (tabsSection) tabsSection.hidden = !selected;
+  if (headName) headName.textContent = selected?.name || '';
+  const showAddPage = Boolean(selected) && selectedWardrobeSubpage === 'add';
+  const showPrepPage = Boolean(selected) && selectedWardrobeSubpage === 'prep';
   charactersPage.hidden = showAddPage || showPrepPage;
   addPage.hidden = !showAddPage;
   if (prepPage) prepPage.hidden = !showPrepPage;
-  renderWardrobePrepCharacterOptions(characters);
   document.querySelectorAll('#bs-bt-wardrobe-tabs [data-wardrobe-tab]').forEach((node) => {
     node.classList.toggle('is-active', String(node.getAttribute('data-wardrobe-tab') || '') === selectedWardrobeSubpage);
   });
-  addPage.innerHTML = renderWardrobeAddPage(characters);
-  if (showAddPage || showPrepPage) return;
+  if (showAddPage) {
+    // 新增表单只在切进来时重画，免得存档刷新把填到一半的内容洗掉
+    if (addPage.dataset.character !== selected.name || !addPage.innerHTML) {
+      addPage.innerHTML = renderWardrobeAddPage();
+      addPage.dataset.character = selected.name;
+    }
+    return;
+  }
+  if (showPrepPage) return;
   if (characters.length === 0) {
-    selectedWardrobeName = '';
     container.innerHTML = '<div class="bs-bt-track-description-empty">尚无注册角色。</div>';
     return;
   }
-  const selected = characters.find((character) => character?.name === selectedWardrobeName);
-  if (!selected) {
-    selectedWardrobeName = '';
-    container.innerHTML = renderWardrobeCharacterList(characters);
-    return;
-  }
-  container.innerHTML = renderWardrobeCharacterPage(selected);
-}
-
-/** 衣柜补充的角色下拉：保留目前的选择，没有时预设正在看的角色 */
-function renderWardrobePrepCharacterOptions(characters = []) {
-  const select = document.getElementById('bs-bt-wardrobe-prep-character');
-  if (!select) return;
-  const names = characters.map((character) => String(character?.name || '')).filter(Boolean);
-  const previous = select.value || selectedWardrobeName;
-  select.innerHTML = names.length > 0
-    ? names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')
-    : '<option value="">尚无注册角色</option>';
-  select.disabled = names.length === 0;
-  if (names.includes(previous)) select.value = previous;
+  container.innerHTML = selected ? renderWardrobeCharacterPage(selected) : renderWardrobeCharacterList(characters);
 }
 
 function getWardrobeDetailItem(profile = {}, itemId = '') {
@@ -7954,6 +7948,13 @@ async function ensureModal(ctx) {
       renderWardrobePage(ctx);
     });
   });
+  document.getElementById('bs-bt-wardrobe-head')?.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element) || !event.target.closest('[data-wardrobe-back]')) return;
+    selectedWardrobeName = '';
+    selectedWardrobeSubpage = 'characters';
+    selectedWardrobeItemId = 0;
+    renderWardrobePage(ctx);
+  });
   const wardrobeList = document.getElementById('bs-bt-wardrobe-list');
   const wardrobeAddPage = document.getElementById('bs-bt-wardrobe-add-page');
   wardrobeAddPage?.addEventListener('change', (event) => {
@@ -7968,16 +7969,16 @@ async function ensureModal(ctx) {
       const characterName = String(characterButton.getAttribute('data-wardrobe-character') || '');
       const character = getChatState(ctx, getSettings(ctx)).characters?.[characterName];
       if (character) {
+        if (selectedWardrobePrepName !== characterName) {
+          const editor = document.getElementById('bs-bt-wardrobe-prep-json');
+          if (editor) editor.value = '';
+          selectedWardrobePrepName = characterName;
+        }
         selectedWardrobeName = characterName;
+        selectedWardrobeSubpage = 'characters';
         selectedWardrobeItemId = 0;
         renderWardrobePage(ctx);
       }
-      return;
-    }
-    if (target.closest('[data-wardrobe-back]')) {
-      selectedWardrobeName = '';
-      selectedWardrobeItemId = 0;
-      renderWardrobePage(ctx);
       return;
     }
     const editButton = target.closest('[data-wardrobe-item-edit]');
@@ -8064,7 +8065,7 @@ async function ensureModal(ctx) {
   wardrobeAddPage?.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element) || !target.closest('[data-wardrobe-item-save]')) return;
-    const characterName = String(document.getElementById('bs-bt-wardrobe-item-character')?.value || '').trim();
+    const characterName = selectedWardrobeName;
     if (!characterName) return;
     const settings = getSettings(ctx);
     const chatState = getChatState(ctx, settings);
@@ -8089,6 +8090,8 @@ async function ensureModal(ctx) {
         } : {}),
       };
       if (!item.name) throw new Error('衣物名称不能为空。');
+      // 成功后表单重画成空白；失败时 applyManualWardrobeTool 先抛错，填好的内容留着
+      delete wardrobeAddPage.dataset.character;
       const result = applyManualWardrobeTool(ctx, {
         name: 'bsAddWardrobeItem', arguments: { female: characterName, item },
       }, 'manual_wardrobe_item_add');

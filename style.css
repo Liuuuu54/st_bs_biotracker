@@ -4362,7 +4362,27 @@
 }
 
 #bs-biotracker-settings .bs-bt-wardrobe-tabs {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#bs-biotracker-settings #bs-bt-wardrobe-head > [data-wardrobe-back] {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+}
+
+#bs-biotracker-settings #bs-bt-wardrobe-head-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+#bs-biotracker-settings #bs-bt-wardrobe-head[hidden],
+#bs-biotracker-settings #bs-bt-wardrobe-tabs-section[hidden] {
+  display: none;
 }
 
 #bs-biotracker-settings .bs-bt-wardrobe-outfit-editor,

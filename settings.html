@@ -710,9 +710,13 @@
 
         <section id="bs-bt-view-wardrobe" class="bs-bt-view" data-view="wardrobe">
           <div class="bs-bt-panel">
-            <div class="settings_section">
+            <div id="bs-bt-wardrobe-head" class="settings_section bs-bt-wardrobe-character-title" hidden>
+              <button class="menu_button" type="button" data-wardrobe-back>返回角色列表</button>
+              <div id="bs-bt-wardrobe-head-name" class="bs-bt-wardrobe-page-title"></div>
+            </div>
+            <div id="bs-bt-wardrobe-tabs-section" class="settings_section" hidden>
               <div class="bs-bt-track-tabs bs-bt-wardrobe-tabs" id="bs-bt-wardrobe-tabs">
-                <button type="button" class="bs-bt-track-tab is-active" data-wardrobe-tab="characters">角色衣柜</button>
+                <button type="button" class="bs-bt-track-tab is-active" data-wardrobe-tab="characters">衣柜</button>
                 <button type="button" class="bs-bt-track-tab" data-wardrobe-tab="add">新增衣物</button>
                 <button type="button" class="bs-bt-track-tab" data-wardrobe-tab="prep">衣柜补充</button>
               </div>
@@ -723,9 +727,7 @@
             <div id="bs-bt-wardrobe-add-page" class="settings_section" hidden></div>
             <div id="bs-bt-wardrobe-prep-page" hidden>
               <div class="settings_section">
-                <small>让模型为已注册角色补充少量长期衣物。只加进衣柜，不覆盖原有衣物，也不改变当前穿着。</small>
-                <label for="bs-bt-wardrobe-prep-character">角色</label>
-                <select id="bs-bt-wardrobe-prep-character" class="text_pole"></select>
+                <small>让模型为这名角色补充少量长期衣物。只加进衣柜，不覆盖原有衣物，也不改变当前穿着。</small>
               </div>
 
               <div class="settings_section">
