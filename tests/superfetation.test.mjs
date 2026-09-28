@@ -160,8 +160,8 @@ test('每胎用自己的孕龄，不是共用时钟', () => {
 
 test('待著床的胚胎撞上孕中期会被清掉，不会活到分娩变成孩子', () => {
   const chatState = one({ stage: '孕早期' }, {
-    pregnantDays: 80, effectivePregnantDays: 80, fetusesCount: 2,
-    fetuses: [fetus(), lateFetus({ conceivedAtDays: 80, pendingImplantation: true, revealed: undefined })],
+    pregnantDays: 94, effectivePregnantDays: 94, fetusesCount: 2,
+    fetuses: [fetus(), lateFetus({ conceivedAtDays: 94, pendingImplantation: true, revealed: undefined })],
   });
   for (let i = 0; i < 20 && P(chatState).base.stage === '孕早期'; i += 1) step(chatState);
   assert.equal(P(chatState).base.stage, '孕中期');

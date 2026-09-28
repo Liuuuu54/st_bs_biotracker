@@ -33,12 +33,12 @@ const P = (chatState) => chatState.characters.A.profile;
 const step = (chatState) => applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 1 } });
 const runTo = (chatState, day) => { while (P(chatState).pregnant.effectivePregnantDays < day) step(chatState); };
 
-test('产科孕期曆：孕早期到 12 周、孕晚期 28 周起、临产期 37～42 周、满 42 周才逾期', () => {
+test('产科孕期曆：孕早期未满 14 周、孕晚期 28 周起、临产期 37～42 周、满 42 周才逾期', () => {
   assert.equal(TERM_START_DAYS, 259);
   assert.equal(DUE_DATE_DAYS, 280);
   const stageAt = (days) => state.derivePregnancyStageState(days, 1).stage;
-  assert.equal(stageAt(84), '孕早期');
-  assert.equal(stageAt(85), '孕中期');
+  assert.equal(stageAt(97), '孕早期', '13 周 6 天仍是孕早期');
+  assert.equal(stageAt(99), '孕中期');
   assert.equal(stageAt(195), '孕中期');
   assert.equal(stageAt(197), '孕晚期');
   assert.equal(stageAt(258), '孕晚期');

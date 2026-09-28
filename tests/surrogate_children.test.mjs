@@ -342,8 +342,9 @@ test('implanting during early pregnancy is refused after the superfetation windo
   chatState.characters['艾拉'] = makeCharacter('艾拉', [makeFetus()]);
   const profile = chatState.characters['艾拉'].profile;
   profile.base.stage = '孕早期';
-  profile.pregnant.pregnantDays = 80;
-  profile.pregnant.effectivePregnantDays = 80;
+  // 视窗＝孕早期 98 天减著床约 6 天，第 94 天已关
+  profile.pregnant.pregnantDays = 94;
+  profile.pregnant.effectivePregnantDays = 94;
 
   const result = applyToolCall(chatState, {
     name: 'bsImplantEmbryo',

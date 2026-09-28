@@ -13,12 +13,12 @@
 | `selfing`（自交） | `fathers` 中至少一個有效名字與遺傳母方名字相同。[親代比對](../../scripts/fetus_tags.js#L110) | 從親代欄位推導。 |
 | `identical`（同卵） | 著床成功時按胎兒種族的 `identicalProbability` 抽分裂，可成 2–4 胎；原胎與新胎共享 `identicalGroup`。異期胚胎著床只對新批次抽籤。[分裂流程](../../scripts/tools.js#L1608) | 事件寫入各胎 `tags`，另存 `identicalGroup`。 |
 | `rebirth`（胎內回歸） | `bsWombReturn` 把回歸者建成胎兒時寫入。[工具實作](../../scripts/tools.js#L862) | 寫入 `tags`。 |
-| `superfetation`（異期復孕） | 孕早期在受精窗口內已有卵、精源並再次受精，或在窗口內追加代孕胚胎時寫入。自然受精的機率係數為 `0.10 × (1 − 當前有效孕日 / 窗口上限)`；窗口上限是 `max(0, 84 − 著床所需實際日數 × 有效孕速)`。[自然窗口](../../scripts/tools.js#L1203)、[受精路徑](../../scripts/tools.js#L2463)、[植入路徑](../../scripts/tools.js#L5043) | 寫入 `tags`、`conceivedAtDays`，並在著床前標為待著床。 |
+| `superfetation`（異期復孕） | 孕早期在受精窗口內已有卵、精源並再次受精，或在窗口內追加代孕胚胎時寫入。自然受精的機率係數為 `0.10 × (1 − 當前有效孕日 / 窗口上限)`；窗口上限是 `max(0, 孕早期 98 − 著床所需實際日數 × 有效孕速)`。[自然窗口](../../scripts/tools.js#L1203)、[受精路徑](../../scripts/tools.js#L2463)、[植入路徑](../../scripts/tools.js#L5043) | 寫入 `tags`、`conceivedAtDays`，並在著床前標為待著床。 |
 | `nested`（孕中孕） | 自然異期受精成功後，若當前有效孕日達 56、精源總量大於 100，且已有胎重至少 1.5 的已著床宿主胎，則新胎寄在宿主體內；優先選最重者，同重時優先女胎。[宿主條件](../../scripts/tools.js#L1161)、[受精判定](../../scripts/tools.js#L2311) | 同時寫入 `nested` 與 `superfetation`，用 `nestedInEmbryoId` 指向宿主。 |
 | `androgenesis`（雄核發生） | 精卵雙方恰有一方採特殊核型，且該方的繼承模式為父系時，建立胚胎就標記。[核型判定](../../scripts/race_config.js#L1523)、[建胎](../../scripts/tools.js#L1686) | 寫入 `tags`。 |
 | `gynogenesis`（雌核發生） | 同一核型判定中，唯一的特殊核型一方採母系繼承模式時寫入；兩方都是一般或都是特殊核型時不產生這兩種標記。[核型判定](../../scripts/race_config.js#L1523) | 寫入 `tags`。 |
 
-`superfetation` 的新胚胎需要經過自己的著床判定；未著床就進入孕中期會被移除。成功著床的普通異期胎在有效孕日 84 揭曉，`nested` 在 189 揭曉；揭曉前不進追蹤頁與模型可見胎兒列表，但仍在狀態中發育。[著床與揭曉](../../scripts/tools.js#L2365)。
+`superfetation` 的新胚胎需要經過自己的著床判定；未著床就進入孕中期會被移除。成功著床的普通異期胎在有效孕日 98（孕中期開始、14 週）揭曉，`nested` 在 196（孕晚期開始、28 週）揭曉；揭曉前不進追蹤頁與模型可見胎兒列表，但仍在狀態中發育。[著床與揭曉](../../scripts/tools.js#L2365)。
 
 開局已懷孕時，註冊模型可直接給特殊來源欄位與 `tags`，使用者也可在註冊頁指定來源。正規化會把 `nestedInIndex` 換成宿主 `embryoId`、撤銷沒有有效宿主的 `nested` 與孤立的 `identical`，並依 `conceivedAtDays` 對齊異期標記；代孕、自交與嵌合仍由支撐欄位推導。[註冊規則](../../scripts/registry.js#L825)、[標記校正](../../scripts/registry.js#L1277)。調試工具也能直接注入指定來源或強制同卵／嵌合，見[工具參考](tool-reference.md#ui-診斷工具)。
 
