@@ -60,7 +60,7 @@ import {
 import { buildMainFlowPrompt, resetPoller, runTracker, getPollWaitStatus } from './scripts/tracker.js';
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
-import { describeBackSide, describeFetalPosition, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
+import { canHostNestedPregnancy, describeBackSide, describeFetalPosition, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
 import { applyToolCall, writeDiaryEntry } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
@@ -3768,6 +3768,8 @@ function buildTrackCharacterViewModel(character) {
         race: String(fetus?.race || '未知'),
         gender: String(fetus?.gender || '未知'),
         pendingImplantation: Boolean(fetus?.pendingImplantation),
+        canHostNested: canHostNestedPregnancy(fetus),
+        embryoType: String(fetus?.embryoType || '胎生'),
         tendencyAngle: Number.isFinite(Number(fetus?.tendencyAngle)) ? Number(fetus.tendencyAngle) : 0,
         descentStage: Number.isFinite(Number(fetus?.descentStage)) ? Number(fetus.descentStage) : null,
         positionText: describeFetalPosition(pregnant, fetus),
@@ -4823,6 +4825,8 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
   const canStartNewPregnancy = !hasConceptionState;
   const canWombReturn = canStartNewPregnancy && ['卵泡期', '排卵期', '黄体期', '月经期', '无经期'].includes(currentStage);
   const canAddDuringPregnancy = currentStage === '孕早期' && implantedFetuses.length > 0;
+  // 孕中孕宿主只列胎生、胎转卵生、不定型：卵生在壳里、卵胎生在卵膜里，进不去
+  const nestedHostFetuses = implantedFetuses.filter((fetus) => fetus.canHostNested);
   const conceptionModes = {
     normal: { label: '一般受孕', available: canStartNewPregnancy, description: '建立新的受精／妊娠状态；孕龄 0 代表尚未着床。' },
     surrogacy: { label: '代孕／托卵',
@@ -4833,7 +4837,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
     },
     womb_return: { label: '胎内回归', available: canWombReturn, description: '跳过回归期，直接从孕早期第 1 天开始；已登记回归者会被冻结。' },
     superfetation: { label: '异期受孕', available: canAddDuringPregnancy, description: '仅限孕早期；保留原胎并加入一批等待着床的新胚胎。' },
-    nested: { label: '孕中孕', available: canAddDuringPregnancy, description: '仅限孕早期；必须指定一颗已着床胎儿作为宿主。' },
+    nested: { label: '孕中孕', available: canAddDuringPregnancy && nestedHostFetuses.length > 0, description: '仅限孕早期；必须指定一颗已着床的胎生、胎转卵生或不定型胎儿作为宿主。' },
   };
   const requestedMode = Object.prototype.hasOwnProperty.call(conceptionModes, debugInjectDraft.mode) ? debugInjectDraft.mode : 'normal';
   const fallbackMode = Object.keys(conceptionModes).find((key) => conceptionModes[key].available) || requestedMode;
@@ -4855,12 +4859,12 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
   const secondaryProviderRaceValue = escapeHtml(debugInjectDraft.secondaryProviderRace || '');
   const returnerValue = escapeHtml(debugInjectDraft.returner || '');
   const returnerRaceValue = escapeHtml(debugInjectDraft.returnerRace || '');
-  const selectedHostIndex = implantedFetuses.some((fetus) => String(fetus.index) === String(debugInjectDraft.hostFetusIndex))
+  const selectedHostIndex = nestedHostFetuses.some((fetus) => String(fetus.index) === String(debugInjectDraft.hostFetusIndex))
     ? String(debugInjectDraft.hostFetusIndex)
-    : String(implantedFetuses[0]?.index ?? '');
+    : String(nestedHostFetuses[0]?.index ?? '');
   debugInjectDraft.hostFetusIndex = selectedHostIndex;
-  const hostOptions = implantedFetuses.map((fetus) =>
-    `<option value="${fetus.index}"${selectedHostIndex === String(fetus.index) ? ' selected' : ''}>胎 ${fetus.index + 1}｜${escapeHtml(fetus.fathers)}｜${escapeHtml(fetus.gender)}｜${escapeHtml(fetus.race)}</option>`
+  const hostOptions = nestedHostFetuses.map((fetus) =>
+    `<option value="${fetus.index}"${selectedHostIndex === String(fetus.index) ? ' selected' : ''}>胎 ${fetus.index + 1}｜${escapeHtml(fetus.embryoType)}｜${escapeHtml(fetus.fathers)}｜${escapeHtml(fetus.gender)}｜${escapeHtml(fetus.race)}</option>`
   ).join('');
   const modifierDraftActive = debugGestationModifierDraft.owner === selectedTrackName;
   const modifierNameValue = escapeHtml(modifierDraftActive ? debugGestationModifierDraft.name : (gestationModifier.name || ''));
@@ -5052,7 +5056,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
         </label>
         <button type="button" class="menu_button" data-debug-action="inject-pregnancy">执行${escapeHtml(selectedMode.label)}注入</button>
       </fieldset>
-      <div class="bs-bt-track-debug-hint">${selectedMode.available ? (conceptionMode === 'womb_return' ? '此调试模式不计算回归期，执行后立即是孕早期第 1 天。' : conceptionMode === 'nested' ? '宿主只列出已着床胎儿；新胎会同时带有孕中孕与异期受孕标记。' : conceptionMode === 'superfetation' ? '新胎使用当前妊娠时钟记录受孕时间，并先进入等待着床状态。' : isAdditionalSurrogacy ? '新胎沿用当前妊娠时钟并等待著床，同时带有代孕与异期复孕标记。' : '父亲名字、父亲种族、性别可用逗号逐胎填写。') : '当前阶段没有可执行的受孕注入模式。'}</div>
+      <div class="bs-bt-track-debug-hint">${selectedMode.available ? (conceptionMode === 'womb_return' ? '此调试模式不计算回归期，执行后立即是孕早期第 1 天。' : conceptionMode === 'nested' ? '宿主只列出已着床的胎生、胎转卵生、不定型胎儿（卵生在壳里、卵胎生在卵膜里，进不去）；新胎会同时带有孕中孕与异期受孕标记。' : conceptionMode === 'superfetation' ? '新胎使用当前妊娠时钟记录受孕时间，并先进入等待着床状态。' : isAdditionalSurrogacy ? '新胎沿用当前妊娠时钟并等待著床，同时带有代孕与异期复孕标记。' : '父亲名字、父亲种族、性别可用逗号逐胎填写。') : '当前阶段没有可执行的受孕注入模式。'}</div>
     </div>
     <div class="bs-bt-track-section" style="margin-top: 10px;">
       <div class="bs-bt-track-section-title">产兆前驱调试</div>

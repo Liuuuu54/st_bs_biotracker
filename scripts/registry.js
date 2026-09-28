@@ -61,7 +61,8 @@ import {
   resolveSkillDefinition,
 } from './skill_config.js';
 import { resolveWardrobeItemRef, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCall, BACK_SIDES, calculateDerivedInheritanceProgress, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
+import { applyToolCall, BACK_SIDES, calculateDerivedInheritanceProgress, canHostNestedPregnancy, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
+import { PREGNANCY_STAGE_DAYS } from './stage_config.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
 const DEBUG_LAST_REGISTRY_RESULT_KEY = '__bs_biotracker_debug_last_registry_result__';
@@ -966,7 +967,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- 嵌合体不必标 tags——给了 chimera 就会自动识别。chimera = { sourceCount: 融合前的受精卵数, fatherSources: [父方名字…], maternalSources: [遗传母方名字…], genderSources: [各来源的性别…] }；父方与母方名字加起来不足两个会被撤销，因为那不成其为嵌合。',
     '- identical：同卵的几胎都标上即可，系统会自动把它们归为同一组；只标一胎会被撤销。',
     '- superfetation：必须一并给 conceivedAtDays（这一胎受精时，母体已经怀了多少有效孕日），会被夹进这次妊娠的范围内。它比同腹其他胎儿晚受精、发育落后。',
-    '- nested：这一胎长在另一颗胎儿体内。除了 conceivedAtDays，还要给 nestedInIndex＝宿主在 fetuses 阵列里的下标（从 0 起算，不能指自己）。它的母亲是那颗胎儿，出生后承载者会同时生下女儿与外孙。',
+    '- nested：这一胎长在另一颗胎儿体内。除了 conceivedAtDays，还要给 nestedInIndex＝宿主在 fetuses 阵列里的下标（从 0 起算，不能指自己）。它的母亲是那颗胎儿，出生后承载者会同时生下孩子与孙辈。宿主只能是胎生、胎转卵生或不定型的胎儿（卵生在壳里、卵胎生在卵膜里，进不去）。',
     '- rebirth：一名已出生的角色回到子宫里成为这一胎，fathers 写那个人的名字（可以是 user）。适合「开场就已经在角色子宫里」的设定。产出后是全新个体，与原来那个人不是同一笔资料。',
     '- revealed：这一胎角色本人知不知道。省略时系统按孕龄自动判定（异期复孕进孕中期才知道、孕中孕要到孕晚期）；想让角色暂时不知情就明确给 false。',
     '- provider: 代孕母方、寄生等提供者名称，正常情况下为 null',
@@ -1421,11 +1422,12 @@ function normalizeRegisteredFetusTags(pregnant) {
     if (valid) fetus.nestedInEmbryoId = fetuses[target].embryoId;
     if (!fetus.nestedInEmbryoId) fetus.tags = fetus.tags.filter((tag) => tag !== 'nested');
   }
-  // 宿主自己也是被套的那颗时整条链不成立，一起撤掉
+  // 宿主自己也是被套的那颗时整条链不成立，一起撤掉；
+  // 宿主是卵生（在壳里）或卵胎生（在卵膜里）也进不去，退回普通异期胎
   for (const fetus of fetuses) {
     if (!fetus.nestedInEmbryoId) continue;
     const host = fetuses.find((item) => item.embryoId === fetus.nestedInEmbryoId);
-    if (!host || host.nestedInEmbryoId) {
+    if (!host || host.nestedInEmbryoId || !canHostNestedPregnancy(host)) {
       delete fetus.nestedInEmbryoId;
       fetus.tags = fetus.tags.filter((tag) => tag !== 'nested');
     }
@@ -1463,7 +1465,10 @@ function normalizeRegisteredFetusTags(pregnant) {
   for (const fetus of fetuses) {
     if (!fetus.conceivedAtDays) { delete fetus.revealed; continue; }
     if (fetus.revealed === undefined) {
-      const threshold = fetus.nestedInEmbryoId ? 189 : 84;
+      // 与运行期同一把尺：一般异期胎在孕中期（14 周）揭晓，孕中孕在孕晚期（28 周）
+      const threshold = fetus.nestedInEmbryoId
+        ? PREGNANCY_STAGE_DAYS.孕早期 + PREGNANCY_STAGE_DAYS.孕中期
+        : PREGNANCY_STAGE_DAYS.孕早期;
       fetus.revealed = effectiveDays >= threshold;
     }
     if (!fetus.revealed) delete fetus.revealed;

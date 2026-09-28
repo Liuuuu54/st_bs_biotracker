@@ -1203,11 +1203,29 @@ const NESTED_MIN_SPERM = 100;
 const NESTED_REVEAL_DAYS = SUPERFETATION_RAW_WINDOW_DAYS + (Number(PREGNANCY_STAGE_DAYS['孕中期']) || 105);
 
 /**
+ * 能当孕中孕宿主的胚型：胎生；胎转卵生（受精视窗在孕早期，壳还只是几片碎片、没合拢）；
+ * 不定型（没有固定外壳，精液浸得进去）。卵生从一开始就在壳里、卵胎生一直在卵膜里，进不去。
+ * 性别不设限
+ */
+const NESTED_HOST_EMBRYO_TYPES = new Set(['胎生', '胎转卵生', '不定型']);
+
+export function canHostNestedPregnancy(fetus) {
+  return NESTED_HOST_EMBRYO_TYPES.has(String(fetus?.embryoType || '胎生'));
+}
+
+/** 宿主是胎转卵生时，壳合拢后内胎跟着被封在里面：胎膜破不了，只能随宿主一起娩出 */
+function isSealedNestedFetus(fetus, fetuses) {
+  const host = getEnclosingHost(fetus, fetuses);
+  return Boolean(host) && String(host.embryoType || '胎生') === '胎转卵生';
+}
+
+/**
  * 挑一颗够大的胎儿当宿主：取最重的，同重时优先女胎。
- * 只挑已著床的——待著床的胚胎自己都还没安顿好。
+ * 只挑已著床的——待著床的胚胎自己都还没安顿好——而且胚型要进得去。
  */
 function pickNestedHostFetus(profile) {
   const candidates = getImplantedFetuses(profile)
+    .filter((fetus) => canHostNestedPregnancy(fetus))
     .filter((fetus) => clampNumber(fetus?.weight, 0.33, 3.0, 1.0) >= NESTED_HOST_MIN_WEIGHT);
   if (candidates.length === 0) return null;
   return candidates.reduce((best, fetus) => {
@@ -4051,6 +4069,7 @@ function releaseRupturedNestedFetuses(pregnant) {
   for (const fetus of fetuses) {
     const host = getEnclosingHost(fetus, fetuses);
     if (!host || clampNumber(fetus?.amnionDurability, -100, 100, 100) > 0) continue;
+    if (isSealedNestedFetus(fetus, fetuses)) continue;
     fetus.nestedReleased = true;
     if (Number.isFinite(Number(host.descentStage))) fetus.descentStage = Number(host.descentStage);
   }
@@ -4104,6 +4123,8 @@ function getAmnionSacs(pregnant) {
   const byGroup = new Map();
   for (const fetus of fetuses) {
     if (!hasMaternalSac(fetus)) continue;
+    // 封在胎转卵生宿主壳里的内胎：胎囊碰不到，不扣耐久、也不能破
+    if (isSealedNestedFetus(fetus, fetuses)) continue;
     const group = Number(fetus?.identicalGroup);
     if (Number.isInteger(group) && group > 0) {
       if (byGroup.has(group)) {
@@ -5211,6 +5232,9 @@ function ruptureFetalSac(profile, female, target) {
   const inLabor = ['第一产程', '第二产程'].includes(stage);
   const reject = (reason) => ({ applied: false, message: `bsAssistFetalPosition skipped for ${female}: ${reason}` });
   if (!inPrelabor && !inLabor) return reject(`stage ${stage || '(none)'} cannot rupture; do not narrate rupture yet.`);
+  if (isSealedNestedFetus(target, fetuses)) {
+    return reject("this fetus is sealed inside a 胎转卵生 host's hardened shell; its membrane cannot break on its own, and it will be born together with the host.");
+  }
   const sac = getSacOfFetus(pregnant, target);
   if (!sac) return reject('that fetus is not implanted and has no sac yet.');
   if (getSacDurability(sac) <= 0) return reject('already ruptured.');
@@ -7155,6 +7179,10 @@ function applyDebugInjectPregnancy(chatState, args) {
     nestedHost = existingFetuses[hostIndex];
     if (!isImplantedFetus(nestedHost)) {
       return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: host fetus must already be implanted.` };
+    }
+    // 调试也挡：卵生在壳里、卵胎生在卵膜里，物理上进不去
+    if (!canHostNestedPregnancy(nestedHost)) {
+      return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: ${String(nestedHost.embryoType || '胎生')} 的胎儿包在壳或卵膜里，不能当孕中孕宿主（只有胎生、胎转卵生、不定型可以）。` };
     }
   }
 
