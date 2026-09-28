@@ -184,6 +184,11 @@ test('bundled registration writes the character, skills, fetus talents and the f
             base: { age: 24 },
             pregnant: { pregnantDays: 200, fetuses: [{ fathers: '甲', race: '人类', gender: '女' }, { fathers: '甲', race: '人类', gender: '男' }] },
           },
+          currentOutfit: {
+            main: { name: '孕前连衣裙', note: '修身针织', fitProfile: { capacity: 'tight' } },
+            accessories: [{ name: '黑色丝袜', category: 'other', effects: [] }],
+            wearState: '腰腹绷紧',
+          },
           diary: { time: '第一天', content: '今天被登记了。' },
           skillSetup: {
             skillDefinitions: [{ name: '胎中新技', description: '只在本次定义的技能。' }],
@@ -199,11 +204,12 @@ test('bundled registration writes the character, skills, fetus talents and the f
   const bundleReport = {};
   const character = await runRegistry(ctx, {
     targetName: '露比',
-    bundle: { diaryWritingPrompt: '写得简短。', skillPrompt: '她会剑术。' },
+    bundle: { diaryWritingPrompt: '写得简短。', skillPrompt: '她会剑术。', outfitPrompt: '还穿着孕前的裙子。' },
     bundleReport,
   });
 
-  assert.match(sentPrompt, /附带：第一篇日记与初始技能／天赋/);
+  assert.match(sentPrompt, /附带：起始着衣、第一篇日记、初始技能／天赋/);
+  assert.equal(sentPayload.outfit_prompt, '还穿着孕前的裙子。');
   assert.equal(sentPayload.diary_writing_prompt, '写得简短。');
   assert.equal(sentPayload.initial_skill_prompt, '她会剑术。');
   assert.ok(Array.isArray(sentPayload.skill_catalog) && sentPayload.skill_catalog.length === CATALOG.length);
@@ -218,6 +224,10 @@ test('bundled registration writes the character, skills, fetus talents and the f
   assert.equal(bundleReport.fetusCount, 1);
   assert.deepEqual(bundleReport.skipped, ['胎儿#5']);
   assert.equal(bundleReport.diary.time, '第一天');
+  const worn = character.profile.wardrobe.items.find((item) => item.id === character.profile.outfit.mainItemId);
+  assert.equal(worn.name, '孕前连衣裙');
+  assert.equal(character.profile.outfit.accessoryItemIds.length, 1);
+  assert.equal(bundleReport.outfit.wearState, '腰腹绷紧');
 });
 
 test('with the skill and wardrobe systems off, bundled registration only adds the diary and drops the outfit', async () => {
@@ -280,13 +290,11 @@ test('with the skill and wardrobe systems off, bundled registration only adds th
   assert.equal(bundleReport.skillsWritten, undefined);
 });
 
-test('the registry prompt keeps a well-formed JSON sample after the outfit block is dropped', () => {
-  const on = buildRegistrySystemPrompt({ wardrobeSystemEnabled: true }, {});
-  const off = buildRegistrySystemPrompt({ wardrobeSystemEnabled: false }, {});
-  assert.match(on, /currentOutfit/);
-  assert.doesNotMatch(off, /currentOutfit|当前衣着/);
-  assert.match(off, /"pregnantDescription": "string"\n {4}\}\n {2}\}\n\}/);
-  assert.match(off, /角色补充设定】/);
+test('plain registration no longer asks for the outfit and keeps a well-formed JSON sample', () => {
+  const prompt = buildRegistrySystemPrompt({}, {});
+  assert.doesNotMatch(prompt, /currentOutfit|当前衣着/);
+  assert.match(prompt, /"pregnantDescription": "string"\n {4}\}\n {2}\}\n\}/);
+  assert.match(prompt, /角色补充设定】/);
 });
 
 test('a diary rewritten by hand replaces the same story day, while the tracker stays on cooldown', () => {

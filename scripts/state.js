@@ -225,6 +225,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   registryCustomNotes: '',
   registrySkillPrompt: '',
+  registryOutfitPrompt: '',
   registryDescriptionGuides: DEFAULT_REGISTRY_DESCRIPTION_GUIDES,
   racePhysiologyOverrides: {},
   derivedTypeOverrides: {},
@@ -795,7 +796,7 @@ export function createDefaultFemaleState(name = '') {
   return syncCharacterStageFromProfile(normalizeCharacterPsychologyState(character));
 }
 
-/** 着衣系统总开关：关闭时衣柜页、备装、注册衣着辨识与 tracker 的衣柜工具、说明、状态全部停用，资料保留 */
+/** 着衣系统总开关：关闭时衣柜页、注册着衣页与 tracker 的衣柜工具、说明、状态全部停用，资料保留 */
 export function isWardrobeSystemEnabled(settings) {
   return settings?.wardrobeSystemEnabled !== false;
 }

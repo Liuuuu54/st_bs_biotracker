@@ -12,7 +12,7 @@ import {
 } from '../scripts/wardrobe_config.js';
 import { applyToolCall, TOOL_DEFINITIONS } from '../scripts/tools.js';
 import { createEmptyChatState, normalizeCharacterPsychologyState } from '../scripts/state.js';
-import { applyRegistryResult } from '../scripts/registry.js';
+import { applyRegistryResult, applyStartingOutfit } from '../scripts/registry.js';
 
 const REF_ITEMS = [
   { id: 0, name: '全裸', slot: 'main' },
@@ -103,20 +103,36 @@ test('sanitizeWearState defaults, trims, strips separators and caps length', () 
   assert.equal(sanitizeWearState('敞开|x;;y'), '敞开 x y');
 });
 
-test('registration records only a reliable current outfit and otherwise stays unknown', () => {
+test('registration leaves the outfit unknown; the starting outfit is written into the wardrobe and worn', () => {
   const chatState = createEmptyChatState();
-  const unknown = applyRegistryResult(chatState, { name: '未知子', profile: { base: { race: '人类' } } });
+  const unknown = applyRegistryResult(chatState, { name: '未知子', profile: { base: { race: '人类' }, currentOutfit: { main: { name: '不该写入' } } } });
   assert.equal(unknown.profile.wardrobe.enabled, true);
   assert.equal(unknown.profile.outfit.mainItemId, null);
+  assert.equal(unknown.profile.wardrobe.items.some((item) => item.name === '不该写入'), false);
 
-  const dressed = applyRegistryResult(chatState, { name: '有衣子', profile: { base: { race: '人类' }, currentOutfit: {
-    main: { name: '日常套装', note: '白襯衫與長裙', parts: ['白襯衫', '長裙'], fitProfile: { masking: 'medium', support: 'normal', capacity: 'fitted', convenience: 'normal' } },
-    accessories: [{ name: '平底鞋', note: '', category: 'footwear', effects: [] }],
-  } } });
-  assert.equal(dressed.profile.wardrobe.items.some((item) => item.name === '日常套装'), true);
-  assert.equal(dressed.profile.wardrobe.items.some((item) => item.name === '平底鞋'), true);
-  assert.equal(dressed.profile.outfit.mainItemId, 1);
-  assert.deepEqual(dressed.profile.outfit.accessoryItemIds, [2]);
+  applyRegistryResult(chatState, { name: '有衣子', profile: { base: { race: '人类' } } });
+  const outfit = {
+    main: { name: '孕前连衣裙', note: '修身针织', parts: ['连衣裙'], fitProfile: { masking: 'low', support: 'normal', capacity: 'tight', convenience: 'normal' } },
+    accessories: [{ name: '黑色丝袜', note: '薄款', category: 'other', effects: [] }],
+    wearState: '腰腹绷紧',
+  };
+  applyStartingOutfit(chatState, '有衣子', { currentOutfit: outfit });
+  let dressed = chatState.characters['有衣子'];
+  const idOf = (name) => dressed.profile.wardrobe.items.find((item) => item.name === name)?.id;
+  assert.equal(dressed.profile.outfit.mainItemId, idOf('孕前连衣裙'));
+  assert.deepEqual(dressed.profile.outfit.accessoryItemIds, [idOf('黑色丝袜')]);
+  assert.equal(dressed.profile.outfit.wearState, '腰腹绷紧');
+
+  // 微调后重新写入：同名衣物更新而不是重复堆进衣柜，配件以新清单为准
+  applyStartingOutfit(chatState, '有衣子', { ...outfit, main: { ...outfit.main, note: '修身针织，米白色' }, accessories: [] });
+  dressed = chatState.characters['有衣子'];
+  assert.equal(dressed.profile.wardrobe.items.filter((item) => item.name === '孕前连衣裙').length, 1);
+  assert.equal(dressed.profile.wardrobe.items.find((item) => item.name === '孕前连衣裙').note, '修身针织，米白色');
+  assert.deepEqual(dressed.profile.outfit.accessoryItemIds, []);
+
+  applyStartingOutfit(chatState, '有衣子', { nude: true });
+  assert.equal(chatState.characters['有衣子'].profile.outfit.mainItemId, 0);
+  assert.throws(() => applyStartingOutfit(chatState, '有衣子', { accessories: [] }), /main/);
 });
 
 function makeWardrobeState() {

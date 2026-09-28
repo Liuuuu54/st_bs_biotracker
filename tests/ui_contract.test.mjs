@@ -23,15 +23,15 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
     'bs-bt-skill-detail-name', 'bs-bt-skill-detail-description', 'bs-bt-skill-detail-save',
     'bs-bt-skill-preset-development', 'bs-bt-skill-preset-behavior',
     'bs-bt-skill-baseline-prompt', 'bs-bt-skill-baseline-save',
-    'bs-bt-wardrobe-tabs', 'bs-bt-wardrobe-list', 'bs-bt-wardrobe-characters-page', 'bs-bt-wardrobe-add-page',
+    'bs-bt-wardrobe-tabs', 'bs-bt-wardrobe-list', 'bs-bt-wardrobe-characters-page', 'bs-bt-wardrobe-add-page', 'bs-bt-wardrobe-prep-page', 'bs-bt-wardrobe-prep-character',
     'bs-bt-register-source', 'bs-bt-register-source-summary',
     'bs-bt-world-baseline-prompt', 'bs-bt-world-baseline-save',
   ]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
   const registerTabs = [...html.matchAll(/data-register-tab="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(registerTabs, ['inference', 'registry', 'wardrobe', 'diary', 'skills']);
-  const registryPage = html.match(/data-register-page="registry"[\s\S]*?data-register-page="wardrobe"/)?.[0] || '';
+  assert.deepEqual(registerTabs, ['inference', 'registry', 'outfit', 'diary', 'skills']);
+  const registryPage = html.match(/data-register-page="registry"[\s\S]*?data-register-page="outfit"/)?.[0] || '';
   assert.match(registryPage, /id="bs-bt-register-custom-notes"/);
   assert.equal((html.match(/id="bs-bt-register-custom-notes"/g) || []).length, 1);
   assert.match(html, /id="bs-bt-register-skill-prompt"/);
@@ -77,7 +77,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.doesNotMatch(html, /id="bs-bt-register-skill-load-child"/);
   assert.doesNotMatch(html, /用自然语言描述角色注册时应具备的技能与天赋/);
   assert.doesNotMatch(html, /选择已备装角色后，可直接调整衣物、当前穿着与穿着状态/);
-  assert.deepEqual([...html.matchAll(/data-wardrobe-tab="([^"]+)"/g)].map((match) => match[1]), ['characters', 'add']);
+  assert.deepEqual([...html.matchAll(/data-wardrobe-tab="([^"]+)"/g)].map((match) => match[1]), ['characters', 'add', 'prep']);
   assert.match(controller, /skillPrompt/);
   assert.match(controller.slice(0, 500), /applyInitialSkillTalentConfig/);
   assert.doesNotMatch(controller, />查看<\/button>/);

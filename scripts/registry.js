@@ -60,12 +60,8 @@ import {
   registerSkillDefinition,
   resolveSkillDefinition,
 } from './skill_config.js';
-import {
-  createDefaultWardrobeItem,
-  normalizeWardrobeItem,
-  sanitizeWearState,
-} from './wardrobe_config.js';
-import { BACK_SIDES, calculateDerivedInheritanceProgress, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
+import { sanitizeWearState } from './wardrobe_config.js';
+import { applyToolCall, BACK_SIDES, calculateDerivedInheritanceProgress, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
 const DEBUG_LAST_REGISTRY_RESULT_KEY = '__bs_biotracker_debug_last_registry_result__';
@@ -445,8 +441,100 @@ export function buildWardrobePrepSystemPrompt(settings, options = {}) {
   ].join('\n');
 }
 
+const STARTING_OUTFIT_SAMPLE = '{"nude":false,"main":{"name":"string","note":"string","parts":[],"fitProfile":{"masking":"medium","support":"normal","capacity":"fitted","convenience":"normal"}},"accessories":[{"name":"string","note":"string","category":"other","effects":[]}],"wearState":"整齐"}';
+
+/** 起始着衣的规则：单独生成与一次注册共用 */
+function buildStartingOutfitRuleLines(outfitPrompt = '') {
+  return [
+    'currentOutfit 是这名角色此刻身上的起始着衣：一套完整基础衣着 main 加上正在穿戴的配件 accessories，不要顺便生成整个衣柜。',
+    '依角色卡、世界观与当下处境设计穿着，包括它合不合身：例如已显怀的孕妇仍硬穿孕前的修身衣服时，fitProfile 如实填这件衣服原本的档位（capacity=tight 等），系统会依孕期自动算出它被撑紧的程度；穿着的当下状态写进 wearState。',
+    'main 使用 name/note/parts/fitProfile。fitProfile 档位：masking=very_low/low/medium/high，support=none/normal/strong，capacity=tight/fitted/stretch/loose，convenience=inconvenient/normal/convenient。',
+    'accessories 的 category 为 underwear/outerwear/footwear/headwear/ornament/support/other，effects 最多两项，使用 masking/support/capacity/convenience 加 _up 或 _down（例如丝袜、孕妇托腹带、外套）。',
+    'note 只写颜色、材质、版型、长短、图案与来源等稳定外观，不写角色感受、怀孕反应或衣物当下状态。',
+    'wearState 是 12 字内的穿着状态标签，例如 整齐、扣子绷紧、衣衫不整。',
+    '明确全裸时填 nude=true，此时不列 main 与 accessories。',
+    outfitPrompt ? '严格遵守 payload.outfit_prompt 的起始着衣细则。' : '',
+  ].filter(Boolean);
+}
+
+export function buildStartingOutfitSystemPrompt(options = {}) {
+  return [
+    '你是 AIRP 角色起始着衣设计器。只为 payload.target_character 决定此刻身上穿着什么，参考 payload.existing_state 的阶段、孕程与描述。',
+    ...buildStartingOutfitRuleLines(options.outfitPrompt),
+    '只输出 JSON，不要输出额外解释。',
+    `JSON 顶层结构必须是：{"currentOutfit": ${STARTING_OUTFIT_SAMPLE}}`,
+  ].join('\n');
+}
+
+/** 起始着衣的结构检查；接受外层包着 currentOutfit 的写法 */
+export function sanitizeStartingOutfit(raw) {
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) && raw.currentOutfit !== undefined ? raw.currentOutfit : raw;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) throw new Error('起始着衣必须是 JSON 对象');
+  const nude = source.nude === true;
+  const main = !nude && source.main && typeof source.main === 'object' && !Array.isArray(source.main) ? source.main : null;
+  if (!nude && !main) throw new Error('起始着衣需要 main，或 nude=true 表示全裸');
+  const accessories = nude ? [] : (Array.isArray(source.accessories) ? source.accessories : []);
+  return {
+    nude,
+    ...(main ? { main } : {}),
+    accessories,
+    wearState: sanitizeWearState(source.wearState),
+  };
+}
+
+/**
+ * 把起始着衣写成角色当前穿着：衣物以名称收进长期衣柜（同名即更新），再整套换上，配件以这份清单为准。
+ * 任一步失败就整份不写
+ */
+export function applyStartingOutfit(chatState, targetName, raw) {
+  const outfit = sanitizeStartingOutfit(raw);
+  if (!chatState.characters?.[targetName]) throw new Error(`起始着衣需要已注册角色：${targetName}`);
+  const workingState = { ...chatState, characters: { ...chatState.characters } };
+  const calls = [];
+  if (outfit.main) calls.push({ name: 'bsAddWardrobeItem', arguments: { female: targetName, item: { ...outfit.main, id: undefined, slot: 'main' } } });
+  for (const accessory of outfit.accessories) {
+    calls.push({ name: 'bsAddWardrobeItem', arguments: { female: targetName, item: { ...accessory, id: undefined, slot: 'accessory' } } });
+  }
+  calls.push({
+    name: 'bsChangeOutfit',
+    arguments: {
+      female: targetName,
+      mainItemId: outfit.nude ? 0 : String(outfit.main.name || '').trim(),
+      accessoryItemIds: outfit.accessories.map((item) => String(item?.name || '').trim()),
+      wearState: outfit.wearState,
+    },
+  });
+  for (const call of calls) {
+    const result = applyToolCall(workingState, call);
+    if (!result?.applied) throw new Error(result?.message || '起始着衣写入失败');
+  }
+  chatState.characters[targetName] = workingState.characters[targetName];
+  return outfit;
+}
+
+export async function runRegistryOutfitInference(ctx, options = {}) {
+  const settings = getSettings(ctx);
+  if (!isWardrobeSystemEnabled(settings)) throw new Error('着衣系统已在系统页关闭');
+  const chatState = getChatState(ctx, settings);
+  const requestedTargetName = String(options.targetName || '').trim();
+  if (!requestedTargetName) throw new Error('起始着衣生成需要 targetName');
+  const targetName = resolveRegisteredCharacterName(chatState, requestedTargetName);
+  if (!targetName) throw new Error(`起始着衣生成需要已注册角色：${requestedTargetName}`);
+  const outfitPrompt = String(options.outfitPrompt !== undefined ? options.outfitPrompt : (settings.registryOutfitPrompt || '')).trim();
+  const payload = await buildRegistryPayload(ctx, settings, chatState, {
+    ...options,
+    targetName,
+    reason: 'outfit_inference',
+    customNotes: '',
+    userInstruction: outfitPrompt,
+  });
+  payload.outfit_prompt = outfitPrompt;
+  const result = await callOpenAICompatible(settings, payload, buildStartingOutfitSystemPrompt({ outfitPrompt }), { flow: 'outfit' });
+  return sanitizeStartingOutfit(result);
+}
+
 function sanitizeWardrobePrepResult(result) {
-  if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('备装推演必须返回 JSON 对象');
+  if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('衣柜补充必须返回 JSON 对象');
   const items = Array.isArray(result?.items) ? result.items : (Array.isArray(result?.wardrobe?.items) ? result.wardrobe.items : []);
   if (items.length <= 0) throw new Error('衣柜补充缺少 items');
   return { items };
@@ -615,9 +703,9 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
   if (!isWardrobeSystemEnabled(settings)) throw new Error('着衣系统已在系统页关闭');
   const chatState = getChatState(ctx, settings);
   const requestedTargetName = String(options.targetName || '').trim();
-  if (!requestedTargetName) throw new Error('备装推演需要 targetName');
+  if (!requestedTargetName) throw new Error('衣柜补充需要 targetName');
   const targetName = resolveRegisteredCharacterName(chatState, requestedTargetName);
-  if (!targetName) throw new Error(`备装推演需要已注册角色：${requestedTargetName}`);
+  if (!targetName) throw new Error(`衣柜补充需要已注册角色：${requestedTargetName}`);
   const customNotes = String(options.customNotes !== undefined ? options.customNotes : (settings.registryCustomNotes || '')).trim();
   const declaredRace = String(options.declaredRace || '').trim();
   const wardrobePrepPrompt = String(options.wardrobePrepPrompt || settings.wardrobePrepPrompt || '').trim();
@@ -703,15 +791,6 @@ export async function runRegistryBreedingInference(ctx, options = {}) {
 
 
 export function buildRegistrySystemPrompt(settings, options = {}) {
-  const prompt = buildRegistrySystemPromptBody(settings, options);
-  if (isWardrobeSystemEnabled(settings)) return prompt;
-  return prompt
-    .replace(/\n7\. 当前衣着：currentOutfit[^\n]*/, '')
-    .replace(/\n【7\. 当前衣着】[\s\S]*?(?=\n【\d+\. 角色补充设定】)/, '')
-    .replace(/,\n\s*"currentOutfit": \{[\s\S]*?\n {4}\}/, '');
-}
-
-function buildRegistrySystemPromptBody(settings, options = {}) {
   const includeBreedingPsychology = Boolean(options.includeBreedingPsychology);
   const guides = {
     ...DEFAULT_REGISTRY_DESCRIPTION_GUIDES,
@@ -758,7 +837,6 @@ function buildRegistrySystemPromptBody(settings, options = {}) {
     '4. 既有孩子记录：children',
     '5. 初登场即怀孕：pregnant.pregnantDays、pregnant.fetusesCount、pregnant.fetuses',
     '6. 文字描述栏位：descriptions',
-    '7. 当前衣着：currentOutfit。只记录登场时明确可见的完整基础衣着与配件，不要顺便生成整个衣柜；无法可靠判断时省略。',
     '如果资料不足，可以省略字段或给 null；不要为了凑完整而编造。',
     embryoTypeLorePrompt,
     '以下字段定义、参数说明、注意事项与示例，均视为必要规则：',
@@ -869,13 +947,9 @@ function buildRegistrySystemPromptBody(settings, options = {}) {
     String(guides.normalDescription || DEFAULT_REGISTRY_DESCRIPTION_GUIDES.normalDescription),
     '[pregnantDescription]',
     String(guides.pregnantDescription || DEFAULT_REGISTRY_DESCRIPTION_GUIDES.pregnantDescription),
-    '【7. 当前衣着】',
-    'currentOutfit.main 是当前一套完整基础衣着，使用 name/note/parts/fitProfile。fitProfile 档位：masking=very_low/low/medium/high，support=none/normal/strong，capacity=tight/fitted/stretch/loose，convenience=inconvenient/normal/convenient。',
-    'currentOutfit.accessories 只列当前穿戴的配件，category 为 underwear/outerwear/footwear/headwear/ornament/support/other，effects 最多两项，使用四维名加 _up/_down。',
-    '明确全裸时填 currentOutfit.nude=true；衣着不明时整个省略，不得用全裸代替未知。',
     `【${includeBreedingPsychology ? 7 : 6}. 角色补充设定】`,
     customNotes ? customNotes : '无',
-    '若提供了角色补充设定，必须优先视为该角色已明确声明的特征，并在推演、注册与备装相关字段中如实体现；不要忽略，也不要擅自扩写超出原意的内容。',
+    '若提供了角色补充设定，必须优先视为该角色已明确声明的特征，并在推演与注册相关字段中如实体现；不要忽略，也不要擅自扩写超出原意的内容。',
     '若角色补充设定明确描述的是一种未来也会持续生效、且倍率不为 1 的妊娠体质、祝福、诅咒、冻结或延长效果，即使角色当前未怀孕，也必须写入 bio.gestationModifierMultiplier、bio.gestationModifierName、bio.gestationModifierDescription；普通妊娠不得补写 bio。',
     '注意：未怀孕角色不要硬填 pregnantDescription；描述内容应遵守旧系统文字栏位语义，不要换行。',
     '只输出 JSON，不要输出额外解释。',
@@ -970,12 +1044,6 @@ function buildRegistrySystemPromptBody(settings, options = {}) {
     '    "descriptions": {',
     '      "normalDescription": "string",',
     '      "pregnantDescription": "string"',
-    '    },',
-    '    "currentOutfit": {',
-    '      "nude": false,',
-    '      "main": { "name": "string", "note": "string", "parts": [], "fitProfile": { "masking": "medium", "support": "normal", "capacity": "fitted", "convenience": "normal" } },',
-    '      "accessories": [{ "name": "string", "note": "string", "category": "other", "effects": [] }],',
-    '      "wearState": "整齐"',
     '    }',
     '  }',
     '}',
@@ -1547,57 +1615,16 @@ function sanitizeRegistryProfile(profile, baseProfile) {
   const descriptions = pickObjectFields(profile.descriptions, DESCRIPTION_FIELDS);
   if (Object.keys(descriptions).length > 0) sanitized.descriptions = descriptions;
 
-  if (profile.currentOutfit && typeof profile.currentOutfit === 'object' && !Array.isArray(profile.currentOutfit)) {
-    const currentOutfit = profile.currentOutfit;
-    const items = [createDefaultWardrobeItem()];
-    let nextId = 1;
-    let mainItemId = null;
-    if (currentOutfit.nude === true) {
-      mainItemId = 0;
-    } else if (currentOutfit.main && typeof currentOutfit.main === 'object' && !Array.isArray(currentOutfit.main)) {
-      const main = normalizeWardrobeItem({ ...currentOutfit.main, id: nextId, slot: 'main' });
-      if (main) {
-        items.push(main);
-        mainItemId = nextId;
-        nextId += 1;
-      }
-    }
-    const accessoryItemIds = [];
-    for (const source of (Array.isArray(currentOutfit.accessories) ? currentOutfit.accessories : [])) {
-      const accessory = normalizeWardrobeItem({ ...source, id: nextId, slot: 'accessory' });
-      if (!accessory) continue;
-      items.push(accessory);
-      accessoryItemIds.push(nextId);
-      nextId += 1;
-    }
-    sanitized.wardrobe = { enabled: true, items };
-    sanitized.outfit = {
-      mainItemId,
-      accessoryItemIds,
-      transientItems: [],
-      wearState: sanitizeWearState(currentOutfit.wearState),
-      pregFit: null,
-    };
-  }
-
   return sanitized;
 }
 
-export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true, allowWardrobe = true } = {}) {
+export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true } = {}) {
   const name = String(result?.name || '').trim();
   if (!name) throw new Error('注册结果缺少角色名称');
   const current = chatState.characters[name];
   const base = current && typeof current === 'object' ? current : createDefaultFemaleState(name);
   const sanitizedProfile = sanitizeRegistryProfile(result.profile, base.profile);
-  if (current && current.profile?.outfit?.mainItemId !== null && current.profile?.outfit?.mainItemId !== undefined) {
-    delete sanitizedProfile.wardrobe;
-    delete sanitizedProfile.outfit;
-  }
   if (!allowBreedingPsychology) delete sanitizedProfile.psychology;
-  if (!allowWardrobe) {
-    delete sanitizedProfile.wardrobe;
-    delete sanitizedProfile.outfit;
-  }
   const effectiveRace = sanitizedProfile.base?.race ?? base.profile.base.race;
   const mergedRaceProfile = getMergedRacePhysiologyProfile(effectiveRace);
   const basePsychology = normalizeCharacterPsychologyState(base).profile.psychology;
@@ -1778,27 +1805,24 @@ function buildDiaryRuleLines(requestedDate = '') {
  * 省下日记与技能各自再送一次角色卡、世界书与聊天的成本
  */
 export function buildRegistryBundlePrompt(options = {}) {
-  if (options.includeSkills === false) {
-    return [
-      '【附带：第一篇日记】',
-      '这次注册同时要产出这名角色的第一篇日记，放在同一个 JSON 的顶层（与 name、profile 并列），必须输出：',
-      '"diary": {"time":"日期标题","content":"日记正文"}',
-      '[日记规则]',
-      ...buildDiaryRuleLines(options.requestedDate),
-      '日记写的是注册当下这名角色的事后回顾，内容必须与你这次输出的 profile 一致（阶段、怀孕与否、处境）。',
-    ].filter(Boolean).join('\n');
-  }
+  const includeOutfit = options.includeOutfit === true;
+  const includeSkills = options.includeSkills !== false;
+  const parts = [includeOutfit ? '起始着衣' : '', '第一篇日记', includeSkills ? '初始技能／天赋' : ''].filter(Boolean);
   return [
-    '【附带：第一篇日记与初始技能／天赋】',
-    '这次注册同时要产出这名角色的第一篇日记与初始技能／天赋，放在同一个 JSON 的顶层（与 name、profile 并列），两个都必须输出：',
+    `【附带：${parts.join('、')}】`,
+    `这次注册同时要产出这名角色的${parts.join('、')}，放在同一个 JSON 的顶层（与 name、profile 并列），${parts.length > 1 ? '每一项都必须输出' : '必须输出'}：`,
+    includeOutfit ? `"currentOutfit": ${STARTING_OUTFIT_SAMPLE}` : '',
     '"diary": {"time":"日期标题","content":"日记正文"}',
-    '"skillSetup": {"skillDefinitions":[{"name":"string","description":"string"}],"initialSkills":[{"skill":"技能精确名称或ID","level":1,"exp":0}],"initialTalents":[{"skill":"技能精确名称或ID","level":0,"exp":0}],"fetusTalents":[{"fetusIndex":0,"talents":[{"skill":"技能精确名称或ID","level":1,"exp":0}]}]}',
+    includeSkills ? '"skillSetup": {"skillDefinitions":[{"name":"string","description":"string"}],"initialSkills":[{"skill":"技能精确名称或ID","level":1,"exp":0}],"initialTalents":[{"skill":"技能精确名称或ID","level":0,"exp":0}],"fetusTalents":[{"fetusIndex":0,"talents":[{"skill":"技能精确名称或ID","level":1,"exp":0}]}]}' : '',
+    ...(includeOutfit ? ['[起始着衣规则]', ...buildStartingOutfitRuleLines(options.outfitPrompt)] : []),
     '[日记规则]',
     ...buildDiaryRuleLines(options.requestedDate),
-    '日记写的是注册当下这名角色的事后回顾，内容必须与你这次输出的 profile 一致（阶段、怀孕与否、衣着、处境）。',
-    '[技能／天赋规则]',
-    ...buildSkillRuleLines({ ...options, hasFetuses: true, fetusSource: 'output' }),
-    'skillSetup 里没有项目的数组也必须输出为空数组。',
+    `日记写的是注册当下这名角色的事后回顾，内容必须与你这次输出的 profile 一致（阶段、怀孕与否、${includeOutfit ? '衣着、' : ''}处境）。`,
+    ...(includeSkills ? [
+      '[技能／天赋规则]',
+      ...buildSkillRuleLines({ ...options, hasFetuses: true, fetusSource: 'output' }),
+      'skillSetup 里没有项目的数组也必须输出为空数组。',
+    ] : []),
   ].filter(Boolean).join('\n');
 }
 
@@ -2120,12 +2144,17 @@ export function applyRegistryChildInheritance(chatState, targetName, source = {}
 
 /** 从注册结果拿出一次注册附带的日记与技能（不让它们混进角色资料） */
 function takeRegistryBundle(result) {
-  if (!result || typeof result !== 'object' || Array.isArray(result)) return { diary: null, skillSetup: null };
-  const diary = result.diary && typeof result.diary === 'object' && !Array.isArray(result.diary) ? result.diary : null;
-  const skillSetup = result.skillSetup && typeof result.skillSetup === 'object' && !Array.isArray(result.skillSetup) ? result.skillSetup : null;
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return { diary: null, skillSetup: null, currentOutfit: null };
+  const pick = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : null);
+  const diary = pick(result.diary);
+  const skillSetup = pick(result.skillSetup);
+  // 模型偶尔会把着衣塞进 profile 里，一并取出
+  const currentOutfit = pick(result.currentOutfit) || pick(result.profile?.currentOutfit);
   delete result.diary;
   delete result.skillSetup;
-  return { diary, skillSetup };
+  delete result.currentOutfit;
+  if (pick(result.profile)) delete result.profile.currentOutfit;
+  return { diary, skillSetup, currentOutfit };
 }
 
 /**
@@ -2164,8 +2193,16 @@ function prepareBundleSkills(chatState, result, skillSetup, report) {
   return { catalog, nextSkillId };
 }
 
-/** 角色注册完成后，写入附带的技能／天赋与第一篇日记 */
+/** 角色注册完成后，写入附带的起始着衣、技能／天赋与第一篇日记 */
 function applyRegistryBundle(chatState, targetName, bundleOutput, workingSkills, report) {
+  if (bundleOutput.includeOutfit) {
+    try {
+      report.outfit = bundleOutput.currentOutfit ? applyStartingOutfit(chatState, targetName, bundleOutput.currentOutfit) : null;
+      if (!report.outfit) report.outfitError = '模型没有给出起始着衣';
+    } catch (error) {
+      report.outfitError = String(error?.message || error);
+    }
+  }
   chatState.skillCatalog = workingSkills.catalog;
   chatState.nextSkillId = workingSkills.nextSkillId;
   if (bundleOutput.skillSetup) {
@@ -2214,6 +2251,8 @@ export async function runRegistry(ctx, options = {}) {
   // 一次注册：日记与技能的规则、图鉴随同这次请求送出
   const bundle = options.bundle && typeof options.bundle === 'object' ? options.bundle : null;
   const bundleSkills = Boolean(bundle) && isSkillSystemEnabled(settings);
+  const bundleOutfit = Boolean(bundle) && isWardrobeSystemEnabled(settings);
+  if (bundleOutfit) payload.outfit_prompt = String(bundle.outfitPrompt || '').trim();
   if (bundleSkills) {
     payload.skill_baseline_prompt = String(chatState.skillBaselinePrompt || '').trim();
     payload.skill_catalog = normalizeSkillCatalog(chatState.skillCatalog);
@@ -2248,6 +2287,8 @@ export async function runRegistry(ctx, options = {}) {
   const systemPrompt = bundle
     ? `${basePrompt}\n\n${buildRegistryBundlePrompt({
       includeSkills: bundleSkills,
+      includeOutfit: bundleOutfit,
+      outfitPrompt: payload.outfit_prompt || '',
       skillPrompt: payload.initial_skill_prompt,
       skillBaselinePrompt: payload.skill_baseline_prompt,
       emptyCatalog: !payload.skill_catalog?.length,
@@ -2294,15 +2335,13 @@ export async function runRegistry(ctx, options = {}) {
     result.name = targetName;
     const bundleOutput = bundle ? takeRegistryBundle(result) : null;
     if (bundleOutput && !bundleSkills) bundleOutput.skillSetup = null;
+    if (bundleOutput) bundleOutput.includeOutfit = bundleOutfit;
     const bundleReport = options.bundleReport && typeof options.bundleReport === 'object' ? options.bundleReport : {};
     // 胎儿天赋要趁胎儿还是这次输出的顺序时挂上去：注册的正规化与特殊来历可能调整胎儿阵列
     const workingSkills = bundleOutput ? prepareBundleSkills(chatState, result, bundleOutput.skillSetup, bundleReport) : null;
     applyRequestedSpecialFetus(result, specialFetus);
     recordRegistryResultDebug(result);
-    let character = applyRegistryResult(chatState, result, {
-      allowBreedingPsychology: includeBreedingPsychology,
-      allowWardrobe: isWardrobeSystemEnabled(settings),
-    });
+    let character = applyRegistryResult(chatState, result, { allowBreedingPsychology: includeBreedingPsychology });
     if (sourceChildContext) character = applyRegistryChildInheritance(chatState, targetName, requestedSource).character;
     if (bundleOutput) character = applyRegistryBundle(chatState, targetName, bundleOutput, workingSkills, bundleReport);
     recordChatStateSnapshot(ctx, chatState, { reason: 'registry' });

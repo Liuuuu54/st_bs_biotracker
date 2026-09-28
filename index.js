@@ -3,12 +3,14 @@ import {
   applyInitialSkillTalentConfig,
   applyRegistryBreedingInference,
   applyRegistrySkillSetup,
+  applyStartingOutfit,
   buildSkillSetupEditorValue,
   resolveRegistryChildSource,
   resolveRegistryTargetName,
   runRegistry,
   runRegistryBreedingInference,
   runRegistryDiaryInference,
+  runRegistryOutfitInference,
   runRegistrySkillInference,
   runRegistryWardrobeInference,
 } from './scripts/registry.js';
@@ -313,25 +315,41 @@ function applyExtensionSystemVisibility(settings) {
     document.querySelectorAll(selector).forEach((node) => { node.hidden = !visible; });
   };
   toggle('#bs-biotracker-settings .bs-bt-home-tile[data-nav-view="wardrobe"]', extensionSystems.wardrobe);
-  toggle('#bs-bt-register-tabs [data-register-tab="wardrobe"]', extensionSystems.wardrobe);
+  toggle('#bs-bt-register-tabs [data-register-tab="outfit"]', extensionSystems.wardrobe);
   toggle('#bs-biotracker-settings .bs-bt-home-tile[data-nav-view="skill-catalog"]', extensionSystems.skill);
   toggle('#bs-bt-register-tabs [data-register-tab="skills"]', extensionSystems.skill);
   const bundleButton = document.getElementById('bs-bt-register-run-bundle');
   if (bundleButton && !bundleButton.disabled) bundleButton.textContent = REGISTRY_OP_UI.registerBundle.idleText;
-  toggle('#bs-bt-register-bundle-note-skill', extensionSystems.skill);
-  toggle('#bs-bt-register-bundle-note-diary', !extensionSystems.skill);
+  const bundleNote = document.getElementById('bs-bt-register-bundle-note');
+  if (bundleNote) bundleNote.textContent = describeRegisterBundleScope();
   const activeTab = document.querySelector('#bs-bt-register-tabs [data-register-tab].is-active')?.getAttribute('data-register-tab');
-  if (activeTab === 'wardrobe' || activeTab === 'skills') setRegisterTab(activeTab);
+  if (activeTab === 'outfit' || activeTab === 'skills') setRegisterTab(activeTab);
   const view = document.getElementById(PANEL_ID)?.dataset.view;
   if (view === 'wardrobe' || view === 'skill-catalog') setView(view);
+}
+
+/** 一次注册会附带哪些子页，依系统页开关而定 */
+function getRegisterBundleParts() {
+  return [
+    extensionSystems.wardrobe ? { label: '着衣', page: '着衣页', field: '「起始着衣细则」' } : null,
+    { label: '日记', page: '日记页', field: '「日记写作规则」与日期' },
+    extensionSystems.skill ? { label: '技能', page: '技能页', field: '「额外技能／天赋提示」' } : null,
+  ].filter(Boolean);
+}
+
+function describeRegisterBundleScope() {
+  const parts = getRegisterBundleParts();
+  return `「一次注册」在同一个请求里附上${parts.map((part) => part.page + '的' + part.field).join('、')}，注册完成时一并写入，`
+    + `比分开送出省下重复的角色卡、世界书与聊天。结果会填进${parts.map((part) => part.page).join('、')}的预览，仍可在那里微调后重新写入。`;
 }
 
 /** 注册页各异步操作的按钮与状态栏绑定 */
 const REGISTRY_OP_UI = {
   register: { buttonId: 'bs-bt-register-run', busyText: '注册中...', idleText: '注册当前角色', setStatus: (message, isError) => setRegisterStatus(message, isError) },
-  registerBundle: { buttonId: 'bs-bt-register-run-bundle', busyText: '注册中...', get idleText() { return extensionSystems.skill ? '一次注册（含日记、技能）' : '一次注册（含日记）'; }, setStatus: (message, isError) => setRegisterStatus(message, isError) },
+  registerBundle: { buttonId: 'bs-bt-register-run-bundle', busyText: '注册中...', get idleText() { return `一次注册（含${getRegisterBundleParts().map((part) => part.label).join('、')}）`; }, setStatus: (message, isError) => setRegisterStatus(message, isError) },
   inference: { buttonId: 'bs-bt-breeding-inference-run', busyText: '推演中...', idleText: '繁育推演', setStatus: (message, isError) => setBreedingInferenceStatus(message, isError) },
-  wardrobe: { buttonId: 'bs-bt-wardrobe-prep-run', busyText: '生成中...', idleText: '生成备装', setStatus: (message, isError) => setWardrobePrepStatus(message, isError) },
+  wardrobe: { buttonId: 'bs-bt-wardrobe-prep-run', busyText: '生成中...', idleText: '生成衣柜补充', setStatus: (message, isError) => setWardrobePrepStatus(message, isError) },
+  outfit: { buttonId: 'bs-bt-register-outfit-generate', busyText: '生成中...', idleText: '生成着衣', setStatus: (message, isError) => setRegisterOutfitStatus(message, isError) },
   diary: { buttonId: 'bs-bt-diary-generate', busyText: '生成中...', idleText: '生成日记', setStatus: (message, isError) => setDiaryStatus(message, isError) },
   skill: { buttonId: 'bs-bt-register-skill-generate', busyText: '生成中...', idleText: '生成技能／天赋', setStatus: (message, isError) => setRegisterSkillStatus(message, isError) },
 };
@@ -360,9 +378,11 @@ function hasPendingRegistryOperations() {
 const REGISTRY_OP_FLOWS = Object.freeze({
   skill: ['skill'],
   wardrobe: ['wardrobe'],
+  outfit: ['outfit'],
   diary: ['diary'],
   inference: ['breeding'],
   register: ['registry', 'breeding'],
+  registerBundle: ['registry', 'breeding'],
 });
 const registryBusyToasts = new Map();
 
@@ -450,7 +470,8 @@ function resetRegisterPageState() {
   setBreedingInferenceEditor('尚未执行繁育推演。直接注册不会生成繁育心理人设。');
   setBreedingInferenceTarget('');
   setBreedingInferenceStatus('');
-  setWardrobePrepStatus('角色必须已注册。补充不会覆盖原衣柜或强制换装。');
+  setWardrobePrepStatus('补充不会覆盖原衣柜或强制换装。');
+  setRegisterOutfitStatus('角色必须先完成注册。写入会把这套衣物收进衣柜并设为当前穿着。');
   setDiaryStatus('角色必须已注册，且同一故事日尚未写过日记。');
   setRegisterStatus('输入名字与 Description 规则后发送注册请求，完成后可在“角色追踪”查看该角色状态变量。');
 }
@@ -476,8 +497,8 @@ function syncRegisterPageOnOpen(ctx) {
 
 function setRegisterTab(tab) {
   const requested = String(tab || 'inference');
-  const disabled = (requested === 'wardrobe' && !extensionSystems.wardrobe) || (requested === 'skills' && !extensionSystems.skill);
-  const next = disabled ? 'registry' : (['inference', 'registry', 'wardrobe', 'diary', 'skills'].includes(requested) ? requested : 'inference');
+  const disabled = (requested === 'outfit' && !extensionSystems.wardrobe) || (requested === 'skills' && !extensionSystems.skill);
+  const next = disabled ? 'registry' : (['inference', 'registry', 'outfit', 'diary', 'skills'].includes(requested) ? requested : 'inference');
   document.querySelectorAll('#bs-bt-register-tabs [data-register-tab]').forEach((node) => {
     node.classList.toggle('is-active', String(node.getAttribute('data-register-tab') || '') === next);
   });
@@ -830,28 +851,22 @@ function setWardrobePrepStatus(message, isError = false) {
 
 async function runWardrobePrepInference(ctx) {
   if (isRegistryOperationPending('wardrobe')) {
-    globalThis.toastr?.info?.('[BS BioTracker] 备装生成正在进行中，请等待完成');
-    return;
-  }
-  const values = getRegisterFormValues();
-  if (!values.targetName) {
-    setWardrobePrepStatus('请先输入要备装的已注册角色名。', true);
-    globalThis.toastr?.warning?.('[BS BioTracker] 请先输入角色名');
+    globalThis.toastr?.info?.('[BS BioTracker] 衣柜补充正在进行中，请等待完成');
     return;
   }
   readSettingsFromForm(ctx);
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
-  const targetName = resolveRegisteredCharacterName(chatState, values.targetName);
+  const targetName = resolveRegisteredCharacterName(chatState, getWardrobePrepTargetName());
   if (!targetName) {
-    setWardrobePrepStatus(`尚未找到已注册角色：${values.targetName}。请先完成注册，再备装。`, true);
-    globalThis.toastr?.warning?.('[BS BioTracker] 备装需要已注册角色');
+    setWardrobePrepStatus('请先选择一个已注册角色。', true);
+    globalThis.toastr?.warning?.('[BS BioTracker] 衣柜补充需要已注册角色');
     return;
   }
   const wardrobePrepPrompt = String(document.getElementById('bs-bt-wardrobe-prep-prompt')?.value || settings.wardrobePrepPrompt || '').trim();
   beginRegistryOperation('wardrobe', `正在为 ${targetName} 生成衣柜补充...`);
   try {
-    const result = await runRegistryWardrobeInference(ctx, { ...values, customNotes: '', skillPrompt: '', targetName, wardrobePrepPrompt });
+    const result = await runRegistryWardrobeInference(ctx, { customNotes: '', targetName, wardrobePrepPrompt });
     const editor = document.getElementById('bs-bt-wardrobe-prep-json');
     if (editor) editor.value = JSON.stringify(result, null, 2);
     setWardrobePrepStatus('衣柜补充生成完成。可以手动微调 JSON，再合并。');
@@ -866,38 +881,41 @@ async function runWardrobePrepInference(ctx) {
   }
 }
 
+function getWardrobePrepTargetName() {
+  return String(document.getElementById('bs-bt-wardrobe-prep-character')?.value || '').trim();
+}
+
 function applyWardrobePrep(ctx) {
-  const values = getRegisterFormValues();
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
-  const targetName = resolveRegisteredCharacterName(chatState, values.targetName);
+  const targetName = resolveRegisteredCharacterName(chatState, getWardrobePrepTargetName());
   const character = targetName ? chatState.characters?.[targetName] : null;
-  if (!values.targetName || !character) {
-    setWardrobePrepStatus('请先在注册角色名输入一个已注册角色。', true);
-    globalThis.toastr?.warning?.('[BS BioTracker] 备装需要已注册角色');
+  if (!character) {
+    setWardrobePrepStatus('请先选择一个已注册角色。', true);
+    globalThis.toastr?.warning?.('[BS BioTracker] 衣柜补充需要已注册角色');
     return;
   }
   const raw = String(document.getElementById('bs-bt-wardrobe-prep-json')?.value || '').trim();
   if (!raw) {
-    setWardrobePrepStatus('备装 JSON 为空。', true);
+    setWardrobePrepStatus('衣柜补充 JSON 为空。', true);
     return;
   }
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    setWardrobePrepStatus(`备装 JSON 无法解析：${String(error?.message || error)}`, true);
+    setWardrobePrepStatus(`衣柜补充 JSON 无法解析：${String(error?.message || error)}`, true);
     return;
   }
   const items = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed?.wardrobe?.items) ? parsed.wardrobe.items : [];
   if (items.length === 0) {
-    setWardrobePrepStatus('备装 JSON 需要 wardrobe.items。', true);
+    setWardrobePrepStatus('衣柜补充 JSON 需要 items。', true);
     return;
   }
   const workingState = cloneJsonValue(chatState);
   const workingCharacter = workingState.characters?.[targetName];
   if (!workingCharacter?.profile) {
-    setWardrobePrepStatus('备装目标状态异常。', true);
+    setWardrobePrepStatus('衣柜补充目标状态异常。', true);
     return;
   }
   const logs = [];
@@ -907,12 +925,12 @@ function applyWardrobePrep(ctx) {
   }
   const failed = logs.find((item) => item && item.applied === false);
   if (failed) {
-    setWardrobePrepStatus(failed.message || '备装失败。', true);
+    setWardrobePrepStatus(failed.message || '衣柜补充失败。', true);
     return;
   }
   const preparedCharacter = workingState.characters?.[targetName];
   if (!preparedCharacter?.profile) {
-    setWardrobePrepStatus('备装目标状态异常。', true);
+    setWardrobePrepStatus('衣柜补充目标状态异常。', true);
     return;
   }
   chatState.characters[targetName] = preparedCharacter;
@@ -923,6 +941,84 @@ function applyWardrobePrep(ctx) {
   renderWardrobePage(ctx);
   setWardrobePrepStatus(`已为 ${targetName} 合并 ${items.length} 项衣柜补充；当前穿着未改变。`);
   globalThis.toastr?.success?.(`[BS BioTracker] 已补充 ${targetName} 的衣柜`);
+}
+
+function setRegisterOutfitStatus(message, isError = false) {
+  const node = document.getElementById('bs-bt-register-outfit-status');
+  if (!node) return;
+  node.textContent = String(message || '');
+  node.dataset.state = isError ? 'error' : 'normal';
+}
+
+async function generateRegistryOutfit(ctx) {
+  if (isRegistryOperationPending('outfit')) {
+    globalThis.toastr?.info?.('[BS BioTracker] 着衣生成正在进行中，请等待完成');
+    return;
+  }
+  const values = getRegisterFormValues();
+  if (!values.targetName) {
+    setRegisterOutfitStatus('请先输入已注册角色名。', true);
+    return;
+  }
+  readSettingsFromForm(ctx);
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const targetName = resolveRegisteredCharacterName(chatState, values.targetName);
+  if (!targetName) {
+    setRegisterOutfitStatus(`尚未找到已注册角色：${values.targetName}。请先完成角色注册。`, true);
+    return;
+  }
+  beginRegistryOperation('outfit', `正在为 ${targetName} 生成起始着衣...`);
+  try {
+    const result = await runRegistryOutfitInference(ctx, {
+      targetName,
+      outfitPrompt: String(document.getElementById('bs-bt-register-outfit-prompt')?.value || '').trim(),
+    });
+    const editor = document.getElementById('bs-bt-register-outfit-result');
+    if (editor) editor.value = JSON.stringify(result, null, 2);
+    setRegisterOutfitStatus('生成完成。可以修改下方 JSON，确认后再写入。');
+  } catch (error) {
+    setRegisterOutfitStatus(String(error?.message || error), true);
+    toastOperationFailure(error);
+  } finally {
+    endRegistryOperation('outfit');
+  }
+}
+
+function writeRegistryOutfit(ctx) {
+  const values = getRegisterFormValues();
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const targetName = resolveRegisteredCharacterName(chatState, values.targetName);
+  if (!targetName) {
+    setRegisterOutfitStatus(`尚未找到已注册角色：${values.targetName || '(空白)'}。请先完成角色注册。`, true);
+    return;
+  }
+  try {
+    const raw = String(document.getElementById('bs-bt-register-outfit-result')?.value || '').trim();
+    if (!raw) throw new Error('请先生成着衣，或填写要写入的 JSON。');
+    const outfit = applyStartingOutfit(chatState, targetName, JSON.parse(raw));
+    recordChatStateSnapshot(ctx, chatState, { reason: 'registry_outfit' });
+    saveSettings(ctx);
+    resetPoller(ctx, trackerDeps);
+    renderStatusPanel(ctx);
+    renderFullStatePage(ctx);
+    renderWardrobePage(ctx);
+    updateMainFlowPrompt(ctx);
+    setRegisterOutfitStatus(`已为 ${targetName} 换上：${describeStartingOutfit(outfit)}。`);
+    globalThis.toastr?.success?.(`[BS BioTracker] 已写入 ${targetName} 的起始着衣`);
+  } catch (error) {
+    const message = String(error?.message || error);
+    setRegisterOutfitStatus(message, true);
+    globalThis.toastr?.error?.(message, '[BS BioTracker]');
+  }
+}
+
+function describeStartingOutfit(outfit) {
+  if (outfit?.nude) return '全裸';
+  const names = [outfit?.main?.name, ...(outfit?.accessories || []).map((item) => item?.name)].filter(Boolean);
+  const state = outfit?.wearState && outfit.wearState !== '整齐' ? `（${outfit.wearState}）` : '';
+  return `${names.join('、') || '未命名'}${state}`;
 }
 
 function setDiaryStatus(message, isError = false) {
@@ -969,8 +1065,12 @@ function describeRegistryBundle(ctx, targetName, report) {
   if (diaryEditor && report.diary) diaryEditor.value = JSON.stringify(report.diary, null, 2);
   const skillEditor = document.getElementById('bs-bt-register-skill-result');
   if (skillEditor && report.skillsWritten) skillEditor.value = JSON.stringify(buildSkillSetupEditorValue(chatState, targetName), null, 2);
+  const outfitEditor = document.getElementById('bs-bt-register-outfit-result');
+  if (outfitEditor && report.outfit) outfitEditor.value = JSON.stringify(report.outfit, null, 2);
   const character = chatState.characters?.[targetName];
   const parts = [];
+  if (report.outfit) parts.push(`已换上起始着衣「${describeStartingOutfit(report.outfit)}」`);
+  else if (report.outfitError) parts.push(`起始着衣没有写入（${report.outfitError}），可到着衣页重新生成`);
   if (report.skillsWritten) {
     const fetusNote = report.fetusCount > 0 ? `、${report.fetusCount} 个胎儿的天赋` : '';
     parts.push(`已写入 ${character?.profile?.skills?.length || 0} 项技能、${character?.profile?.talents?.length || 0} 项天赋${fetusNote}`);
@@ -978,7 +1078,8 @@ function describeRegistryBundle(ctx, targetName, report) {
   parts.push(report.diary ? `已写入日记「${report.diary.time}」` : `日记没有写入（${report.diaryError || '未知原因'}），可到日记页重新生成`);
   const skipped = Array.isArray(report.skipped) ? report.skipped : [];
   if (skipped.length > 0) parts.push(`跳过 ${skipped.length} 项对不上的引用：${skipped.join('、')}`);
-  return `${parts.join('；')}。${report.skillsWritten ? '日记页与技能页' : '日记页'}的预览可再微调后重新写入。`;
+  const pages = [report.outfit ? '着衣页' : '', '日记页', report.skillsWritten ? '技能页' : ''].filter(Boolean);
+  return `${parts.join('；')}。${pages.join('、')}的预览可再微调后重新写入。`;
 }
 
 function applyRegistryDiary(ctx) {
@@ -3346,16 +3447,20 @@ function renderWardrobePage(ctx) {
   const container = document.getElementById('bs-bt-wardrobe-list');
   const addPage = document.getElementById('bs-bt-wardrobe-add-page');
   const charactersPage = document.getElementById('bs-bt-wardrobe-characters-page');
+  const prepPage = document.getElementById('bs-bt-wardrobe-prep-page');
   if (!container || !addPage || !charactersPage) return;
   const characters = Object.values(chatState.characters || {});
   const showAddPage = selectedWardrobeSubpage === 'add';
-  charactersPage.hidden = showAddPage;
+  const showPrepPage = selectedWardrobeSubpage === 'prep';
+  charactersPage.hidden = showAddPage || showPrepPage;
   addPage.hidden = !showAddPage;
+  if (prepPage) prepPage.hidden = !showPrepPage;
+  renderWardrobePrepCharacterOptions(characters);
   document.querySelectorAll('#bs-bt-wardrobe-tabs [data-wardrobe-tab]').forEach((node) => {
     node.classList.toggle('is-active', String(node.getAttribute('data-wardrobe-tab') || '') === selectedWardrobeSubpage);
   });
   addPage.innerHTML = renderWardrobeAddPage(characters);
-  if (showAddPage) return;
+  if (showAddPage || showPrepPage) return;
   if (characters.length === 0) {
     selectedWardrobeName = '';
     container.innerHTML = '<div class="bs-bt-track-description-empty">尚无注册角色。</div>';
@@ -3368,6 +3473,19 @@ function renderWardrobePage(ctx) {
     return;
   }
   container.innerHTML = renderWardrobeCharacterPage(selected);
+}
+
+/** 衣柜补充的角色下拉：保留目前的选择，没有时预设正在看的角色 */
+function renderWardrobePrepCharacterOptions(characters = []) {
+  const select = document.getElementById('bs-bt-wardrobe-prep-character');
+  if (!select) return;
+  const names = characters.map((character) => String(character?.name || '')).filter(Boolean);
+  const previous = select.value || selectedWardrobeName;
+  select.innerHTML = names.length > 0
+    ? names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')
+    : '<option value="">尚无注册角色</option>';
+  select.disabled = names.length === 0;
+  if (names.includes(previous)) select.value = previous;
 }
 
 function getWardrobeDetailItem(profile = {}, itemId = '') {
@@ -6874,6 +6992,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-world-baseline-prompt', settings.worldBaselinePrompt);
   setValue('bs-bt-register-custom-notes', settings.registryCustomNotes);
   setValue('bs-bt-register-skill-prompt', settings.registrySkillPrompt);
+  setValue('bs-bt-register-outfit-prompt', settings.registryOutfitPrompt);
   setValue('bs-bt-registry-normal-description', settings.registryDescriptionGuides?.normalDescription);
   setValue('bs-bt-registry-pregnant-description', settings.registryDescriptionGuides?.pregnantDescription);
   setValue('bs-bt-diary-writing-prompt', settings.diaryWritingPrompt);
@@ -7459,6 +7578,7 @@ function readSettingsFromForm(ctx) {
   settings.worldBaselinePrompt = String(getValue('bs-bt-world-baseline-prompt')).trim();
   settings.registryCustomNotes = String(getValue('bs-bt-register-custom-notes')).trim();
   settings.registrySkillPrompt = String(getValue('bs-bt-register-skill-prompt')).trim();
+  settings.registryOutfitPrompt = String(getValue('bs-bt-register-outfit-prompt')).trim();
   settings.registryDescriptionGuides = {
     normalDescription: String(getValue('bs-bt-registry-normal-description')).trim(),
     pregnantDescription: String(getValue('bs-bt-registry-pregnant-description')).trim(),
@@ -7828,7 +7948,8 @@ async function ensureModal(ctx) {
   );
   document.querySelectorAll('#bs-bt-wardrobe-tabs [data-wardrobe-tab]').forEach((node) => {
     node.addEventListener('click', () => {
-      selectedWardrobeSubpage = String(node.getAttribute('data-wardrobe-tab') || '') === 'add' ? 'add' : 'characters';
+      const tab = String(node.getAttribute('data-wardrobe-tab') || '');
+      selectedWardrobeSubpage = ['add', 'prep'].includes(tab) ? tab : 'characters';
       selectedWardrobeItemId = 0;
       renderWardrobePage(ctx);
     });
@@ -8423,6 +8544,8 @@ async function ensureModal(ctx) {
   });
   document.getElementById('bs-bt-register-skill-generate')?.addEventListener('click', () => generateRegistrySkillSetup(ctx));
   document.getElementById('bs-bt-register-skill-write')?.addEventListener('click', () => writeRegistrySkillSetup(ctx));
+  document.getElementById('bs-bt-register-outfit-generate')?.addEventListener('click', () => generateRegistryOutfit(ctx));
+  document.getElementById('bs-bt-register-outfit-write')?.addEventListener('click', () => writeRegistryOutfit(ctx));
   document.getElementById('bs-bt-register-source')?.addEventListener('change', () => syncRegisterChildSourceFields(ctx));
   // 改角色名后，上一个角色的推演结果就不再适用；留着会被误认为是这个角色的结果。
   // 以「编辑器内容属于谁」为准而不是 draft 是否存在——使用者看到的是编辑器内容。
@@ -8575,11 +8698,12 @@ async function ensureModal(ctx) {
       globalThis.toastr?.error?.(message, '[BS BioTracker]');
       return;
     }
-    const busyMessage = `${breedingInference ? `正在使用繁育推演注册 ${targetName}` : `正在注册 ${targetName}`}${bundle ? '（含日记与技能）' : ''}...`;
+    const busyMessage = `${breedingInference ? `正在使用繁育推演注册 ${targetName}` : `正在注册 ${targetName}`}${bundle ? `（含${getRegisterBundleParts().map((part) => part.label).join('、')}）` : ''}...`;
     if (bundle) beginRegistryOperation('registerBundle', busyMessage);
     else beginRegistryOperation('register', busyMessage);
-    // 一次注册：日记页的写作规则与日期、技能页的额外提示随同这次请求送出
+    // 一次注册：着衣页的细则、日记页的写作规则与日期、技能页的额外提示随同这次请求送出
     const bundleOptions = bundle ? {
+      outfitPrompt: String(document.getElementById('bs-bt-register-outfit-prompt')?.value || '').trim(),
       diaryWritingPrompt: String(document.getElementById('bs-bt-diary-writing-prompt')?.value || '').trim(),
       requestedDate: String(document.getElementById('bs-bt-diary-date')?.value || '').trim(),
       skillPrompt: String(document.getElementById('bs-bt-register-skill-prompt')?.value || '').trim(),
@@ -8604,7 +8728,7 @@ async function ensureModal(ctx) {
         breedingInference
           ? `注册完成：${character.name}（已套用繁育推演）。`
           : `注册完成：${character.name}。`,
-        bundleNote || '可继续备装或写日记。',
+        bundleNote || '可继续设定着衣、写日记或配置技能。',
         missingSpecial,
       ].filter(Boolean).join(' '));
       globalThis.toastr?.success?.(`[BS BioTracker] 已注册 ${character.name}`);

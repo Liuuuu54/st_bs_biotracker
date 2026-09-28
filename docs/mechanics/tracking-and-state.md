@@ -38,11 +38,11 @@
 | 技能與衣物 | `bsRegisterSkillDefinition`、`bsTrainSkill`、`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` |
 | 測試／診斷 | `bsDebugInjectPregnancy`、`bsDebugClearContainers`、`bsDebugSetGestationModifier`、`bsDebugFetalActivity`、`bsDebugSetProdromal`、`bsDebugSetFetalPosition` |
 
-實際支援的名稱以[分派器](../../scripts/tools.js#L7395)為準；可送給追蹤模型的清單還會依設定及角色狀態過濾，見 [getTrackerToolDefinitions](../../scripts/tracker.js#L720)。
+實際支援的名稱以[分派器](../../scripts/tools.js#L7395)為準；可送給追蹤模型的清單還會依設定及角色狀態過濾，見 [getTrackerToolDefinitions](../../scripts/tracker.js#L704)。
 
 這個投影有兩個容易踩到的邊界。世界書排除／白名單處理後，會重新建立只含書名與通過篩選條目的物件；宿主原物件的 `originalData` 可能仍有被排除的完整條目，不能整包傳給模型。[世界書投影](../../scripts/state.js#L1082)。角色狀態則遞迴省略 `null`、空字串、空陣列與空物件，但保留 `outfit.mainItemId=null`，因為它表示「衣著未記錄」。只有妊娠相關階段才傳 `pregnantDescription`。[狀態投影](../../scripts/tracker.js#L1053)、[妊娠欄位條件](../../scripts/tracker.js#L742)。
 
-衣櫃工具並非註冊後就常駐：本聊天至少一名角色有實際衣物、已記錄主服、配件或暫時衣物，才把衣櫃工具及資料送入追蹤請求。僅有預設的 `id=0` 全裸項目、全員 `mainItemId=null` 時不啟用。[衣櫃開關](../../scripts/tracker.js#L694)、[工具過濾](../../scripts/tracker.js#L720)。
+衣櫃與技能是可關閉的擴充系統，由系統頁的 `着衣系统`、`技能系统` 開關決定（預設開啟）。開啟時即使全員衣著未記錄，衣櫃工具與資料也照送，模型可直接換裝；關閉著衣系統時不送衣櫃工具、衣櫃說明與 wardrobe／outfit，關閉技能系統時不送技能工具、技能圖鑑、技能基準、技能說明與角色／胎兒／孩子的技能天賦。模型即使呼叫已關閉系統的工具也不執行。[開關](../../scripts/state.js#L800)、[工具過濾](../../scripts/tracker.js#L704)、[狀態投影](../../scripts/tracker.js#L1081)。
 
 ## 快照與宿主保存
 

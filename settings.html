@@ -104,7 +104,7 @@
               <summary>其他入口</summary>
               <ul>
                 <li>「预设」管理追踪器使用的预设；「排除」控制送给追踪器的世界书条目。</li>
-                <li>「技能」管理技能图鉴；「衣柜」管理已备装角色的衣物和穿着。两者可在系统页整个关闭，关闭后入口隐藏，LLM 也看不到相关工具。</li>
+                <li>「技能」管理技能图鉴；「衣柜」管理角色的衣物和穿着，也能让模型补充衣物。两者可在系统页整个关闭，关闭后入口隐藏，LLM 也看不到相关工具。</li>
                 <li>「变量」可查看状态、历史与调试工具；「百科」提供种族资料与计算工具；「主题」调整界面。</li>
               </ul>
             </details>
@@ -391,7 +391,7 @@
             <div class="settings_section">
               <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-wardrobe-system-enabled" type="checkbox" />
-                <label for="bs-bt-wardrobe-system-enabled">着衣系统(衣柜页、备装、注册衣着辨识；关闭后 LLM 看不到衣柜工具、说明与穿着状态，资料保留)</label>
+                <label for="bs-bt-wardrobe-system-enabled">着衣系统(衣柜页、注册着衣页；关闭后 LLM 看不到衣柜工具、说明与穿着状态，资料保留)</label>
               </div>
               <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-skill-system-enabled" type="checkbox" />
@@ -473,7 +473,7 @@
               <div class="bs-bt-track-tabs" id="bs-bt-register-tabs">
                 <button type="button" class="bs-bt-track-tab is-active" data-register-tab="inference">推演</button>
                 <button type="button" class="bs-bt-track-tab" data-register-tab="registry">注册</button>
-                <button type="button" class="bs-bt-track-tab" data-register-tab="wardrobe">备装</button>
+                <button type="button" class="bs-bt-track-tab" data-register-tab="outfit">着衣</button>
                 <button type="button" class="bs-bt-track-tab" data-register-tab="diary">日记</button>
                 <button type="button" class="bs-bt-track-tab" data-register-tab="skills">技能</button>
               </div>
@@ -600,8 +600,7 @@
                 <button id="bs-bt-register-run" class="menu_button" type="button">注册当前角色</button>
                 <button id="bs-bt-register-run-bundle" class="menu_button" type="button">一次注册（含日记、技能）</button>
               </div>
-              <small id="bs-bt-register-bundle-note-diary" hidden>「一次注册」在同一个请求里附上日记页的「日记写作规则」，注册完成时一并写入第一篇日记，比分两次送出省下重复的角色卡、世界书与聊天。结果会填进日记页的预览，仍可在那里微调后重新写入。</small>
-              <small id="bs-bt-register-bundle-note-skill">「一次注册」在同一个请求里附上日记页的「日记写作规则」与技能页的「额外技能／天赋提示」，注册完成时一并写入第一篇日记与初始技能／天赋（含胎儿天赋），比分三次送出省下重复的角色卡、世界书与聊天。结果会填进日记页与技能页的预览，仍可在那里微调后重新写入。</small>
+              <small id="bs-bt-register-bundle-note"></small>
 
               <hr class="sysHR" />
 
@@ -611,30 +610,25 @@
                   class="bs-bt-status-box">输入名字与 Description 规则后发送注册请求，完成后可在“完整变量”查看该角色状态变量。</pre>
               </div>
             </div>
-            <div class="bs-bt-register-page" data-register-page="wardrobe" hidden>
+            <div class="bs-bt-register-page" data-register-page="outfit" hidden>
               <div class="settings_section">
-                <div class="bs-bt-status-title">衣柜补充（可选）</div>
-                <small>角色注册时已会记录当前衣着。只在剧情需要更多可换衣物时，再用此页补充少量长期衣柜项目。</small>
-              </div>
-
-              <div class="settings_section">
-                <label for="bs-bt-wardrobe-prep-prompt">补充要求（可选）</label>
-                <textarea id="bs-bt-wardrobe-prep-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="例如：补一套正式外出服与一件冬季外套；避免高跟鞋。"></textarea>
+                <label for="bs-bt-register-outfit-prompt">起始着衣细则</label>
+                <textarea id="bs-bt-register-outfit-prompt" class="text_pole bs-bt-textarea" rows="5"
+                  placeholder="例如：孕晚期仍硬穿孕前那件修身连衣裙，腰腹绷得很紧；腿上套着一双黑色丝袜。"></textarea>
               </div>
 
               <div class="settings_section bs-bt-action-row">
-                <button id="bs-bt-wardrobe-prep-run" class="menu_button" type="button">生成衣柜补充</button>
-                <button id="bs-bt-wardrobe-prep-apply" class="menu_button" type="button">合并补充</button>
+                <button id="bs-bt-register-outfit-generate" class="menu_button" type="button">生成着衣</button>
+                <button id="bs-bt-register-outfit-write" class="menu_button" type="button">写入着衣</button>
               </div>
 
-              <div class="settings_section">
-                <label for="bs-bt-wardrobe-prep-json">衣柜补充 JSON</label>
-                <textarea id="bs-bt-wardrobe-prep-json" class="text_pole bs-bt-textarea" rows="16" placeholder="先输入已注册角色名，生成后可手动微调再合并。"></textarea>
-              </div>
+              <hr class="sysHR" />
 
               <div class="settings_section">
-                <div class="bs-bt-status-title">补充状态</div>
-                <pre id="bs-bt-wardrobe-prep-status" class="bs-bt-status-box">角色必须已注册。补充不会覆盖原衣柜或强制换装。</pre>
+                <label for="bs-bt-register-outfit-result">着衣预览</label>
+                <textarea id="bs-bt-register-outfit-result" class="text_pole bs-bt-textarea" rows="14"
+                  placeholder="生成结果会显示为 JSON；确认或修改后再写入。"></textarea>
+                <div id="bs-bt-register-outfit-status" class="bs-bt-inline-status">角色必须先完成注册。写入会把这套衣物收进衣柜并设为当前穿着。</div>
               </div>
             </div>
             <div class="bs-bt-register-page" data-register-page="diary" hidden>
@@ -720,12 +714,40 @@
               <div class="bs-bt-track-tabs bs-bt-wardrobe-tabs" id="bs-bt-wardrobe-tabs">
                 <button type="button" class="bs-bt-track-tab is-active" data-wardrobe-tab="characters">角色衣柜</button>
                 <button type="button" class="bs-bt-track-tab" data-wardrobe-tab="add">新增衣物</button>
+                <button type="button" class="bs-bt-track-tab" data-wardrobe-tab="prep">衣柜补充</button>
               </div>
             </div>
             <div id="bs-bt-wardrobe-characters-page" class="settings_section">
               <div id="bs-bt-wardrobe-list" class="bs-bt-wardrobe-list"></div>
             </div>
             <div id="bs-bt-wardrobe-add-page" class="settings_section" hidden></div>
+            <div id="bs-bt-wardrobe-prep-page" hidden>
+              <div class="settings_section">
+                <small>让模型为已注册角色补充少量长期衣物。只加进衣柜，不覆盖原有衣物，也不改变当前穿着。</small>
+                <label for="bs-bt-wardrobe-prep-character">角色</label>
+                <select id="bs-bt-wardrobe-prep-character" class="text_pole"></select>
+              </div>
+
+              <div class="settings_section">
+                <label for="bs-bt-wardrobe-prep-prompt">补充要求（可选）</label>
+                <textarea id="bs-bt-wardrobe-prep-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="例如：补一套正式外出服与一件冬季外套；避免高跟鞋。"></textarea>
+              </div>
+
+              <div class="settings_section bs-bt-action-row">
+                <button id="bs-bt-wardrobe-prep-run" class="menu_button" type="button">生成衣柜补充</button>
+                <button id="bs-bt-wardrobe-prep-apply" class="menu_button" type="button">合并补充</button>
+              </div>
+
+              <div class="settings_section">
+                <label for="bs-bt-wardrobe-prep-json">衣柜补充 JSON</label>
+                <textarea id="bs-bt-wardrobe-prep-json" class="text_pole bs-bt-textarea" rows="16" placeholder="生成后可手动微调再合并。"></textarea>
+              </div>
+
+              <div class="settings_section">
+                <div class="bs-bt-status-title">补充状态</div>
+                <pre id="bs-bt-wardrobe-prep-status" class="bs-bt-status-box">补充不会覆盖原衣柜或强制换装。</pre>
+              </div>
+            </div>
           </div>
         </section>
 

@@ -107,7 +107,7 @@ export function getAuthHeaders(settings, sessionId = '') {
  * 只有 hostname 归属 opencode.ai 的 endpoint 才带，其他渠道一律不带。
  */
 const OPENCODE_SESSION_HEADER = 'x-opencode-session';
-const OPENCODE_FLOW_NAMES = ['tracker', 'registry', 'wardrobe', 'diary', 'skill', 'breeding'];
+const OPENCODE_FLOW_NAMES = ['tracker', 'registry', 'wardrobe', 'outfit', 'diary', 'skill', 'breeding'];
 
 /** 汇点最后校验：非法值直接丢弃，防换行/伪造头注入。 */
 function isValidOpenCodeSessionId(sessionId) {
@@ -456,6 +456,7 @@ export const API_FLOW_LABELS = Object.freeze({
   registry: '注册',
   breeding: '繁育推演',
   wardrobe: '衣柜补充',
+  outfit: '起始着衣',
   diary: '日记',
   skill: '技能推演',
 });
@@ -1540,7 +1541,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   const stPresetSampling = presetEnvelope?.sampling || {};
   const effectivePresetName = presetEnvelope?.presetName || '';
   // 格式化输出(v4兼容)：response_format.type = json_object（无 json_schema），可在设置关闭。
-  // DeepSeek 系额外注入输出结构指令——但只在追踪流程注入：registry/日记/备装/技能/
+  // DeepSeek 系额外注入输出结构指令——但只在追踪流程注入：registry/日记/着衣/衣柜补充/技能/
   // 繁育推演各自声明了不同的 JSON 结构，注入 tool_calls 指令会压过它们的 schema。
   const useFormattedOutputV4 = shouldUseResponseFormat(settings, model);
   const isTrackerFlow = !safePayload?.target_character;
