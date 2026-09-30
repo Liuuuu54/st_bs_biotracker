@@ -1,6 +1,8 @@
 const EMPTY_LIST = Object.freeze([]);
 const HOST_CHAT_VIEW_CACHE = new WeakMap();
-const HOST_STABLE_CHAT_ID_CACHE = new WeakMap();
+// 以 fallback id 为键而非 ctx：宿主 getContext() 每次都回新物件，
+// 按 ctx 缓存的话自取 ctx 的渲染路径会退回 fallback key，读到空的聊天状态。
+const HOST_STABLE_CHAT_ID_CACHE = new Map();
 const TAURI_HISTORY_PAGE_SIZE = 200;
 const TAURI_STATE_NAMESPACE = 'bs-biotracker';
 const TAURI_STATE_KEY = 'chat-state-v1';
@@ -164,8 +166,8 @@ export function getHostCharacters(ctx) {
 export function getHostChatId(ctx) {
   const fallbackId = getFallbackHostChatId(ctx);
   if (getHostKind() === 'tauritavern') {
-    const cached = ctx && typeof ctx === 'object' ? HOST_STABLE_CHAT_ID_CACHE.get(ctx) : null;
-    if (cached?.fallbackId === fallbackId && cached.stableId) return cached.stableId;
+    const stableId = HOST_STABLE_CHAT_ID_CACHE.get(fallbackId);
+    if (stableId) return stableId;
   }
   return fallbackId;
 }
@@ -186,8 +188,8 @@ function getFallbackHostChatId(ctx) {
 export async function resolveHostChatId(ctx) {
   const fallbackId = getFallbackHostChatId(ctx);
   if (getHostKind() !== 'tauritavern') return fallbackId;
-  const cached = ctx && typeof ctx === 'object' ? HOST_STABLE_CHAT_ID_CACHE.get(ctx) : null;
-  if (cached?.fallbackId === fallbackId && cached.stableId) return cached.stableId;
+  const cached = HOST_STABLE_CHAT_ID_CACHE.get(fallbackId);
+  if (cached) return cached;
   const ready = globalThis.__TAURITAVERN__?.ready || globalThis.__TAURITAVERN_MAIN_READY__;
   if (ready && typeof ready.then === 'function') await ready;
   const handle = getCurrentTauriChatHandle();
@@ -195,7 +197,7 @@ export async function resolveHostChatId(ctx) {
   try {
     const stableId = String(await handle.stableId() || '').trim();
     if (!stableId) return fallbackId;
-    if (ctx && typeof ctx === 'object') HOST_STABLE_CHAT_ID_CACHE.set(ctx, { fallbackId, stableId });
+    HOST_STABLE_CHAT_ID_CACHE.set(fallbackId, stableId);
     return stableId;
   } catch (error) {
     console.warn('[BS BioTracker] unable to resolve TauriTavern stable chat id', error);

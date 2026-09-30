@@ -74,6 +74,20 @@ test('TauriTavern uses stableId and per-chat store without persisting chatStates
   assert.equal(saved?.chatState?.characters?.Alice?.initialized, true);
 });
 
+test('TauriTavern stable chat id survives a fresh getContext() object', async () => {
+  resetGlobals();
+  const handle = { stableId: async () => 'stable-chat-fresh-ctx' };
+  const makeCtx = () => ({ chatId: 'fallback-fresh-ctx', extensionSettings: {}, saveSettingsDebounced() {} });
+  globalThis.__TAURITAVERN__ = {
+    ready: Promise.resolve(),
+    api: { chat: { current: { handle: () => handle } } },
+  };
+
+  assert.equal(await host.resolveHostChatId(makeCtx()), 'stable-chat-fresh-ctx');
+  // 宿主 getContext() 每次回新物件；自取 ctx 的渲染路径（技能名、时钟）必须仍命中稳定 id
+  assert.equal(host.getHostChatId(makeCtx()), 'stable-chat-fresh-ctx');
+});
+
 test('Luker uses its chat sidecar without persisting chatStates globally', async () => {
   resetGlobals();
   let saved = null;
