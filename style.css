@@ -4052,11 +4052,16 @@
 }
 
 #bs-biotracker-settings .bs-bt-override-name {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
+/* 通用 .menu_button 是 width: 100%，放在同一列会把名称挤成一字一行 */
 #bs-biotracker-settings .bs-bt-override-clear {
   flex: 0 0 auto;
+  width: auto;
+  white-space: nowrap;
 }
 
 #bs-biotracker-settings #bs-bt-view-track .menu_button,
