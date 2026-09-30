@@ -2,66 +2,66 @@
 
 [返回機制索引](README.md) · [服裝與技能細節](wardrobe-and-skills.md)
 
-本頁按[公開工具定義](../../scripts/tools.js#L91)與[實際分派器](../../scripts/tools.js#L7395)逐項核對。`female` 是已註冊角色名稱，除 `bsRegisterSkillDefinition` 以外的公開工具都要指定它；未知角色會拒絕。`applied=false` 表示該次呼叫未完成其預定變更。多個工具依回覆順序執行，不會整批回滾。[結果紀錄](../../scripts/tools.js#L7441)。
+本頁按[公開工具定義](../../scripts/tools.js#L92)與[實際分派器](../../scripts/tools.js#L7571)逐項核對。`female` 是已註冊角色名稱，除 `bsRegisterSkillDefinition` 以外的公開工具都要指定它；未知角色會拒絕。`applied=false` 表示該次呼叫未完成其預定變更。多個工具依回覆順序執行，不會整批回滾。[結果紀錄](../../scripts/tools.js#L7627)。
 
-下表的「必填」依模型可見的 schema；實作仍會再次檢查有效值。`bsDebug*` 有分派實作，但不在公開 `TOOL_DEFINITIONS` 中；它們由 UI 診斷功能呼叫。[UI 入口](../../index.js#L5001)。
+下表的「必填」依模型可見的 schema；實作仍會再次檢查有效值。`bsDebug*` 有分派實作，但不在公開 `TOOL_DEFINITIONS` 中；它們由 UI 診斷功能呼叫。[UI 入口](../../index.js#L5262)。
 
 ## 時間與基本狀態
 
 | 工具 | 參數 | 成功效果與拒絕條件 |
 | --- | --- | --- |
-| [`bsPassedTime`](../../scripts/tools.js#L6051) | `minute`、`hour`、`day`、`week`、`month`、`year`，至少一個正數。 | 單位相加，月=30 日、年=365 日，推進**整個聊天所有角色**，並增加 `minutesPassed`。沒有正時間則拒絕；胎內回歸且承載者仍在的角色凍結。時間零頭和各階段規則見[時間機制](cycles-and-conception.md#時間怎樣推進)。 |
-| [`bsUpdateCharacterStatus`](../../scripts/tools.js#L6087) | 必填 `female`、`options`；可傳 `vitality`、`psyStress`、`libido`、`uterinePressure`。 | 四項都是**增減量**，受各自上限限制。活力會連動代謝，性欲連動乳意／可能高潮排卵，宮壓可磨損羊膜並更新風險。空 `options` 在實作中仍會回報套用，但沒有數值變化。 |
-| [`bsSetCharacterPresence`](../../scripts/tools.js#L6363) | 必填 `female`、明示布林 `isPresent`。 | 寫入 `base.isHere`；離場後追蹤 payload 預設不送完整狀態，部分在場代謝略過。設回在場也會解除 `wombReturnHost` 凍結；省略布林值會拒絕。 |
-| [`bsSetMenstrualPhases`](../../scripts/tools.js#L6767) | 必填 `female`、`stage`。 | 只接受卵泡、排卵、黃體、月經、產後恢復、假孕；階段天數歸零並調整排卵冷卻。已有胚胎、受精進度、真妊娠、回歸期、產兆或產程時拒絕，不能用它直接設成懷孕。 |
+| [`bsPassedTime`](../../scripts/tools.js#L6200) | `minute`、`hour`、`day`、`week`、`month`、`year`，至少一個正數。 | 單位相加，月=30 日、年=365 日，推進**整個聊天所有角色**，並增加 `minutesPassed`。沒有正時間則拒絕；胎內回歸且承載者仍在的角色凍結。時間零頭和各階段規則見[時間機制](cycles-and-conception.md#時間怎樣推進)。 |
+| [`bsUpdateCharacterStatus`](../../scripts/tools.js#L6236) | 必填 `female`、`options`；可傳 `vitality`、`psyStress`、`libido`、`uterinePressure`。 | 四項都是**增減量**，受各自上限限制。活力會連動代謝，性欲連動乳意／可能高潮排卵，宮壓可磨損羊膜並更新風險。空 `options` 在實作中仍會回報套用，但沒有數值變化。 |
+| [`bsSetCharacterPresence`](../../scripts/tools.js#L6532) | 必填 `female`、明示布林 `isPresent`。 | 寫入 `base.isHere`；離場後追蹤 payload 預設不送完整狀態，部分在場代謝略過。設回在場也會解除 `wombReturnHost` 凍結；省略布林值會拒絕。 |
+| [`bsSetMenstrualPhases`](../../scripts/tools.js#L6936) | 必填 `female`、`stage`。 | 只接受卵泡、排卵、黃體、月經、產後恢復、假孕；階段天數歸零並調整排卵冷卻。已有胚胎、受精進度、真妊娠、回歸期、產兆或產程時拒絕，不能用它直接設成懷孕。 |
 
 ## 精源、受孕與分娩
 
 | 工具 | 參數 | 成功效果與拒絕條件 |
 | --- | --- | --- |
-| [`bsAddSperm`](../../scripts/tools.js#L6640) | 必填 `female`、`male`、`race`、`action`、`amount`；`action=insert/deposit/withdraw`。 | `insert` 與 `withdraw` 的 `amount` 必須是 0；只有已 `insert` 且來源相同時，`deposit` 才能加入正數精源，之後狀態變 `spent`，再沉積要重新插入。插入會更新近期性伴、初次性經歷與可能的產程推回；沉積會增氣味，產兆時可催熟。實際受精留待時間推進。 |
-| [`bsDrainSperm`](../../scripts/tools.js#L6734) | 必填 `female`、正數 `amount`。 | 按各精源目前比例減少殘留；量足夠時全清。清空後下次時間推進便沒有該批精源的受孕機會。零、負數或非有限值拒絕。 |
-| [`bsImplantEmbryo`](../../scripts/tools.js#L4983) | 必填 `female`、`provider`；可傳 `fathers`、`count`（1–50）、`race`、`fatherRace`。 | 建立外源、**尚未著床**的胚胎；`provider` 必須異於承載者。`count` 是有效胎兒卡數，不是伴生卵枚數。孕期追加只允許孕早期有已著床胎且異期窗口未關閉；回歸期拒絕。供體歸屬與種族細節見[特殊流程](special-cases.md#外源胚胎植入)。 |
-| [`bsAbortion`](../../scripts/tools.js#L4858) | 必填 `female`；可傳 `fetusIndex`（可見胎兒從 0 起算）、`force`。 | 有索引時移除該可見胎及依附的內胎；沒索引時結束整個受精／妊娠。`immune.miscarriage` 開啟時須 `force=true`。無受孕狀態、索引無效或沒有胎兒的假孕會拒絕；著床前與孕期結束走不同階段／經歷分支。 |
-| [`bsWombReturn`](../../scripts/tools.js#L862) | 必填 `female`、`returner`；可傳 `returnerRace`、非負 `hours`。 | 清空承載者原有子宮內容、建立回歸胎並按小時過渡；已註冊回歸者凍結。只可在月經階段／無經期使用，不可自我回歸或重複回歸。詳見[胎內回歸](special-cases.md#胎內回歸)。 |
-| [`bsChildbirth`](../../scripts/tools.js#L5131) | 必填 `female`。 | 將剩餘已著床胎兒轉為 `children`，結束妊娠並進產後恢復；直接呼叫記為手術產，自然走完產程則記自然產。沒有已著床胎兒或未進入妊娠／產兆／產程時拒絕。 |
-| [`bsAssistFetalPosition`](../../scripts/tools.js#L5384) | 必填 `female`、`action`；可傳 `fetusIndex`、`targetAngle`、`backSide`、`actor`。 | `rotate` 轉角／胎背或解肩難產，`lift` 托高，`descend` 推低，`rupture` 破膜，`extract` 助產取出先露胎。未指定索引時選領頭胎；索引按可見胎。`actor=fetus` 不耗母體活力，但不可自行 `extract` 或解自己的肩難產；階段、胎位、體力、宮壓不符會拒絕。[胎位與羊膜](pregnancy-and-labor.md#胎位羊膜與宮壓)。 |
-| [`bsMaternalFetalInteraction`](../../scripts/tools.js#L5533) | 必填 `female`；可傳 `direction=fetal/maternal`、`change=slight_increase/significant_increase/slight_decrease/significant_decrease`。 | 預設 `direction=fetal`，須給有效 `change`，按 ±0.5／±1 更新隨機已著床胎親近度；`maternal` 不用 `change`，由情壓決定安撫是否成功並隨機變化。每角色每故事小時最多一次；無已著床胎拒絕。 |
+| [`bsAddSperm`](../../scripts/tools.js#L6809) | 必填 `female`、`male`、`race`、`action`、`amount`；`action=insert/deposit/withdraw`。 | `insert` 與 `withdraw` 的 `amount` 必須是 0；只有已 `insert` 且來源相同時，`deposit` 才能加入正數精源，之後狀態變 `spent`，再沉積要重新插入。插入會更新近期性伴、初次性經歷與可能的產程推回；沉積會增氣味，產兆時可催熟。實際受精留待時間推進。 |
+| [`bsDrainSperm`](../../scripts/tools.js#L6903) | 必填 `female`、正數 `amount`。 | 按各精源目前比例減少殘留；量足夠時全清。清空後下次時間推進便沒有該批精源的受孕機會。零、負數或非有限值拒絕。 |
+| [`bsImplantEmbryo`](../../scripts/tools.js#L5115) | 必填 `female`、`provider`；可傳 `fathers`、`count`（1–50）、`race`、`fatherRace`。 | 建立外源、**尚未著床**的胚胎；`provider` 必須異於承載者。`count` 是有效胎兒卡數，不是伴生卵枚數。孕期追加只允許孕早期有已著床胎且異期窗口未關閉；回歸期拒絕。供體歸屬與種族細節見[特殊流程](special-cases.md#外源胚胎植入)。 |
+| [`bsAbortion`](../../scripts/tools.js#L4988) | 必填 `female`；可傳 `fetusIndex`（可見胎兒從 0 起算）、`force`。 | 有索引時移除該可見胎及依附的內胎；沒索引時結束整個受精／妊娠。`immune.miscarriage` 開啟時須 `force=true`。無受孕狀態、索引無效或沒有胎兒的假孕會拒絕；著床前與孕期結束走不同階段／經歷分支。 |
+| [`bsWombReturn`](../../scripts/tools.js#L891) | 必填 `female`、`returner`；可傳 `returnerRace`、非負 `hours`。 | 清空承載者原有子宮內容、建立回歸胎並按小時過渡；已註冊回歸者凍結。只可在月經階段／無經期使用，不可自我回歸或重複回歸。詳見[胎內回歸](special-cases.md#胎內回歸)。 |
+| [`bsChildbirth`](../../scripts/tools.js#L5266) | 必填 `female`。 | 將剩餘已著床胎兒轉為 `children`，結束妊娠並進產後恢復；直接呼叫記為手術產，自然走完產程則記自然產。沒有已著床胎兒或未進入妊娠／產兆／產程時拒絕。 |
+| [`bsAssistFetalPosition`](../../scripts/tools.js#L5519) | 必填 `female`、`action`；可傳 `fetusIndex`、`targetAngle`、`backSide`、`actor`。 | `rotate` 轉角／胎背或解肩難產，`lift` 托高，`descend` 推低，`rupture` 破膜，`extract` 助產取出先露胎。未指定索引時選領頭胎；索引按可見胎。`actor=fetus` 不耗母體活力，但不可自行 `extract` 或解自己的肩難產；階段、胎位、體力、宮壓不符會拒絕。[胎位與羊膜](pregnancy-and-labor.md#胎位羊膜與宮壓)。 |
+| [`bsMaternalFetalInteraction`](../../scripts/tools.js#L5668) | 必填 `female`；可傳 `direction=fetal/maternal`、`change=slight_increase/significant_increase/slight_decrease/significant_decrease`。 | 預設 `direction=fetal`，須給有效 `change`，按 ±0.5／±1 更新隨機已著床胎親近度；`maternal` 不用 `change`，由情壓決定安撫是否成功並隨機變化。每角色每故事小時最多一次；無已著床胎拒絕。 |
 
 ## 代謝、心理與記錄
 
 | 工具 | 參數 | 成功效果與拒絕條件 |
 | --- | --- | --- |
-| [`bsExcreteMetabolism`](../../scripts/tools.js#L3388) | 必填 `female`；可在 `options` 傳 `excretion`、`hunger`、`sleep`、`milk`、`odor`、`companionship`、`flux` 的非負減量。 | 普通角色不帶選項時使用預設直接減量；衍生類型不帶選項時預設釋放 `flux`。堵塞降低效果，進食／睡眠／排泄有交叉回升，處理前後需求等級還會影響胎兒供養。代謝免疫會拒絕。[代謝細節](character-systems.md#需求累積與處理)。 |
-| [`bsUpdatePsychology`](../../scripts/tools.js#L6553) | 必填 `female`、`options.mens` 或 `options.preg`；數值欄位為增減量，布林欄位為新值。 | 月經側可改 `mastery/desire/autonomy/isChaste/hasContraception`；孕育側可改 `cognition/bonding/stance/knowsFatherSource/hasProfessionalPrenatalCare`。依當前階段選側，數值夾在 0–100；未推論心理、側別錯誤或本故事小時已更新會拒絕。 |
-| [`bsWriteDiary`](../../scripts/tools.js#L6022) | 必填 `female`、日期標題 `time`、正文 `content`。 | 追加一則主觀日記並記錄故事日；同角色同故事日（`floor(minutesPassed/1440)`）已有日記時拒絕。`time` 是文字標題，不決定故事日索引；角色離場仍可寫。 |
-| [`bsSetDescription`](../../scripts/tools.js#L6335) | 必填 `female`、`options.normalDescription` 或 `pregnantDescription`。 | 文字格式為 `子欄名|內容;;`，逐子欄合併；省略子欄表示保留，空補丁不清空。已有描述時不得新增未知子欄，格式錯誤會拒絕整次更新；原本空白的描述可首次建立子欄。[合併實作](../../scripts/tools.js#L6125)。 |
-| [`bsUpdateExperience`](../../scripts/tools.js#L6387) | 必填 `female`、`options`；可設 `virginity/latestSexPartner/emotionalMate/marriageMate`，以及四種懷孕／生產／流產經歷數。 | 直接設定欄位，非增減量；數字限制 0–9999，不觸發額外生理規則。沒有可更新欄位時拒絕。 |
-| [`bsNameChild`](../../scripts/tools.js#L6420) | 必填 `female`、從 0 起算的 `childIndex`、非空 `name`。 | 只更改 `children[childIndex].name`；索引越界或名字空白會拒絕，不改血緣來源。 |
+| [`bsExcreteMetabolism`](../../scripts/tools.js#L3486) | 必填 `female`；可在 `options` 傳 `excretion`、`hunger`、`sleep`、`milk`、`odor`、`companionship`、`flux` 的非負減量。 | 普通角色不帶選項時使用預設直接減量；衍生類型不帶選項時預設釋放 `flux`。堵塞降低效果，進食／睡眠／排泄有交叉回升，處理前後需求等級還會影響胎兒供養。代謝免疫會拒絕。[代謝細節](character-systems.md#需求累積與處理)。 |
+| [`bsUpdatePsychology`](../../scripts/tools.js#L6722) | 必填 `female`、`options.mens` 或 `options.preg`；數值欄位為增減量，布林欄位為新值。 | 月經側可改 `mastery/desire/autonomy/isChaste/hasContraception`；孕育側可改 `cognition/bonding/stance/knowsFatherSource/hasProfessionalPrenatalCare`。依當前階段選側，數值夾在 0–100；未推論心理、側別錯誤或本故事小時已更新會拒絕。 |
+| [`bsWriteDiary`](../../scripts/tools.js#L6160) | 必填 `female`、日期標題 `time`、正文 `content`。 | 追加一則主觀日記並記錄故事日；同角色同故事日（`floor(minutesPassed/1440)`）已有日記時拒絕。`time` 是文字標題，不決定故事日索引；角色離場仍可寫。 |
+| [`bsSetDescription`](../../scripts/tools.js#L6504) | 必填 `female`、`options.normalDescription` 或 `pregnantDescription`。 | 文字格式為 `子欄名|內容;;`，逐子欄合併；省略子欄表示保留，空補丁不清空。已有描述時不得新增未知子欄，格式錯誤會拒絕整次更新；原本空白的描述可首次建立子欄。[合併實作](../../scripts/tools.js#L6274)。 |
+| [`bsUpdateExperience`](../../scripts/tools.js#L6556) | 必填 `female`、`options`；可設 `virginity/latestSexPartner/emotionalMate/marriageMate`，以及四種懷孕／生產／流產經歷數。 | 直接設定欄位，非增減量；數字限制 0–9999，不觸發額外生理規則。沒有可更新欄位時拒絕。 |
+| [`bsNameChild`](../../scripts/tools.js#L6589) | 必填 `female`、從 0 起算的 `childIndex`、非空 `name`。 | 只更改 `children[childIndex].name`；索引越界或名字空白會拒絕，不改血緣來源。 |
 
 ## 服裝與技能
 
 | 工具 | 參數 | 成功效果與拒絕條件 |
 | --- | --- | --- |
-| [`bsAddWardrobeItem`](../../scripts/tools.js#L6186) | 必填 `female`、`item`；衣物須有 `name/note/slot`，可帶 ID、`parts/fitProfile` 或 `category/effects`。 | 更新或新增長期衣櫃；主服與配件資料按各自規則正規化。`id=0` 保留，無效物件拒絕。詳見[衣櫃](wardrobe-and-skills.md#衣櫃與當前穿著是兩份資料)。 |
-| [`bsRemoveWardrobeItem`](../../scripts/tools.js#L6220) | 必填 `female`、`itemId`（ID 或名稱）。 | 永久刪除長期衣物，並清掉目前穿著對它的引用；找不到或 `id=0` 時拒絕。 |
-| [`bsChangeOutfit`](../../scripts/tools.js#L6257) | 必填 `female`；可傳 `mainItemId`、`main`、`accessories`、`scope`、配件 ID 清單或增減清單、`wearState`。 | 同一次呼叫內換主服與配件，可引用既有或建立新衣。`mainItemId=0` 為全裸，`null` 為未記錄；無效引用拒絕整次提交。細節與數值見[服裝機制](wardrobe-and-skills.md#三個服裝工具)。 |
-| [`bsRegisterSkillDefinition`](../../scripts/tools.js#L6443) | 必填非空 `name`、`description`。 | 向本聊天圖鑑註冊技能定義並取得新 ID；同名時重用舊定義，此次 `applied=false`，不會讓角色覺醒。 |
-| [`bsTrainSkill`](../../scripts/tools.js#L6458) | 必填 `female`、已登記技能 `skill`（ID／名稱）、整數 `skillExp`（0–1,000,000）、非空 `reason`；可傳 `awaken`。 | 對角色技能加經驗、升級並記歷史；未覺醒時須 `awaken=true`。LLM 不可直接改角色天賦；特定孕期會把部分經驗轉為隨機胎兒的有號天賦經驗。[技能機制](wardrobe-and-skills.md#技能目錄角色技能與天賦)。 |
+| [`bsAddWardrobeItem`](../../scripts/tools.js#L6335) | 必填 `female`、`item`；衣物須有 `name/note/slot`，可帶 ID、`parts/fitProfile` 或 `category/effects`。 | 更新或新增長期衣櫃；主服與配件資料按各自規則正規化。`id=0` 保留，無效物件拒絕。詳見[衣櫃](wardrobe-and-skills.md#衣櫃與當前穿著是兩份資料)。 |
+| [`bsRemoveWardrobeItem`](../../scripts/tools.js#L6389) | 必填 `female`、`itemId`（ID 或名稱）。 | 永久刪除長期衣物，並清掉目前穿著對它的引用；找不到或 `id=0` 時拒絕。 |
+| [`bsChangeOutfit`](../../scripts/tools.js#L6426) | 必填 `female`；可傳 `mainItemId`、`main`、`accessories`、`scope`、配件 ID 清單或增減清單、`wearState`。 | 同一次呼叫內換主服與配件，可引用既有或建立新衣。`mainItemId=0` 為全裸，`null` 為未記錄；無效引用拒絕整次提交。細節與數值見[服裝機制](wardrobe-and-skills.md#三個服裝工具)。 |
+| [`bsRegisterSkillDefinition`](../../scripts/tools.js#L6612) | 必填非空 `name`、`description`。 | 向本聊天圖鑑註冊技能定義並取得新 ID；同名時重用舊定義，此次 `applied=false`，不會讓角色覺醒。 |
+| [`bsTrainSkill`](../../scripts/tools.js#L6627) | 必填 `female`、已登記技能 `skill`（ID／名稱）、整數 `skillExp`（0–1,000,000）、非空 `reason`；可傳 `awaken`。 | 對角色技能加經驗、升級並記歷史；未覺醒時須 `awaken=true`。LLM 不可直接改角色天賦；特定孕期會把部分經驗轉為隨機胎兒的有號天賦經驗。[技能機制](wardrobe-and-skills.md#技能目錄角色技能與天賦)。 |
 
 ## UI 診斷工具
 
-以下六個工具由[診斷 UI](../../index.js#L5001)透過 `applyToolCall` 呼叫，沒有列入模型的公開 `TOOL_DEFINITIONS`。它們可直接改寫或清除狀態，與自然故事流程的機率／階段門檻不同。每次 UI 成功操作會記錄快照並保存。
+以下六個工具由[診斷 UI](../../index.js#L5262)透過 `applyToolCall` 呼叫，沒有列入模型的公開 `TOOL_DEFINITIONS`。它們可直接改寫或清除狀態，與自然故事流程的機率／階段門檻不同。每次 UI 成功操作會記錄快照並保存。
 
 | 工具 | 主要參數 | 效果與限制 |
 | --- | --- | --- |
-| [`bsDebugInjectPregnancy`](../../scripts/tools.js#L6840) | `female`、`mode`（`normal/surrogacy/womb_return/superfetation/nested`）、`father/race/fetusCount/genders/equivalentDays`，以及模式用的 provider、returner、host 索引與強制同卵／嵌合旗標。 | 直接建立測試胚胎或指定有效孕日；`fetusCount` 夾在 1–9，`equivalentDays` 夾在 0–300。追加異期／巢狀胚胎須在孕早期窗口、有已著床胎；強制嵌合限一般／代孕且至少兩個基礎胚胎。 |
-| [`bsDebugClearContainers`](../../scripts/tools.js#L7115) | `female`、`container=sperms/fetuses/children`。 | 清精源、子女紀錄或受孕狀態；清已著床妊娠會轉產後恢復並增加流產經歷，清著床前則只清胚胎。空容器拒絕。 |
-| [`bsDebugSetGestationModifier`](../../scripts/tools.js#L7197) | `female`、`clear`，或 `name/multiplier/description`。 | 設定／清除妊娠速度修飾器；倍率夾在 0–20，0 可凍結有效孕日。非清除操作須有名稱，已有孕胎時重算孕期生理。 |
-| [`bsDebugFetalActivity`](../../scripts/tools.js#L7256) | `female`、非空 `activityText`。 | 把最多 500 字的胎動敘述附加到通知；須有胎兒且處於妊娠／產兆／產程。它不直接改胎位。 |
-| [`bsDebugSetFetalPosition`](../../scripts/tools.js#L7291) | `female`、**完整胎兒陣列**的 `fetusIndex`；可傳 `tendencyAngle/backSide/descentStage/makePresenting/allowPathologicalState`。 | 直接設定胎位與先露，再經下降位置校正；待著床胎拒絕。`allowPathologicalState` 限真實分娩模式下測試互鎖雙胎，與公開助產工具的可見胎索引不同。 |
-| [`bsDebugSetProdromal`](../../scripts/tools.js#L7336) | `female`、`progressPercent`（0–100）。 | 在孕晚期、臨產期、逾期或已有產兆時，直接設前驅進度、剩餘小時及疼痛；其他階段拒絕。 |
+| [`bsDebugInjectPregnancy`](../../scripts/tools.js#L7009) | `female`、`mode`（`normal/surrogacy/womb_return/superfetation/nested`）、`father/race/fetusCount/genders/equivalentDays`，以及模式用的 provider、returner、host 索引與強制同卵／嵌合旗標。 | 直接建立測試胚胎或指定有效孕日；`fetusCount` 夾在 1–9，`equivalentDays` 夾在 0–300。追加異期／巢狀胚胎須在孕早期窗口、有已著床胎；強制嵌合限一般／代孕且至少兩個基礎胚胎。 |
+| [`bsDebugClearContainers`](../../scripts/tools.js#L7289) | `female`、`container=sperms/fetuses/children`。 | 清精源、子女紀錄或受孕狀態；清已著床妊娠會轉產後恢復並增加流產經歷，清著床前則只清胚胎。空容器拒絕。 |
+| [`bsDebugSetGestationModifier`](../../scripts/tools.js#L7373) | `female`、`clear`，或 `name/multiplier/description`。 | 設定／清除妊娠速度修飾器；倍率夾在 0–20，0 可凍結有效孕日。非清除操作須有名稱，已有孕胎時重算孕期生理。 |
+| [`bsDebugFetalActivity`](../../scripts/tools.js#L7432) | `female`、非空 `activityText`。 | 把最多 500 字的胎動敘述附加到通知；須有胎兒且處於妊娠／產兆／產程。它不直接改胎位。 |
+| [`bsDebugSetFetalPosition`](../../scripts/tools.js#L7467) | `female`、**完整胎兒陣列**的 `fetusIndex`；可傳 `tendencyAngle/backSide/descentStage/makePresenting/allowPathologicalState`。 | 直接設定胎位與先露，再經下降位置校正；待著床胎拒絕。`allowPathologicalState` 限真實分娩模式下測試互鎖雙胎，與公開助產工具的可見胎索引不同。 |
+| [`bsDebugSetProdromal`](../../scripts/tools.js#L7512) | `female`、`progressPercent`（0–100）。 | 在孕晚期、臨產期、逾期或已有產兆時，直接設前驅進度、剩餘小時及疼痛；其他階段拒絕。 |
 
 ## 工具間共用的邊界
 
-人名參數中的完整 `user`、`{user}`、`{{user}}`、`<user>` 別名會解析成宿主使用者名稱，避免同一人在精源、子女和族譜裡變成多個節點。[名稱解析](../../scripts/tools.js#L713)。每次工具前會同步胚胎 ID、羊膜與背向，工具後會同步供養「爆」扣分、巢狀胎釋放、先露參照與下降位置。[統一入口](../../scripts/tools.js#L7372)。若某工具被拒絕，仍須看操作紀錄中的 `applied` 與訊息，不應只根據模型曾呼叫它就認定故事狀態已改變。
+人名參數中的完整 `user`、`{user}`、`{{user}}`、`<user>` 別名會解析成宿主使用者名稱，避免同一人在精源、子女和族譜裡變成多個節點。[名稱解析](../../scripts/tools.js#L742)。每次工具前會同步胚胎 ID、羊膜與背向，工具後會同步供養「爆」扣分、巢狀胎釋放、先露參照與下降位置。[統一入口](../../scripts/tools.js#L7548)。若某工具被拒絕，仍須看操作紀錄中的 `applied` 與訊息，不應只根據模型曾呼叫它就認定故事狀態已改變。
