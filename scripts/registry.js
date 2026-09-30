@@ -13,8 +13,10 @@ import {
   PSY_PREG_BOOL_FIELDS,
 } from './registry_psy_config.js';
 import {
+  computePostpartumRecoveryDays,
   getEmbryoTypeByRace,
   getMergedRacePhysiologyProfile,
+  getRecoveryCoefficientByRace,
   getRaceComponents,
   getRaceDescriptorComponents,
   parseRaceDescriptor,
@@ -1305,22 +1307,6 @@ function sanitizeDiaryEntries(value) {
     .filter((item) => item.time && item.content);
 }
 
-function getRegistryEmbryoTypeRecoveryCoefficient(embryoType) {
-  switch (String(embryoType || '胎生')) {
-    case '卵生':
-      return 0.6;
-    case '卵胎生':
-      return 0.4;
-    case '胎转卵生':
-      return 1.0;
-    case '不定型':
-      return 0.8;
-    case '胎生':
-    default:
-      return 0.2;
-  }
-}
-
 function deriveRegisteredFetusRace(motherRace, fatherRace) {
   const motherParts = getRaceDescriptorComponents(motherRace);
   const fatherParts = getRaceDescriptorComponents(fatherRace);
@@ -1549,19 +1535,6 @@ function normalizeRegisteredPregnancy(profile) {
   const experience = profile.experience || {};
   experience.pregnantExperience = Math.max(1, clampNumber(experience.pregnantExperience, 0, 999, 0));
   profile.experience = experience;
-
-  const recoveryBase = Math.max(1, Math.round(clampNumber(bio.recoveryDays, 1, 9999, 56)));
-  const totalWeight = pregnant.fetuses.reduce((sum, fetus) => sum + clampNumber(fetus?.weight, 0.33, 3.0, 1.0), 0);
-  const recoveryAccumulator = pregnant.fetuses.reduce((sum, fetus) => {
-    const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
-    return sum + (weight * getRegistryEmbryoTypeRecoveryCoefficient(fetus?.embryoType));
-  }, 0);
-  const averageRecovery = recoveryAccumulator / Math.max(totalWeight, 0.5);
-  const fetusCountModifier = 1 + (Math.max(0, pregnant.fetuses.length - 1) * 0.12);
-  profile.bio = {
-    ...bio,
-    recoveryDays: Math.max(1, Math.round(recoveryBase * (1 + averageRecovery) * fetusCountModifier)),
-  };
   profile.pregnant = pregnant;
 }
 
@@ -1677,6 +1650,22 @@ function sanitizeRegistryProfile(profile, baseProfile) {
   return sanitized;
 }
 
+/**
+ * 注册时先按单胎定一个产后恢复天数；真正的分娩／流产会按当下重算。
+ * 注册在产后恢复中的角色，最近那一次分娩不算「之前的分娩」。
+ */
+function getRegisteredRecoveryDays(profile) {
+  const experience = profile?.experience || {};
+  const births = clampNumber(experience.naturalBirthExperience, 0, 999, 0) + clampNumber(experience.surgicalBirthExperience, 0, 999, 0);
+  const inPostpartum = String(profile?.base?.stage || '') === '产后恢复';
+  return computePostpartumRecoveryDays({
+    recoveryCoefficient: getRecoveryCoefficientByRace(profile?.base?.race),
+    vitalityLevel: profile?.base?.vitalityLevel,
+    priorBirths: inPostpartum ? Math.max(0, births - 1) : births,
+    fetusCount: 1,
+  });
+}
+
 export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true } = {}) {
   const name = String(result?.name || '').trim();
   if (!name) throw new Error('注册结果缺少角色名称');
@@ -1766,6 +1755,10 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
   }
   nextCharacter.profile.bio = {
     ...nextCharacter.profile.bio,
+    // 原本就在产后恢复、重新注册后仍在产后恢复：沿用分娩当下定好的天数
+    recoveryDays: base.initialized && base.profile?.base?.stage === '产后恢复' && nextCharacter.profile.base?.stage === '产后恢复'
+      ? clampNumber(base.profile?.bio?.recoveryDays, 1, 9999, 56)
+      : getRegisteredRecoveryDays(nextCharacter.profile),
     gestationEffectiveSpeed: clampNumber(
       getGestationEffectiveSpeed(nextCharacter.profile),
       0,

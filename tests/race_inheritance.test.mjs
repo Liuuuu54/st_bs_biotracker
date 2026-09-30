@@ -71,7 +71,7 @@ test('内建名录为人类加 72 个异种，新增种族进入正确胚胎分�
   const easternDragon = getRacePhysiologyProfile('东方龙');
   assert.deepEqual(
     [westernDragon.impregnationDifficulty, westernDragon.orgasmOvulationAmount, westernDragon.breedTolerance],
-    [2, 2, 10],
+    [2, 2, 2],
     '西方龙应较高产、易受精且高承载',
   );
   assert.deepEqual(

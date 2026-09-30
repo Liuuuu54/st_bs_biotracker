@@ -369,6 +369,103 @@ export const RACE_COMPANION_EGGS_MEANS = Object.freeze(Object.assign(
   },
 ));
 
+/**
+ * 产后恢复系数：以人类 56 天为 1，只看母体物种（混血取各成分平均），衍生类型不参与。
+ * 实际恢复天数在分娩／流产当下再乘活力、经产与胎数因子，见 computePostpartumRecoveryDays。
+ */
+export const RACE_RECOVERY_COEFFICIENTS = Object.freeze({
+  "人类": 1,
+  "精灵": 4.86,
+  "兽耳族": 0.25,
+  "怪兽类": 0.25,
+  "袋兽族": 6,
+  "哥布林": 0.8,
+  "兽人": 0.39,
+  "矮人": 2,
+  "半身人": 0.61,
+  "半人马": 3.75,
+  "巨人": 6,
+  "媚魔": 0.25,
+  "雪族": 1.25,
+  "夜叉": 6,
+  "妖狐": 3.75,
+  "貓又": 0.66,
+  "月兔族": 0.25,
+  "杜拉罕": 0.41,
+  "人鱼": 5,
+  "鱼人": 6,
+  "怪鱼类": 0.25,
+  "海妖": 6,
+  "独居虫族": 0.25,
+  "蛇人": 1.2,
+  "蛙人": 0.25,
+  "眼魔": 1.07,
+  "水母族": 0.64,
+  "海马族": 6,
+  "河童": 2.5,
+  "梅杜莎": 4.29,
+  "鸟人": 0.5,
+  "怪鸟类": 0.25,
+  "植物亚人": 0.3,
+  "社会虫族": 0.25,
+  "蜥蜴人": 0.77,
+  "触手怪": 0.25,
+  "妖精": 3.75,
+  "真菌亚人": 0.25,
+  "海蛞蝓族": 0.91,
+  "龟族": 1.8,
+  "甲壳族": 0.46,
+  "宝箱怪": 0.3,
+  "阿拉克涅": 0.57,
+  "百足姬": 1.32,
+  "天狗": 2,
+  "深潜者": 0.96,
+  "狗头人": 0.39,
+  "西方龙": 6,
+  "东方龙": 6,
+  "狮鹫族": 5.05,
+  "天使": 2.23,
+  "恶魔": 2.23,
+  "奇美拉": 4.16,
+  "麒麟": 6,
+  "凤凰": 6,
+  "白泽": 6,
+  "独角兽": 4.38,
+  "空鲸": 6,
+  "星繭族": 6,
+  "修格斯": 2.79,
+  "史萊姆": 0.25,
+  "石像鬼": 6,
+  "烛灵": 0.63,
+  "人偶": 3.75,
+  "心魇": 6,
+  "夢魔": 0.66,
+  "宝石人": 6,
+  "奈米丛族": 0.34,
+  "元素灵": 0.39,
+  "灯神": 2.02,
+  "影魔": 0.64,
+  "活体铠甲": 2,
+  "伪人": 2,
+});
+
+export const EMBRYO_TYPES = Object.freeze(["胎生", "卵生", "卵胎生", "胎转卵生", "不定型"]);
+
+const BUILTIN_EMBRYO_TYPE_GROUPS = Object.freeze([
+  ["胎生", VIVIPAROUS_RACES],
+  ["卵生", OVIPAROUS_RACES],
+  ["卵胎生", OVOVIVIPAROUS_RACES],
+  ["胎转卵生", METOVIVIPAROUS_RACES],
+  ["不定型", AMORPHOUS_RACES],
+]);
+
+function getBuiltinEmbryoType(race) {
+  for (const [type, races] of BUILTIN_EMBRYO_TYPE_GROUPS) {
+    if (races.includes(race)) return type;
+  }
+  return "胎生";
+}
+
 export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
   "人类": {
     "menstrualLengthRatio": 1,
@@ -544,7 +641,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 0.25,
     "gestationSpeciesSpeed": 20,
     "birthDifficulty": 0.2,
-    "breedTolerance": 2,
+    "breedTolerance": 1,
     "impregnationDifficulty": 0.4,
     "orgasmOvulationAmount": 3,
     "identicalProbability": 1,
@@ -574,7 +671,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 0.75,
     "gestationSpeciesSpeed": 2.5,
     "birthDifficulty": 0.2,
-    "breedTolerance": 4,
+    "breedTolerance": 1.33,
     "impregnationDifficulty": 0.2,
     "orgasmOvulationAmount": 8,
     "identicalProbability": 0,
@@ -584,7 +681,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 0.25,
     "gestationSpeciesSpeed": 5,
     "birthDifficulty": 0.2,
-    "breedTolerance": 5,
+    "breedTolerance": 1.67,
     "impregnationDifficulty": 0.25,
     "orgasmOvulationAmount": 9,
     "identicalProbability": 25,
@@ -614,7 +711,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 3,
     "gestationSpeciesSpeed": 1.6,
     "birthDifficulty": 0.4,
-    "breedTolerance": 1.6,
+    "breedTolerance": 1,
     "impregnationDifficulty": 2.5,
     "orgasmOvulationAmount": 4,
     "identicalProbability": 20,
@@ -624,7 +721,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 0.75,
     "gestationSpeciesSpeed": 1.25,
     "birthDifficulty": 0.8,
-    "breedTolerance": 2.5,
+    "breedTolerance": 1,
     "impregnationDifficulty": 1.5,
     "orgasmOvulationAmount": 3,
     "identicalProbability": 20,
@@ -644,7 +741,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 1.67,
     "birthDifficulty": 0.6,
-    "breedTolerance": 3.6,
+    "breedTolerance": 1.2,
     "impregnationDifficulty": 0.6,
     "orgasmOvulationAmount": 6,
     "identicalProbability": 66,
@@ -654,7 +751,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 0.75,
     "gestationSpeciesSpeed": 2,
     "birthDifficulty": 1.5,
-    "breedTolerance": 4,
+    "breedTolerance": 1.33,
     "impregnationDifficulty": 2,
     "orgasmOvulationAmount": 6,
     "identicalProbability": 0,
@@ -664,7 +761,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 2,
     "birthDifficulty": 3.5,
-    "breedTolerance": 4,
+    "breedTolerance": 1.33,
     "impregnationDifficulty": 1.5,
     "orgasmOvulationAmount": 6,
     "identicalProbability": 0,
@@ -674,7 +771,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 1,
     "birthDifficulty": 1,
-    "breedTolerance": 1.5,
+    "breedTolerance": 1,
     "impregnationDifficulty": 1,
     "orgasmOvulationAmount": 1,
     "identicalProbability": 20,
@@ -684,7 +781,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1.5,
     "gestationSpeciesSpeed": 1.25,
     "birthDifficulty": 1.2,
-    "breedTolerance": 3,
+    "breedTolerance": 1,
     "impregnationDifficulty": 0.5,
     "orgasmOvulationAmount": 3,
     "identicalProbability": 10,
@@ -804,7 +901,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 4,
     "gestationSpeciesSpeed": 0.25,
     "birthDifficulty": 4,
-    "breedTolerance": 10,
+    "breedTolerance": 2,
     "impregnationDifficulty": 2,
     "orgasmOvulationAmount": 2,
     "identicalProbability": 25,
@@ -824,7 +921,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 3.5,
     "gestationSpeciesSpeed": 0.33,
     "birthDifficulty": 3,
-    "breedTolerance": 9,
+    "breedTolerance": 1.8,
     "impregnationDifficulty": 4,
     "orgasmOvulationAmount": 2,
     "identicalProbability": 25,
@@ -834,7 +931,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 13,
     "gestationSpeciesSpeed": 0.8,
     "birthDifficulty": 2.5,
-    "breedTolerance": 7,
+    "breedTolerance": 1.4,
     "impregnationDifficulty": 3,
     "orgasmOvulationAmount": 1,
     "identicalProbability": 10,
@@ -844,7 +941,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 13,
     "gestationSpeciesSpeed": 0.8,
     "birthDifficulty": 2.5,
-    "breedTolerance": 7,
+    "breedTolerance": 1.4,
     "impregnationDifficulty": 3,
     "orgasmOvulationAmount": 1,
     "identicalProbability": 10,
@@ -854,7 +951,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1.5,
     "gestationSpeciesSpeed": 0.66,
     "birthDifficulty": 2,
-    "breedTolerance": 6,
+    "breedTolerance": 1.5,
     "impregnationDifficulty": 5,
     "orgasmOvulationAmount": 1,
     "identicalProbability": 0,
@@ -894,7 +991,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1.5,
     "gestationSpeciesSpeed": 0.5,
     "birthDifficulty": 3.5,
-    "breedTolerance": 8,
+    "breedTolerance": 1.6,
     "impregnationDifficulty": 5,
     "orgasmOvulationAmount": 1,
     "identicalProbability": 25,
@@ -904,7 +1001,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 3,
     "gestationSpeciesSpeed": 0.2,
     "birthDifficulty": 5,
-    "breedTolerance": 10,
+    "breedTolerance": 2,
     "impregnationDifficulty": 6,
     "orgasmOvulationAmount": 1,
     "identicalProbability": 5,
@@ -924,7 +1021,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 0.25,
     "gestationSpeciesSpeed": 0.5,
     "birthDifficulty": 0.25,
-    "breedTolerance": 8,
+    "breedTolerance": 2,
     "impregnationDifficulty": 1,
     "orgasmOvulationAmount": 3,
     "identicalProbability": 75,
@@ -934,7 +1031,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 0.4,
     "birthDifficulty": 2.5,
-    "breedTolerance": 4,
+    "breedTolerance": 1,
     "impregnationDifficulty": 6,
     "orgasmOvulationAmount": 0,
     "identicalProbability": 5,
@@ -944,7 +1041,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 1.6,
     "birthDifficulty": 0.5,
-    "breedTolerance": 2,
+    "breedTolerance": 1,
     "impregnationDifficulty": 6,
     "orgasmOvulationAmount": 0,
     "identicalProbability": 40,
@@ -954,7 +1051,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 0.8,
     "birthDifficulty": 1.5,
-    "breedTolerance": 2,
+    "breedTolerance": 1,
     "impregnationDifficulty": 6,
     "orgasmOvulationAmount": 0,
     "identicalProbability": 10,
@@ -974,7 +1071,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 1,
     "birthDifficulty": 0.5,
-    "breedTolerance": 3,
+    "breedTolerance": 1,
     "impregnationDifficulty": 1,
     "orgasmOvulationAmount": 2,
     "identicalProbability": 33,
@@ -984,7 +1081,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 0.5,
     "gestationSpeciesSpeed": 1,
     "birthDifficulty": 0.5,
-    "breedTolerance": 5,
+    "breedTolerance": 1.25,
     "impregnationDifficulty": 6,
     "orgasmOvulationAmount": 0,
     "identicalProbability": 5,
@@ -994,7 +1091,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 3,
     "gestationSpeciesSpeed": 0.8,
     "birthDifficulty": 3,
-    "breedTolerance": 2,
+    "breedTolerance": 1,
     "impregnationDifficulty": 7,
     "orgasmOvulationAmount": 0,
     "identicalProbability": 5,
@@ -1004,7 +1101,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 2,
     "birthDifficulty": 1,
-    "breedTolerance": 6,
+    "breedTolerance": 1.5,
     "impregnationDifficulty": 7,
     "orgasmOvulationAmount": 0,
     "identicalProbability": 1,
@@ -1014,7 +1111,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 0.4,
     "birthDifficulty": 4,
-    "breedTolerance": 12,
+    "breedTolerance": 2.4,
     "impregnationDifficulty": 4,
     "orgasmOvulationAmount": 1,
     "identicalProbability": 20,
@@ -1024,7 +1121,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 0.75,
     "birthDifficulty": 0.6,
-    "breedTolerance": 5,
+    "breedTolerance": 1.25,
     "impregnationDifficulty": 0.5,
     "orgasmOvulationAmount": 0,
     "identicalProbability": 33,
@@ -1044,7 +1141,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 0.5,
     "gestationSpeciesSpeed": 2.5,
     "birthDifficulty": 0.4,
-    "breedTolerance": 1.2,
+    "breedTolerance": 1,
     "impregnationDifficulty": 0.3,
     "orgasmOvulationAmount": 3,
     "identicalProbability": 20,
@@ -1064,7 +1161,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 2,
     "gestationSpeciesSpeed": 0.3,
     "birthDifficulty": 2,
-    "breedTolerance": 12,
+    "breedTolerance": 2.4,
     "impregnationDifficulty": 5,
     "orgasmOvulationAmount": 2,
     "identicalProbability": 50,
@@ -1074,7 +1171,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 1.5,
     "birthDifficulty": 1.5,
-    "breedTolerance": 2,
+    "breedTolerance": 1,
     "impregnationDifficulty": 0.5,
     "orgasmOvulationAmount": 4,
     "identicalProbability": 15,
@@ -1084,7 +1181,7 @@ export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
     "menstrualLengthRatio": 1,
     "gestationSpeciesSpeed": 1,
     "birthDifficulty": 1,
-    "breedTolerance": 2,
+    "breedTolerance": 1,
     "impregnationDifficulty": 3,
     "orgasmOvulationAmount": 1,
     "identicalProbability": 33,
@@ -1111,9 +1208,12 @@ export const RACE_PHYSIOLOGY_FIELDS = Object.freeze([
   "orgasmOvulationAmount",
   "identicalProbability",
   "companionEggsMean",
-  "recoveryDays",
+  "recoveryCoefficient",
   "genderRatio"
 ]);
+
+/** 胚型是字串，不进 RACE_PHYSIOLOGY_FIELDS（那里的栏位会被当数值平均） */
+export const RACE_EMBRYO_TYPE_FIELD = "embryoType";
 
 let customRacePhysiologyProfiles = {};
 let customDerivedTypeProfiles = {};
@@ -1174,8 +1274,11 @@ function sanitizeRacePhysiologyProfilePatch(profile) {
       result[RACE_INHERITANCE_FIELD] = inheritanceMode;
     }
   }
+  if (Object.prototype.hasOwnProperty.call(profile, RACE_EMBRYO_TYPE_FIELD)) {
+    const embryoType = String(profile[RACE_EMBRYO_TYPE_FIELD] || '').trim();
+    if (EMBRYO_TYPES.includes(embryoType)) result[RACE_EMBRYO_TYPE_FIELD] = embryoType;
+  }
   for (const field of RACE_PHYSIOLOGY_FIELDS) {
-    if (field === 'recoveryDays') continue;
     if (!Object.prototype.hasOwnProperty.call(profile, field)) continue;
     if (field === 'genderRatio' && profile[field] === null) {
       result[field] = null;
@@ -1187,6 +1290,7 @@ function sanitizeRacePhysiologyProfilePatch(profile) {
     else if (field === 'orgasmOvulationAmount') result[field] = Math.max(0, Math.round(value));
     else if (field === 'companionEggsMean') result[field] = Math.max(0, Math.min(9999, Math.round(value)));
     else if (field === 'identicalProbability') result[field] = Math.max(0, Math.min(100, value));
+    else if (field === 'recoveryCoefficient') result[field] = Math.max(0.01, Math.min(100, value));
     else result[field] = Math.max(0, value);
   }
   return Object.keys(result).length > 0 ? result : null;
@@ -1265,7 +1369,9 @@ export function getBuiltinRacePhysiologyProfile(race) {
   return profile ? {
     ...profile,
     companionEggsMean: RACE_COMPANION_EGGS_MEANS[key] || 0,
+    recoveryCoefficient: RACE_RECOVERY_COEFFICIENTS[key] ?? 1,
     [RACE_INHERITANCE_FIELD]: RACE_INHERITANCE_PROFILES[key] || RACE_INHERITANCE_MODES.NORMAL,
+    [RACE_EMBRYO_TYPE_FIELD]: getBuiltinEmbryoType(key),
   } : null;
 }
 
@@ -1279,55 +1385,66 @@ export function getRaceIntroductionLine(race) {
 
 function getEffectiveRacePhysiologyProfileValue(race) {
   const key = getBaseRaceName(race);
-  const builtin = RACE_PHYSIOLOGY_PROFILES[key];
+  const builtin = getBuiltinRacePhysiologyProfile(key);
   if (!builtin) return null;
   return {
     ...builtin,
-    companionEggsMean: RACE_COMPANION_EGGS_MEANS[key] || 0,
-    [RACE_INHERITANCE_FIELD]: RACE_INHERITANCE_PROFILES[key] || RACE_INHERITANCE_MODES.NORMAL,
     ...(customRacePhysiologyProfiles[key] || {}),
   };
-}
-
-function getEmbryoRecoveryCoefficientByType(embryoType) {
-  switch (String(embryoType || '胎生')) {
-    case '卵生':
-      return 0.6;
-    case '卵胎生':
-      return 0.4;
-    case '胎转卵生':
-      return 1.0;
-    case '不定型':
-      return 0.8;
-    case '胎生':
-    default:
-      return 0.2;
-  }
-}
-
-function resolveRecoveryDays(profile, embryoType) {
-  const explicit = Number(profile?.recoveryDays);
-  if (Number.isFinite(explicit) && explicit >= 0) return explicit;
-
-  const gestationSpeciesSpeed = Number(profile?.gestationSpeciesSpeed);
-  const birthDifficulty = Number(profile?.birthDifficulty);
-  const breedTolerance = Number(profile?.breedTolerance);
-  if (!Number.isFinite(gestationSpeciesSpeed) || gestationSpeciesSpeed <= 0) return 56;
-  if (!Number.isFinite(birthDifficulty) || birthDifficulty <= 0) return 56;
-  if (!Number.isFinite(breedTolerance) || breedTolerance <= 0) return 56;
-
-  const coefficient = getEmbryoRecoveryCoefficientByType(embryoType);
-  return Math.max(1, Math.round(coefficient * (280 / gestationSpeciesSpeed) * (birthDifficulty / breedTolerance)));
 }
 
 export function getRacePhysiologyProfile(race) {
   const key = getBaseRaceName(race);
   const profile = getEffectiveRacePhysiologyProfileValue(key);
-  if (!profile) return null;
-  return {
-    ...profile,
-    recoveryDays: resolveRecoveryDays(profile, getEmbryoTypeByRace(key)),
-  };
+  return profile ? { ...profile } : null;
+}
+
+/** 内置异种按「当前生效」的胚型分组（百科改过胚型的物种会移到新组） */
+export function getRaceGroupsByEmbryoType() {
+  const groups = new Map(EMBRYO_TYPES.map((type) => [type, []]));
+  for (const race of ALL_BUILTIN_RACES) {
+    const type = getEffectiveRacePhysiologyProfileValue(race)?.[RACE_EMBRYO_TYPE_FIELD];
+    groups.get(EMBRYO_TYPES.includes(type) ? type : '胎生').push(race);
+  }
+  return EMBRYO_TYPES.map((type) => ({ label: type, races: groups.get(type) }));
+}
+
+// 活力等级 1-7：一推就倒 … 无坚不摧
+const POSTPARTUM_VITALITY_FACTORS = Object.freeze([1.5, 1.3, 1.15, 1.0, 0.9, 0.85, 0.75]);
+
+function getPostpartumParityFactor(priorBirths) {
+  const count = Math.max(0, Math.floor(Number(priorBirths) || 0));
+  if (count === 0) return 1.0;
+  return count <= 3 ? 0.9 : 1.1;
+}
+
+/**
+ * 产后恢复天数 = 56 × 恢复系数 × 活力因子 × 经产因子 × 胎数因子（× 流产的孕程比例）。
+ * 恢复系数只看母体物种；不看妊娠速度、分娩难度、承载耐受与胚型。
+ * - priorBirths：这次之前的分娩次数（自然＋手术），不含流产
+ * - fetusCount：这次娩出的胎数，不含伴生卵
+ * - progressRatio：流产时的孕程比例（有效孕日／280）；足月分娩传 1
+ */
+export function computePostpartumRecoveryDays({
+  recoveryCoefficient = 1,
+  vitalityLevel = 4,
+  priorBirths = 0,
+  fetusCount = 1,
+  progressRatio = 1,
+} = {}) {
+  const coefficient = Number.isFinite(Number(recoveryCoefficient)) && Number(recoveryCoefficient) > 0 ? Number(recoveryCoefficient) : 1;
+  const level = Math.max(1, Math.min(7, Math.round(Number(vitalityLevel) || 4)));
+  const count = Math.max(1, Math.floor(Number(fetusCount) || 1));
+  const fetusFactor = Math.min(2, 1 + (0.15 * (count - 1)));
+  const progress = Number.isFinite(Number(progressRatio)) ? Math.max(0.25, Math.min(1, Number(progressRatio))) : 1;
+  const days = 56 * coefficient * POSTPARTUM_VITALITY_FACTORS[level - 1] * getPostpartumParityFactor(priorBirths) * fetusFactor * progress;
+  return Math.max(1, Math.round(days));
+}
+
+/** 母体的恢复系数：混血取各成分平均，衍生类型不参与；未收录的种族按 1 */
+export function getRecoveryCoefficientByRace(race) {
+  const value = Number(getMergedRacePhysiologyProfile(race)?.recoveryCoefficient);
+  return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 /** 衍生类型的繁体写法映射到简体基名，模型写哪种字形都认得 */
@@ -1549,12 +1666,9 @@ export function getEmbryoTypeByRace(race) {
     }
   }
 
-  if (VIVIPAROUS_RACES.includes(dominantRace)) return '胎生';
-  if (OVIPAROUS_RACES.includes(dominantRace)) return '卵生';
-  if (OVOVIVIPAROUS_RACES.includes(dominantRace)) return '卵胎生';
-  if (METOVIVIPAROUS_RACES.includes(dominantRace)) return '胎转卵生';
-  if (AMORPHOUS_RACES.includes(dominantRace)) return '不定型';
-  return '胎生';
+  // 百科可以改胚型：先看生效中的覆写，没有覆写才落回内置分组
+  const embryoType = getEffectiveRacePhysiologyProfileValue(dominantRace)?.[RACE_EMBRYO_TYPE_FIELD];
+  return EMBRYO_TYPES.includes(embryoType) ? embryoType : '胎生';
 }
 
 /**

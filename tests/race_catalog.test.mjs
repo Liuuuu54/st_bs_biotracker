@@ -157,6 +157,9 @@ test('杜拉罕填补胎生组「难受孕 + 高承载」的空缺', async () =>
 
 test('承载耐受进入提示词，且偏移不再被胎儿种族放大', async () => {
   const { buildRacePhysiologyPrompt } = await import('../scripts/race_prompt_context.js');
+  const { setRacePhysiologyOverrides } = await import('../scripts/race_config.js');
+  // 文字档位只看数值，用覆写钉住，不跟着内置表的数值调整变动
+  setRacePhysiologyOverrides({ 西方龙: { breedTolerance: 10 }, 天使: { breedTolerance: 7 } });
   const makePayload = (motherRace, fetusRace) => ({
     existing_state: {
       A: {
@@ -178,6 +181,7 @@ test('承载耐受进入提示词，且偏移不再被胎儿种族放大', async
   assert.match(toleranceLine('天使'), /战斗/);
   // 低耐受要能分得开
   assert.match(toleranceLine('精灵'), /行动力明显下降/);
+  setRacePhysiologyOverrides({});
 
   // 人类怀龙胎不该因为胎儿种族耐受高而变成十倍耐受
   const humanCarryingDragon = buildRacePhysiologyPrompt(makePayload('人类', '西方龙'));

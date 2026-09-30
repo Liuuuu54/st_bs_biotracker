@@ -1,4 +1,4 @@
-import { AMORPHOUS_RACES, DERIVED_TYPE_RACES, METOVIVIPAROUS_RACES, OVIPAROUS_RACES, OVOVIVIPAROUS_RACES, VIVIPAROUS_RACES, deriveFetusRace, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile } from './race_config.js';
+import { DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusRace, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace } from './race_config.js';
 
 /**
  * 提示词插值防线：剥离换行、闭合标签与控制字符——race/derivedType 等用户可控字符串
@@ -13,14 +13,6 @@ function sanitizePromptText(value) {
     .replace(/[\u0000-\u001f\u007f\u0080-\u009f]/g, ' ')
     .trim();
 }
-
-const RACE_CATALOG_GROUPS = Object.freeze([
-  ['胎生', VIVIPAROUS_RACES],
-  ['卵生', OVIPAROUS_RACES],
-  ['卵胎生', OVOVIVIPAROUS_RACES],
-  ['胎转卵生', METOVIVIPAROUS_RACES],
-  ['不定型', AMORPHOUS_RACES],
-]);
 
 /**
  * 剧本级的人类与社会常识。它不是种族参数，也不参与 72 个异种的名录计数；
@@ -75,7 +67,8 @@ export function buildRaceCatalogBlock({ withHints = false, selection = null } = 
   const selectedDerivedTypes = selection && Array.isArray(selection.derivedTypes)
     ? new Set(selection.derivedTypes.map((type) => String(type || '').trim()).filter(Boolean))
     : null;
-  const groupLines = RACE_CATALOG_GROUPS.map(([label, races]) => {
+  // 按当前生效的胚型分组：百科改过胚型的物种要列在新组下
+  const groupLines = getRaceGroupsByEmbryoType().map(({ label, races }) => {
     const names = races.filter((race) => race !== '人类' && (!selectedRaces || selectedRaces.has(race))).map((race) => {
       const hint = withHints ? buildRaceCatalogHint(getRaceIntroductionLine(race)) : '';
       return hint ? `${race}(${hint})` : race;
@@ -134,6 +127,12 @@ function formatRecoveryDays(value) {
   if (days >= 365) return `${days}天左右（约${formatYearMonthApprox(days)}）`;
   if (days >= 14) return `${days}天左右（约${formatNumber(days / 7, 1)}周）`;
   return `${days}天左右`;
+}
+
+/** 物种层面只知道恢复系数；实际天数在分娩当下再乘活力、经产与胎数因子 */
+function formatRecoveryBaseline(coefficient) {
+  const value = Number.isFinite(Number(coefficient)) && Number(coefficient) > 0 ? Number(coefficient) : 1;
+  return `基准${formatRecoveryDays(computePostpartumRecoveryDays({ recoveryCoefficient: value }))}（恢复系数 ${formatNumber(value)}；实际再依活力等级、经产次数与该次胎数调整）`;
 }
 
 function getBirthDifficultyText(value) {
@@ -250,22 +249,6 @@ function getGenderRatioDisplay(value) {
   return `男女比 ${Math.round(num)}:${Math.round(100 - num)}`;
 }
 
-function getEmbryoRecoveryCoefficient(embryoType) {
-  switch (String(embryoType || '胎生')) {
-    case '卵生':
-      return 0.6;
-    case '卵胎生':
-      return 0.4;
-    case '胎转卵生':
-      return 1.0;
-    case '不定型':
-      return 0.8;
-    case '胎生':
-    default:
-      return 0.2;
-  }
-}
-
 function describeShift(nextValue, baseValue, formatter = (value) => String(value)) {
   const next = Number(nextValue);
   const base = Number(baseValue);
@@ -285,7 +268,7 @@ function buildSingleRacePhysiologyBlock(race) {
     introductionLine ? `- 物种短敘述: ${introductionLine}` : '',
     `- 经期长度: ${formatCycleDays(profile.menstrualLengthRatio)}`,
     `- 妊娠长度: ${formatGestation(profile.gestationSpeciesSpeed)}`,
-    `- 产后恢复时间: ${formatRecoveryDays(profile.recoveryDays)}`,
+    `- 产后恢复时间: ${formatRecoveryBaseline(profile.recoveryCoefficient)}`,
     `- 分娩难度: ${getBirthDifficultyText(profile.birthDifficulty)}`,
     `- 承载耐受: ${getBreedToleranceText(profile.breedTolerance)}（数值 ${formatNumber(profile.breedTolerance)}；越高则孕期越不被削弱）`,
     `- 受精难度: ${getImpregnationDifficultyText(profile.impregnationDifficulty)}`,
@@ -309,7 +292,7 @@ function buildHybridAverageBlock(race) {
     merged.hasUnknownRace ? '- 注意：该混血包含未收录种族，以下平均数值不完整，仅供粗略参考。' : '',
     `- 平均经期长度: ${formatCycleDays(merged.menstrualLengthRatio)}`,
     `- 平均妊娠长度: ${formatGestation(merged.gestationSpeciesSpeed)}`,
-    `- 平均产后恢复时间: ${formatRecoveryDays(merged.recoveryDays)}`,
+    `- 平均产后恢复时间: ${formatRecoveryBaseline(merged.recoveryCoefficient)}`,
     `- 平均分娩难度: ${getBirthDifficultyText(merged.birthDifficulty)}`,
     `- 平均承载耐受: ${getBreedToleranceText(merged.breedTolerance)}`,
     `- 平均受精难度: ${getImpregnationDifficultyText(merged.impregnationDifficulty)}`,
@@ -416,6 +399,7 @@ function buildPregnancyShiftBlock(characterState) {
   const profile = characterState?.profile || {};
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
+  const experience = profile.experience || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   if (fetuses.length === 0) return '';
 
@@ -423,36 +407,29 @@ function buildPregnancyShiftBlock(characterState) {
   const motherProfile = getMergedRacePhysiologyProfile(motherRace);
   if (!motherRace || !motherProfile) return '';
 
-  let totalWeight = 0;
   let gestationDaysAccumulator = 0;
   let birthAccumulator = 0;
-  let recoveryAccumulator = 0;
 
   // 下面的累加与平均方式必须跟 tools.js 的妊娠偏移一致，否则提示词报的数值和实际推进对不上
   for (const fetus of fetuses) {
-    const weight = Math.max(0.33, Math.min(3.0, Number(fetus?.weight) || 1.0));
     const raceProfile = getMergedRacePhysiologyProfile(fetus?.race) || {};
-    totalWeight += weight;
     // 妊娠取「天数平均」：胎重只影响胎儿自己的发育天数，不参与族速平均
     const fetusGestationSpeed = Math.max(0.1, Math.min(20, Number(raceProfile?.gestationSpeciesSpeed) || 1.0));
     gestationDaysAccumulator += 280 / fetusGestationSpeed;
     // 分娩难度同样不按胎重加权
     birthAccumulator += Math.max(0.1, Math.min(100, Number(raceProfile?.birthDifficulty) || 1.0));
-    recoveryAccumulator += weight * getEmbryoRecoveryCoefficient(fetus?.embryoType);
   }
 
   const fetusCount = Math.max(1, fetuses.length);
   const averageGestationDays = gestationDaysAccumulator / fetusCount;
   const averageGestation = averageGestationDays > 0 ? 280 / averageGestationDays : 1.0;
   const averageBirth = birthAccumulator / fetusCount;
-  const averageRecoveryCoefficient = recoveryAccumulator / Math.max(totalWeight, 0.33);
   const fetusCountModifier = 1 + ((fetuses.length - 1) * 0.08);
   const toleranceCountModifier = Math.max(0.6, 1 - ((fetuses.length - 1) * 0.04));
 
   const baseGestationSpeciesSpeed = Math.max(0.1, Math.min(20, Number(motherProfile.gestationSpeciesSpeed) || 1.0));
   const baseBirthDifficulty = Math.max(0.1, Math.min(100, Number(motherProfile.birthDifficulty) || 1.0));
   const baseBreedTolerance = Math.max(0.1, Math.min(100, Number(motherProfile.breedTolerance) || 1.0));
-  const baseRecoveryDays = Math.max(1, Math.round(Number(motherProfile.recoveryDays) || 56));
 
   // 妊娠速度与分娩难度完全由胎儿族决定，母体 base 不参与相乘（tools.js 同）；
   // 只有承载耐受是在母体 base 上做偏移
@@ -460,11 +437,17 @@ function buildPregnancyShiftBlock(characterState) {
   const shiftedBirthDifficulty = Math.max(0.1, Math.min(100, averageBirth * fetusCountModifier));
   // 承载耐受只取母体自身 x 胎数修正（与 tools.js 同）：胎儿族的承载力不是母体的加成
   const shiftedBreedTolerance = Math.max(0.1, Math.min(100, baseBreedTolerance * toleranceCountModifier));
-  // 恢复天数按「胚胎类型恢复系数 × (280/妊娠速度) × (分娩难度/承载耐受)」计算
-  const shiftedRecoveryDays = Math.max(
-    1,
-    Math.round(Math.max(0.1, Math.min(2.0, averageRecoveryCoefficient)) * (280 / shiftedGestationSpeciesSpeed) * (shiftedBirthDifficulty / Math.max(shiftedBreedTolerance, 0.1))),
-  );
+  // 产后恢复按分娩当下计算（与 tools.js 同）：母体恢复系数 × 活力 × 经产 × 这次胎数
+  const recoveryInput = {
+    recoveryCoefficient: getRecoveryCoefficientByRace(motherRace),
+    vitalityLevel: base.vitalityLevel,
+    priorBirths: (Number(experience.naturalBirthExperience) || 0) + (Number(experience.surgicalBirthExperience) || 0),
+  };
+  const baseRecoveryDays = computePostpartumRecoveryDays({ ...recoveryInput, fetusCount: 1 });
+  const shiftedRecoveryDays = computePostpartumRecoveryDays({
+    ...recoveryInput,
+    fetusCount: fetuses.length + (Number(pregnant.deliveredCount) || 0),
+  });
 
   const gestationBaseDays = 280 / baseGestationSpeciesSpeed;
   const gestationShiftedDays = 280 / shiftedGestationSpeciesSpeed;
@@ -475,12 +458,12 @@ function buildPregnancyShiftBlock(characterState) {
 
   return [
     '[妊娠生理偏移补充设定]',
-    '以下为系统在怀孕后依据胎儿种族、胚胎类型、胎数与胎重，对母体生理参数产生的偏移结果。',
+    '以下为系统在怀孕后依据胎儿种族、胎数与胎重，对母体生理参数产生的偏移结果。',
     `- 母体种族: ${sanitizePromptText(motherRace)}`,
     `- 妊娠长度偏移: ${describeShift(gestationShiftedDays, gestationBaseDays, (value) => formatGestation(280 / value))}`,
     `- 分娩难度偏移: ${describeShift(shiftedBirthDifficulty, baseBirthDifficulty, (value) => `${formatNumber(value)}（${getBirthDifficultyText(value)}）`)}`,
     `- 承载耐受偏移: ${describeShift(shiftedBreedTolerance, baseBreedTolerance, (value) => `${formatNumber(value)}（${getBreedToleranceText(value)}）`)}`,
-    `- 产后恢复时间偏移: ${describeShift(shiftedRecoveryDays, baseRecoveryDays, (value) => formatRecoveryDays(value))}`,
+    `- 预计产后恢复时间: ${describeShift(shiftedRecoveryDays, baseRecoveryDays, (value) => formatRecoveryDays(value))}`,
   ].join('\n');
 }
 

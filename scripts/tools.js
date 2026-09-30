@@ -52,12 +52,14 @@ import {
   TERM_START_DAYS,
 } from './stage_config.js';
 import {
+  computePostpartumRecoveryDays,
   deriveFetusRace,
   getFetusInheritanceTag,
   getBaseRaceName,
   getDerivedTypeMetabolismExemptions,
   getEmbryoTypeByRace,
   getMergedRacePhysiologyProfile,
+  getRecoveryCoefficientByRace,
   rollCompanionEggCount,
   parseRaceDescriptor,
   getRaceDescriptorComponents,
@@ -1780,22 +1782,6 @@ function updateFetalEnergyDrain(profile) {
   profile.pregnant.fetalEnergyDrain = fetuses.reduce((sum, fetus) => sum + getFetusEnergyDrain(profile, fetus), 0);
 }
 
-function getEmbryoTypeModifiers(embryoType) {
-  switch (String(embryoType || '胎生')) {
-    case '卵生':
-      return { recoveryCoefficient: 0.6 };
-    case '卵胎生':
-      return { recoveryCoefficient: 0.4 };
-    case '胎转卵生':
-      return { recoveryCoefficient: 1.0 };
-    case '不定型':
-      return { recoveryCoefficient: 0.8 };
-    case '胎生':
-    default:
-      return { recoveryCoefficient: 0.2 };
-  }
-}
-
 function snapshotOriginalPregnancyBio(character) {
   const runtime = character.runtime || {};
   if (runtime.originalPregnancyBio) return runtime.originalPregnancyBio;
@@ -1804,7 +1790,6 @@ function snapshotOriginalPregnancyBio(character) {
     gestationSpeciesSpeed: clampNumber(getGestationSpeciesSpeed(character?.profile), 0.1, 20, 1.0),
     birthDifficulty: clampNumber(bio.birthDifficulty, 0.1, 100, 1.0),
     breedTolerance: clampNumber(bio.breedTolerance, 0.1, 100, 1.0),
-    recoveryDays: Math.max(1, Math.round(clampNumber(bio.recoveryDays, 1, 9999, 56))),
   };
   runtime.originalPregnancyBio = snapshot;
   character.runtime = runtime;
@@ -1820,50 +1805,33 @@ function applyPregnancyPhysiology(profile, runtime) {
     gestationSpeciesSpeed: clampNumber(getGestationSpeciesSpeed(profile), 0.1, 20, 1.0),
     birthDifficulty: clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1.0),
     breedTolerance: clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0),
-    recoveryDays: Math.max(1, Math.round(clampNumber(profile?.bio?.recoveryDays, 1, 9999, 56))),
   };
 
-  let totalWeight = 0;
   let gestationDaysAccumulator = 0;
-  let gestationCount = 0;
   let birthAccumulator = 0;
-  let birthCount = 0;
-  let recoveryAccumulator = 0;
 
   for (const fetus of fetuses) {
-    const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
-    const embryoModifiers = getEmbryoTypeModifiers(fetus?.embryoType);
     const raceProfile = getMergedRacePhysiologyProfile(fetus?.race) || {};
-
-    totalWeight += weight;
     const gestationSpeed = clampNumber(raceProfile.gestationSpeciesSpeed, 0.1, 20, 1.0);
     gestationDaysAccumulator += 280 / gestationSpeed;
-    gestationCount += 1;
     birthAccumulator += clampNumber(raceProfile.birthDifficulty, 0.1, 100, 1.0);
-    birthCount += 1;
-    recoveryAccumulator += weight * embryoModifiers.recoveryCoefficient;
   }
 
-  const averageGestationDays = gestationDaysAccumulator / Math.max(gestationCount, 1);
+  const averageGestationDays = gestationDaysAccumulator / fetuses.length;
   const averageGestation = averageGestationDays > 0 ? 280 / averageGestationDays : 1.0;
-  const averageBirth = birthAccumulator / Math.max(birthCount, 1);
-  const averageRecoveryCoefficient = recoveryAccumulator / Math.max(totalWeight, 0.33);
+  const averageBirth = birthAccumulator / fetuses.length;
   const fetusCountModifier = 1 + ((fetuses.length - 1) * 0.08);
   const toleranceCountModifier = Math.max(0.6, 1 - ((fetuses.length - 1) * 0.04));
   const gestationModifierMultiplier = getGestationModifierMultiplier(profile);
 
   const gestationEffectiveSpeed = clampNumber(averageGestation * gestationModifierMultiplier, 0, 20, averageGestation);
-  const recoveryGestationSpeed = Math.max(0.1, gestationEffectiveSpeed > 0 ? gestationEffectiveSpeed : averageGestation);
   const birthDifficulty = clampNumber(averageBirth * fetusCountModifier, 0.1, 100, originalBio.birthDifficulty);
   // 承载耐受只取母体自身 x 胎数修正：breedTolerance 描述「这具身体多能扛妊娠」，
   // 是承载者的属性。此前还乘上胎儿族的 breedTolerance，等于把胎儿族的承载力
   // 当成母体的加成——人类怀龙胎会变成十倍耐受，比怀人类胎还轻松，方向是反的。
   // 跨种族的额外负担已由 getConceptionWeightRatio 换算成胎重，不该在这里再算一遍。
   const breedTolerance = clampNumber(originalBio.breedTolerance * toleranceCountModifier, 0.1, 100, originalBio.breedTolerance);
-  const recoveryDays = Math.max(
-    1,
-    Math.round(clampNumber(averageRecoveryCoefficient, 0.1, 2.0, 0.2) * (280 / recoveryGestationSpeed) * (birthDifficulty / Math.max(breedTolerance, 0.1))),
-  );
+  // 产后恢复天数不在孕期推算：分娩／流产当下才由 settlePostpartumRecoveryDays 定下
 
   profile.bio = {
     ...(profile.bio || {}),
@@ -1871,7 +1839,6 @@ function applyPregnancyPhysiology(profile, runtime) {
     gestationEffectiveSpeed,
     birthDifficulty,
     breedTolerance,
-    recoveryDays,
   };
   return true;
 }
@@ -1886,10 +1853,34 @@ function restorePregnancyPhysiology(profile, runtime) {
     gestationEffectiveSpeed: clampNumber(originalBio.gestationSpeciesSpeed * gestationModifierMultiplier, 0, 20, 1.0),
     birthDifficulty: clampNumber(originalBio.birthDifficulty, 0.1, 100, 1.0),
     breedTolerance: clampNumber(originalBio.breedTolerance, 0.1, 100, 1.0),
-    recoveryDays: Math.max(1, Math.round(clampNumber(originalBio.recoveryDays, 1, 9999, 56))),
   };
   delete runtime.originalPregnancyBio;
   return true;
+}
+
+/**
+ * 在清空妊娠之前调用：按母体物种的恢复系数、活力等级、之前的分娩次数与这次娩出的胎数，
+ * 定下这次产后恢复的天数。流产另乘孕程比例（有效孕日／280，最少 1/4）。
+ * 这次娩出的胎数＝产程中已逐胎娩出的 deliveredCount ＋ 还留在子宫里的胎儿。
+ */
+function settlePostpartumRecoveryDays(profile, { miscarriage = false } = {}) {
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const experience = profile.experience || {};
+  const remaining = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.length : 0;
+  const delivered = clampNumber(pregnant.deliveredCount, 0, 99, 0);
+  const recoveryDays = computePostpartumRecoveryDays({
+    recoveryCoefficient: getRecoveryCoefficientByRace(base.race),
+    vitalityLevel: base.vitalityLevel,
+    priorBirths: clampNumber(experience.naturalBirthExperience, 0, 999, 0) + clampNumber(experience.surgicalBirthExperience, 0, 999, 0),
+    fetusCount: Math.max(1, delivered + remaining),
+    progressRatio: miscarriage ? clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) / 280 : 1,
+  });
+  return recoveryDays;
+}
+
+function assignPostpartumRecoveryDays(profile, recoveryDays) {
+  profile.bio = { ...(profile.bio || {}), recoveryDays };
 }
 
 function isObliquePosition(angle, fetus) {
@@ -3598,6 +3589,7 @@ function clearPregnancyState(profile) {
   pregnant.effectiveLaborHours = 0;
   pregnant.laborPhase = null;
   pregnant.laborBirthNumber = 0;
+  pregnant.deliveredCount = 0;
   pregnant.presentingEmbryoId = null;
   pregnant.laborPain = 0;
   pregnant.prodromalOriginStage = null;
@@ -3745,8 +3737,10 @@ function applyChildbirthInternal(profile, female, isNatural) {
   const companionEggs = remainingFetuses.reduce((sum, fetus) => sum + getCompanionEggCount(fetus), 0);
   const companionNote = companionEggs > 0 ? `，并排出${companionEggs}枚伴生卵` : '';
   if (remainingFetuses.length > 0) appendChildrenFromFetuses(profile, remainingFetuses);
+  const recoveryDays = settlePostpartumRecoveryDays(profile);
   clearPregnancyState(profile);
   if (runtime) restorePregnancyPhysiology(profile, runtime);
+  assignPostpartumRecoveryDays(profile, recoveryDays);
   base.stage = '产后恢复';
   base.days = 0;
   experience.naturalBirthExperience = clampNumber(experience.naturalBirthExperience, 0, 999, 0) + (isNatural ? 1 : 0);
@@ -4324,6 +4318,8 @@ function removePresentingFetus(pregnant) {
   const born = [baby, ...enclosed];
   pregnant.fetuses = fetuses.filter((fetus) => !born.includes(fetus));
   pregnant.fetusesCount = pregnant.fetuses.length;
+  // 产后恢复要按「这次一共生了几胎」算，逐胎娩出的要先记下来
+  pregnant.deliveredCount = clampNumber(pregnant.deliveredCount, 0, 99, 0) + born.length;
   pregnant.presentingEmbryoId = null;
   return born;
 }
@@ -4513,8 +4509,10 @@ function applyPressureCrisis(profile, runtime, female) {
       return { changed: false, warned: false };
     }
 
+    const recoveryDays = settlePostpartumRecoveryDays(profile, { miscarriage: true });
     clearPregnancyState(profile);
     restorePregnancyPhysiology(profile, runtime || {});
+    assignPostpartumRecoveryDays(profile, recoveryDays);
     base.stage = '产后恢复';
     base.days = 0;
     experience.miscarriageExperience = clampNumber(experience.miscarriageExperience, 0, 999, 0) + 1;
@@ -5067,6 +5065,7 @@ function applyAbortion(chatState, args) {
     ? String(pregnant.wombReturn?.returner || '').trim()
     : '';
 
+  const recoveryDays = settlePostpartumRecoveryDays(profile, { miscarriage: true });
   clearPregnancyState(profile);
   restorePregnancyPhysiology(profile, next.runtime || {});
 
@@ -5089,6 +5088,7 @@ function applyAbortion(chatState, args) {
       secondly: `${female}避孕成功`,
     };
   } else {
+    assignPostpartumRecoveryDays(profile, recoveryDays);
     base.stage = '产后恢复';
     base.days = 0;
     experience.miscarriageExperience = clampNumber(experience.miscarriageExperience, 0, 999, 0) + 1;
@@ -7245,6 +7245,7 @@ function applyDebugInjectPregnancy(chatState, args) {
   pregnant.effectiveLaborHours = 0;
   pregnant.laborPhase = null;
   pregnant.laborBirthNumber = 0;
+  pregnant.deliveredCount = 0;
   pregnant.presentingEmbryoId = null;
   pregnant.laborPain = 0;
   pregnant.prodromalOriginStage = null;
@@ -7341,9 +7342,11 @@ function applyDebugClearContainers(chatState, args) {
   }
 
   const implantedPregnancy = isPregnancyStage(stage) || clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) > 0;
+  const recoveryDays = settlePostpartumRecoveryDays(profile, { miscarriage: true });
   clearPregnancyState(profile);
   restorePregnancyPhysiology(profile, next.runtime || {});
   if (implantedPregnancy) {
+    assignPostpartumRecoveryDays(profile, recoveryDays);
     base.stage = '产后恢复';
     base.days = 0;
     experience.miscarriageExperience = clampNumber(experience.miscarriageExperience, 0, 999, 0) + 1;

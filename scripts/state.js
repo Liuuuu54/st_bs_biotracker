@@ -10,6 +10,7 @@ import {
 } from './registry_psy_config.js';
 import { LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
+import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters } from './state_migration.js';
 import {
   createDefaultWardrobeItem,
   DEFAULT_WEAR_STATE,
@@ -651,6 +652,7 @@ export function createChildId() {
 
 export function createEmptyChatState() {
   return {
+    schemaVersion: CHAT_STATE_SCHEMA_VERSION,
     lastAttemptedSignature: '',
     lastProcessedSignature: '',
     // 失败当下「整段对话」的签名，用来判断是否该挡下自动重试
@@ -712,6 +714,7 @@ export function createDefaultFemaleState(name = '') {
         effectiveLaborHours: 0,
         laborPhase: null,
         laborBirthNumber: 0,
+        deliveredCount: 0,
         presentingEmbryoId: null,
         laborPain: 0,
         prodromalOriginStage: null,
@@ -1056,6 +1059,7 @@ export function getChatState(ctx, settings) {
     chatState.characters = migrated;
     shouldSave = true;
   }
+  if (migrateChatStateSchema(chatState)) shouldSave = true;
   const normalizedSkillCatalog = normalizeSkillCatalog(chatState.skillCatalog);
   if (JSON.stringify(chatState.skillCatalog || []) !== JSON.stringify(normalizedSkillCatalog)) shouldSave = true;
   chatState.skillCatalog = normalizedSkillCatalog;
@@ -1102,6 +1106,31 @@ export function getChatState(ctx, settings) {
     }
   }
   return chatState;
+}
+
+/**
+ * 存档结构升版：角色与每一层楼层快照都要迁移，否则回溯楼层会把旧结构带回来。
+ * 快照是差异链，逐层还原成完整内容、迁移后再按原本的中继资料重新串回去。
+ */
+function migrateChatStateSchema(chatState) {
+  const fromVersion = getChatStateSchemaVersion(chatState);
+  if (fromVersion >= CHAT_STATE_SCHEMA_VERSION) return false;
+  migrateCharacters(chatState.characters, fromVersion);
+  if (Array.isArray(chatState.snapshots) && chatState.snapshots.length > 0) {
+    const source = chatState.snapshots;
+    const cache = new Map();
+    const rebuiltCache = new Map();
+    const rebuilt = [];
+    for (let index = 0; index < source.length; index += 1) {
+      const payload = materializeSnapshotPayloadAt(source, index, cache);
+      const characters = unpackSnapshotCharacters(payload.characters);
+      migrateCharacters(characters, fromVersion);
+      rebuilt.push(createStoredSnapshotState(rebuilt, { ...payload, characters: packSnapshotCharacters(characters) }, source[index], rebuiltCache));
+    }
+    chatState.snapshots = rebuilt;
+  }
+  chatState.schemaVersion = CHAT_STATE_SCHEMA_VERSION;
+  return true;
 }
 
 export function isChatStateEffectivelyEmpty(chatState) {
@@ -1654,6 +1683,7 @@ function createSnapshotCharacterBaseline(name = '') {
         effectiveLaborHours: 0,
         laborPhase: null,
         laborBirthNumber: 0,
+        deliveredCount: 0,
         presentingEmbryoId: null,
         laborPain: 0,
         prodromalOriginStage: null,
@@ -1770,7 +1800,13 @@ function normalizeCharacterForSnapshot(character, name = '') {
   next.profile.descriptions = compactSnapshotRecord(next.profile.descriptions || {});
   next.profile.notify = compactSnapshotRecord(next.profile.notify || {});
   delete next.updatedAt;
+  // runtime 其余是时间进位之类的暂态，不进快照；孕前原值例外：
+  // 回溯楼层后少了它，分娩时会把孕期调整过的耐受当成原值还原回去，永久偏掉
+  const originalPregnancyBio = next.runtime?.originalPregnancyBio;
   delete next.runtime;
+  if (originalPregnancyBio && typeof originalPregnancyBio === 'object') {
+    next.runtime = { originalPregnancyBio };
+  }
   return next;
 }
 

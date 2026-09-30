@@ -20,6 +20,8 @@ import {
   DERIVED_TYPE_FLUX_PROFILES,
   DERIVED_TYPE_INHERITANCE_PROFILES,
   DERIVED_TYPE_RACES,
+  EMBRYO_TYPES,
+  RACE_EMBRYO_TYPE_FIELD,
   RACE_INHERITANCE_FIELD,
   RACE_INHERITANCE_MODES,
   RACE_INTRODUCTION_FIELD,
@@ -31,6 +33,7 @@ import {
   getDerivedTypeIntroductionLine,
   getDerivedTypeMetabolismExemptions,
   getDerivedTypeOverride,
+  getRaceGroupsByEmbryoType,
   getRaceIntroductionLine,
   getRacePhysiologyOverride,
   normalizeDerivedOverrideMap,
@@ -253,13 +256,10 @@ let debugFetalTalentDraft = {
   skillId: 0,
 };
 
-const RACE_PALETTE_GROUPS = [
-  { label: '胎生', races: VIVIPAROUS_RACES },
-  { label: '卵生', races: OVIPAROUS_RACES },
-  { label: '卵胎生', races: OVOVIVIPAROUS_RACES },
-  { label: '胎转卵生', races: METOVIVIPAROUS_RACES },
-  { label: '不定型', races: AMORPHOUS_RACES },
-];
+// 分组跟着「当前生效」的胚型走：百科改了胚型，调色盘、百科与名录清单都要移到新组
+function getRacePaletteGroups() {
+  return getRaceGroupsByEmbryoType();
+}
 const RACE_ENCYCLOPEDIA_LIST = Array.from(
   new Set([
     ...VIVIPAROUS_RACES,
@@ -269,10 +269,12 @@ const RACE_ENCYCLOPEDIA_LIST = Array.from(
     ...AMORPHOUS_RACES,
   ].filter((race) => race !== '人类')),
 ).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
-const RACE_ENCYCLOPEDIA_GROUPS = RACE_PALETTE_GROUPS.map((group) => ({
-  label: group.label,
-  races: Array.from(new Set(group.races.filter((race) => race !== '人类'))),
-})).filter((group) => group.races.length > 0);
+function getRaceEncyclopediaGroups() {
+  return getRacePaletteGroups().map((group) => ({
+    label: group.label,
+    races: Array.from(new Set(group.races.filter((race) => race !== '人类'))),
+  })).filter((group) => group.races.length > 0);
+}
 const DERIVED_ENCYCLOPEDIA_LIST = Array.from(new Set(DERIVED_TYPE_RACES)).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
 const RACE_PHYSIOLOGY_FIELD_LABELS = Object.freeze({
   menstrualLengthRatio: '经期长度倍率',
@@ -283,13 +285,15 @@ const RACE_PHYSIOLOGY_FIELD_LABELS = Object.freeze({
   orgasmOvulationAmount: '额外排卵倾向',
   identicalProbability: '同卵多胎概率(%)',
   companionEggsMean: '典型伴生卵数量',
+  recoveryCoefficient: '产后恢复系数',
   genderRatio: '男胎比例',
 });
 const RACE_PHYSIOLOGY_FIELD_HINTS = Object.freeze({
   genderRatio: '0-100；空白=双性，-1=无性',
   companionEggsMean: '每名有效后代伴随的背景卵数；0=没有伴生卵',
+  recoveryCoefficient: '人类 56 天为 1；实际再依活力、经产与胎数调整',
 });
-const EDITABLE_RACE_PHYSIOLOGY_FIELDS = Object.freeze(RACE_PHYSIOLOGY_FIELDS.filter((field) => field !== 'recoveryDays'));
+const EDITABLE_RACE_PHYSIOLOGY_FIELDS = RACE_PHYSIOLOGY_FIELDS;
 const RACE_INTRODUCTION_LABEL = '物种短敘述';
 const RACE_INHERITANCE_LABELS = Object.freeze({
   [RACE_INHERITANCE_MODES.NORMAL]: '一般',
@@ -1835,7 +1839,7 @@ function setRaceCatalogEntryIncluded(ctx, kind, name, included) {
 /** 基准页的名录勾选：异种按胚胎型态分组，衍生类型另成一组；每组可整组勾选或清空 */
 function getRaceCatalogChecklistGroups() {
   return [
-    ...RACE_ENCYCLOPEDIA_GROUPS.map((group) => ({ kind: 'race', label: group.label, names: group.races })),
+    ...getRaceEncyclopediaGroups().map((group) => ({ kind: 'race', label: group.label, names: group.races })),
     { kind: 'derived', label: '衍生类型', names: DERIVED_ENCYCLOPEDIA_LIST },
   ];
 }
@@ -1906,6 +1910,7 @@ function getRacePhysiologyFieldStep(field) {
 }
 
 function getRacePhysiologyFieldMin(field) {
+  if (field === 'recoveryCoefficient') return '0.01';
   return field === 'genderRatio' ? '-1' : '0';
 }
 
@@ -1992,6 +1997,33 @@ function renderRacePhysiologyEditor(race) {
   }
   editorNode.appendChild(inheritanceLabel);
 
+  const embryoLabel = document.createElement('label');
+  embryoLabel.className = 'bs-bt-race-editor-field';
+  embryoLabel.setAttribute('for', 'bs-bt-race-embryo-type');
+  const embryoText = document.createElement('span');
+  embryoText.textContent = '胚型';
+  embryoLabel.appendChild(embryoText);
+  const embryoSelect = document.createElement('select');
+  embryoSelect.id = 'bs-bt-race-embryo-type';
+  embryoSelect.className = 'text_pole';
+  embryoSelect.dataset.raceEmbryoField = RACE_EMBRYO_TYPE_FIELD;
+  embryoSelect.title = '只影响之后的受孕；已在腹中的胎儿维持原胚型';
+  for (const type of EMBRYO_TYPES) {
+    const option = document.createElement('option');
+    option.value = type;
+    option.textContent = type;
+    embryoSelect.appendChild(option);
+  }
+  embryoSelect.value = String((override && override[RACE_EMBRYO_TYPE_FIELD]) || builtin[RACE_EMBRYO_TYPE_FIELD] || '胎生');
+  embryoLabel.appendChild(embryoSelect);
+  if (override && Object.prototype.hasOwnProperty.call(override, RACE_EMBRYO_TYPE_FIELD)) {
+    const badge = document.createElement('span');
+    badge.className = 'bs-bt-race-editor-badge';
+    badge.textContent = '已覆盖';
+    embryoLabel.appendChild(badge);
+  }
+  editorNode.appendChild(embryoLabel);
+
   for (const field of EDITABLE_RACE_PHYSIOLOGY_FIELDS) {
     const label = document.createElement('label');
     label.className = 'bs-bt-race-editor-field';
@@ -2041,6 +2073,11 @@ function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
   if (inheritanceSelect instanceof HTMLSelectElement) {
     const value = String(inheritanceSelect.value || RACE_INHERITANCE_MODES.NORMAL);
     if (!onlyDiff || value !== builtin[RACE_INHERITANCE_FIELD]) result[RACE_INHERITANCE_FIELD] = value;
+  }
+  const embryoSelect = document.querySelector(`[data-race-embryo-field="${RACE_EMBRYO_TYPE_FIELD}"]`);
+  if (embryoSelect instanceof HTMLSelectElement) {
+    const value = String(embryoSelect.value || builtin[RACE_EMBRYO_TYPE_FIELD]);
+    if (!onlyDiff || value !== builtin[RACE_EMBRYO_TYPE_FIELD]) result[RACE_EMBRYO_TYPE_FIELD] = value;
   }
   for (const field of EDITABLE_RACE_PHYSIOLOGY_FIELDS) {
     const input = document.querySelector(`[data-race-physiology-field="${field}"]`);
@@ -2094,6 +2131,8 @@ function copyHumanPhysiologyToEditor() {
   if (inheritanceSelect instanceof HTMLSelectElement) {
     inheritanceSelect.value = human[RACE_INHERITANCE_FIELD] || RACE_INHERITANCE_MODES.NORMAL;
   }
+  const embryoSelect = document.querySelector(`[data-race-embryo-field="${RACE_EMBRYO_TYPE_FIELD}"]`);
+  if (embryoSelect instanceof HTMLSelectElement) embryoSelect.value = human[RACE_EMBRYO_TYPE_FIELD] || '胎生';
   for (const field of EDITABLE_RACE_PHYSIOLOGY_FIELDS) {
     const input = document.querySelector(`[data-race-physiology-field="${field}"]`);
     if (!(input instanceof HTMLInputElement)) continue;
@@ -2248,7 +2287,7 @@ function renderRaceEncyclopediaPage(ctx = null) {
   }
 
   selectNode.innerHTML = '';
-  for (const group of RACE_ENCYCLOPEDIA_GROUPS) {
+  for (const group of getRaceEncyclopediaGroups()) {
     const optgroup = document.createElement('optgroup');
     optgroup.label = `${group.label} (${group.races.length})`;
     for (const race of group.races) {
@@ -2657,7 +2696,7 @@ function isCalculatorRaceTarget(targetInputId = '') {
 function renderRacePaletteSelect(selectId, currentValue, includeEmpty = false) {
   const options = [];
   if (includeEmpty) options.push('<option value="">不设</option>');
-  for (const group of RACE_PALETTE_GROUPS) {
+  for (const group of getRacePaletteGroups()) {
     const groupOptions = group.races.map((race) => `<option value="${escapeHtml(race)}"${race === currentValue ? ' selected' : ''}>${escapeHtml(race)}</option>`).join('');
     options.push(`<optgroup label="${escapeHtml(`${group.label} (${group.races.length})`)}">${groupOptions}</optgroup>`);
   }
