@@ -2,7 +2,7 @@
 
 ![芭絲特查看 BS BioTracker PDA 的品牌插畫](assets/branding/bs-biotracker-cover.png)
 
-BS BioTracker 是用於角色扮演的生理狀態追蹤擴充，現已推出 **v1.0.5**。它會根據對話更新角色狀態，並讓角色的生理週期、妊娠、需求與時間流逝持續影響故事。
+BS BioTracker 是用於角色扮演的生理狀態追蹤擴充，現已推出 **v1.0.6**。它會根據對話更新角色狀態，並讓角色的生理週期、妊娠、需求與時間流逝持續影響故事。
 
 支援 SillyTavern、TauriTavern、Luker；SillyTavern 已知測試版本為 `1.19.0`。
 
