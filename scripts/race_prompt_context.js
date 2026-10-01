@@ -1,4 +1,5 @@
 import { DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusRace, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace } from './race_config.js';
+import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN } from './stage_config.js';
 
 /**
  * 提示词插值防线：剥离换行、闭合标签与控制字符——race/derivedType 等用户可控字符串
@@ -342,7 +343,7 @@ function buildSpermCalculationBlock(characterState) {
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const stage = String(base.stage || '');
   const fertilizationDays = Number(base.fertilizationDays || 0);
-  const hasPregnancyState = fetuses.length > 0 || fertilizationDays > 0 || ['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '产兆前驱', '第一产程', '第二产程', '第三产程', '假孕期'].includes(stage);
+  const hasPregnancyState = fetuses.length > 0 || fertilizationDays > 0 || ['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '延产期', '产兆前驱', '第一产程', '第二产程', '第三产程', '假孕期'].includes(stage);
   if (hasPregnancyState) return '';
 
   const motherRace = String(base.race || '').trim();
@@ -414,7 +415,7 @@ function buildPregnancyShiftBlock(characterState) {
   for (const fetus of fetuses) {
     const raceProfile = getMergedRacePhysiologyProfile(fetus?.race) || {};
     // 妊娠取「天数平均」：胎重只影响胎儿自己的发育天数，不参与族速平均
-    const fetusGestationSpeed = Math.max(0.1, Math.min(20, Number(raceProfile?.gestationSpeciesSpeed) || 1.0));
+    const fetusGestationSpeed = Math.max(GESTATION_SPEED_MIN, Math.min(GESTATION_SPEED_MAX, Number(raceProfile?.gestationSpeciesSpeed) || 1.0));
     gestationDaysAccumulator += 280 / fetusGestationSpeed;
     // 分娩难度同样不按胎重加权
     birthAccumulator += Math.max(0.1, Math.min(100, Number(raceProfile?.birthDifficulty) || 1.0));
@@ -427,13 +428,13 @@ function buildPregnancyShiftBlock(characterState) {
   const fetusCountModifier = 1 + ((fetuses.length - 1) * 0.08);
   const toleranceCountModifier = Math.max(0.6, 1 - ((fetuses.length - 1) * 0.04));
 
-  const baseGestationSpeciesSpeed = Math.max(0.1, Math.min(20, Number(motherProfile.gestationSpeciesSpeed) || 1.0));
+  const baseGestationSpeciesSpeed = Math.max(GESTATION_SPEED_MIN, Math.min(GESTATION_SPEED_MAX, Number(motherProfile.gestationSpeciesSpeed) || 1.0));
   const baseBirthDifficulty = Math.max(0.1, Math.min(100, Number(motherProfile.birthDifficulty) || 1.0));
   const baseBreedTolerance = Math.max(0.1, Math.min(100, Number(motherProfile.breedTolerance) || 1.0));
 
   // 妊娠速度与分娩难度完全由胎儿族决定，母体 base 不参与相乘（tools.js 同）；
   // 只有承载耐受是在母体 base 上做偏移
-  const shiftedGestationSpeciesSpeed = Math.max(0.1, Math.min(20, averageGestation));
+  const shiftedGestationSpeciesSpeed = Math.max(GESTATION_SPEED_MIN, Math.min(GESTATION_SPEED_MAX, averageGestation));
   const shiftedBirthDifficulty = Math.max(0.1, Math.min(100, averageBirth * fetusCountModifier));
   // 承载耐受只取母体自身 x 胎数修正（与 tools.js 同）：胎儿族的承载力不是母体的加成
   const shiftedBreedTolerance = Math.max(0.1, Math.min(100, baseBreedTolerance * toleranceCountModifier));

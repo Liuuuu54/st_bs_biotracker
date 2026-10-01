@@ -13,7 +13,7 @@
 <body>
 <div id="harness-info">
   <b>BioTracker UI Harness</b>（mock 宿主，非真实 SillyTavern）<br>
-  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件，精液灌满）、贝拉（产后恢复，pregFit 生效，精液灌满）、琪拉（孕 30 周六胎：五种胚型＋孕中孕，各种胎儿标签，精液浸满）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、茉拉（刚受精）。
+  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件，精液灌满）、贝拉（产后恢复，pregFit 生效，精液灌满）、琪拉（孕 30 周六胎：五种胚型＋孕中孕，各种胎儿标签，精液浸满）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、芙拉（延产期，乏力 2 级）、茉拉（刚受精）。
 </div>
 <script type="module">
   const CHAT_KEY = 'ui-harness-chat';
@@ -213,6 +213,16 @@
           pregnant: {
             pregnantDays: 130, effectivePregnantDays: 130,
             fetuses: [{ embryoId: 1, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '男', weight: 1.0, tendencyAngle: 90, affinity: -20, talents: [] }],
+          },
+        },
+      }),
+      // 子宫图测试：延产期第 3 次延产、子宫乏力 2 级（宫颈封口＋宫壁细纹）
+      芙拉: makeCharacter('芙拉', {
+        base: { stage: '延产期', days: 106, age: 28, eggs: 0, uterinePressure: 30, uterineAtony: 2 },
+        profile: {
+          pregnant: {
+            pregnantDays: 400, effectivePregnantDays: 400, extensionCount: 3, extensionUntilDays: 420,
+            fetuses: [{ embryoId: 1, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 1.1, tendencyAngle: 0, affinity: 12, descentStage: -1, talents: [] }],
           },
         },
       }),

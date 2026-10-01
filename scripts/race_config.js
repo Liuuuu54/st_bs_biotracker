@@ -1424,6 +1424,7 @@ function getPostpartumParityFactor(priorBirths) {
  * - priorBirths：这次之前的分娩次数（自然＋手术），不含流产
  * - fetusCount：这次娩出的胎数，不含伴生卵
  * - progressRatio：流产时的孕程比例（有效孕日／280）；足月分娩传 1
+ * - atonyLevel：子宫乏力级数（反复延产留下），每级恢复期多 10%
  */
 export function computePostpartumRecoveryDays({
   recoveryCoefficient = 1,
@@ -1431,13 +1432,15 @@ export function computePostpartumRecoveryDays({
   priorBirths = 0,
   fetusCount = 1,
   progressRatio = 1,
+  atonyLevel = 0,
 } = {}) {
   const coefficient = Number.isFinite(Number(recoveryCoefficient)) && Number(recoveryCoefficient) > 0 ? Number(recoveryCoefficient) : 1;
   const level = Math.max(1, Math.min(7, Math.round(Number(vitalityLevel) || 4)));
   const count = Math.max(1, Math.floor(Number(fetusCount) || 1));
   const fetusFactor = Math.min(2, 1 + (0.15 * (count - 1)));
   const progress = Number.isFinite(Number(progressRatio)) ? Math.max(0.25, Math.min(1, Number(progressRatio))) : 1;
-  const days = 56 * coefficient * POSTPARTUM_VITALITY_FACTORS[level - 1] * getPostpartumParityFactor(priorBirths) * fetusFactor * progress;
+  const atony = 1 + 0.1 * Math.max(0, Math.floor(Number(atonyLevel) || 0));
+  const days = 56 * coefficient * POSTPARTUM_VITALITY_FACTORS[level - 1] * getPostpartumParityFactor(priorBirths) * fetusFactor * progress * atony;
   return Math.max(1, Math.round(days));
 }
 

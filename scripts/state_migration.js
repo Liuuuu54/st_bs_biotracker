@@ -9,7 +9,7 @@ import {
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 2;
+export const CHAT_STATE_SCHEMA_VERSION = 3;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -92,8 +92,23 @@ function migrateCharacterV1ToV2(character) {
   }
 }
 
+/**
+ * v2 → v3（1.0.7 延产）：补上延产次数、本次延产到期日与子宫乏力级数。
+ * 旧存档不可能处在延产期，一律从「没延产过、没有乏力」开始。
+ */
+function migrateCharacterV2ToV3(character) {
+  const profile = character?.profile;
+  if (!profile || typeof profile !== 'object') return;
+  const pregnant = profile.pregnant && typeof profile.pregnant === 'object' ? profile.pregnant : (profile.pregnant = {});
+  const base = profile.base && typeof profile.base === 'object' ? profile.base : (profile.base = {});
+  if (!Number.isInteger(pregnant.extensionCount)) pregnant.extensionCount = 0;
+  if (pregnant.extensionUntilDays === undefined) pregnant.extensionUntilDays = null;
+  if (!Number.isFinite(Number(base.uterineAtony))) base.uterineAtony = 0;
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
+  2: migrateCharacterV2ToV3,
 });
 
 export function getChatStateSchemaVersion(chatState) {

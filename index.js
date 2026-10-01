@@ -28,6 +28,7 @@ import {
   RACE_PHYSIOLOGY_FIELDS,
   getEmbryoTypeByRace,
   getBuiltinRacePhysiologyProfile,
+  getMergedRacePhysiologyProfile,
   getDerivedTypeFluxProfile,
   getDerivedTypeInheritanceProfile,
   getDerivedTypeIntroductionLine,
@@ -59,11 +60,23 @@ import {
   MENSTRUAL_STAGES,
   PREGNANCY_STAGE_DAYS,
   PREGNANCY_STAGES,
+  POSTTERM_START_DAYS,
+  GESTATION_SPEED_MAX,
+  GESTATION_SPEED_MIN,
 } from './scripts/stage_config.js';
 import { buildMainFlowPrompt, resetPoller, runTracker, getPollWaitStatus } from './scripts/tracker.js';
 import { buildLineageView, relatedNodeIds } from './scripts/lineage_view.js';
 import { deriveFetusTags, getFetusTagLabels } from './scripts/fetus_tags.js';
-import { canHostNestedPregnancy, describeBackSide, describeFetalPosition, getPresentingAmnionDurability, getPresentingFetus, isFetusKnownToCharacter } from './scripts/tools.js';
+import {
+  canHostNestedPregnancy,
+  describeBackSide,
+  describeFetalPosition,
+  getLibidoCap as getProfileLibidoCap,
+  getPresentingAmnionDurability,
+  getPresentingFetus,
+  getUterinePressureCap as getProfileUterinePressureCap,
+  isFetusKnownToCharacter,
+} from './scripts/tools.js';
 import { applyToolCall, writeDiaryEntry } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
@@ -1262,6 +1275,8 @@ function getRegisterFormValues(ctx = getContextSafe()) {
     declaredRace: String(document.getElementById('bs-bt-register-race')?.value || '').trim(),
     customNotes: String(document.getElementById('bs-bt-register-custom-notes')?.value || '').trim(),
     specialFetus: getSpecialFetusRequest(),
+    useGestationModifier: Boolean(document.getElementById('bs-bt-register-gestation-modifier')?.checked),
+    gestationModifierMultiplier: Number(document.getElementById('bs-bt-register-gestation-multiplier')?.value ?? 1),
     breedingInferencePrompt: String(document.getElementById('bs-bt-breeding-inference-prompt')?.value || '').trim(),
     skillPrompt: String(document.getElementById('bs-bt-register-skill-prompt')?.value || '').trim(),
     sourceChildKey,
@@ -2817,6 +2832,13 @@ function getStageProgress(profile) {
   if (stage === '逾期') {
     return { label: '阶段进度', value: Number(base.days) || 0, unbounded: true, unit: 'd', displayStartAtOne: true };
   }
+  if (stage === '延产期') {
+    // 延产期的天数从 42 周起算、跨多次延产连续计数；上限是这次延产的到期日
+    const untilDays = Number(profile?.pregnant?.extensionUntilDays);
+    return Number.isFinite(untilDays)
+      ? { label: '延产进度', value: Number(base.days) || 0, max: Math.max(1, untilDays - POSTTERM_START_DAYS), unit: 'd', displayStartAtOne: true }
+      : { label: '延产进度', value: Number(base.days) || 0, unbounded: true, unit: 'd', displayStartAtOne: true };
+  }
   if (Object.prototype.hasOwnProperty.call(MENSTRUAL_STAGE_DAYS, stage)) {
     const ratio = Math.max(0.1, Math.min(20, Number(profile?.bio?.menstrualLengthRatio) || 1));
     return {
@@ -2925,26 +2947,17 @@ function getLaborStageThreshold(profile, stage, options = {}) {
   return Math.max(0.1, threshold);
 }
 
+// 与 tools.js 共用同一套上限：孕月让它们涨上去，子宫乏力再让它们往回缩
+function withStage(profile, stage) {
+  return { ...(profile || {}), base: { ...(profile?.base || {}), stage } };
+}
+
 function getLibidoCap(stage, profile = null) {
-  const isTruePregnancy = ['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '产兆前驱', '第一产程', '第二产程', '第三产程'].includes(stage);
-  if (isTruePregnancy && profile) {
-    const effectivePregnantDays = Number(profile.pregnant?.effectivePregnantDays) || 0;
-    const months = Math.floor(effectivePregnantDays / 28);
-    const progress = Math.max(0, Math.min(10, months)) / 10;
-    return Math.round(100 + (150 - 100) * progress);
-  }
-  return 100;
+  return getProfileLibidoCap(withStage(profile, stage));
 }
 
 function getUterinePressureCap(stage, profile = null) {
-  const isTruePregnancy = ['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '产兆前驱', '第一产程', '第二产程', '第三产程'].includes(stage);
-  if (isTruePregnancy && profile) {
-    const effectivePregnantDays = Number(profile.pregnant?.effectivePregnantDays) || 0;
-    const months = Math.floor(effectivePregnantDays / 28);
-    const progress = Math.max(0, Math.min(10, months)) / 10;
-    return Math.round(50 + (150 - 50) * progress);
-  }
-  return 50;
+  return getProfileUterinePressureCap(withStage(profile, stage));
 }
 
 function getMetabolismLevel(value, cap = 150) {
@@ -3723,6 +3736,9 @@ function buildTrackCharacterViewModel(character) {
       laborBirthNumber: Number(pregnant.laborBirthNumber) || 0,
       laborPain: Number(pregnant.laborPain) || 0,
       prodromalOriginStage: pregnant.prodromalOriginStage ?? null,
+      extensionCount: Number(pregnant.extensionCount) || 0,
+      extensionUntilDays: Number.isFinite(Number(pregnant.extensionUntilDays)) && pregnant.extensionUntilDays !== null ? Number(pregnant.extensionUntilDays) : null,
+      uterineAtony: Number(base.uterineAtony) || 0,
       prodromalRemainingHours: Number(pregnant.prodromalRemainingHours) || 0,
       prodromalDelayProgressHours: Number(pregnant.prodromalDelayProgressHours) || 0,
       // 羊膜是每胎各一：追踪页的膜耐性条显示先露胎（正在下降或即将娩出那胎）的胎囊
@@ -3875,9 +3891,12 @@ function renderProgressList(items) {
 }
 
 function renderTrackTitle(title, badge = '') {
-  const badgeHtml = String(badge || '').trim()
-    ? `<span class="bs-bt-track-title-badge">${escapeHtml(badge)}</span>`
-    : '';
+  // 可以传一个或多个标签；空的略过
+  const badgeHtml = (Array.isArray(badge) ? badge : [badge])
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .map((item) => `<span class="bs-bt-track-title-badge">${escapeHtml(item)}</span>`)
+    .join('');
   return `<span class="bs-bt-track-title-main">${escapeHtml(title)}</span>${badgeHtml}`;
 }
 
@@ -4203,7 +4222,7 @@ function renderWombSection(data, badge) {
     ? `<section id="bs-bt-womb-cards" class="bs-bt-womb-cards" role="region" aria-label="胎儿详细"${wombCardsOpen ? '' : ' hidden'}><h3>胎儿详细</h3>${cards.map((item, index) => renderWombFetusCard(item, index, data)).join('')}</section>`
     : '';
   return `<div class="bs-bt-track-section bs-bt-womb-section">
-      ${badge ? `<div class="bs-bt-track-section-title">${renderTrackTitle('子宫', badge)}</div>` : ''}
+      ${(Array.isArray(badge) ? badge.length > 0 : Boolean(badge)) ? `<div class="bs-bt-track-section-title">${renderTrackTitle('子宫', badge)}</div>` : ''}
       <div class="bs-bt-womb" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${toggle}${replay}${panel}</div>
       ${renderWombAlert(data)}
     </div>`;
@@ -4363,8 +4382,11 @@ function renderTrackPregnancy(viewModel) {
     : (Number(data.eggs) > 0 || Number(data.fertilizationDays) > 0 || hasFertilizedEmbryo)
       ? '危险期'
       : '安全期';
+  // 孕龄看有效孕日（阶段、胎儿外形都按它算）；妊娠速度不是 1 时实际经过天数会不同，另外并列
+  const gestationalDays = Number(data.effectivePregnantDays) || 0;
+  const elapsedDays = Number(data.pregnantDays) || 0;
   const pregnantDaysBadge = data.showPregnantFields
-    ? `孕龄 ${formatOneBasedDay(data.pregnantDays)}d`
+    ? `孕龄 ${formatOneBasedDay(gestationalDays)}d${Math.floor(elapsedDays) !== Math.floor(gestationalDays) ? `（实际 ${formatOneBasedDay(elapsedDays)}d）` : ''}`
     : '';
   const amnionDurability = Math.max(0, Math.min(100, Number(data.amnionDurability) || 0));
   const pregnantDescriptionOptions = data.showLaborFields
@@ -4379,7 +4401,11 @@ function renderTrackPregnancy(viewModel) {
     || Math.abs(Number(gestationModifier.multiplier ?? 1) - 1) > 0.000001,
   );
   return `
-    ${renderWombSection(data, pregnantDaysBadge)}
+    ${renderWombSection(data, [
+      pregnantDaysBadge,
+      // 延产次数跟着这次妊娠；子宫乏力不另外标，子宫图上的细纹已经看得出来
+      data.showPregnantFields && Number(data.extensionCount) > 0 ? `延产第 ${Number(data.extensionCount)} 次` : '',
+    ].filter(Boolean))}
     ${hasGestationModifier ? `<div class="bs-bt-track-section">
       <div class="bs-bt-track-section-title">妊娠变速效果</div>
       <div class="bs-bt-track-meta">
@@ -4835,12 +4861,17 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
     ),
   ].join('');
 
-  const hasProtectedPregnancyState = hasConceptionState || ['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '产兆前驱', '第一产程', '第二产程', '第三产程'].includes(currentStage);
-  const canEnterProdromal = ['孕晚期', '临产期', '逾期'].includes(currentStage);
+  const hasProtectedPregnancyState = hasConceptionState || ['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '延产期', '产兆前驱', '第一产程', '第二产程', '第三产程'].includes(currentStage);
+  const canEnterProdromal = ['孕晚期', '临产期', '逾期', '延产期'].includes(currentStage);
   const isProdromal = currentStage === '产兆前驱';
+  const prodromalOrigin = String(viewModel.pregnancy?.prodromalOriginStage || '');
+  const canExtendPregnancy = currentStage === '逾期' || (isProdromal && (prodromalOrigin === '逾期' || prodromalOrigin === '延产期'));
+  const canInducePregnancy = currentStage === '延产期';
+  const extensionCount = Math.max(0, Number(viewModel.pregnancy?.extensionCount) || 0);
+  const uterineAtony = Math.max(0, Number(viewModel.pregnancy?.uterineAtony) || 0);
   const canSetProdromal = canEnterProdromal || isProdromal;
   const canTriggerFetalActivity = Number(counts.fetuses) > 0
-    && ['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '产兆前驱', '第一产程', '第二产程', '第三产程'].includes(currentStage);
+    && ['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '延产期', '产兆前驱', '第一产程', '第二产程', '第三产程'].includes(currentStage);
   const prodromalProgress = isProdromal && Number(viewModel.overview?.stageProgress?.max) > 0
     ? Math.round(Math.max(0, Math.min(100, (Number(viewModel.overview.stageProgress.value) / Number(viewModel.overview.stageProgress.max)) * 100)))
     : 0;
@@ -5106,7 +5137,15 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
         </label>
         <button type="button" class="menu_button" data-debug-action="set-prodromal">${isProdromal ? '应用进度' : '切换并应用'}</button>
       </fieldset>
-      <div class="bs-bt-track-debug-hint">${canSetProdromal ? '0% 为刚进入产兆前驱，100% 为剩余时间耗尽；设为 100% 后，下一次时间推进会进入第一产程。' : '只有孕晚期、临产期或逾期角色可以切换至产兆前驱。'}</div>
+      <div class="bs-bt-track-debug-hint">${canSetProdromal ? '0% 为刚进入产兆前驱，100% 为剩余时间耗尽；设为 100% 后，下一次时间推进会进入第一产程。' : '只有孕晚期、临产期、逾期或延产期角色可以切换至产兆前驱。'}</div>
+    </div>
+    <div class="bs-bt-track-section" style="margin-top: 10px;">
+      <div class="bs-bt-track-section-title">延产调试</div>
+      <div class="bs-bt-track-inline-action bs-bt-track-inline-action-equal">
+        <button type="button" class="menu_button bs-bt-inline-button" data-debug-action="extend-pregnancy"${canExtendPregnancy ? '' : ' disabled'}>延产</button>
+        <button type="button" class="menu_button bs-bt-inline-button" data-debug-action="induce-pregnancy"${canInducePregnancy ? '' : ' disabled'}>引产</button>
+      </div>
+      <div class="bs-bt-track-debug-hint">已延产 ${extensionCount} 次，子宫乏力 ${uterineAtony} 级。延产只能在逾期，或由逾期／延产期进入的产兆前驱使用；引产只能在延产期使用。</div>
     </div>
     <div class="bs-bt-track-section" style="margin-top: 10px;">
       <div class="bs-bt-track-section-title">胎儿自主活动调试</div>
@@ -5158,13 +5197,12 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
           <span class="bs-bt-track-debug-label">效果名称</span>
           <input id="bs-bt-debug-gestation-name" class="text_pole" type="text" value="${modifierNameValue}" placeholder="例如：地母神的祝福" />
         </label>
-        <label class="bs-bt-track-debug-field">
-          <span class="bs-bt-track-debug-label">倍率</span>
-          <input id="bs-bt-debug-gestation-multiplier" class="text_pole" type="number" min="0" max="20" step="0.1" value="${modifierMultiplierValue}" />
-        </label>
+        <div class="bs-bt-track-debug-field">
+          ${renderGestationSpeedSlider({ inputId: 'bs-bt-debug-gestation-multiplier', multiplier: modifierMultiplierValue, speciesSpeed: Number(gestationModifier.speciesSpeed) || 1 })}
+        </div>
         <label class="bs-bt-track-debug-field">
           <span class="bs-bt-track-debug-label">说明</span>
-          <textarea id="bs-bt-debug-gestation-description" class="text_pole bs-bt-textarea" rows="3" placeholder="例如：地母神赐与女性冒险者的祝福，使妊娠速度变为 0.5 倍；若倍率为 0，则代表胎儿发育冻结">${modifierDescriptionValue}</textarea>
+          <textarea id="bs-bt-debug-gestation-description" class="text_pole bs-bt-textarea" rows="3" placeholder="例如：地母神赐与女性冒险者的祝福，十天就怀满十个月">${modifierDescriptionValue}</textarea>
         </label>
         <div class="bs-bt-track-inline-action bs-bt-track-inline-action-equal">
           <button type="button" class="menu_button bs-bt-inline-button" data-debug-action="set-gestation-modifier">应用效果</button>
@@ -5325,6 +5363,119 @@ function bindDebugPregnancyDraftControls(root, refresh) {
   });
 }
 
+// ── 妊娠变速拉杆：对数刻度（0.03～30 差一千倍，线性拉杆在慢的那端没有解析度），冻结（0）另外勾选 ──
+const GESTATION_SLIDER_STEPS = 1000;
+
+function gestationMultiplierToSliderPosition(multiplier) {
+  const value = Math.max(GESTATION_SPEED_MIN, Math.min(GESTATION_SPEED_MAX, Number(multiplier) || 1));
+  return Math.round(GESTATION_SLIDER_STEPS * Math.log(value / GESTATION_SPEED_MIN) / Math.log(GESTATION_SPEED_MAX / GESTATION_SPEED_MIN));
+}
+
+function sliderPositionToGestationMultiplier(position) {
+  const ratio = Math.max(0, Math.min(GESTATION_SLIDER_STEPS, Number(position) || 0)) / GESTATION_SLIDER_STEPS;
+  const raw = GESTATION_SPEED_MIN * ((GESTATION_SPEED_MAX / GESTATION_SPEED_MIN) ** ratio);
+  // 拉到 1 附近就吸到 1（没有变速），其余取三位有效数字
+  if (Math.abs(raw - 1) < 0.02) return 1;
+  return Number(raw.toPrecision(3));
+}
+
+function formatGestationLength(days) {
+  const value = Math.max(1, Math.round(days));
+  if (value < 60) return `约 ${value} 天`;
+  if (value < 730) return `约 ${value} 天（约 ${Math.round(value / 28)} 个月）`;
+  return `约 ${value} 天（约 ${(value / 365).toFixed(1)} 年）`;
+}
+
+/** 拉杆下方的一句话：以种族速度 × 倍率换算整个孕期多长 */
+function describeGestationSpeed(multiplier, speciesSpeed = 1) {
+  const modifier = Number(multiplier);
+  if (modifier === 0) return '冻结：胎儿停止发育，孕期不会推进';
+  const species = Math.max(GESTATION_SPEED_MIN, Math.min(GESTATION_SPEED_MAX, Number(speciesSpeed) || 1));
+  const speed = Math.max(GESTATION_SPEED_MIN, Math.min(GESTATION_SPEED_MAX, species * (Number.isFinite(modifier) ? modifier : 1)));
+  const speciesNote = Math.abs(species - 1) > 1e-6 ? `（含种族速度 ×${Number(species.toPrecision(3))}）` : '';
+  return `整个孕期${formatGestationLength(280 / speed)}${speciesNote}`;
+}
+
+function renderGestationSpeedSlider({ inputId, multiplier, speciesSpeed = 1 }) {
+  const value = Number(multiplier);
+  const frozen = value === 0;
+  const position = gestationMultiplierToSliderPosition(frozen ? 1 : value);
+  const shown = frozen ? 0 : sliderPositionToGestationMultiplier(position);
+  return `<div class="bs-bt-gestation-slider" data-gestation-slider data-species-speed="${escapeHtml(String(speciesSpeed))}">
+      <div class="bs-bt-gestation-slider-head">
+        <span>倍率 <output data-role="value">×${escapeHtml(String(shown))}</output></span>
+        <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="freeze"${frozen ? ' checked' : ''} /> 冻结</label>
+      </div>
+      <input type="range" data-role="range" min="0" max="${GESTATION_SLIDER_STEPS}" step="1" value="${position}"${frozen ? ' disabled' : ''} />
+      <div class="bs-bt-gestation-slider-scale"><span>慢 ×${GESTATION_SPEED_MIN}</span><span>×1</span><span>快 ×${GESTATION_SPEED_MAX}</span></div>
+      <input type="hidden" id="${escapeHtml(inputId)}" value="${escapeHtml(String(shown))}" />
+      <small data-role="summary">${escapeHtml(describeGestationSpeed(shown, speciesSpeed))}</small>
+    </div>`;
+}
+
+/** 绑定拉杆：数值写进隐藏栏位并触发 input，既有的草稿保存照旧运作 */
+function bindGestationSpeedSlider(root) {
+  root.querySelectorAll('[data-gestation-slider]').forEach((node) => {
+    if (node.dataset.bound === 'true') return;
+    node.dataset.bound = 'true';
+    const range = node.querySelector('[data-role="range"]');
+    const freeze = node.querySelector('[data-role="freeze"]');
+    const hidden = node.querySelector('input[type="hidden"]');
+    const output = node.querySelector('[data-role="value"]');
+    const summary = node.querySelector('[data-role="summary"]');
+    const update = () => {
+      const frozen = Boolean(freeze?.checked);
+      if (range) range.disabled = frozen;
+      const value = frozen ? 0 : sliderPositionToGestationMultiplier(range?.value);
+      if (hidden) {
+        hidden.value = String(value);
+        hidden.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      if (output) output.textContent = `×${value}`;
+      if (summary) summary.textContent = describeGestationSpeed(value, node.dataset.speciesSpeed);
+    };
+    range?.addEventListener('input', update);
+    freeze?.addEventListener('change', update);
+  });
+}
+
+function setGestationSliderSpeciesSpeed(root, speciesSpeed) {
+  root.querySelectorAll('[data-gestation-slider]').forEach((node) => {
+    node.dataset.speciesSpeed = String(speciesSpeed);
+    const hidden = node.querySelector('input[type="hidden"]');
+    const summary = node.querySelector('[data-role="summary"]');
+    if (summary) summary.textContent = describeGestationSpeed(hidden?.value, speciesSpeed);
+  });
+}
+
+function getRegisterRaceSpeciesSpeed() {
+  const race = String(document.getElementById('bs-bt-register-race')?.value || '').trim() || '人类';
+  return Number(getMergedRacePhysiologyProfile(race)?.gestationSpeciesSpeed) || 1;
+}
+
+/** 注册页：勾「此角色使用妊娠变速」才显示拉杆；孕期长度随注册种族换算 */
+function setupRegisterGestationSlider() {
+  const toggle = document.getElementById('bs-bt-register-gestation-modifier');
+  const anchor = document.getElementById('bs-bt-register-gestation-slider');
+  if (!toggle || !anchor || anchor.dataset.ready === 'true') return;
+  anchor.dataset.ready = 'true';
+  anchor.innerHTML = renderGestationSpeedSlider({
+    inputId: 'bs-bt-register-gestation-multiplier',
+    multiplier: 1,
+    speciesSpeed: getRegisterRaceSpeciesSpeed(),
+  });
+  bindGestationSpeedSlider(anchor);
+  const sync = () => {
+    anchor.hidden = !toggle.checked;
+    setGestationSliderSpeciesSpeed(anchor, getRegisterRaceSpeciesSpeed());
+  };
+  toggle.addEventListener('change', sync);
+  const raceInput = document.getElementById('bs-bt-register-race');
+  raceInput?.addEventListener('input', sync);
+  raceInput?.addEventListener('change', sync);
+  sync();
+}
+
 function applySelectedTrackGestationModifier(ctx, clear = false) {
   if (!selectedTrackName) return;
   const settings = getSettings(ctx);
@@ -5391,6 +5542,27 @@ function setSelectedTrackProdromal(ctx, progressPercent) {
   renderStatusPanel(ctx);
   renderFullStatePage(ctx);
   globalThis.toastr?.success?.(`[BS BioTracker] 已将 ${selectedTrackName} 的产兆前驱进度设为 ${Math.round(Number(progressPercent) || 0)}%`);
+}
+
+function applySelectedTrackExtension(ctx, action) {
+  if (!selectedTrackName) return;
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const result = applyToolCall(chatState, {
+    name: 'bsExtendPregnancy',
+    arguments: { female: selectedTrackName, action, reason: '调试面板' },
+  });
+  if (!result?.applied) {
+    globalThis.toastr?.warning?.(result?.message || '[BS BioTracker] 延产调试失败');
+    return;
+  }
+  recordChatStateSnapshot(ctx, chatState, { reason: action === 'induce' ? 'debug_induce_pregnancy' : 'debug_extend_pregnancy' });
+  saveSettings(ctx);
+  renderStatusPanel(ctx);
+  renderFullStatePage(ctx);
+  globalThis.toastr?.success?.(action === 'induce'
+    ? `[BS BioTracker] 已为 ${selectedTrackName} 引产，进入产兆前驱`
+    : `[BS BioTracker] 已为 ${selectedTrackName} 延产`);
 }
 
 function setSelectedTrackFetalPosition(ctx, scope) {
@@ -5610,6 +5782,7 @@ function setSelectedTrackExpansion(ctx, key) {
 }
 
 function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(ctx)) {
+  bindGestationSpeedSlider(root);
   if (!root) return;
   bindDebugPregnancyDraftControls(root, refresh);
   root.querySelectorAll('[data-debug-immune]').forEach((node) =>
@@ -5642,6 +5815,12 @@ function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(c
       const progressPercent = root.querySelector('#bs-bt-debug-prodromal-progress')?.value || '0';
       setSelectedTrackProdromal(ctx, progressPercent);
     }),
+  );
+  root.querySelectorAll('[data-debug-action="extend-pregnancy"]').forEach((node) =>
+    node.addEventListener('click', () => applySelectedTrackExtension(ctx, 'extend')),
+  );
+  root.querySelectorAll('[data-debug-action="induce-pregnancy"]').forEach((node) =>
+    node.addEventListener('click', () => applySelectedTrackExtension(ctx, 'induce')),
   );
   root.querySelectorAll('[data-debug-action="fetal-activity"]').forEach((node) =>
     node.addEventListener('click', () => {
@@ -6158,6 +6337,7 @@ function renderStatusPanel(ctx) {
     debugFetalActivityDraft.owner = selectedTrackName;
     debugFetalActivityDraft.text = String(event.target?.value || '');
   });
+  bindGestationSpeedSlider(content);
   content.querySelector('#bs-bt-debug-gestation-name')?.addEventListener('input', (event) => {
     debugGestationModifierDraft.owner = selectedTrackName;
     debugGestationModifierDraft.name = String(event.target?.value || '');
@@ -8742,6 +8922,7 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-register-outfit-generate')?.addEventListener('click', () => generateRegistryOutfit(ctx));
   document.getElementById('bs-bt-register-outfit-write')?.addEventListener('click', () => writeRegistryOutfit(ctx));
   document.getElementById('bs-bt-register-source')?.addEventListener('change', () => syncRegisterChildSourceFields(ctx));
+  setupRegisterGestationSlider();
   // 改角色名后，上一个角色的推演结果就不再适用；留着会被误认为是这个角色的结果。
   // 以「编辑器内容属于谁」为准而不是 draft 是否存在——使用者看到的是编辑器内容。
   document.getElementById('bs-bt-register-name')?.addEventListener('input', () => {
@@ -8870,7 +9051,7 @@ async function ensureModal(ctx) {
       globalThis.toastr?.info?.('[BS BioTracker] 注册请求正在进行中，请等待完成');
       return;
     }
-    const { targetName, declaredRace, customNotes, sourceChild, specialFetus } = getRegisterFormValues();
+    const { targetName, declaredRace, customNotes, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier } = getRegisterFormValues();
     if (specialFetus?.error) {
       setRegisterStatus(specialFetus.error, true);
       globalThis.toastr?.warning?.(specialFetus.error, '[BS BioTracker]');
@@ -8906,7 +9087,8 @@ async function ensureModal(ctx) {
     const bundleReport = {};
     try {
       const character = await runRegistry(ctx, {
-        targetName, customNotes, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest,
+        targetName, customNotes, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier,
+        ...(useGestationModifier ? { gestationModifierMultiplier } : {}),
         ...(bundleOptions ? { bundle: bundleOptions, bundleReport } : {}),
       });
       renderStatusPanel(ctx);

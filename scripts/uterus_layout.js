@@ -14,7 +14,7 @@ const MID_TRIMESTER_DAYS = PREGNANCY_STAGE_DAYS.孕早期;
 const LATE_TRIMESTER_DAYS = PREGNANCY_STAGE_DAYS.孕早期 + PREGNANCY_STAGE_DAYS.孕中期;
 const SAC_VISIBLE_DAYS = MID_TRIMESTER_DAYS;
 const EMPTY_STAGES = Object.freeze(['月经期', '卵泡期', '排卵期', '黄体期', '产后恢复', '假孕期']);
-const GESTATION_STAGES = Object.freeze(['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '产兆前驱', '回归期', ...LABOR_STAGES]);
+const GESTATION_STAGES = Object.freeze(['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '延产期', '产兆前驱', '回归期', ...LABOR_STAGES]);
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
@@ -361,6 +361,9 @@ export function computeUterusLayout(profile, options = {}) {
     semenSoaked,
     semenOverflow,
     lateBulge: days >= LATE_TRIMESTER_DAYS,
+    // 延产期在宫颈画封口；子宫乏力在宫壁画妊娠纹似的细纹（都不改宫壁颜色，免得跟宫压变色混在一起）
+    extensionSeal: stage === '延产期',
+    atony: clamp(Math.floor(finite(base.uterineAtony)), 0, 9),
     fetuses: items,
     sacs,
     hiddenCount: Math.max(0, occupants.length - drawn.length),

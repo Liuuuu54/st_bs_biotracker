@@ -40,7 +40,11 @@ import {
 } from './wardrobe_config.js';
 import {
   DUE_DATE_DAYS,
+  EXTENSION_MONTH_DAYS,
+  FIRST_EXTENSION_UNTIL_DAYS,
   FIRST_STAGE_NATURAL_BIRTH_EXPERIENCE,
+  GESTATION_SPEED_MAX,
+  GESTATION_SPEED_MIN,
   LABOR_STAGES,
   LABOR_STAGE_BASE_HOURS,
   LABOR_STAGE_INCREMENT,
@@ -48,6 +52,7 @@ import {
   MENSTRUAL_STAGE_DAYS,
   MENSTRUAL_STAGES,
   PREGNANCY_STAGE_DAYS,
+  POSTTERM_START_DAYS,
   PREGNANCY_STAGES,
   TERM_START_DAYS,
 } from './stage_config.js';
@@ -484,6 +489,26 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
+    name: 'bsExtendPregnancy',
+    description: '延产：以某种特殊手段（神奇医疗、法术、契约等）让妊娠拖过预产期迟迟不生，或结束延产。'
+      + '只有剧情明确使用了这类手段才调用；单纯「还没生」「预产期过了」不要调用。'
+      + '\naction=extend：第一次只能在逾期（满 42 周），或由逾期发动的产兆前驱使用，妊娠会维持到第 52 周；'
+      + '之后延产期满会进入产兆前驱，可在那次产兆前驱再用，每次再延 28 天；第二次起每延一次会加深子宫乏力（宫压与性欲上限下降、产程变慢、产后恢复变长）。'
+      + '已破水、已进入产程时不能延产。'
+      + '\naction=induce：引产，结束延产期并立即进入产兆前驱；延产期间这是唯一的出口——不能剖腹（bsChildbirth）也不能终止妊娠（bsAbortion）。'
+      + '\n延产期间宫压不会自行累积，也不会引发流产或产程；羊膜每天回复一点、不会破水。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        female: { type: 'string' },
+        action: { type: 'string', enum: ['extend', 'induce'] },
+        reason: { type: 'string', description: '剧情中使用的手段，例如「教会的延产圣术」' },
+      },
+      required: ['female', 'action', 'reason'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'bsImplantEmbryo',
     description: '把外源胚胎植入角色体内：代孕、胚胎移植、虫母注卵、寄生产卵等，凡是「孕育者不是遗传母亲」的情节都用这个。'
       + 'provider 是胚胎真正的归属方（提供卵子的一方／虫母／委托母亲），分娩后孩子会转交给她；若她尚未注册，孩子会留在承载者名下并标注来源。'
@@ -807,6 +832,7 @@ const WOMB_FROZEN_BLOCKED_TOOLS = new Set([
   'bsImplantEmbryo',
   'bsAbortion',
   'bsChildbirth',
+  'bsExtendPregnancy',
   'bsMaternalFetalInteraction',
   'bsExcreteMetabolism',
   'bsUpdatePsychology',
@@ -850,7 +876,7 @@ function finishWombReturn(profile, overflowDays, name, notify) {
   // 也不套用正常受孕的产科偏移（约半个周期）：回归没有受精事件，
   // 凭空多出两周孕龄会让它变成「孕早期第 14 天」，与「回归结束即第一天」矛盾。
   const carried = Math.max(0, Number(overflowDays) || 0);
-  const speed = clampNumber(getGestationEffectiveSpeed(profile), 0, 20, 1);
+  const speed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
   const startDays = 1 + carried;
   pregnant.pregnantDays = startDays;
   pregnant.effectivePregnantDays = startDays * speed;
@@ -1248,7 +1274,7 @@ function pickNestedHostFetus(profile) {
  * 妊娠速度极快的物种可能算出负值，那就是该物种不可能异期复孕。
  */
 function getSuperfetationWindowDays(profile) {
-  const speed = clampNumber(getGestationEffectiveSpeed(profile), 0.1, 20, 1);
+  const speed = clampNumber(getGestationEffectiveSpeed(profile), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1);
   return Math.max(0, SUPERFETATION_RAW_WINDOW_DAYS - (getImplantationDays(profile) * speed));
 }
 
@@ -1787,7 +1813,7 @@ function snapshotOriginalPregnancyBio(character) {
   if (runtime.originalPregnancyBio) return runtime.originalPregnancyBio;
   const bio = character?.profile?.bio || {};
   const snapshot = {
-    gestationSpeciesSpeed: clampNumber(getGestationSpeciesSpeed(character?.profile), 0.1, 20, 1.0),
+    gestationSpeciesSpeed: clampNumber(getGestationSpeciesSpeed(character?.profile), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0),
     birthDifficulty: clampNumber(bio.birthDifficulty, 0.1, 100, 1.0),
     breedTolerance: clampNumber(bio.breedTolerance, 0.1, 100, 1.0),
   };
@@ -1802,7 +1828,7 @@ function applyPregnancyPhysiology(profile, runtime) {
   if (fetuses.length === 0) return false;
 
   const originalBio = runtime?.originalPregnancyBio || {
-    gestationSpeciesSpeed: clampNumber(getGestationSpeciesSpeed(profile), 0.1, 20, 1.0),
+    gestationSpeciesSpeed: clampNumber(getGestationSpeciesSpeed(profile), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0),
     birthDifficulty: clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1.0),
     breedTolerance: clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0),
   };
@@ -1812,7 +1838,7 @@ function applyPregnancyPhysiology(profile, runtime) {
 
   for (const fetus of fetuses) {
     const raceProfile = getMergedRacePhysiologyProfile(fetus?.race) || {};
-    const gestationSpeed = clampNumber(raceProfile.gestationSpeciesSpeed, 0.1, 20, 1.0);
+    const gestationSpeed = clampNumber(raceProfile.gestationSpeciesSpeed, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0);
     gestationDaysAccumulator += 280 / gestationSpeed;
     birthAccumulator += clampNumber(raceProfile.birthDifficulty, 0.1, 100, 1.0);
   }
@@ -1824,7 +1850,7 @@ function applyPregnancyPhysiology(profile, runtime) {
   const toleranceCountModifier = Math.max(0.6, 1 - ((fetuses.length - 1) * 0.04));
   const gestationModifierMultiplier = getGestationModifierMultiplier(profile);
 
-  const gestationEffectiveSpeed = clampNumber(averageGestation * gestationModifierMultiplier, 0, 20, averageGestation);
+  const gestationEffectiveSpeed = clampNumber(averageGestation * gestationModifierMultiplier, 0, GESTATION_SPEED_MAX, averageGestation);
   const birthDifficulty = clampNumber(averageBirth * fetusCountModifier, 0.1, 100, originalBio.birthDifficulty);
   // 承载耐受只取母体自身 x 胎数修正：breedTolerance 描述「这具身体多能扛妊娠」，
   // 是承载者的属性。此前还乘上胎儿族的 breedTolerance，等于把胎儿族的承载力
@@ -1835,7 +1861,7 @@ function applyPregnancyPhysiology(profile, runtime) {
 
   profile.bio = {
     ...(profile.bio || {}),
-    gestationSpeciesSpeed: clampNumber(averageGestation, 0.1, 20, 1.0),
+    gestationSpeciesSpeed: clampNumber(averageGestation, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0),
     gestationEffectiveSpeed,
     birthDifficulty,
     breedTolerance,
@@ -1849,8 +1875,8 @@ function restorePregnancyPhysiology(profile, runtime) {
   const gestationModifierMultiplier = getGestationModifierMultiplier(profile);
   profile.bio = {
     ...(profile.bio || {}),
-    gestationSpeciesSpeed: clampNumber(originalBio.gestationSpeciesSpeed, 0.1, 20, 1.0),
-    gestationEffectiveSpeed: clampNumber(originalBio.gestationSpeciesSpeed * gestationModifierMultiplier, 0, 20, 1.0),
+    gestationSpeciesSpeed: clampNumber(originalBio.gestationSpeciesSpeed, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0),
+    gestationEffectiveSpeed: clampNumber(originalBio.gestationSpeciesSpeed * gestationModifierMultiplier, 0, GESTATION_SPEED_MAX, 1.0),
     birthDifficulty: clampNumber(originalBio.birthDifficulty, 0.1, 100, 1.0),
     breedTolerance: clampNumber(originalBio.breedTolerance, 0.1, 100, 1.0),
   };
@@ -1875,6 +1901,7 @@ function settlePostpartumRecoveryDays(profile, { miscarriage = false } = {}) {
     priorBirths: clampNumber(experience.naturalBirthExperience, 0, 999, 0) + clampNumber(experience.surgicalBirthExperience, 0, 999, 0),
     fetusCount: Math.max(1, delivered + remaining),
     progressRatio: miscarriage ? clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) / 280 : 1,
+    atonyLevel: getUterineAtony(profile),
   });
   return recoveryDays;
 }
@@ -1965,11 +1992,11 @@ function calculatePositionDifficulty(angle, fetus) {
 // 阵列遍历先后不会让谁天然占便宜；最后交给 reconcileFetalDescent 夹上限与容量。
 
 /** 各孕期阶段一天内产生位移（上下或左右）的机率；多胎时再乘 1/√胎数，表示挤 */
-const FETAL_MOVE_CHANCE = Object.freeze({ 孕早期: 0.6, 孕中期: 0.5, 孕晚期: 0.35, 临产期: 0.25, 逾期: 0.15 });
+const FETAL_MOVE_CHANCE = Object.freeze({ 孕早期: 0.6, 孕中期: 0.5, 孕晚期: 0.35, 临产期: 0.25, 逾期: 0.15, 延产期: 0.15 });
 /** 位移中上下移动所占比例，其余为左右换位 */
 const FETAL_VERTICAL_SHARE = 0.6;
 /** 越接近足月越倾向往下 */
-const FETAL_DOWNWARD_MATURITY_BIAS = Object.freeze({ 孕晚期: 0.1, 临产期: 0.15, 逾期: 0.15 });
+const FETAL_DOWNWARD_MATURITY_BIAS = Object.freeze({ 孕晚期: 0.1, 临产期: 0.15, 逾期: 0.15, 延产期: 0.15 });
 
 /** 能自行活动的胎儿：已着床、没被包在宿主体内、还没入盆 */
 function canMoveFreely(fetus, fetuses) {
@@ -1985,7 +2012,7 @@ function rollFetalDownward(profile, stage) {
 
 /** 原有的孕期角度规则：多胎时按胎重占比决定这天转不转得动 */
 function driftPregnancyAngle(fetus, stage, gestationSpeed, totalWeight, fetusCount) {
-  if (stage === '逾期') return;
+  if (stage === '逾期' || stage === '延产期') return;
   const successRate = fetusCount > 1 ? clampNumber(fetus?.weight, 0.33, 3.0, 1.0) / Math.max(totalWeight, 0.33) : 1;
   if (Math.random() > successRate) return;
   const currentAngle = wrapAngle(fetus.tendencyAngle);
@@ -2036,7 +2063,7 @@ function swapLateral(fetuses, fetus, other, movers, swapped) {
 }
 
 // 胎背翻身：孕期每天、没有位移的那天才可能翻；胎儿越大越难翻
-const FETAL_ROLL_CHANCE = Object.freeze({ 孕早期: 0.1, 孕中期: 0.06, 孕晚期: 0.03, 临产期: 0.02, 逾期: 0.01 });
+const FETAL_ROLL_CHANCE = Object.freeze({ 孕早期: 0.1, 孕中期: 0.06, 孕晚期: 0.03, 临产期: 0.02, 逾期: 0.01, 延产期: 0.01 });
 // 产兆前驱与产程中，还在高位自由活动的胎儿每小时
 const LABOR_FETAL_ROLL_CHANCE = 0.01;
 // 已入盆的枕后位胎儿每小时自然转成枕前位（左右不变）；现实中多数枕后位会在产程中自己转正
@@ -2139,7 +2166,7 @@ function updateFetalPositions(profile, tick, female) {
   const pregnant = profile.pregnant || {};
   if (!Array.isArray(pregnant.fetuses) || pregnant.fetuses.length === 0 || !PREGNANCY_STAGES.includes(stage)) return;
 
-  const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, 20, 1);
+  const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
   // 逐日步进的上限：bsPassedTime 可以叠出十几万天，逐日推进会拖死 UI。
   // 10 年远超任何种族的妊娠期（最慢的 gestationSpeciesSpeed=0.1 也才 2800 天），
   // 正常剧情不会触到；只有荒谬的时间跳跃才会被截断。
@@ -2535,7 +2562,7 @@ function processSimpleConception(profile, tick, notify, name) {
         setVisualCue(profile, 'implantationFailed');
       } else {
         const obstetricPregnantDays = base.fertilizationDays + getObstetricPregnancyOffsetDays(profile);
-        const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, 20, 1);
+        const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
         applyIdenticalSplit(profile);
         resolvePendingChimeraGenders(pregnant.fetuses);
         base.stage = '孕早期';
@@ -2697,6 +2724,7 @@ const PREGNANCY_BLOCKAGE_STAGE_CHANCE = Object.freeze({
   孕晚期: 34,
   临产期: 42,
   逾期: 48,
+  延产期: 48,
   产兆前驱: 55,
   第一产程: 60,
   第二产程: 65,
@@ -2711,6 +2739,7 @@ const PREGNANCY_BLOCKAGE_STAGE_SEVERITY = Object.freeze({
   孕晚期: 0.26,
   临产期: 0.32,
   逾期: 0.36,
+  延产期: 0.36,
   产兆前驱: 0.40,
   第一产程: 0.42,
   第二产程: 0.45,
@@ -2725,6 +2754,7 @@ const PREGNANCY_BLOCKAGE_STAGE_WEIGHTS = Object.freeze({
   孕晚期: { excretion: 6, sleep: 3, milk: 3, hunger: 2, companionship: 2, odor: 2 },
   临产期: { excretion: 6, sleep: 3, milk: 3, odor: 2, hunger: 2, companionship: 2 },
   逾期: { excretion: 6, sleep: 4, milk: 3, odor: 2, hunger: 2, companionship: 2 },
+  延产期: { excretion: 6, sleep: 4, milk: 3, odor: 2, hunger: 2, companionship: 2 },
   产兆前驱: { excretion: 6, sleep: 4, milk: 3, odor: 2, companionship: 2, hunger: 1 },
   第一产程: { excretion: 6, sleep: 4, odor: 2, milk: 2, companionship: 2, hunger: 1 },
   第二产程: { excretion: 5, sleep: 4, odor: 2, milk: 2, companionship: 2, hunger: 1 },
@@ -2944,22 +2974,35 @@ function shouldResetOrgasmOvulation(stage) {
   return stage === '月经期' || stage === '产后恢复';
 }
 
-function getLibidoCap(profile) {
+const UTERINE_ATONY_STEP = 0.1;
+
+/** 子宫乏力级数：第二次延产起每延一次加 1，产后恢复结束才清零 */
+function getUterineAtony(profile) {
+  return Math.max(0, Math.floor(clampNumber(profile?.base?.uterineAtony, 0, 99, 0)));
+}
+
+/** 乏力让孕期涨上去的上限往回缩：每级 −10%，最低缩回非孕期的上限 */
+function applyAtonyToCap(profile, pregnancyCap, baselineCap) {
+  const multiplier = Math.max(0, 1 - UTERINE_ATONY_STEP * getUterineAtony(profile));
+  return Math.max(baselineCap, Math.round(pregnancyCap * multiplier));
+}
+
+export function getLibidoCap(profile) {
   const stage = profile?.base?.stage;
   if (!isTruePregnancyStage(stage)) return 100;
   const effectivePregnantDays = clampNumber(profile?.pregnant?.effectivePregnantDays, 0, 9999, 0);
   const months = Math.floor(effectivePregnantDays / 28);
   const progress = Math.max(0, Math.min(10, months)) / 10;
-  return Math.round(100 + (150 - 100) * progress);
+  return applyAtonyToCap(profile, Math.round(100 + (150 - 100) * progress), 100);
 }
 
-function getUterinePressureCap(profile) {
+export function getUterinePressureCap(profile) {
   const stage = profile?.base?.stage;
   if (!isTruePregnancyStage(stage)) return 50;
   const effectivePregnantDays = clampNumber(profile?.pregnant?.effectivePregnantDays, 0, 9999, 0);
   const months = Math.floor(effectivePregnantDays / 28);
   const progress = Math.max(0, Math.min(10, months)) / 10;
-  return Math.round(50 + (150 - 50) * progress);
+  return applyAtonyToCap(profile, Math.round(50 + (150 - 50) * progress), 50);
 }
 
 function applyHourlyPregnancyMetabolism(profile, tick) {
@@ -3059,7 +3102,7 @@ function addNutrition(profile, amount) {
 function applyWeeklyNutrition(profile) {
   const pregnant = profile?.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0.1, 20, 1);
+  const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1);
   const cap = NUTRITION_WEEKLY_CAP * gestationSpeed;
   let changed = false;
   for (const fetus of fetuses) {
@@ -3138,7 +3181,7 @@ function applyTermPressure(profile, tick, female) {
 
   const pregnant = profile?.pregnant || {};
   const effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
-  const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, 20, 1);
+  const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
   const elapsed = Math.min(tick.passedDays * gestationSpeed, Math.max(0, effectivePregnantDays - TERM_START_DAYS));
   if (elapsed <= 0) return;
   const midpointDays = effectivePregnantDays - elapsed / 2;
@@ -3426,7 +3469,7 @@ function updateAdvisoryNotify(profile, female) {
   }
 
   const stage = String(base.stage || '');
-  if (['临产期', '逾期', '产兆前驱', '第一产程', '第二产程'].includes(stage)) {
+  if (['临产期', '逾期', '延产期', '产兆前驱', '第一产程', '第二产程'].includes(stage)) {
     const amnion = clampNumber(getPresentingAmnionDurability(pregnant), -100, 100, 0);
     if (amnion > 0) {
       // 陈述句会被当成背景资讯忽略，必须写成禁令：设定上产程前羊膜恒不破，
@@ -3436,7 +3479,9 @@ function updateAdvisoryNotify(profile, female) {
       const canRupture = RUPTURE_ALLOWED_PRELABOR_STAGES.includes(stage) || ['第一产程', '第二产程'].includes(stage);
       reminders.push(canRupture
         ? `${female}尚未破水（膜耐性还有${Math.round(amnion)}%）：禁止描写破水、羊水流出或羊膜破裂。若剧情确实需要破水，必须先调用 bsAssistFetalPosition（action=rupture），成功后才可如此描写`
-        : `${female}尚未破水（膜耐性还有${Math.round(amnion)}%）：禁止描写破水、羊水流出或羊膜破裂。此阶段无法破水，必须先进入产兆前驱`);
+        : stage === '延产期'
+          ? `${female}正在延产期（膜耐性还有${Math.round(amnion)}%）：禁止描写破水、羊水流出、羊膜破裂或分娩发动。延产期间无法破水，也不会自然发动；剧情要结束延产，必须先调用 bsExtendPregnancy（action=induce）引产进入产兆前驱`
+          : `${female}尚未破水（膜耐性还有${Math.round(amnion)}%）：禁止描写破水、羊水流出或羊膜破裂。此阶段无法破水，必须先进入产兆前驱`);
     } else if (stage !== '第三产程') {
       reminders.push(`${female}已破水`);
     }
@@ -3477,6 +3522,8 @@ function applyAmnionDurabilityFromPressure(profile, finalPressure, female) {
   const notify = profile.notify || {};
   if (stage === '孕早期' || stage === '孕中期') {
     notify.secondly = `${female}子宫压力过高，有流产风险`;
+  } else if (stage === '延产期') {
+    notify.secondly = `${female}子宫压力升高，但延产手段压住了宫缩，不会因此发动`;
   } else {
     notify.secondly = `${female}子宫收缩强烈，即将生产`;
   }
@@ -3590,6 +3637,8 @@ function clearPregnancyState(profile) {
   pregnant.laborPhase = null;
   pregnant.laborBirthNumber = 0;
   pregnant.deliveredCount = 0;
+  pregnant.extensionCount = 0;
+  pregnant.extensionUntilDays = null;
   pregnant.presentingEmbryoId = null;
   pregnant.laborPain = 0;
   pregnant.prodromalOriginStage = null;
@@ -4389,6 +4438,8 @@ function enterProdromalStage(profile, female, stage, message) {
   pregnant.laborBirthNumber = 0;
   pregnant.presentingEmbryoId = null;
   pregnant.prodromalOriginStage = stage;
+  // 不论是延产期满、引产还是调试进来的，延产到期日都作废：产兆前驱里要再延产得重新使用工具
+  pregnant.extensionUntilDays = null;
   pregnant.prodromalRemainingHours = getProdromalInitialHours(profile);
   pregnant.prodromalDelayProgressHours = 0;
   pregnant.prodromalLeadEmbryoId = null;
@@ -4399,6 +4450,115 @@ function enterProdromalStage(profile, female, stage, message) {
     ...(profile.notify || {}),
     firstly: `${female}进入了产兆前驱`,
     secondly: message,
+  };
+}
+
+const EXTENSION_AMNION_REGEN_PER_DAY = 5;
+
+/** 延产期羊膜每天回复一点，最多回满；延产期本来就不会破水，这里只补磨损 */
+function regenerateExtensionAmnion(profile, tick) {
+  const days = Math.max(0, Number(tick?.deltaDays) || 0);
+  if (days <= 0) return;
+  for (const sac of getAmnionSacs(profile?.pregnant)) {
+    const current = getSacDurability(sac);
+    if (current <= 0 || current >= AMNION_INTACT) continue;
+    setSacDurability(sac, Math.min(AMNION_INTACT, current + EXTENSION_AMNION_REGEN_PER_DAY * days));
+  }
+}
+
+/**
+ * 延产：第一次在逾期，或由逾期发动的产兆前驱使用，延到 52 周；
+ * 之后在延产期满（或引产）进入的产兆前驱再用，每次再延 28 天。
+ * 第二次起每延一次子宫乏力 +1。action=induce 是延产期唯一的出口：立即进入产兆前驱。
+ */
+function applyExtendPregnancy(chatState, args) {
+  const female = String(args?.female || '').trim();
+  const action = String(args?.action || 'extend').trim();
+  const reason = String(args?.reason || '').trim();
+  const character = chatState.characters?.[female];
+  if (!female || !character) {
+    return { applied: false, message: `bsExtendPregnancy skipped: unknown character ${female || '(empty)'}.` };
+  }
+  if (action !== 'extend' && action !== 'induce') {
+    return { applied: false, message: `bsExtendPregnancy skipped for ${female}: action must be extend or induce.` };
+  }
+  const next = cloneValue(character);
+  const profile = next.profile || {};
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const stage = String(base.stage || '');
+  if (getImplantedFetuses(profile).length === 0) {
+    return { applied: false, message: `bsExtendPregnancy skipped for ${female}: no implanted fetuses.` };
+  }
+  const reasonNote = reason ? `（${reason}）` : '';
+
+  if (action === 'induce') {
+    if (stage !== '延产期') {
+      return { applied: false, message: `bsExtendPregnancy skipped for ${female}: 只有延产期可以引产（目前为 ${stage || '(none)'}）。` };
+    }
+    enterProdromalStage(profile, female, '延产期', `${female}经引产结束延产${reasonNote}，开始出现分娩前兆`);
+    next.profile = profile;
+    chatState.characters[female] = next;
+    return { applied: true, message: `bsExtendPregnancy induced labor for ${female}: entered 产兆前驱.` };
+  }
+
+  const origin = String(pregnant.prodromalOriginStage || '');
+  const fromOverdue = stage === '逾期' || (stage === '产兆前驱' && origin === '逾期');
+  const fromExtension = stage === '产兆前驱' && origin === '延产期';
+  if (!fromOverdue && !fromExtension) {
+    return {
+      applied: false,
+      message: `bsExtendPregnancy skipped for ${female}: 只能在逾期、或由逾期／延产期进入的产兆前驱使用（目前为 ${stage || '(none)'}${stage === '产兆前驱' ? `，由${origin || '未知阶段'}进入` : ''}）。`,
+    };
+  }
+  if (getAmnionSacs(pregnant).some((sac) => getSacDurability(sac) <= 0)) {
+    return { applied: false, message: `bsExtendPregnancy skipped for ${female}: 已经破水，无法延产。` };
+  }
+
+  const effectiveDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+  const previousCount = Math.max(0, Math.floor(clampNumber(pregnant.extensionCount, 0, 999, 0)));
+  const count = previousCount + 1;
+  // 第一次延到 52 周；逾期拖得太久、已经过了 52 周才第一次延产的，就和之后一样再延 28 天
+  const untilDays = previousCount === 0 && effectiveDays < FIRST_EXTENSION_UNTIL_DAYS
+    ? FIRST_EXTENSION_UNTIL_DAYS
+    : effectiveDays + EXTENSION_MONTH_DAYS;
+  const atonyRaised = count >= 2;
+  if (atonyRaised) base.uterineAtony = getUterineAtony(profile) + 1;
+
+  // 回到延产期：产兆前驱与产程的暂态全部作废，已入盆的胎儿退回子宫低位
+  clearProdromalState(pregnant);
+  pregnant.laborHours = 0;
+  pregnant.effectiveLaborHours = 0;
+  pregnant.laborPhase = null;
+  pregnant.laborBirthNumber = 0;
+  pregnant.presentingEmbryoId = null;
+  pregnant.laborPain = 0;
+  for (const fetus of Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []) {
+    if (getDescentStage(fetus) >= DESCENT_INLET) fetus.descentStage = DESCENT_LOW;
+  }
+  for (const sac of getAmnionSacs(pregnant)) setSacDurability(sac, AMNION_INTACT);
+  pregnant.extensionCount = count;
+  pregnant.extensionUntilDays = untilDays;
+  base.stage = '延产期';
+  base.days = Math.max(0, effectiveDays - POSTTERM_START_DAYS);
+  base.uterinePressure = 0;
+  profile.cooldown = { ...(profile.cooldown || {}), pregnancyPressureWarning: false };
+  profile.base = base;
+  profile.pregnant = pregnant;
+  reconcileFetalDescent(profile);
+
+  const untilWeeks = Math.floor(untilDays / 7);
+  const atonyNote = atonyRaised ? `；子宫乏力加深至 ${getUterineAtony(profile)} 级` : '';
+  profile.notify = {
+    ...(profile.notify || {}),
+    firstly: `${female}进入了延产期`,
+    secondly: `${female}第 ${count} 次延产${reasonNote}，妊娠将维持到第 ${untilWeeks} 周（有效孕日 ${Math.round(untilDays)}）${atonyNote}`,
+  };
+  next.profile = profile;
+  chatState.characters[female] = next;
+  return {
+    applied: true,
+    message: `bsExtendPregnancy applied to ${female}: extension #${count}, until effective day ${Math.round(untilDays)} (week ${untilWeeks}), uterine atony ${getUterineAtony(profile)}.`,
   };
 }
 
@@ -4451,7 +4611,7 @@ function shouldKeepPregnancyPressureWarning(profile) {
  */
 export function getPregnancyPressureRisk(profile) {
   const stage = String(profile?.base?.stage || '');
-  if (!PREGNANCY_STAGES.includes(stage)) return null;
+  if (!PREGNANCY_STAGES.includes(stage) || stage === '延产期') return null;
   const pressureCap = getUterinePressureCap(profile);
   const ratio = clampNumber(profile?.base?.uterinePressure, 0, pressureCap, 0) / Math.max(pressureCap, 1);
   // 临产、逾期宫压达 66% 时下一小时就自然发动，不看流产免疫
@@ -4478,6 +4638,8 @@ function applyPressureCrisis(profile, runtime, female) {
   const cooldown = profile?.cooldown || {};
   const stage = String(base.stage || '');
   if (!isPregnancyStage(stage)) return { changed: false, warned: false };
+  // 延产期宫压照常显示，也能被工具调整，但任何高度都不会引发流产或产程，连警告都不发
+  if (stage === '延产期') return { changed: false, warned: false };
 
   const pressureCap = getUterinePressureCap(profile);
   const currentPressure = clampNumber(base.uterinePressure, 0, pressureCap, 0);
@@ -4718,7 +4880,13 @@ function getOversizeVitalityMultiplier(profile, stage, phase) {
 function getLaborProgressMultiplier(profile, stage, phase) {
   const currentPressure = clampNumber(profile?.base?.uterinePressure, 0, getUterinePressureCap(profile), 0);
   const pressureMultiplier = stage === '第三产程' ? 1 : Math.max(0.5, Math.min(1.5, 0.5 + (currentPressure / 150)));
-  return pressureMultiplier * getOversizeVitalityMultiplier(profile, stage, phase) * getPosteriorMultiplier(profile, stage);
+  return pressureMultiplier * getOversizeVitalityMultiplier(profile, stage, phase) * getPosteriorMultiplier(profile, stage) * getAtonyLaborMultiplier(profile, stage);
+}
+
+/** 子宫乏力让宫缩无力：第一、第二产程每级慢 10%，最低一半 */
+function getAtonyLaborMultiplier(profile, stage) {
+  if (stage !== '第一产程' && stage !== '第二产程') return 1;
+  return Math.max(0.5, 1 - UTERINE_ATONY_STEP * getUterineAtony(profile));
 }
 
 // 枕后位（胎背朝后）：真实分娩模式下第一、第二产程的有效进度打折，疼痛略高
@@ -5009,6 +5177,10 @@ function applyAbortion(chatState, args) {
     return { applied: false, message: `bsAbortion skipped for ${female}: no conception state.` };
   }
 
+  if (stage === '延产期') {
+    return { applied: false, message: `bsAbortion skipped for ${female}: 延产期间不能终止妊娠，需先调用 bsExtendPregnancy（action=induce）引产进入产兆前驱。` };
+  }
+
   // 假孕期没有胎儿：结束假孕请走 bsSetMenstrualPhases，不该记进流产经验
   if (stage === '假孕期' && fetuses.length === 0) {
     return { applied: false, message: `bsAbortion skipped for ${female}: 假孕期无胎儿，请用 bsSetMenstrualPhases 结束假孕。` };
@@ -5276,6 +5448,9 @@ function applyChildbirth(chatState, args) {
     return { applied: false, message: `bsChildbirth skipped for ${female}: no fetuses.` };
   }
   const childbirthStage = String(profile?.base?.stage || '');
+  if (childbirthStage === '延产期') {
+    return { applied: false, message: `bsChildbirth skipped for ${female}: 延产期间不能手术分娩，需先调用 bsExtendPregnancy（action=induce）引产进入产兆前驱。` };
+  }
   const childbirthAllowedStages = ['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '产兆前驱', '第一产程', '第二产程', '第三产程'];
   if (!childbirthAllowedStages.includes(childbirthStage)) {
     return { applied: false, message: `bsChildbirth skipped for ${female}: stage ${childbirthStage || '(none)'} 不允许手术分娩（需已着床进入妊娠阶段）。` };
@@ -5689,6 +5864,8 @@ function applyMaternalFetalInteraction(chatState, args) {
   const next = cloneValue(character);
   const profile = next.profile || {};
   const stage = String(profile?.base?.stage || '');
+  // 延产期的胎儿被关得太久，对母体的情绪更敏感：亲和波动加倍（±1／±2）
+  const affinitySwing = stage === '延产期' ? 2 : 1;
   const interactionCooldown = profile.cooldown || {};
   if (interactionCooldown.maternalFetalInteractionUsed) {
     return { applied: false, message: `bsMaternalFetalInteraction skipped for ${female}: already changed during this story hour.` };
@@ -5706,7 +5883,7 @@ function applyMaternalFetalInteraction(chatState, args) {
     const selectedFetus = fetuses[selectedIndex];
     const maternalChangeKeys = Object.keys(changeMap);
     const maternalChange = maternalChangeKeys[randomInt(0, maternalChangeKeys.length - 1)];
-    const maternalChangeValue = changeMap[maternalChange];
+    const maternalChangeValue = changeMap[maternalChange] * affinitySwing;
     const maternalChangeDisplay = changeDisplayMap[maternalChange];
 
     const psyStress = clampNumber(profile?.base?.psyStress, 0, 9999, 0);
@@ -5734,7 +5911,7 @@ function applyMaternalFetalInteraction(chatState, args) {
     return { applied: true, message: `bsMaternalFetalInteraction applied to ${female}: maternal interaction.` };
   }
 
-  const changeValue = changeMap[change];
+  const changeValue = changeMap[change] === undefined ? undefined : changeMap[change] * affinitySwing;
   if (changeValue === undefined) {
     return { applied: false, message: `bsMaternalFetalInteraction skipped for ${female}: direction=fetal requires a valid change.` };
   }
@@ -5963,7 +6140,7 @@ function applyTimeToCharacter(character, tick) {
   } else if (PREGNANCY_STAGES.includes(stage)) {
     const oldPregnantDays = clampNumber(pregnant.pregnantDays, 0, 9999, 0);
     pregnant.pregnantDays = oldPregnantDays + deltaDays;
-    pregnant.effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) + (deltaDays * clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), 0, 20, 1));
+    pregnant.effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) + (deltaDays * clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), 0, GESTATION_SPEED_MAX, 1));
     const oldWeek = Math.floor(oldPregnantDays / 7);
     const newWeek = Math.floor(pregnant.pregnantDays / 7);
     if (newWeek > oldWeek && isHere) {
@@ -5971,7 +6148,7 @@ function applyTimeToCharacter(character, tick) {
     }
     updateDerivedTypeProgress(profile, tick);
     revealSuperfetationFetuses(profile, next.name, notify);
-    const derived = derivePregnancyStageState(pregnant.effectivePregnantDays, 1);
+    const derived = derivePregnancyStageState(pregnant.effectivePregnantDays, 1, pregnant);
     stage = derived.stage;
     days = derived.days;
     stageChanged = stage !== oldStage;
@@ -5981,7 +6158,18 @@ function applyTimeToCharacter(character, tick) {
     // 足月宫压离场也照样累积：离场只是镜头不在，不能让孕周一路走却永远不生
     applyTermPressure(profile, tick, next.name);
     if (isHere) applyHourlyPregnancyMetabolism(profile, tick);
-    const pressureCrisis = isHere ? applyPressureCrisis(profile, next.runtime || {}, next.name) : { changed: false, warned: false };
+    if (stage === '延产期') {
+      regenerateExtensionAmnion(profile, tick);
+      if (clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) >= clampNumber(pregnant.extensionUntilDays, 0, 9999, 0)) {
+        enterProdromalStage(profile, next.name, '延产期', `${next.name}的延产期已满，开始出现分娩前兆；若要再延产，需在产兆前驱期间使用延产手段`);
+        stage = String(base.stage || stage);
+        days = clampNumber(base.days, 0, 9999, 0);
+        stageChanged = true;
+      }
+    }
+    const pressureCrisis = isHere && PREGNANCY_STAGES.includes(stage)
+      ? applyPressureCrisis(profile, next.runtime || {}, next.name)
+      : { changed: false, warned: false };
     if (pressureCrisis.changed) {
       stage = String(base.stage || stage);
       days = clampNumber(base.days, 0, 9999, 0);
@@ -6004,6 +6192,8 @@ function applyTimeToCharacter(character, tick) {
       days = 0;
       stageChanged = true;
       enteredFollicular = true;
+      // 子宫乏力撑过产程，到产后恢复结束才算复旧完成
+      base.uterineAtony = 0;
       pregnant.pregnantDays = 0;
       pregnant.effectivePregnantDays = 0;
       pregnant.laborHours = 0;
@@ -6025,7 +6215,7 @@ function applyTimeToCharacter(character, tick) {
     stageChanged = stageChanged || finished || stage !== oldStage;
   } else if (stage === '假孕期') {
     pregnant.pregnantDays = clampNumber(pregnant.pregnantDays, 0, 9999, 0) + deltaDays;
-    const pseudoLimit = Math.max(1, 84 * clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), 0.1, 20, 1));
+    const pseudoLimit = Math.max(1, 84 * clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1));
     if (pregnant.pregnantDays > pseudoLimit) {
       stage = '月经期';
       days = 0;
@@ -6036,7 +6226,7 @@ function applyTimeToCharacter(character, tick) {
   } else if (stage === '产兆前驱') {
     const oldPregnantDays = clampNumber(pregnant.pregnantDays, 0, 9999, 0);
     pregnant.pregnantDays = oldPregnantDays + deltaDays;
-    pregnant.effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) + (deltaDays * clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), 0, 20, 1));
+    pregnant.effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) + (deltaDays * clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), 0, GESTATION_SPEED_MAX, 1));
     const oldWeek = Math.floor(oldPregnantDays / 7);
     const newWeek = Math.floor(pregnant.pregnantDays / 7);
     if (newWeek > oldWeek && isHere) {
@@ -6622,7 +6812,7 @@ function applyRegisterSkillDefinition(chatState, args) {
   };
 }
 
-const FETAL_TALENT_TRANSFER_STAGES = new Set(['孕中期', '孕晚期', '临产期', '逾期', '产兆前驱', '第一产程']);
+const FETAL_TALENT_TRANSFER_STAGES = new Set(['孕中期', '孕晚期', '临产期', '逾期', '延产期', '产兆前驱', '第一产程']);
 
 function applyTrainSkill(chatState, args) {
   const female = String(args?.female || '').trim();
@@ -7246,6 +7436,8 @@ function applyDebugInjectPregnancy(chatState, args) {
   pregnant.laborPhase = null;
   pregnant.laborBirthNumber = 0;
   pregnant.deliveredCount = 0;
+  pregnant.extensionCount = 0;
+  pregnant.extensionUntilDays = null;
   pregnant.presentingEmbryoId = null;
   pregnant.laborPain = 0;
   pregnant.prodromalOriginStage = null;
@@ -7261,7 +7453,7 @@ function applyDebugInjectPregnancy(chatState, args) {
   } else {
     resolvePendingChimeraGenders(pregnant.fetuses);
     applyPregnancyPhysiology(profile, next.runtime || {});
-    const actualGestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, 20, 1);
+    const actualGestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
     pregnant.pregnantDays = actualGestationSpeed > 0 ? Math.max(0, equivalentDays / actualGestationSpeed) : equivalentDays;
     pregnant.effectivePregnantDays = Math.max(0, equivalentDays);
     const derived = derivePregnancyStageState(pregnant.effectivePregnantDays, 1);
@@ -7398,14 +7590,14 @@ function applyDebugSetGestationModifier(chatState, args) {
   } else {
     const name = String(args?.name || '').trim();
     const description = String(args?.description || '').trim();
-    const multiplier = clampNumber(args?.multiplier, 0, 20, 1.0);
+    const multiplier = clampNumber(args?.multiplier, 0, GESTATION_SPEED_MAX, 1.0);
     if (!name) return { applied: false, message: `bsDebugSetGestationModifier skipped for ${female}: empty name.` };
     bio.gestationModifierMultiplier = multiplier;
     bio.gestationModifierName = name;
     bio.gestationModifierDescription = description;
   }
 
-  bio.gestationEffectiveSpeed = clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), 0, 20, baseSpeed);
+  bio.gestationEffectiveSpeed = clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), 0, GESTATION_SPEED_MAX, baseSpeed);
   profile.bio = bio;
 
   if (fetuses.length > 0 && isPregnancyStage(stage)) {
@@ -7519,7 +7711,7 @@ function applyDebugSetProdromal(chatState, args) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const stage = String(base.stage || '');
-  const allowedEntryStages = ['孕晚期', '临产期', '逾期'];
+  const allowedEntryStages = ['孕晚期', '临产期', '逾期', '延产期'];
   if (!allowedEntryStages.includes(stage) && stage !== '产兆前驱') {
     return { applied: false, message: `bsDebugSetProdromal skipped for ${female}: stage must be late pregnancy, term, overdue, or prodromal.` };
   }
@@ -7600,6 +7792,7 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsSetMenstrualPhases') return applySetMenstrualPhases(chatState, args);
   if (name === 'bsExcreteMetabolism') return applyExcreteMetabolism(chatState, args);
   if (name === 'bsAbortion') return applyAbortion(chatState, args);
+  if (name === 'bsExtendPregnancy') return applyExtendPregnancy(chatState, args);
   if (name === 'bsImplantEmbryo') return applyImplantEmbryo(chatState, args);
   if (name === 'bsWombReturn') return applyWombReturn(chatState, args);
   if (name === 'bsChildbirth') return applyChildbirth(chatState, args);

@@ -781,6 +781,17 @@ function getPromptFacingAmnion(pregnant, visibleFetuses) {
   return { uniform: null, tags };
 }
 
+/** 延产过才送延产次数；还在延产期才送到期日（有效孕日） */
+function getPromptFacingExtensionState(pregnant = {}) {
+  const count = Math.max(0, Math.floor(Number(pregnant.extensionCount) || 0));
+  if (count <= 0) return {};
+  const until = pregnant.extensionUntilDays;
+  return {
+    extensionCount: count,
+    ...(until !== null && until !== undefined && Number.isFinite(Number(until)) ? { extensionUntilDays: Number(until) } : {}),
+  };
+}
+
 function getPromptFacingLaborState(base = {}, pregnant = {}) {
   const stage = String(base.stage || '');
   if (stage !== '产兆前驱' && !LABOR_STAGES.includes(stage)) return {};
@@ -874,6 +885,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
     vitalityLevelText: getVitalityLevelText(base.vitalityLevel),
     psyStressLevelText: getPsyStressLevelText(base.psyStressLevel),
   };
+  // 子宫乏力只在反复延产后才有；没有就不送
+  if (!(Number(base.uterineAtony) > 0)) delete profile.base.uterineAtony;
 
   if (!sendPregnantState) {
     delete profile.pregnant;
@@ -884,6 +897,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
       pregnantDays: Number.isFinite(Number(pregnant.pregnantDays)) ? Number(pregnant.pregnantDays) : 0,
       effectivePregnantDays: Number.isFinite(Number(pregnant.effectivePregnantDays)) ? Number(pregnant.effectivePregnantDays) : 0,
       ...getPromptFacingLaborState(base, pregnant),
+      ...getPromptFacingExtensionState(pregnant),
       ...(amnion.uniform === null ? {} : { amnionDurability: amnion.uniform }),
       ...(hasFetuses && !immune.metabolism ? { nutrition: getPregnancyNutritionTotal(pregnant) } : {}),
       ...(immune.metabolism ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
@@ -1010,6 +1024,7 @@ function buildOffscreenCharacterState(item, diaryLimit = 0, wardrobeOn = true) {
           pregnantDays: pregnant.pregnantDays ?? 0,
           effectivePregnantDays: pregnant.effectivePregnantDays ?? 0,
           ...getPromptFacingLaborState(base, pregnant),
+          ...getPromptFacingExtensionState(pregnant),
           fetusesCount: hasFetuses ? pregnant.fetuses.filter(isFetusKnownToCharacter).length : 0,
           ...(metabolismImmune ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
         },

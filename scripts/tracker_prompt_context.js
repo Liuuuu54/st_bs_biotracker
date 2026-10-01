@@ -85,6 +85,8 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- pregnantDays: 这次妊娠的孕龄天数，等同产科从末次月经/本族等价周期起点计算的孕周天数。',
   '- effectivePregnantDays: 真正计入胎儿发育与阶段推进的有效孕龄天数；当妊娠被冻结时，它可以停在原地而 pregnantDays 继续增加。',
   '- laborHours / effectiveLaborHours / laborPhase / laborBirthNumber / laborPain 仅在产兆前驱或正式产程期间发送；产后恢复不再表示分娩疼痛。',
+  '- 延产期：逾期后以特殊手段（bsExtendPregnancy）让妊娠拖着不生的妊娠阶段。extensionCount 是本次妊娠已延产几次，extensionUntilDays 是这次延产到期的有效孕日（到期会进入产兆前驱）。延产期间宫压不会自行累积，再高也不会引发流产或产程；羊膜每天回复、不会破水；不能剖腹或终止妊娠，唯一出口是 bsExtendPregnancy（action=induce）引产。',
+  '- base.uterineAtony：子宫乏力级数，第二次延产起每延一次加 1，产后恢复结束才清零。每级让宫压与性欲上限下降 10%、第一／第二产程变慢 10%、产后恢复变长 10%；剧情可描写宫缩无力、子宫松弛。',
   '- laborHours: 当前产程内部阶段已消耗的实际时长。',
   '- effectiveLaborHours: 真正推动当前产程内部阶段前进的有效时长。',
   '- laborPhase: 当前产程内部阶段。第一产程为潜伏期/活跃期/过渡期；第二产程为胎体下降/胎体娩出/间歇期；第三产程为供养器官娩出/产后观察。',
@@ -148,7 +150,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- skillExp 由你直接给非负整数，并综合事件成果、当前技能等级、本级需求及同名天赋判断。正天赋通常让同等事件更容易获得较多技能经验，负天赋通常较少；系统不会再次套倍率。',
   '- 严禁尝试传入 talentExp 或用任何工具修改角色自己的 talents。只有系统在允许孕期阶段执行技能锻炼时，才能依亲和度自动改变 fetuses[*].talents。',
   '- 新技能必须先调用 bsRegisterSkillDefinition，以 name+description 登记到 skill_catalog；先检查既有定义，禁止制造同义重复。随后才能用精确名称调用 bsTrainSkill，并在剧情确实触发觉醒时传 awaken=true。',
-  '- 孕中期、孕晚期、临产期、逾期、产兆前驱、第一产程调用 bsTrainSkill 时，系统每次只随机选择一胎，将本次 skillExp 依该胎 affinity 自动传为天赋经验：skillExp*abs(affinity)/50，正亲和为擅长、负亲和为苦手、0 不传。第二与第三产程禁止传递。',
+  '- 孕中期、孕晚期、临产期、逾期、延产期、产兆前驱、第一产程调用 bsTrainSkill 时，系统每次只随机选择一胎，将本次 skillExp 依该胎 affinity 自动传为天赋经验：skillExp*abs(affinity)/50，正亲和为擅长、负亲和为苦手、0 不传。第二与第三产程禁止传递。',
   '- 胎儿与孩子只有 talents，没有 skills。分娩时 talents 原样进入 children；日后注册孩子角色时，由用户在注册第五子页参考并载入，不会只凭同名自动继承。',
   '',
   '[children]',
@@ -407,6 +409,12 @@ function buildMainFlowFieldNotes(existingState = {}) {
       '- pregnant：pregnantDays 孕龄天数；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；nutrition 供养盈亏，正为充足、负为亏空；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
       '- fetuses 按子宫里由左到右排列，不代表出生顺序；presenting=true 是正在下降或娩出的那一胎。weight 胎重系数，1.0 为标准；affinity 母胎亲密度 -50～50，负值为排斥；positionText、backSideText、tendencyAngleText 是胎位现况，描写须一致。',
     );
+  }
+  if (profiles.some((profile) => profile.base?.stage === '延产期' || Number(profile.pregnant?.extensionCount) > 0)) {
+    lines.push('- 延产期：以特殊手段让逾期妊娠拖着不生；期间不会自然发动、不会破水，宫压再高也不会分娩。extensionCount 为已延产次数，extensionUntilDays 为这次延产到期的有效孕日。');
+  }
+  if (profiles.some((profile) => Number(profile.base?.uterineAtony) > 0)) {
+    lines.push('- base.uterineAtony 子宫乏力级数：反复延产让子宫松弛无力，宫缩弱、产程慢、产后恢复久。');
   }
   if (profiles.some((profile) => profile.outfit)) {
     lines.push('- outfit.currentWearText 是当前穿着；mainItemId=null 表示衣着未记录，不代表裸体。pregFit.gap 低于 0 表示该维度（遮蔽、承托、容身、方便）已被孕期变化压过，只写成体感，不写数字。');

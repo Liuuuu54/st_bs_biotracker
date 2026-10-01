@@ -10,7 +10,7 @@ import {
   getSpermDoseCompanionMultiplier,
   getSpermDoseDifficultyBonus,
 } from './race_config.js';
-import { MENSTRUAL_STAGE_DAYS, MENSTRUAL_STAGES } from './stage_config.js';
+import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, MENSTRUAL_STAGE_DAYS, MENSTRUAL_STAGES } from './stage_config.js';
 
 export const SPERM_DECAY_PER_DAY = 10;
 export const CROSS_RACE_DIFFICULTY_MULTIPLIER = 1.5;
@@ -186,10 +186,10 @@ export function calculateOffspringPreview({
   const profile = getMergedRacePhysiologyProfile(fetusRace) || {};
   const eggProfile = getMergedRacePhysiologyProfile(eggRace) || {};
   const spermProfile = getMergedRacePhysiologyProfile(spermRace) || {};
-  const gestationSpeciesSpeed = clampNumber(profile.gestationSpeciesSpeed, 0.1, 20, 1);
+  const gestationSpeciesSpeed = clampNumber(profile.gestationSpeciesSpeed, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1);
   const components = getRaceComponents(fetusRace);
   const embryoTypeSource = components.reduce((slowest, race) => {
-    const speed = clampNumber(getMergedRacePhysiologyProfile(race)?.gestationSpeciesSpeed, 0.1, 20, 1);
+    const speed = clampNumber(getMergedRacePhysiologyProfile(race)?.gestationSpeciesSpeed, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1);
     if (!slowest || speed < slowest.speed) return { race, speed };
     return slowest;
   }, null);
@@ -291,11 +291,11 @@ function getDerivedInheritanceRate({
   );
   const speciesSpeed = clampNumber(
     getMergedRacePhysiologyProfile(fetusRace)?.gestationSpeciesSpeed,
-    0.1,
-    20,
+    GESTATION_SPEED_MIN,
+    GESTATION_SPEED_MAX,
     1,
   );
-  const modifier = clampNumber(gestationModifierMultiplier, 0, 20, 1);
+  const modifier = clampNumber(gestationModifierMultiplier, 0, GESTATION_SPEED_MAX, 1);
   const dailyDelta = direction * (DERIVED_INHERITANCE_THRESHOLD / DERIVED_INHERITANCE_BASELINE_DAYS)
     * speciesSpeed * modifier * affinityFactor * inheritanceSpeed;
   return { progress, direction, activeDerivedType, dailyDelta };

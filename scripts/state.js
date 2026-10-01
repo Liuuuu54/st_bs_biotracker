@@ -8,7 +8,7 @@ import {
   PSY_PREG_FIELDS,
   PSY_PREG_BOOL_FIELDS,
 } from './registry_psy_config.js';
-import { LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
+import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
 import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters } from './state_migration.js';
 import {
@@ -104,6 +104,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '可受孕生殖道的插入／精液沉积／拔出用 bsAddSperm 状态机；排出既有残留精液用 bsDrainSperm；缓解生理需求用 bsExcreteMetabolism。',
   '跨日、重大事件或 notify 提醒时，可用 bsWriteDiary 为角色追加主观日记。',
   '月经阶段、排卵期、假孕期切换用 bsSetMenstrualPhases；不要用它覆盖正在进行的受精、真妊娠或产程。',
+  '剧情以特殊手段让逾期的妊娠延后不生用 bsExtendPregnancy（action=extend），结束延产用 action=induce；延产期间不能用 bsAbortion 或 bsChildbirth。',
   '流产用 bsAbortion；立即结束分娩用 bsChildbirth；角色在场状态变化用 bsSetCharacterPresence，参数必须为 female 和 isPresent（布尔值 true/false，不要使用 isHere）。角色明确回到当前场景、重新同行或参与当前互动时应设为 true；明确离开、失联或转为幕外时才设为 false。',
   '母胎互动用 bsMaternalFetalInteraction；每名角色在每个新小时内仅允许一次成功的母胎互动变化，重复调用会被跳过。direction=fetal 时须传 change，表示胎儿对母体的亲近或排斥并改变 affinity。direction=maternal 时不传 change，表示母体安抚胎儿，系统随机判定 affinity 变化。母胎互动不影响营养，也不改变胎位或产程。剧情明确出现人工胎位操作（转位、托高延后分娩、推送），或胎儿有意识地自己转身、缩回、往下钻时用 bsAssistFetalPosition（后者加 actor=fetus）。',
   '不要编造怀孕天数、胎数、流产、分娩或其他高影响事件。',
@@ -460,9 +461,13 @@ export function deriveMenstrualStageState() {
   return { stage, days };
 }
 
-export function derivePregnancyStageState(pregnantDays, gestationSpeed = 1) {
+export function derivePregnancyStageState(pregnantDays, gestationSpeed = 1, { extensionUntilDays = null } = {}) {
   const actualPregnantDays = Math.max(0, Number(pregnantDays) || 0);
   const speed = Math.max(0.1, Number(gestationSpeed) || 1);
+  // 延产期按到期日黏住，不随孕日推回逾期；到期与否由时间推进处理（到期就进产兆前驱并清掉到期日）
+  if (extensionUntilDays !== null && extensionUntilDays !== undefined && Number.isFinite(Number(extensionUntilDays))) {
+    return { stage: '延产期', days: Math.max(0, actualPregnantDays - POSTTERM_START_DAYS) };
+  }
   const stageNames = ['孕早期', '孕中期', '孕晚期', '临产期'];
   let totalPregnancyDays = 0;
   for (const stageName of stageNames) totalPregnancyDays += PREGNANCY_STAGE_DAYS[stageName] / speed;
@@ -492,13 +497,13 @@ export function derivePregnancyStageState(pregnantDays, gestationSpeed = 1) {
 
 export function getGestationSpeciesSpeed(profile) {
   const baseSpeed = Number(profile?.bio?.gestationSpeciesSpeed);
-  if (Number.isFinite(baseSpeed) && baseSpeed > 0) return Math.max(0.1, Math.min(20, baseSpeed));
+  if (Number.isFinite(baseSpeed) && baseSpeed > 0) return Math.max(GESTATION_SPEED_MIN, Math.min(GESTATION_SPEED_MAX, baseSpeed));
   return 1;
 }
 
 export function getGestationModifierMultiplier(profile) {
   const multiplier = Number(profile?.bio?.gestationModifierMultiplier);
-  if (Number.isFinite(multiplier) && multiplier >= 0) return Math.max(0, Math.min(20, multiplier));
+  if (Number.isFinite(multiplier) && multiplier >= 0) return Math.max(0, Math.min(GESTATION_SPEED_MAX, multiplier));
   return 1;
 }
 
@@ -506,10 +511,10 @@ export function getGestationEffectiveSpeed(profile) {
   const hasSpeciesSpeed = Number.isFinite(Number(profile?.bio?.gestationSpeciesSpeed));
   const hasModifierMultiplier = Number.isFinite(Number(profile?.bio?.gestationModifierMultiplier));
   if (hasSpeciesSpeed || hasModifierMultiplier) {
-    return Math.max(0, Math.min(20, getGestationSpeciesSpeed(profile) * getGestationModifierMultiplier(profile)));
+    return Math.max(0, Math.min(GESTATION_SPEED_MAX, getGestationSpeciesSpeed(profile) * getGestationModifierMultiplier(profile)));
   }
   const effectiveSpeed = Number(profile?.bio?.gestationEffectiveSpeed);
-  if (Number.isFinite(effectiveSpeed) && effectiveSpeed >= 0) return Math.max(0, Math.min(20, effectiveSpeed));
+  if (Number.isFinite(effectiveSpeed) && effectiveSpeed >= 0) return Math.max(0, Math.min(GESTATION_SPEED_MAX, effectiveSpeed));
   return 1;
 }
 
@@ -544,7 +549,7 @@ export function syncCharacterStageFromProfile(characterState) {
       return next;
     }
 
-    const derived = derivePregnancyStageState(pregnant.effectivePregnantDays, 1);
+    const derived = derivePregnancyStageState(pregnant.effectivePregnantDays, 1, pregnant);
     next.profile.base = {
       ...base,
       stage: derived.stage,
@@ -706,6 +711,7 @@ export function createDefaultFemaleState(name = '') {
         psyStress: getPsyStressInitByLevel(psyStressLevel),
         vitalityLevel,
         psyStressLevel,
+        uterineAtony: 0,
       },
       pregnant: {
         pregnantDays: 0,
@@ -715,6 +721,8 @@ export function createDefaultFemaleState(name = '') {
         laborPhase: null,
         laborBirthNumber: 0,
         deliveredCount: 0,
+        extensionCount: 0,
+        extensionUntilDays: null,
         presentingEmbryoId: null,
         laborPain: 0,
         prodromalOriginStage: null,
@@ -1675,6 +1683,7 @@ function createSnapshotCharacterBaseline(name = '') {
         psyStress: getPsyStressInitByLevel(4),
         vitalityLevel: 4,
         psyStressLevel: 4,
+        uterineAtony: 0,
       },
       pregnant: {
         pregnantDays: 0,
@@ -1684,6 +1693,8 @@ function createSnapshotCharacterBaseline(name = '') {
         laborPhase: null,
         laborBirthNumber: 0,
         deliveredCount: 0,
+        extensionCount: 0,
+        extensionUntilDays: null,
         presentingEmbryoId: null,
         laborPain: 0,
         prodromalOriginStage: null,

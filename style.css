@@ -2377,6 +2377,7 @@
 #bs-biotracker-settings .bs-bt-track-title-left,
 #bs-biotracker-settings .bs-bt-track-section-title:not(.bs-bt-track-section-title--split) {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -4036,6 +4037,38 @@
 
 #bs-biotracker-settings .bs-bt-action-row[hidden] {
   display: none !important;
+}
+
+#bs-biotracker-settings .bs-bt-gestation-slider {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
+
+#bs-biotracker-settings .bs-bt-gestation-slider-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-gestation-slider-freeze {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+#bs-biotracker-settings .bs-bt-gestation-slider input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+
+#bs-biotracker-settings .bs-bt-gestation-slider-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75em;
+  opacity: 0.75;
 }
 
 #bs-biotracker-settings .bs-bt-override-list {

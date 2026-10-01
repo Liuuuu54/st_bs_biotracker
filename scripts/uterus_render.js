@@ -412,10 +412,12 @@ function createSpriteCache(P) {
         const ctx = off.getContext('2d');
         const filled = (x, y) => Boolean(grid.cells[y]?.[x]);
         const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+        const points = [];
         grid.cells.forEach((row, y) => row.forEach((tone, x) => {
           if (tone) {
             ctx.fillStyle = tones[tone];
             ctx.fillRect(x, y, 1, 1);
+            points.push([x - grid.anchorX, y - grid.anchorY]);
             box.x0 = Math.min(box.x0, x); box.x1 = Math.max(box.x1, x);
             box.y0 = Math.min(box.y0, y); box.y1 = Math.max(box.y1, y);
           } else if (filled(x - 1, y) || filled(x + 1, y) || filled(x, y - 1) || filled(x, y + 1)) {
@@ -427,7 +429,7 @@ function createSpriteCache(P) {
         }));
         // 本体范围（相对于锚点），羊膜囊依它贴合
         const bounds = { x0: box.x0 - grid.anchorX, y0: box.y0 - grid.anchorY, x1: box.x1 - grid.anchorX, y1: box.y1 - grid.anchorY };
-        fetal.set(key, { canvas: off, anchorX: grid.anchorX, anchorY: grid.anchorY, bounds });
+        fetal.set(key, { canvas: off, anchorX: grid.anchorX, anchorY: grid.anchorY, bounds, points });
       }
       return fetal.get(key);
     },
@@ -600,6 +602,43 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     ctx.rect(womb.cx - 3, womb.bottom - 6, 6, tract.canalBottom - womb.bottom + 6);
   }
 
+  /**
+   * 子宫乏力：宫壁外缘的斜向细纹，级数越高越密（每级每侧两道，最多 12 道）。
+   * 用图样而不是换色：宫壁颜色留给宫压，单色主题也看得出来
+   */
+  function drawAtonyStriae() {
+    const level = Math.min(6, Math.max(0, Math.floor(Number(layout.atony) || 0)));
+    if (level <= 0) return;
+    const { px } = pen;
+    const { womb } = layout;
+    const count = level * 2;
+    for (let i = 0; i < count; i += 1) {
+      const y = Math.round(womb.cy - womb.ry * 0.6 + ((i + 0.5) * womb.ry * 1.2) / count);
+      const edge = wombRadius(womb, y);
+      if (!edge) continue;
+      for (const side of [-1, 1]) {
+        for (let d = 0; d < 3; d += 1) px(womb.cx + side * (edge - 1 - d), y + d - 1, 1, 1, P.wallDark);
+      }
+    }
+  }
+
+  /** 延产期：宫颈横一道膜色的封口，三颗结晶钉住；引产或延产期满就不画，看得出封印解开 */
+  function drawExtensionSeal() {
+    if (!layout.extensionSeal) return;
+    const { px } = pen;
+    const { womb, tract } = layout;
+    const cx = womb.cx;
+    const y = tract.neckTop + Math.max(1, Math.floor(tract.neckLength / 2));
+    px(cx - 9, y - 1, 18, 3, P.water);
+    px(cx - 8, y, 16, 1, P.waterLight);
+    for (const x of [cx - 6, cx, cx + 6]) {
+      px(x - 1, y - 2, 3, 1, P.waterLight);
+      px(x, y - 3, 1, 1, P.waterLight);
+      px(x - 1, y + 2, 3, 1, P.water);
+      px(x, y + 3, 1, 1, P.water);
+    }
+  }
+
   function drawUterus(tick) {
     const { px, line, ellipse } = pen;
     const { womb, tract, wallInset, libidoHeat, pressureLevel } = layout;
@@ -637,6 +676,9 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       }
     }
     outlineWomb(-3, 1, layout.emptyStage ? liningTone() : (pressureLevel >= 2 ? P.wallLight : P.shine));
+    // 内层宫腔会盖掉宫壁带，细纹要等轮廓画完才画
+    drawAtonyStriae();
+    drawExtensionSeal();
     // 孕晚期胎儿把子宫壁顶出 1～2 像素
     if (layout.lateBulge) {
       for (const fetus of layout.fetuses) {
@@ -790,20 +832,41 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   }
 
   /** 这个囊的成员实际画出来的范围（含呼吸位移），外扩一点成椭圆 */
+  /**
+   * 羊膜泡：中心与长短轴比例跟着胎儿图的外框，大小再放到能包住每一个有画的像素。
+   * 只按外框放大 1.12 倍时，外框四角落在椭圆外（要约 1.41 倍才包得住），
+   * 胎儿蜷成一团时角落是空的看不出来，手脚往斜角伸出去就会戳出羊膜
+   */
   function bubbleGeometry(members, breaths) {
+    const points = [];
+    for (const fetus of members) {
+      const y = Math.round(fetus.y + (breaths.get(fetus.embryoId) || 0));
+      const x = Math.round(fetus.x);
+      const sprite = spriteOf.fetus(fetusSpec(fetus.size, fetus.sprite, fetus.angle, fetus.squeeze, null, 100, fetus.inner.length > 0));
+      for (const [dx, dy] of sprite.points) points.push([x + dx, y + dy]);
+    }
+    if (points.length === 0) return { cx: 0, cy: 0, rx: 0, ry: 0 };
     let x0 = Infinity;
     let y0 = Infinity;
     let x1 = -Infinity;
     let y1 = -Infinity;
-    for (const fetus of members) {
-      const y = fetus.y + (breaths.get(fetus.embryoId) || 0);
-      const b = spriteOf.fetus(fetusSpec(fetus.size, fetus.sprite, fetus.angle, fetus.squeeze, null, 100, fetus.inner.length > 0)).bounds;
-      x0 = Math.min(x0, Math.round(fetus.x) + b.x0);
-      x1 = Math.max(x1, Math.round(fetus.x) + b.x1);
-      y0 = Math.min(y0, Math.round(y) + b.y0);
-      y1 = Math.max(y1, Math.round(y) + b.y1);
+    for (const [x, y] of points) {
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y); y1 = Math.max(y1, y);
     }
-    return { cx: (x0 + x1 + 1) / 2, cy: (y0 + y1 + 1) / 2, rx: ((x1 - x0 + 1) / 2) * 1.12 + 1.5, ry: ((y1 - y0 + 1) / 2) * 1.12 + 1.5 };
+    const cx = (x0 + x1 + 1) / 2;
+    const cy = (y0 + y1 + 1) / 2;
+    const halfW = (x1 - x0 + 1) / 2;
+    const halfH = (y1 - y0 + 1) / 2;
+    // 每个像素四个角都要在椭圆内：取离中心最远的那个角，换算成外框的倍数
+    let reach = 1;
+    for (const [x, y] of points) {
+      const nx = Math.max(Math.abs(x - cx), Math.abs(x + 1 - cx)) / halfW;
+      const ny = Math.max(Math.abs(y - cy), Math.abs(y + 1 - cy)) / halfH;
+      reach = Math.max(reach, Math.hypot(nx, ny));
+    }
+    const scale = Math.max(1.12, reach);
+    return { cx, cy, rx: halfW * scale + 1.5, ry: halfH * scale + 1.5 };
   }
 
   /**

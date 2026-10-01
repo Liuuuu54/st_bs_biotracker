@@ -526,6 +526,15 @@
               </div>
 
               <div class="settings_section">
+                <div class="bs-bt-setting-toggle-row">
+                  <input id="bs-bt-register-gestation-modifier" type="checkbox" />
+                  <label for="bs-bt-register-gestation-modifier">此角色使用妊娠变速</label>
+                </div>
+                <small>整个孕期本来就变快或变慢时才勾，勾了再用拉杆设定倍率。变快：例如地母神的祝福，十天就怀满十个月（约 28 倍，最快 30 倍）；变慢：例如怀胎三年才足月（约 0.26 倍，最慢 0.03 倍）。不勾时不写入变速：过了预产期仍不生会当作逾期或延产，重新注册也会清掉旧的变速。</small>
+                <div id="bs-bt-register-gestation-slider" hidden></div>
+              </div>
+
+              <div class="settings_section">
                 <label for="bs-bt-registry-normal-description">注册默认 normalDescription 规则</label>
                 <textarea id="bs-bt-registry-normal-description" class="text_pole bs-bt-textarea" rows="7"></textarea>
               </div>

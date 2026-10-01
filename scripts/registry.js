@@ -64,7 +64,7 @@ import {
 } from './skill_config.js';
 import { resolveWardrobeItemRef, sanitizeWearState } from './wardrobe_config.js';
 import { applyToolCall, BACK_SIDES, calculateDerivedInheritanceProgress, canHostNestedPregnancy, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
-import { PREGNANCY_STAGE_DAYS } from './stage_config.js';
+import { EXTENSION_MONTH_DAYS, FIRST_EXTENSION_UNTIL_DAYS, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS } from './stage_config.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
 const DEBUG_LAST_REGISTRY_RESULT_KEY = '__bs_biotracker_debug_last_registry_result__';
@@ -848,6 +848,11 @@ export async function runRegistryBreedingInference(ctx, options = {}) {
 
 
 export function buildRegistrySystemPrompt(settings, options = {}) {
+  // 注册页的「此角色使用妊娠变速」：没勾就不让模型写变速，免得把「怀很久／过了预产期」都塞进倍率
+  const useGestationModifier = options.useGestationModifier === true;
+  const sliderMultiplier = useGestationModifier && options.gestationModifierMultiplier !== undefined && options.gestationModifierMultiplier !== null
+    ? Number(options.gestationModifierMultiplier)
+    : NaN;
   const includeBreedingPsychology = Boolean(options.includeBreedingPsychology);
   const guides = {
     ...DEFAULT_REGISTRY_DESCRIPTION_GUIDES,
@@ -892,7 +897,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '2. 情感与妊娠经验：experience',
     ...(includeBreedingPsychology ? ['3. 繁育心理：psychology.mens 或 psychology.preg（二选一，互斥）'] : []),
     '4. 既有孩子记录：children',
-    '5. 初登场即怀孕：pregnant.pregnantDays、pregnant.fetusesCount、pregnant.fetuses',
+    '5. 初登场即怀孕：pregnant.gestationalAgeDays（或 pregnantDays）、pregnant.fetusesCount、pregnant.fetuses；正在延产再加 pregnant.extensionCount',
     '6. 文字描述栏位：descriptions',
     '如果资料不足，可以省略字段或给 null；不要为了凑完整而编造。',
     embryoTypeLorePrompt,
@@ -960,8 +965,11 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- [{"name":"冬月 露花","fathers":"前夫","gender":"女","race":"人类","age":5}]',
     '【5. 初登场即怀孕】',
     '参数说明：',
-    '- pregnant.pregnantDays: 这次妊娠的孕龄天数，等同产科从末次月经/本族等价周期起点计算的孕周天数；若资料写“孕8周/怀孕8周”填 56，若明确写“受孕后8周/胚胎发育8周”，需再加上本族等价排卵前偏移。',
-    '- 不要填写 pregnant.effectivePregnantDays；系统会依据孕龄、角色种族妊娠速度与 bio.gestationModifierMultiplier 自动换算有效妊娠天数。',
+    '- pregnant.gestationalAgeDays: 发育到哪里，换算成人类产科孕周的天数（从末次月经起算）。资料写“孕8周/怀孕8周”填 56；写“受孕后8周/胚胎发育8周”需再加 14；写“足月”约 280、“逾期两周”约 294、“怀胎一年仍未生”约 365。一般只填这个。',
+    '- pregnant.pregnantDays: 实际已经怀了多少天。只有资料给出的是经过时间、又没有说发育到哪里时才填，例如「精灵怀孕500天」、受诅咒「怀胎三年」；系统会乘上种族妊娠速度与 bio.gestationModifierMultiplier 换算发育进度。两者都填时以 gestationalAgeDays 为准。',
+    '- 不要填写 pregnant.effectivePregnantDays；系统会自动换算。',
+    '- pregnant.extensionCount: 只在资料明确写角色已过预产期、正被某种手段（医疗、法术、契约等）延后生产时填，表示已经延产几次（≥1）；gestationalAgeDays 应至少 294（42 周），写得不足时系统会当作刚满 42 周。没有延产就省略。单纯过了预产期还没生是逾期，不要填。',
+    '- base.uterineAtony: 子宫乏力级数，反复延产留下的后遗症；只在资料明确描写多次延产导致子宫松弛无力时填，省略时系统按延产次数推定（次数减 1）。',
     '- pregnant.fetusesCount: 这次怀孕的怀胎数',
     '- pregnant.fetuses: 每个胎儿包含 fathers、provider、race、gender、embryoType；也可填写 companionEggCount、weight、tendencyAngle、backSide、affinity',
     '- companionEggCount: 这一胎伴随的背景卵数量（伴生卵），它们不会发育，也不建立胎儿卡或孩子；不是 fetusesCount。一整群十枚卵、只有一名能长大时，就是一张胎儿卡加 9 枚伴生卵。不确定时省略，由系统依种族抽取。胎生与胎转卵生恒为 0。',
@@ -978,21 +986,32 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- tendencyAngle: 胎位/趋向角度，范围 0-360；不确定可省略，系统会随机补值。角度映射必须固定为：0/360=正常头位/正位，180=完全臀位/倒位，90或270=横位；不要把 180 写成头位',
     '- affinity: 胎儿对母体的亲和/排斥倾向，范围 -50 到 50；正值亲和，负值排斥，不确定可省略',
     '示例：',
-    '- 人类怀单胎8周，正常头位示例: {"pregnant":{"pregnantDays":56,"fetusesCount":1,"fetuses":[{"fathers":"丈夫","provider":null,"race":"人类","gender":"男","embryoType":"胎生","weight":1.0,"tendencyAngle":0,"affinity":10}]}}',
+    '- 人类怀单胎8周，正常头位示例: {"pregnant":{"gestationalAgeDays":56,"fetusesCount":1,"fetuses":[{"fathers":"丈夫","provider":null,"race":"人类","gender":"男","embryoType":"胎生","weight":1.0,"tendencyAngle":0,"affinity":10}]}}',
     '- 精灵怀孕500天: {"base":{"race":"精灵"},"pregnant":{"pregnantDays":500,"fetusesCount":1,"fetuses":[{"fathers":"伴侣","provider":null,"race":"精灵","gender":"女","embryoType":"胎生"}]}}',
-    '- 妖怪猫又怀双胎20周: {"pregnant":{"pregnantDays":140,"fetusesCount":2,"fetuses":[{"fathers":"监狱囚犯","provider":null,"race":"[妖怪]兽耳族-猫又x蜥蜴人","gender":"女","embryoType":"胎生"},{"fathers":"监狱囚犯","provider":null,"race":"[妖怪]兽耳族-猫又x蜥蜴人","gender":"女","embryoType":"胎生"}]}}',
-    '- 代孕情节: {"pregnant":{"pregnantDays":84,"fetusesCount":1,"fetuses":[{"fathers":"委托人","provider":"代孕者A","race":"人类","gender":"女","embryoType":"胎生"}]}}',
-    '【5.1 妊娠變速类补充设定（仅在存在特殊变速效果时填写 bio）】',
-    '参数说明：',
-    '- bio.gestationModifierMultiplier: 特殊妊娠速度修正倍率。大于 1 为加速，小于 1 为减速，0 为冻结；初始怀孕仍只填 pregnant.pregnantDays（孕龄），系统会用倍率换算 effectivePregnantDays。',
-    '- bio.gestationModifierName: 该倍率效果的名称，例如祝福、诅咒、体质、术式。',
-    '- bio.gestationModifierDescription: 对该倍率来源与表现的简短说明。',
-    '- 这组 bio 字段是可选的特殊效果，不是一般妊娠的必填资料。普通人类孕妇、常规妊娠、种族原生孕期速度都不要填写。',
-    '- 禁止用 bio 填写 gestationModifierMultiplier=1 的默认占位内容，例如「常规妊娠」「标准人类妊娠生理周期」；没有特殊变速效果就整个省略 bio。',
-    '- 仅当资料明确存在持续生效且倍率不为 1 的祝福、诅咒、体质、术式、冻结或延长效果时填写；未怀孕角色也可保留此类明确效果。',
-    '示例：',
-    '- 被祝福的冒险者妊娠加快: {"bio":{"gestationModifierMultiplier":1.5,"gestationModifierName":"丰饶祝福","gestationModifierDescription":"受女神祝福后，妊娠期间胎儿发育明显加快，孕期反应也会更早显现。"}}',
-    '- 红尘之力导致孕期极端延长，即使当前未怀孕也应保留: {"bio":{"gestationModifierMultiplier":0.001,"gestationModifierName":"红尘织命","gestationModifierDescription":"受红尘之力影响，若进入妊娠，孕期推进速度仅为常规人类的千分之一，整体妊娠期会被极度拉长。"}}',
+    '- 妖怪猫又怀双胎20周: {"pregnant":{"gestationalAgeDays":140,"fetusesCount":2,"fetuses":[{"fathers":"监狱囚犯","provider":null,"race":"[妖怪]兽耳族-猫又x蜥蜴人","gender":"女","embryoType":"胎生"},{"fathers":"监狱囚犯","provider":null,"race":"[妖怪]兽耳族-猫又x蜥蜴人","gender":"女","embryoType":"胎生"}]}}',
+    '- 被延产圣术拖到孕 50 周仍未生: {"pregnant":{"gestationalAgeDays":350,"extensionCount":1,"fetusesCount":1,"fetuses":[{"fathers":"丈夫","provider":null,"race":"人类","gender":"女","embryoType":"胎生"}]}}',
+    '- 代孕情节: {"pregnant":{"gestationalAgeDays":84,"fetusesCount":1,"fetuses":[{"fathers":"委托人","provider":"代孕者A","race":"人类","gender":"女","embryoType":"胎生"}]}}',
+    ...(useGestationModifier ? [
+      '【5.1 妊娠變速类补充设定（仅在存在特殊变速效果时填写 bio）】',
+      '参数说明：',
+      '- bio.gestationModifierMultiplier: 特殊妊娠速度修正倍率。大于 1 为加速，小于 1 为减速，0 为冻结；只影响注册之后的推进速度。目前发育到哪里仍填 pregnant.gestationalAgeDays，不会被倍率换算。',
+      '- 倍率与延产的分别：整个孕期本来就长或短用倍率，约为 280 ÷ 总孕期天数：怀胎三年才足月约 0.26，地母神祝福十天就怀满十个月约 28（倍率范围 0.03～30，0 为冻结）；正常长到足月、过了预产期才被某种手段拖着不生用延产（pregnant.extensionCount）。不要用倍率表现「过了预产期还不生」。',
+      '- bio.gestationModifierName: 该倍率效果的名称，例如祝福、诅咒、体质、术式。',
+      '- bio.gestationModifierDescription: 对该倍率来源与表现的简短说明。',
+      '- 这组 bio 字段是可选的特殊效果，不是一般妊娠的必填资料。普通人类孕妇、常规妊娠、种族原生孕期速度都不要填写。',
+      '- 禁止用 bio 填写 gestationModifierMultiplier=1 的默认占位内容，例如「常规妊娠」「标准人类妊娠生理周期」；没有特殊变速效果就整个省略 bio。',
+      '- 仅当资料明确存在持续生效且倍率不为 1 的祝福、诅咒、体质、术式、冻结或延长效果时填写；未怀孕角色也可保留此类明确效果。',
+      '示例：',
+      '- 被祝福的冒险者妊娠加快: {"bio":{"gestationModifierMultiplier":1.5,"gestationModifierName":"丰饶祝福","gestationModifierDescription":"受女神祝福后，妊娠期间胎儿发育明显加快，孕期反应也会更早显现。"}}',
+      '- 红尘之力导致孕期极端延长，即使当前未怀孕也应保留: {"bio":{"gestationModifierMultiplier":0.001,"gestationModifierName":"红尘织命","gestationModifierDescription":"受红尘之力影响，若进入妊娠，孕期推进速度仅为常规人类的千分之一，整体妊娠期会被极度拉长。"}}',
+      ...(Number.isFinite(sliderMultiplier)
+        ? [`使用者已在注册页用拉杆设定这名角色的变速倍率为 ${sliderMultiplier}${sliderMultiplier === 0 ? '（冻结）' : ''}：bio.gestationModifierMultiplier 一律以此为准，不必自行估算；请依资料填写 bio.gestationModifierName 与 bio.gestationModifierDescription，说明这份变速的来源与表现。若资料只写了经过时间（例如怀胎三年），pregnant.pregnantDays 会按这个倍率换算发育进度。`]
+        : ['使用者已确认这名角色使用妊娠变速：必须依资料填写 bio.gestationModifierMultiplier、bio.gestationModifierName、bio.gestationModifierDescription，倍率不可为 1。']),
+    ] : [
+      '【5.1 妊娠变速】',
+      '使用者没有为这名角色开启妊娠变速：不要输出 bio.gestationModifierMultiplier、gestationModifierName、gestationModifierDescription，输出了也会被忽略。',
+      '即使资料写怀孕很久，也按种族正常孕期理解：发育到哪里填 pregnant.gestationalAgeDays；过了预产期仍未生是逾期，被某种手段拖着不生用 pregnant.extensionCount。',
+    ]),
     '【6. 文字描述栏位】',
     '参数说明：descriptions 包含 normalDescription、pregnantDescription。',
     'normalDescription 与 pregnantDescription 必须使用旧版格式：字段名|描述内容;;字段名|描述内容;;...字段名|描述内容;;。',
@@ -1007,7 +1026,9 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     `【${includeBreedingPsychology ? 7 : 6}. 角色补充设定】`,
     customNotes ? customNotes : '无',
     '若提供了角色补充设定，必须优先视为该角色已明确声明的特征，并在推演与注册相关字段中如实体现；不要忽略，也不要擅自扩写超出原意的内容。',
-    '若角色补充设定明确描述的是一种未来也会持续生效、且倍率不为 1 的妊娠体质、祝福、诅咒、冻结或延长效果，即使角色当前未怀孕，也必须写入 bio.gestationModifierMultiplier、bio.gestationModifierName、bio.gestationModifierDescription；普通妊娠不得补写 bio。',
+    ...(useGestationModifier ? [
+      '若角色补充设定明确描述的是一种未来也会持续生效、且倍率不为 1 的妊娠体质、祝福、诅咒、冻结或延长效果，即使角色当前未怀孕，也必须写入 bio.gestationModifierMultiplier、bio.gestationModifierName、bio.gestationModifierDescription；普通妊娠不得补写 bio。',
+    ] : []),
     '注意：未怀孕角色不要硬填 pregnantDescription；描述内容应遵守旧系统文字栏位语义，不要换行。',
     '只输出 JSON，不要输出额外解释。',
     '【name】必须原样填写 payload.target_character，一字不差。那是用户指定要注册的角色名；即使它与角色卡名不同，也不得改用角色卡名、别名或称谓。',
@@ -1028,7 +1049,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '      "psyStressLevel": 4',
     '    },',
     '    "pregnant": {',
-    '      "pregnantDays": 0,',
+    '      "gestationalAgeDays": 0,',
     '      "fetusesCount": 0,',
     '      "fetuses": [',
     '        {',
@@ -1276,8 +1297,12 @@ function sanitizePregnant(value) {
         };
       })
     : [];
+  const gestationalAgeDays = Number(value.gestationalAgeDays);
+  const extensionCount = Math.floor(Number(value.extensionCount));
   return {
     pregnantDays: Number.isFinite(Number(value.pregnantDays)) ? Number(value.pregnantDays) : 0,
+    ...(Number.isFinite(gestationalAgeDays) && gestationalAgeDays > 0 ? { gestationalAgeDays } : {}),
+    ...(Number.isFinite(extensionCount) && extensionCount > 0 ? { extensionCount: Math.min(99, extensionCount) } : {}),
     fetusesCount: Number.isFinite(Number(value.fetusesCount)) ? Number(value.fetusesCount) : fetuses.length,
     fetuses,
   };
@@ -1287,7 +1312,7 @@ function sanitizeRegistryBio(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const multiplier = Number(value.gestationModifierMultiplier);
   if (!Number.isFinite(multiplier)) return null;
-  const normalizedMultiplier = clampNumber(multiplier, 0, 20, 1);
+  const normalizedMultiplier = clampNumber(multiplier, 0, GESTATION_SPEED_MAX, 1);
   if (Math.abs(normalizedMultiplier - 1) <= 0.000001) return null;
   return {
     gestationModifierMultiplier: normalizedMultiplier,
@@ -1496,11 +1521,47 @@ function normalizeRegisteredPregnancy(profile) {
     };
   });
   pregnant.fetusesCount = pregnant.fetuses.length;
-  pregnant.pregnantDays = Math.max(1, Math.floor(Number(pregnant.pregnantDays) || 1));
-  const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0.1, 20, 1.0);
-  pregnant.effectivePregnantDays = Math.max(1, pregnant.pregnantDays * gestationSpeed);
+  // 发育进度（gestationalAgeDays）直接就是有效孕日，实际天数反推；没给才用实际天数乘妊娠速度。
+  // 变速倍率是 0（冻结）时不能拿来换算，否则卡上写足月也会被乘回孕早期，退回只看种族速度
+  const effectiveSpeed = getGestationEffectiveSpeed(profile);
+  const gestationSpeed = effectiveSpeed > 0
+    ? clampNumber(effectiveSpeed, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0)
+    : clampNumber(getGestationSpeciesSpeed(profile), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0);
+  const gestationalAgeDays = Number(pregnant.gestationalAgeDays);
+  if (Number.isFinite(gestationalAgeDays) && gestationalAgeDays > 0) {
+    pregnant.effectivePregnantDays = Math.max(1, gestationalAgeDays);
+    const statedElapsed = Number(pregnant.pregnantDays);
+    pregnant.pregnantDays = Number.isFinite(statedElapsed) && statedElapsed > 0
+      ? Math.max(1, Math.floor(statedElapsed))
+      : Math.max(1, Math.round(gestationalAgeDays / gestationSpeed));
+  } else {
+    // 只给实际天数（例如「怀胎三年」）：乘上种族速度与特殊变速倍率换算成发育进度。
+    // 倍率是 0（冻结）时没有速度可乘，退回只看种族速度
+    pregnant.pregnantDays = Math.max(1, Math.floor(Number(pregnant.pregnantDays) || 1));
+    pregnant.effectivePregnantDays = Math.max(1, pregnant.pregnantDays * gestationSpeed);
+  }
+  delete pregnant.gestationalAgeDays;
+  // 延产中：发育至少到逾期才算数；第一次延到 52 周，已超过就和之后一样再延 28 天
+  const extensionCount = Math.max(0, Math.floor(Number(pregnant.extensionCount) || 0));
+  // 资料写明在延产，但孕周写不到 42 周（多半把「过了预产期」也当延产）：延产必定已逾期，拉到刚满 42 周
+  if (extensionCount > 0 && pregnant.effectivePregnantDays < POSTTERM_START_DAYS) {
+    pregnant.effectivePregnantDays = POSTTERM_START_DAYS;
+    pregnant.pregnantDays = Math.max(pregnant.pregnantDays, Math.round(POSTTERM_START_DAYS / gestationSpeed));
+  }
+  if (extensionCount > 0) {
+    pregnant.extensionCount = extensionCount;
+    pregnant.extensionUntilDays = extensionCount === 1 && pregnant.effectivePregnantDays < FIRST_EXTENSION_UNTIL_DAYS
+      ? FIRST_EXTENSION_UNTIL_DAYS
+      : pregnant.effectivePregnantDays + EXTENSION_MONTH_DAYS;
+    const base = profile.base || {};
+    if (!Number.isFinite(Number(base.uterineAtony)) || Number(base.uterineAtony) <= 0) base.uterineAtony = extensionCount - 1;
+    profile.base = base;
+  } else {
+    pregnant.extensionCount = 0;
+    pregnant.extensionUntilDays = null;
+  }
   const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
-  const gestationModifierMultiplier = clampNumber(profile?.bio?.gestationModifierMultiplier, 0, 20, 1);
+  const gestationModifierMultiplier = clampNumber(profile?.bio?.gestationModifierMultiplier, 0, GESTATION_SPEED_MAX, 1);
   for (const fetus of pregnant.fetuses) {
     if (Number.isFinite(Number(fetus?.maternalDerivedTypeProgress))) continue;
     const conceivedAtDays = Math.max(0, Number(fetus?.conceivedAtDays) || 0);
@@ -1606,6 +1667,10 @@ function sanitizeRegistryProfile(profile, baseProfile) {
       const vitalityLevel = Number(profile.base.vitalityLevel);
       if (Number.isFinite(vitalityLevel)) nextBase.vitalityLevel = Math.max(1, Math.min(7, Math.round(vitalityLevel)));
     }
+    if (profile.base.uterineAtony !== undefined) {
+      const uterineAtony = Number(profile.base.uterineAtony);
+      if (Number.isFinite(uterineAtony)) nextBase.uterineAtony = Math.max(0, Math.min(9, Math.floor(uterineAtony)));
+    }
     if (profile.base.psyStressLevel !== undefined) {
       const psyStressLevel = Number(profile.base.psyStressLevel);
       if (Number.isFinite(psyStressLevel)) nextBase.psyStressLevel = Math.max(1, Math.min(7, Math.round(psyStressLevel)));
@@ -1666,13 +1731,28 @@ function getRegisteredRecoveryDays(profile) {
   });
 }
 
-export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true } = {}) {
+export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true, useGestationModifier = true, gestationModifierMultiplier = null } = {}) {
   const name = String(result?.name || '').trim();
   if (!name) throw new Error('注册结果缺少角色名称');
   const current = chatState.characters[name];
   const base = current && typeof current === 'object' ? current : createDefaultFemaleState(name);
   const sanitizedProfile = sanitizeRegistryProfile(result.profile, base.profile);
   if (!allowBreedingPsychology) delete sanitizedProfile.psychology;
+  // 注册页没勾「使用妊娠变速」：模型就算写了变速也不采用，倍率会在下面重设回 1
+  if (!useGestationModifier) delete sanitizedProfile.bio;
+  // 勾了而且用拉杆设定了倍率：倍率以拉杆为准，模型只负责效果名称与说明；拉到 1 就等于没有变速
+  else if (gestationModifierMultiplier !== null && gestationModifierMultiplier !== undefined && Number.isFinite(Number(gestationModifierMultiplier))) {
+    const multiplier = clampNumber(Number(gestationModifierMultiplier), 0, GESTATION_SPEED_MAX, 1);
+    const rawBio = result?.profile?.bio && typeof result.profile.bio === 'object' ? result.profile.bio : {};
+    if (Math.abs(multiplier - 1) <= 0.000001) delete sanitizedProfile.bio;
+    else {
+      sanitizedProfile.bio = {
+        gestationModifierMultiplier: multiplier,
+        gestationModifierName: rawBio.gestationModifierName === null ? '' : String(rawBio.gestationModifierName || '').trim(),
+        gestationModifierDescription: rawBio.gestationModifierDescription === null ? '' : String(rawBio.gestationModifierDescription || '').trim(),
+      };
+    }
+  }
   const effectiveRace = sanitizedProfile.base?.race ?? base.profile.base.race;
   const mergedRaceProfile = getMergedRacePhysiologyProfile(effectiveRace);
   const basePsychology = normalizeCharacterPsychologyState(base).profile.psychology;
@@ -1741,7 +1821,8 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
       bio: {
         ...base.profile.bio,
         ...(mergedRaceProfile || {}),
-        ...(sanitizedProfile.bio || {}),
+        // 注册按角色卡重新判定特殊变速：结果里没有，就代表没有，不能沿用上一次注册留下的倍率
+        ...(sanitizedProfile.bio || { gestationModifierMultiplier: 1, gestationModifierName: '', gestationModifierDescription: '' }),
       },
       metabolism: {
         ...base.profile.metabolism,
@@ -2395,7 +2476,11 @@ export async function runRegistry(ctx, options = {}) {
     const workingSkills = bundleOutput ? prepareBundleSkills(chatState, result, bundleOutput.skillSetup, bundleReport) : null;
     applyRequestedSpecialFetus(result, specialFetus);
     recordRegistryResultDebug(result);
-    let character = applyRegistryResult(chatState, result, { allowBreedingPsychology: includeBreedingPsychology });
+    let character = applyRegistryResult(chatState, result, {
+      allowBreedingPsychology: includeBreedingPsychology,
+      useGestationModifier: options.useGestationModifier === true,
+      gestationModifierMultiplier: options.gestationModifierMultiplier ?? null,
+    });
     if (sourceChildContext) character = applyRegistryChildInheritance(chatState, targetName, requestedSource).character;
     if (bundleOutput) character = applyRegistryBundle(chatState, targetName, bundleOutput, workingSkills, bundleReport);
     recordChatStateSnapshot(ctx, chatState, { reason: 'registry' });
