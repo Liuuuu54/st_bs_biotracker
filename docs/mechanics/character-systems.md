@@ -18,7 +18,7 @@
 
 心理資料分月經側 `mens` 與妊娠側 `preg`，另有各階段偏好。初始化可透過獨立的繁殖心理推論取得；欄位定義、布林欄位、階段解釋集中在 [registry_psy_config.js](../../scripts/registry_psy_config.js#L7)。`bsUpdatePsychology` 更新目前適用側的值，並受每故事小時一次的冷卻限制。[工具實作](../../scripts/tools.js#L6912)。沒有心理推論資料時，追蹤器不會無條件開放心理更新工具。[工具過濾](../../scripts/tracker.js#L690)。
 
-`bsMaternalFetalInteraction` 處理母胎互動，亦受每故事小時一次限制；胎兒的親近度限制在 -50 至 50，母方結果受情壓影響。[互動實作](../../scripts/tools.js#L5843)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L503)。
+`bsMaternalFetalInteraction` 處理母胎互動，亦受每故事小時一次限制；胎兒的親近度限制在 -50 至 50，母方結果受情壓影響。[互動實作](../../scripts/tools.js#L5843)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L505)。
 
 經歷資料包含貞操、近期性伴、情感／婚姻伴侶、懷孕、自然產、手術產與流產次數。部分由生理流程自動更新，`bsUpdateExperience` 可記錄故事中辨識到的事件；子女會隨分娩建立，再由 `bsNameChild` 補名。[預設資料](../../scripts/state.js#L738)、[經歷工具](../../scripts/tools.js#L6746)、[子女工具](../../scripts/tools.js#L6779)。
 

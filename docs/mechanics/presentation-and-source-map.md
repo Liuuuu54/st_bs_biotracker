@@ -6,7 +6,7 @@
 
 PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化。追蹤器另產生 `existing_state` 的精簡投影給非同步模型，[buildTrackerPayload](../../scripts/tracker.js#L1300)；主流程提示使用[buildMainFlowStatePrompt](../../scripts/tracker_prompt_context.js#L429)將狀態轉成給聊天模型看的文字。兩者並非完整存檔，也不保證顯示每個內部欄位。種族與胚胎的背景提示分別由 [race_prompt_context.js](../../scripts/race_prompt_context.js#L536)及 [embryo_prompt_context.js](../../scripts/embryo_prompt_context.js#L80)組成。
 
-像素子宮畫板先由 [computeUterusLayout](../../scripts/uterus_layout.js#L140)根據已知且可顯示的胎兒、胎位、宮壓等計算位置；同屏最多繪製五胎。接著 [fetus_sprite.js](../../scripts/fetus_sprite.js#L308)產生胎兒格點，[uterus_render.js](../../scripts/uterus_render.js#L518)負責色盤、像素、動態及親近表情。畫板是狀態的視圖，繪圖本身不會推進妊娠。
+像素子宮畫板先由 [computeUterusLayout](../../scripts/uterus_layout.js#L140)根據已知且可顯示的胎兒、胎位、宮壓等計算位置；同屏最多繪製五胎。接著 [fetus_sprite.js](../../scripts/fetus_sprite.js#L308)產生胎兒格點，[uterus_render.js](../../scripts/uterus_render.js#L520)負責色盤、像素、動態及親近表情。畫板是狀態的視圖，繪圖本身不會推進妊娠。
 
 家系圖由 [lineage.js](../../scripts/lineage.js#L29)把子女和父母來源組成圖，再由 [lineage_view.js](../../scripts/lineage_view.js#L64)建立聚焦視圖。若來源欄位不完整，圖上自然只能呈現已記錄的關係。
 
