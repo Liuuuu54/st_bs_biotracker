@@ -95,10 +95,19 @@ function findIntroCommit(doc, markup) {
   return found;
 }
 
-function resolveTarget(doc, markup, ups, rel, lineNo) {
+function resolveTarget(doc, markup, ups, rel, lineNo, headLineNo = null) {
   const file = path.posix.normalize(path.posix.join(path.posix.dirname(doc), ups + rel));
   if (!fs.existsSync(path.join(ROOT, file))) return { error: 'MISSING FILE' };
-  const commit = findIntroCommit(doc, markup) || 'HEAD';
+  const commit = findIntroCommit(doc, markup);
+  if (commit) return mapFromSource(commit, file, lineNo);
+  // 历史里找不到这段连结：多半是已对齐过、还没提交，之后程式码又动了。
+  // 同一行文件在 HEAD 里还在（只差行号）时，用 HEAD 的行号对 HEAD 的程式码重新对齐
+  if (headLineNo !== null) return mapFromSource('HEAD', file, headLineNo);
+  // 连 HEAD 都没有这行：工作区里刚写的，本来就对着目前的程式码，原样保留
+  return { line: lineNo, how: 'uncommitted' };
+}
+
+function mapFromSource(commit, file, lineNo) {
   const old = linesAt(commit, file);
   if (lineNo < 1 || lineNo > old.length) return { error: `OUT OF RANGE at ${commit.slice(0, 7)}` };
   const target = old[lineNo - 1];
@@ -122,24 +131,52 @@ function resolveTarget(doc, markup, ups, rel, lineNo) {
   return { error: `UNRESOLVED (${hits.length} hits) ${target.trim().slice(0, 70)}` };
 }
 
+/** 去掉行号后的文件行：用来在 HEAD 版文件里认出「同一行，只是行号不同」 */
+function linkShape(line) {
+  return line.replace(/#L\d+\)/g, '#L)').replace(/\r$/, '');
+}
+
+function headDocLinesByShape(doc) {
+  const map = new Map();
+  let text = '';
+  try {
+    text = git('show', `HEAD:${doc}`);
+  } catch {
+    return map;
+  }
+  for (const line of splitLines(text)) {
+    const shape = linkShape(line);
+    if (shape !== line && !map.has(shape)) map.set(shape, line);
+  }
+  return map;
+}
+
 function fix() {
   let moved = 0;
   const notes = [];
   for (const doc of DOCS) {
     const docPath = path.join(ROOT, doc);
     const text = fs.readFileSync(docPath, 'utf8');
-    const next = text.split('\n').map((line, index) => line.replace(LINK, (whole, label, ups, rel, n) => {
-      const lineNo = Number(n);
-      const result = resolveTarget(doc, whole, ups, rel, lineNo);
-      if (result.error) {
-        notes.push(`${doc}:${index + 1} [${label}] ${rel}#L${lineNo} ${result.error}`);
-        return whole;
-      }
-      if (result.line === lineNo) return whole;
-      moved += 1;
-      if (result.how !== 'exact') notes.push(`${doc}:${index + 1} [${label}] ${rel}#L${lineNo} -> ${result.line} (${result.how})，请人工确认`);
-      return `[${label}](${ups}${rel}#L${result.line})`;
-    })).join('\n');
+    const headLines = headDocLinesByShape(doc);
+    const next = text.split('\n').map((line, index) => {
+      const headLine = headLines.get(linkShape(line));
+      const headNumbers = headLine ? [...headLine.matchAll(LINK)].map((match) => Number(match[4])) : [];
+      let linkIndex = 0;
+      return line.replace(LINK, (whole, label, ups, rel, n) => {
+        const lineNo = Number(n);
+        const headLineNo = linkIndex < headNumbers.length ? headNumbers[linkIndex] : null;
+        linkIndex += 1;
+        const result = resolveTarget(doc, whole, ups, rel, lineNo, headLineNo);
+        if (result.error) {
+          notes.push(`${doc}:${index + 1} [${label}] ${rel}#L${lineNo} ${result.error}`);
+          return whole;
+        }
+        if (result.line === lineNo) return whole;
+        moved += 1;
+        if (result.how !== 'exact') notes.push(`${doc}:${index + 1} [${label}] ${rel}#L${lineNo} -> ${result.line} (${result.how})，请人工确认`);
+        return `[${label}](${ups}${rel}#L${result.line})`;
+      });
+    }).join('\n');
     if (next !== text) fs.writeFileSync(docPath, next);
   }
   notes.forEach((line) => console.log(line));
