@@ -41,6 +41,8 @@
 
 `chatState.skillCatalog` 是**本聊天共用**的技能定義（ID、名稱、描述）；`profile.skills` 是角色已覺醒技能的等級／經驗；`profile.talents` 是角色資質；`profile.skillHistory` 記錄升級事件。技能 ID 隨 `nextSkillId` 遞增，同名定義會重用。註冊角色時也可推論初始技能和天賦。[狀態](../../scripts/state.js#L658)、[定義規則](../../scripts/skill_config.js#L57)、[初始化](../../scripts/registry.js#L1906)。
 
+技能頁的「技能基準」按聊天保存，送入初始技能推演與追蹤，約束要建立、成長哪些方向的技能；它不刪除已有的技能，留空即不限制。「可選預設技能」把一組預設技能（部位開發、行為與傾向）按聊天匯入圖鑑，兩組可各自匯入，重複匯入會自動去重；這個聊天還沒有技能基準時，匯入會一併把基準設成「只追蹤調教類技能」。每個技能的描述會隨圖鑑送進追蹤，作為技能成立與成長的判斷標準。[預設技能](../../scripts/skill_config.js#L144)。
+
 ### 技能升級
 
 角色技能從 Lv1 開始，下一級需求是 `100 × 目前等級²` 經驗；一次可跨多級，最高 Lv10，滿級的經驗歸零。`bsTrainSkill` 只接受已登記的技能 ID／名稱、非負整數 `skillExp` 和非空 `reason`。角色沒有該技能時，須明確傳 `awaken=true`；覺醒後從 Lv1 起算。升級會寫入最多保留 100 筆的歷史並產生通知。[requiredExp](../../scripts/skill_config.js#L52)、[加經驗](../../scripts/skill_config.js#L221)、[訓練](../../scripts/tools.js#L6817)。
