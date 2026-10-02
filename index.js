@@ -5396,15 +5396,15 @@ function describeGestationSpeed(multiplier, speciesSpeed = 1) {
   return `整个孕期${formatGestationLength(280 / speed)}${speciesNote}`;
 }
 
-function renderGestationSpeedSlider({ inputId, multiplier, speciesSpeed = 1 }) {
+function renderGestationSpeedSlider({ inputId, multiplier, speciesSpeed = 1, allowFreeze = true }) {
   const value = Number(multiplier);
-  const frozen = value === 0;
+  const frozen = allowFreeze && value === 0;
   const position = gestationMultiplierToSliderPosition(frozen ? 1 : value);
   const shown = frozen ? 0 : sliderPositionToGestationMultiplier(position);
   return `<div class="bs-bt-gestation-slider" data-gestation-slider data-species-speed="${escapeHtml(String(speciesSpeed))}">
       <div class="bs-bt-gestation-slider-head">
         <span>倍率 <output data-role="value">×${escapeHtml(String(shown))}</output></span>
-        <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="freeze"${frozen ? ' checked' : ''} /> 冻结</label>
+        ${allowFreeze ? `<label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="freeze"${frozen ? ' checked' : ''} /> 冻结</label>` : ''}
       </div>
       <input type="range" data-role="range" min="0" max="${GESTATION_SLIDER_STEPS}" step="1" value="${position}"${frozen ? ' disabled' : ''} />
       <div class="bs-bt-gestation-slider-scale"><span>慢 ×${GESTATION_SPEED_MIN}</span><span>×1</span><span>快 ×${GESTATION_SPEED_MAX}</span></div>
@@ -5463,6 +5463,8 @@ function setupRegisterGestationSlider() {
     inputId: 'bs-bt-register-gestation-multiplier',
     multiplier: 1,
     speciesSpeed: getRegisterRaceSpeciesSpeed(),
+    // 开局就冻结的角色极少，也容易被误当成延产或慢孕；真的需要就注册后到调试面板冻结
+    allowFreeze: false,
   });
   bindGestationSpeedSlider(anchor);
   const sync = () => {
