@@ -49,6 +49,7 @@ import {
   VIVIPAROUS_RACES,
 } from './scripts/race_config.js';
 import { initializeCalculatorUi } from './scripts/calculator_ui.js';
+import { createDocViewer, parseDocHref } from './scripts/doc_viewer.js';
 import { calculateFertilizationPreview } from './scripts/calculator.js';
 import {
   FIRST_STAGE_NATURAL_BIRTH_EXPERIENCE,
@@ -8612,6 +8613,16 @@ async function ensureModal(ctx) {
     if (!nextModel) return;
     const modelInput = document.getElementById('bs-bt-model');
     if (modelInput) modelInput.value = nextModel;
+  });
+  // 「?」与说明连结改在插件内的阅读器打开本机 docs；按住修饰键或中键仍照原样去 GitHub
+  const docViewer = createDocViewer(document.getElementById('bs-bt-doc-viewer'));
+  document.addEventListener('click', (event) => {
+    const link = event.target?.closest?.('#bs-biotracker-settings a[href]');
+    if (!link || link.closest('#bs-bt-doc-viewer') || event.ctrlKey || event.metaKey || event.shiftKey || event.button) return;
+    const doc = parseDocHref(link.getAttribute('href'));
+    if (!doc) return;
+    event.preventDefault();
+    docViewer.show(doc.path, doc.anchor);
   });
   // 追踪页会整段重绘，族谱按钮用委派监听
   document.addEventListener('click', (event) => {

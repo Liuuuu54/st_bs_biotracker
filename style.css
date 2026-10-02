@@ -5694,3 +5694,131 @@
     inset 0 0 16px rgba(141, 247, 255, 0.18),
     0 0 14px rgba(78, 222, 255, 0.28);
 }
+
+/* 插件内的说明阅读器：盖满萤幕，读随插件安装的 docs/ */
+#bs-biotracker-settings .bs-bt-doc-viewer {
+  position: absolute;
+  inset: 0;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  background: var(--bsbt-lcd-bg);
+  color: var(--bsbt-lcd-text);
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer[hidden] {
+  display: none;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-head [hidden] {
+  display: none;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-external {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px 12px 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  font-size: 0.9em;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-body h1,
+#bs-biotracker-settings .bs-bt-doc-viewer-body h2,
+#bs-biotracker-settings .bs-bt-doc-viewer-body h3,
+#bs-biotracker-settings .bs-bt-doc-viewer-body h4 {
+  margin: 1em 0 0.4em;
+  line-height: 1.35;
+  color: inherit;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-body h1 { font-size: 1.3em; }
+#bs-biotracker-settings .bs-bt-doc-viewer-body h2 { font-size: 1.15em; }
+#bs-biotracker-settings .bs-bt-doc-viewer-body h3 { font-size: 1.05em; }
+
+#bs-biotracker-settings .bs-bt-doc-viewer-body .is-doc-target {
+  outline: 1px dashed currentColor;
+  outline-offset: 3px;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-body p,
+#bs-biotracker-settings .bs-bt-doc-viewer-body ul,
+#bs-biotracker-settings .bs-bt-doc-viewer-body ol {
+  margin: 0.5em 0;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-body ul,
+#bs-biotracker-settings .bs-bt-doc-viewer-body ol {
+  padding-left: 1.4em;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-body a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-body code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: 0.92em;
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-body pre {
+  overflow-x: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+#bs-biotracker-settings .bs-bt-doc-viewer-body pre code {
+  padding: 0;
+  background: none;
+}
+
+#bs-biotracker-settings .bs-bt-doc-table {
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+#bs-biotracker-settings .bs-bt-doc-table table {
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+#bs-biotracker-settings .bs-bt-doc-table th,
+#bs-biotracker-settings .bs-bt-doc-table td {
+  padding: 4px 6px;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  text-align: left;
+  vertical-align: top;
+}

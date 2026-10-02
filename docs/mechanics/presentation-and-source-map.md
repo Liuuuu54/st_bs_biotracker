@@ -38,6 +38,7 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 | [lineage.js](../../scripts/lineage.js) | 家系資料圖。 |
 | [lineage_view.js](../../scripts/lineage_view.js) | 家系聚焦視圖。 |
 | [calculator_ui.js](../../scripts/calculator_ui.js) | 計算器畫面的輸入與結果。 |
+| [doc_viewer.js](../../scripts/doc_viewer.js) | 插件內的說明閱讀器，讀取隨插件安裝的 docs。 |
 
 ## 查一個數值時的路線
 
