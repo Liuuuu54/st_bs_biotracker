@@ -4039,6 +4039,28 @@
   display: none !important;
 }
 
+/* 说明连结：一个小圆圈问号，点开机制说明；解释交给文件，界面只留入口 */
+#bs-biotracker-settings .bs-bt-doc-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.3em;
+  height: 1.3em;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.8em;
+  line-height: 1;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.75;
+}
+
+#bs-biotracker-settings .bs-bt-doc-link:hover,
+#bs-biotracker-settings .bs-bt-doc-link:focus-visible {
+  opacity: 1;
+}
+
 #bs-biotracker-settings .bs-bt-gestation-slider {
   display: grid;
   gap: 4px;

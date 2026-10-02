@@ -1948,7 +1948,7 @@ function renderRacePhysiologyEditor(race) {
   const statusNode = document.getElementById('bs-bt-race-editor-status');
   if (!editorNode) return;
   editorNode.innerHTML = '';
-  if (statusNode) statusNode.textContent = '物种短敘述可留空；核型与数值只保存和内置值不同的字段；混血种族固定按一般核型处理。';
+  if (statusNode) statusNode.textContent = '只保存与内置值不同的字段。';
   if (!race) {
     editorNode.textContent = '请选择种族后编辑参数。';
     return;
@@ -5126,7 +5126,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
         </label>
         <button type="button" class="menu_button" data-debug-action="inject-pregnancy">执行${escapeHtml(selectedMode.label)}注入</button>
       </fieldset>
-      <div class="bs-bt-track-debug-hint">${selectedMode.available ? (conceptionMode === 'womb_return' ? '此调试模式不计算回归期，执行后立即是孕早期第 1 天。' : conceptionMode === 'nested' ? '宿主只列出已着床的胎生、胎转卵生、不定型胎儿（卵生在壳里、卵胎生在卵膜里，进不去）；新胎会同时带有孕中孕与异期受孕标记。' : conceptionMode === 'superfetation' ? '新胎使用当前妊娠时钟记录受孕时间，并先进入等待着床状态。' : isAdditionalSurrogacy ? '新胎沿用当前妊娠时钟并等待著床，同时带有代孕与异期复孕标记。' : '父亲名字、父亲种族、性别可用逗号逐胎填写。') : '当前阶段没有可执行的受孕注入模式。'}</div>
+      <div class="bs-bt-track-debug-hint">${selectedMode.available ? (conceptionMode === 'womb_return' ? '此调试模式不计算回归期，执行后立即是孕早期第 1 天。' : conceptionMode === 'nested' ? '宿主只能是已着床的胎生、胎转卵生或不定型胎儿。' : conceptionMode === 'superfetation' ? '新胎使用当前妊娠时钟记录受孕时间，并先进入等待着床状态。' : isAdditionalSurrogacy ? '新胎沿用当前妊娠时钟并等待著床，同时带有代孕与异期复孕标记。' : '父亲名字、父亲种族、性别可用逗号逐胎填写。') : '当前阶段没有可执行的受孕注入模式。'}</div>
     </div>
     <div class="bs-bt-track-section" style="margin-top: 10px;">
       <div class="bs-bt-track-section-title">产兆前驱调试</div>
@@ -5145,7 +5145,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
         <button type="button" class="menu_button bs-bt-inline-button" data-debug-action="extend-pregnancy"${canExtendPregnancy ? '' : ' disabled'}>延产</button>
         <button type="button" class="menu_button bs-bt-inline-button" data-debug-action="induce-pregnancy"${canInducePregnancy ? '' : ' disabled'}>引产</button>
       </div>
-      <div class="bs-bt-track-debug-hint">已延产 ${extensionCount} 次，子宫乏力 ${uterineAtony} 级。延产只能在逾期，或由逾期／延产期进入的产兆前驱使用；引产只能在延产期使用。</div>
+      <div class="bs-bt-track-debug-hint">已延产 ${extensionCount} 次，子宫乏力 ${uterineAtony} 级 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/pregnancy-and-labor.md#延產期" target="_blank" rel="noopener noreferrer" title="延产说明" aria-label="延产说明">?</a></div>
     </div>
     <div class="bs-bt-track-section" style="margin-top: 10px;">
       <div class="bs-bt-track-section-title">胎儿自主活动调试</div>
@@ -5209,7 +5209,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
           <button type="button" class="menu_button bs-bt-inline-button" data-debug-action="clear-gestation-modifier">清除效果</button>
         </div>
       </fieldset>
-      <div class="bs-bt-track-debug-hint">当前倍率 ${Number(gestationModifier.multiplier || 0).toFixed(3)}x，物种妊娠速度 ${Number(gestationModifier.speciesSpeed || 1).toFixed(3)}，当前生效速度 ${Number(gestationModifier.effectiveSpeed || 0).toFixed(3)}。倍率为 0 代表胎儿发育冻结。</div>
+      <div class="bs-bt-track-debug-hint">当前倍率 ${Number(gestationModifier.multiplier || 0).toFixed(3)}x，物种妊娠速度 ${Number(gestationModifier.speciesSpeed || 1).toFixed(3)}，当前生效速度 ${Number(gestationModifier.effectiveSpeed || 0).toFixed(3)}。</div>
     </div>
   `;
 }

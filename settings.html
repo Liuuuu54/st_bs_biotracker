@@ -124,9 +124,8 @@
           <div class="bs-bt-panel">
             <div id="bs-bt-skill-catalog-overview">
               <div class="settings_section">
-                <div class="bs-bt-section-title">技能基准 Prompt</div>
+                <div class="bs-bt-section-title">技能基准 Prompt <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/wardrobe-and-skills.md#技能目錄角色技能與天賦" target="_blank" rel="noopener noreferrer" title="技能基准说明" aria-label="技能基准说明">?</a></div>
                 <textarea id="bs-bt-skill-baseline-prompt" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="3" maxlength="4000" placeholder="例如：本聊天只追踪正格冒险中的战斗、生存、探索、交涉与专业技能；不要建立或提升调教、性行为与部位开发技能。"></textarea>
-                <div class="bs-bt-inline-status">按聊天保存，约束初始技能推演与 Tracker 后续建技／成长；不会删除已经存在的技能资料。留空表示不追加限制。</div>
                 <button id="bs-bt-skill-baseline-save" class="menu_button" type="button">保存技能基准</button>
                 <div id="bs-bt-skill-baseline-status" class="bs-bt-inline-status"></div>
               </div>
@@ -134,8 +133,7 @@
               <hr class="sysHR" />
 
               <div class="settings_section">
-                <div class="bs-bt-section-title">可选预设技能</div>
-                <div class="bs-bt-inline-status">按聊天导入到现有技能图鉴；两组可独立选用，重复导入会自动去重。角色进度仍使用原有 skills 与 bsTrainSkill。</div>
+                <div class="bs-bt-section-title">可选预设技能 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/wardrobe-and-skills.md#技能目錄角色技能與天賦" target="_blank" rel="noopener noreferrer" title="预设技能说明" aria-label="预设技能说明">?</a></div>
                 <div class="bs-bt-skill-preset-grid">
                   <article class="bs-bt-skill-card">
                     <div class="bs-bt-skill-card__title">部位开发（6）</div>
@@ -174,9 +172,8 @@
                 <div id="bs-bt-skill-detail-title" class="bs-bt-section-title"></div>
                 <label for="bs-bt-skill-detail-name">技能名称</label>
                 <input id="bs-bt-skill-detail-name" class="text_pole" type="text" />
-                <label for="bs-bt-skill-detail-description">技能描述 Prompt</label>
+                <label for="bs-bt-skill-detail-description">技能描述 Prompt <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/wardrobe-and-skills.md#技能目錄角色技能與天賦" target="_blank" rel="noopener noreferrer" title="技能描述说明" aria-label="技能描述说明">?</a></label>
                 <textarea id="bs-bt-skill-detail-description" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="3"></textarea>
-                <div class="bs-bt-inline-status">此描述会随技能图鉴送入 Tracker，作为技能成立与成长的判断标准。</div>
                 <button id="bs-bt-skill-detail-save" class="menu_button" type="button">保存技能定义</button>
                 <div id="bs-bt-skill-detail-status" class="bs-bt-inline-status"></div>
               </div>
@@ -275,7 +272,7 @@
             <hr class="sysHR" />
 
             <div class="settings_section">
-              <label for="bs-bt-api-profile-select">连接配置组</label>
+              <label for="bs-bt-api-profile-select">连接配置组 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#連接設定" target="_blank" rel="noopener noreferrer" title="连接配置组说明" aria-label="连接配置组说明">?</a></label>
               <select id="bs-bt-api-profile-select" class="text_pole">
                 <option value="">尚未保存配置组</option>
               </select>
@@ -284,7 +281,6 @@
                 <button id="bs-bt-api-profile-save" class="menu_button" type="button">保存</button>
                 <button id="bs-bt-api-profile-delete" class="menu_button" type="button">删除</button>
               </div>
-              <small>保存下方到分隔线为止的连接设置（API 地址、格式、Key、模型、温度、思考强度、格式化输出）；选择配置组即套用并保存设置。Key 与其他设置一样存在本机的 SillyTavern 设置档。</small>
             </div>
 
             <div class="settings_section">
@@ -326,7 +322,7 @@
             </div>
 
             <div class="settings_section">
-              <label for="bs-bt-temperature-mode">温度</label>
+              <label for="bs-bt-temperature-mode">温度 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#溫度思考強度格式化輸出" target="_blank" rel="noopener noreferrer" title="温度说明" aria-label="温度说明">?</a></label>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                 <select id="bs-bt-temperature-mode" class="text_pole">
                   <option value="legacy">沿用旧行为</option>
@@ -335,11 +331,10 @@
                 </select>
                 <input id="bs-bt-temperature" class="text_pole" type="number" min="0" max="2" step="0.1" placeholder="default" />
               </div>
-              <small>temperature，仅适用于支援该参数的模型。沿用旧行为＝过往逻辑（主 0.2／重试 0.1，预设可覆盖）；不传参数适用于要求省略该参数的模型；手动指定每次都用你的（含覆盖预设）。</small>
             </div>
 
             <div class="settings_section">
-              <label for="bs-bt-reasoning-effort">思考强度</label>
+              <label for="bs-bt-reasoning-effort">思考强度 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#溫度思考強度格式化輸出" target="_blank" rel="noopener noreferrer" title="思考强度说明" aria-label="思考强度说明">?</a></label>
               <select id="bs-bt-reasoning-effort" class="text_pole">
                 <option value="minimal">Minimal</option>
                 <option value="low">Low</option>
@@ -350,15 +345,14 @@
                 <option value="max">Max</option>
                 <option value="auto">Auto（自动）</option>
               </select>
-              <small>reasoning_effort，随本插件设置保存。偏小尺寸的模型拉高思考强度有助于保证输出内容正确性。默认 Auto：不传输思考强度参数，由服务端自动决定。</small>
             </div>
 
             <div class="settings_section">
               <label style="display:flex;align-items:center;gap:8px;">
                 <input id="bs-bt-formatted-output-v4" type="checkbox" />
                 <span>格式化输出(v4兼容)</span>
+                <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#溫度思考強度格式化輸出" target="_blank" rel="noopener noreferrer" title="格式化输出说明" aria-label="格式化输出说明">?</a>
               </label>
-              <small>请求体附加 response_format.type = json_object，可减少掉格式；不支持该参数的渠道请关闭。</small>
             </div>
 
             <hr class="sysHR" />
@@ -387,39 +381,44 @@
             </div>
 
             <div class="settings_section">
-              <label for="bs-bt-tracker-token-budget">追踪提示词注意力预算（估算 token，仅作为左上角电池的插件请求体积警示，不限制發送）</label>
+              <label for="bs-bt-tracker-token-budget">追踪提示词注意力预算（估算 token） <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#追蹤節奏" target="_blank" rel="noopener noreferrer" title="注意力预算说明" aria-label="注意力预算说明">?</a></label>
               <input id="bs-bt-tracker-token-budget" class="text_pole" type="number" min="500" max="100000" step="100" />
             </div>
 
             <div class="settings_section">
               <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-require-full-description-updates" type="checkbox" />
-                <label for="bs-bt-require-full-description-updates">bsSetDescription 完整更新模式(仅为LLM提示词要求，不保證成效)</label>
+                <label for="bs-bt-require-full-description-updates">bsSetDescription 完整更新模式</label>
+                <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#功能開關" target="_blank" rel="noopener noreferrer" title="完整更新模式说明" aria-label="完整更新模式说明">?</a>
               </div>
             </div>
 
             <div class="settings_section">
               <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-womb-animation" type="checkbox" />
-                <label for="bs-bt-womb-animation">子宫图待机动画(关闭后只画静态图；事件特写仍会播一次)</label>
+                <label for="bs-bt-womb-animation">子宫图待机动画</label>
+                <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#功能開關" target="_blank" rel="noopener noreferrer" title="待机动画说明" aria-label="待机动画说明">?</a>
               </div>
             </div>
 
             <div class="settings_section">
               <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-wardrobe-system-enabled" type="checkbox" />
-                <label for="bs-bt-wardrobe-system-enabled">着衣系统(衣柜页、注册着衣页；关闭后 LLM 看不到衣柜工具、说明与穿着状态，资料保留)</label>
+                <label for="bs-bt-wardrobe-system-enabled">着衣系统</label>
+                <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#功能開關" target="_blank" rel="noopener noreferrer" title="着衣系统开关说明" aria-label="着衣系统开关说明">?</a>
               </div>
               <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-skill-system-enabled" type="checkbox" />
-                <label for="bs-bt-skill-system-enabled">技能系统(技能页、注册技能页；关闭后 LLM 看不到技能工具、图鉴、说明与技能／天赋状态，资料保留)</label>
+                <label for="bs-bt-skill-system-enabled">技能系统</label>
+                <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#功能開關" target="_blank" rel="noopener noreferrer" title="技能系统开关说明" aria-label="技能系统开关说明">?</a>
               </div>
             </div>
 
             <div class="settings_section">
               <div class="bs-bt-setting-toggle-row">
                 <input id="bs-bt-luker-multi-agent-manual-only" type="checkbox" />
-                <label for="bs-bt-luker-multi-agent-manual-only">Luker 多智能体安全模式(关闭自动追踪，编排完成后手动分析)</label>
+                <label for="bs-bt-luker-multi-agent-manual-only">Luker 多智能体安全模式</label>
+                <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#功能開關" target="_blank" rel="noopener noreferrer" title="Luker 安全模式说明" aria-label="Luker 安全模式说明">?</a>
               </div>
             </div>
 
@@ -529,8 +528,8 @@
                 <div class="bs-bt-setting-toggle-row">
                   <input id="bs-bt-register-gestation-modifier" type="checkbox" />
                   <label for="bs-bt-register-gestation-modifier">此角色使用妊娠变速</label>
+                  <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/registration.md#開局已懷孕與特殊效果" target="_blank" rel="noopener noreferrer" title="妊娠变速说明" aria-label="妊娠变速说明">?</a>
                 </div>
-                <small>整个孕期本来就变快或变慢时才勾，勾了再用拉杆设定倍率。变快：例如地母神的祝福，十天就怀满十个月（约 28 倍，最快 30 倍）；变慢：例如怀胎三年才足月（约 0.26 倍，最慢 0.03 倍）。不勾时不写入变速：过了预产期仍不生会当作逾期或延产，重新注册也会清掉旧的变速。</small>
                 <div id="bs-bt-register-gestation-slider" hidden></div>
               </div>
 
@@ -546,8 +545,7 @@
               </div>
 
               <details class="settings_section bs-bt-special-fetus">
-                <summary>特殊胎儿来历（选填）</summary>
-                <small>只在这次注册确实会产生妊娠时才有意义。勾选后展开该项的设定。</small>
+                <summary>特殊胎儿来历（选填） <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/registration.md#開局已懷孕與特殊效果" target="_blank" rel="noopener noreferrer" title="特殊胎儿来历说明" aria-label="特殊胎儿来历说明">?</a></summary>
                 <div class="bs-bt-special-list">
                   <div class="bs-bt-special-item">
                     <label class="bs-bt-special-head">
@@ -556,7 +554,7 @@
                       <span class="bs-bt-special-mode" data-mode="hard">直接写入</span>
                     </label>
                     <div class="bs-bt-special-body" data-special-body="rebirth" hidden>
-                      <small>一名已出生的角色回到子宫里成为其中一胎。产出后是全新个体。</small>
+                      <small>已出生的角色回到子宫成为一胎。</small>
                       <input id="bs-bt-special-rebirth" class="text_pole" type="text"
                         placeholder="回到子宫里的那个人（可填 user 名）" />
                     </div>
@@ -582,7 +580,7 @@
                       <span class="bs-bt-special-mode" data-mode="hint">交给模型</span>
                     </label>
                     <div class="bs-bt-special-body" data-special-body="chimera" hidden>
-                      <small>两颗以上的受精卵在著床前融合成一个个体，身上同时带有多套血统与性别来源。来源名字要由模型从角色卡里挑，程式补不出来。</small>
+                      <small>多颗受精卵融合成一个个体。</small>
                     </div>
                   </div>
 
@@ -593,7 +591,7 @@
                       <span class="bs-bt-special-mode" data-mode="hint">交给模型</span>
                     </label>
                     <div class="bs-bt-special-body" data-special-body="identical" hidden>
-                      <small>一颗受精卵分裂成两胎，父系与种族完全一致。需要模型至少产出两颗胎儿。</small>
+                      <small>一颗受精卵分裂成两胎。</small>
                     </div>
                   </div>
 
@@ -604,7 +602,7 @@
                       <span class="bs-bt-special-mode" data-mode="hint">交给模型</span>
                     </label>
                     <div class="bs-bt-special-body" data-special-body="superfetation" hidden>
-                      <small>母体已经怀孕之后又受精一次，晚到那胎发育落后，最后一起娩出。受精时点由模型按孕龄决定。</small>
+                      <small>怀孕后又受精一次，晚到那胎发育落后。</small>
                     </div>
                   </div>
 
@@ -615,11 +613,10 @@
                       <span class="bs-bt-special-mode" data-mode="hint">交给模型</span>
                     </label>
                     <div class="bs-bt-special-body" data-special-body="nested" hidden>
-                      <small>一颗胎儿长在另一颗胎儿体内，承载者会同时生下女儿与外孙。需要模型指定宿主是哪一胎。</small>
+                      <small>一颗胎儿长在另一颗胎儿体内。</small>
                     </div>
                   </div>
                 </div>
-                <small>「直接写入」由程式保证生效；「交给模型」得靠它编出胎儿结构，没照办时重跑一次注册即可。</small>
               </details>
 
               <div class="settings_section bs-bt-action-row">
@@ -760,7 +757,7 @@
             </div>
             <div id="bs-bt-wardrobe-prep-page" hidden>
               <div class="settings_section">
-                <small>让模型代入这名角色整理长期衣柜：补充衣物，要求时也会挑出穿不下、不再适合的衣物丢掉。不改变当前穿着，正在穿的不会被丢。</small>
+                <small>让模型代入这名角色补充或整理长期衣柜。 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/wardrobe-and-skills.md#三個服裝工具" target="_blank" rel="noopener noreferrer" title="备装说明" aria-label="备装说明">?</a></small>
               </div>
 
               <div class="settings_section">
@@ -1019,18 +1016,17 @@
                     <button id="bs-bt-race-save-override" class="menu_button" type="button">保存覆盖</button>
                     <button id="bs-bt-race-reset-override" class="menu_button" type="button">恢复内置</button>
                   </div>
-                  <div id="bs-bt-race-editor-status" class="bs-bt-inline-status">物种短敘述可留空；核型与数值只保存和内置值不同的字段；混血种族固定按一般核型处理。</div>
+                  <div id="bs-bt-race-editor-status" class="bs-bt-inline-status">只保存与内置值不同的字段。</div>
                 </div>
               </div>
             </div>
 
             <div class="settings_section" id="bs-bt-override-inventory" hidden>
-              <div class="bs-bt-status-title">已保存的参数覆写</div>
+              <div class="bs-bt-status-title">已保存的参数覆写 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#物種與衍生類型的參數覆寫" target="_blank" rel="noopener noreferrer" title="参数覆写说明" aria-label="参数覆写说明">?</a></div>
               <div id="bs-bt-override-list" class="bs-bt-override-list"></div>
               <div class="bs-bt-action-row">
                 <button id="bs-bt-override-clear-all" class="menu_button" type="button">清除全部覆写</button>
               </div>
-              <small>覆写保存在 SillyTavern 的设定档里，重装插件不会清除。此处也会列出名录里已经看不到的条目（例如早期版本覆写过的人类），可逐项或整批清除。</small>
             </div>
 
             <div class="settings_section">
@@ -1060,7 +1056,7 @@
                     <button id="bs-bt-derived-save-override" class="menu_button" type="button">保存覆盖</button>
                     <button id="bs-bt-derived-reset-override" class="menu_button" type="button">恢复内置</button>
                   </div>
-                  <div id="bs-bt-derived-editor-status" class="bs-bt-inline-status">只保存与内置值不同的字段；代谢抵免维持内置规则，子项会继承所属衍生大类。</div>
+                  <div id="bs-bt-derived-editor-status" class="bs-bt-inline-status">只保存与内置值不同的字段。</div>
                 </div>
               </div>
             </div>
@@ -1073,9 +1069,8 @@
 
             <div class="bs-bt-encyclopedia-page" data-encyclopedia-page="world" hidden>
               <div class="settings_section">
-                <label for="bs-bt-world-baseline-prompt">世界基准提示词</label>
+                <label for="bs-bt-world-baseline-prompt">世界基准提示词 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#世界基準與提示詞名錄" target="_blank" rel="noopener noreferrer" title="世界基准说明" aria-label="世界基准说明">?</a></label>
                 <textarea id="bs-bt-world-baseline-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="留空即采用普通人类与现实社会常识；例如：本世界人类的男女生殖生理与社会角色和现实相反，所有角色都视为正常。"></textarea>
-                <small>描述全剧本共通的人类生理、性别角色与社会常识；会送入主线、追踪、注册及繁育推演。人类始终可用，但不列入 72 个异种名录。</small>
                 <div class="settings_section bs-bt-action-row">
                   <button id="bs-bt-world-baseline-save" class="menu_button" type="button">保存世界基准</button>
                   <button id="bs-bt-race-catalog-human-only" class="menu_button" type="button">现代写实</button>
@@ -1084,8 +1079,7 @@
               </div>
 
               <div class="settings_section">
-                <div class="bs-bt-status-title">提示词名录</div>
-                <small>勾选本故事可能登场的异种与衍生类型；只有勾选的会送入追踪与注册提示词，勾选即保存。</small>
+                <div class="bs-bt-status-title">提示词名录 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#世界基準與提示詞名錄" target="_blank" rel="noopener noreferrer" title="提示词名录说明" aria-label="提示词名录说明">?</a></div>
                 <div id="bs-bt-catalog-checklist" class="bs-bt-catalog-checklist"></div>
               </div>
             </div>
@@ -1097,7 +1091,7 @@
                   <button type="button" class="bs-bt-track-tab" data-calculator-tab="offspring">后代预测</button>
                   <button type="button" class="bs-bt-track-tab" data-calculator-tab="derived">衍生遗传</button>
                 </div>
-                <small>只读推演，不会抽签，也不会写入角色变量。使用当前百科参数覆盖。</small>
+                <small>只读推演，不会写入角色。 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#計算器" target="_blank" rel="noopener noreferrer" title="计算器说明" aria-label="计算器说明">?</a></small>
               </div>
 
               <div class="bs-bt-calculator-panel" data-calculator-panel="fertilization">
