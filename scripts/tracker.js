@@ -1791,14 +1791,11 @@ export async function runTracker(ctx, deps, reason = 'manual') {
   }
   if (globalThis[RUN_RUNTIME_KEY]) {
     if (!isTrackerRunStale(settings)) {
-      clearPollWaitStatus(ctx);
-      chatState.lastRawResult = {
-        message: '已有一轮追踪请求正在执行，本次请求未重复发送。',
-        tool_calls: [],
-      };
-      chatState.lastOperationLogs = [];
-      saveSettings(ctx);
-      deps.renderStatusPanel(ctx);
+      // 上一轮的结果仍属于那一轮：单侧心理推演会在锁内等候数分钟，期间每次轮询都会走到这里，
+      // 若清掉 lastOperationLogs，刚结算的避孕结果就进不了下一轮的承接提示
+      if (reason === 'poll') {
+        return recordPollSkip(ctx, deps, 'already_running', '上一轮追踪仍在执行（可能在等单侧心理推演），自动追踪等待中。');
+      }
       return { skipped: true, reason: 'already_running' };
     }
     console.warn('[BS BioTracker] 上一轮追踪已超时未结束，强制释放运行锁');

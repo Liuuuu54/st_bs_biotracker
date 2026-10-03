@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
 import { runTracker, RUN_RUNTIME_KEY, RUN_STARTED_AT_KEY } from '../scripts/tracker.js';
+import { getChatState, getSettings } from '../scripts/state.js';
 
 function makeCtx() {
   return {
@@ -52,4 +53,22 @@ test('a run lock with no recorded start time is treated as stale', async () => {
   const result = await runTracker(makeCtx(), makeDeps(), 'manual');
 
   assert.notEqual(result.reason, 'already_running');
+});
+
+test('a blocked poll or manual run keeps the previous run results for the next-turn prompt', async () => {
+  const ctx = makeCtx();
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const logs = [{ name: 'bsAddSperm', applied: true, message: 'hasCondom=true, condomFailed=true' }];
+  chatState.lastOperationLogs = logs;
+  chatState.lastRawResult = { message: 'previous run', tool_calls: [] };
+  globalThis[RUN_RUNTIME_KEY] = 'psychology-wait';
+  globalThis[RUN_STARTED_AT_KEY] = Date.now();
+
+  for (const reason of ['poll', 'manual']) {
+    const result = await runTracker(ctx, makeDeps(), reason);
+    assert.equal(result.reason, 'already_running');
+    assert.deepEqual(getChatState(ctx, settings).lastOperationLogs, logs);
+    assert.equal(getChatState(ctx, settings).lastRawResult.message, 'previous run');
+  }
 });
