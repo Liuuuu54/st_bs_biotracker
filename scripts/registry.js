@@ -537,7 +537,7 @@ async function runBreedingInference(settings, payload, options = {}) {
   const systemPrompt = options.breedingInferenceSystemPrompt || buildBreedingInferenceSystemPrompt(settings, options);
   recordBreedingInferenceRequestDebug(systemPrompt, payload);
   try {
-    const rawResult = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'breeding' });
+    const rawResult = await callBreedingWithStageRetry(settings, payload, systemPrompt, options);
     const result = normalizeBreedingInferenceResult(rawResult);
     // 角色卡、最近对话中会同时出现 user 与其他人物；target_character 是 UI 的
     // 明确输入，不能把模型回传的猜测当成目标来源，否则结果会显示成 user。
@@ -547,12 +547,12 @@ async function runBreedingInference(settings, payload, options = {}) {
     const side = options.psychologySide || (result?.preg ? 'preg' : result?.mens ? 'mens' : null);
     if (!side) throw new Error('繁育推演缺少当前心理侧。');
     if (!result[side] || typeof result[side] !== 'object') throw new Error('繁育推演未输出指定侧。');
-    const stageProfiles = normalizePsychologyStageProfiles({ [side]: result?.stageProfiles?.[side] });
+    const stageProfiles = pickBreedingStageProfiles(result, side);
     delete result[side === 'preg' ? 'mens' : 'preg'];
     result.pregnancy_status = side;
     const missing = getMissingPsychologyStageProfileKeys(stageProfiles, side);
     if (missing.length > 0) {
-      throw new Error(`繁育推演缺少当前侧 3x6 stageProfiles：${missing.slice(0, 12).join(', ')}${missing.length > 12 ? '...' : ''}`);
+      throw new Error(`繁育推演缺少当前侧 3x6 stageProfiles：${missing.slice(0, 6).join(', ')}${missing.length > 6 ? `…共 ${missing.length} 项` : ''}。模型回传开头：${JSON.stringify(rawResult ?? null).slice(0, 240)}`);
     }
     const labelLeaks = getPsychologyStageProfileLabelLeaks(stageProfiles);
     if (labelLeaks.length > 0) {
@@ -2480,4 +2480,69 @@ export async function runRegistry(ctx, options = {}) {
     recordRegistryResultDebug(null, error);
     throw error;
   }
+}
+
+// ── 繁育推演 stageProfiles 的容错 ─────────────────────────
+// 不同模型常把 3×6 阶段解释写成别的形状：少了侧别一层、塞进 mens／preg 里、
+// 阶段键写成 1-25、100+。这里全部接受；仍有缺漏就带着缺项重问一次，两次都缺才报错。
+
+function canonicalStageKey(key) {
+  const text = String(key ?? '').trim().toLowerCase().replace(/\s+/g, '').replace(/[-~～–—至到]/g, '_');
+  if (/^(>|＞)?100(\+|＋|_?plus|以上|_)$/.test(text) || text === '>100' || text === '＞100') return '100_plus';
+  return text;
+}
+
+function canonicalStageField(field) {
+  if (!field || typeof field !== 'object' || Array.isArray(field)) return field;
+  return Object.fromEntries(Object.entries(field).map(([key, value]) => [
+    canonicalStageKey(key),
+    value && typeof value === 'object' && !Array.isArray(value) ? (value.text ?? value.description ?? value.desc ?? '') : value,
+  ]));
+}
+
+function canonicalStageGroup(group) {
+  if (!group || typeof group !== 'object' || Array.isArray(group)) return null;
+  return Object.fromEntries(Object.entries(group).map(([axis, field]) => [String(axis).replace(/_(value|interpret|stages?)$/, ''), canonicalStageField(field)]));
+}
+
+export function pickBreedingStageProfiles(result, side) {
+  const fields = side === 'preg' ? PSY_PREG_FIELDS : PSY_MENS_FIELDS;
+  const sideBlock = result?.[side] && typeof result[side] === 'object' ? result[side] : {};
+  const candidates = [
+    result?.stageProfiles?.[side],
+    sideBlock.stageProfiles?.[side],
+    sideBlock.stageProfiles,
+    result?.stageProfiles,
+    result?.stage_profiles?.[side],
+    result?.stage_profiles,
+  ];
+  let best = {};
+  let bestMissing = Infinity;
+  for (const candidate of candidates) {
+    const group = canonicalStageGroup(candidate);
+    if (!group || !Object.keys(fields).some((axis) => group[axis])) continue;
+    const normalized = normalizePsychologyStageProfiles({ [side]: group });
+    const missing = getMissingPsychologyStageProfileKeys(normalized, side).length;
+    if (missing < bestMissing) {
+      best = normalized;
+      bestMissing = missing;
+    }
+  }
+  return best;
+}
+
+async function callBreedingWithStageRetry(settings, payload, systemPrompt, options = {}) {
+  const ask = (prompt) => callOpenAICompatible(settings, payload, prompt, { flow: 'breeding' });
+  const first = await ask(systemPrompt);
+  const result = normalizeBreedingInferenceResult(first);
+  const side = options.psychologySide || (result?.preg ? 'preg' : result?.mens ? 'mens' : null);
+  if (!side) return first;
+  const missing = getMissingPsychologyStageProfileKeys(pickBreedingStageProfiles(result, side), side);
+  if (missing.length === 0) return first;
+  const fields = Object.keys(side === 'preg' ? PSY_PREG_FIELDS : PSY_MENS_FIELDS);
+  const correction = [
+    `上一次输出缺少 stageProfiles 的 ${missing.length} 项（例如 ${missing.slice(0, 3).join('、')}）。请重新输出完整 JSON。`,
+    `stageProfiles 必须写成 {"${side}":{${fields.map((axis) => `"${axis}":{${PSY_STAGE_KEYS.map((key) => `"${key}":"……"`).join(',')}}`).join(',')}}}，三轴 × 六阶段全部填写，键名逐字一致。`,
+  ].join('\n');
+  return ask(`${systemPrompt}\n${correction}`);
 }

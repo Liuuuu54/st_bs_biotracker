@@ -476,3 +476,69 @@ test('an already-pregnant registration reconstructs omitted derived inheritance 
   const fetus = chatState.characters['魔导孕母'].profile.pregnant.fetuses[0];
   assert.equal(fetus.maternalDerivedTypeProgress, 75);
 });
+
+function breedingCtx() {
+  const ctx = {
+    chatId: 'breeding-shape-chat', name1: '陆素素', name2: '卡片角色', characterId: 0,
+    characters: [{ name: '卡片角色', description: '角色卡描述', avatar: 'card.png' }],
+    chat: [{ is_user: true, name: 'user', mes: '一段剧情。' }],
+    extensionSettings: {}, saveSettingsDebounced() {},
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  settings.apiUrl = 'https://example.test/v1';
+  settings.model = 'test-model';
+  return ctx;
+}
+
+const reply = (body) => ({ ok: true, status: 200, async text() { return JSON.stringify({ choices: [{ message: { content: JSON.stringify(body) } }] }); } });
+const mensValues = { mastery_value: 50, desire_value: 50, autonomy_value: 50 };
+const dashedMens = () => Object.fromEntries(Object.entries(makeCompleteStageProfiles().mens).map(([axis, stages]) => [axis,
+  Object.fromEntries(Object.entries(stages).map(([key, text]) => [key === '100_plus' ? '100+' : key.replace('_', '-'), text]))]));
+
+test('breeding inference accepts stageProfiles without the side level, inside the side block, or with dashed stage keys', async () => {
+  const shapes = [
+    { mens: mensValues, stageProfiles: makeCompleteStageProfiles().mens },
+    { mens: { ...mensValues, stageProfiles: makeCompleteStageProfiles().mens } },
+    { mens: mensValues, stageProfiles: { mens: dashedMens() } },
+  ];
+  for (const shape of shapes) {
+    const ctx = breedingCtx();
+    let calls = 0;
+    globalThis.fetch = async () => { calls += 1; return reply({ target_character: '陆素素', pregnancy_status: 'mens', ...shape }); };
+    const result = await runRegistryBreedingInference(ctx, { targetName: '陆素素' });
+    assert.equal(calls, 1, '形状可解析时不重问');
+    assert.equal(result.stageProfiles.mens.mastery['100_plus'], '测试角色在 mastery 100_plus 的长期表现。');
+  }
+});
+
+test('breeding inference asks once more when stageProfiles are missing, and only then fails', async () => {
+  let ctx = breedingCtx();
+  const prompts = [];
+  globalThis.fetch = async (_url, init) => {
+    prompts.push(JSON.parse(init.body).messages[0].content);
+    return reply(prompts.length === 1
+      ? { target_character: '陆素素', pregnancy_status: 'mens', mens: mensValues }
+      : { target_character: '陆素素', pregnancy_status: 'mens', mens: mensValues, stageProfiles: makeCompleteStageProfiles() });
+  };
+  const result = await runRegistryBreedingInference(ctx, { targetName: '陆素素' });
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /上一次输出缺少 stageProfiles 的 18 项/);
+  assert.ok(result.stageProfiles.mens.autonomy['0']);
+
+  ctx = breedingCtx();
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; return reply({ target_character: '陆素素', pregnancy_status: 'mens', mens: mensValues }); };
+  await assert.rejects(runRegistryBreedingInference(ctx, { targetName: '陆素素' }), /繁育推演缺少当前侧 3x6 stageProfiles/);
+  assert.equal(calls, 2);
+});
+
+test('a failed breeding inference shows the start of what the model returned, for bug reports', async () => {
+  const ctx = breedingCtx();
+  globalThis.fetch = async () => reply({ target_character: '陆素素', pregnancy_status: 'mens', mens: mensValues, stageProfiles: { 奇怪的形状: true } });
+  await assert.rejects(runRegistryBreedingInference(ctx, { targetName: '陆素素' }), (error) => {
+    assert.match(error.message, /共 18 项/);
+    assert.match(error.message, /模型回传开头：\{.*奇怪的形状/);
+    return true;
+  });
+});
