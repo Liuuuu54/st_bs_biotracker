@@ -7,6 +7,7 @@ import {
 } from './calculator.js';
 import {
   DERIVED_TYPE_RACES,
+  formatBloodline,
   getMergedRacePhysiologyProfile,
 } from './race_config.js';
 
@@ -191,6 +192,7 @@ function calculateOffspring() {
   const lines = [
     `核型：卵方 ${result.eggInheritanceMode} × 精方 ${result.spermInheritanceMode}`,
     `后代种族：${result.fetusRace}${inheritance}`,
+    `血脉：${formatBloodline(result.fetusRace, result.bloodline, result.bloodlineSource)}`,
     `胚型：${result.embryoType}（由最长孕期成分「${result.embryoTypeSource}」决定）`,
     `着床周期：成功受精后约 ${formatNumber(result.implantationDays, 3)} 天判定`,
     `种族基准孕期：约 ${formatNumber(result.gestationDays, 2)} 天　性别率：${genderText}`,

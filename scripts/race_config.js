@@ -1445,8 +1445,8 @@ export function computePostpartumRecoveryDays({
 }
 
 /** 母体的恢复系数：混血取各成分平均，衍生类型不参与；未收录的种族按 1 */
-export function getRecoveryCoefficientByRace(race) {
-  const value = Number(getMergedRacePhysiologyProfile(race)?.recoveryCoefficient);
+export function getRecoveryCoefficientByRace(race, bloodline = null) {
+  const value = Number(getMergedRacePhysiologyProfile(race, bloodline)?.recoveryCoefficient);
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
@@ -1501,15 +1501,134 @@ export function parseRaceDescriptor(rawRace) {
   }
   const derivedMatch = value.match(/^\[([^\]]+)\](.+)$/);
   if (!derivedMatch) {
+    const weighted = parseWeightedRaceText(value);
     return {
-      race: value,
+      race: weighted?.race || value,
       derivedType: null,
+      ...(weighted ? { bloodline: weighted.bloodline } : {}),
     };
   }
+  const weighted = parseWeightedRaceText(String(derivedMatch[2] || '').trim());
   return {
-    race: String(derivedMatch[2] || '').trim(),
+    race: weighted?.race || String(derivedMatch[2] || '').trim(),
     derivedType: String(derivedMatch[1] || '').trim() || null,
+    ...(weighted ? { bloodline: weighted.bloodline } : {}),
   };
+}
+
+/** 支持「1/4精灵x3/4人类」「精灵25%x人类75%」；缺失份额不得猜成某个种族。 */
+function parseWeightedRaceText(value) {
+  const parts = value.split(/[xX×]/).map((part) => part.trim()).filter(Boolean);
+  let hasWeight = false;
+  const entries = parts.map((part) => {
+    const fraction = part.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*(.+)$/);
+    const percent = part.match(/^(\d+(?:\.\d+)?)\s*%\s*(.+)$/);
+    const suffix = part.match(/^(.+?)\s*(\d+(?:\.\d+)?)\s*%$/);
+    if (fraction) { hasWeight = true; return [fraction[3].trim(), Number(fraction[1]) / Number(fraction[2])]; }
+    if (percent) { hasWeight = true; return [percent[2].trim(), Number(percent[1]) / 100]; }
+    if (suffix) { hasWeight = true; return [suffix[1].trim(), Number(suffix[2]) / 100]; }
+    return [part, null];
+  });
+  if (!hasWeight) return null;
+  const specified = entries.reduce((sum, [, weight]) => sum + (weight ?? 0), 0);
+  const missing = entries.filter(([, weight]) => weight === null).length;
+  if (!Number.isFinite(specified) || specified < 0 || specified > 1 + 1e-9) return null;
+  // 单写 1/4精灵时，剩余血脉记为未知，而不是错误地归一化成纯精灵。
+  if (!missing && specified < 1 - 1e-9) entries.push(['未知', 1 - specified]);
+  const weights = new Map();
+  for (const [name, value] of entries) {
+    const weight = value === null ? Math.max(0, 1 - specified) / missing : value;
+    if (name && weight > 0) weights.set(name, (weights.get(name) || 0) + weight);
+  }
+  if (!weights.size) return null;
+  return { race: [...weights.keys()].join('x'), bloodline: Object.fromEntries(weights) };
+}
+
+/** 比例为 0..1；字串旧档按基种族均分，装饰子项分享该基种族的份额。 */
+export function getBloodlineInfo(race, bloodline = null, source = null) {
+  const parsed = parseRaceDescriptor(race);
+  const parts = [...new Set(getRaceDescriptorComponents(parsed.race))];
+  const raw = bloodline ?? parsed.bloodline;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const entries = Object.entries(raw);
+    const allowed = new Set(parts);
+    const valid = entries.length > 0 && entries.every(([key, value]) => allowed.has(key) && typeof value === 'number' && Number.isFinite(value) && value >= 0);
+    const sum = valid ? entries.reduce((total, [, value]) => total + value, 0) : 0;
+    if (Number.isFinite(sum) && sum > 0) {
+      return {
+        bloodline: Object.fromEntries(entries.filter(([, value]) => value > 0).map(([key, value]) => [key, value / sum])),
+        bloodlineSource: ['explicit', 'inherited', 'estimated', 'pure'].includes(source) ? source : 'explicit',
+      };
+    }
+  }
+  const bases = new Map();
+  for (const part of parts) {
+    const key = getBaseRaceComponentName(part);
+    if (!bases.has(key)) bases.set(key, []);
+    bases.get(key).push(part);
+  }
+  return {
+    bloodline: Object.fromEntries([...bases.values()].flatMap((variants) => variants.map((part) => [part, 1 / bases.size / variants.length]))),
+    bloodlineSource: parts.length <= 1 ? 'pure' : 'estimated',
+  };
+}
+
+export function normalizeBloodline(race, bloodline = null) {
+  return getBloodlineInfo(race, bloodline).bloodline;
+}
+
+export function formatBloodline(race, bloodline = null, source = null) {
+  const info = getBloodlineInfo(race, bloodline, source);
+  const text = Object.entries(info.bloodline).map(([name, value]) => {
+    const percent = value * 100;
+    const label = percent >= 0.01 ? String(Number(percent.toFixed(2))) : percent.toPrecision(2);
+    return `${name} ${label}%`;
+  }).join(' · ');
+  return text + (text && info.bloodlineSource === 'estimated' ? '（比例推定）' : '');
+}
+
+/** 普通遗传父母各半；核型沿用现有九格规则，只取被选中的遗传方。 */
+export function deriveFetusAncestry(egg, sperm) {
+  const eggRecord = typeof egg === 'string' ? { race: egg } : egg || {};
+  const spermRecord = typeof sperm === 'string' ? { race: sperm } : sperm || {};
+  const eggRace = eggRecord.race || '人类', spermRace = spermRecord.race || eggRace;
+  const eggMode = getRaceInheritanceMode(eggRace), spermMode = getRaceInheritanceMode(spermRace);
+  let parents = [spermRecord, eggRecord];
+  if ((eggMode !== RACE_INHERITANCE_MODES.NORMAL) !== (spermMode !== RACE_INHERITANCE_MODES.NORMAL)) {
+    const activeMode = eggMode !== RACE_INHERITANCE_MODES.NORMAL ? eggMode : spermMode;
+    parents = [activeMode === RACE_INHERITANCE_MODES.PATERNAL ? spermRecord : eggRecord];
+  }
+  const infos = parents.map((parent) => getBloodlineInfo(parent.race || '人类', parent.bloodline, parent.bloodlineSource));
+  const weights = new Map();
+  for (const info of infos) for (const [name, value] of Object.entries(info.bloodline)) weights.set(name, (weights.get(name) || 0) + value / infos.length);
+  return {
+    race: [...weights.keys()].join('x') || '人类',
+    bloodline: Object.fromEntries(weights),
+    bloodlineSource: infos.some((info) => info.bloodlineSource === 'estimated') ? 'estimated' : 'inherited',
+  };
+}
+
+/** 嵌合体按参与受精卵数量加权，三个来源不能因融合顺序变成 1/4、1/4、1/2。 */
+export function mergeFetusAncestry(fetuses) {
+  const weights = new Map();
+  let total = 0, estimated = false;
+  for (const fetus of fetuses) {
+    const count = Math.max(1, Number(fetus?.chimera?.sourceCount) || 1);
+    const info = getBloodlineInfo(fetus?.race, fetus?.bloodline, fetus?.bloodlineSource);
+    estimated ||= info.bloodlineSource === 'estimated';
+    for (const [name, value] of Object.entries(info.bloodline)) weights.set(name, (weights.get(name) || 0) + value * count);
+    total += count;
+  }
+  return { bloodline: Object.fromEntries([...weights].map(([name, value]) => [name, value / total])), bloodlineSource: estimated ? 'estimated' : 'inherited' };
+}
+
+function getWeightedRaceParts(race, bloodline) {
+  const totals = new Map();
+  for (const [name, weight] of Object.entries(normalizeBloodline(race, bloodline))) {
+    const base = getBaseRaceComponentName(name);
+    totals.set(base, (totals.get(base) || 0) + weight);
+  }
+  return [...totals].map(([name, weight]) => ({ name, weight }));
 }
 
 function canonicalizeRaceComponent(component) {
@@ -1519,7 +1638,7 @@ function canonicalizeRaceComponent(component) {
 export function getRaceDescriptorComponents(race) {
   const value = parseRaceDescriptor(race).race;
   if (!value) return [];
-  return value.split(/[xX]/).map(canonicalizeRaceComponent).filter(Boolean);
+  return value.split(/[xX×]/).map(canonicalizeRaceComponent).filter(Boolean);
 }
 
 function getBaseRaceComponentName(component) {
@@ -1546,54 +1665,52 @@ export function getRaceComponents(race) {
     });
 }
 
-function mergeGenderRatioValues(values) {
-  // 双性优先于数值平均：多一套器官是稳定的身体构造，混血时应当保留，
-  // 否则「史莱姆x人类」会被平均成普通男女，双性只剩嵌合体那条 20% 的路径。
-  // 无性不比照办理——它是「少一套」的减法，让触手怪x人类的后代全部绝育过重。
-  if (values.some((value) => value === null)) return null;
+/** 双性成分合计达到这个血脉份额，后代才固定为双性 */
+const HERMAPHRODITE_BLOODLINE_THRESHOLD = 0.25;
 
-  const normalValues = values.filter((value) => Number.isFinite(value) && value >= 0 && value <= 100);
-  if (normalValues.length > 0) {
-    return normalValues.reduce((sum, value) => sum + value, 0) / normalValues.length;
-  }
-  if (values.some((value) => value === -1)) return -1;
+/**
+ * 性别比按血脉份额加权。双性优先于数值平均：多一套器官是稳定的身体构造，
+ * 否则「史莱姆x人类」会被平均成普通男女，双性只剩嵌合体那条 20% 的路径；
+ * 但份额要够——祖先只剩零点几成的双性血统，不该让每一代都固定双性。
+ * 无性不比照办理——它是「少一套」的减法，让触手怪x人类的后代全部绝育过重。
+ */
+function mergeWeightedGenderRatio(genders) {
+  const hermaphroditeShare = genders.filter(({ value }) => value === null).reduce((sum, item) => sum + item.weight, 0);
+  if (hermaphroditeShare >= HERMAPHRODITE_BLOODLINE_THRESHOLD - 1e-9) return null;
+  const normal = genders.filter(({ value }) => Number.isFinite(value) && value >= 0 && value <= 100);
+  const normalWeight = normal.reduce((sum, item) => sum + item.weight, 0);
+  if (normal.length > 0 && normalWeight > 0) return normal.reduce((sum, item) => sum + item.value * item.weight, 0) / normalWeight;
+  if (genders.some(({ value }) => value === -1)) return -1;
   return 50;
 }
 
-function mergeGestationSpeciesSpeedByAverageDays(values) {
-  const speeds = values.filter((value) => Number.isFinite(value) && value > 0);
-  if (speeds.length === 0) return null;
-
-  const averageDays = speeds
-    .map((speed) => 280 / speed)
-    .reduce((sum, days) => sum + days, 0) / speeds.length;
-  return averageDays > 0 ? 280 / averageDays : null;
-}
-
-export function getMergedRacePhysiologyProfile(race) {
-  const parts = getRaceComponents(race);
+export function getMergedRacePhysiologyProfile(race, bloodline = null) {
+  const parts = getWeightedRaceParts(race, bloodline);
   if (parts.length === 0) return null;
 
   const profiles = parts
-    .map((part) => getRacePhysiologyProfile(part))
-    .filter((profile) => profile && typeof profile === 'object');
+    .map((part) => ({ profile: getRacePhysiologyProfile(part.name), weight: part.weight }))
+    .filter(({ profile }) => profile && typeof profile === 'object');
   if (profiles.length === 0) return null;
 
   const merged = {};
   for (const field of RACE_PHYSIOLOGY_FIELDS) {
     if (field === 'genderRatio' || field === 'companionEggsMean') continue;
     const values = profiles
-      .map((profile) => Number(profile[field]))
-      .filter((value) => Number.isFinite(value));
+      .map(({ profile, weight }) => ({ value: Number(profile[field]), weight }))
+      .filter(({ value }) => Number.isFinite(value));
     if (values.length > 0) {
-      merged[field] = field === 'gestationSpeciesSpeed'
-        ? mergeGestationSpeciesSpeedByAverageDays(values)
-        : values.reduce((sum, value) => sum + value, 0) / values.length;
+      const valid = field === 'gestationSpeciesSpeed' ? values.filter(({ value }) => value > 0) : values;
+      const totalWeight = valid.reduce((sum, item) => sum + item.weight, 0);
+      if (totalWeight > 0) {
+        const mean = valid.reduce((sum, item) => sum + item.weight * (field === 'gestationSpeciesSpeed' ? 280 / item.value : item.value), 0) / totalWeight;
+        merged[field] = field === 'gestationSpeciesSpeed' ? 280 / mean : mean;
+      }
     }
   }
 
-  merged.companionEggsMean = getCompanionEggsMeanByRace(race);
-  merged.genderRatio = mergeGenderRatioValues(profiles.map((profile) => profile.genderRatio));
+  merged.companionEggsMean = getCompanionEggsMeanByRace(race, bloodline);
+  merged.genderRatio = mergeWeightedGenderRatio(profiles.map(({ profile, weight }) => ({ value: profile.genderRatio, weight })));
   // 核型不按生理数值混合；任何复合种族都回归一般遗传。
   merged[RACE_INHERITANCE_FIELD] = RACE_INHERITANCE_MODES.NORMAL;
   // 存在未收录的混血成分：不静默丢弃，标记出来让提示词明确「数值仅供参考」
@@ -1654,8 +1771,8 @@ export function getFetusInheritanceTag(eggRace, spermRace) {
   return activeMode === RACE_INHERITANCE_MODES.PATERNAL ? 'androgenesis' : 'gynogenesis';
 }
 
-export function getEmbryoTypeByRace(race) {
-  const parts = getRaceComponents(race);
+export function getEmbryoTypeByRace(race, bloodline = null) {
+  const parts = getWeightedRaceParts(race, bloodline).map((part) => part.name);
   if (parts.length === 0) return '胎生';
 
   let dominantRace = parts[0];
@@ -1679,19 +1796,19 @@ export function getEmbryoTypeByRace(race) {
  * 胎生与胎转卵生恒无伴生卵；其余类型在「整群＝伴生卵＋1」的尺度上对所有成分做几何平均再减一，
  * 与旧的卵群几何平均完全一致（全为 0 的仍是 0）。
  */
-export function getCompanionEggsMeanByRace(race) {
-  const embryoType = getEmbryoTypeByRace(race);
+export function getCompanionEggsMeanByRace(race, bloodline = null) {
+  const embryoType = getEmbryoTypeByRace(race, bloodline);
   if (embryoType === '胎生' || embryoType === '胎转卵生') return 0;
-  const parts = getRaceComponents(race);
+  const parts = getWeightedRaceParts(race, bloodline);
   if (parts.length === 0) return 0;
   const clutches = parts.map((part) => {
-    const profile = getEffectiveRacePhysiologyProfileValue(part);
+    const profile = getEffectiveRacePhysiologyProfileValue(part.name);
     const value = Number(profile?.companionEggsMean);
-    return (Number.isFinite(value) && value >= 0 ? value : 0) + 1;
+    return { value: (Number.isFinite(value) && value >= 0 ? value : 0) + 1, weight: part.weight };
   });
   const clutch = clutches.length === 1
-    ? clutches[0]
-    : Math.exp(clutches.reduce((sum, value) => sum + Math.log(value), 0) / clutches.length);
+    ? clutches[0].value
+    : Math.exp(clutches.reduce((sum, item) => sum + item.weight * Math.log(item.value), 0));
   return Math.max(0, clutch - 1);
 }
 
@@ -1713,8 +1830,8 @@ export function getSpermDoseDifficultyBonus(totalSperm) {
  * 每个独立受精形成的有效胚胎抽一次并落盘。在「整群＝伴生卵＋1」的尺度上乘精液倍率与 ±10% 波动，
  * 取整后再减一，分布与旧卵群完全相同。均值 0 是硬特例：任何浮动或倍率都不会凭空产生伴生卵。
  */
-export function rollCompanionEggCount(race, random = Math.random, spermValue = 20) {
-  const mean = getCompanionEggsMeanByRace(race);
+export function rollCompanionEggCount(race, random = Math.random, spermValue = 20, bloodline = null) {
+  const mean = getCompanionEggsMeanByRace(race, bloodline);
   if (!Number.isFinite(mean) || mean <= 0) return 0;
   const variation = 0.9 + (Math.max(0, Math.min(1, Number(random()) || 0)) * 0.2);
   const clutch = (mean + 1) * getSpermDoseCompanionMultiplier(spermValue) * variation;

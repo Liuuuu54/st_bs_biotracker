@@ -3,6 +3,7 @@ import {
   RACE_PHYSIOLOGY_PROFILES,
   computePostpartumRecoveryDays,
   getRaceComponents,
+  getBloodlineInfo,
   getRecoveryCoefficientByRace,
 } from './race_config.js';
 
@@ -10,7 +11,7 @@ import {
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 4;
+export const CHAT_STATE_SCHEMA_VERSION = 5;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -138,10 +139,32 @@ function migrateCharacterV3ToV4(character) {
   for (const child of (profile.children || [])) if (child.selectedFather === undefined) child.selectedFather = null;
 }
 
+export function normalizeCharacterBloodlines(character) {
+  const profile = character?.profile;
+  if (!profile || typeof profile !== 'object') return;
+  const list = (value) => Array.isArray(value) ? value : [];
+  const records = [profile.base, ...list(profile.base?.sperms), ...list(profile.base?.spermContacts),
+    ...list(profile.pregnant?.fetuses), ...list(profile.children)];
+  const seen = new Set();
+  for (const record of records) {
+    if (!record || typeof record !== 'object' || seen.has(record)) continue;
+    seen.add(record);
+    records.push(...list(record.contactEmbryos));
+    if (!record.race) continue;
+    Object.assign(record, getBloodlineInfo(record.race, record.bloodline, record.bloodlineSource));
+    if (record.fatherRace) {
+      const father = getBloodlineInfo(record.fatherRace, record.fatherBloodline, record.fatherBloodlineSource);
+      record.fatherBloodline = father.bloodline;
+      record.fatherBloodlineSource = father.bloodlineSource;
+    }
+  }
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
   2: migrateCharacterV2ToV3,
   3: migrateCharacterV3ToV4,
+  4: normalizeCharacterBloodlines,
 });
 
 export function getChatStateSchemaVersion(chatState) {

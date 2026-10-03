@@ -9,6 +9,8 @@
  * 直接就能对回角色节点；对不上的（路人）当作未注册叶节点。
  */
 
+import { getBloodlineInfo } from './race_config.js';
+
 /** 双父／多母源会合并成 "A×B"，与 registry 的拆分规则一致 */
 function splitSources(value) {
   return String(value || '')
@@ -50,6 +52,7 @@ export function buildLineageGraph(chatState) {
     if (!nodes.has(id)) nodes.set(id, { id, kind: 'unregistered', name: value });
     const node = nodes.get(id);
     if (traits?.race && !node.race) node.race = traits.race;
+    if (traits?.race && !node.bloodline) Object.assign(node, getBloodlineInfo(traits.race, traits.bloodline, traits.bloodlineSource));
     if (traits?.derivedType && !node.derivedType) node.derivedType = traits.derivedType;
     return id;
   };
@@ -62,6 +65,7 @@ export function buildLineageGraph(chatState) {
       kind: 'character',
       name,
       race: profile.base?.race ?? null,
+      ...getBloodlineInfo(profile.base?.race, profile.base?.bloodline, profile.base?.bloodlineSource),
       derivedType: profile.base?.derivedType ?? null,
       age: profile.base?.age ?? null,
     });
@@ -85,6 +89,7 @@ export function buildLineageGraph(chatState) {
           kind: 'child',
           name: child.name ?? null,
           race: child.race ?? null,
+          ...getBloodlineInfo(child.race, child.bloodline, child.bloodlineSource),
           derivedType: child.derivedType ?? null,
           gender: child.gender ?? null,
           age: child.age ?? null,
@@ -122,7 +127,7 @@ export function buildLineageGraph(chatState) {
       if (fatherInfo.first && fatherInfo.first !== '未知') {
         const singleFather = fatherInfo.all.length <= 1;
         const from = resolveParent(fatherInfo.first, singleFather
-          ? { race: child.fatherRace ?? null, derivedType: child.fatherDerivedType ?? null }
+          ? { race: child.fatherRace ?? null, bloodline: child.fatherBloodline, bloodlineSource: child.fatherBloodlineSource, derivedType: child.fatherDerivedType ?? null }
           : null);
         if (from) edges.push({ from, to: childNodeId, type: isRebirth ? 'rebirth' : 'father' });
       }

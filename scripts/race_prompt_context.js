@@ -1,4 +1,4 @@
-import { DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusRace, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace } from './race_config.js';
+import { DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN } from './stage_config.js';
 
 /**
@@ -284,12 +284,13 @@ export function buildSingleRacePhysiologyText(race) {
   return buildSingleRacePhysiologyBlock(race);
 }
 
-function buildHybridAverageBlock(race) {
-  const merged = getMergedRacePhysiologyProfile(race);
+function buildHybridAverageBlock(race, bloodline = null) {
+  const merged = getMergedRacePhysiologyProfile(race, bloodline);
   if (!merged) return '';
   return [
-    '【混血平均参考】',
-    '- 以下是系统层面的平均参考值，仅供综合判断；不要用它覆盖各族原始特征。',
+    '【混血加权参考】',
+    '- 以下按血脉比例加权，孕期按天数加权；没有比例时才按基种族均分。',
+    `- 血脉比例: ${sanitizePromptText(formatBloodline(race, bloodline))}`,
     merged.hasUnknownRace ? '- 注意：该混血包含未收录种族，以下平均数值不完整，仅供粗略参考。' : '',
     `- 平均经期长度: ${formatCycleDays(merged.menstrualLengthRatio)}`,
     `- 平均妊娠长度: ${formatGestation(merged.gestationSpeciesSpeed)}`,
@@ -297,13 +298,13 @@ function buildHybridAverageBlock(race) {
     `- 平均分娩难度: ${getBirthDifficultyText(merged.birthDifficulty)}`,
     `- 平均承载耐受: ${getBreedToleranceText(merged.breedTolerance)}`,
     `- 平均受精难度: ${getImpregnationDifficultyText(merged.impregnationDifficulty)}`,
-    `- 混血典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race))}（先由孕期最长的成分决定胚型；胎生／胎转卵生恒为 0，其余按整群规模对所有成分做几何平均）`,
+    `- 混血典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race, bloodline))}（先由孕期最长的成分决定胚型；胎生／胎转卵生恒为 0，其余按血脉比例对整群规模做加权几何平均）`,
     `- 平均多产性参考: ${getProlificacyText(merged.orgasmOvulationAmount, merged.identicalProbability)}；额外排卵倾向 ${formatNumber(merged.orgasmOvulationAmount)}，同卵多胎概率 ${formatNumber(merged.identicalProbability)}%`,
     `- 平均性别比参考: ${getGenderRatioText(merged.genderRatio)}`,
   ].filter(Boolean).join('\n');
 }
 
-function buildRacePhysiologyLoreBlock(race) {
+function buildRacePhysiologyLoreBlock(race, includeAverage = true) {
   const value = String(race || '').trim();
   if (!value) return '';
   const components = getRaceComponents(value);
@@ -314,7 +315,7 @@ function buildRacePhysiologyLoreBlock(race) {
     `该角色为混血/复合种族：${components.map(sanitizePromptText).join(' x ')}`,
     '请同时理解各族生理参数，不要把混血直接脑补成单一物种。',
     ...components.map((part) => buildSingleRacePhysiologyBlock(part)).filter(Boolean),
-    buildHybridAverageBlock(value),
+    includeAverage ? buildHybridAverageBlock(value) : '',
   ].join('\n\n');
 }
 
@@ -348,7 +349,7 @@ function buildSpermCalculationBlock(characterState) {
 
   const motherRace = String(base.race || '').trim();
   if (!motherRace) return '';
-  const motherProfile = getMergedRacePhysiologyProfile(motherRace) || {};
+  const motherProfile = getMergedRacePhysiologyProfile(motherRace, base.bloodline) || {};
   const motherInheritanceMode = getRaceInheritanceMode(motherRace);
   const motherDifficulty = Number(motherProfile?.impregnationDifficulty);
   const motherEmbryoType = getEmbryoTypeByRace(motherRace);
@@ -369,14 +370,15 @@ function buildSpermCalculationBlock(characterState) {
 
   heteroSperms.forEach((sperm, index) => {
     const fatherRace = String(sperm?.race || '').trim();
-    const fatherProfile = getMergedRacePhysiologyProfile(fatherRace) || {};
+    const fatherProfile = getMergedRacePhysiologyProfile(fatherRace, sperm?.bloodline) || {};
     const fatherDifficulty = Number(fatherProfile?.impregnationDifficulty);
     const fatherEmbryoType = getEmbryoTypeByRace(fatherRace);
     const fatherInheritanceMode = getRaceInheritanceMode(fatherRace);
     let effectiveDifficulty = (Number.isFinite(motherDifficulty) ? motherDifficulty : 1.0) + (Number.isFinite(fatherDifficulty) ? fatherDifficulty : 1.0);
     if (motherEmbryoType !== fatherEmbryoType) effectiveDifficulty *= 1.5;
-    const fetusRace = deriveFetusRace(motherRace, fatherRace);
-    const fetusProfile = getMergedRacePhysiologyProfile(fetusRace) || {};
+    const ancestry = deriveFetusAncestry(base, sperm);
+    const fetusRace = ancestry.race;
+    const fetusProfile = getMergedRacePhysiologyProfile(fetusRace, ancestry.bloodline) || {};
     const fetusGenderRatio = fetusProfile?.genderRatio;
     lines.push(
       [
@@ -388,6 +390,7 @@ function buildSpermCalculationBlock(characterState) {
         `- 系统受精难度计算: 母体 ${formatNumber(motherDifficulty)} + 精方 ${formatNumber(fatherDifficulty)}${motherEmbryoType !== fatherEmbryoType ? `，且因胚胎类型不同（${motherEmbryoType} vs ${fatherEmbryoType}）再 ×1.5` : ''} = ${formatNumber(effectiveDifficulty)}`,
         `- 核型判定: 精方 ${fatherInheritanceMode} / 卵方 ${motherInheritanceMode}；双方皆一般或皆具核型时混血，只有一方具核型时雄核保留精方、雌核保留卵方。`,
         `- 核型判定后胎儿种族: ${sanitizePromptText(fetusRace)}`,
+        `- 后代血脉: ${sanitizePromptText(formatBloodline(fetusRace, ancestry.bloodline, ancestry.bloodlineSource))}`,
         `- 系统性别比计算: 以后代种族 ${sanitizePromptText(fetusRace)} 的 genderRatio 为准，当前结果为 ${getGenderRatioDisplay(fetusGenderRatio)} (${getGenderRatioText(fetusGenderRatio)})`,
       ].join('\n'),
     );
@@ -405,7 +408,7 @@ function buildPregnancyShiftBlock(characterState) {
   if (fetuses.length === 0) return '';
 
   const motherRace = String(base.race || '').trim();
-  const motherProfile = getMergedRacePhysiologyProfile(motherRace);
+  const motherProfile = getMergedRacePhysiologyProfile(motherRace, base.bloodline);
   if (!motherRace || !motherProfile) return '';
 
   let gestationDaysAccumulator = 0;
@@ -413,7 +416,7 @@ function buildPregnancyShiftBlock(characterState) {
 
   // 下面的累加与平均方式必须跟 tools.js 的妊娠偏移一致，否则提示词报的数值和实际推进对不上
   for (const fetus of fetuses) {
-    const raceProfile = getMergedRacePhysiologyProfile(fetus?.race) || {};
+    const raceProfile = getMergedRacePhysiologyProfile(fetus?.race, fetus?.bloodline) || {};
     // 妊娠取「天数平均」：胎重只影响胎儿自己的发育天数，不参与族速平均
     const fetusGestationSpeed = Math.max(GESTATION_SPEED_MIN, Math.min(GESTATION_SPEED_MAX, Number(raceProfile?.gestationSpeciesSpeed) || 1.0));
     gestationDaysAccumulator += 280 / fetusGestationSpeed;
@@ -440,7 +443,7 @@ function buildPregnancyShiftBlock(characterState) {
   const shiftedBreedTolerance = Math.max(0.1, Math.min(100, baseBreedTolerance * toleranceCountModifier));
   // 产后恢复按分娩当下计算（与 tools.js 同）：母体恢复系数 × 活力 × 经产 × 这次胎数
   const recoveryInput = {
-    recoveryCoefficient: getRecoveryCoefficientByRace(motherRace),
+    recoveryCoefficient: getRecoveryCoefficientByRace(motherRace, base.bloodline),
     vitalityLevel: base.vitalityLevel,
     priorBirths: (Number(experience.naturalBirthExperience) || 0) + (Number(experience.surgicalBirthExperience) || 0),
   };
@@ -536,7 +539,26 @@ function collectRelevantDerivedTypes(payload = {}, options = {}) {
 export function buildRacePhysiologyPrompt(payload = {}, { includeAllRelevant = true } = {}) {
   const races = collectRelevantRaces(payload, { includeExistingState: true, includeCurrentCharacter: false });
   const derivedTypes = collectRelevantDerivedTypes(payload, { includeExistingState: true, includeCurrentCharacter: false });
-  const blocks = (includeAllRelevant ? races : races.slice(0, 1)).map((race) => buildRacePhysiologyLoreBlock(race)).filter(Boolean);
+  // 同一种族与比例只出一块，列出用到它的角色：三胞胎或同一父源的多份精液不重复送整段参考
+  const weighted = new Map();
+  for (const [owner, character] of Object.entries(payload.existing_state || {})) {
+    const profile = character?.profile || {};
+    const records = [profile.base, ...(Array.isArray(profile.base?.sperms) ? profile.base.sperms : []),
+      ...(Array.isArray(profile.pregnant?.fetuses) ? profile.pregnant.fetuses : [])];
+    for (const record of records) {
+      if (!record?.bloodline || getRaceComponents(record.race).length <= 1) continue;
+      const label = formatBloodline(record.race, record.bloodline, record.bloodlineSource);
+      const key = `${record.race}|${label}`;
+      if (!weighted.has(key)) weighted.set(key, { record, label, owners: new Set() });
+      weighted.get(key).owners.add(owner);
+    }
+  }
+  const weightedRaces = new Set([...weighted.values()].map(({ record }) => record.race));
+  const blocks = (includeAllRelevant ? races : races.slice(0, 1)).map((race) => buildRacePhysiologyLoreBlock(race, !weightedRaces.has(race))).filter(Boolean);
+  const weightedBlocks = [...weighted.values()].map(({ record, owners }) => [
+    `【${[...owners].map(sanitizePromptText).join('、')} / ${sanitizePromptText(record.race)}】`,
+    buildHybridAverageBlock(record.race, record.bloodline),
+  ].join('\n'));
   const derivedBlocks = (includeAllRelevant ? derivedTypes : derivedTypes.slice(0, 1)).map((derivedType) => buildDerivedFluxLoreBlock(derivedType)).filter(Boolean);
   const spermBlocks = payload?.existing_state && typeof payload.existing_state === 'object'
     ? Object.values(payload.existing_state).map((item) => buildSpermCalculationBlock(item)).filter(Boolean)
@@ -551,6 +573,7 @@ export function buildRacePhysiologyPrompt(payload = {}, { includeAllRelevant = t
     '这些设定用于帮助你理解角色的经期长度、妊娠长度、恢复时间、分娩难度、受精难度、多产性与性别比。',
     COMPANION_EGGS_DEFINITION_PROMPT,
     ...blocks,
+    ...weightedBlocks,
     ...derivedBlocks,
     ...spermBlocks,
     ...pregnancyBlocks,

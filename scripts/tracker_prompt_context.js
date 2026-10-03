@@ -107,6 +107,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].conceivedAtDays: 异期复孕专用——这一胎受精或植入当下的 effectivePregnantDays。该胎自己的孕龄 = effectivePregnantDays 减去这个值，所以同腹胎儿的发育进度可能不同。一般妊娠不出现。',
   '- 异期复孕的胎儿在进入孕中期之前不会出现在 fetuses 里，也不计入 fetusesCount：角色本人还不知道自己怀了两胎。它在系统里照常发育、照常消耗供养力，所以在揭晓前你会看到供养负担与体感比胎数应有的更重——那是伏笔，可以据此写身体的异样，但不要直接写破「其实有两胎」。揭晓时系统会以 notify 告知。',
   '- fetuses[*].fatherRace: 父方种族字符串，已去除 [derived] 前缀，用于理解父源与 fatherDerivedType。',
+  '- base.bloodline / fetuses[*].bloodline: 各种族的血脉份额（0到1），合计1；比例由系统遗传计算，不能用字串去重后的种族数重新均分。bloodlineSource=estimated 表示旧资料缺少比例，属于推定。',
   '- fetuses[*].fatherDerivedType: 父方衍生类型；若没有则为 null。',
   '- fetuses[*].gender: 胎儿性别。',
   '- fetuses[*].embryoType: 胚胎型态，如 胎生、卵生、卵胎生、胎转卵生、不定型。',

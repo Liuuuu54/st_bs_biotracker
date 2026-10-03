@@ -11,7 +11,7 @@ import {
 } from './registry_psy_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
-import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters } from './state_migration.js';
+import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines } from './state_migration.js';
 import {
   createDefaultWardrobeItem,
   DEFAULT_WEAR_STATE,
@@ -373,6 +373,7 @@ function normalizeVisualCue(value) {
 export function normalizeCharacterPsychologyState(characterState) {
   if (!characterState || typeof characterState !== 'object') return characterState;
   if (!characterState.profile || typeof characterState.profile !== 'object') return characterState;
+  normalizeCharacterBloodlines(characterState);
   characterState.profile.psychology = normalizePsychologyState(characterState.profile.psychology);
   characterState.profile.experience = normalizeExperience(characterState.profile.experience);
   characterState.profile.cognitionRecords = normalizeCognitionRecords(characterState.profile.cognitionRecords);

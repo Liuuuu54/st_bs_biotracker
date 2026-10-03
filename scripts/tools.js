@@ -60,6 +60,9 @@ import {
 import {
   computePostpartumRecoveryDays,
   deriveFetusRace,
+  deriveFetusAncestry,
+  getBloodlineInfo,
+  mergeFetusAncestry,
   getFetusInheritanceTag,
   getBaseRaceName,
   getDerivedTypeMetabolismExemptions,
@@ -382,6 +385,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         female: { type: 'string' },
         male: { type: 'string' },
         race: { type: 'string' },
+        bloodline: { type: 'object', additionalProperties: { type: 'number' }, description: '已知血脉比例，键为race中的成分，值为0到1；不明时省略，不猜比例。race也可写精灵25%x人类75%。' },
         action: { type: 'string', enum: ['insert', 'deposit', 'withdraw'] },
         hasCondom: { type: 'boolean', description: '本次是否使用屏障式避孕（套子，或世界观中的等效手段，如羊肠套、魔法屏障）；只有剧情确实使用时才为 true，不得引入世界观没有的器具。insert 设置、deposit 可显式更新、省略沿用，withdraw 不结算。' },
         amount: { type: 'number', description: 'insert／withdraw 必须为 0；deposit 必须为正数。' },
@@ -957,7 +961,10 @@ function applyWombReturn(chatState, args) {
   const fatherRace = parsedReturner?.race
     || parseRaceDescriptor(returnerBase.race || motherRace).race
     || motherRace;
-  const fetusRace = deriveFetusRace(motherRace, fatherRace);
+  const fatherAncestry = getBloodlineInfo(fatherRace, parsedReturner?.bloodline ?? returnerBase.bloodline,
+    parsedReturner?.bloodline ? 'explicit' : returnerBase.bloodlineSource);
+  const ancestry = deriveFetusAncestry(base, { race: fatherRace, ...fatherAncestry });
+  const fetusRace = ancestry.race;
   const fatherDerivedType = parsedReturner?.derivedType
     || (returnerBase.derivedType ? String(returnerBase.derivedType) : null);
   const derivedSeed = getDerivedInheritanceSeed(base.derivedType ? String(base.derivedType) : null, fatherDerivedType);
@@ -969,11 +976,13 @@ function applyWombReturn(chatState, args) {
     fathers: returnerName,
     provider: null,
     providerSources: [],
-    race: fetusRace,
+    ...ancestry,
     fatherRace,
+    fatherBloodline: fatherAncestry.bloodline,
+    fatherBloodlineSource: fatherAncestry.bloodlineSource,
     fatherDerivedType,
-    gender: deriveFetusGender(fetusRace),
-    embryoType: deriveFetusEmbryoType(fetusRace),
+    gender: deriveFetusGender(fetusRace, ancestry.bloodline),
+    embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline),
     // 回归者本身就是唯一的有效个体，没有伴生卵。
     companionEggCount: 0,
     // 刚进去时是一个成人的体积，之后随回归期线性回落到 1.0
@@ -1140,8 +1149,8 @@ function deriveFetusEmbryoType(race) {
   return getEmbryoTypeByRace(race);
 }
 
-function deriveFetusGender(race) {
-  const profile = getMergedRacePhysiologyProfile(race);
+function deriveFetusGender(race, bloodline = null) {
+  const profile = getMergedRacePhysiologyProfile(race, bloodline);
   if (profile?.genderRatio === -1) return '无';
   if (profile?.genderRatio === null) return '双';
   const ratio = clampNumber(profile?.genderRatio, 0, 100, 50);
@@ -1300,7 +1309,7 @@ function pickImplantedFetusIndex(fetuses) {
 
 function getConceptionWeightRatio(profile, sperm) {
   const motherBreedTolerance = clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0);
-  const fatherProfile = getMergedRacePhysiologyProfile(sperm?.race);
+  const fatherProfile = getMergedRacePhysiologyProfile(sperm?.race, sperm?.bloodline);
   const fatherBreedTolerance = clampNumber(fatherProfile?.breedTolerance, 0.1, 100, 1.0);
   const dominance = (fatherBreedTolerance - motherBreedTolerance) / Math.max(motherBreedTolerance + fatherBreedTolerance, 0.1);
   return clampNumber(1 + (dominance * 0.65), 0.625, 1.6, 1.0);
@@ -1325,6 +1334,7 @@ function updateDerivedTypeProgress(profile, tick) {
       motherDerivedType,
       fatherDerivedType,
       fetusRace: fetus?.race,
+      fetusBloodline: fetus?.bloodline,
       passedDays,
       gestationModifierMultiplier,
     });
@@ -1508,8 +1518,8 @@ export function calculateChimeraFusionProbability(fetusA, fetusB) {
 
   const raceA = String(fetusA?.race || '人类');
   const raceB = String(fetusB?.race || '人类');
-  const physiologyA = getMergedRacePhysiologyProfile(raceA);
-  const physiologyB = getMergedRacePhysiologyProfile(raceB);
+  const physiologyA = getMergedRacePhysiologyProfile(raceA, fetusA?.bloodline);
+  const physiologyB = getMergedRacePhysiologyProfile(raceB, fetusB?.bloodline);
   const identicalA = clampNumber(physiologyA?.identicalProbability, 0, 100, 5);
   const identicalB = clampNumber(physiologyB?.identicalProbability, 0, 100, 5);
   const difficultyA = clampNumber(physiologyA?.impregnationDifficulty, 0.1, 100, 1);
@@ -1541,6 +1551,10 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
   const providerSources = maternalSources.length > 1
     ? maternalSources
     : maternalSources.filter((source) => source !== carrierName);
+  const fatherAncestry = mergeFetusAncestry([fetusA, fetusB].map((fetus) => ({
+    race: fetus.fatherRace || '未知', bloodline: fetus.fatherBloodline,
+    bloodlineSource: fetus.fatherBloodlineSource, chimera: fetus.chimera,
+  })));
   return {
     embryoId,
     contactIds: [...new Set([...(fetusA.contactIds || []), ...(fetusB.contactIds || [])])],
@@ -1553,7 +1567,10 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
     provider: providerSources.length === 0 ? null : providerSources.join(' × '),
     providerSources,
     race,
+    ...mergeFetusAncestry([fetusA, fetusB]),
     fatherRace: combineRaceDescriptors(fetusA?.fatherRace, fetusB?.fatherRace),
+    fatherBloodline: fatherAncestry.bloodline,
+    fatherBloodlineSource: fatherAncestry.bloodlineSource,
     fatherDerivedType,
     gender,
     embryoType,
@@ -1670,7 +1687,7 @@ function applyIdenticalSplit(profile, batch = null) {
     result.push(baseFetus);
     // 调试工具可能已明确把这颗胚胎分进同卵组；著床时不可再次掷骰分裂。
     if (Number.isInteger(Number(baseFetus?.identicalGroup)) && Number(baseFetus.identicalGroup) > 0) continue;
-    const physiology = getMergedRacePhysiologyProfile(baseFetus?.race);
+    const physiology = getMergedRacePhysiologyProfile(baseFetus?.race, baseFetus?.bloodline);
     const splitRate = clampNumber(
       physiology?.identicalProbability,
       0,
@@ -1737,9 +1754,10 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
   const geneticProfile = options.geneticProfile || profile;
   const motherRace = parseRaceDescriptor(geneticProfile?.base?.race || '人类').race || '人类';
   const fatherRace = parseRaceDescriptor(sperm?.race || motherRace || '人类').race || motherRace || '人类';
-  const fetusRace = deriveFetusRace(motherRace, fatherRace);
+  const ancestry = deriveFetusAncestry({ ...geneticProfile.base, race: motherRace }, { ...sperm, race: fatherRace });
+  const fetusRace = ancestry.race;
   const inheritanceTag = getFetusInheritanceTag(motherRace, fatherRace);
-  const gender = deriveFetusGender(fetusRace);
+  const gender = deriveFetusGender(fetusRace, ancestry.bloodline);
   const weightRatio = getConceptionWeightRatio(profile, sperm);
   const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
   const fatherDerivedType = sperm?.derivedType ? String(sperm.derivedType) : null;
@@ -1753,13 +1771,15 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     // 自然受精恒为 null；代孕／注卵由植入工具指定归属
     provider: options.provider ? String(options.provider) : null,
     providerSources: options.provider ? [String(options.provider)] : [],
-    race: fetusRace,
+    ...ancestry,
     fatherRace,
+    fatherBloodline: getBloodlineInfo(fatherRace, sperm?.bloodline, sperm?.bloodlineSource).bloodline,
+    fatherBloodlineSource: getBloodlineInfo(fatherRace, sperm?.bloodline, sperm?.bloodlineSource).bloodlineSource,
     fatherDerivedType,
     gender,
-    embryoType: deriveFetusEmbryoType(fetusRace),
+    embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline),
     // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
-    companionEggCount: rollCompanionEggCount(fetusRace, Math.random, sperm?.value),
+    companionEggCount: rollCompanionEggCount(fetusRace, Math.random, sperm?.value, ancestry.bloodline),
     weight: getConceptionWeight(cycleStage, gender, weightRatio),
     tendencyAngle: randomInt(0, 360),
     backSide: randomBackSide(),
@@ -1814,7 +1834,7 @@ function applyPregnancyPhysiology(profile, runtime) {
   let birthAccumulator = 0;
 
   for (const fetus of fetuses) {
-    const raceProfile = getMergedRacePhysiologyProfile(fetus?.race) || {};
+    const raceProfile = getMergedRacePhysiologyProfile(fetus?.race, fetus?.bloodline) || {};
     const gestationSpeed = clampNumber(raceProfile.gestationSpeciesSpeed, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0);
     gestationDaysAccumulator += 280 / gestationSpeed;
     birthAccumulator += clampNumber(raceProfile.birthDifficulty, 0.1, 100, 1.0);
@@ -1873,7 +1893,7 @@ function settlePostpartumRecoveryDays(profile, { miscarriage = false } = {}) {
   const remaining = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.length : 0;
   const delivered = clampNumber(pregnant.deliveredCount, 0, 99, 0);
   const recoveryDays = computePostpartumRecoveryDays({
-    recoveryCoefficient: getRecoveryCoefficientByRace(base.race),
+    recoveryCoefficient: getRecoveryCoefficientByRace(base.race, base.bloodline),
     vitalityLevel: base.vitalityLevel,
     priorBirths: clampNumber(experience.naturalBirthExperience, 0, 999, 0) + clampNumber(experience.surgicalBirthExperience, 0, 999, 0),
     fetusCount: Math.max(1, delivered + remaining),
@@ -3695,8 +3715,11 @@ function appendChildrenFromFetuses(profile, fetuses) {
       nestedInChildId: null,
       gender: String(fetus?.gender || '未知'),
       race: String(fetus?.race || '未知'),
+      ...getBloodlineInfo(fetus?.race || '未知', fetus?.bloodline, fetus?.bloodlineSource),
       // 父系种族在胎儿上本来就有，此前分娩时被丢掉，血缘图便无从得知路人父亲的血统
       fatherRace: fetus?.fatherRace ? String(fetus.fatherRace) : null,
+      fatherBloodline: fetus?.fatherBloodline ? cloneValue(fetus.fatherBloodline) : null,
+      fatherBloodlineSource: fetus?.fatherBloodlineSource || null,
       fatherDerivedType: fetus?.fatherDerivedType ? String(fetus.fatherDerivedType) : null,
       derivedType: childDerivedType,
       age: 0,
@@ -5387,10 +5410,15 @@ function applyImplantEmbryo(chatState, args) {
   const geneticRace = geneticDescriptor.race || '人类';
   const fatherRaceText = String(args?.fatherRace || '').trim();
   const fatherDescriptor = parseRaceDescriptor(fatherRaceText || geneticRace);
-  const geneticProfile = { base: { race: geneticRace } };
+  const geneticProfile = { base: { race: geneticRace, ...getBloodlineInfo(geneticRace,
+    geneticDescriptor.bloodline ?? (providerRace === geneticRace ? providerCharacter?.profile?.base?.bloodline : null),
+    geneticDescriptor.bloodline ? 'explicit' : providerCharacter?.profile?.base?.bloodlineSource) } };
   const spermSeed = {
     male: fathers,
     race: fatherDescriptor.race || geneticRace,
+    ...getBloodlineInfo(fatherDescriptor.race || geneticRace, fatherDescriptor.bloodline
+      ?? chatState.characters?.[fathers]?.profile?.base?.bloodline,
+      fatherDescriptor.bloodline ? 'explicit' : chatState.characters?.[fathers]?.profile?.base?.bloodlineSource),
     // 所有外部遗传衍生类型都占父系槽：fatherRace 明示者优先，否则退回卵源 race。
     derivedType: fatherDescriptor.derivedType || geneticDescriptor.derivedType || null,
   };
@@ -7013,8 +7041,11 @@ function applyUpdatePsychology(chatState, args) {
 function applyAddSperm(chatState, args) {
   const female = String(args?.female || '').trim();
   const male = String(args?.male || '').trim();
-  const parsedRace = parseRaceDescriptor(args?.race || '人类');
+  const fatherBase = chatState.characters?.[male]?.profile?.base;
+  const parsedRace = parseRaceDescriptor(args?.race || fatherBase?.race || '人类');
   const race = parsedRace.race || '人类';
+  const ancestry = getBloodlineInfo(race, args?.bloodline ?? parsedRace.bloodline ?? fatherBase?.bloodline,
+    args?.bloodline || parsedRace.bloodline ? 'explicit' : fatherBase?.bloodlineSource);
   const action = String(args?.action || '').trim();
   const amount = Number(args?.amount);
   const character = chatState.characters?.[female];
@@ -7089,10 +7120,11 @@ function applyAddSperm(chatState, args) {
       existing.value = Math.max(0, clampNumber(existing.value, 0, 999999, 0) + enteredAmount);
       existing.race = race;
       existing.derivedType = maleDerivedType;
-    } else sperms.push({ male, race, derivedType: maleDerivedType, value: enteredAmount });
+      Object.assign(existing, ancestry);
+    } else sperms.push({ male, race, ...ancestry, derivedType: maleDerivedType, value: enteredAmount });
     base.nextSpermContactId = (Number(base.nextSpermContactId) || 0) + 1;
     base.spermContacts = [...(base.spermContacts || []), {
-      id: base.nextSpermContactId, male, race, derivedType: maleDerivedType,
+      id: base.nextSpermContactId, male, race, ...ancestry, derivedType: maleDerivedType,
       minutesPassed: Number(chatState.minutesPassed) || 0, value: enteredAmount, blocked: false,
     }];
   }
@@ -7365,7 +7397,7 @@ function applyDebugInjectPregnancy(chatState, args) {
     const providerDescriptor = providerRaceInput
       ? parseRaceDescriptor(providerRaceInput)
       : parseRaceDescriptor(providerCharacter?.profile?.base?.race || base.race || '人类');
-    geneticProfile = { base: { race: providerDescriptor.race || '人类' } };
+    geneticProfile = { base: { race: providerDescriptor.race || '人类', ...getBloodlineInfo(providerDescriptor.race || '人类', providerDescriptor.bloodline ?? providerCharacter?.profile?.base?.bloodline, providerDescriptor.bloodline ? 'explicit' : providerCharacter?.profile?.base?.bloodlineSource) } };
 
     if (forceChimera) {
       const requestedSecondaryProvider = String(args?.secondaryProvider || '').trim();
@@ -7384,7 +7416,7 @@ function applyDebugInjectPregnancy(chatState, args) {
         const secondaryProviderDescriptor = secondaryProviderRaceInput
           ? parseRaceDescriptor(secondaryProviderRaceInput)
           : parseRaceDescriptor(secondaryProviderCharacter?.profile?.base?.race || base.race || '人类');
-        secondaryGeneticProfile = { base: { race: secondaryProviderDescriptor.race || '人类' } };
+        secondaryGeneticProfile = { base: { race: secondaryProviderDescriptor.race || '人类', ...getBloodlineInfo(secondaryProviderDescriptor.race || '人类', secondaryProviderDescriptor.bloodline ?? secondaryProviderCharacter?.profile?.base?.bloodline, secondaryProviderDescriptor.bloodline ? 'explicit' : secondaryProviderCharacter?.profile?.base?.bloodlineSource) } };
       }
     }
   }
@@ -7416,6 +7448,10 @@ function applyDebugInjectPregnancy(chatState, args) {
       race: parseRaceDescriptor(rawRaceList.length === 1 ? rawRaceList[0] : rawRaceList[index]).race || '人类',
       derivedType: null,
     };
+    const spermDescriptor = parseRaceDescriptor(rawRaceList.length === 1 ? rawRaceList[0] : rawRaceList[index]);
+    Object.assign(spermSeed, getBloodlineInfo(spermSeed.race, spermDescriptor.bloodline
+      ?? chatState.characters?.[spermSeed.male]?.profile?.base?.bloodline,
+      spermDescriptor.bloodline ? 'explicit' : chatState.characters?.[spermSeed.male]?.profile?.base?.bloodlineSource));
     const usesSecondaryProvider = mode === 'surrogacy' && forceChimera && index === 1;
     const fetus = createSimpleFetus(
       profile,

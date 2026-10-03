@@ -3,6 +3,7 @@
  * 只做资料整形，不产生 DOM，也不依赖任何宿主 API。
  */
 import { buildLineageGraph, focusLineage } from './lineage.js';
+import { formatBloodline } from './race_config.js';
 
 const GENERATION_LABELS = new Map([
   [-3, '曾祖辈'],
@@ -111,6 +112,7 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
       isCenter: node.id === centerId,
       displayName: node.name || '未命名',
       raceLabel: raceLabel(node.race, node.derivedType),
+      bloodlineLabel: formatBloodline(node.race, node.bloodline, node.bloodlineSource),
       ageLabel: ageLabel(node.age),
       parents,
       geneticParents: parents.filter(isGenetic),

@@ -1,5 +1,6 @@
 import {
   deriveFetusRace,
+  deriveFetusAncestry,
   getCompanionEggsMeanByRace,
   getDerivedTypeInheritanceProfile,
   getEmbryoTypeByRace,
@@ -81,7 +82,7 @@ export function calculateFertilizationPreview({
   const spermDoseBonus = getSpermDoseDifficultyBonus(effectiveTotalSperm);
   const sources = validSources.map((source) => {
     const share = totalExposureAmountDays > 0 ? source.exposureAmountDays / totalExposureAmountDays : 0;
-    const maleProfile = getMergedRacePhysiologyProfile(source.race) || {};
+    const maleProfile = getMergedRacePhysiologyProfile(source.race, source.bloodline) || {};
     const maleDifficulty = clampNumber(maleProfile.impregnationDifficulty, 0.1, 100, 1);
     const sameRace = isSameRaceGroup(eggRace, source.race);
     let effectiveDifficulty = sameRace
@@ -168,10 +169,11 @@ export function calculateOffspringPreview({
   spermValue = 20,
   conceptionStage = '排卵期',
 } = {}) {
-  const fetusRace = deriveFetusRace(eggRace, spermRace);
+  const ancestry = deriveFetusAncestry(eggRace, spermRace);
+  const fetusRace = ancestry.race;
   const embryoType = getEmbryoTypeByRace(fetusRace);
   // 伴生卵在「整群＝伴生卵＋1」的尺度上乘倍率与波动，取整后再减一，与正式抽取一致
-  const companionEggsMean = getCompanionEggsMeanByRace(fetusRace);
+  const companionEggsMean = getCompanionEggsMeanByRace(fetusRace, ancestry.bloodline);
   const companionMultiplier = getSpermDoseCompanionMultiplier(spermValue);
   const adjustedClutch = (companionEggsMean + 1) * companionMultiplier;
   const toEggs = (clutch) => Math.max(0, Math.min(12499, clutch - 1));
@@ -183,7 +185,7 @@ export function calculateOffspringPreview({
       // 正式抽取为 [0.9, 1.1)，上界不含 1.1；这里列出实际可抽到的最大整数。
       max: toEggs(Math.ceil((adjustedClutch * 1.1) + 0.5) - 1),
     };
-  const profile = getMergedRacePhysiologyProfile(fetusRace) || {};
+  const profile = getMergedRacePhysiologyProfile(fetusRace, ancestry.bloodline) || {};
   const eggProfile = getMergedRacePhysiologyProfile(eggRace) || {};
   const spermProfile = getMergedRacePhysiologyProfile(spermRace) || {};
   const gestationSpeciesSpeed = clampNumber(profile.gestationSpeciesSpeed, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1);
@@ -228,6 +230,8 @@ export function calculateOffspringPreview({
     eggInheritanceMode: getRaceInheritanceMode(eggRace),
     spermInheritanceMode: getRaceInheritanceMode(spermRace),
     fetusRace,
+    bloodline: ancestry.bloodline,
+    bloodlineSource: ancestry.bloodlineSource,
     inheritanceTag: getFetusInheritanceTag(eggRace, spermRace),
     embryoType,
     embryoTypeSource: embryoTypeSource?.race || fetusRace,
@@ -273,6 +277,7 @@ function getDerivedInheritanceRate({
   motherDerivedType = null,
   fatherDerivedType = null,
   fetusRace = '人类',
+  fetusBloodline = null,
   gestationModifierMultiplier = 1,
 } = {}) {
   const progress = clampNumber(currentProgress, -100, 100, 0);
@@ -290,7 +295,7 @@ function getDerivedInheritanceRate({
     1,
   );
   const speciesSpeed = clampNumber(
-    getMergedRacePhysiologyProfile(fetusRace)?.gestationSpeciesSpeed,
+    getMergedRacePhysiologyProfile(fetusRace, fetusBloodline)?.gestationSpeciesSpeed,
     GESTATION_SPEED_MIN,
     GESTATION_SPEED_MAX,
     1,

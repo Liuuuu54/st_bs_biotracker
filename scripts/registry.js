@@ -17,6 +17,8 @@ import {
   computePostpartumRecoveryDays,
   getEmbryoTypeByRace,
   getMergedRacePhysiologyProfile,
+  getBloodlineInfo,
+  deriveFetusAncestry,
   getRecoveryCoefficientByRace,
   getRaceComponents,
   getRaceDescriptorComponents,
@@ -923,6 +925,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '【1. 角色基础注册】',
     '参数说明：',
     `- base.race: 纯种/混血/衍生种族/子类物种，保留原始写法，若故事为现代写实，种族统一填人类即可${declaredRace ? `。【重要】用户已明确指定，必须强制填写為：${declaredRace}` : ''}`,
+    '- base.bloodline: 仅在原文明确血脉比例时填写对象，键与 base.race 的种族成分一致，值为0到1、合计1。例如四分之一精灵填写 race="精灵x人类"、bloodline={"精灵":0.25,"人类":0.75}。也支持 race="1/4精灵x3/4人类" 或 "精灵25%x人类75%"。只写1/4精灵时其余75%为未知，不得擅自认定是人类。没有比例依据就省略；系统会标为比例推定。衍生类型不占种族血脉份额。',
     '- base.vitalityLevel: 1-7，默认语义为 一推就倒(1)-身怀病弱(2)-难产体态(3)-均衡活力(4)-安产体态(5)-经过锻炼(6)-无坚不摧(7)',
     '- base.psyStressLevel: 1-7，默认语义为 情感丧失麻木不仁(1)-内向压抑冷感(2)-情绪平缓理性(3)-情绪均衡稳定(4)-情绪丰富敏感(5)-强烈波动焦躁(6)-极端情绪精神异常(7)',
     '- base.age: 角色年龄',
@@ -1212,8 +1215,11 @@ function sanitizeChildren(value) {
           : undefined,
         gender: item.gender ?? null,
         race: parsed.race || null,
+        ...getBloodlineInfo(parsed.race, item.bloodline ?? parsed.bloodline, item.bloodlineSource),
         derivedType: item.derivedType ?? parsed.derivedType ?? null,
         fatherRace: item.fatherRace ?? null,
+        fatherBloodline: item.fatherBloodline ?? null,
+        fatherBloodlineSource: item.fatherBloodlineSource ?? null,
         fatherDerivedType: item.fatherDerivedType ?? null,
         age: item.age ?? null,
         birthWeightRatio: Number.isFinite(Number(item.birthWeightRatio)) ? clampNumber(item.birthWeightRatio, 0.33, 3.0, 1.0) : null,
@@ -1238,6 +1244,7 @@ function sanitizeRegistrySperms(value) {
       return {
         male: item.male === null ? null : String(item.male || '').trim() || null,
         race: parsed.race || null,
+        ...getBloodlineInfo(parsed.race, item.bloodline ?? parsed.bloodline, item.bloodlineSource),
         derivedType: derivedTypeRaw === null ? null : String(derivedTypeRaw || '').trim() || null,
         value: clampNumber(item.value, 0, 9999, 0),
       };
@@ -1262,7 +1269,10 @@ function sanitizePregnant(value) {
           fathers: item.fathers ?? null,
           provider: item.provider ?? null,
           race: parsed.race || null,
+          ...(item.bloodline || parsed.bloodline ? getBloodlineInfo(parsed.race, item.bloodline ?? parsed.bloodline, item.bloodlineSource) : {}),
           fatherRace: explicitFatherRace,
+          fatherBloodline: item.fatherBloodline ?? parseRaceDescriptor(item.fatherRace).bloodline ?? null,
+          fatherBloodlineSource: item.fatherBloodlineSource ?? null,
           fatherDerivedType: item.fatherDerivedType ?? parsed.derivedType ?? null,
           gender: item.gender ?? null,
           embryoType: item.embryoType ?? null,
@@ -1478,7 +1488,7 @@ function normalizeRegisteredFetusTags(pregnant) {
   for (const fetus of fetuses) if (fetus.tags.length === 0) delete fetus.tags;
 }
 
-function normalizeRegisteredPregnancy(profile) {
+function normalizeRegisteredPregnancy(profile, chatState) {
   const pregnant = profile.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((item) => ({ ...item })) : [];
   if (fetuses.length === 0) return;
@@ -1489,18 +1499,25 @@ function normalizeRegisteredPregnancy(profile) {
     // 避免把已完整的胎儿种族再跟承载者混一次（代孕/移植胚胎会因此被改血统）
     const explicitFatherRace = parseRaceDescriptor(fetus?.fatherRace || '').race || null;
     const fatherRace = explicitFatherRace;
-    const fetusRace = explicitFatherRace
-      ? (explicitFatherRace === motherRace ? motherRace : deriveRegisteredFetusRace(motherRace, explicitFatherRace))
-      : (fetus?.race ? parseRaceDescriptor(fetus.race).race || motherRace : motherRace);
-    const embryoType = fetus?.embryoType || getEmbryoTypeByRace(fetusRace);
+    const provider = String(fetus?.provider || '').trim();
+    const eggBase = provider ? chatState?.characters?.[provider]?.profile?.base
+      : fetus.tags?.includes('nested') ? null : profile.base;
+    const fatherBase = chatState?.characters?.[fetus?.fathers]?.profile?.base;
+    // 代孕且卵源未知时信任胎儿资料，绝不能拿承载者补成遗传母亲。
+    const ancestry = fetus.bloodline || fetus.chimera || !explicitFatherRace || !eggBase
+      ? { race: fetus?.race || motherRace, ...getBloodlineInfo(fetus?.race || motherRace, fetus?.bloodline, fetus?.bloodlineSource) }
+      : deriveFetusAncestry(eggBase, { race: explicitFatherRace, ...getBloodlineInfo(explicitFatherRace,
+        fetus.fatherBloodline ?? fatherBase?.bloodline, fetus.fatherBloodlineSource ?? fatherBase?.bloodlineSource) });
+    const fetusRace = ancestry.race;
+    const embryoType = fetus?.embryoType || getEmbryoTypeByRace(fetusRace, ancestry.bloodline);
     const companionEggCount = embryoType === '胎生' || embryoType === '胎转卵生'
       ? 0
       : (Number.isFinite(Number(fetus?.companionEggCount))
         ? Math.max(0, Math.min(12499, Math.round(Number(fetus.companionEggCount))))
-        : rollCompanionEggCount(fetusRace));
+        : rollCompanionEggCount(fetusRace, Math.random, 20, ancestry.bloodline));
     return {
       ...fetus,
-      race: fetusRace,
+      ...ancestry,
       fatherRace,
       embryoType,
       companionEggCount,
@@ -1510,6 +1527,21 @@ function normalizeRegisteredPregnancy(profile) {
       affinity: Number.isFinite(Number(fetus?.affinity)) ? clampNumber(fetus.affinity, -50, 50, 0) : 0,
     };
   });
+  // 孕中孕的遗传母亲是宿主胎儿；先完成普通胎儿，避免阵列顺序影响比例。
+  for (const [index, original] of fetuses.entries()) {
+    if (original.bloodline || original.chimera || !original.tags?.includes('nested') || !original.fatherRace) continue;
+    const hostIndex = Number(original.nestedInIndex);
+    const host = pregnant.fetuses[hostIndex];
+    if (!Number.isInteger(hostIndex) || hostIndex === index || !host || host.tags?.includes('nested') || !canHostNestedPregnancy(host)) continue;
+    const fatherBase = chatState?.characters?.[original.fathers]?.profile?.base;
+    const ancestry = deriveFetusAncestry(host, {
+      race: original.fatherRace,
+      ...getBloodlineInfo(original.fatherRace, original.fatherBloodline ?? fatherBase?.bloodline,
+        original.fatherBloodlineSource ?? fatherBase?.bloodlineSource),
+    });
+    Object.assign(pregnant.fetuses[index], ancestry);
+    if (!original.embryoType) pregnant.fetuses[index].embryoType = getEmbryoTypeByRace(ancestry.race, ancestry.bloodline);
+  }
   pregnant.fetusesCount = pregnant.fetuses.length;
   // 发育进度（gestationalAgeDays）直接就是有效孕日，实际天数反推；没给才用实际天数乘妊娠速度。
   // 变速倍率是 0（冻结）时不能拿来换算，否则卡上写足月也会被乘回孕早期，退回只看种族速度
@@ -1562,6 +1594,7 @@ function normalizeRegisteredPregnancy(profile) {
       motherDerivedType,
       fatherDerivedType: fetus?.fatherDerivedType,
       fetusRace: fetus?.race,
+      fetusBloodline: fetus?.bloodline,
       passedDays: elapsedDays,
       gestationModifierMultiplier,
     });
@@ -1623,7 +1656,9 @@ function sanitizeRegistryProfile(profile, baseProfile) {
       const parsed = parseRaceDescriptor(profile.base.race);
       nextBase.race = parsed.race || baseProfile.base.race;
       if (profile.base.derivedType === undefined && parsed.derivedType !== null) nextBase.derivedType = parsed.derivedType;
+      if (parsed.bloodline) Object.assign(nextBase, getBloodlineInfo(nextBase.race, parsed.bloodline, 'explicit'));
     }
+    if (profile.base.bloodline !== undefined) Object.assign(nextBase, getBloodlineInfo(nextBase.race ?? baseProfile.base.race, profile.base.bloodline, profile.base.bloodlineSource));
     if (profile.base.derivedType !== undefined) nextBase.derivedType = profile.base.derivedType === null ? null : String(profile.base.derivedType || '').trim() || null;
     if (profile.base.age !== undefined) {
       const age = Number(profile.base.age);
@@ -1714,7 +1749,7 @@ function getRegisteredRecoveryDays(profile) {
   const births = clampNumber(experience.naturalBirthExperience, 0, 999, 0) + clampNumber(experience.surgicalBirthExperience, 0, 999, 0);
   const inPostpartum = String(profile?.base?.stage || '') === '产后恢复';
   return computePostpartumRecoveryDays({
-    recoveryCoefficient: getRecoveryCoefficientByRace(profile?.base?.race),
+    recoveryCoefficient: getRecoveryCoefficientByRace(profile?.base?.race, profile?.base?.bloodline),
     vitalityLevel: profile?.base?.vitalityLevel,
     priorBirths: inPostpartum ? Math.max(0, births - 1) : births,
     fetusCount: 1,
@@ -1745,7 +1780,10 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
   }
   const seededRecords = initialCognitionRecords === undefined ? undefined : initializeCognitionRecords(initialCognitionRecords, Number(chatState.minutesPassed) || 0);
   const effectiveRace = sanitizedProfile.base?.race ?? base.profile.base.race;
-  const mergedRaceProfile = getMergedRacePhysiologyProfile(effectiveRace);
+  const ancestry = getBloodlineInfo(effectiveRace, sanitizedProfile.base?.bloodline
+    ?? (effectiveRace === base.profile.base.race ? base.profile.base.bloodline : null),
+    sanitizedProfile.base?.bloodlineSource ?? base.profile.base.bloodlineSource);
+  const mergedRaceProfile = getMergedRacePhysiologyProfile(effectiveRace, ancestry.bloodline);
   const basePsychology = normalizeCharacterPsychologyState(base).profile.psychology;
   const stageProfiles = Object.keys(sanitizedProfile.psychology?.stageProfiles || {}).length > 0
     ? sanitizedProfile.psychology.stageProfiles
@@ -1788,6 +1826,7 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
       base: {
         ...base.profile.base,
         ...(sanitizedProfile.base || {}),
+        ...ancestry,
         vitality: getVitalityInitByLevel(sanitizedProfile.base?.vitalityLevel ?? base.profile.base.vitalityLevel),
         psyStress: getPsyStressInitByLevel(sanitizedProfile.base?.psyStressLevel ?? base.profile.base.psyStressLevel),
       },
@@ -1824,7 +1863,7 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
     updatedAt: Date.now(),
   };
   if (Array.isArray(nextCharacter.profile?.pregnant?.fetuses) && nextCharacter.profile.pregnant.fetuses.length > 0) {
-    normalizeRegisteredPregnancy(nextCharacter.profile);
+    normalizeRegisteredPregnancy(nextCharacter.profile, chatState);
   }
   nextCharacter.profile.bio = {
     ...nextCharacter.profile.bio,
@@ -2250,6 +2289,8 @@ export function applyRegistryChildInheritance(chatState, targetName, source = {}
   if (!character?.profile) throw new Error(`找不到已注册角色：${name || '(空白)'}`);
   character.profile.base = character.profile.base && typeof character.profile.base === 'object' ? character.profile.base : {};
   character.profile.base.race = String(resolved.child.race || '未知');
+  Object.assign(character.profile.base, getBloodlineInfo(character.profile.base.race, resolved.child.bloodline, resolved.child.bloodlineSource));
+  character.profile.bio = character.profile.bio && typeof character.profile.bio === 'object' ? character.profile.bio : {}; Object.assign(character.profile.bio, getMergedRacePhysiologyProfile(character.profile.base.race, character.profile.base.bloodline) || {});
   if (resolved.child.derivedType) character.profile.base.derivedType = String(resolved.child.derivedType);
   else delete character.profile.base.derivedType;
   character.profile.talents = normalizeTalentList(resolved.child.talents);
@@ -2449,10 +2490,20 @@ export async function runRegistry(ctx, options = {}) {
       result.profile = result.profile && typeof result.profile === 'object' && !Array.isArray(result.profile) ? result.profile : {};
       result.profile.base = result.profile.base && typeof result.profile.base === 'object' && !Array.isArray(result.profile.base) ? result.profile.base : {};
       result.profile.base.race = String(sourceChildContext.child.race || '未知');
+      Object.assign(result.profile.base, getBloodlineInfo(result.profile.base.race, sourceChildContext.child.bloodline, sourceChildContext.child.bloodlineSource));
       if (sourceChildContext.child.derivedType) result.profile.base.derivedType = String(sourceChildContext.child.derivedType);
       else delete result.profile.base.derivedType;
     }
     // 使用者已经明确指定要注册谁，模型不得改名。
+    // 显式比例同样由用户锁定，不能依赖模型把 1/4 再说成「混血」后丢失份额。
+    const declared = parseRaceDescriptor(options.declaredRace);
+    if (!sourceChildContext && declared.bloodline) {
+      result.profile = result.profile && typeof result.profile === 'object' ? result.profile : {};
+      result.profile.base = result.profile.base && typeof result.profile.base === 'object' ? result.profile.base : {};
+      result.profile.base.race = declared.race;
+      Object.assign(result.profile.base, getBloodlineInfo(declared.race, declared.bloodline, 'explicit'));
+      if (declared.derivedType) result.profile.base.derivedType = declared.derivedType;
+    }
     // payload 里同时有角色卡与 target_character，模型常把角色卡名当成 name 回传，
     // 于是角色被注册成卡片名而不是输入的名字（重新注册一次又「好了」，其实只是这次没抽到）。
     result.name = targetName;

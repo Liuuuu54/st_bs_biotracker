@@ -31,6 +31,7 @@ import {
   getEmbryoTypeByRace,
   getBuiltinRacePhysiologyProfile,
   getMergedRacePhysiologyProfile,
+  formatBloodline,
   getDerivedTypeFluxProfile,
   getDerivedTypeInheritanceProfile,
   getDerivedTypeIntroductionLine,
@@ -51,6 +52,8 @@ import {
   VIVIPAROUS_RACES,
 } from './scripts/race_config.js';
 import { initializeCalculatorUi } from './scripts/calculator_ui.js';
+import { createRacePaletteSelection, appendRacePaletteTag, removeRacePaletteTag, equalizeRacePalette,
+  setRacePalettePercent, palettePercentText, buildRacePaletteValue } from './scripts/race_palette.js';
 import { createDocViewer, parseDocHref } from './scripts/doc_viewer.js';
 import { calculateFertilizationPreview } from './scripts/calculator.js';
 import {
@@ -227,6 +230,7 @@ let racePaletteState = {
   derivedSubtype: '',
   subtype: '',
   raceTags: [],
+  bloodline: {},
 };
 
 function normalizeWorldbookMode(value) {
@@ -2739,12 +2743,7 @@ async function inspectCurrentCharacterWorldbook(ctx) {
 }
 
 function buildRacePaletteDescriptor(state = racePaletteState) {
-  const raceLabel = Array.isArray(state?.raceTags) ? state.raceTags.map((item) => String(item || '').trim()).filter(Boolean).join('x') : '';
-  const derivedBase = String(state?.selectedDerivedType || '').trim();
-  const derivedSubtype = String(state?.derivedSubtype || '').trim();
-  const derivedType = derivedBase ? `${derivedBase}${derivedSubtype ? `-${derivedSubtype}` : ''}` : '';
-  if (derivedType && raceLabel) return `[${derivedType}]${raceLabel}`;
-  return raceLabel || (derivedType ? `[${derivedType}]` : '');
+  return state.shareInvalid ? '' : buildRacePaletteValue(state);
 }
 
 function isRegisterRaceTarget(targetInputId = '') {
@@ -2769,19 +2768,24 @@ function renderRacePaletteBody() {
   const isRegister = isRegisterRaceTarget(racePaletteState.targetInputId);
   const isCalculator = isCalculatorRaceTarget(racePaletteState.targetInputId);
   const paletteTitle = isRegister ? '角色种族调色盘' : isCalculator ? '计算种族调色盘' : '父源调色盘';
-  const emptyHint = isRegister ? '尚未加入角色种族 tag。' : isCalculator ? '尚未加入计算种族 tag。' : '尚未加入这位父亲的种族 tag。';
+  const emptyHint = isRegister ? '尚未加入角色种族。' : isCalculator ? '尚未加入计算种族。' : '尚未加入这位父亲的种族。';
   const guide = isRegister
-    ? '先把角色种族逐个加入 tag，衍生型会套在整体种族上；确认后会直接写入注册种族并关闭。'
+    ? '逐个加入角色种族并设置比例；确认后写入注册种族。'
     : isCalculator
-      ? '逐个加入种族即可组成混血；衍生型会套在整体种族上，确认后写入当前计算栏位。'
-      : '先把种族逐个加入 tag，衍生型会套在整位父亲上；确认后会直接写入父亲种族并关闭。';
+      ? '逐个加入种族并设置比例；确认后写入当前计算栏位。'
+      : '逐个加入父源种族并设置比例；确认后加入这位父亲的种族资料。';
   const derivedOptions = [`<option value="">不设</option>`, ...DERIVED_TYPE_RACES.map((value) => `<option value="${escapeHtml(value)}"${racePaletteState.selectedDerivedType === value ? ' selected' : ''}>${escapeHtml(value)}</option>`)];
   const raceTags = Array.isArray(racePaletteState.raceTags) && racePaletteState.raceTags.length > 0
     ? racePaletteState.raceTags.map((entry, index) => `
-        <button type="button" class="bs-bt-race-tag" data-race-remove-index="${index}" title="移除此项">
-          <span>${escapeHtml(entry)}</span>
-          <span aria-hidden="true">×</span>
-        </button>
+        <div class="bs-bt-race-share-row">
+          <div class="bs-bt-race-share-head"><span>${escapeHtml(entry)}</span>
+            <button type="button" class="bs-bt-race-close-button" data-race-remove-index="${index}" aria-label="移除${escapeHtml(entry)}" title="移除此项">×</button>
+          </div>
+          <div class="bs-bt-race-share-controls">
+            <input type="range" min="0" max="100" step="0.1" data-race-share-index="${index}" value="${escapeHtml(palettePercentText(racePaletteState.bloodline[entry]))}" aria-label="${escapeHtml(entry)}血统百分比滑杆"${racePaletteState.raceTags.length === 1 ? ' disabled' : ''}>
+            <label><input class="text_pole" type="number" min="0" max="100" step="any" data-race-share-index="${index}" value="${escapeHtml(palettePercentText(racePaletteState.bloodline[entry]))}" aria-label="${escapeHtml(entry)}血统百分比"${racePaletteState.raceTags.length === 1 ? ' disabled' : ''}> %</label>
+          </div>
+        </div>
       `).join('')
     : `<div class="bs-bt-race-preview-hint">${emptyHint}</div>`;
   return `
@@ -2791,7 +2795,6 @@ function renderRacePaletteBody() {
         <button type="button" class="bs-bt-race-close-button" data-race-action="cancel" aria-label="关闭调色盘" title="关闭调色盘">×</button>
       </div>
       <div class="bs-bt-race-preview-hint">${guide}</div>
-      <div class="bs-bt-race-tag-list">${raceTags}</div>
       <label class="bs-bt-track-debug-field">
         <span class="bs-bt-track-debug-label">衍生型</span>
         <select id="bs-bt-race-derived">${derivedOptions.join('')}</select>
@@ -2808,10 +2811,15 @@ function renderRacePaletteBody() {
         <span class="bs-bt-track-debug-label">子项(自定义)</span>
         <input id="bs-bt-race-subtype" class="text_pole" type="text" value="${escapeHtml(racePaletteState.subtype || '')}" placeholder="例如：鼠族、炎裔" />
       </label>
-      <div class="bs-bt-race-actions">
-        <button type="button" class="menu_button" data-race-action="append">加入种族 tag</button>
-        <button type="button" class="menu_button" data-race-action="confirm">确认</button>
+      <button type="button" class="menu_button" data-race-action="append">加入种族</button>
+      <div class="bs-bt-race-palette-title">已选种族与血统比例</div>
+      <div class="bs-bt-race-share-list">${raceTags}</div>
+      <div class="bs-bt-race-share-footer">
+        <span data-race-share-status role="status">${racePaletteState.raceTags.length ? '合计 100%' : '加入种族后可调整血统比例'}</span>
+        <button type="button" class="menu_button" data-race-action="equalize"${racePaletteState.raceTags.length < 2 ? ' disabled' : ''}>平均分配</button>
       </div>
+      <div class="bs-bt-race-preview-hint">调整一项，其他项按原比例补足至 100%；衍生型不占份额。</div>
+      <button type="button" class="menu_button" data-race-action="confirm">确认</button>
     </div>
   `;
 }
@@ -3566,6 +3574,7 @@ function buildTrackCharacterViewModel(character) {
     },
     overview: {
       raceLabel: formatRaceLabel(base.race, base.derivedType),
+      bloodlineLabel: formatBloodline(base.race, base.bloodline, base.bloodlineSource),
       age: Number.isFinite(Number(base.age)) ? Math.round(Number(base.age)) : null,
       stage,
       stageProgress: getStageProgress(profile),
@@ -3838,6 +3847,7 @@ function renderTrackOverview(viewModel) {
       <div class="bs-bt-track-meta">
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">姓名</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.name)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">种族</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.raceLabel)}</span></div>
+        <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">血脉</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bloodlineLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">年龄</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.age ?? '未知')}</span></div>
       </div>
     </div>
@@ -4076,6 +4086,7 @@ function renderWombFetusCard(item, index, data) {
       </summary>
       <div class="bs-bt-womb-card-body">
         <span class="bs-bt-womb-card-line">${escapeHtml(summary)}</span>
+        <span class="bs-bt-womb-card-line">血脉：${escapeHtml(formatBloodline(item?.race, item?.bloodline, item?.bloodlineSource))}</span>
         ${describeBackSide(item) ? `<span class="bs-bt-womb-card-line">${escapeHtml(describeBackSide(item))}</span>` : ''}
         ${item?.provider ? `<span class="bs-bt-womb-card-line">${escapeHtml(`遗传母方 ${item.provider}`)}</span>` : ''}
         ${renderFetusTagRow(item)}
@@ -4492,6 +4503,7 @@ function lineageDetailRows(node) {
   if (!node) return '';
   const rows = [
     ['种族', node.raceLabel || '未知'],
+    ['血脉', node.bloodlineLabel || '未知'],
     ['性别', node.gender || '—'],
     ['年龄', node.ageLabel || '未知'],
     ['世代', node.generation === 0 ? '本人' : (node.generation < 0 ? `上${Math.abs(node.generation)}代` : `下${node.generation}代`)],
@@ -4556,6 +4568,7 @@ function renderLineageCard(node) {
       </span>
       <span class="bs-bt-lineage__card-name">${escapeHtml(node.displayName)}</span>
       <span class="bs-bt-lineage__card-sub">${escapeHtml(sub)}</span>
+      ${node.bloodlineLabel ? `<span class="bs-bt-lineage__card-sub" title="${escapeHtml(node.bloodlineLabel)}">${escapeHtml(node.bloodlineLabel)}</span>` : ''}
       <span class="bs-bt-lineage__card-age">${escapeHtml(node.ageLabel || '')}</span>
       ${node.isCenter ? '<span class="bs-bt-lineage__badge">本人</span>' : ''}
     </button>
@@ -5851,7 +5864,7 @@ function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(c
     node.addEventListener('click', () => {
       const index = Number(node.getAttribute('data-race-remove-index'));
       if (!Number.isInteger(index) || index < 0) return;
-      racePaletteState.raceTags = racePaletteState.raceTags.filter((_, entryIndex) => entryIndex !== index);
+      removeRacePaletteTag(racePaletteState, index);
       refresh();
     }),
   );
@@ -5863,7 +5876,7 @@ function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(c
       globalThis.toastr?.warning?.('[BS BioTracker] 请先选择种族');
       return;
     }
-    racePaletteState.raceTags = [...racePaletteState.raceTags, raceTag];
+    appendRacePaletteTag(racePaletteState, raceTag);
     racePaletteState.selectedRace = '人类';
     racePaletteState.subtype = '';
     refresh();
@@ -5897,14 +5910,15 @@ function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(c
 }
 
 function openRacePalettePopover(targetInputId) {
+  const editsExistingValue = isRegisterRaceTarget(targetInputId) || isCalculatorRaceTarget(targetInputId);
+  const selection = createRacePaletteSelection(editsExistingValue ? document.getElementById(targetInputId)?.value : '');
   racePaletteState = {
     targetInputId,
     isOpen: true,
     selectedRace: '人类',
-    selectedDerivedType: '',
-    derivedSubtype: '',
     subtype: '',
-    raceTags: [],
+    ...selection,
+    shareInvalid: false,
   };
   refreshRegisterRacePalette();
 }
@@ -5915,6 +5929,7 @@ function closeRacePalettePopover() {
 }
 
 function refreshRegisterRacePalette() {
+  racePaletteState.shareInvalid = false;
   const paletteModal = document.getElementById('bs-bt-race-palette-modal');
   if (paletteModal) {
     paletteModal.hidden = !racePaletteState.isOpen;
@@ -5956,7 +5971,7 @@ function bindRacePaletteModal(ctx) {
     if (removeButton) {
       const index = Number(removeButton.getAttribute('data-race-remove-index'));
       if (Number.isInteger(index) && index >= 0) {
-        racePaletteState.raceTags = racePaletteState.raceTags.filter((_, entryIndex) => entryIndex !== index);
+        removeRacePaletteTag(racePaletteState, index);
         refreshRegisterRacePalette();
       }
       return;
@@ -5965,6 +5980,11 @@ function bindRacePaletteModal(ctx) {
     const actionButton = target.closest('[data-race-action]');
     if (!actionButton) return;
     const action = String(actionButton.getAttribute('data-race-action') || '');
+    if (action === 'equalize') {
+      equalizeRacePalette(racePaletteState);
+      refreshRegisterRacePalette();
+      return;
+    }
     if (action === 'append') {
       const raceName = String(racePaletteState.selectedRace || '').trim();
       const subtype = String(racePaletteState.subtype || '').trim();
@@ -5973,7 +5993,7 @@ function bindRacePaletteModal(ctx) {
         globalThis.toastr?.warning?.('[BS BioTracker] 请先选择种族');
         return;
       }
-      racePaletteState.raceTags = [...racePaletteState.raceTags, raceTag];
+      appendRacePaletteTag(racePaletteState, raceTag);
       racePaletteState.selectedRace = '人类';
       racePaletteState.subtype = '';
       refreshRegisterRacePalette();
@@ -5996,6 +6016,8 @@ function bindRacePaletteModal(ctx) {
         || isCalculatorRaceTarget(racePaletteState.targetInputId);
       const current = String(input.value || '').trim();
       input.value = replacesValue ? descriptor : (current ? `${current},${descriptor}` : descriptor);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
       const draftRaceKey = {
         'bs-bt-debug-race': 'race',
         'bs-bt-debug-provider-race': 'providerRace',
@@ -6019,6 +6041,19 @@ function bindRacePaletteModal(ctx) {
   modal.addEventListener('input', (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement) || !racePaletteState.isOpen) return;
+    if (target.hasAttribute('data-race-share-index')) {
+      const index = Number(target.dataset.raceShareIndex);
+      const valid = setRacePalettePercent(racePaletteState, index, target.value);
+      racePaletteState.shareInvalid = !valid;
+      const status = modal.querySelector('[data-race-share-status]');
+      if (status) status.textContent = valid ? '合计 100%' : '请输入 0–100 之间的百分比';
+      const confirm = modal.querySelector('[data-race-action="confirm"]');
+      if (confirm) confirm.disabled = !valid;
+      if (valid) modal.querySelectorAll('[data-race-share-index]').forEach((node) => {
+        if (node !== target) node.value = palettePercentText(racePaletteState.bloodline[racePaletteState.raceTags[Number(node.dataset.raceShareIndex)]]);
+      });
+      return;
+    }
     if (target.id === 'bs-bt-race-derived-subtype') racePaletteState.derivedSubtype = String(target.value || '');
     if (target.id === 'bs-bt-race-subtype') racePaletteState.subtype = String(target.value || '');
   });
@@ -6319,7 +6354,7 @@ function renderStatusPanel(ctx) {
     node.addEventListener('click', () => {
       const index = Number(node.getAttribute('data-race-remove-index'));
       if (!Number.isInteger(index) || index < 0) return;
-      racePaletteState.raceTags = racePaletteState.raceTags.filter((_, entryIndex) => entryIndex !== index);
+      removeRacePaletteTag(racePaletteState, index);
       renderStatusPanel(ctx);
     }),
   );
@@ -6331,7 +6366,7 @@ function renderStatusPanel(ctx) {
       globalThis.toastr?.warning?.('[BS BioTracker] 请先选择种族');
       return;
     }
-    racePaletteState.raceTags = [...racePaletteState.raceTags, raceTag];
+    appendRacePaletteTag(racePaletteState, raceTag);
     racePaletteState.selectedRace = '人类';
     racePaletteState.subtype = '';
     renderStatusPanel(ctx);
@@ -9107,7 +9142,7 @@ async function ensureModal(ctx) {
     if (removeButton && isRegisterRaceTarget(racePaletteState.targetInputId)) {
       const index = Number(removeButton.getAttribute('data-race-remove-index'));
       if (Number.isInteger(index) && index >= 0) {
-        racePaletteState.raceTags = racePaletteState.raceTags.filter((_, entryIndex) => entryIndex !== index);
+        removeRacePaletteTag(racePaletteState, index);
         refreshRegisterRacePalette();
       }
       return;
@@ -9123,7 +9158,7 @@ async function ensureModal(ctx) {
         globalThis.toastr?.warning?.('[BS BioTracker] 请先选择种族');
         return;
       }
-      racePaletteState.raceTags = [...racePaletteState.raceTags, raceTag];
+      appendRacePaletteTag(racePaletteState, raceTag);
       racePaletteState.selectedRace = '人类';
       racePaletteState.subtype = '';
       refreshRegisterRacePalette();

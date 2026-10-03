@@ -2174,6 +2174,58 @@
   gap: 6px;
 }
 
+#bs-biotracker-settings .bs-bt-race-share-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-race-share-row {
+  padding: 8px;
+  border: 1px solid var(--bsbt-border-color);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-race-share-head,
+#bs-biotracker-settings .bs-bt-race-share-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+#bs-biotracker-settings .bs-bt-race-share-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+#bs-biotracker-settings [data-race-share-status] {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+#bs-biotracker-settings .bs-bt-race-share-controls input[type='range'] {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--bsbt-lcd-text);
+}
+
+#bs-biotracker-settings .bs-bt-race-share-controls label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-race-share-controls input[type='number'] {
+  width: 72px;
+  min-width: 0;
+}
+
 #bs-biotracker-settings .bs-bt-race-tag {
   display: inline-flex;
   align-items: center;
