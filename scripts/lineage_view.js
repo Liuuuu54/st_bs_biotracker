@@ -71,6 +71,16 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
   }
 
   const byId = new Map(focused.nodes.map((node) => [node.id, node]));
+  // 母方（卵源）血统：族谱图示平手时取母系占比较高的种族。用完整资料图找，母亲不在聚焦范围内也算；多位母源取平均
+  const graphById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const motherBloodlineOf = (id) => {
+    const mothers = graph.edges.filter((edge) => edge.to === id && edge.type === 'mother')
+      .map((edge) => graphById.get(edge.from)?.bloodline).filter((value) => value && typeof value === 'object');
+    if (mothers.length === 0) return null;
+    const merged = {};
+    for (const bloodline of mothers) for (const [name, share] of Object.entries(bloodline)) merged[name] = (merged[name] || 0) + share / mothers.length;
+    return merged;
+  };
   // 无名的孩子也可能当亲代（孕中孕的母亲就是同胎的另一个孩子），
   // 没有 fallback 的话关系栏会印出原始节点 id
   const nameOf = (id) => {
@@ -113,6 +123,7 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
       displayName: node.name || '未命名',
       raceLabel: raceLabel(node.race, node.derivedType),
       bloodlineLabel: formatBloodline(node.race, node.bloodline, node.bloodlineSource),
+      motherBloodline: motherBloodlineOf(node.id),
       ageLabel: ageLabel(node.age),
       parents,
       geneticParents: parents.filter(isGenetic),

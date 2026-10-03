@@ -6005,3 +6005,20 @@
   min-width: 0;
 }
 .bs-bt-cognition-row { display: grid; gap: 8px; margin-block: 8px; }
+
+/* 族谱肖像：有种族图示时改成圆角方形，让衍生外框的角饰有空间；颜色跟随主题文字色 */
+.bs-bt-lineage__portrait.has-icon {
+  border-radius: 10px;
+  padding: 2px;
+}
+
+.bs-bt-lineage__portrait .bs-bt-race-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 「本人」徽章往上凸出 9px；列外层的横向卷动会连带裁掉纵向溢出，没有亲代连线留白的那排要自己留空间 */
+.bs-bt-lineage__cluster-cards:not(.has-link) {
+  padding-top: 10px;
+}

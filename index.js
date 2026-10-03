@@ -51,7 +51,7 @@ import {
   OVOVIVIPAROUS_RACES,
   VIVIPAROUS_RACES,
 } from './scripts/race_config.js';
-import { initializeCalculatorUi } from './scripts/calculator_ui.js';
+import { initializeCalculatorUi } from './scripts/calculator_ui.js'; import { raceIconSvg } from './scripts/race_icons.js';
 import { createRacePaletteSelection, appendRacePaletteTag, removeRacePaletteTag, equalizeRacePalette,
   setRacePalettePercent, palettePercentText, buildRacePaletteValue } from './scripts/race_palette.js';
 import { createDocViewer, parseDocHref } from './scripts/doc_viewer.js';
@@ -4555,15 +4555,15 @@ function lineageSexGlyph(node) {
 }
 
 function renderLineageCard(node) {
-  const sex = lineageSexGlyph(node);
+  const sex = lineageSexGlyph(node); const icon = raceIconSvg({ race: node.race, bloodline: node.bloodline, motherBloodline: node.motherBloodline, derivedType: node.derivedType, label: node.raceLabel }); // 没有对应图示（自订或未知种族）时退回姓名首字
   const sub = node.raceLabel || (node.kind === 'unregistered' ? '未注册' : '—');
   return `
     <button type="button"
       class="bs-bt-lineage__card${node.isCenter ? ' is-center' : ''}${node.kind === 'unregistered' ? ' is-ghost' : ''}"
       data-lineage-node="${escapeHtml(node.id)}"
       ${node.hasDetail ? '' : 'disabled'}>
-      <span class="bs-bt-lineage__portrait">
-        <span class="bs-bt-lineage__initial">${escapeHtml(lineageInitial(node.displayName))}</span>
+      <span class="bs-bt-lineage__portrait${icon ? ' has-icon' : ''}">
+        ${icon || `<span class="bs-bt-lineage__initial">${escapeHtml(lineageInitial(node.displayName))}</span>`}
         ${sex ? `<span class="bs-bt-lineage__sex">${sex}</span>` : ''}
       </span>
       <span class="bs-bt-lineage__card-name">${escapeHtml(node.displayName)}</span>

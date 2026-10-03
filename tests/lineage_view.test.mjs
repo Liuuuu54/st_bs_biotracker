@@ -195,3 +195,21 @@ test('一般孩子仍然标为「父」', () => {
   const child = view.nodes.find((node) => node.displayName === '长子');
   assert.ok(child.parents.some((p) => p.relation === '父' && p.name === '凯'));
 });
+
+test('each node carries its genetic mother bloodline for icon tie-breaks; a surrogate carrier does not count', () => {
+  const chat = {
+    characters: {
+      狐母: ch('狐母', [
+        { id: 'k1', name: '甲', race: '妖狐x人类', bloodline: { 妖狐: 0.5, 人类: 0.5 }, fathers: '人父' },
+        { id: 'k2', name: '乙', race: '妖狐x人类', bloodline: { 妖狐: 0.5, 人类: 0.5 }, fathers: '人父', provider: '人母' },
+      ], { race: '妖狐' }),
+      人父: ch('人父'),
+      人母: ch('人母'),
+    },
+  };
+  const view = buildLineageView(chat, '狐母');
+  const node = (name) => view.nodes.find((item) => item.displayName === name);
+  assert.deepEqual(node('甲').motherBloodline, { 妖狐: 1 });
+  assert.deepEqual(node('乙').motherBloodline, { 人类: 1 }, '代孕时卵源才是母方，承载者不算');
+  assert.equal(node('狐母').motherBloodline, null);
+});

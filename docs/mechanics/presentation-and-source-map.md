@@ -10,6 +10,8 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 
 家系圖由 [lineage.js](../../scripts/lineage.js#L31)把子女和父母來源組成圖，再由 [lineage_view.js](../../scripts/lineage_view.js#L65)建立聚焦視圖。若來源欄位不完整，圖上自然只能呈現已記錄的關係。
 
+家系卡片的肖像顯示種族圖示（七巧板風，見 [race_icons.js](../../scripts/race_icons.js)）：每個內建種族一個象徵物，衍生類型加上專屬外框（修煉八卦爻、魔導法陣與盧恩、妖怪勾玉、神祇光芒祭壇、不死棺木、血族蝙蝠血滴、星際行星、機械齒輪、器靈劍魂、變異輻射、序列階章、獸化爪痕）。混血時圖示取有圖示的成分中血統占比最高者；平手時取母方（遺傳母親，代孕時為卵源）占比較高的，母方也平手才取種族文字中排在前面的。血統比例本身仍是父母各半，母系只在選圖示時稍占上風，並在底下墊按血統占比斜切的拼色底；自訂或未知種族沒有圖示，肖像退回姓名首字。圖形以 `currentColor` 填色，隨主題變色。
+
 ## 模組索引
 
 | 模組 | 責任 |
@@ -37,6 +39,7 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 | [uterus_render.js](../../scripts/uterus_render.js) | 子宮畫板繪製。 |
 | [lineage.js](../../scripts/lineage.js) | 家系資料圖。 |
 | [lineage_view.js](../../scripts/lineage_view.js) | 家系聚焦視圖。 |
+| [race_icons.js](../../scripts/race_icons.js) | 種族圖示、衍生外框與混血拼色底的 SVG。 |
 | [calculator_ui.js](../../scripts/calculator_ui.js) | 計算器畫面的輸入與結果。 |
 | [doc_viewer.js](../../scripts/doc_viewer.js) | 插件內的說明閱讀器，讀取隨插件安裝的 docs。 |
 
