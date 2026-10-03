@@ -404,11 +404,11 @@ function buildMainFlowFieldNotes(existingState = {}) {
     '[状态字段速读]',
     '- 值为空的字段一律省略；认知与心理的省略/null 表示未知，不等于未孕或0。',
     '- cognitionRecords 保存角色信念，可以与事实不同；系统结果、真实胎父与胎数不自动成为角色知识。自然线索到点也不强制知孕。',
-    '- lastCondomResult/lastEmergencyResult 是执行后结果，供本轮承接，仍不等于角色察觉。',
+    ...(profiles.some((profile) => profile.lastCondomResult || profile.lastEmergencyResult) ? ['- lastCondomResult/lastEmergencyResult 只在结算后的下一次叙事出现：是系统结果，不等于角色察觉；可据此描写合理可见的后果，不要求本轮处理。'] : []),
     '- base：vitality 活力、psyStress 情压，体质与精神倾向看 *LevelText；libido 性欲；uterinePressure 宫压（上限随孕程提高，越高越接近流产或分娩）；eggs 可受精卵数；sperms 为体内残留精液，value 每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。',
   ];
   if (profiles.some((profile) => profile.metabolism)) {
-    lines.push('- metabolism：excretion 泄意、hunger 饿意、sleep 困意、milk 乳意、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；数值越高越急迫（一般上限 150）。');
+    lines.push('- metabolism：excretion 泄意、hunger 饿意、sleep 困意、milk 乳意、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；数值越高越急迫（一般上限 150）。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');
   }
   if (profiles.some((profile) => profile.pregnant)) {
     lines.push(
@@ -433,9 +433,9 @@ function buildMainFlowFieldNotes(existingState = {}) {
 }
 
 export function buildMainFlowStatePrompt(payload = {}) {
-  const existingState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {};
-  const hasState = Object.keys(existingState).length > 0;
-  if (!hasState) return '';
+  const trackedState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {};
+  if (Object.keys(trackedState).length === 0) return '';
+  const existingState = projectNarrativeState(trackedState, payload.recent_operation_results);
   const racePhysiologyPrompt = buildRacePhysiologyPrompt(payload || {});
   // 特殊来历的胎儿只丢一串 tags 给主线模型，它无从判断该怎么写。
   // 与种族短叙述同规则：只解释本轮真的出现过的标签，没出现就不占 token。
@@ -456,10 +456,54 @@ export function buildMainFlowStatePrompt(payload = {}) {
     '',
     '[当前已注册角色状态]',
     serializeStateForPrompt(existingState),
-    ...(payload.recent_operation_results?.length ? ['[上轮已结算的生殖操作结果]', '下一次叙事据此承接成败；这不是角色已知的事实，不能自动写入认知或让角色揭露隐藏真相。', serializeStateForPrompt(payload.recent_operation_results)] : []),
+    ...(payload.recent_operation_results?.length ? ['[上轮已结算的生殖操作结果]', '可据此描写合理可见的后果（例如破套可能当场被发现），不要求本轮处理；这不是角色已知的事实，不得让角色无依据得知受孕、胎数或胎父，也不能自动写入认知。', serializeStateForPrompt(payload.recent_operation_results.map(({ name, applied, message }) => ({ name, applied, message })))] : []),
     fetusTagBlock,
     '</bs_biotracker>',
   ].filter((part) => part !== '').join('\n');
+}
+
+// notify.thirdly 是写给追踪模型的工具提示（「应优先使用 bsExcreteMetabolism」、供养力的奖惩），
+// 写剧情的模型读到会以为本轮必须安排角色去处理。这里改写成中性的身体状态，奖惩与操作建议删掉；
+// 破水禁令等限制原样保留。改写依赖 tools.js 产生的固定句式，见 main_flow_narrative 测试。
+const NARRATIVE_REMINDER_RULES = [
+  [/^(.+?)有强烈的生理需求（(.+?)），应优先使用 bsExcreteMetabolism 缓解生理不适$/, '$1有明显的生理需求（$2）：可自然体现身体状态，不要求本轮处理'],
+  [/^(.+?)仍有未被衍生代谢抵免的生理需求（(.+?)），可用 bsExcreteMetabolism 处理$/, '$1仍有生理需求（$2）：可自然体现，不要求本轮处理'],
+  [/^(.+?)已达到(.+?)，应优先使用 bsExcreteMetabolism 进行解放$/, '$1已达到$2：可自然体现，不要求本轮处理'],
+  [/^(.+?)渴望陪伴，可优先给予陪伴、交流或安抚$/, '$1渴望陪伴'],
+  [/^(.+?)渴望陪伴，但当前臭意会妨碍社交舒适度$/, '$1渴望陪伴，但身上的气味令人在意'],
+];
+const NARRATIVE_REMINDER_DROPS = [/供养力/, /^若释放量足够大/, /^清洁后再给予陪伴/, /bsExcreteMetabolism/];
+
+export function narrativeReminders(text) {
+  return String(text || '').split('；').map((part) => part.trim()).filter(Boolean).map((part) => {
+    const rule = NARRATIVE_REMINDER_RULES.find(([pattern]) => pattern.test(part));
+    if (rule) return part.replace(rule[0], rule[1]);
+    return NARRATIVE_REMINDER_DROPS.some((pattern) => pattern.test(part)) ? '' : part;
+  }).filter(Boolean).join('；');
+}
+
+/**
+ * 主线叙事看到的角色状态：避孕结果只在刚结算后的下一次叙事出现（之后仍保存在资料里，
+ * 但不再每轮提醒），代谢提醒改成中性描述
+ */
+export function projectNarrativeState(existingState = {}, recentResults = []) {
+  const results = Array.isArray(recentResults) ? recentResults : [];
+  const fresh = (tool, test = () => true) => new Set(results.filter((item) => item?.name === tool && test(item)).map((item) => item.female));
+  const condomFresh = fresh('bsAddSperm', (item) => String(item.message || '').includes('deposit'));
+  const emergencyFresh = fresh('bsAbortion');
+  return Object.fromEntries(Object.entries(existingState || {}).map(([name, item]) => {
+    if (!item?.profile) return [name, item];
+    const profile = { ...item.profile };
+    if (!condomFresh.has(name)) delete profile.lastCondomResult;
+    if (!emergencyFresh.has(name)) delete profile.lastEmergencyResult;
+    if (profile.notify?.thirdly) {
+      const thirdly = narrativeReminders(profile.notify.thirdly);
+      const notify = { ...profile.notify, thirdly };
+      if (!thirdly) delete notify.thirdly;
+      profile.notify = Object.values(notify).some((value) => String(value || '').trim()) ? notify : undefined;
+    }
+    return [name, { ...item, profile }];
+  }));
 }
 
 /**

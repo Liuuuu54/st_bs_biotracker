@@ -1365,7 +1365,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     available_tools: getTrackerToolDefinitions(settings, existingState),
     diary_enabled: diaryEnabled,
     race_catalog_selection: settings?.raceCatalogSelection || null,
-    recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => ['bsAddSperm', 'bsAbortion'].includes(log.name) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message }) => ({ name, applied, message })),
+    recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => ['bsAddSperm', 'bsAbortion'].includes(log.name) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),
     world_baseline_prompt: String(settings?.worldBaselinePrompt || '').trim(),
     require_full_description_updates: settings?.requireFullDescriptionUpdates === true,
     ...(psychologyEnabled ? { breeding_psychology_enabled: true } : {}),
