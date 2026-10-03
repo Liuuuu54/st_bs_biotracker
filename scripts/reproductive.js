@@ -2,7 +2,7 @@
 export const COGNITION_METHODS = Object.freeze(['perception', 'guess', 'informed', 'test', 'prenatal']);
 export const EXPERIENCE_ACTIONS = Object.freeze(['cognition', 'date', 'breakup', 'marry', 'divorce', 'child']);
 export const REPRODUCTIVE_DEFAULTS = Object.freeze({
-  condomCapacity: 100, condomReliability: 0.95,
+  condomCapacity: 50, condomReliability: 0.95,
   emergencyEffectiveness: 0.8,
   noticeBaseDays: 42, noticeMinDays: 28, noticeMaxDays: 280, noticeSpread: 0.6,
   noticeFetalWeight: 0.15, experienceCap: 10,

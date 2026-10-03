@@ -4036,7 +4036,7 @@ function renderWombAlert(data) {
 }
 
 const WOMB_CUE_LABELS = Object.freeze({
-  insert: '插入', ejaculate: '射精', ovulation: '排卵', fertilization: '受精', surrogacy: '代孕植入',
+  insert: '插入', insertCondom: '戴套插入', ejaculate: '射精', ejaculateCondom: '射在套里', condomBreak: '套子破裂', condomOverflow: '套子撑爆', ovulation: '排卵', fertilization: '受精', surrogacy: '代孕植入',
   chimera: '嵌合融合', rebirth: '胎内回归', implantation: '着床', implantationFailed: '着床失败', rupture: '破水',
 });
 

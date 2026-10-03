@@ -124,3 +124,30 @@ test('看得见的受孕照常发事件', () => {
   assert.equal(call(surrogacy, 'bsImplantEmbryo', { provider: '委托者', race: '人类', fathers: 'M', fatherRace: '人类', count: 1 }).applied, true);
   assert.equal(cue(surrogacy)?.type, 'surrogacy');
 });
+
+test('戴套插入、射在套里、破裂与撑爆各有自己的特写', () => {
+  const held = setup('卵泡期');
+  held.reproductiveSettings = { condomReliability: 1 };
+  assert.equal(call(held, 'bsAddSperm', { male: 'M', race: '人类', action: 'insert', amount: 0, hasCondom: true }).applied, true);
+  assert.equal(cue(held).type, 'insertCondom');
+  assert.equal(call(held, 'bsAddSperm', { male: 'M', race: '人类', action: 'deposit', amount: 20 }).applied, true);
+  assert.deepEqual([P(held).lastCondomResult.condomFailed, P(held).lastCondomResult.condomFailReason], [false, null]);
+  assert.deepEqual(cue(held), { type: 'ejaculateCondom', seq: 2 });
+
+  // 机率失效是破裂：没超过容量，特写是侧面裂开
+  const torn = setup('卵泡期');
+  torn.reproductiveSettings = { condomReliability: 0 };
+  assert.equal(call(torn, 'bsAddSperm', { male: 'M', race: '人类', action: 'insert', amount: 0, hasCondom: true }).applied, true);
+  assert.equal(call(torn, 'bsAddSperm', { male: 'M', race: '人类', action: 'deposit', amount: 20 }).applied, true);
+  assert.deepEqual([P(torn).lastCondomResult.condomFailed, P(torn).lastCondomResult.condomFailReason], [true, 'tear']);
+  assert.deepEqual(cue(torn), { type: 'condomBreak', seq: 2 });
+
+  // 量超过容量必定撑爆，即使可靠度是 1
+  const burst = setup('卵泡期');
+  burst.reproductiveSettings = { condomReliability: 1 };
+  assert.equal(call(burst, 'bsAddSperm', { male: 'M', race: '人类', action: 'insert', amount: 0, hasCondom: true }).applied, true);
+  assert.equal(call(burst, 'bsAddSperm', { male: 'M', race: '人类', action: 'deposit', amount: 150 }).applied, true);
+  assert.deepEqual([P(burst).lastCondomResult.condomFailed, P(burst).lastCondomResult.condomFailReason], [true, 'overflow']);
+  assert.equal(P(burst).lastCondomResult.enteredAmount, 150);
+  assert.deepEqual(cue(burst), { type: 'condomOverflow', seq: 2 });
+});

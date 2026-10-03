@@ -973,7 +973,8 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   }
 
   // ---- 事件演出 ----
-  function shaft(tip) {
+  /** condom=true 时外面再包一层膜，前端留储精囊；回传头部 y，供储精囊鼓胀与破口定位 */
+  function shaft(tip, condom = false) {
     const { womb, tract } = layout;
     const bottom = Math.min(120, tract.canalBottom);
     const headY = Math.min(bottom - 5, Math.round(tip));
@@ -981,6 +982,65 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     pen.px(womb.cx - 3, headY + 3, 7, bottom - headY - 3, P.wallLight);
     pen.ellipse(womb.cx, headY + 2, 4, 3, P.fetusLight);
     pen.px(womb.cx - 2, headY, 3, 1, P.shine);
+    if (condom) {
+      pen.px(womb.cx - 5, headY + 3, 1, bottom - headY - 3, P.waterLight);
+      pen.px(womb.cx + 5, headY + 3, 1, bottom - headY - 3, P.waterLight);
+      pen.ring(womb.cx, headY + 2, 5, 4, P.waterLight, [200, 340]);
+      teat(headY, 0);
+      pen.px(womb.cx + 2, headY + 4, 1, Math.max(1, Math.round((bottom - headY) / 3)), P.shine);
+    }
+    return headY;
+  }
+
+  /**
+   * 正常射在套里：精液先积进前端的小储精囊，满了就沿龟头在膜里摊开，套子外形不变。
+   * fill 0..1；回传储精囊顶端 y。
+   */
+  function teat(headY, fill) {
+    const { womb } = layout;
+    const h = 3;
+    const top = headY - 1 - h;
+    pen.px(womb.cx - 2, top, 5, h + 1, P.waterLight);
+    pen.px(womb.cx - 1, top + 1, 3, h - 1, P.cavityDeep);
+    const tipRows = Math.min(h - 1, Math.round(fill * 1.6 * (h - 1)));
+    if (tipRows > 0) pen.px(womb.cx - 1, top + 1, 3, tipRows, P.fluidLight);
+    // 储精囊满了以后，龟头周围的膜透出一圈精液，并沿柱身往下渗一点
+    const film = Math.max(0, Math.round((fill - 0.55) / 0.45 * 4));
+    if (film > 0) {
+      pen.px(womb.cx - 5, headY + 2, 1, film, P.fluidLight);
+      pen.px(womb.cx + 5, headY + 2, 1, film, P.fluidLight);
+      pen.px(womb.cx - 3, headY - 1, 7, 1, P.fluidLight);
+    }
+    pen.px(womb.cx - 1, top, 1, 1, P.shine);
+    return top;
+  }
+
+  /** 撑爆专用：量超过容量时储精囊被撑成球；fill 0..1 决定鼓起多少 */
+  function reservoir(headY, fill, color = P.fluidLight) {
+    const { womb } = layout;
+    const r = 1 + Math.round(3 * fill);
+    const cy = headY - 2 - r;
+    pen.ellipse(womb.cx, cy, r + 1, r + 1, P.waterLight);
+    if (fill > 0) pen.ellipse(womb.cx, cy, r, r, color);
+    pen.px(womb.cx - Math.max(1, r - 1), cy - r, 1, 1, P.shine);
+    return cy;
+  }
+
+  /** 精液从 originY 往宫腔上方喷：没戴套从龟头出，破套从破口出；dx 让侧面裂缝的喷流偏向一边起喷 */
+  function spray(originY, elapsed, count = 13, dx = 0) {
+    const { womb } = layout;
+    ctx.save();
+    cavityPath();
+    ctx.clip();
+    for (let i = 0; i < count; i += 1) {
+      const release = elapsed - i * 75;
+      if (release < 0) continue;
+      const travel = Math.min(35, release / 45);
+      const spread = Math.min(3, travel / 7);
+      const x = womb.cx + Math.round(dx * Math.max(0, 1 - travel / 12)) + Math.round(Math.sin(i * 2.4 + travel * 0.3) * spread);
+      pen.px(x, originY - travel, i % 3 ? 1 : 2, i % 3 ? 1 : 2, i % 2 ? P.shine : P.fluidLight);
+    }
+    ctx.restore();
   }
 
   function divisionCells(cx, cy, count, k) {
@@ -1099,6 +1159,88 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
         line(cx + 5, cy + 6, cx + 1, cy + 8, P.fetusLight);
         ctx.globalAlpha = 1;
       }
+    } else if (type === 'condomBreak') {
+      // 特写套子前端：不会鼓胀；射到第二股时膜在龟头侧面裂开，精液从裂缝斜喷出去
+      const tear = 600;
+      const bodyTop = y + 26;
+      px(cx - 9, bodyTop, 1, H - (bodyTop - y), P.waterLight);
+      px(cx + 9, bodyTop, 1, H - (bodyTop - y), P.waterLight);
+      px(cx - 8, bodyTop, 17, H - (bodyTop - y), P.wallLight);
+      ellipse(cx, bodyTop, 8, 5, P.fetusLight);
+      ring(cx, bodyTop, 9, 6, P.waterLight, [0, 0]);
+      px(cx + 6, bodyTop + 4, 1, 14, P.shine);
+      px(cx - 3, bodyTop - 11, 7, 6, P.waterLight);
+      px(cx - 2, bodyTop - 10, 5, 4, P.cavityDeep);
+      const rows = Math.min(4, Math.floor(Math.min(elapsed, tear) / 250) + 1);
+      px(cx - 2, bodyTop - 10, 5, rows, P.fluidLight);
+      px(cx - 2, bodyTop - 11, 1, 1, P.shine);
+      if (elapsed >= tear - 120 && elapsed < tear) line(cx + 9, bodyTop - 2, cx + 8, bodyTop + 1, P.void);
+      if (elapsed >= tear) {
+        const torn = elapsed - tear;
+        const gap = Math.min(3, 1 + Math.floor(torn / 150));
+        // 裂缝：膜往两边掀开，缝里看得到精液
+        px(cx + 8, bodyTop - 3, gap, 7, P.void);
+        px(cx + 8, bodyTop - 2, 1, 5, P.fluidLight);
+        line(cx + 8 + gap, bodyTop - 4, cx + 10 + gap, bodyTop - 6, P.waterLight);
+        line(cx + 8 + gap, bodyTop + 4, cx + 10 + gap, bodyTop + 6, P.waterLight);
+        for (let i = 0; i < 14; i += 1) {
+          const age = torn - i * 55;
+          if (age < 0) continue;
+          const dist = Math.min(24, age / 28);
+          const sx = cx + 10 + gap + Math.round(dist * 0.55);
+          const sy = bodyTop - Math.round(dist * 0.9) + Math.round((dist * dist) / 90) + (i % 3) - 1;
+          px(sx, sy, i % 3 ? 1 : 2, i % 3 ? 1 : 2, i % 2 ? P.shine : P.fluidLight);
+        }
+        // 也有一点顺着柱身外侧往下流
+        px(cx + 10, bodyTop + 4, 1, Math.min(12, Math.round(torn / 80)), P.fluidLight);
+      }
+    } else if (type === 'condomOverflow') {
+      // 特写套子前端：储精囊越撑越薄，到点沿顶部裂开，碎膜翻开、精液从裂口喷出
+      const tear = 900;
+      const swell = Math.min(1, elapsed / tear);
+      const tipY = y + 20;
+      const bodyTop = tipY + 6;
+      px(cx - 9, bodyTop, 1, H - (bodyTop - y), P.waterLight);
+      px(cx + 9, bodyTop, 1, H - (bodyTop - y), P.waterLight);
+      px(cx - 8, bodyTop, 17, H - (bodyTop - y), P.wallLight);
+      ellipse(cx, bodyTop, 8, 5, P.fetusLight);
+      px(cx + 6, bodyTop + 4, 1, 14, P.shine);
+      if (elapsed < tear) {
+        const rx = Math.round((5 + 4 * swell) * k * 0.8);
+        const ry = Math.round((4 + 6 * swell) * k * 0.8);
+        const ty = tipY - ry + 3;
+        ellipse(cx, ty, rx + 1, ry + 1, P.waterLight);
+        ellipse(cx, ty, rx, ry, P.fluidLight);
+        px(cx - Math.round(rx / 2), ty - ry + 1, 2, 1, P.shine);
+        // 快撑破时膜变薄：顶端闪出几点细纹
+        if (swell > 0.7 && Math.floor(elapsed / 120) % 2 === 0) {
+          line(cx - 2, ty - ry, cx, ty - ry + 2, P.void);
+          line(cx, ty - ry + 2, cx + 2, ty - ry, P.void);
+        }
+      } else {
+        const torn = elapsed - tear;
+        const rx = 8;
+        // 残膜还套在龟头上：边缘从囊口往裂缝收，两片碎膜往外翻开
+        const ty = bodyTop - 3;
+        const open = Math.min(4, 1 + torn / 120);
+        ellipse(cx, ty + 1, rx - 1, 3, P.fluidLight);
+        line(cx - rx, ty + 1, cx - 3, ty - 4, P.waterLight);
+        line(cx + rx, ty + 1, cx + 3, ty - 4, P.waterLight);
+        line(cx - 3, ty - 4, cx - 3 - open, ty - 6 - open, P.waterLight);
+        line(cx + 3, ty - 4, cx + 3 + open, ty - 6 - open, P.waterLight);
+        // 裂口正中一道液柱往上冲，两侧液滴放慢散开
+        const column = Math.min(16, Math.round(torn / 35));
+        for (let j = 0; j < column; j += 1) px(cx - 1 + (j % 2), ty - 5 - j, 2, 1, j % 3 ? P.fluidLight : P.shine);
+        for (let i = 0; i < 12; i += 1) {
+          const age = torn - i * 70;
+          if (age < 0) continue;
+          const dist = Math.min(18, age / 55);
+          const a = -Math.PI / 2 + (i % 2 ? 1 : -1) * (0.35 + (i % 4) * 0.18);
+          const dx = Math.round(Math.cos(a) * dist);
+          const dy = Math.round(Math.sin(a) * dist + (dist * dist) / 70);
+          px(cx + dx, ty - 5 + dy, i % 3 ? 1 : 2, i % 3 ? 1 : 2, i % 2 ? P.shine : P.fluidLight);
+        }
+      }
     }
     ctx.restore();
   }
@@ -1142,30 +1284,64 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     for (const [x, y, w, h, color] of outlet) pen.px(x, y, w, h, color);
   }
 
+  // 套子失效都分两段：小窗特写先演失效的那一刻；小窗遮住产道中线，所以等它在 CONDOM_INSET_MS
+  // 收起后，主画面才演精液冲进宫腔。机率破裂（condomBreak）不鼓胀，射到一半侧面裂开；
+  // 超过容量（condomOverflow）则储精囊先被撑成球，到 CONDOM_BURST_MS 才爆开。
+  const CONDOM_TEAR_MS = 600;
+  const CONDOM_BURST_MS = 900;
+  const CONDOM_INSET_MS = 1500;
+  const CONDOM_FAIL_MS = 3300;
+
+  /** 正常射精是一股一股的：每股约 250ms，前几股最多 */
+  function spurtFill(elapsed, total = 1300) {
+    return Math.min(1, (Math.floor(elapsed / 250) + 1) * 250 / total);
+  }
+
   function drawCue(tick) {
     if (!cue) return;
     const elapsed = Math.max(0, tick - cue.start);
-    if (elapsed > (cue.type === 'rupture' ? RUPTURE_MS : CUE_MS)) { cue = null; return; }
+    const limit = cue.type === 'rupture' ? RUPTURE_MS : (cue.type === 'condomBreak' || cue.type === 'condomOverflow') ? CONDOM_FAIL_MS : CUE_MS;
+    if (elapsed > limit) { cue = null; return; }
     const { womb, tract } = layout;
     if (cue.type === 'rupture') drawRupture(elapsed);
-    else if (cue.type === 'insert') {
+    else if (cue.type === 'insert' || cue.type === 'insertCondom') {
       const phase = Math.floor(elapsed / 180) % 4;
-      shaft(tract.canalTop + (phase === 1 || phase === 2 ? 0 : 8));
+      shaft(tract.canalTop + (phase === 1 || phase === 2 ? 0 : 8), cue.type === 'insertCondom');
       if (phase === 1 || phase === 2) { pen.px(womb.cx - 8, tract.canalTop + 3, 2, 1, P.shine); pen.px(womb.cx + 7, tract.canalTop + 3, 2, 1, P.shine); }
     } else if (cue.type === 'ejaculate') {
       shaft(tract.canalTop + 1);
-      ctx.save();
-      cavityPath();
-      ctx.clip();
-      for (let i = 0; i < 13; i += 1) {
-        const release = elapsed - i * 75;
-        if (release < 0) continue;
-        const travel = Math.min(35, release / 45);
-        const spread = Math.min(3, travel / 7);
-        const x = womb.cx + Math.round(Math.sin(i * 2.4 + travel * 0.3) * spread);
-        pen.px(x, tract.canalTop + 2 - travel, i % 3 ? 1 : 2, i % 3 ? 1 : 2, i % 2 ? P.shine : P.fluidLight);
+      spray(tract.canalTop + 2, elapsed);
+    } else if (cue.type === 'ejaculateCondom') {
+      // 一股一股积进储精囊，满了在膜里摊开；宫腔里不出现任何飞沫
+      const headY = shaft(tract.canalTop + 4, true);
+      teat(headY, spurtFill(elapsed));
+    } else if (cue.type === 'condomBreak') {
+      const headY = shaft(tract.canalTop + 4, true);
+      // 裂开前只积了一两股；裂开后从侧面漏掉，储精囊不再变满
+      teat(headY, spurtFill(Math.min(elapsed, CONDOM_TEAR_MS)));
+      if (elapsed >= CONDOM_TEAR_MS) {
+        const gap = Math.min(3, 1 + Math.floor((elapsed - CONDOM_TEAR_MS) / 200));
+        pen.px(womb.cx + 5, headY + 2, 1, gap + 1, P.cavityDeep);
+        pen.px(womb.cx + 6, headY + 2, 1, 1, P.waterLight);
+        pen.px(womb.cx + 6, headY + 3 + gap, 1, 1, P.waterLight);
+        pen.px(womb.cx + 4, headY + 2, 1, gap + 1, P.fluidLight);
+        if (elapsed >= CONDOM_INSET_MS) spray(headY + 2, elapsed - CONDOM_INSET_MS, 13, 5);
       }
-      ctx.restore();
+      if (elapsed < CONDOM_INSET_MS) cueInset('condomBreak', elapsed);
+    } else if (cue.type === 'condomOverflow') {
+      const headY = shaft(tract.canalTop + 4, true);
+      if (elapsed < CONDOM_BURST_MS) {
+        reservoir(headY, Math.min(1, elapsed / CONDOM_BURST_MS) * 1.15);
+      } else {
+        // 撑爆：囊壁剩两片碎膜往两侧翻开，精液从顶端破口直冲宫腔
+        const torn = elapsed - CONDOM_BURST_MS;
+        const flap = Math.min(3, 1 + torn / 200);
+        pen.px(womb.cx - 2 - flap, headY - 4, 2, 1, P.waterLight);
+        pen.px(womb.cx + 1 + flap, headY - 4, 2, 1, P.waterLight);
+        pen.px(womb.cx - 1, headY - 2, 3, 1, P.fluidLight);
+        if (elapsed >= CONDOM_INSET_MS) spray(headY - 3, elapsed - CONDOM_INSET_MS, 15);
+      }
+      if (elapsed < CONDOM_INSET_MS) cueInset('condomOverflow', elapsed);
     } else cueInset(cue.type, elapsed);
   }
 

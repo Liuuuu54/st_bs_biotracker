@@ -7041,7 +7041,7 @@ function applyAddSperm(chatState, args) {
     base.penetrationSource = male;
     base.latestSexDays = 0;
     next.profile.base = base;
-    setVisualCue(next.profile, 'insert');
+    setVisualCue(next.profile, base.penetrationCondom ? 'insertCondom' : 'insert');
     const experience = { ...(next.profile?.experience || {}), latestSexPartner: male };
     if (experience.virginity === null || experience.virginity === undefined) experience.virginity = male;
     next.profile.experience = experience;
@@ -7078,7 +7078,7 @@ function applyAddSperm(chatState, args) {
 
   const config = normalizeReproductiveSettings(chatState.reproductiveSettings);
   const hasCondom = args.hasCondom ?? base.penetrationCondom ?? false;
-  const condomFailed = hasCondom && (amount > config.condomCapacity || Math.random() >= config.condomReliability);
+  const condomOverflow = hasCondom && amount > config.condomCapacity; const condomFailed = condomOverflow || (hasCondom && Math.random() >= config.condomReliability); const condomFailReason = condomFailed ? (condomOverflow ? 'overflow' : 'tear') : null;
   const enteredAmount = hasCondom && !condomFailed ? 0 : amount;
   base.penetrationCondom = hasCondom;
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
@@ -7097,7 +7097,7 @@ function applyAddSperm(chatState, args) {
     }];
   }
   base.sperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
-  next.profile.lastCondomResult = { hasCondom, condomFailed, enteredAmount, minutesPassed: Number(chatState.minutesPassed) || 0 };
+  next.profile.lastCondomResult = { hasCondom, condomFailed, condomFailReason, enteredAmount, minutesPassed: Number(chatState.minutesPassed) || 0 };
   base.penetrationState = 'spent';
   base.penetrationSource = male;
   base.latestSexDays = 0;
@@ -7112,12 +7112,12 @@ function applyAddSperm(chatState, args) {
   next.profile.experience = experience;
   if (enteredAmount > 0) {
     applyOdorGain(next.profile, Math.min(18, 4 + Math.log10(Math.max(1, enteredAmount)) * 4));
-    setVisualCue(next.profile, 'ejaculate');
-  }
+    setVisualCue(next.profile, condomFailed ? (condomOverflow ? 'condomOverflow' : 'condomBreak') : 'ejaculate');
+  } else if (hasCondom) setVisualCue(next.profile, 'ejaculateCondom');
   const ripening = enteredAmount > 0 ? applyProdromalSemenRipening(next.profile, female) : null;
   if (ripening) next.profile.notify = { ...(next.profile.notify || {}), secondly: ripening };
   chatState.characters[female] = ripening ? syncCharacterStageFromProfile(next) : next;
-  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}, enteredAmount=${enteredAmount}（系统结算，不代表角色知情；下轮承接）.${ripening ? ` ${ripening}。` : ''}` };
+  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}${condomFailReason ? ` (${condomFailReason === 'overflow' ? '超过容量撑破' : '套子破裂'})` : ''}, enteredAmount=${enteredAmount}（系统结算，不代表角色知情；下轮承接）.${ripening ? ` ${ripening}。` : ''}` };
 }
 
 function applyDrainSperm(chatState, args) {
