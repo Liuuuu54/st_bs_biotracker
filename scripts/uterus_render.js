@@ -973,6 +973,29 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   }
 
   // ---- 事件演出 ----
+  /**
+   * 套子与精液的颜色跟着主题走，但浅色或单色主题里膜会融进柱身、白色精液会融进背景：
+   * 依背景深浅往白或往暗推，直到和背景、柱身、宫腔都拉开亮度差为止
+   */
+  let condomPalette = null;
+  function condomTones() {
+    if (condomPalette) return condomPalette;
+    const darkTheme = luminance(P.void) < 0.5;
+    const target = darkTheme ? '#ffffff' : mixColor(P.wallDark, '#000000', 0.35);
+    // cap 限制最多推多远：精液在浅色主题只压成米灰，不能变成黑洞
+    const guard = (color, against, min, cap = 1) => {
+      for (let t = 0; t <= cap + 0.001; t += 0.1) {
+        const c = mixColor(color, target, t);
+        if (against.every((other) => Math.abs(luminance(c) - luminance(other)) >= min)) return c;
+      }
+      return mixColor(color, target, cap);
+    };
+    const latex = guard(P.waterLight, [P.wallLight, P.fetusLight, P.void], 0.14);
+    const semen = guard(P.fluidLight, [P.void, P.cavity, P.cavityDeep], 0.18, darkTheme ? 1 : 0.6);
+    condomPalette = { latex, semen, semenHi: guard(mixColor(semen, P.shine, 0.5), [P.void, P.cavity, P.cavityDeep], 0.18, darkTheme ? 1 : 0.6) };
+    return condomPalette;
+  }
+
   /** condom=true 时外面再包一层膜，前端留储精囊；回传头部 y，供储精囊鼓胀与破口定位 */
   function shaft(tip, condom = false) {
     const { womb, tract } = layout;
@@ -983,9 +1006,9 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     pen.ellipse(womb.cx, headY + 2, 4, 3, P.fetusLight);
     pen.px(womb.cx - 2, headY, 3, 1, P.shine);
     if (condom) {
-      pen.px(womb.cx - 5, headY + 3, 1, bottom - headY - 3, P.waterLight);
-      pen.px(womb.cx + 5, headY + 3, 1, bottom - headY - 3, P.waterLight);
-      pen.ring(womb.cx, headY + 2, 5, 4, P.waterLight, [200, 340]);
+      pen.px(womb.cx - 5, headY + 3, 1, bottom - headY - 3, condomTones().latex);
+      pen.px(womb.cx + 5, headY + 3, 1, bottom - headY - 3, condomTones().latex);
+      pen.ring(womb.cx, headY + 2, 5, 4, condomTones().latex, [200, 340]);
       teat(headY, 0);
       pen.px(womb.cx + 2, headY + 4, 1, Math.max(1, Math.round((bottom - headY) / 3)), P.shine);
     }
@@ -1000,27 +1023,27 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     const { womb } = layout;
     const h = 3;
     const top = headY - 1 - h;
-    pen.px(womb.cx - 2, top, 5, h + 1, P.waterLight);
+    pen.px(womb.cx - 2, top, 5, h + 1, condomTones().latex);
     pen.px(womb.cx - 1, top + 1, 3, h - 1, P.cavityDeep);
     const tipRows = Math.min(h - 1, Math.round(fill * 1.6 * (h - 1)));
-    if (tipRows > 0) pen.px(womb.cx - 1, top + 1, 3, tipRows, P.fluidLight);
+    if (tipRows > 0) pen.px(womb.cx - 1, top + 1, 3, tipRows, condomTones().semen);
     // 储精囊满了以后，龟头周围的膜透出一圈精液，并沿柱身往下渗一点
     const film = Math.max(0, Math.round((fill - 0.55) / 0.45 * 4));
     if (film > 0) {
-      pen.px(womb.cx - 5, headY + 2, 1, film, P.fluidLight);
-      pen.px(womb.cx + 5, headY + 2, 1, film, P.fluidLight);
-      pen.px(womb.cx - 3, headY - 1, 7, 1, P.fluidLight);
+      pen.px(womb.cx - 5, headY + 2, 1, film, condomTones().semen);
+      pen.px(womb.cx + 5, headY + 2, 1, film, condomTones().semen);
+      pen.px(womb.cx - 3, headY - 1, 7, 1, condomTones().semen);
     }
     pen.px(womb.cx - 1, top, 1, 1, P.shine);
     return top;
   }
 
   /** 撑爆专用：量超过容量时储精囊被撑成球；fill 0..1 决定鼓起多少 */
-  function reservoir(headY, fill, color = P.fluidLight) {
+  function reservoir(headY, fill, color = condomTones().semen) {
     const { womb } = layout;
     const r = 1 + Math.round(3 * fill);
     const cy = headY - 2 - r;
-    pen.ellipse(womb.cx, cy, r + 1, r + 1, P.waterLight);
+    pen.ellipse(womb.cx, cy, r + 1, r + 1, condomTones().latex);
     if (fill > 0) pen.ellipse(womb.cx, cy, r, r, color);
     pen.px(womb.cx - Math.max(1, r - 1), cy - r, 1, 1, P.shine);
     return cy;
@@ -1038,7 +1061,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       const travel = Math.min(35, release / 45);
       const spread = Math.min(3, travel / 7);
       const x = womb.cx + Math.round(dx * Math.max(0, 1 - travel / 12)) + Math.round(Math.sin(i * 2.4 + travel * 0.3) * spread);
-      pen.px(x, originY - travel, i % 3 ? 1 : 2, i % 3 ? 1 : 2, i % 2 ? P.shine : P.fluidLight);
+      pen.px(x, originY - travel, i % 3 ? 1 : 2, i % 3 ? 1 : 2, i % 2 ? condomTones().semenHi : condomTones().semen);
     }
     ctx.restore();
   }
@@ -1163,16 +1186,16 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       // 特写套子前端：不会鼓胀；射到第二股时膜在龟头侧面裂开，精液从裂缝斜喷出去
       const tear = 600;
       const bodyTop = y + 26;
-      px(cx - 9, bodyTop, 1, H - (bodyTop - y), P.waterLight);
-      px(cx + 9, bodyTop, 1, H - (bodyTop - y), P.waterLight);
+      px(cx - 9, bodyTop, 1, H - (bodyTop - y), condomTones().latex);
+      px(cx + 9, bodyTop, 1, H - (bodyTop - y), condomTones().latex);
       px(cx - 8, bodyTop, 17, H - (bodyTop - y), P.wallLight);
       ellipse(cx, bodyTop, 8, 5, P.fetusLight);
-      ring(cx, bodyTop, 9, 6, P.waterLight, [0, 0]);
+      ring(cx, bodyTop, 9, 6, condomTones().latex, [0, 0]);
       px(cx + 6, bodyTop + 4, 1, 14, P.shine);
-      px(cx - 3, bodyTop - 11, 7, 6, P.waterLight);
+      px(cx - 3, bodyTop - 11, 7, 6, condomTones().latex);
       px(cx - 2, bodyTop - 10, 5, 4, P.cavityDeep);
       const rows = Math.min(4, Math.floor(Math.min(elapsed, tear) / 250) + 1);
-      px(cx - 2, bodyTop - 10, 5, rows, P.fluidLight);
+      px(cx - 2, bodyTop - 10, 5, rows, condomTones().semen);
       px(cx - 2, bodyTop - 11, 1, 1, P.shine);
       if (elapsed >= tear - 120 && elapsed < tear) line(cx + 9, bodyTop - 2, cx + 8, bodyTop + 1, P.void);
       if (elapsed >= tear) {
@@ -1180,19 +1203,19 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
         const gap = Math.min(3, 1 + Math.floor(torn / 150));
         // 裂缝：膜往两边掀开，缝里看得到精液
         px(cx + 8, bodyTop - 3, gap, 7, P.void);
-        px(cx + 8, bodyTop - 2, 1, 5, P.fluidLight);
-        line(cx + 8 + gap, bodyTop - 4, cx + 10 + gap, bodyTop - 6, P.waterLight);
-        line(cx + 8 + gap, bodyTop + 4, cx + 10 + gap, bodyTop + 6, P.waterLight);
+        px(cx + 8, bodyTop - 2, 1, 5, condomTones().semen);
+        line(cx + 8 + gap, bodyTop - 4, cx + 10 + gap, bodyTop - 6, condomTones().latex);
+        line(cx + 8 + gap, bodyTop + 4, cx + 10 + gap, bodyTop + 6, condomTones().latex);
         for (let i = 0; i < 14; i += 1) {
           const age = torn - i * 55;
           if (age < 0) continue;
           const dist = Math.min(24, age / 28);
           const sx = cx + 10 + gap + Math.round(dist * 0.55);
           const sy = bodyTop - Math.round(dist * 0.9) + Math.round((dist * dist) / 90) + (i % 3) - 1;
-          px(sx, sy, i % 3 ? 1 : 2, i % 3 ? 1 : 2, i % 2 ? P.shine : P.fluidLight);
+          px(sx, sy, i % 3 ? 1 : 2, i % 3 ? 1 : 2, i % 2 ? condomTones().semenHi : condomTones().semen);
         }
         // 也有一点顺着柱身外侧往下流
-        px(cx + 10, bodyTop + 4, 1, Math.min(12, Math.round(torn / 80)), P.fluidLight);
+        px(cx + 10, bodyTop + 4, 1, Math.min(12, Math.round(torn / 80)), condomTones().semen);
       }
     } else if (type === 'condomOverflow') {
       // 特写套子前端：储精囊越撑越薄，到点沿顶部裂开，碎膜翻开、精液从裂口喷出
@@ -1200,8 +1223,8 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       const swell = Math.min(1, elapsed / tear);
       const tipY = y + 20;
       const bodyTop = tipY + 6;
-      px(cx - 9, bodyTop, 1, H - (bodyTop - y), P.waterLight);
-      px(cx + 9, bodyTop, 1, H - (bodyTop - y), P.waterLight);
+      px(cx - 9, bodyTop, 1, H - (bodyTop - y), condomTones().latex);
+      px(cx + 9, bodyTop, 1, H - (bodyTop - y), condomTones().latex);
       px(cx - 8, bodyTop, 17, H - (bodyTop - y), P.wallLight);
       ellipse(cx, bodyTop, 8, 5, P.fetusLight);
       px(cx + 6, bodyTop + 4, 1, 14, P.shine);
@@ -1209,8 +1232,8 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
         const rx = Math.round((5 + 4 * swell) * k * 0.8);
         const ry = Math.round((4 + 6 * swell) * k * 0.8);
         const ty = tipY - ry + 3;
-        ellipse(cx, ty, rx + 1, ry + 1, P.waterLight);
-        ellipse(cx, ty, rx, ry, P.fluidLight);
+        ellipse(cx, ty, rx + 1, ry + 1, condomTones().latex);
+        ellipse(cx, ty, rx, ry, condomTones().semen);
         px(cx - Math.round(rx / 2), ty - ry + 1, 2, 1, P.shine);
         // 快撑破时膜变薄：顶端闪出几点细纹
         if (swell > 0.7 && Math.floor(elapsed / 120) % 2 === 0) {
@@ -1223,14 +1246,14 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
         // 残膜还套在龟头上：边缘从囊口往裂缝收，两片碎膜往外翻开
         const ty = bodyTop - 3;
         const open = Math.min(4, 1 + torn / 120);
-        ellipse(cx, ty + 1, rx - 1, 3, P.fluidLight);
-        line(cx - rx, ty + 1, cx - 3, ty - 4, P.waterLight);
-        line(cx + rx, ty + 1, cx + 3, ty - 4, P.waterLight);
-        line(cx - 3, ty - 4, cx - 3 - open, ty - 6 - open, P.waterLight);
-        line(cx + 3, ty - 4, cx + 3 + open, ty - 6 - open, P.waterLight);
+        ellipse(cx, ty + 1, rx - 1, 3, condomTones().semen);
+        line(cx - rx, ty + 1, cx - 3, ty - 4, condomTones().latex);
+        line(cx + rx, ty + 1, cx + 3, ty - 4, condomTones().latex);
+        line(cx - 3, ty - 4, cx - 3 - open, ty - 6 - open, condomTones().latex);
+        line(cx + 3, ty - 4, cx + 3 + open, ty - 6 - open, condomTones().latex);
         // 裂口正中一道液柱往上冲，两侧液滴放慢散开
         const column = Math.min(16, Math.round(torn / 35));
-        for (let j = 0; j < column; j += 1) px(cx - 1 + (j % 2), ty - 5 - j, 2, 1, j % 3 ? P.fluidLight : P.shine);
+        for (let j = 0; j < column; j += 1) px(cx - 1 + (j % 2), ty - 5 - j, 2, 1, j % 3 ? condomTones().semen : condomTones().semenHi);
         for (let i = 0; i < 12; i += 1) {
           const age = torn - i * 70;
           if (age < 0) continue;
@@ -1238,7 +1261,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
           const a = -Math.PI / 2 + (i % 2 ? 1 : -1) * (0.35 + (i % 4) * 0.18);
           const dx = Math.round(Math.cos(a) * dist);
           const dy = Math.round(Math.sin(a) * dist + (dist * dist) / 70);
-          px(cx + dx, ty - 5 + dy, i % 3 ? 1 : 2, i % 3 ? 1 : 2, i % 2 ? P.shine : P.fluidLight);
+          px(cx + dx, ty - 5 + dy, i % 3 ? 1 : 2, i % 3 ? 1 : 2, i % 2 ? condomTones().semenHi : condomTones().semen);
         }
       }
     }
@@ -1322,9 +1345,9 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       if (elapsed >= CONDOM_TEAR_MS) {
         const gap = Math.min(3, 1 + Math.floor((elapsed - CONDOM_TEAR_MS) / 200));
         pen.px(womb.cx + 5, headY + 2, 1, gap + 1, P.cavityDeep);
-        pen.px(womb.cx + 6, headY + 2, 1, 1, P.waterLight);
-        pen.px(womb.cx + 6, headY + 3 + gap, 1, 1, P.waterLight);
-        pen.px(womb.cx + 4, headY + 2, 1, gap + 1, P.fluidLight);
+        pen.px(womb.cx + 6, headY + 2, 1, 1, condomTones().latex);
+        pen.px(womb.cx + 6, headY + 3 + gap, 1, 1, condomTones().latex);
+        pen.px(womb.cx + 4, headY + 2, 1, gap + 1, condomTones().semen);
         if (elapsed >= CONDOM_INSET_MS) spray(headY + 2, elapsed - CONDOM_INSET_MS, 13, 5);
       }
       if (elapsed < CONDOM_INSET_MS) cueInset('condomBreak', elapsed);
@@ -1336,9 +1359,9 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
         // 撑爆：囊壁剩两片碎膜往两侧翻开，精液从顶端破口直冲宫腔
         const torn = elapsed - CONDOM_BURST_MS;
         const flap = Math.min(3, 1 + torn / 200);
-        pen.px(womb.cx - 2 - flap, headY - 4, 2, 1, P.waterLight);
-        pen.px(womb.cx + 1 + flap, headY - 4, 2, 1, P.waterLight);
-        pen.px(womb.cx - 1, headY - 2, 3, 1, P.fluidLight);
+        pen.px(womb.cx - 2 - flap, headY - 4, 2, 1, condomTones().latex);
+        pen.px(womb.cx + 1 + flap, headY - 4, 2, 1, condomTones().latex);
+        pen.px(womb.cx - 1, headY - 2, 3, 1, condomTones().semen);
         if (elapsed >= CONDOM_INSET_MS) spray(headY - 3, elapsed - CONDOM_INSET_MS, 15);
       }
       if (elapsed < CONDOM_INSET_MS) cueInset('condomOverflow', elapsed);
@@ -1388,6 +1411,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     },
     setTheme(next) {
       P = getUterusPalette(next);
+      condomPalette = null;
       pen = makePen(ctx, P);
       spriteOf = createSpriteCache(P);
       kick();
