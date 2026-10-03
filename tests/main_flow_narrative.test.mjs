@@ -75,3 +75,49 @@ test('a condom result reaches only the next narration, then stays in the data on
   assert.doesNotMatch(later, /lastCondomResult|上轮已结算的生殖操作结果/);
   assert.equal(chatState.characters['甲'].profile.lastCondomResult.condomFailed, true);
 });
+
+test('labor reminders keep the bans for the narrator but never name a tool', () => {
+  const text = [
+    '甲尚未破水（膜耐性还有95%）：禁止描写破水、羊水流出或羊膜破裂。若剧情确实需要破水，必须先调用 bsAssistFetalPosition（action=rupture），成功后才可如此描写',
+    '乙正处于产兆前驱阶段',
+    '若剧情明确把胎儿往上托，可用 bsAssistFetalPosition（action=lift）延后分娩，需要足够活力',
+    '丙正在延产期（膜耐性还有100%）：禁止描写破水、羊水流出、羊膜破裂或分娩发动。延产期间无法破水，也不会自然发动',
+    '剧情要结束延产，必须先调用 bsExtendPregnancy（action=induce）引产进入产兆前驱',
+    '已跨入新的一天',
+    '若角色有值得沉淀的经历、心境、关系或身体变化，可调用 bsWriteDiary 写入主观日记',
+  ].join('；');
+  assert.deepEqual(narrativeReminders(text).split('；'), [
+    '甲尚未破水（膜耐性还有95%）：禁止描写破水、羊水流出或羊膜破裂',
+    '乙正处于产兆前驱阶段',
+    '丙正在延产期（膜耐性还有100%）：禁止描写破水、羊水流出、羊膜破裂或分娩发动。延产期间无法破水，也不会自然发动',
+    '已跨入新的一天',
+  ]);
+});
+
+test('a rupture replaces the not-yet-ruptured ban in the same turn', () => {
+  const { ctx, settings, chatState } = setup([['甲', '卵泡期']]);
+  assert.equal(applyToolCall(chatState, { name: 'bsDebugInjectPregnancy', arguments: { female: '甲', fetusCount: 1, equivalentDays: 272 } }).applied, true);
+  assert.equal(applyToolCall(chatState, { name: 'bsDebugSetProdromal', arguments: { female: '甲', progressPercent: 99 } }).applied, true);
+  assert.equal(applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 3 } }).applied, true);
+  assert.equal(chatState.characters['甲'].profile.base.stage, '第一产程');
+  assert.match(chatState.characters['甲'].profile.notify.thirdly, /尚未破水/);
+
+  assert.equal(applyToolCall(chatState, { name: 'bsAssistFetalPosition', arguments: { female: '甲', action: 'rupture' } }).applied, true);
+  const notify = chatState.characters['甲'].profile.notify;
+  assert.equal(notify.secondly, '甲破水了');
+  assert.doesNotMatch(notify.thirdly, /尚未破水/);
+  assert.match(notify.thirdly, /甲已破水/);
+  assert.doesNotMatch(buildMainFlowPrompt(ctx, settings), /尚未破水|bsAssistFetalPosition/);
+});
+
+test('an obstruction warning reaches the narrator without the tool advice', () => {
+  const { ctx, settings, chatState } = setup([['甲', '卵泡期', (p) => { p.immune = { ...p.immune, realisticLabor: true }; }]]);
+  applyToolCall(chatState, { name: 'bsDebugInjectPregnancy', arguments: { female: '甲', fetusCount: 1, equivalentDays: 272 } });
+  chatState.characters['甲'].profile.pregnant.fetuses[0].tendencyAngle = 90;
+  applyToolCall(chatState, { name: 'bsDebugSetProdromal', arguments: { female: '甲', progressPercent: 99 } });
+  for (let i = 0; i < 4 && !/难产/.test(chatState.characters['甲'].profile.notify.firstly); i += 1) applyToolCall(chatState, { name: 'bsPassedTime', arguments: { minute: 30 } });
+  assert.match(chatState.characters['甲'].profile.notify.firstly, /横位，无法入盆，可用 bsAssistFetalPosition/);
+  const prompt = buildMainFlowPrompt(ctx, settings);
+  assert.match(prompt, /"firstly":"甲发生难产警示：领头的胎儿呈横位，无法入盆"/);
+  assert.doesNotMatch(prompt, /\bbs[A-Z]\w*/);
+});

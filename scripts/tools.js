@@ -563,7 +563,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + 'lift：把胎儿往上托回一格；产兆前驱托高领头胎儿会把分娩延后，这是要跟宫缩对抗的，母体活力不足会被拒绝，并带来一阵剧痛。产程中已入盆的胎儿不能再托回；双胎互锁只能用 rotate 转开其中一胎。'
       + 'descend：把胎儿往下推送一格；产兆前驱推送领头胎儿会缩短前驱，时间归零即进入第一产程；正式产程中不能用。'
       + 'rupture：破水（每一胎有各自的羊膜，同卵共囊一起破）。只有在产兆前驱且宫压已达上限的 66%，或已在第一／第二产程时才会生效；产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用，系统未确认前不要擅自描写破水。孕中孕内胎的胎膜破了代表它被宿主在宫内生出来，不算母亲破水。'
-      + 'extract：第二产程中把正在产道里下降或娩出的那一胎直接助产拉出（胎膜未破会先破）；肩难产时也可以用。只生这一胎，不会结束其余胎儿的分娩；要一次结束全部请用 bsChildbirth。'
+      + 'extract：第二产程中把正在产道里下降或娩出的那一胎直接助产拉出（胎膜未破会先破）；肩难产时也可以用。只生这一胎，不会结束其余胎儿的分娩；要一次结束全部请用 bsChildbirth。剧情已写出这一胎自己生下来、系统却还在下降或娩出中时，也直接用 extract 同步，记为自然产，不要让剧情等系统；不要为此改用 bsChildbirth（那会记成手术产）。'
       + '所有操作都会带来瞬时的疼痛（产程中）或心理压力（孕期），描写不得超过系统给出的疼痛等级。',
     input_schema: {
       type: 'object',
@@ -4443,7 +4443,7 @@ function enterProdromalStage(profile, female, stage, message) {
   pregnant.prodromalRemainingHours = getProdromalInitialHours(profile);
   pregnant.prodromalDelayProgressHours = 0;
   pregnant.prodromalLeadEmbryoId = null;
-  pregnant.laborPain = 0;
+  pregnant.laborPain = 0; base.uterinePressure = Math.max(clampNumber(base.uterinePressure, 0, 9999, 0), Math.ceil(getUterinePressureCap(profile) * 0.66)); // 宫压至少补到自然发动门槛：延产把宫压归零、离场在 50% 就发动、调试直接跳入，否则真实产程模式几乎每次都判宫缩微弱
   profile.pregnant = pregnant;
   updateLaborPain(profile, '产兆前驱', null, 0);
   profile.notify = {
@@ -5871,7 +5871,7 @@ function applyAssistFetalPosition(chatState, args) {
       cueRupture(profile, [sac]);
     }
     applyAssistStrain(profile, action);
-    deliverPresentingFetus(profile, female, profile.notify || {}, { lead: '经助产拉出，' });
+    deliverPresentingFetus(profile, female, profile.notify || {}); // 不标「助产拉出」：extract 也用来同步剧情里已自己生下的那一胎
     reconcileFetalDescent(profile);
     next.profile = profile;
     chatState.characters[female] = syncCharacterStageFromProfile(next);
@@ -7787,13 +7787,13 @@ export function applyToolCall(chatState, call) {
   const previous = guarded && (target.profile.reproductiveOperations || []).find((x) => x.source === call.sourceId);
   if (previous) return { ...previous.result, applied: false, unchanged: true, message: `重复来源：${previous.result.message}` };
   if (['产后恢复', '假孕期'].includes(target?.profile?.base?.stage) && ['bsImplantEmbryo', 'bsDebugInjectPregnancy', 'bsWombReturn'].includes(call?.name)) return { applied: false, message: '恢复/假孕须先进入月经，不能跳过周期刷新植入妊娠。' };
-  const oldStages = Object.fromEntries(Object.entries(chatState.characters || {}).map(([name, character]) => [name, character.profile?.base?.stage]));
+  const oldStages = Object.fromEntries(Object.entries(chatState.characters || {}).map(([name, character]) => [name, character.profile?.base?.stage])); const oldIntact = Object.fromEntries(Object.entries(chatState.characters || {}).map(([name, character]) => [name, hasIntactPresentingSac(character.profile)]));
   const result = dispatchToolCall(chatState, call);
   for (const [name, character] of Object.entries(chatState.characters || {})) {
     const oldStage = oldStages[name];
     const stage = character.profile?.base?.stage;
     if (result.applied && stage === '月经期' && oldStage !== stage && call.name !== 'bsPassedTime') refreshCognition(character.profile);
-    if (result.applied && call.name !== 'bsPassedTime') syncPsychologyLifecycle(character.profile, oldStage);
+    if (result.applied && call.name !== 'bsPassedTime') syncPsychologyLifecycle(character.profile, oldStage); if (result.applied && !['bsPassedTime', 'bsExcreteMetabolism'].includes(call.name) && (oldStage !== stage || oldIntact[name] !== hasIntactPresentingSac(character.profile))) refreshAdvisoryNotify(character.profile, name);
   }
   if (guarded && result.applied) {
     const profile = chatState.characters[args.female].profile;
@@ -7897,4 +7897,17 @@ export function applyToolCallsResult(ctx, result, sourceId = '') {
   chatState.lastOperationLogs = summarizeOperationLogs(logs);
   saveSettings(ctx);
   return { chatState, logs };
+}
+
+/** 破水、娩出、引产等直接改变阶段或胎膜的工具：重建提醒，否则旁白会同时看到「破水了」与「尚未破水」；跨日的日记提醒照旧保留 */
+function hasIntactPresentingSac(profile) {
+  return clampNumber(getPresentingAmnionDurability(profile?.pregnant || {}), -100, 100, 0) > 0;
+}
+
+function refreshAdvisoryNotify(profile, female) {
+  if (!profile) return;
+  const text = String(profile.notify?.thirdly || '');
+  const kept = text.includes('已跨入新的一天') ? text.slice(text.indexOf('已跨入新的一天')) : '';
+  updateAdvisoryNotify(profile, female);
+  if (kept) appendNotifyReminder(profile.notify, kept);
 }

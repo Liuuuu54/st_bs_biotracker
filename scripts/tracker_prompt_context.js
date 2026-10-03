@@ -113,7 +113,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].companionEggCount: 这一胎伴随的背景卵数量（伴生卵），为 0 时不出现。出生时会随这一胎一起排出，可描写成产下整群卵，但只有这一胎会写入族谱；绝不能按伴生卵自行增加 fetusesCount、胎儿卡或孩子。',
   '- fetuses[*].weight: 胎重系数，標準1.0，范围0.33~3.0。影响妊娠负担、分娩难度与恢复期。',
   '- fetuses[*].tendencyAngle: 胎位角度，0/360=头位，180=臀位，90或270=横位，禁止反写；影响第二产程的难度。若 notify 发出难产警示，应优先考虑 bsChildbirth 手术产。',
-  '- fetuses[*].tendencyAngleText: 系统额外附带的胎位文字说明，如 正位(头位)/倒位(臀位)/横位/斜位。',
+  '- fetuses[*].tendencyAngleText: 系统额外附带的胎位文字说明，如 头位(头朝下)/臀位(臀部朝下)/横位/斜位。',
   '- fetuses[*].positionText: 这一胎在子宫里的深度，由系统的胎动与产程自动结算：顶到宫顶／宫内自由／子宫低位／入盆／进入产道／着冠／先露部已出；卡住时会写明（如 与另一胎在入口互锁、肩部卡住、在宿主胎儿体内）。描写胎儿位置、腹部下沉、入盆时须与它一致，不要自行改写。',
   '- fetuses[*].backSideText: 胎背朝母体哪一侧（左前／右前／左后／右后；横位时写成朝上或朝下、偏前或偏后）。与胎位角度互相独立，由系统的胎动与产程结算；胎背朝后（枕后位）时胎儿的脸朝母体腹侧，真实分娩模式下产程较慢、较痛。描写胎动方向、胎背贴着哪一侧肚皮时须与它一致。',
   '- fetuses 的排列顺序是子宫里由左至右的相对位置，不代表出生顺序；正在下降或娩出的那一胎带 presenting=true。',
@@ -313,7 +313,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
       '- bsPassedTime 是每一轮 tracker 分析都必须优先考虑的第一工具。',
       '- 你应先根据 recent_messages 判断本轮累计了多少分钟/小时/天，再调用 bsPassedTime 推进时间。',
       '- 只有在确认本轮完全没有任何可推进的时间量时，才允许不调用 bsPassedTime。',
-      '- 其他状态工具默认建立在时间推进之后，不要跳过 bsPassedTime 直接更新长程状态。',
+      '- 其他状态工具默认建立在时间推进之后，不要跳过 bsPassedTime 直接更新长程状态。\n- 例外：剧情里的操作（转胎、托高、破水、助产、手术产等）发生在这段时间中途、而推进时间可能先改变条件（例如胎儿入盆后只能小幅转动）时，把 bsPassedTime 拆成操作前、操作后两次调用，中间放该操作。',
     ].join('\n'),
     String(basePrompt || '').trim(),
     buildWorldBaselineBlock(payload?.world_baseline_prompt),
@@ -472,13 +472,15 @@ const NARRATIVE_REMINDER_RULES = [
   [/^(.+?)渴望陪伴，可优先给予陪伴、交流或安抚$/, '$1渴望陪伴'],
   [/^(.+?)渴望陪伴，但当前臭意会妨碍社交舒适度$/, '$1渴望陪伴，但身上的气味令人在意'],
 ];
-const NARRATIVE_REMINDER_DROPS = [/供养力/, /^若释放量足够大/, /^清洁后再给予陪伴/, /bsExcreteMetabolism/];
+const NARRATIVE_REMINDER_DROPS = [/供养力/, /^若释放量足够大/, /^清洁后再给予陪伴/, /\bbs[A-Z]\w*/];
 
+/** 旁白不能调用工具：禁令留下，「须先调用某工具」这类句子或分句拿掉，仍带工具名的片段整段丢弃 */
 export function narrativeReminders(text) {
   return String(text || '').split('；').map((part) => part.trim()).filter(Boolean).map((part) => {
     const rule = NARRATIVE_REMINDER_RULES.find(([pattern]) => pattern.test(part));
     if (rule) return part.replace(rule[0], rule[1]);
-    return NARRATIVE_REMINDER_DROPS.some((pattern) => pattern.test(part)) ? '' : part;
+    const stripped = part.replace(/。[^。]*\bbs[A-Z]\w*[^。]*/g, '').replace(/，[^，。]*\bbs[A-Z]\w*[^。]*/g, (clause, at, whole) => (whole.slice(0, at).includes('：') ? '' : clause));
+    return NARRATIVE_REMINDER_DROPS.some((pattern) => pattern.test(stripped)) ? '' : stripped;
   }).filter(Boolean).join('；');
 }
 
@@ -496,11 +498,12 @@ export function projectNarrativeState(existingState = {}, recentResults = []) {
     const profile = { ...item.profile };
     if (!condomFresh.has(name)) delete profile.lastCondomResult;
     if (!emergencyFresh.has(name)) delete profile.lastEmergencyResult;
-    if (profile.notify?.thirdly) {
-      const thirdly = narrativeReminders(profile.notify.thirdly);
-      const notify = { ...profile.notify, thirdly };
-      if (!thirdly) delete notify.thirdly;
-      profile.notify = Object.values(notify).some((value) => String(value || '').trim()) ? notify : undefined;
+    if (profile.notify) {
+      // 难产警示、阶段通知同样可能写着「可用某工具」，三栏一起改写
+      const notify = Object.fromEntries(Object.entries(profile.notify)
+        .map(([key, value]) => [key, typeof value === 'string' ? narrativeReminders(value) : value])
+        .filter(([, value]) => String(value || '').trim()));
+      profile.notify = Object.keys(notify).length > 0 ? notify : undefined;
     }
     return [name, { ...item, profile }];
   }));

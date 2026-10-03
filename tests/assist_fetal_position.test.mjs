@@ -170,7 +170,8 @@ test('extract：直接生下先露胎，胎膜未破会先破；其余胎儿不�
   assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.embryoId), [2]);
   assert.equal(P(chatState).pregnant.fetuses[0].amnionDurability, 100, '其他胎囊不动');
   assert.equal(P(chatState).pregnant.laborPhase, '间歇期');
-  assert.match(String(P(chatState).notify.secondly), /经助产拉出/);
+  assert.match(String(P(chatState).notify.secondly), /生下了/);
+  assert.doesNotMatch(String(P(chatState).notify.secondly), /助产/, '同步剧情里自己生下的胎儿时不能写成助产');
   near(P(chatState).pregnant.assistPainBoost, 3, '拉出 +3');
 });
 
@@ -337,4 +338,15 @@ test('非妊娠或孕期中的插入不碰胎儿', () => {
   assert.equal(result.applied, true);
   assert.equal(P(chatState).pregnant.fetuses[0].affinity, 0);
   assert.equal(P(chatState).notify.secondly, undefined);
+});
+
+test('extract 同步剧情里自己生下的单胎：走完第三产程记为自然产，不记手术产', () => {
+  const chatState = secondStage([fetus(1, { descentStage: 2 })]);
+  assert.equal(assist(chatState, 'extract').applied, true);
+  for (let i = 0; i < 12 && P(chatState).base.stage !== '产后恢复'; i += 1) {
+    applyToolCall(chatState, { name: 'bsPassedTime', arguments: { minute: 30 } });
+  }
+  assert.equal(P(chatState).base.stage, '产后恢复');
+  assert.equal(P(chatState).experience.naturalBirthExperience, 1);
+  assert.equal(P(chatState).experience.surgicalBirthExperience, 0);
 });

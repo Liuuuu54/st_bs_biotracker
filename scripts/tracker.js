@@ -672,8 +672,8 @@ function getPsyStressLevelText(level) {
 function getTendencyAngleText(angle) {
   const value = Number(angle);
   if (!Number.isFinite(value)) return '未知';
-  if ((value >= 0 && value <= 15) || (value >= 345 && value <= 360)) return '正位(↓)';
-  if ((value >= 165 && value <= 195)) return '倒位(↑)';
+  if ((value >= 0 && value <= 15) || (value >= 345 && value <= 360)) return '头位(头朝下)';
+  if ((value >= 165 && value <= 195)) return '臀位(臀部朝下)';
   if ((value >= 75 && value <= 105)) return '横位(←)';
   if ((value >= 255 && value <= 285)) return '横位(→)';
   if (value > 15 && value < 75) return '斜位(↗)';

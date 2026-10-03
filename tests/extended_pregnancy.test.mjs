@@ -277,3 +277,29 @@ test('注册页「此角色使用妊娠变速」：没勾时提示词禁止写�
   const kept = applyRegistryResult(state.createEmptyChatState(), { name: 'R', profile: withModifier }, { useGestationModifier: true });
   assert.equal(kept.profile.bio.gestationModifierMultiplier, 0.1);
 });
+
+test('真实产程下，延产后引产或期满发动的产程不会因宫压归零而永远停滞', () => {
+  for (const route of ['induce', 'expire']) {
+    const chatState = overdue();
+    P(chatState).immune = { ...P(chatState).immune, realisticLabor: true };
+    extend(chatState);
+    if (route === 'induce') call(chatState, 'bsExtendPregnancy', { action: 'induce', reason: '解除圣术' });
+    for (let day = 0; day < 80 && P(chatState).base.stage === '延产期'; day += 1) passDays(chatState, 1);
+    assert.equal(P(chatState).base.stage, '产兆前驱', route);
+    assert.ok(P(chatState).base.uterinePressure >= 0.66 * 140, `${route}: 宫压补到自然发动门槛`);
+    for (let hour = 0; hour < 400 && !['第三产程', '产后恢复'].includes(P(chatState).base.stage); hour += 1) {
+      if (P(chatState).pregnant.laborPhase === '过渡期') call(chatState, 'bsAssistFetalPosition', { action: 'rupture' });
+      call(chatState, 'bsPassedTime', { hour: 1 });
+    }
+    assert.ok(['第三产程', '产后恢复'].includes(P(chatState).base.stage), `${route}: ${P(chatState).base.stage}`);
+  }
+});
+
+test('延产改变阶段后重建提醒，跨日的日记提示仍完整保留', () => {
+  const chatState = overdue();
+  passDays(chatState, 1);
+  assert.match(P(chatState).notify.thirdly, /已跨入新的一天；若角色有值得沉淀.*bsWriteDiary/);
+  extend(chatState);
+  assert.match(P(chatState).notify.thirdly, /正在延产期/);
+  assert.match(P(chatState).notify.thirdly, /已跨入新的一天；若角色有值得沉淀.*bsWriteDiary/);
+});
