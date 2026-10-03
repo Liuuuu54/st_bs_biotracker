@@ -27,7 +27,7 @@
 | [`bsWombReturn`](../../scripts/tools.js#L917) | 必填 `female`、`returner`；可傳 `returnerRace`、非負 `hours`。 | 清空承載者原有子宮內容、建立回歸胎並按小時過渡；已註冊回歸者凍結。只可在月經階段／無經期使用，不可自我回歸或重複回歸。詳見[胎內回歸](special-cases.md#胎內回歸)。 |
 | [`bsChildbirth`](../../scripts/tools.js#L5438) | 必填 `female`。 | 將剩餘已著床胎兒轉為 `children`，結束妊娠並進產後恢復；直接呼叫記為手術產，自然走完產程則記自然產。沒有已著床胎兒或未進入妊娠／產兆／產程時拒絕。 |
 | [`bsAssistFetalPosition`](../../scripts/tools.js#L5694) | 必填 `female`、`action`；可傳 `fetusIndex`、`targetAngle`、`backSide`、`actor`。 | `rotate` 轉角／胎背或解肩難產，`lift` 托高，`descend` 推低，`rupture` 破膜，`extract` 助產取出先露胎。未指定索引時選領頭胎；索引按可見胎。`actor=fetus` 不耗母體活力，但不可自行 `extract` 或解自己的肩難產；階段、胎位、體力、宮壓不符會拒絕。[胎位與羊膜](pregnancy-and-labor.md#胎位羊膜與宮壓)。 |
-| [`bsMaternalFetalInteraction`](../../scripts/tools.js#L5843) | 必填 `female`；可傳 `direction=fetal/maternal`、`change=slight_increase/significant_increase/slight_decrease/significant_decrease`。 | 預設 `direction=fetal`，須給有效 `change`，按 ±0.5／±1 更新隨機已著床胎親近度；`maternal` 不用 `change`，由情壓決定安撫是否成功並隨機變化。每角色每故事小時最多一次；無已著床胎拒絕。 |
+| [`bsMaternalFetalInteraction`](../../scripts/tools.js#L5843) | 必填 `female`；可傳 `direction=fetal/maternal/sibling`、`change=slight_increase/significant_increase/slight_decrease/significant_decrease`。 | 預設 `direction=fetal`，須給有效 `change`，按 ±0.5／±1 更新隨機已著床胎親近度；`maternal` 不用 `change`，由情壓決定安撫是否成功並隨機變化。`sibling` 須給有效 `change`，隨機挑一對相鄰且角色已知的胎兒：`slight_decrease` 一胎踢另一胎，對方偏轉 10–20°（已入盆則不動）；`significant_decrease` 推擠，可自由活動時左右換位；兩種 `increase` 為依偎，位置不變；不改親近度。三種方向共用每角色每故事小時一次的限制；無已著床胎、或 `sibling` 找不到相鄰已知的兩胎時拒絕。 |
 
 ## 代謝、心理與記錄
 

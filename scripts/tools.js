@@ -581,7 +581,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsMaternalFetalInteraction',
-    description: '处理母体与胎儿之间的互动。每名角色在每个新小时内最多成功互动一次；在 bsPassedTime 推进满下一小时之前，重复调用会被跳过。direction=fetal 表示胎儿对母体的亲近或排斥，必须传 change，并调整随机一胎的 affinity。direction=maternal 表示母体安抚胎儿，不使用 change；系统会随机判定 affinity 变化。母胎互动不影响供养力，也不改变胎位、下降或产程时间；要托高或推送胎儿请用 bsAssistFetalPosition。',
+    description: '处理母体与胎儿、以及多胎之间的互动。每名角色在每个新小时内最多成功互动一次（三种 direction 共用）；在 bsPassedTime 推进满下一小时之前，重复调用会被跳过。direction=fetal 表示胎儿对母体的亲近或排斥，必须传 change，并调整随机一胎的 affinity。direction=maternal 表示母体安抚胎儿，不使用 change；系统会随机判定 affinity 变化。direction=sibling 只在剧情明确写到腹中两胎互动时使用（互踢、推挤、依偎），必须传 change：slight_decrease 一胎踢另一胎、使对方小幅偏转，significant_decrease 推挤、两胎可能左右换位，slight_increase／significant_increase 依偎、位置不变；对象是随机一对相邻且角色已知的胎儿，不影响 affinity。母胎互动（fetal、maternal）不影响供养力，也不改变胎位、下降或产程时间；要托高或推送胎儿请用 bsAssistFetalPosition。',
     input_schema: {
       type: 'object',
       properties: {
@@ -592,7 +592,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         },
         direction: {
           type: 'string',
-          enum: ['fetal', 'maternal'],
+          enum: ['fetal', 'maternal', 'sibling'],
         },
       },
       required: ['female'],
@@ -2099,7 +2099,7 @@ function stepFetalActivity(profile, stage, gestationSpeed) {
   for (const intent of intents) {
     const { fetus } = intent;
     if (intent.type === 'angle') {
-      driftPregnancyAngle(fetus, stage, gestationSpeed, totalWeight, fetuses.length);
+      const angleBefore = wrapAngle(fetus.tendencyAngle); driftPregnancyAngle(fetus, stage, gestationSpeed, totalWeight, fetuses.length); settleNaturalCrowding(profile, fetuses, fetus, angleBefore);
       maybeRollBackSide(fetus, FETAL_ROLL_CHANCE[stage] || 0);
     } else if (intent.type === 'vertical') {
       const before = getDescentStage(fetus);
@@ -5809,7 +5809,7 @@ function applyAssistFetalPosition(chatState, args) {
     }
     const lacking = requireVitality();
     if (lacking) return lacking;
-    target.tendencyAngle = desired;
+    const crowded = shoulderStuck ? { blocked: false, note: '' } : rotateAmongNeighbors(profile, fetuses, target, current, desired); if (crowded.blocked) return skip(crowded.message); target.tendencyAngle = desired;
     if (desiredBack) target.backSide = desiredBack;
     if (shoulderStuck) {
       delete target.shoulderDystocia;
@@ -5817,7 +5817,7 @@ function applyAssistFetalPosition(chatState, args) {
       summary = `${female}的${label}经转动解开了卡住的肩部`;
     } else {
       const parts = [hasAngle ? getTendencyAngleLabel(desired) : '', desiredBack ? `胎背朝${desiredBack}` : ''].filter(Boolean);
-      summary = `${female}的${label}${bySelf ? '自己转到' : '被转到'}${parts.join('、')}`;
+      summary = `${female}的${label}${bySelf ? '自己转到' : '被转到'}${parts.join('、')}${crowded.note}`;
     }
   } else if (action === 'lift') {
     if (depth >= 1) return skip('the fetus is already in the birth canal and cannot be pushed back.');
@@ -5926,7 +5926,7 @@ function applyMaternalFetalInteraction(chatState, args) {
   }
 
   const cooldown = profile.cooldown || {};
-  if (direction === 'maternal') {
+  if (direction === 'sibling') return applySiblingInteraction(chatState, next, female, change); if (direction === 'maternal') {
     const selectedIndex = pickImplantedFetusIndex(fetuses);
     if (selectedIndex < 0) return { applied: false, message: 'bsMaternalFetalInteraction skipped: 没有已著床的胎儿。' };
     const selectedFetus = fetuses[selectedIndex];
@@ -7910,4 +7910,127 @@ function refreshAdvisoryNotify(profile, female) {
   const kept = text.includes('已跨入新的一天') ? text.slice(text.indexOf('已跨入新的一天')) : '';
   updateAdvisoryNotify(profile, female);
   if (kept) appendNotifyReminder(profile.notify, kept);
+}
+
+// ── 多胎胎间：转向牵制与互动（v1.1.1）─────────────────────
+// 不存新资料：牵制只看当下的左右顺序、胎重与胎量；互动只改角度或左右顺序，
+// 与母胎互动共用每小时一次的冷却。
+
+/** 一次转向超过这个角度才会碰到旁边的胎儿 */
+const CROWDED_ROTATION_THRESHOLD = 30;
+/** 被带动的邻胎跟着转的比例；同一胎囊贴得更紧 */
+const CROWDED_DRAG_SHARE = 0.3;
+const CROWDED_DRAG_SHARE_SAME_SAC = 0.5;
+
+/** 子宫有多挤：胎量 0.5 以下不挤，3 以上全满（足月三胎） */
+function getUterineCrowding(profile) {
+  return clampNumber((getFetalBulk(profile) - 0.5) / 2.5, 0, 1, 0);
+}
+
+/** 左右相邻、实际占空间的胎儿（待着床与包在宿主体内的不占位置） */
+function getSpatialNeighbors(fetuses, fetus) {
+  const occupying = fetuses.filter((other) => !other?.pendingImplantation && !getEnclosingHost(other, fetuses));
+  const index = occupying.indexOf(fetus);
+  if (index < 0) return [];
+  return [occupying[index - 1], occupying[index + 1]].filter(Boolean);
+}
+
+function signedAngleDelta(from, to) {
+  return ((wrapAngle(to) - wrapAngle(from) + 540) % 360) - 180;
+}
+
+/**
+ * 多胎中一胎从 from 转到 to：先逐一判定邻胎会不会挡住，挡住就整次不转、什么都不改；
+ * 没挡住时邻胎可能被带着转一点。回传 { blocked, message, note }
+ */
+function rotateAmongNeighbors(profile, fetuses, fetus, from, to) {
+  const delta = signedAngleDelta(from, to);
+  if (Math.abs(delta) <= CROWDED_ROTATION_THRESHOLD) return { blocked: false, note: '' };
+  const neighbors = getSpatialNeighbors(fetuses, fetus);
+  if (neighbors.length === 0) return { blocked: false, note: '' };
+  const crowding = getUterineCrowding(profile);
+  const ownWeight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
+  const visible = fetuses.filter(isFetusKnownToCharacter);
+  const name = (other) => (visible.includes(other) ? `第${visible.indexOf(other) + 1}胎` : '旁边的胎儿');
+  for (const other of neighbors) {
+    const otherWeight = clampNumber(other?.weight, 0.33, 3.0, 1.0);
+    if (Math.random() < crowding * (otherWeight / (otherWeight + ownWeight))) {
+      return { blocked: true, message: `rotation blocked: the uterus is crowded and ${name(other)}挡住了转身的空间; try a smaller turn or wait until there is more room.` };
+    }
+  }
+  const dragged = [];
+  for (const other of neighbors) {
+    if (!isFetusKnownToCharacter(other) || !canMoveFreely(other, fetuses)) continue;
+    if (Math.random() >= crowding * 0.5) continue;
+    const group = getSharedSacGroup(fetus);
+    const share = group > 0 && group === getSharedSacGroup(other) ? CROWDED_DRAG_SHARE_SAME_SAC : CROWDED_DRAG_SHARE;
+    other.tendencyAngle = wrapAngle(clampNumber(other.tendencyAngle, 0, 360, 0) + Math.round(delta * share));
+    dragged.push(name(other));
+  }
+  return { blocked: false, note: dragged.length > 0 ? `，${dragged.join('、')}也被带着转了一点` : '' };
+}
+
+/** 自然胎动转得太大时套用牵制：被挡住就退回原角度 */
+function settleNaturalCrowding(profile, fetuses, fetus, before) {
+  if (fetuses.length < 2) return;
+  const result = rotateAmongNeighbors(profile, fetuses, fetus, before, fetus.tendencyAngle);
+  if (result.blocked) fetus.tendencyAngle = before;
+}
+
+/**
+ * direction=sibling：随机一对相邻且角色已知的胎儿互动。
+ * 踢让对方小幅偏转、推挤可能左右换位、依偎不改位置；不碰 affinity。
+ */
+function applySiblingInteraction(chatState, next, female, change) {
+  const skip = (reason) => ({ applied: false, message: `bsMaternalFetalInteraction skipped for ${female}: ${reason}` });
+  if (!['slight_increase', 'significant_increase', 'slight_decrease', 'significant_decrease'].includes(change)) {
+    return skip('direction=sibling requires a valid change.');
+  }
+  const profile = next.profile || {};
+  const pregnant = profile.pregnant || {};
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const known = (fetus) => isFetusKnownToCharacter(fetus) && !fetus?.pendingImplantation && !getEnclosingHost(fetus, fetuses);
+  const pairs = [];
+  for (const fetus of fetuses.filter(known)) {
+    for (const other of getSpatialNeighbors(fetuses, fetus)) {
+      if (known(other) && fetuses.indexOf(fetus) < fetuses.indexOf(other)) pairs.push([fetus, other]);
+    }
+  }
+  if (pairs.length === 0) return skip('there is no pair of neighboring fetuses known to the character.');
+  const pair = pairs[randomInt(0, pairs.length - 1)];
+  const [actor, target] = Math.random() < 0.5 ? pair : [pair[1], pair[0]];
+  const visible = fetuses.filter(isFetusKnownToCharacter);
+  const name = (fetus) => `第${visible.indexOf(fetus) + 1}胎`;
+  let summary;
+  if (change === 'slight_decrease') {
+    if (canMoveFreely(target, fetuses)) {
+      const before = wrapAngle(clampNumber(target.tendencyAngle, 0, 360, 0));
+      target.tendencyAngle = wrapAngle(before + (randomInt(10, 20) * (Math.random() < 0.5 ? -1 : 1)));
+      summary = `${female}腹中${name(actor)}踢了${name(target)}一脚，${name(target)}被踢得偏转了一些`;
+    } else {
+      summary = `${female}腹中${name(actor)}踢了${name(target)}一脚，${name(target)}已经入盆，没有被踢动`;
+    }
+  } else if (change === 'significant_decrease') {
+    const before = fetuses.indexOf(actor) < fetuses.indexOf(target);
+    const [actorName, targetName] = [name(actor), name(target)]; // 换位前的编号，与上一轮看到的一致
+    const movers = fetuses.filter((fetus) => canMoveFreely(fetus, fetuses));
+    // swapLateral 假设两边的胎囊在阵列里紧邻；中间夹着不占位置的胎儿时不换，免得切错
+    const sameSac = getSharedSacGroup(actor) > 0 && getSharedSacGroup(actor) === getSharedSacGroup(target);
+    const members = sameSac ? [actor, target] : [...getSacBlock(fetuses, actor), ...getSacBlock(fetuses, target)];
+    const indexes = members.map((fetus) => fetuses.indexOf(fetus));
+    if (Math.max(...indexes) - Math.min(...indexes) + 1 === members.length) swapLateral(fetuses, actor, target, movers, new Set());
+    const swappedNow = (fetuses.indexOf(actor) < fetuses.indexOf(target)) !== before;
+    summary = swappedNow
+      ? `${female}腹中${actorName}和${targetName}推挤起来，两胎换了左右位置`
+      : `${female}腹中${actorName}和${targetName}推挤了一阵，但都挤不动，位置没变`;
+  } else {
+    summary = `${female}腹中${name(actor)}和${name(target)}${change === 'significant_increase' ? '紧紧依偎在一起' : '挨在一起'}，胎动平静了下来`;
+  }
+  pregnant.fetuses = fetuses;
+  profile.pregnant = pregnant;
+  profile.cooldown = { ...(profile.cooldown || {}), maternalFetalInteractionUsed: true };
+  profile.notify = { ...(profile.notify || {}), secondly: summary };
+  next.profile = profile;
+  chatState.characters[female] = next;
+  return { applied: true, message: `bsMaternalFetalInteraction applied to ${female}: sibling interaction. ${summary}` };
 }

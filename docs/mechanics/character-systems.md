@@ -20,7 +20,7 @@
 
 心理只在使用者啟用推演後存在。月經側為掌控／欲望／自主，妊娠側為母職信心／接納與聯結／社會展現；四個旧旗標及认知數值軸已撤除。只初始化当前侧三軸与六階段角色解释，转侧重新推演，產後恢復暫停；未知值為 null，不補成 0 或接受 delta。`bsUpdatePsychology` 仍受每故事小時一次的冷卻。[欄位定義](../../scripts/registry_psy_config.js)、[生命週期与紀錄](reproductive-tracking.md)。
 
-`bsMaternalFetalInteraction` 處理母胎互動，亦受每故事小時一次限制；胎兒的親近度限制在 -50 至 50，母方結果受情壓影響。[互動實作](../../scripts/tools.js#L5843)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L505)。
+`bsMaternalFetalInteraction` 處理母胎互動與多胎之間的互踢、推擠、依偎（`direction=sibling`，只改角度或左右位置），三者共用每故事小時一次的限制；胎兒的親近度限制在 -50 至 50，母方結果受情壓影響。[互動實作](../../scripts/tools.js#L5843)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L505)。
 
 `experience` 保存初次／近期性伴、獨立的交往与婚姻名單及後臺懷孕／生產／損失次數。`bsRecordExperience` 以必填 `female/action/time` 定位角色与分支；認知追加至 `profile.cognitionRecords`，關係與子女更新长期資料。子女 `selectedFather` 是角色選定身份，`fathers` 仍是實際遺傳来源。[工具參考](tool-reference.md)、[詳細機制](reproductive-tracking.md)。
 
