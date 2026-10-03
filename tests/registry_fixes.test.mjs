@@ -352,7 +352,7 @@ function makeCompleteStageProfiles() {
   const makeAxis = (axis) => Object.fromEntries(stages.map((stage) => [stage, `测试角色在 ${axis} ${stage} 的长期表现。`]));
   return {
     mens: Object.fromEntries(['mastery', 'desire', 'autonomy'].map((axis) => [axis, makeAxis(axis)])),
-    preg: Object.fromEntries(['cognition', 'bonding', 'stance'].map((axis) => [axis, makeAxis(axis)])),
+    preg: Object.fromEntries(['confidence', 'bonding', 'stance'].map((axis) => [axis, makeAxis(axis)])),
   };
 }
 

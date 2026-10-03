@@ -56,7 +56,7 @@ test('工具描述带上标度与清空后果，避免模型误用', () => {
 
   const drainSperm = TOOL_DEFINITIONS.find((tool) => tool.name === 'bsDrainSperm');
   assert.match(drainSperm.description, /不再有受孕机会/, 'bsDrainSperm 应警告清空会断掉受孕');
-  assert.match(drainSperm.description, /洗澡/, 'bsDrainSperm 应说明单纯洗澡不该调用');
+  assert.match(drainSperm.description, /沐浴.*可选用/, 'bsDrainSperm 应说明沐浴可按情境排精，不强制避孕意图');
 });
 
 test('追踪提示词说明残留会自动衰减', () => {

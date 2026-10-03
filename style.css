@@ -2511,6 +2511,8 @@
 
 #bs-biotracker-settings .bs-bt-track-progress-head {
   display: flex;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
   justify-content: space-between;
   gap: 8px;
   font-size: 0.9em;
@@ -2760,6 +2762,120 @@
 
 #bs-biotracker-settings .bs-bt-track-description-empty {
   opacity: 0.75;
+}
+
+/* A bounded, native scroller keeps long cognition histories on a station timeline. */
+#bs-biotracker-settings .bs-bt-cognition-timeline {
+  max-height: min(340px, max(120px, calc(var(--bsbt-device-height) - 350px)), 40vh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bsbt-lcd-text) transparent;
+  scrollbar-gutter: stable;
+  padding: 2px 4px 2px 2px;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline::-webkit-scrollbar {
+  width: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline::-webkit-scrollbar-thumb {
+  background: var(--bsbt-lcd-text);
+  border-radius: 3px;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop {
+  position: relative;
+  padding: 0 0 10px 24px;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop:last-child {
+  padding-bottom: 0;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: currentColor;
+  opacity: 0.45;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop:first-child::before {
+  top: 18px;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop:last-child::before {
+  bottom: auto;
+  height: 18px;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop:only-child::before {
+  display: none;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: var(--bsbt-lcd-bg);
+}
+
+#bs-biotracker-settings .bs-bt-cognition-entry > summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-entry > summary::-webkit-details-marker {
+  display: none;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-entry > summary::before {
+  content: '▸';
+  flex: 0 0 1ch;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-entry[open] > summary::before {
+  content: '▾';
+}
+
+#bs-biotracker-settings .bs-bt-cognition-entry > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-entry .bs-bt-track-card-note {
+  margin-top: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline .bs-bt-track-card-note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 #bs-biotracker-settings .bs-bt-track-radar-wrap {
@@ -5822,3 +5938,18 @@
   text-align: left;
   vertical-align: top;
 }
+
+/* Reproductive baseline and optional author-seeded beliefs use existing pages. */
+.bs-bt-reproductive-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.bs-bt-reproductive-controls label,
+.bs-bt-cognition-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.bs-bt-cognition-row { display: grid; gap: 8px; margin-block: 8px; }

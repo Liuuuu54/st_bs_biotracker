@@ -13,7 +13,7 @@
 <body>
 <div id="harness-info">
   <b>BioTracker UI Harness</b>（mock 宿主，非真实 SillyTavern）<br>
-  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件，精液灌满）、贝拉（产后恢复，pregFit 生效，精液灌满）、琪拉（孕 30 周六胎：五种胚型＋孕中孕，各种胎儿标签，精液浸满）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、芙拉（延产期，乏力 2 级）、茉拉（刚受精）。
+  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件，精液灌满）、贝拉（产后恢复，六种 bsRecordExperience action＋五种认知方式，pregFit 生效，精液灌满）、琪拉（孕 30 周六胎：五种胚型＋孕中孕，各种胎儿标签，精液浸满）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、芙拉（延产期，乏力 2 级）、茉拉（刚受精）。
 </div>
 <script type="module">
   const CHAT_KEY = 'ui-harness-chat';
@@ -49,6 +49,7 @@
   });
 
   const chatState = {
+    schemaVersion: 4,
     skillCatalog: [
       { id: 1, name: '剑术', description: '使用长剑进行攻防的实战技巧。' },
       { id: 2, name: '魔力感知', description: '辨识周遭魔力流动的能力。' },
@@ -81,6 +82,7 @@
           ],
         },
         profile: {
+          cognitionRecords: [{ time: '旅途第六日', method: 'guess', content: '她猜测自己可能怀孕，但还没确认。' }],
           // 多项技能：验证「一次列出全部」的排版，其中 skillId 5 已满级走 MAX 分支
           skills: [
             { skillId: 1, level: 3, exp: 120 },
@@ -99,7 +101,7 @@
           ],
           children: [
             // 一般生育 + 已注册成角色（节点会与「长女」合并）
-            { id: 'c1', name: '长女', gender: '女', race: '精灵x人类', fathers: '凯', fatherRace: '人类', age: 18, registeredAs: '长女', talents: [] },
+            { id: 'c1', name: '长女', selectedFather: '故人', gender: '女', race: '精灵x人类', fathers: '凯', fatherRace: '人类', age: 18, registeredAs: '长女', talents: [] },
             // 未注册的路人父亲，带上血统
             { id: 'c2', name: '次子', gender: '男', race: '精灵x西方龙', fathers: '无名旅人', fatherRace: '西方龙', fatherDerivedType: '血族', age: 6, talents: [] },
             // 代孕：艾拉只是承载者，遗传母是琪拉
@@ -162,8 +164,12 @@
       }),
       // 产后恢复也灌满：子宫比未孕大、容量约 120 → 100
       贝拉: makeCharacter('贝拉', {
-        base: { stage: '产后恢复', days: 10, age: 27, sperms: [{ male: '凯', race: '人类', derivedType: null, value: 140 }] },
+        base: { stage: '产后恢复', days: 10, age: 27, eggs: 0, sperms: [{ male: '凯', race: '人类', derivedType: null, value: 140 }] },
         profile: {
+          bio: { recoveryDays: 56 },
+          // 已出生子女和生理经历是工具操作前的背景，child action 只命名／选择身份。
+          experience: { pregnantExperience: 1, naturalBirthExperience: 1 },
+          children: [{ id: 'bella-c1', name: '待命名新生儿', selectedFather: null, gender: '女', race: '人类', fathers: '凯', fatherRace: '人类', age: 0, talents: [] }],
           wardrobe: {
             enabled: true,
             items: [
@@ -286,6 +292,59 @@
       charLore: [{ name: 'aila', extraBooks: ['性格适配衣橱'] }],
     },
   };
+
+  // 全部经公开分派器套用，避免直接塞最终状态掩盖 action 接线问题。
+  // 故事日期只用于叙事，不推进产后恢复的系统时钟。
+  const { applyToolCall } = await import('/scripts/tools.js');
+  const bellaExperienceSamples = [
+    { action: 'date', time: '旅途第1日', partner: '旧恋人' },
+    { action: 'date', time: '旅途第2日', partner: '凯' },
+    { action: 'date', time: '旅途第3日', partner: '莉雅' },
+    { action: 'breakup', time: '旅途第4日', partner: '旧恋人' },
+    { action: 'marry', time: '旅途第5日', partner: '前配偶' },
+    { action: 'divorce', time: '旅途第6日', partner: '前配偶' },
+    { action: 'marry', time: '旅途第7日', partner: '莱昂' },
+    { action: 'marry', time: '旅途第8日', partner: '莉雅' },
+    { action: 'cognition', time: '旅途第28日', method: 'perception', content: '月经迟迟没来，她注意到身体变化，但以为只是旅途劳累。' },
+    { action: 'cognition', time: '旅途第30日', method: 'guess', content: '她猜测自己可能怀孕，尚未确认。\n腹部变化也可能只是发胖。' },
+    { action: 'cognition', time: '旅途第35日', method: 'informed', content: '助产士告诉她可能怀孕；她听进了建议，但仍有疑虑。' },
+    { action: 'cognition', time: '旅途第42日', method: 'test', content: '验孕结果呈阳性，她据此相信自己已经怀孕。' },
+    { action: 'cognition', time: '旅途第100日', method: 'prenatal', content: '产检时被告知是一名单胎；这是她记住的报告内容，不代表工具替她确认了客观胎数。' },
+    { action: 'child', time: '产后第10日', childIndex: 0, name: '星禾', selectedFather: '莱昂' },
+  ];
+  const sampleDetails = document.createElement('details');
+  sampleDetails.id = 'harness-bella-experience';
+  const sampleSummary = document.createElement('summary');
+  sampleSummary.textContent = '贝拉：六种 bsRecordExperience action 的工具样本（展开查看）';
+  const sampleList = document.createElement('ol');
+  bellaExperienceSamples.forEach((args, index) => {
+    const result = applyToolCall(chatState, {
+      name: 'bsRecordExperience', arguments: { female: '贝拉', ...args }, sourceId: `harness:bella:experience:${index}`,
+    });
+    if (!result.applied) throw new Error(`贝拉样本 ${args.action} 未套用：${result.message}`);
+    const row = document.createElement('li');
+    row.dataset.action = args.action;
+    if (args.method) row.dataset.method = args.method;
+    row.dataset.applied = String(result.applied);
+    row.textContent = `${args.time} · ${args.action}${args.method ? ' / ' + args.method : ''} · ${args.partner || args.content || `${args.name}，选定父亲 ${args.selectedFather}`} · 已套用`;
+    sampleList.appendChild(row);
+  });
+  sampleDetails.append(sampleSummary, sampleList);
+  document.getElementById('harness-info').appendChild(sampleDetails);
+
+  // Optional stage matrix: /tests/ui-harness.html?progress=1 keeps the ordinary seeds intact.
+  if (new URLSearchParams(location.search).get('progress') === '1') {
+    const { stageProgressFixtures } = await import('/tests/stage-progress-fixtures.mjs');
+    const fixtures = stageProgressFixtures();
+    fixtures.forEach(({ id, profile }) => {
+      const label = id.replace('-start', '·起点').replace('-half', '·中段').replace('-end', '·终点');
+      const name = `进度·${label}`;
+      chatState.characters[name] = { name, initialized: true, profile };
+    });
+    const note = document.createElement('div');
+    note.textContent = `已加载 ${fixtures.length} 个阶段／子阶段进度样本：追踪名单选择「进度·」角色查看概览。`;
+    document.getElementById('harness-info').appendChild(note);
+  }
 
   await import('/index.js');
 

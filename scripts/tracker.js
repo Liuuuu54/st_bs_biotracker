@@ -1,3 +1,5 @@
+import { inferPendingPsychology } from './registry.js';
+import { naturalNoticeDays, psychologySide } from './reproductive.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
@@ -689,6 +691,7 @@ function getDiaryRecentLimit(settings, characterCount) {
 
 export function hasBreedingPsychology(existingState = {}) {
   return Object.values(existingState || {}).some((item) => {
+    if (item?.profile?.psychology?.enabled) return true;
     const stageProfiles = item?.profile?.psychology?.stageProfiles;
     return stageProfiles && typeof stageProfiles === 'object' && !Array.isArray(stageProfiles)
       && Object.keys(stageProfiles).length > 0;
@@ -903,7 +906,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
       ...(immune.metabolism ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
       fetuses: visibleFetuses.map((fetus) => {
         const {
-          embryoId: _embryoId, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion,
+          embryoId: _embryoId, contactIds: _contactIds, contactMinutes: _contactMinutes, contactEmbryos: _contactEmbryos, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion,
           // 位置只送紧凑的文字摘要（positionText）；数值、解绑与阻塞旗标不外露
           descentStage: _descentStage, nestedReleased: _nestedReleased, backSide: _backSide,
           inletIntruder: _inletIntruder, shoulderDystocia: _shoulderDystocia, shoulderRelieved: _shoulderRelieved, ...visibleFetus
@@ -981,6 +984,20 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   // 孕态描述只在妊娠相关阶段有用；月经阶段照送等于每人白占一两百 token
   if (!sendPregnantState && profile.descriptions) delete profile.descriptions.pregnantDescription;
 
+  if (pregnant.noticeSample && base.isHere !== false) {
+    // Existing gestational clocks include the LMP offset; natural cues use post-conception age.
+    const age = Math.max(0, Number(pregnant.effectivePregnantDays) - (pregnant.noticeSample.obstetricOffsetDays ?? 14));
+    const count = (pregnant.fetuses || []).filter((x) => !x.nestedInEmbryoId && !x.pendingImplantation).length;
+    if (age >= naturalNoticeDays(pregnant.noticeSample, count)) profile.naturalPregnancyCue = '现在较容易注意到妊娠相关自然线索；是否察觉、误解或拒信依剧情，不自动确认怀孕。';
+  }
+  delete profile.pregnant?.noticeSample;
+  delete profile.pregnant?.experienceBeforePregnancy;
+  profile.cognitionRecords = (profile.cognitionRecords || []).map(({ time, method, content, sequence, minutesPassed, storyDayIndex }) =>
+    ({ time, method, content, sequence, minutesPassed, storyDayIndex }));
+  delete profile.reproductiveOperations;
+  delete profile.reproductiveMigration;
+  delete profile.base?.spermContacts;
+  delete profile.base?.nextSpermContactId;
   delete profile.bio;
   // immune 只留 metabolism 一项：prompt 据此不发本人的需求与衍生需求说明
   if (immune.metabolism) profile.immune = { metabolism: true };
@@ -989,6 +1006,12 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   delete profile.visualCue;
   if (immune.metabolism) delete profile.metabolism;
   if (!hasBreedingPsychology({ current: item })) delete profile.psychology;
+  else {
+    const side = psychologySide(base.stage);
+    const psychology = profile.psychology || {};
+    profile.psychology = side ? { activeSide: side, pendingSide: psychology.pendingSide,
+      [side]: psychology[side] || {} } : undefined;
+  }
   profile.diary = getRecentDiaryEntries(item?.profile || {}, diaryLimit);
 
   delete next.updatedAt;
@@ -1342,6 +1365,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     available_tools: getTrackerToolDefinitions(settings, existingState),
     diary_enabled: diaryEnabled,
     race_catalog_selection: settings?.raceCatalogSelection || null,
+    recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => ['bsAddSperm', 'bsAbortion'].includes(log.name) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message }) => ({ name, applied, message })),
     world_baseline_prompt: String(settings?.worldBaselinePrompt || '').trim(),
     require_full_description_updates: settings?.requireFullDescriptionUpdates === true,
     ...(psychologyEnabled ? { breeding_psychology_enabled: true } : {}),
@@ -1687,7 +1711,14 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
 
   const result = normalizeTrackerResult(rawResult);
   result.character_check_coverage = buildCharacterCheckCoverage(payload.tracked_females, result.character_checks);
-  applyToolCallsResult(ctx, result);
+  applyToolCallsResult(ctx, result, attemptedSignature);
+  // Persist the event snapshot before awaiting the optional side inference.
+  const branchKey = getChatKey(ctx);
+  const acceptedSignature = silentReplacementDuringRun ? postCallSignature : attemptedSignature;
+  chatState.lastProcessedSignature = acceptedSignature;
+  if (Object.values(chatState.characters || {}).some((item) => item.profile?.psychology?.pendingSide && item.profile?.base?.isHere !== false)) recordChatStateSnapshot(ctx, chatState, { messageCount: messageIndex + 1, reason: 'tracker_pending_psychology', ...getFloorAnchorFields(getHostChat(ctx)[messageIndex]) });
+  await inferPendingPsychology(ctx, settings, chatState, () => getChatKey(ctx) === branchKey && buildSignature(ctx, messageIndex + 1) === acceptedSignature);
+  if (getChatKey(ctx) !== branchKey || buildSignature(ctx, messageIndex + 1) !== acceptedSignature) return { discarded: true, triggered: true };
   chatState.lastProcessedSignature = silentReplacementDuringRun ? postCallSignature : attemptedSignature;
   chatState.lastFailedChatSignature = '';
   settings.hostMutSeqCounter = hostRunState.mutSeq;

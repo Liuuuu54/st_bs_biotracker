@@ -1,3 +1,4 @@
+import { recordExperience, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import {
   cloneValue,
@@ -287,45 +288,20 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
-    name: 'bsUpdateExperience',
-    description: '直接更新单一角色的经验/关系字段。适合修正贞洁、伴侣、怀孕/分娩/流产经历等记录，不触发额外规则。',
+    name: 'bsRecordExperience',
+    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。cognition 需 method、content：只记角色感知、猜测、被告知或检查解读，允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 需已存在的 childIndex（从0起）及 name 或 selectedFather；null 取消选爹，省略保留，不改遗传父方。各 action 参数互斥。认知实际进月经刷新，关系和孩子长期保留。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
     input_schema: {
       type: 'object',
       properties: {
-        female: { type: 'string' },
-        options: {
-          type: 'object',
-          properties: {
-            virginity: { type: ['string', 'null'] },
-            latestSexPartner: { type: ['string', 'null'] },
-            emotionalMate: { type: ['string', 'null'] },
-            marriageMate: { type: ['string', 'null'] },
-            pregnantExperience: { type: 'integer' },
-            naturalBirthExperience: { type: 'integer' },
-            surgicalBirthExperience: { type: 'integer' },
-            miscarriageExperience: { type: 'integer' },
-          },
-          additionalProperties: false,
-        },
+        female: { type: 'string', minLength: 1 },
+        action: { type: 'string', enum: ['cognition', 'date', 'breakup', 'marry', 'divorce', 'child'] },
+        time: { type: 'string', minLength: 1 },
+        method: { type: 'string', enum: ['perception', 'guess', 'informed', 'test', 'prenatal'] },
+        content: { type: 'string', minLength: 1 }, partner: { type: 'string', minLength: 1 },
+        childIndex: { type: 'integer', minimum: 0 }, name: { type: 'string', minLength: 1 },
+        selectedFather: { type: ['string', 'null'], minLength: 1 },
       },
-      required: ['female', 'options'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'bsNameChild',
-    description: '给单一角色已出生的某个孩子命名。只修改 children 指定索引的 name，不触发额外规则。'
-      + 'childIndex 从 0 起算，对应 existing_state 里 children 数组的下标；越界会被拒绝。'
-      + '注意介面与叙事惯常说的「第一个孩子」是 childIndex=0。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        female: { type: 'string' },
-        childIndex: { type: 'integer' },
-        name: { type: 'string' },
-      },
-      required: ['female', 'childIndex', 'name'],
-      additionalProperties: false,
+      required: ['female', 'action', 'time'], additionalProperties: false,
     },
   },
   {
@@ -373,19 +349,15 @@ export const TOOL_DEFINITIONS = Object.freeze([
                   mastery: { type: 'number' },
                   desire: { type: 'number' },
                   autonomy: { type: 'number' },
-                  isChaste: { type: 'boolean' },
-                  hasContraception: { type: 'boolean' },
                 },
                 additionalProperties: false,
               },
               preg: {
                 type: 'object',
                 properties: {
-                  cognition: { type: 'number' },
+                  confidence: { type: 'number' },
                   bonding: { type: 'number' },
                   stance: { type: 'number' },
-                  knowsFatherSource: { type: 'boolean' },
-                  hasProfessionalPrenatalCare: { type: 'boolean' },
                 },
                 additionalProperties: false,
               },
@@ -399,11 +371,11 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddSperm',
-    description: '记录可受孕生殖道内的插入、精液沉积与拔出；口交、肛交、体外射精、隔着保险套、手淫或单纯体表接触一律不要调用。'
+    description: '记录可受孕生殖道内的插入、精液沉积与拔出；口交、肛交、体外射精、手淫或单纯体表接触一律不要调用。戴套生殖道行为仍用本工具，hasCondom 决定本次 deposit 是否阻隔；省略沿用本次 insert 的设置，旧调用默认未戴套。'
       + 'action=insert／withdraw 时 amount=0；只有 insert 后才能以 action=deposit 沉积正数精液，沉积后若要再次射精须重新 insert。不同来源 insert 会直接交棒。'
       + 'amount 建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
       + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。'
-      + '产兆前驱与产程中插入会顶到最前面的胎儿：前驱时把领头胎儿往上顶、延后前驱；第二产程把产道里的先露胎往回顶、产程进度倒退，着冠时倒退更多且可能顶破胎膜；第一产程只会痛。被顶的胎儿亲和下降。产兆前驱中射精则会缩短前驱。结果写在回传讯息里，描写须与之一致。',
+      + '产兆前驱与产程中插入会顶到最前面的胎儿：前驱时把领头胎儿往上顶、延后前驱；第二产程把产道里的先露胎往回顶、产程进度倒退，着冠时倒退更多且可能顶破胎膜；第一产程只会痛。被顶的胎儿亲和下降。产兆前驱中射精则会缩短前驱。结果写在回传讯息里，供下一次回复承接，不要求重写当轮正文。',
     input_schema: {
       type: 'object',
       properties: {
@@ -411,6 +383,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         male: { type: 'string' },
         race: { type: 'string' },
         action: { type: 'string', enum: ['insert', 'deposit', 'withdraw'] },
+        hasCondom: { type: 'boolean', description: '本次是否戴套；insert 设置、deposit 可显式更新、省略沿用，withdraw 不结算。' },
         amount: { type: 'number', description: 'insert／withdraw 必须为 0；deposit 必须为正数。' },
       },
       required: ['female', 'male', 'race', 'action', 'amount'],
@@ -419,7 +392,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsDrainSperm',
-    description: '让角色主动排出体内部分或全部精液残留，按当前各来源比例一并减少。用于角色主动清洗、灌洗或使用道具排出。注意：受精是在每次时间推进时用当下仍存在的精液判定，清空后这次性交不再有受孕机会——若剧情只是洗澡沐浴、角色并不打算避孕，不要调用本工具，残留本来就会自行衰减。',
+    description: '让角色主动排出体内部分或全部精液残留，按当前各来源比例一并减少。用于角色主动清洗、灌洗或使用道具排出。注意：受精是在每次时间推进时用当下仍存在的精液判定，清空后这次性交不再有受孕机会；清洗/沐浴若剧情支持体内冲洗可选用，不要求避孕意图，不自动联动臭意解除。排出不撤销已受精结果。',
     input_schema: {
       type: 'object',
       properties: {
@@ -448,7 +421,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsExcreteMetabolism',
-    description: '缓解角色的生理需求。普通种族用于处理泄意、饿意、困意、乳意、臭意与伴意；其中 excretion（泄意）同时包含排尿与排便需求。乳意在普通周期表示乳房胀敏，在妊娠、假孕或产后恢复则可表示乳胀与泌乳需求；性欲波动会自然产生乳意，不由伴意解除额外转化。进食缓解 hunger 会增加 excretion 与少量 sleep，睡眠缓解 sleep 会增加少量 hunger，高 odor 会降低 companionship 的社交缓解效果。带 derivedType 的角色以 flux 进行极性解放，并处理未抵免需求；要解放 flux 时请传 flux，或不传 options 使用默认释放量。pregnant.blockage 会降低排解效果，pregnant.acceleration 会加快累积并让刚缓解的对应需求较快回升，pregnant.expansion 会使对应需求容量由 150 扩为 200。',
+    description: '缓解角色的生理需求。普通种族用于处理泄意、饿意、困意、乳意、臭意与伴意；其中 excretion（泄意）同时包含排尿与排便需求。乳意在普通周期表示乳房胀敏，在妊娠、假孕或产后恢复则可表示乳胀与泌乳需求；性欲波动会自然产生乳意，不由伴意解除额外转化。进食缓解 hunger 会增加 excretion 与少量 sleep，睡眠缓解 sleep 会增加少量 hunger，高 odor 会降低 companionship 的社交缓解效果。带 derivedType 的角色以 flux 进行极性解放，并处理未抵免需求；要解放 flux 时请传 flux，或不传 options 使用默认释放量。pregnant.blockage 会降低排解效果，pregnant.acceleration 会加快累积并让刚缓解的对应需求较快回升，pregnant.expansion 会使对应需求容量由 150 扩为 200。清洁可缓解 odor；若也支持体内冲洗，可另用 bsDrainSperm，但不自动排精。',
     input_schema: {
       type: 'object',
       properties: {
@@ -473,7 +446,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAbortion',
-    description: '终止当前受精或妊娠状态。月经阶段且着床前视为避孕成功，其他阶段视为流产。'
+    description: 'purpose=emergency 表示事后避孕药/紧急避孕尝试，仅著床前处理服药前已有接触，按各自接触时间结算，窗口沿用该角色的着床时长，成功不清可见残留，不提供未来保护；服药不等于成功、结果下轮承接，不代表角色知道。purpose=termination（旧调用默认）表示已明确成功的人工终止，purpose=miscarriage 落实非人工流产；确定结果不重抽，不自动 force。' + '已成立妊娠的自然流产与人工终止分别累计，著床前不计妊娠损失。'
       + '可指定 fetusIndex 做减胎（只拿掉那一胎，其余继续）；fetusIndex 从 0 起算，越界会被拒绝——'
       + '系统通知与介面说的「第 2 胎」对应 fetusIndex=1，不要直接照抄那个序号。省略 fetusIndex 则终止整个妊娠。'
       + '若 miscarriage 保护开启，则需 force=true 才会生效。',
@@ -481,6 +454,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       type: 'object',
       properties: {
         female: { type: 'string' },
+        purpose: { type: 'string', enum: ['emergency', 'termination', 'miscarriage'] },
         force: { type: 'boolean' },
         fetusIndex: { type: 'integer' },
       },
@@ -762,7 +736,7 @@ const POSTPARTUM_START_WEAR_PRESSURE = 4;
  * 风险大于收益。
  */
 const ST_USER_NAME_ALIASES = new Set(['user', '{user}', '{{user}}', '<user>']);
-const PERSON_NAME_ARG_KEYS = ['female', 'male', 'provider', 'fathers', 'returner'];
+const PERSON_NAME_ARG_KEYS = ['female', 'male', 'provider', 'fathers', 'returner', 'partner', 'selectedFather'];
 
 function resolveUserAliasName(value) {
   const raw = String(value ?? '').trim();
@@ -1569,6 +1543,9 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
     : maternalSources.filter((source) => source !== carrierName);
   return {
     embryoId,
+    contactIds: [...new Set([...(fetusA.contactIds || []), ...(fetusB.contactIds || [])])],
+    // Keep constituent embryos so a successful preimplantation attempt removes only its source.
+    contactEmbryos: [cloneValue(fetusA), cloneValue(fetusB)],
     fusionCheckedWith: [],
     // 嵌合本身由 chimera 栏位推导，这里只承接两边已落盘的标签
     tags: sanitizeFetusTagList([...(fetusA?.tags || []), ...(fetusB?.tags || [])]),
@@ -2306,6 +2283,16 @@ function advanceLaborFetalActivity(profile, tick, female) {
   appendFetalActivityNotice(profile, female, events);
 }
 
+function rescaleSpermContacts(base) {
+  for (const male of new Set((base.spermContacts || []).map((x) => x.male))) {
+    const contacts = base.spermContacts.filter((x) => x.male === male);
+    const previous = contacts.reduce((sum, x) => sum + x.value, 0);
+    const residue = (base.sperms || []).find((x) => x.male === male)?.value || 0;
+    const factor = previous > 0 ? Math.min(1, residue / previous) : 0;
+    for (const contact of contacts) contact.value *= factor;
+  }
+}
+
 function stageAllowsSpermRetention(stage) {
   return MENSTRUAL_STAGES.includes(stage) || PREGNANCY_STAGES.includes(stage) || stage === '产后恢复' || stage === '假孕期';
 }
@@ -2315,16 +2302,19 @@ function processSpermLifecycle(profile, stage, tick) {
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   if (sperms.length === 0) {
     base.sperms = [];
+    rescaleSpermContacts(base);
     return;
   }
 
   if (stage === '月经期' && tick.passedHours > 0) {
     base.sperms = [];
+    rescaleSpermContacts(base);
     return;
   }
 
   if (!stageAllowsSpermRetention(stage)) {
     base.sperms = [];
+    rescaleSpermContacts(base);
     return;
   }
 
@@ -2334,6 +2324,7 @@ function processSpermLifecycle(profile, stage, tick) {
       value: Math.max(0, clampNumber(item?.value, 0, 999999, 0) - (tick.deltaDays * SPERM_DECAY_PER_DAY)),
     }))
     .filter((item) => item.value > 0);
+  rescaleSpermContacts(base);
 }
 
 /**
@@ -2344,7 +2335,13 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
-  const availableSperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
+  const contacts = base.spermContacts || [];
+  const availableSperms = sperms.flatMap((item) => {
+    const sources = contacts.filter((x) => x.male === item.male);
+    const total = sources.reduce((sum, x) => sum + x.value, 0);
+    const unknown = Math.max(0, Number(item.value) - total);
+    return [...sources.filter((x) => !x.blocked && x.value > 0), ...(unknown > 0 ? [{ ...item, value: unknown }] : [])];
+  }).filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
   let eggs = clampNumber(base.eggs, 0, 99, 0);
 
   while (eggs > 0 && availableSperms.length > 0) {
@@ -2374,6 +2371,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
     if (winner) {
       pregnant.fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
       const fetus = createSimpleFetus(profile, winner, stage);
+      if (winner.id !== undefined) { fetus.contactIds = [winner.id]; fetus.contactMinutes = winner.minutesPassed; }
       // 孕中孕：异期受精成立之后，再看三个额外条件同时成不成立
       const conceivedAt = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
       const nestedHost = superfetation
@@ -2383,6 +2381,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
         : null;
       if (nestedHost) markNestedFetus(profile, fetus, nestedHost);
       else if (superfetation) markSuperfetationFetus(profile, fetus);
+      if (!pregnant.experienceBeforePregnancy && !superfetation) pregnant.experienceBeforePregnancy = experienceSnapshot(profile.experience);
       pregnant.fetuses.push(fetus);
       if (!superfetation) setVisualCue(profile, 'fertilization');
       notify.secondly = nestedHost
@@ -2505,7 +2504,7 @@ function processSimpleConception(profile, tick, notify, name) {
   const deltaDays = tick.deltaDays;
   const fullDays = tick.passedDays;
   const passedHours = tick.passedHours;
-  const allowsNaturalConception = [...MENSTRUAL_STAGES, '产后恢复'].includes(stage);
+  const allowsNaturalConception = MENSTRUAL_STAGES.includes(stage);
 
   if (allowsNaturalConception) {
     // 一次性排出本周期的份额：按天累加会让长排卵期窗口把卵数堆到上限，
@@ -2599,20 +2598,6 @@ function normalizeToolCallArguments(value) {
 
 function isPregnancyStage(stage) {
   return PREGNANCY_STAGES.includes(stage) || stage === '假孕期' || stage === '产兆前驱' || LABOR_STAGES.includes(stage);
-}
-
-function clearPsychologyTransitionState(profile, stage, days) {
-  const psychology = profile?.psychology;
-  if (!psychology || typeof psychology !== 'object') return;
-  const pregnant = profile?.pregnant || {};
-
-  if (isTruePregnancyStage(stage) && clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) > 7) {
-    psychology.mens = buildEmptyPsychologyGroup(PSY_MENS_FIELDS, PSY_MENS_BOOL_FIELDS);
-  }
-
-  if (stage === '产后恢复' && clampNumber(days, 1, 9999, 1) > 7) {
-    psychology.preg = buildEmptyPsychologyGroup(PSY_PREG_FIELDS, PSY_PREG_BOOL_FIELDS);
-  }
 }
 
 function isTruePregnancyStage(stage) {
@@ -3128,10 +3113,8 @@ const TERM_PRESSURE_RAMP_DAYS = 14;
 const POSTTERM_PRESSURE_MULTIPLIER = 2;
 
 function randomStandardNormal() {
-  let u = 0;
-  let v = 0;
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
+  const u = Math.max(Number.EPSILON, Math.random());
+  const v = Math.max(Number.EPSILON, Math.random());
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
@@ -3148,15 +3131,29 @@ function getTermReadinessAnchor(pregnant) {
 /** 已抽好的发动体质；这次妊娠还没抽时回 null */
 function peekTermReadiness(pregnant) {
   const stored = pregnant?.termReadiness;
-  if (!stored || typeof stored !== 'object' || stored.embryoId !== getTermReadinessAnchor(pregnant)) return null;
+  if (!stored || typeof stored !== 'object' || !(pregnant.fetuses || []).length) return null;
   const value = Number(stored.value);
   return Number.isFinite(value) ? value : null;
 }
 
 /**
  * 这一胎的「发动体质」：每次妊娠抽一次，决定不靠剧情时大概几周发动，抽的当下套上活力与情压等级。
- * 绑在最早那胎的 embryoId 上，下一次妊娠换了胎儿自然重抽，不必在每个结束妊娠的地方清掉
+ * 同次妊娠固定；减胎或换位不重抽。结束妊娠由 clearPregnancyState 清除，注册新妊娠也重置。
  */
+export function ensureNaturalNoticeSample(profile, config = {}) {
+  const pregnant = profile?.pregnant;
+  const fetuses = pregnant?.fetuses || [];
+  if (!pregnant || !fetuses.some((x) => !x.pendingImplantation) || !isTruePregnancyStage(profile.base?.stage)) return null;
+  if (!pregnant.noticeSample) {
+    const prior = pregnant.experienceBeforePregnancy || experienceSnapshot(profile.experience, true);
+    pregnant.experienceBeforePregnancy = prior;
+    pregnant.noticeSample = { z: randomStandardNormal(), vitalityLevel: profile.base?.vitalityLevel,
+      psyStressLevel: profile.base?.psyStressLevel, experience: prior, config: normalizeReproductiveSettings(config),
+      obstetricOffsetDays: getObstetricPregnancyOffsetDays(profile) * clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1) };
+  }
+  return pregnant.noticeSample;
+}
+
 function getTermReadiness(profile) {
   const pregnant = profile?.pregnant || {};
   const stored = peekTermReadiness(pregnant);
@@ -3164,7 +3161,7 @@ function getTermReadiness(profile) {
   const base = profile?.base || {};
   const levelFactor = (VITALITY_LEVEL_READINESS[Math.round(Number(base.vitalityLevel))] || 1)
     * (PSY_STRESS_LEVEL_READINESS[Math.round(Number(base.psyStressLevel))] || 1);
-  const rolled = TERM_READINESS_MEDIAN * Math.exp(TERM_READINESS_SPREAD * randomStandardNormal()) * levelFactor;
+  const rolled = TERM_READINESS_MEDIAN * Math.exp(TERM_READINESS_SPREAD * randomStandardNormal()) * levelFactor * experienceFactor(pregnant.experienceBeforePregnancy || experienceSnapshot(profile.experience, true), pregnant.noticeSample?.config || normalizeReproductiveSettings(), 'labor');
   const value = clampNumber(rolled, 0.5, 15, TERM_READINESS_MEDIAN);
   pregnant.termReadiness = { embryoId: getTermReadinessAnchor(pregnant), value };
   return value;
@@ -3628,6 +3625,9 @@ function applyExcreteMetabolism(chatState, args) {
 function clearPregnancyState(profile) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
+  delete pregnant.noticeSample;
+  delete pregnant.experienceBeforePregnancy;
+  delete pregnant.termReadiness;
   base.fertilizationDays = 0;
   base.uterinePressure = 0;
   pregnant.pregnantDays = 0;
@@ -4290,7 +4290,7 @@ function applyLaborAmnionWear(profile, female, options = {}) {
   return ruptured.length > 0;
 }
 
-function getProdromalInitialHours(profile) {
+export function getProdromalInitialHours(profile) {
   return 48 * clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
 }
 
@@ -4725,11 +4725,12 @@ function resolveFirstStageExperienceMultiplier(profile) {
   );
 }
 
-function resolveLaborPhaseHours(profile, stage, phase, fetuses) {
+export function resolveLaborPhaseHours(profile, stage, phase, fetuses = profile?.pregnant?.fetuses || [], { fullStage = false } = {}) {
   const birthDifficulty = clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
   if (stage === '第一产程') {
     const total = resolveLaborStageHours('第一产程', Math.max(fetuses.length, 1), birthDifficulty)
       * resolveFirstStageExperienceMultiplier(profile);
+    if (fullStage) return total;
     if (phase === '活跃期') return total * 0.35;
     if (phase === '过渡期') return total * 0.15;
     return total * 0.5;
@@ -4745,7 +4746,7 @@ function resolveLaborPhaseHours(profile, stage, phase, fetuses) {
   return 1;
 }
 
-function getLaborPhaseForStage(stage, currentPhase) {
+export function getLaborPhaseForStage(stage, currentPhase) {
   if (stage === '第一产程') return ['潜伏期', '活跃期', '过渡期'].includes(currentPhase) ? currentPhase : '潜伏期';
   if (stage === '第二产程') return ['胎体下降', '胎体娩出', '间歇期'].includes(currentPhase) ? currentPhase : '胎体下降';
   if (stage === '第三产程') return ['供养器官娩出', '产后观察'].includes(currentPhase) ? currentPhase : '供养器官娩出';
@@ -5153,7 +5154,54 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
   return done(false);
 }
 
+function applyEmergencyContraception(chatState, args) {
+  const female = String(args?.female || '').trim();
+  const character = chatState.characters?.[female];
+  const skip = (message) => ({ applied: false, message: `bsAbortion emergency skipped: ${message}` });
+  if (!character) return skip('未知角色。');
+  if (args.force || args.fetusIndex !== undefined) return skip('事后避孕不可 force 或指定 fetusIndex。');
+  const profile = character.profile;
+  const stage = profile.base?.stage;
+  if (isTruePregnancyStage(stage) || stage === WOMB_RETURN_STAGE) return skip('已着床妊娠不适用事后避孕。');
+  if (profile.immune?.miscarriage) return skip('受既有保护限制，不自动绕过。');
+  const fetuses = profile.pregnant?.fetuses || [];
+  const contacts = profile.base?.spermContacts || [];
+  const now = Number(chatState.minutesPassed) || 0;
+  const targets = contacts.filter((x) => !x.blocked && (x.value > 0 || fetuses.some((f) => f.contactIds?.includes(x.id))));
+  const unknownResidue = (profile.base?.sperms || []).some((s) => Number(s.value) > contacts.filter((x) => x.male === s.male).reduce((sum, x) => sum + x.value, 0) + 0.000001);
+  if (unknownResidue || fetuses.some((x) => !x.contactIds?.length || x.contactIds.some((id) => !contacts.some((contact) => contact.id === id))) || targets.some((x) => !Number.isFinite(x.minutesPassed) || x.minutesPassed > now)) return skip('旧接触缺少时间或来源，无法结算；请补接触来源时间。');
+  if (!targets.length) return skip('无既有可处理接触，不建立长期保护。');
+  if (fetuses.some((x) => x.contactIds?.length > 1 && !x.contactEmbryos?.length)) return skip('融合胚胎缺少构成来源，无法安全分离旧资料。');
+  const next = cloneValue(character);
+  const config = normalizeReproductiveSettings(chatState.reproductiveSettings);
+  const windowMinutes = getImplantationDays(profile) * 1440;
+  const outcomes = targets.map((x) => {
+    const probability = config.emergencyEffectiveness * Math.max(0, 1 - (now - x.minutesPassed) / windowMinutes);
+    return { contactId: x.id, probability, success: Math.random() < probability };
+  });
+  const succeeded = new Set(outcomes.filter((x) => x.success).map((x) => x.contactId));
+  for (const contact of next.profile.base.spermContacts) if (succeeded.has(contact.id)) contact.blocked = true;
+  const pregnant = next.profile.pregnant;
+  const remaining = [];
+  for (const fetus of next.profile.pregnant.fetuses) {
+    if (fetus.contactIds.every((id) => succeeded.has(id))) continue;
+    if (fetus.contactEmbryos && fetus.contactIds.some((id) => succeeded.has(id))) {
+      const survivors = fetus.contactEmbryos.filter((part) => !part.contactIds.every((id) => succeeded.has(id)));
+      if (survivors.length === 1) remaining.push({ ...survivors[0], embryoId: fetus.embryoId });
+      else remaining.push(fetus);
+    } else remaining.push(fetus);
+  }
+  pregnant.fetuses = remaining;
+  pregnant.fetusesCount = pregnant.fetuses.length;
+  if (!pregnant.fetuses.length) next.profile.base.fertilizationDays = 0;
+  next.profile.lastEmergencyResult = { minutesPassed: now, windowMinutes, outcomes };
+  chatState.characters[female] = next;
+  return { applied: true, message: `事后避孕尝试已结算：${outcomes.filter((x) => x.success).length}/${outcomes.length} 次接触成功。可见残留不清除，无未来保护；下轮承接，系统结果不等于角色知情。` };
+}
+
 function applyAbortion(chatState, args) {
+  if (args?.purpose === 'emergency') return applyEmergencyContraception(chatState, args);
+  if (args?.purpose !== undefined && !['termination', 'miscarriage'].includes(args.purpose)) return { applied: false, message: 'bsAbortion purpose 无效。' };
   const female = String(args?.female || '').trim();
   const force = Boolean(args?.force);
   const fetusIndex = args?.fetusIndex;
@@ -5263,7 +5311,8 @@ function applyAbortion(chatState, args) {
     assignPostpartumRecoveryDays(profile, recoveryDays);
     base.stage = '产后恢复';
     base.days = 0;
-    experience.miscarriageExperience = clampNumber(experience.miscarriageExperience, 0, 999, 0) + 1;
+    const lossField = args.purpose === 'miscarriage' ? 'miscarriageExperience' : 'abortionExperience';
+    experience[lossField] = clampNumber(experience[lossField], 0, 999, 0) + 1;
     profile.experience = experience;
     profile.notify = {
       ...notify,
@@ -6048,14 +6097,19 @@ function getMenstrualStageFluctuation(profile, stage) {
   return normalized * maxFluctuationRatio;
 }
 
-function getStageLimit(profile, stage) {
+export function getStageLimit(profile, stage) {
   if (MENSTRUAL_STAGE_DAYS[stage]) {
     const ratio = clampNumber(profile?.bio?.menstrualLengthRatio, 0.1, 20, 1);
     const fluctuation = getMenstrualStageFluctuation(profile, stage);
     return Math.max(1, MENSTRUAL_STAGE_DAYS[stage] * ratio * (1 + fluctuation));
   }
-  if (stage === '产后恢复') return Math.max(1, clampNumber(profile?.bio?.recoveryDays, 1, 9999, 56));
+  if (stage === '产后恢复') return clampNumber(profile?.bio?.recoveryDays, 0, 9999, 56);
   return null;
+}
+
+/** Shared read-only limit for the engine and progress UI; pseudo age uses actual days. */
+export function getPseudoPregnancyLimit(profile) {
+  return Math.max(1, 84 * clampNumber(getGestationEffectiveSpeed(profile), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1));
 }
 
 function advanceMenstrualStage(profile, stage, daysValue) {
@@ -6069,6 +6123,10 @@ function advanceMenstrualStage(profile, stage, daysValue) {
     nextDays -= limit;
     const stageIndex = MENSTRUAL_STAGES.indexOf(nextStage);
     nextStage = MENSTRUAL_STAGES[(stageIndex + 1) % MENSTRUAL_STAGES.length];
+    if (nextStage === '月经期') {
+      if (shouldEnterPseudoPregnancy(profile, '黄体期', nextStage)) return { stage: '假孕期', days: 0, changed: true, enteredFollicular };
+      refreshCognition(profile);
+    }
     if (nextStage === '卵泡期') enteredFollicular = true;
     changed = true;
   }
@@ -6094,6 +6152,7 @@ function applyTimeToCharacter(character, tick) {
   const next = cloneValue(character);
   snapshotOriginalPregnancyBio(next);
   const profile = next.profile || {};
+  const oldCognitionCycle = Number(profile.cognitionCycle) || 0;
   profile.__runtimeRef = next.runtime || {};
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
@@ -6130,7 +6189,7 @@ function applyTimeToCharacter(character, tick) {
     days = advanced.days;
     stageChanged = advanced.changed;
     enteredFollicular = advanced.enteredFollicular;
-    if (stageChanged && shouldEnterPseudoPregnancy(profile, oldStage, stage)) {
+    if (stage === '假孕期') {
       stage = '假孕期';
       days = 0;
       pregnant.pregnantDays = 0;
@@ -6187,11 +6246,15 @@ function applyTimeToCharacter(character, tick) {
   } else if (stage === '产后恢复') {
     days += deltaDays;
     const recoveryDays = getStageLimit(profile, '产后恢复');
-    if (days > recoveryDays) {
-      stage = '卵泡期';
-      days = 0;
+    if (days >= recoveryDays) {
+      stage = '月经期';
+      days = Math.max(0, days - recoveryDays);
       stageChanged = true;
-      enteredFollicular = true;
+      refreshCognition(profile);
+      const advanced = advanceMenstrualStage(profile, stage, days);
+      stage = advanced.stage;
+      days = advanced.days;
+      enteredFollicular = advanced.enteredFollicular;
       // 子宫乏力撑过产程，到产后恢复结束才算复旧完成
       base.uterineAtony = 0;
       pregnant.pregnantDays = 0;
@@ -6215,13 +6278,18 @@ function applyTimeToCharacter(character, tick) {
     stageChanged = stageChanged || finished || stage !== oldStage;
   } else if (stage === '假孕期') {
     pregnant.pregnantDays = clampNumber(pregnant.pregnantDays, 0, 9999, 0) + deltaDays;
-    const pseudoLimit = Math.max(1, 84 * clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1));
+    const pseudoLimit = getPseudoPregnancyLimit({ ...profile, bio });
     if (pregnant.pregnantDays > pseudoLimit) {
       stage = '月经期';
-      days = 0;
+      days = Math.max(0, pregnant.pregnantDays - pseudoLimit);
       stageChanged = true;
       pregnant.pregnantDays = 0;
       pregnant.effectivePregnantDays = 0;
+      refreshCognition(profile);
+      const advanced = advanceMenstrualStage(profile, stage, days);
+      stage = advanced.stage;
+      days = advanced.days;
+      enteredFollicular = advanced.enteredFollicular;
     }
   } else if (stage === '产兆前驱') {
     const oldPregnantDays = clampNumber(pregnant.pregnantDays, 0, 9999, 0);
@@ -6297,7 +6365,7 @@ function applyTimeToCharacter(character, tick) {
     restorePregnancyPhysiology(profile, next.runtime || {});
   }
 
-  clearPsychologyTransitionState(profile, stage, days);
+  syncPsychologyLifecycle({ ...profile, base: { ...base, stage } }, oldStage, (Number(profile.cognitionCycle) || 0) !== oldCognitionCycle);
 
   profile.base = {
     ...base,
@@ -6743,62 +6811,6 @@ function applySetCharacterPresence(chatState, args) {
   };
 }
 
-function applyUpdateExperience(chatState, args) {
-  const female = String(args?.female || '').trim();
-  const character = chatState.characters?.[female];
-  const options = args?.options && typeof args.options === 'object' ? args.options : null;
-  if (!female || !character) return { applied: false, message: `bsUpdateExperience skipped: unknown character ${female || '(empty)'}.` };
-  if (!options) return { applied: false, message: 'bsUpdateExperience skipped: empty options.' };
-
-  const next = cloneValue(character);
-  const profile = next.profile || {};
-  const experience = profile.experience || {};
-  const allowedStringFields = ['virginity', 'latestSexPartner', 'emotionalMate', 'marriageMate'];
-  const allowedNumberFields = ['pregnantExperience', 'naturalBirthExperience', 'surgicalBirthExperience', 'miscarriageExperience'];
-
-  let changed = false;
-  for (const field of allowedStringFields) {
-    if (options[field] === undefined) continue;
-    experience[field] = options[field] === null ? null : String(options[field]);
-    changed = true;
-  }
-  for (const field of allowedNumberFields) {
-    if (options[field] === undefined) continue;
-    experience[field] = clampNumber(options[field], 0, 9999, experience[field] || 0);
-    changed = true;
-  }
-
-  if (!changed) return { applied: false, message: `bsUpdateExperience skipped for ${female}: no allowed fields.` };
-
-  profile.experience = experience;
-  next.profile = profile;
-  chatState.characters[female] = next;
-  return { applied: true, message: `bsUpdateExperience applied to ${female}.` };
-}
-
-function applyNameChild(chatState, args) {
-  const female = String(args?.female || '').trim();
-  const childIndex = Number(args?.childIndex);
-  const childName = String(args?.name || '').trim();
-  const character = chatState.characters?.[female];
-  if (!female || !character) return { applied: false, message: `bsNameChild skipped: unknown character ${female || '(empty)'}.` };
-  if (!Number.isInteger(childIndex)) return { applied: false, message: 'bsNameChild skipped: invalid childIndex.' };
-  if (!childName) return { applied: false, message: 'bsNameChild skipped: empty name.' };
-
-  const next = cloneValue(character);
-  const profile = next.profile || {};
-  const children = Array.isArray(profile.children) ? profile.children.map((item) => ({ ...item })) : [];
-  if (childIndex < 0 || childIndex >= children.length) {
-    return { applied: false, message: `bsNameChild skipped for ${female}: childIndex ${childIndex} out of range.` };
-  }
-
-  children[childIndex].name = childName;
-  profile.children = children;
-  next.profile = profile;
-  chatState.characters[female] = next;
-  return { applied: true, message: `bsNameChild applied to ${female}: child ${childIndex} named ${childName}.` };
-}
-
 function applyRegisterSkillDefinition(chatState, args) {
   const result = registerSkillDefinition(chatState.skillCatalog, args, chatState.nextSkillId);
   if (!result.ok) return { applied: false, message: `bsRegisterSkillDefinition skipped: ${result.message}` };
@@ -6929,6 +6941,7 @@ function applyUpdatePsychology(chatState, args) {
   // 等于白写一场。
   const isPregnancySide = PREGNANCY_STAGES.includes(stage) || stage === '假孕期' || stage === '产兆前驱' || stage === WOMB_RETURN_STAGE || LABOR_STAGES.includes(stage);
 
+  if (stage === '产后恢复' || psychology.pendingSide) return { applied: false, message: '心理侧尚未成立，需单侧推演。' };
   const targetGroup = isPregnancySide ? 'preg' : 'mens';
   const sourcePatch = options[targetGroup];
   if (!sourcePatch || typeof sourcePatch !== 'object') {
@@ -6949,7 +6962,8 @@ function applyUpdatePsychology(chatState, args) {
   for (const field of allowedFields) {
     if (sourcePatch[field] === undefined) continue;
     const valueKey = `${field}_value`;
-    const currentValue = target[valueKey] === null || target[valueKey] === undefined ? 0 : clampNumber(target[valueKey], 0, 100, 0);
+    if (target[valueKey] === null || target[valueKey] === undefined || !Number.isFinite(Number(sourcePatch[field]))) continue;
+    const currentValue = clampNumber(target[valueKey], 0, 100, 0);
     target[valueKey] = clampNumber(currentValue + Number(sourcePatch[field] || 0), 0, 100, currentValue);
     changed = true;
   }
@@ -7012,6 +7026,7 @@ function applyAddSperm(chatState, args) {
   if (!Number.isFinite(amount)) return { applied: false, message: 'bsAddSperm skipped: invalid amount.' };
   if (amount < 0) return { applied: false, message: 'bsAddSperm skipped: negative amount 请改用 bsDrainSperm 扣除精液。' };
 
+  if (args.hasCondom !== undefined && typeof args.hasCondom !== 'boolean') return { applied: false, message: 'hasCondom 必须为 boolean。' };
   const next = cloneValue(character);
   const base = next.profile?.base || {};
   const currentState = ['idle', 'inserted', 'spent'].includes(base.penetrationState)
@@ -7022,6 +7037,7 @@ function applyAddSperm(chatState, args) {
   if (action === 'insert') {
     if (amount !== 0) return { applied: false, message: `bsAddSperm skipped for ${female}: insert 的 amount 必须为 0。` };
     base.penetrationState = 'inserted';
+    base.penetrationCondom = args.hasCondom ?? false;
     base.penetrationSource = male;
     base.latestSexDays = 0;
     next.profile.base = base;
@@ -7046,6 +7062,7 @@ function applyAddSperm(chatState, args) {
     }
     base.penetrationState = 'idle';
     base.penetrationSource = null;
+    base.penetrationCondom = false;
     next.profile.base = base;
     chatState.characters[female] = next;
     return { applied: true, message: `bsAddSperm withdraw applied to ${female}: penetrationState=idle.` };
@@ -7059,17 +7076,28 @@ function applyAddSperm(chatState, args) {
     return { applied: false, message: `bsAddSperm skipped for ${female}: 当前插入来源是 ${currentSource}，不是 ${male}。` };
   }
 
+  const config = normalizeReproductiveSettings(chatState.reproductiveSettings);
+  const hasCondom = args.hasCondom ?? base.penetrationCondom ?? false;
+  const condomFailed = hasCondom && (amount > config.condomCapacity || Math.random() >= config.condomReliability);
+  const enteredAmount = hasCondom && !condomFailed ? 0 : amount;
+  base.penetrationCondom = hasCondom;
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   const maleDerivedType = parsedRace.derivedType || null;
   const existing = sperms.find((item) => String(item?.male || '') === male);
-  if (existing) {
-    existing.value = Math.max(0, clampNumber(existing.value, 0, 999999, 0) + amount);
-    existing.race = race;
-    existing.derivedType = maleDerivedType;
-  } else if (amount > 0) {
-    sperms.push({ male, race, derivedType: maleDerivedType, value: amount });
+  if (enteredAmount > 0) {
+    if (existing) {
+      existing.value = Math.max(0, clampNumber(existing.value, 0, 999999, 0) + enteredAmount);
+      existing.race = race;
+      existing.derivedType = maleDerivedType;
+    } else sperms.push({ male, race, derivedType: maleDerivedType, value: enteredAmount });
+    base.nextSpermContactId = (Number(base.nextSpermContactId) || 0) + 1;
+    base.spermContacts = [...(base.spermContacts || []), {
+      id: base.nextSpermContactId, male, race, derivedType: maleDerivedType,
+      minutesPassed: Number(chatState.minutesPassed) || 0, value: enteredAmount, blocked: false,
+    }];
   }
   base.sperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
+  next.profile.lastCondomResult = { hasCondom, condomFailed, enteredAmount, minutesPassed: Number(chatState.minutesPassed) || 0 };
   base.penetrationState = 'spent';
   base.penetrationSource = male;
   base.latestSexDays = 0;
@@ -7082,12 +7110,14 @@ function applyAddSperm(chatState, args) {
     experience.virginity = male;
   }
   next.profile.experience = experience;
-  applyOdorGain(next.profile, Math.min(18, 4 + Math.log10(Math.max(1, amount)) * 4));
-  setVisualCue(next.profile, 'ejaculate');
-  const ripening = applyProdromalSemenRipening(next.profile, female);
+  if (enteredAmount > 0) {
+    applyOdorGain(next.profile, Math.min(18, 4 + Math.log10(Math.max(1, enteredAmount)) * 4));
+    setVisualCue(next.profile, 'ejaculate');
+  }
+  const ripening = enteredAmount > 0 ? applyProdromalSemenRipening(next.profile, female) : null;
   if (ripening) next.profile.notify = { ...(next.profile.notify || {}), secondly: ripening };
   chatState.characters[female] = ripening ? syncCharacterStageFromProfile(next) : next;
-  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent.${ripening ? ` ${ripening}。` : ''}` };
+  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}, enteredAmount=${enteredAmount}（系统结算，不代表角色知情；下轮承接）.${ripening ? ` ${ripening}。` : ''}` };
 }
 
 function applyDrainSperm(chatState, args) {
@@ -7104,6 +7134,7 @@ function applyDrainSperm(chatState, args) {
 
   if (total <= amount) {
     base.sperms = [];
+    rescaleSpermContacts(base);
     next.profile.base = base;
     chatState.characters[female] = next;
     return { applied: true, message: `bsDrainSperm cleared all sperm for ${female}.` };
@@ -7118,6 +7149,7 @@ function applyDrainSperm(chatState, args) {
     .filter((item) => item.value > 0);
 
   base.sperms = sperms;
+  rescaleSpermContacts(base);
   next.profile.base = base;
   chatState.characters[female] = next;
   return { applied: true, message: `bsDrainSperm applied to ${female}.` };
@@ -7125,7 +7157,7 @@ function applyDrainSperm(chatState, args) {
 
 function applySetMenstrualPhases(chatState, args) {
   const female = String(args?.female || '').trim();
-  const stage = String(args?.stage || '').trim();
+  let stage = String(args?.stage || '').trim();
   const character = chatState.characters?.[female];
   if (!female || !character) return { applied: false, message: `bsSetMenstrualPhases skipped: unknown character ${female || '(empty)'}.` };
   if (!stage) return { applied: false, message: 'bsSetMenstrualPhases skipped: empty stage.' };
@@ -7142,11 +7174,11 @@ function applySetMenstrualPhases(chatState, args) {
   const cooldown = profile.cooldown || {};
   const notify = profile.notify || {};
   const currentStage = String(base.stage || '');
+  if (['产后恢复', '假孕期'].includes(currentStage) && stage !== currentStage) stage = '月经期';
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const hasConceptionState = fetuses.length > 0
     || clampNumber(base.fertilizationDays, 0, 9999, 0) > 0
-    || clampNumber(pregnant.pregnantDays, 0, 9999, 0) > 0
-    || clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) > 0;
+    || (!['假孕期', '产后恢复'].includes(currentStage) && (clampNumber(pregnant.pregnantDays, 0, 9999, 0) > 0 || clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) > 0));
   const hasProtectedPregnancyState = PREGNANCY_STAGES.includes(currentStage)
     || currentStage === '产兆前驱'
     || currentStage === WOMB_RETURN_STAGE
@@ -7161,6 +7193,7 @@ function applySetMenstrualPhases(chatState, args) {
 
   base.stage = stage;
   base.days = 0;
+  if (stage === '月经期' && ['产后恢复', '假孕期'].includes(currentStage)) clearPregnancyState(profile);
   profile.base = base;
   if (stage === '卵泡期') {
     const metabolism = profile.metabolism || {};
@@ -7546,7 +7579,7 @@ function applyDebugClearContainers(chatState, args) {
     profile.notify = {
       ...notify,
       firstly: `${female}进入了产后恢复`,
-      secondly: `${female}的胎儿已被调试淨空，并记录一次流产/堕胎经验`,
+      secondly: `${female}的胎儿已被调试淨空，并记录一次流产经验`,
     };
     next.profile = profile;
     chatState.characters[female] = syncCharacterStageFromProfile(next);
@@ -7741,17 +7774,37 @@ export function applyToolCall(chatState, call) {
   // 先让每个母体的编号计数器越过现存号码，再执行可能移除胎儿的操作；
   // 否则从未发过号的母体减胎后，会把被移除那胎的号码重发给下一个新胎
   for (const character of Object.values(chatState?.characters || {})) {
-    if (character?.profile?.pregnant && typeof character.profile.pregnant === 'object') {
+    if (call?.name === 'bsPassedTime') ensureNaturalNoticeSample(character.profile, chatState.reproductiveSettings);
+    if (call?.name !== 'bsRecordExperience' && character?.profile?.pregnant && typeof character.profile.pregnant === 'object') {
       syncEmbryoCounter(character.profile.pregnant);
       ensureAmnionMetadata(character.profile.pregnant);
       ensureBackSideMetadata(character.profile.pregnant);
     }
   }
+  const args = resolvePersonNameArgs(normalizeToolCallArguments(call?.arguments));
+  const target = chatState.characters?.[String(args?.female || '').trim()];
+  const guarded = ['bsRecordExperience', 'bsAddSperm', 'bsAbortion'].includes(call?.name) && call?.sourceId && target;
+  const previous = guarded && (target.profile.reproductiveOperations || []).find((x) => x.source === call.sourceId);
+  if (previous) return { ...previous.result, applied: false, unchanged: true, message: `重复来源：${previous.result.message}` };
+  if (['产后恢复', '假孕期'].includes(target?.profile?.base?.stage) && ['bsImplantEmbryo', 'bsDebugInjectPregnancy', 'bsWombReturn'].includes(call?.name)) return { applied: false, message: '恢复/假孕须先进入月经，不能跳过周期刷新植入妊娠。' };
+  const oldStages = Object.fromEntries(Object.entries(chatState.characters || {}).map(([name, character]) => [name, character.profile?.base?.stage]));
   const result = dispatchToolCall(chatState, call);
+  for (const [name, character] of Object.entries(chatState.characters || {})) {
+    const oldStage = oldStages[name];
+    const stage = character.profile?.base?.stage;
+    if (result.applied && stage === '月经期' && oldStage !== stage && call.name !== 'bsPassedTime') refreshCognition(character.profile);
+    if (result.applied && call.name !== 'bsPassedTime') syncPsychologyLifecycle(character.profile, oldStage);
+  }
+  if (guarded && result.applied) {
+    const profile = chatState.characters[args.female].profile;
+    profile.reproductiveOperations = [...(profile.reproductiveOperations || []), { source: call.sourceId, action: args.action || call.name, result }].slice(-512);
+  }
+  if (call?.name === 'bsRecordExperience') return result;
   syncAllNutritionBurst(chatState);
   for (const character of Object.values(chatState?.characters || {})) {
     const pregnant = character?.profile?.pregnant;
     if (!pregnant || typeof pregnant !== 'object') continue;
+    ensureNaturalNoticeSample(character.profile, chatState.reproductiveSettings);
     releaseRupturedNestedFetuses(pregnant);
     reconcilePresentingReference(pregnant);
     reconcileFetalDescent(character.profile);
@@ -7782,8 +7835,7 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsChangeOutfit') return applyChangeOutfit(chatState, args);
   if (name === 'bsSetDescription') return applyDescription(chatState, args);
   if (name === 'bsSetCharacterPresence') return applySetCharacterPresence(chatState, args);
-  if (name === 'bsUpdateExperience') return applyUpdateExperience(chatState, args);
-  if (name === 'bsNameChild') return applyNameChild(chatState, args);
+  if (name === 'bsRecordExperience') return recordExperience(chatState, args, call.sourceId || '');
   if (name === 'bsRegisterSkillDefinition') return applyRegisterSkillDefinition(chatState, args);
   if (name === 'bsTrainSkill') return applyTrainSkill(chatState, args);
   if (name === 'bsUpdatePsychology') return applyUpdatePsychology(chatState, args);
@@ -7817,15 +7869,17 @@ function getDisabledSystemToolMessage(settings, name) {
   return '';
 }
 
-export function applyToolCallsResult(ctx, result) {
+export function applyToolCallsResult(ctx, result, sourceId = '') {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const toolCalls = Array.isArray(result?.tool_calls) ? result.tool_calls : [];
   const logs = [];
-  for (const call of toolCalls) {
+  chatState.reproductiveSettings = normalizeReproductiveSettings(settings.reproductiveSettings);
+  for (const [callIndex, call] of toolCalls.entries()) {
     const normalizedCall = {
       name: String(call?.name || '').trim(),
-      arguments: normalizeToolCallArguments(call?.arguments),
+      arguments: resolvePersonNameArgs(normalizeToolCallArguments(call?.arguments)),
+      sourceId: sourceId ? `${sourceId}:${callIndex}` : String(call?.id || ''),
     };
     const disabledMessage = getDisabledSystemToolMessage(settings, normalizedCall.name);
     const appliedResult = disabledMessage

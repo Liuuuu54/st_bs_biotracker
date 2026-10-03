@@ -233,8 +233,8 @@ test('出生后母亲解析成宿主孩子的稳定 id，血缘图上母亲是�
   assert.equal(hostChild.birthEmbryoId, nestedChild.nestedInEmbryoId);
 
   applyToolCall(built, {
-    name: 'bsNameChild',
-    arguments: { female: 'A', childIndex: children.indexOf(hostChild), name: '宿主女' },
+    name: 'bsRecordExperience',
+    arguments: { female: 'A', action: 'child', time: '今日', childIndex: children.indexOf(hostChild), name: '宿主女' },
   });
   const view = buildLineageView(built, 'A');
   const nestedNode = view.nodes.find((node) => node.childId === nestedChild.id);

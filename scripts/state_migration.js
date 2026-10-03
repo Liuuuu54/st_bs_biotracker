@@ -1,3 +1,4 @@
+import { normalizeExperience, psychologySide } from './reproductive.js';
 import {
   RACE_PHYSIOLOGY_PROFILES,
   computePostpartumRecoveryDays,
@@ -9,7 +10,7 @@ import {
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 3;
+export const CHAT_STATE_SCHEMA_VERSION = 4;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -106,9 +107,41 @@ function migrateCharacterV2ToV3(character) {
   if (!Number.isFinite(Number(base.uterineAtony))) base.uterineAtony = 0;
 }
 
+function migrateCharacterV3ToV4(character) {
+  const profile = character?.profile;
+  if (!profile || profile.reproductiveMigration?.version === 4) return;
+  const old = JSON.parse(JSON.stringify({ experience: profile.experience || {}, psychology: profile.psychology || {} }));
+  profile.reproductiveMigration = { version: 4, original: old };
+  const e = profile.experience || {};
+  profile.experience = normalizeExperience({ ...e,
+    emotionalMates: e.emotionalMates ?? (e.emotionalMate ? [e.emotionalMate] : []),
+    marriageMates: e.marriageMates ?? (e.marriageMate ? [e.marriageMate] : []),
+    abortionExperience: e.abortionExperience ?? 0,
+  });
+  profile.cognitionRecords = profile.cognitionRecords || [];
+  const psy = profile.psychology || {};
+  const enabled = Object.keys(psy.stageProfiles || {}).length > 0;
+  const side = psychologySide(profile.base?.stage);
+  psy.enabled = enabled;
+  psy.activeSide = side;
+  for (const group of ['mens', 'preg']) {
+    for (const key of ['isChaste', 'hasContraception', 'knowsFatherSource', 'hasProfessionalPrenatalCare']) delete psy[group]?.[key];
+  }
+  delete psy.preg?.cognition_value;
+  delete psy.preg?.cognition_interpret;
+  if (psy.stageProfiles) delete psy.stageProfiles.preg;
+  if (enabled && side === 'preg') {
+    psy.preg = { confidence_value: 50, bonding_value: 50, stance_value: 50 };
+    delete psy.stageProfiles?.mens;
+  } else psy.preg = {};
+  profile.psychology = psy;
+  for (const child of (profile.children || [])) if (child.selectedFather === undefined) child.selectedFather = null;
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
   2: migrateCharacterV2ToV3,
+  3: migrateCharacterV3ToV4,
 });
 
 export function getChatStateSchemaVersion(chatState) {

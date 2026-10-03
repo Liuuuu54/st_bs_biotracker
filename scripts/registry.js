@@ -1,3 +1,4 @@
+import { normalizeExperience, initializeCognitionRecords, normalizeReproductiveSettings, psychologySide } from './reproductive.js';
 import { callOpenAICompatible } from './api.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
 import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt, buildWorldBaselineBlock } from './race_prompt_context.js';
@@ -53,7 +54,7 @@ import {
   worldbookSelectionMatches,
 } from './state.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
-import { canLoadHostWorldInfo, getHostWorldBook, loadHostWorldInfo } from './host.js';
+import { canLoadHostWorldInfo, getHostChat, getHostWorldBook, loadHostWorldInfo } from './host.js';
 import {
   normalizeNextSkillId,
   normalizeSkillCatalog,
@@ -63,7 +64,7 @@ import {
   resolveSkillDefinition,
 } from './skill_config.js';
 import { resolveWardrobeItemRef, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCall, BACK_SIDES, calculateDerivedInheritanceProgress, canHostNestedPregnancy, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
+import { applyToolCall, BACK_SIDES, calculateDerivedInheritanceProgress, canHostNestedPregnancy, ensureNaturalNoticeSample, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
 import { EXTENSION_MONTH_DAYS, FIRST_EXTENSION_UNTIL_DAYS, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS } from './stage_config.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
@@ -342,89 +343,24 @@ function sanitizePromptText(value) {
 }
 
 export function buildBreedingInferenceSystemPrompt(settings, options = {}) {
-  const targetName = String(options.targetName || '').trim();
-  const customNotes = String(options.customNotes !== undefined ? options.customNotes : (settings?.registryCustomNotes || '')).trim();
-  const declaredRace = String(options.declaredRace || '').trim();
-  const breedingInferencePrompt = String(options.breedingInferencePrompt || '').trim();
-  const worldBaselinePrompt = buildWorldBaselineBlock(settings?.worldBaselinePrompt);
-  const sourceChild = options.sourceChildContext?.child || null;
-  const psyMensLines = Object.entries(PSY_MENS_FIELDS).map(([key, value]) => `- mens.${key}_value: ${value.definition}`);
-  const psyMensBoolLines = Object.entries(PSY_MENS_BOOL_FIELDS).map(([key, value]) => `- mens.${key}: ${value.definition}`);
-  const psyPregLines = Object.entries(PSY_PREG_FIELDS).map(([key, value]) => `- preg.${key}_value: ${value.definition}`);
-  const psyPregBoolLines = Object.entries(PSY_PREG_BOOL_FIELDS).map(([key, value]) => `- preg.${key}: ${value.definition}`);
-  const stageKeysText = PSY_STAGE_KEYS.join(', ');
+  const side = options.psychologySide || null;
   return [
-    worldBaselinePrompt,
-    '你是 AIRP 角色繁育推演器。',
-    '你的任务不是注册角色，而是在注册前根据角色卡、世界书、最近对话与用户补充，推演该角色的繁育心理底盘。',
-    targetName ? `本次唯一目标是「${targetName}」。target_character 必须逐字填写「${targetName}」，不得填写 user、角色卡名或任何其他角色。` : '',
-    '繁育推演描述的是较稳定的人格、经历、认知与关系倾向，不是当下短暂情绪；不要因为角色刚害羞、刚哭、刚受伤就大幅改写长期心理轴。',
-    '若资料能支持判断，必须给出数值；只有完全没有线索时才使用 null。',
-    '如果角色当前未怀孕或没有明确初登场怀孕迹象，填写 mens；如果角色当前已怀孕、假孕、产兆前驱或产程中，填写 preg。mens 与 preg 二选一，另一项用 null。',
-    '启用 mens 时，必须同时推演 isChaste 与 hasContraception；启用 preg 时，必须同时推演 knowsFatherSource 与 hasProfessionalPrenatalCare。',
-    '数值范围为 0-100。0 是极端封闭/否认/失控，50 是普通中性，100 是极端掌控/执迷/展现。不要使用 100+，注册阶段只给 0-100 起始点。',
-    declaredRace ? `用户已声明角色种族倾向：${sanitizePromptText(declaredRace)}` : '',
-    sourceChild ? '本次角色来源为已出生孩子。payload.source_child 是其固定出生资料与既有天赋；必须用来判断长期人格、母子关系及成长背景，不得改写其种族或天赋。' : '',
-    customNotes ? `角色补充设定：${sanitizePromptText(customNotes)}` : '',
-    breedingInferencePrompt ? `额外推演提示：${sanitizePromptText(breedingInferencePrompt)}` : '',
-    'mens 字段定义：',
-    ...psyMensLines,
-    ...psyMensBoolLines,
-    'preg 字段定义：',
-    ...psyPregLines,
-    ...psyPregBoolLines,
-    '推演准则：',
-    '- mastery/cognition 主要看角色对自身生理、医学/魔法知识、经验与冷静程度。',
-    '- desire 主要看角色对受孕、承接种子、繁衍使命、避孕与恐惧怀孕的长期态度。',
-    '- autonomy 主要看角色在亲密关系与权力互动中的主动/被动、支配/顺从倾向。',
-    '- bonding 主要看母性、责任感、对胎儿的接纳或排斥，不等同于是否喜欢伴侣。',
-    '- stance 主要看角色如何处理孕妇身份的社会风险、公开程度、资源调度与身份利益。',
-    '- 布林字段是当前状态判定，不属于 6x6 阶段表；必须根据角色设定、最近剧情、医疗/魔法条件与关系线索合理推断，不确定时填 false。',
-    '- isChaste 代表当前保持贞洁取向、未发生性关系，或处于稳定单一性伴侣关系；若角色已有多对象关系、频繁性接触、被设定为非单伴侣，或资料无法确认单一关系，应填 false。',
-    '- hasContraception 代表当前确有稳定生效中的避孕措施；不要因为角色“不想怀孕”就自动视为 true。',
-    '- knowsFatherSource 代表角色能明确判断或相信胎儿父源；多对象、记忆缺口、魔法混淆或刻意隐瞒时应谨慎。',
-    '- hasProfessionalPrenatalCare 代表已有持续、专业、可信的产检或等价照护；一次性的民间判断或自我猜测不算 true。',
-    `- stageProfiles 必须保存 6 轴 × 6 阶段的角色专属解释。每个轴都必须包含这些阶段键：${stageKeysText}。`,
-    '- stageProfiles 的六个阶段只代表数值区间：0=极低或封闭，1_25=低位倾向，26_50=中低到中性，51_75=中高位倾向，76_100=高位强化，100_plus=超常或不可逆倾向。',
-    '- stageProfiles 的文字必须从角色资料重新诠释：写她在该区间会如何理解、掩饰、表达、合理化、抗拒或推进繁育相关变化。',
-    '- 不要使用任何预设阶段名、模板标签、括号式总称或分级标题；每段文本必须直接进入角色专属表现。',
-    '- 不要复述字段定义，不要写通用人群说明，不要把每段开头写成同一种固定句式。',
-    '- 即使当前只使用 mens 或 preg，也要同时生成 mens 与 preg 全部 6 轴阶段表，供未来阶段切换后继续推演。',
-    '只输出 JSON，不要输出解释文字。JSON 结构必须是：',
-    '{',
-    '  "target_character": "string",',
-    '  "pregnancy_status": "mens|preg|unknown",',
-    '  "confidence": 0,',
-    '  "evidence": ["string"],',
-    '  "mens": {',
-    '    "mastery_value": 0,',
-    '    "desire_value": 0,',
-    '    "autonomy_value": 0,',
-    '    "isChaste": false,',
-    '    "hasContraception": false',
-    '  },',
-    '  "preg": {',
-    '    "cognition_value": 0,',
-    '    "bonding_value": 0,',
-    '    "stance_value": 0,',
-    '    "knowsFatherSource": false,',
-    '    "hasProfessionalPrenatalCare": false',
-    '  },',
-    '  "stageProfiles": {',
-    '    "mens": {',
-    '      "mastery": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" },',
-    '      "desire": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" },',
-    '      "autonomy": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" }',
-    '    },',
-    '    "preg": {',
-    '      "cognition": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" },',
-    '      "bonding": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" },',
-    '      "stance": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" }',
-    '    }',
-    '  },',
-    '  "notes": "string"',
-    '}',
-    '如果使用 mens，preg 必须为 null；如果使用 preg，mens 必须为 null。',
+    buildWorldBaselineBlock(settings?.worldBaselinePrompt),
+    '你是 AIRP 角色单侧心情推演器。只推指定的当前侧，不预先生成另一侧。',
+    `本次唯一目标是「${String(options.targetName || '').trim()}」，target_character 必须逐字一致。`,
+    side ? `本次只输出 ${side}，另一侧省略。` : '当前非孕用 mens，真孕/假孕/产程/回归用 preg；只选一侧。恢复期无当前有效侧，不提前建立下一轮 mens。',
+    '依据角色资料、关系、处境、近期剧情、当前 cognitionRecords、日记、孩子和长期经验建立新侧，不能复用上一胎心理。',
+    '知道怀孕、接受本次怀孕、母职信心与展现倾向分开。不把模型看到的实际父源/胎数/孕程当成角色已知。',
+    '尚未感知妊娠时，不凭空生成孕妇心态，无依据的轴保持 null；null 不等于 0。知情后才补推缺项。',
+    '想受孕不等于接纳每次妊娠；生过孩子不等于想再生。已知或相信敌对父源可影响态度，秘密真相不可影响。',
+    'confidence 是母职信心，不是产科知识或认知准确度；bonding 是接纳与联结，不强制恋孕、自我牺牲或决定留下孩子；stance 是展现倾向，不等于已告知谁。',
+    '本次初始化不受日常 ±1～3 的 delta 限制。数值为 0～100 或 null，不写心理 bool，不改 cognitionRecords。',
+    ...Object.entries(PSY_MENS_FIELDS).map(([key, field]) => `mens.${key}_value: ${field.definition}`),
+    ...Object.entries(PSY_PREG_FIELDS).map(([key, field]) => `preg.${key}_value: ${field.definition}`),
+    `只生成当前侧三轴 × 六阶段的 stageProfiles，阶段键 ${PSY_STAGE_KEYS.join(', ')}。每段为角色专属表现，不照抄默认标签。`,
+    '只输出 JSON：{target_character,pregnancy_status:"mens|preg|unknown",confidence:0,evidence:[],mens或preg:{对应三项 *_value:数值或null},stageProfiles:{当前侧:{各轴:{各阶段键:表现文字}}},notes:"说明"}。另一侧不输出。',
+    options.customNotes ? `角色补充设定：${sanitizePromptText(options.customNotes)}` : '',
+    options.breedingInferencePrompt ? `额外推演提示：${sanitizePromptText(options.breedingInferencePrompt)}` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -608,10 +544,15 @@ async function runBreedingInference(settings, payload, options = {}) {
     if (result && typeof result === 'object' && !Array.isArray(result)) {
       result.target_character = String(payload?.target_character || '').trim();
     }
-    const stageProfiles = normalizePsychologyStageProfiles(result?.stageProfiles);
-    const missing = getMissingPsychologyStageProfileKeys(stageProfiles);
+    const side = options.psychologySide || (result?.preg ? 'preg' : result?.mens ? 'mens' : null);
+    if (!side) throw new Error('繁育推演缺少当前心理侧。');
+    if (!result[side] || typeof result[side] !== 'object') throw new Error('繁育推演未输出指定侧。');
+    const stageProfiles = normalizePsychologyStageProfiles({ [side]: result?.stageProfiles?.[side] });
+    delete result[side === 'preg' ? 'mens' : 'preg'];
+    result.pregnancy_status = side;
+    const missing = getMissingPsychologyStageProfileKeys(stageProfiles, side);
     if (missing.length > 0) {
-      throw new Error(`繁育推演缺少 6x6 stageProfiles：${missing.slice(0, 12).join(', ')}${missing.length > 12 ? '...' : ''}`);
+      throw new Error(`繁育推演缺少当前侧 3x6 stageProfiles：${missing.slice(0, 12).join(', ')}${missing.length > 12 ? '...' : ''}`);
     }
     const labelLeaks = getPsychologyStageProfileLabelLeaks(stageProfiles);
     if (labelLeaks.length > 0) {
@@ -644,13 +585,14 @@ export function normalizeBreedingInferenceResult(result) {
   };
 }
 
-function getMissingPsychologyStageProfileKeys(stageProfiles) {
+function getMissingPsychologyStageProfileKeys(stageProfiles, side) {
   const missing = [];
   const groups = [
     ['mens', PSY_MENS_FIELDS],
     ['preg', PSY_PREG_FIELDS],
   ];
   for (const [groupKey, fieldConfig] of groups) {
+    if (groupKey !== side) continue;
     for (const field of Object.keys(fieldConfig || {})) {
       for (const stageKey of PSY_STAGE_KEYS) {
         if (!String(stageProfiles?.[groupKey]?.[field]?.[stageKey] || '').trim()) {
@@ -816,6 +758,27 @@ export async function runRegistryBreedingInference(ctx, options = {}) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const targetName = resolveRegistryTargetName(ctx, options.targetName);
+  const initialProfile = chatState.characters[targetName]?.profile;
+  const initialSide = initialProfile ? psychologySide(initialProfile.base?.stage) : null;
+  const initialGeneration = initialProfile?.psychology?.generation;
+  if (initialProfile && !initialSide) throw new Error('恢复期不初始化心理，请等待恢复结束');
+  if (initialSide) options = { ...options, psychologySide: initialSide };
+  const liveProvider = globalThis.SillyTavern?.getContext;
+  const useLiveContext = typeof liveProvider === 'function' && getChatKey(liveProvider()) === getChatKey(ctx);
+  const captureAnchor = (context) => JSON.stringify({ chat: getChatKey(context),
+    length: getHostChat(context).length, swipe: getHostChat(context).at(-1)?.swipe_id,
+    messages: buildRecentMessages(context, settings) });
+  const anchor = captureAnchor(ctx);
+  const requireCurrent = () => {
+    const liveContext = useLiveContext ? liveProvider() : ctx;
+    const current = chatState.characters[targetName]?.profile;
+    if (captureAnchor(liveContext) !== anchor || (initialProfile &&
+      (psychologySide(current?.base?.stage) !== initialSide || current?.psychology?.generation !== initialGeneration))) {
+      const error = new Error('繁育推演期间聊天、分支或适用侧已变化，结果已丢弃，请重新推演');
+      error.code = 'BS_REPRODUCTIVE_STALE';
+      throw error;
+    }
+  };
   if (!targetName) throw new Error('繁育推演需要 targetName');
   const customNotes = String(options.customNotes !== undefined ? options.customNotes : (settings.registryCustomNotes || '')).trim();
   const requestedSource = options.sourceChild || null;
@@ -836,7 +799,18 @@ export async function runRegistryBreedingInference(ctx, options = {}) {
     userInstruction: breedingInferencePrompt,
   });
   payload.breeding_inference_prompt = breedingInferencePrompt;
-  return runBreedingInference(settings, payload, {
+  const subject = chatState.characters[targetName]?.profile;
+  if (subject) payload.existing_state = { name: targetName, profile: {
+    base: { stage: subject.base?.stage }, cognitionRecords: subject.cognitionRecords || [],
+    diary: subject.diary || [], experience: subject.experience || {},
+    children: (subject.children || []).map(({ name, selectedFather, age }) => ({ name, selectedFather, age })),
+    psychology: initialSide ? { [initialSide]: subject.psychology?.[initialSide] || {} } : undefined,
+    descriptions: { normalDescription: subject.descriptions?.normalDescription },
+  } };
+  payload.initial_cognition_records = options.initialCognitionRecords || [];
+  payload.psychology_side = options.psychologySide || null;
+  requireCurrent();
+  const result = await runBreedingInference(settings, payload, {
     ...options,
     targetName,
     customNotes,
@@ -844,6 +818,50 @@ export async function runRegistryBreedingInference(ctx, options = {}) {
     breedingInferencePrompt,
     sourceChildContext,
   });
+  requireCurrent();
+  return result;
+}
+
+const pendingPsychologyRequests = new Set();
+
+// Triggered by a successful tracking event, never by loading an old chat.
+export async function inferPendingPsychology(ctx, settings, chatState, isCurrent = () => true) {
+  for (const [name, character] of Object.entries(chatState.characters || {})) {
+    const psychology = character.profile?.psychology;
+    const side = psychology?.pendingSide;
+    if (!psychology?.enabled || !side || character.profile.base?.isHere === false) continue;
+    const generation = psychology.generation || 0;
+    const key = `${getChatKey(ctx)}:${name}:${generation}`;
+    if (pendingPsychologyRequests.has(key)) continue;
+    pendingPsychologyRequests.add(key);
+    try {
+      const result = await runRegistryBreedingInference(ctx, { targetName: name, psychologySide: side });
+      const current = chatState.characters[name]?.profile?.psychology;
+      if (!isCurrent() || current?.generation !== generation || current?.pendingSide !== side
+        || psychologySide(chatState.characters[name]?.profile?.base?.stage) !== side) continue;
+      const config = side === 'preg' ? PSY_PREG_FIELDS : PSY_MENS_FIELDS;
+      const normalized = normalizePsychologyGroup(result[side], config, { stageProfiles: result.stageProfiles[side] });
+      if (current.supplementOnly) {
+        for (const field of Object.keys(config)) {
+          if (current[side]?.[`${field}_value`] !== null && current[side]?.[`${field}_value`] !== undefined) {
+            normalized[`${field}_value`] = current[side][`${field}_value`];
+          }
+        }
+      }
+      current[side] = normalizePsychologyGroup(normalized, config, { stageProfiles: result.stageProfiles[side] });
+      current.stageProfiles = { ...(current.stageProfiles || {}), [side]: result.stageProfiles[side] };
+      current.activeSide = side;
+      current.pendingSide = null;
+      delete current.supplementOnly;
+      delete current.inferenceError;
+    } catch (error) {
+      const current = chatState.characters[name]?.profile?.psychology;
+      if (error.code !== 'BS_REPRODUCTIVE_STALE' && isCurrent() && current?.generation === generation) current.inferenceError = '单侧推演失败，保持未知；下次追踪可重试。';
+      console.warn('[BS BioTracker] 单侧心理推演失败', error);
+    } finally {
+      pendingPsychologyRequests.delete(key);
+    }
+  }
 }
 
 
@@ -929,36 +947,33 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- virginity: 初次性对象名称，处女时为 null',
     '- latestSexPartner: 最新性对象，仅在最近一月经周期(ex: 人类28天)内仍有意义，否则可为 null',
     '- 若填写 latestSexPartner，最好同时填写 base.latestSexDays，表示距离最近一次性行为过去了几天',
-    '- emotionalMate: 情感对象，无则 null',
-    '- marriageMate: 婚姻对象，无则 null',
+    '- emotionalMates: 多人交往名单，无则 []',
+    '- marriageMates: 多人婚姻名单，无则 []',
     '- pregnantExperience: 怀孕经验次数',
     '- naturalBirthExperience: 自然产经验次数',
     '- surgicalBirthExperience: 手术产经验次数',
-    '- miscarriageExperience: 流产/堕胎次数',
+    '- miscarriageExperience: 已成立妊娠的自然/非人工流产次数，旧版妊娠损失归入流产；abortionExperience: 堕胎次数。两者分开。',
     '示例：',
-    '- 高中女生: {"experience":{"virginity":"前男友","emotionalMate":"{{user_name}}","pregnantExperience":0}}',
-    '- 媚魔女仆: {"experience":{"virginity":"前任主人","emotionalMate":null,"pregnantExperience":5,"naturalBirthExperience":3,"surgicalBirthExperience":0,"miscarriageExperience":2}}',
-    '- 守贞人妻: {"experience":{"virginity":"丈夫","latestSexPartner":"丈夫","emotionalMate":"丈夫","marriageMate":"丈夫","pregnantExperience":3,"naturalBirthExperience":0,"surgicalBirthExperience":2,"miscarriageExperience":0}}',
+    '- 高中女生: {"experience":{"virginity":"前男友","emotionalMates":["{{user_name}}"],"pregnantExperience":0}}',
+    '- 媚魔女仆: {"experience":{"virginity":"前任主人","emotionalMates":[],"pregnantExperience":5,"naturalBirthExperience":3,"surgicalBirthExperience":0,"miscarriageExperience":2}}',
+    '- 守贞人妻: {"experience":{"virginity":"丈夫","latestSexPartner":"丈夫","emotionalMates":["丈夫"],"marriageMates":["丈夫"],"pregnantExperience":3,"naturalBirthExperience":0,"surgicalBirthExperience":2,"miscarriageExperience":0}}',
     '- 刚做爱开局: {"base":{"latestSexDays":0,"sperms":[{"male":"丈夫","race":"[不死-僵尸]人类","value":30}]},"experience":{"latestSexPartner":"丈夫"}}',
     '【3. 繁育心理】',
     '参数说明：',
     '- 若 payload.breeding_inference 存在，先采用其中对应 mens 或 preg 的数值作为心理起始点；只有当角色资料与繁育推演明显冲突时才调整。',
     '- 若 payload.breeding_inference.stageProfiles 存在，必须原样写入 profile.psychology.stageProfiles，除非需要修正明显错误或空缺。',
     '- 繁育心理是角色长期繁育人格底盘，不是临时情绪。注册时应让它能支撑后续 bsUpdatePsychology 的小幅推演。',
-    '- 非怀孕角色只填写 psychology.mens，包含 mastery_value、mastery_interpret、desire_value、desire_interpret、autonomy_value、autonomy_interpret，以及 isChaste、hasContraception。',
-    '- 怀孕角色只填写 psychology.preg，包含 cognition_value、cognition_interpret、bonding_value、bonding_interpret、stance_value、stance_interpret，以及 knowsFatherSource、hasProfessionalPrenatalCare。',
     '- psychology.mens 与 psychology.preg 互斥，不要同时填写。',
-    '- 你主要填写 *_value，数值范围为 0-100；*_interpret 可省略，系统会按阶段自动补全。布林旗标只填 true/false。',
-    '- psychology.stageProfiles 用来保存该角色专属 6 轴 × 6 阶段解释。结构为 psychology.stageProfiles.mens.{mastery,desire,autonomy}.{0,1_25,26_50,51_75,76_100,100_plus} 与 psychology.stageProfiles.preg.{cognition,bonding,stance}.{0,1_25,26_50,51_75,76_100,100_plus}。',
+    '- 你主要填写 *_value，数值范围为 0-100；*_interpret 可省略，系统会按阶段自动补全。没有依据的值填 null，不能把未知补成 0。不再使用心理布林旗标。',
+    '- psychology.stageProfiles 用来保存该角色专属 当前侧 3 轴 × 6 阶段解释。结构为 psychology.stageProfiles.mens.{mastery,desire,autonomy}.{0,1_25,26_50,51_75,76_100,100_plus} 与 psychology.stageProfiles.preg.{confidence,bonding,stance}.{0,1_25,26_50,51_75,76_100,100_plus}。',
     '非怀孕使用以下定义与阶段预览：',
     ...psyMensLines,
     ...psyMensBoolLines,
     '怀孕使用以下定义与阶段预览：',
     ...psyPregLines,
     ...psyPregBoolLines,
-    '示例：',
-    '- 非怀孕: {"psychology":{"mens":{"mastery_value":62,"desire_value":38,"autonomy_value":71,"isChaste":true,"hasContraception":true}}}',
-    '- 怀孕: {"psychology":{"preg":{"cognition_value":58,"bonding_value":84,"stance_value":47,"knowsFatherSource":true,"hasProfessionalPrenatalCare":false}}}',
+    '- 非孕侧 mastery（掌控）、desire（欲望）、autonomy（自主）；孕侧 confidence（母职信心）、bonding（接纳与联结）、stance（社会展现）。恢复期不初始化任何一侧。',
+    '- 只初始化实际当前侧并输出该侧三轴的全部六阶段专属解释；不得预写另一侧。角色主观判断仅依 initial_cognition_records 与可知剧情，不能把实际胎数、父方当作角色知识。',
     '【4. 既有孩子记录】',
     '参数说明：每个孩子对象包含 name、fathers、gender、race、age。',
     '示例：',
@@ -1069,47 +1084,20 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '    "experience": {',
     '      "virginity": "string|null",',
     '      "latestSexPartner": "string|null",',
-    '      "emotionalMate": "string|null",',
-    '      "marriageMate": "string|null",',
+    '      "emotionalMates": ["string"],',
+    '      "marriageMates": ["string"],',
     '      "pregnantExperience": 0,',
     '      "naturalBirthExperience": 0,',
     '      "surgicalBirthExperience": 0,',
-    '      "miscarriageExperience": 0',
+    '      "miscarriageExperience": 0,',
+    '      "abortionExperience": 0',
     '    },',
-    '    "psychology": {',
-    '      "mens": {',
-    '        "mastery_value": 0,',
-    '        "mastery_interpret": "string",',
-    '        "desire_value": 0,',
-    '        "desire_interpret": "string",',
-    '        "autonomy_value": 0,',
-    '        "autonomy_interpret": "string",',
-    '        "isChaste": false,',
-    '        "hasContraception": false',
-    '      },',
-    '      "preg": {',
-    '        "cognition_value": 0,',
-    '        "cognition_interpret": "string",',
-    '        "bonding_value": 0,',
-    '        "bonding_interpret": "string",',
-    '        "stance_value": 0,',
-    '        "stance_interpret": "string",',
-    '        "knowsFatherSource": false,',
-    '        "hasProfessionalPrenatalCare": false',
-    '      },',
-    '      "stageProfiles": {',
-    '        "mens": {',
-    '          "mastery": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" },',
-    '          "desire": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" },',
-    '          "autonomy": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" }',
-    '        },',
-    '        "preg": {',
-    '          "cognition": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" },',
-    '          "bonding": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" },',
-    '          "stance": { "0": "string", "1_25": "string", "26_50": "string", "51_75": "string", "76_100": "string", "100_plus": "string" }',
-    '        }',
-    '      }',
-    '    },',
+    ...JSON.stringify({ psychology: (() => {
+      const side = options.breedingInference?.preg ? 'preg' : 'mens';
+      const config = side === 'preg' ? PSY_PREG_FIELDS : PSY_MENS_FIELDS;
+      return { [side]: Object.fromEntries(Object.keys(config).map((axis) => [`${axis}_value`, null])),
+        stageProfiles: { [side]: Object.fromEntries(Object.keys(config).map((axis) => [axis, Object.fromEntries(PSY_STAGE_KEYS.map((key) => [key, '角色专属解释']))])) } };
+    })() }, null, 2).split('\n').slice(1, -1).map((line, index, lines) => `    ${line}${index === lines.length - 1 ? ',' : ''}`),
     '    "metabolism": {',
     '      "excretion": 0,',
     '      "hunger": 0,',
@@ -1146,12 +1134,13 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
 const EXPERIENCE_FIELDS = [
   'virginity',
   'latestSexPartner',
-  'emotionalMate',
-  'marriageMate',
+  'emotionalMates',
+  'marriageMates',
   'pregnantExperience',
   'naturalBirthExperience',
   'surgicalBirthExperience',
   'miscarriageExperience',
+  'abortionExperience',
 ];
 
 const DESCRIPTION_FIELDS = ['normalDescription', 'pregnantDescription'];
@@ -1206,6 +1195,7 @@ function sanitizeChildren(value) {
       const parsed = parseRaceDescriptor(item.race);
       return {
         name: item.name ?? item.babyName ?? null,
+        selectedFather: item.selectedFather == null ? null : String(item.selectedFather).trim() || null,
         fathers: item.fathers ?? null,
         provider: item.provider ?? null,
         // 多母源/嵌合体的来源字段必须原样保留，否则手动转交会失去归属依据
@@ -1731,7 +1721,7 @@ function getRegisteredRecoveryDays(profile) {
   });
 }
 
-export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true, useGestationModifier = true, gestationModifierMultiplier = null } = {}) {
+export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true, useGestationModifier = true, gestationModifierMultiplier = null, initialCognitionRecords = undefined } = {}) {
   const name = String(result?.name || '').trim();
   if (!name) throw new Error('注册结果缺少角色名称');
   const current = chatState.characters[name];
@@ -1753,6 +1743,7 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
       };
     }
   }
+  const seededRecords = initialCognitionRecords === undefined ? undefined : initializeCognitionRecords(initialCognitionRecords, Number(chatState.minutesPassed) || 0);
   const effectiveRace = sanitizedProfile.base?.race ?? base.profile.base.race;
   const mergedRaceProfile = getMergedRacePhysiologyProfile(effectiveRace);
   const basePsychology = normalizeCharacterPsychologyState(base).profile.psychology;
@@ -1804,12 +1795,13 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
         ...base.profile.pregnant,
         ...(sanitizedProfile.pregnant || {}),
         // 注册会从 1 重新编胎儿号，旧的发动体质可能刚好对上同一个编号：这次妊娠重抽
-        ...(sanitizedProfile.pregnant ? { termReadiness: undefined } : {}),
+        ...(sanitizedProfile.pregnant ? { termReadiness: undefined, noticeSample: undefined, experienceBeforePregnancy: undefined } : {}),
       },
       experience: {
         ...base.profile.experience,
         ...(sanitizedProfile.experience || {}),
       },
+      cognitionRecords: seededRecords ?? base.profile.cognitionRecords ?? [],
       diary: sanitizedProfile.diary ?? base.profile.diary,
       skills: normalizeSkillList(base.profile.skills),
       talents: normalizeTalentList(base.profile.talents),
@@ -1854,7 +1846,23 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
       nextCharacter.profile.base.latestSexDays = -1;
     }
   }
-  chatState.characters[name] = syncCharacterStageFromProfile(normalizeCharacterPsychologyState(nextCharacter));
+  const synchronized = syncCharacterStageFromProfile(nextCharacter);
+  if (allowBreedingPsychology && Object.keys(nextPsychology.stageProfiles || {}).length) {
+    const side = psychologySide(synchronized.profile.base?.stage);
+    nextPsychology.enabled = true;
+    nextPsychology.activeSide = side;
+    nextPsychology.pendingSide = null;
+    if (side) {
+      const opposite = side === 'preg' ? 'mens' : 'preg';
+      nextPsychology[opposite] = {};
+      delete nextPsychology.stageProfiles[opposite];
+    } else {
+      nextPsychology.mens = {};
+      nextPsychology.preg = {};
+    }
+  }
+  chatState.characters[name] = normalizeCharacterPsychologyState(synchronized);
+  ensureNaturalNoticeSample(chatState.characters[name].profile, chatState.reproductiveSettings);
   return chatState.characters[name];
 }
 
@@ -2195,44 +2203,22 @@ export function applyBreedingInferenceResult(chatState, targetName, inference) {
   if (!current) throw new Error(`找不到已注册角色：${name}`);
   if (!inference || typeof inference !== 'object' || Array.isArray(inference)) throw new Error('缺少可套用的繁育推演');
 
-  const next = normalizeCharacterPsychologyState({
-    ...current,
-    profile: {
-      ...(current.profile || {}),
-      psychology: current.profile?.psychology || {},
-    },
-  });
-  const psychology = next.profile.psychology || {};
-  const stageProfiles = Object.keys(inference.stageProfiles || {}).length > 0
-    ? normalizePsychologyStageProfiles(inference.stageProfiles)
-    : (psychology.stageProfiles || {});
-
-  const mens = inference.mens && typeof inference.mens === 'object'
-    ? normalizePsychologyGroup(inference.mens, PSY_MENS_FIELDS, {
-      booleanFields: PSY_MENS_BOOL_FIELDS,
-      stageProfiles: stageProfiles.mens,
-    })
-    : normalizePsychologyGroup(psychology.mens, PSY_MENS_FIELDS, {
-      booleanFields: PSY_MENS_BOOL_FIELDS,
-      stageProfiles: stageProfiles.mens,
-    });
-  const preg = inference.preg && typeof inference.preg === 'object'
-    ? normalizePsychologyGroup(inference.preg, PSY_PREG_FIELDS, {
-      booleanFields: PSY_PREG_BOOL_FIELDS,
-      stageProfiles: stageProfiles.preg,
-    })
-    : normalizePsychologyGroup(psychology.preg, PSY_PREG_FIELDS, {
-      booleanFields: PSY_PREG_BOOL_FIELDS,
-      stageProfiles: stageProfiles.preg,
-    });
-
+  const next = normalizeCharacterPsychologyState(JSON.parse(JSON.stringify(current)));
+  const side = psychologySide(next.profile.base?.stage);
+  if (!side) throw new Error('恢复期不初始化月经或妊娠心理');
+  if (!inference[side]) throw new Error('繁育推演与当前生理侧不符，请重新推演');
+  const stageProfiles = normalizePsychologyStageProfiles({ [side]: inference.stageProfiles?.[side] });
+  const missing = getMissingPsychologyStageProfileKeys(stageProfiles, side);
+  if (missing.length) throw new Error('繁育推演缺少当前侧 3x6 阶段解释');
+  const config = side === 'preg' ? PSY_PREG_FIELDS : PSY_MENS_FIELDS;
   next.profile.psychology = {
-    mens,
-    preg,
-    stageProfiles,
+    enabled: true, activeSide: side, pendingSide: null,
+    generation: (Number(next.profile.psychology.generation) || 0) + 1,
+    mens: {}, preg: {}, stageProfiles,
+    [side]: normalizePsychologyGroup(inference[side], config, { stageProfiles: stageProfiles[side] }),
   };
   next.updatedAt = Date.now();
-  chatState.characters[name] = syncCharacterStageFromProfile(normalizeCharacterPsychologyState(next));
+  chatState.characters[name] = next;
   return chatState.characters[name];
 }
 
@@ -2362,6 +2348,7 @@ function applyRegistryBundle(chatState, targetName, bundleOutput, workingSkills,
 }
 
 export async function runRegistry(ctx, options = {}) {
+  if (options.initialCognitionRecords !== undefined) initializeCognitionRecords(options.initialCognitionRecords);
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const targetName = resolveRegistryTargetName(ctx, options.targetName);
@@ -2382,6 +2369,7 @@ export async function runRegistry(ctx, options = {}) {
   const includeBreedingPsychology = Boolean(options.breedingInference);
   const payload = await buildRegistryPayload(ctx, settings, chatState, { ...options, customNotes, declaredRace, sourceChildContext });
   payload.breeding_psychology_enabled = includeBreedingPsychology;
+  payload.initial_cognition_records = options.initialCognitionRecords || [];
   if (includeBreedingPsychology) payload.breeding_inference = options.breedingInference;
   // 一次注册：日记与技能的规则、图鉴随同这次请求送出
   const bundle = options.bundle && typeof options.bundle === 'object' ? options.bundle : null;
@@ -2476,10 +2464,12 @@ export async function runRegistry(ctx, options = {}) {
     const workingSkills = bundleOutput ? prepareBundleSkills(chatState, result, bundleOutput.skillSetup, bundleReport) : null;
     applyRequestedSpecialFetus(result, specialFetus);
     recordRegistryResultDebug(result);
+    chatState.reproductiveSettings = normalizeReproductiveSettings(settings.reproductiveSettings);
     let character = applyRegistryResult(chatState, result, {
       allowBreedingPsychology: includeBreedingPsychology,
       useGestationModifier: options.useGestationModifier === true,
       gestationModifierMultiplier: options.gestationModifierMultiplier ?? null,
+      initialCognitionRecords: options.initialCognitionRecords,
     });
     if (sourceChildContext) character = applyRegistryChildInheritance(chatState, targetName, requestedSource).character;
     if (bundleOutput) character = applyRegistryBundle(chatState, targetName, bundleOutput, workingSkills, bundleReport);

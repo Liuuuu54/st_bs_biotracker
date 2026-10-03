@@ -524,6 +524,13 @@
                   placeholder="仅用于本次角色注册。例如：羊膜绒毛膜为 MCMA、时常泌乳体质、特殊繁殖设定等。"></textarea>
               </div>
 
+              <details class="settings_section">
+                <summary>初始认知纪录（选填）</summary>
+                <p>填写她开局知道、猜测或误解的内容；与真实生理状态分开。留空可正常注册。</p>
+                <div id="bs-bt-initial-cognition-rows"></div>
+                <button id="bs-bt-initial-cognition-add" class="menu_button" type="button">新增一笔</button>
+              </details>
+
               <div class="settings_section">
                 <div class="bs-bt-setting-toggle-row">
                   <input id="bs-bt-register-gestation-modifier" type="checkbox" />
@@ -623,7 +630,7 @@
                 <button id="bs-bt-register-run" class="menu_button" type="button">注册当前角色</button>
                 <button id="bs-bt-register-run-bundle" class="menu_button" type="button">一次注册（含日记、技能）</button>
               </div>
-              <small id="bs-bt-register-bundle-note"></small>
+              <small><span id="bs-bt-register-bundle-note"></span> <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/registration.md#註冊頁的幾條路徑" target="_blank" rel="noopener noreferrer" title="一次注册说明" aria-label="一次注册说明">?</a></small>
 
               <hr class="sysHR" />
 
@@ -1069,6 +1076,11 @@
 
             <div class="bs-bt-encyclopedia-page" data-encyclopedia-page="world" hidden>
               <div class="settings_section">
+                <details class="settings_section">
+                  <summary>生殖世界基准 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/reproductive-tracking.md#自然線索與遊戲基準" target="_blank" rel="noopener noreferrer" title="生殖世界基准说明" aria-label="生殖世界基准说明">?</a></summary>
+                  <div id="bs-bt-reproductive-controls" class="bs-bt-reproductive-controls"></div>
+                  <button id="bs-bt-reproductive-save" class="menu_button" type="button">保存生殖基准</button>
+                </details>
                 <label for="bs-bt-world-baseline-prompt">世界基准提示词 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#世界基準與提示詞名錄" target="_blank" rel="noopener noreferrer" title="世界基准说明" aria-label="世界基准说明">?</a></label>
                 <textarea id="bs-bt-world-baseline-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="留空即采用普通人类与现实社会常识；例如：本世界人类的男女生殖生理与社会角色和现实相反，所有角色都视为正常。"></textarea>
                 <div class="settings_section bs-bt-action-row">

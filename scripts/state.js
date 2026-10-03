@@ -1,3 +1,4 @@
+import { normalizeExperience, normalizeCognitionRecords, normalizeReproductiveSettings } from './reproductive.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import {
   buildEmptyPsychologyGroup,
@@ -98,7 +99,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '没有足够依据时，tool_calls 返回空数组。',
   '如果对话明确发生了时间流逝，优先调用 bsPassedTime。',
   '如果只是活力、情压、性欲、宫压波动，使用 bsUpdateCharacterStatus。',
-  '如果只是心理数值变化，使用 bsUpdatePsychology；其数值参数一律表示变化量(delta)而不是目标值，例如当前为 78 时传 2 会变成 80。应优先做单一心理项的小幅调整，单次建议只动一个字段，幅度尽量控制在 ±1 到 ±3，±5 已属于偏大变化。每名角色在每个新小时内仅允许一次成功的 bsUpdatePsychology 变化，重复调用会被跳过。如果只是经验或关系记录变化，使用 bsUpdateExperience。',
+  '如果只是心理数值变化，使用 bsUpdatePsychology；其数值参数一律表示变化量(delta)而不是目标值，例如当前为 78 时传 2 会变成 80。应优先做单一心理项的小幅调整，单次建议只动一个字段，幅度尽量控制在 ±1 到 ±3，±5 已属于偏大变化。每名角色在每个新小时内仅允许一次成功的 bsUpdatePsychology 变化，重复调用会被跳过。如果只是经验或关系记录变化，使用 bsRecordExperience（必填 female、action、time；认知用 cognition，关系用 date/breakup/marry/divorce，孩子用 child）。',
   '如果只是描述文字变化，使用 bsSetDescription。',
   '剧情中出现穿上、脱下、更衣、借穿、被脱除、淋湿更换、洗浴后重新着装等衣着变化时，必须用 bsChangeOutfit 同步当前穿着；只更新衣着描述文字而不换装是错误的。角色获得新长期衣物用 bsAddWardrobeItem，永久失去衣物用 bsRemoveWardrobeItem。',
   '可受孕生殖道的插入／精液沉积／拔出用 bsAddSperm 状态机；排出既有残留精液用 bsDrainSperm；缓解生理需求用 bsExcreteMetabolism。',
@@ -206,6 +207,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   formattedOutputV4: true,
   raceCatalogSelection: null,
   worldBaselinePrompt: '',
+  reproductiveSettings: normalizeReproductiveSettings(),
   triggerTiming: 'after_ai',
   pollMs: 1800,
   apiTimeoutMs: 180000,
@@ -286,6 +288,7 @@ function pickFirstString(obj, paths) {
 function normalizePsychologyState(value) {
   const stageProfiles = normalizePsychologyStageProfiles(value?.stageProfiles);
   return {
+    ...(value || {}),
     mens: normalizePsychologyGroup(value?.mens, PSY_MENS_FIELDS, { booleanFields: PSY_MENS_BOOL_FIELDS, stageProfiles: stageProfiles.mens }),
     preg: normalizePsychologyGroup(value?.preg, PSY_PREG_FIELDS, { booleanFields: PSY_PREG_BOOL_FIELDS, stageProfiles: stageProfiles.preg }),
     stageProfiles,
@@ -371,6 +374,11 @@ export function normalizeCharacterPsychologyState(characterState) {
   if (!characterState || typeof characterState !== 'object') return characterState;
   if (!characterState.profile || typeof characterState.profile !== 'object') return characterState;
   characterState.profile.psychology = normalizePsychologyState(characterState.profile.psychology);
+  characterState.profile.experience = normalizeExperience(characterState.profile.experience);
+  characterState.profile.cognitionRecords = normalizeCognitionRecords(characterState.profile.cognitionRecords);
+  for (const child of (characterState.profile.children || [])) {
+    if (child.selectedFather === undefined) child.selectedFather = null;
+  }
   characterState.profile.skills = normalizeSkillList(characterState.profile.skills);
   characterState.profile.talents = normalizeTalentList(characterState.profile.talents);
   characterState.profile.skillHistory = normalizeSkillHistory(characterState.profile.skillHistory);
@@ -738,18 +746,20 @@ export function createDefaultFemaleState(name = '') {
       experience: {
         virginity: null,
         latestSexPartner: null,
-        emotionalMate: null,
-        marriageMate: null,
+        emotionalMates: [],
+        marriageMates: [],
         pregnantExperience: 0,
         naturalBirthExperience: 0,
         surgicalBirthExperience: 0,
         miscarriageExperience: 0,
+        abortionExperience: 0,
       },
       psychology: {
         mens: buildEmptyPsychologyGroup(PSY_MENS_FIELDS, PSY_MENS_BOOL_FIELDS),
         preg: buildEmptyPsychologyGroup(PSY_PREG_FIELDS, PSY_PREG_BOOL_FIELDS),
         stageProfiles: {},
       },
+      cognitionRecords: [],
       children: [],
       skills: [],
       talents: [],
@@ -1131,7 +1141,7 @@ function migrateChatStateSchema(chatState) {
     const rebuilt = [];
     for (let index = 0; index < source.length; index += 1) {
       const payload = materializeSnapshotPayloadAt(source, index, cache);
-      const characters = unpackSnapshotCharacters(payload.characters);
+      const characters = unpackSnapshotCharacters(payload.characters, false, true);
       migrateCharacters(characters, fromVersion);
       rebuilt.push(createStoredSnapshotState(rebuilt, { ...payload, characters: packSnapshotCharacters(characters) }, source[index], rebuiltCache));
     }
@@ -1710,18 +1720,20 @@ function createSnapshotCharacterBaseline(name = '') {
       experience: {
         virginity: null,
         latestSexPartner: null,
-        emotionalMate: null,
-        marriageMate: null,
+        emotionalMates: [],
+        marriageMates: [],
         pregnantExperience: 0,
         naturalBirthExperience: 0,
         surgicalBirthExperience: 0,
         miscarriageExperience: 0,
+        abortionExperience: 0,
       },
       psychology: {
         mens: buildEmptyPsychologyGroup(PSY_MENS_FIELDS, PSY_MENS_BOOL_FIELDS),
         preg: buildEmptyPsychologyGroup(PSY_PREG_FIELDS, PSY_PREG_BOOL_FIELDS),
         stageProfiles: {},
       },
+      cognitionRecords: [],
       children: [],
       skills: [],
       talents: [],
@@ -1834,13 +1846,18 @@ function packSnapshotCharacters(characters) {
 }
 
 /** 快照里的角色一律存成「相对预设角色的差异」（default_delta_v1），这里还原 */
-function unpackSnapshotCharacters(characters) {
+function unpackSnapshotCharacters(characters, normalize = true, legacy = false) {
   if (!characters || typeof characters !== 'object') return {};
   const unpacked = {};
   for (const [name, item] of Object.entries(characters)) {
     const baseline = createSnapshotCharacterBaseline(name);
+    if (legacy) {
+      for (const key of ['emotionalMates', 'marriageMates', 'unclassifiedLossExperience', 'abortionExperience']) delete baseline.profile.experience[key];
+      baseline.profile.experience.emotionalMate = null;
+      baseline.profile.experience.marriageMate = null;
+    }
     const restored = applyStateDeltaPatch(baseline, item && typeof item === 'object' ? item : {});
-    unpacked[name] = normalizeCharacterPsychologyState(restored);
+    unpacked[name] = normalize ? normalizeCharacterPsychologyState(restored) : restored;
   }
   return unpacked;
 }

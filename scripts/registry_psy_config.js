@@ -1,4 +1,5 @@
 function clampPsychValue(value) {
+  if (value === null || value === undefined) return null;
   const next = Number(value);
   if (!Number.isFinite(next)) return null;
   return Math.max(0, Math.min(100, Math.round(next)));
@@ -105,124 +106,51 @@ export const PSY_MENS_FIELDS = Object.freeze({
   },
 });
 
-export const PSY_MENS_BOOL_FIELDS = Object.freeze({
-  isChaste: {
-    definition: '是否当前保持贞洁取向或单一性伴侣关系，不处于多对象性关系状态。',
-  },
-  hasContraception: {
-    definition: '是否当前存在稳定生效中的避孕措施，例如套、药物、结界、器具等。(若角色對自身月经完全无知，则该字段也应为 false)',
-  },
-});
+export const PSY_MENS_BOOL_FIELDS = Object.freeze({});
 
 export const PSY_PREG_FIELDS = Object.freeze({
-  cognition: {
-    definition: '个体对妊娠生理变化的认知与应对能力。数值越高，越能冷静处理风险；数值低则表现为无知或恐慌。',
-    preview: '0(隐式妊娠) -> 1~25(混乱与猜疑) -> 26~50(勉强适应) -> 51~75(理性理解) -> 76~100(专业准备) -> 100+(医学级觉知)',
+  confidence: {
+    definition: '对承担母职与养育孩子的信心，不代表产科知识、信息准确度或是否想再生。',
+    preview: '无力面对 -> 缺乏信心 -> 谨慎尝试 -> 逐步笃定 -> 稳定自信 -> 超常笃定',
     stages: {
-      0: {
-        meaning: '隐式妊娠',
-        performance: '大脑完全封锁怀孕讯号。即便胎动剧烈或腹部隆起，仍会解释为胃病、气息紊乱或肥胖。拒绝承认怀孕。',
-        breakthrough_condition: '需由外部权威强制指认，或经历不可忽视的分娩启动，方可突破至 1+。',
-      },
-      '1_25': {
-        meaning: '混乱与猜疑',
-        performance: '感知到身体异样但拒绝深思。对孕期禁忌、周数完全模糊。增加时，开始怀疑真实情况；减少时，会陷入自我欺骗。',
-      },
-      '26_50': {
-        meaning: '勉强适应',
-        performance: '虽然承认怀孕，但对未来的变化感到焦虑。缺乏系统知识，容易被谣言误导或因小症状而惊慌失措。尚未达到从容应对的程度。',
-      },
-      '51_75': {
-        meaning: '理性理解',
-        performance: '主动掌握孕期知识，能对应自身周数与胎儿状态。开始能辨识假性宫缩，并有条理地准备待产物品。增加时，对身体掌控感提升。',
-      },
-      '76_100': {
-        meaning: '专业准备',
-        performance: '对妊娠风险有深刻理解。能冷静应对各种生理突发状况，如预判破水、调整呼吸节奏以缓解疼痛。增加时，进入准专业状态。',
-        transcend_condition: '当个体能像专业医师般冷静审视自身分娩过程，甚至能自行引导胎位、处理紧急分娩细节时，进入 100+。',
-      },
-      '100_plus': {
-        meaning: '医学级觉知',
-        performance: '绝对冷静。能精确感应子宫颈开口公分数、羊水状态与胎儿心率。在分娩时能如同旁观者般指挥自己，无惧痛楚，只追求最优的分娩结果。此阶段不会跌回100。',
-      },
+      '0': { meaning: '无力面对', performance: '认为自己难以承担养育责任；不因此推定她不知道怀孕或拒绝孩子。' },
+      '1_25': { meaning: '缺乏信心', performance: '担心照料与生活安排，需要支持；具体焦虑依角色与经历判断。' },
+      '26_50': { meaning: '谨慎尝试', performance: '对自己的能力仍有疑虑，可以寻求帮助并尝试准备。' },
+      '51_75': { meaning: '逐步笃定', performance: '相信自己能逐步承担责任，也承认需要学习或协助。' },
+      '76_100': { meaning: '稳定自信', performance: '对母职与养育安排有稳定信心，不等于掌握医疗技能。' },
+      '100_plus': { meaning: '超常笃定', performance: '对养育使命有强烈笃定，具体表现依角色，不赋予诊断能力。' }
     },
   },
   bonding: {
-    definition: '个体与腹中胎儿的情感联结与母性本能。数值越高，守护欲越强；数值低则视胎儿为异物。',
-    preview: '0(怀孕否认症) -> 1~25(疏离与嫌恶) -> 26~50(任务式共存) -> 51~75(萌生守护) -> 76~100(自我牺牲) -> 100+(恋孕狂热)',
+    definition: '对本次妊娠的接纳与腹中生命的情感联结；接受、爱胎儿与享受孕态可不一致。',
+    preview: '抗拒与疏离 -> 矛盾疏离 -> 责任式接纳 -> 建立联结 -> 珍惜与期待 -> 强烈投入',
     stages: {
-      0: {
-        meaning: '怀孕否认症',
-        performance: '心理防御机制完全切断与胎儿的联系。无视胎动，甚至将腹部隆起视为肿瘤或寄生，拒绝产生任何情感回馈。',
-        breakthrough_condition: '需经历与胎儿的共生感触发，或被强烈爱意感化，方可突破至 1+。',
-      },
-      '1_25': {
-        meaning: '疏离与嫌恶',
-        performance: '将怀孕视为诅咒、累赘。对腹部触碰感到厌恶，常有终结妊娠的念头，缺乏保护胎儿的本能。增加时，排斥感减弱；减少时，会产生毁灭倾向。',
-      },
-      '26_50': {
-        meaning: '任务式共存',
-        performance: '接受怀孕事实，但仅将其视为一项生理任务或责任。缺乏自发的爱意，仅是被动地配合养胎。增加时，开始产生好奇。',
-      },
-      '51_75': {
-        meaning: '萌生守护',
-        performance: '开始自发地触摸肚子、与胎儿对话。能感知到胎动带来的喜悦，产生初步的母性保护欲。增加时，保护行为会变得明显。',
-      },
-      '76_100': {
-        meaning: '自我牺牲',
-        performance: '胎儿成为生命核心。愿意为了胎儿的健康放弃自己的喜好、形象甚至安全。展现强烈的母爱。增加时，联结感向灵魂层面延伸。',
-        transcend_condition: '当母性本能转化为一种对怀孕状态与腹中生命的极度崇拜与迷恋时，进入 100+。',
-      },
-      '100_plus': {
-        meaning: '恋孕狂热',
-        performance: '产生强烈的恋孕情节。迷恋大肚子带来的沉重感、胎动的入侵感。比起生产，更希望永远维持这种合而为一的状态，视怀孕为最高幸福。此阶段不会跌回100。',
-      },
+      '0': { meaning: '抗拒与疏离', performance: '对本次妊娠抗拒或疏离，不因此推定未知怀孕、伤害胎儿或已决定终止。' },
+      '1_25': { meaning: '矛盾疏离', performance: '情感投入较少或心情矛盾，原因与行为需有角色及事件依据。' },
+      '26_50': { meaning: '责任式接纳', performance: '可以出于责任接纳，情感仍在形成；不自动等于决定留下孩子。' },
+      '51_75': { meaning: '建立联结', performance: '逐渐建立情感联结，也可对孕态或父方保持复杂态度。' },
+      '76_100': { meaning: '珍惜与期待', performance: '珍惜腹中生命并期待未来，不强制恋孕、延产或自我牺牲。' },
+      '100_plus': { meaning: '强烈投入', performance: '投入非常强烈；具体表达与选择依剧情，不默认希望永远怀孕。' }
     },
   },
   stance: {
-    definition: '个体对怀孕身份的社会展现与心态。数值越高，越倾向利用孕妇身份获取优势。',
-    preview: '0(绝对藏孕) -> 1~25(畏怯隐蔽) -> 26~50(被动接受) -> 51~75(正式准备) -> 76~100(自豪展现) -> 100+(母权优越)',
+    definition: '对孕妇身份的社会展现倾向；分数不等于实际已告知谁。',
+    preview: '极度隐蔽 -> 倾向隐瞒 -> 谨慎应对 -> 愿意分享 -> 公开展现 -> 强烈认同',
     stages: {
-      0: {
-        meaning: '绝对藏孕',
-        performance: '将怀孕视为耻辱或致命弱点。会用宽大衣物、束腹甚至法术隐藏孕肚，绝不在言谈中提及怀孕。害怕被识破。',
-        breakthrough_condition: '当隐藏已无可能，或被环境强迫接受孕妇身份后，方可突破至 1+。',
-      },
-      '1_25': {
-        meaning: '畏怯隐蔽',
-        performance: '对自己的孕态感到不安，害怕别人的指点。在社交场合总是缩小存在感，对母职缺乏信心。增加时，羞耻感降低；减少时，会更加封闭。',
-      },
-      '26_50': {
-        meaning: '被动接受',
-        performance: '不再刻意隐藏，但也不会主动展示。穿着以宽松舒适为主，被动地接受他人的照顾，但内心仍感局促。增加时，开始习惯特殊待遇。',
-      },
-      '51_75': {
-        meaning: '正式准备',
-        performance: '坦然展现孕妇身份。会为了待产主动收集资源、与人交流经验。能以正常心态面对外界的注目与关怀。增加时，自信心提升。',
-      },
-      '76_100': {
-        meaning: '自豪展现',
-        performance: '刻意穿着贴身孕妇装展示腹部曲线。主动谈论育儿计划，享受被视为母亲的尊重，并开始懂得要求合理的照顾。增加时，展现欲增强。',
-        transcend_condition: '当个体开始意识到孕妇身份是一种强大的社会武器，能主动操控规则来获取更大利益时，进入 100+。',
-      },
-      '100_plus': {
-        meaning: '母权优越',
-        performance: '极度炫耀孕肚，将怀孕作为获取特权、物资或地位的手段。懂得利用他人的同情或保护欲来达成目的。将怀孕视为一种高人一等的阶级符号。此阶段不会跌回100。',
-      },
+      '0': { meaning: '极度隐蔽', performance: '倾向隐藏孕态，具体措施需剧情支持；不是不知道怀孕。' },
+      '1_25': { meaning: '倾向隐瞒', performance: '在社交中谨慎隐瞒，动机依处境，不由此推定母职信心低。' },
+      '26_50': { meaning: '谨慎应对', performance: '对公开身份保持谨慎，可按对象与环境选择是否告知。' },
+      '51_75': { meaning: '愿意分享', performance: '愿意向合适的人分享；实际公开对象仍需事件依据。' },
+      '76_100': { meaning: '公开展现', performance: '愿意坦然展现孕妇身份，不等于对所有人公开。' },
+      '100_plus': { meaning: '强烈认同', performance: '对孕妇身份有强烈社会认同，具体表达依角色而非固定特权行为。' }
     },
-  },
+  }
 });
 
-export const PSY_PREG_BOOL_FIELDS = Object.freeze({
-  knowsFatherSource: {
-    definition: '是否知晓当前妊娠或腹中胎儿的父源对象。(若角色連自身妊娠都未知曉，該字段也应为 false)',
-  },
-  hasProfessionalPrenatalCare: {
-    definition: '是否已经接受或持续接受专业产检、医疗监护或正规待产照护。',
-  },
-});
+export const PSY_PREG_BOOL_FIELDS = Object.freeze({});
 
 export function resolvePsychStageKey(value) {
+  if (value === null || value === undefined) return null;
   const next = Number(value);
   if (!Number.isFinite(next)) return null;
   if (next <= 0) return '0';

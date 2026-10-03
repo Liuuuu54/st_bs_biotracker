@@ -8,6 +8,8 @@
 
 每個聊天有獨立的 `chatState`，包含角色字典、累積時間、技能目錄、場景摘要、最後結果與快照。角色的 `profile` 再分成 `base`、`pregnant`、`experience`、`psychology`、`bio`、`metabolism`、`wardrobe` 等區塊；另有 `runtime` 儲存時間零頭與生理原值。[預設結構](../../scripts/state.js#L658)中的角色字典使用無原型物件，避免特殊角色名碰到 JavaScript 內建屬性。
 
+概覽階段進度直接讀取角色生理時鐘，與引擎共用門檻；各階段起算點、分母與單位見[階段進度核對](../v110-ui-stage-progress.md)。
+
 ## 一樓訊息的處理路徑
 
 1. [runTracker](../../scripts/tracker.js#L1739)先從宿主載入聊天狀態與最新聊天視圖，並取得已註冊角色。
@@ -34,7 +36,7 @@
 | --- | --- |
 | 時間與身體 | `bsPassedTime`、`bsUpdateCharacterStatus`、`bsExcreteMetabolism`、`bsSetMenstrualPhases`、`bsSetCharacterPresence` |
 | 生殖與分娩 | `bsAddSperm`、`bsDrainSperm`、`bsImplantEmbryo`、`bsAbortion`、`bsChildbirth`、`bsAssistFetalPosition`、`bsMaternalFetalInteraction`、`bsWombReturn` |
-| 記錄與描述 | `bsWriteDiary`、`bsUpdateExperience`、`bsNameChild`、`bsSetDescription`、`bsUpdatePsychology` |
+| 記錄與描述 | `bsWriteDiary`、`bsRecordExperience`、`bsSetDescription`、`bsUpdatePsychology` |
 | 技能與衣物 | `bsRegisterSkillDefinition`、`bsTrainSkill`、`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` |
 | 測試／診斷 | `bsDebugInjectPregnancy`、`bsDebugClearContainers`、`bsDebugSetGestationModifier`、`bsDebugFetalActivity`、`bsDebugSetProdromal`、`bsDebugSetFetalPosition` |
 
@@ -53,3 +55,6 @@ SillyTavern 的聊天狀態在擴充設定內；TauriTavern／Luker 使用每聊
 樓層快照不保存 `runtime` 的時間進位等暫態，但會保存孕期的孕前原值（`runtime.originalPregnancyBio`），回溯後分娩才能還原正確的承載耐受、分娩難度與孕速。
 
 聊天狀態帶有存檔結構版本 `schemaVersion`（1.0.5 以前的存檔沒有此欄位，視為 1）。讀取時若版本較舊，會逐版遷移角色資料與每一層樓層快照，完成後寫回。v2（1.0.6）把仍等於舊內置值的承載耐受換成新內置值（自訂過的不動），並為不在產後恢復的角色按新公式重算恢復天數。v3（1.0.7）補上延產次數、延產到期日與子宮乏力級數，舊存檔一律從「沒延產過、沒有乏力」開始。[v2→v3](../../scripts/state_migration.js#L99)。[遷移入口](../../scripts/state.js#L1123)、[v1→v2](../../scripts/state_migration.js#L60)。
+
+
+v4（v1.1.0）遷移關係名單、舊損失歸入流產、單側心理與子女選定身份，也保留原資料備查。認知、接觸來源、抽樣与來源去重隨角色快照還原；詳見[生殖認知與避孕](reproductive-tracking.md)。

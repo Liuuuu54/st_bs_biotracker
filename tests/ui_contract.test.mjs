@@ -121,7 +121,8 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /bs-bt-sperm-share__race/, '圆饼图图例应保留来源种族');
   assert.doesNotMatch(controller, /bs-bt-sperm-share__pct/, '圆饼图已经表达占比，图例不应重复显示百分比');
   assert.match(controller, /calculateFertilizationPreview/, '精卵同时存在时应复用真实受精公式');
-  assert.match(controller, /MENSTRUAL_STAGE_DAYS,\s*MENSTRUAL_STAGES,\s*PREGNANCY_STAGE_DAYS/s, '追踪页受孕率依赖的月经阶段目录必须显式导入');
+  const stageImports = controller.match(/import \{([^}]+)\} from '\.\/scripts\/stage_config\.js';/)?.[1] || '';
+  assert.match(stageImports, /\bMENSTRUAL_STAGES\b/, '追踪页受孕率依赖的月经阶段目录必须显式导入');
   assert.match(controller, /conceptionChance/, '精液来源区应显示所有精源合计受孕率');
   assert.match(controller, /is-conceived/, '已有受精卵时危险期徽章应进入特效状态');
   assert.match(controller, /hasPendingImplantation/, '普通受精、异期受孕与孕中孕的待着床胚胎都应触发状态徽章特效');

@@ -1,3 +1,5 @@
+import { getStageProgress, formatProgressNumber } from './scripts/stage_progress.js';
+import { normalizeReproductiveSettings, COGNITION_METHODS, psychologySide } from './scripts/reproductive.js';
 import { abortActiveApiRequests, fetchModelList, isApiUserAbortError } from './scripts/api.js';
 import {
   applyInitialSkillTalentConfig,
@@ -52,16 +54,9 @@ import { initializeCalculatorUi } from './scripts/calculator_ui.js';
 import { createDocViewer, parseDocHref } from './scripts/doc_viewer.js';
 import { calculateFertilizationPreview } from './scripts/calculator.js';
 import {
-  FIRST_STAGE_NATURAL_BIRTH_EXPERIENCE,
   LABOR_STAGES,
-  LABOR_STAGE_BASE_HOURS,
-  LABOR_STAGE_INCREMENT,
-  LABOR_POSTPARTUM_OBSERVATION_HOURS,
-  MENSTRUAL_STAGE_DAYS,
   MENSTRUAL_STAGES,
-  PREGNANCY_STAGE_DAYS,
   PREGNANCY_STAGES,
-  POSTTERM_START_DAYS,
   GESTATION_SPEED_MAX,
   GESTATION_SPEED_MIN,
 } from './scripts/stage_config.js';
@@ -205,6 +200,9 @@ let selectedFullStateSubpage = 'variables';
 let selectedTrackName = '';
 let selectedTrackSubpage = 'overview';
 let selectedTrackCardIndexes = {};
+// Reading position and folds are local UI state, scoped to chat and character.
+const cognitionTimelineViews = new Map();
+const trackContentRenderCache = new WeakMap();
 let selectedWardrobeName = '';
 let selectedWardrobeSubpage = 'characters';
 // 备装 JSON 属于哪个角色：换人就清掉，免得把别人的备装套进来
@@ -362,9 +360,7 @@ function getRegisterBundleParts() {
 }
 
 function describeRegisterBundleScope() {
-  const parts = getRegisterBundleParts();
-  return `「一次注册」在同一个请求里附上${parts.map((part) => part.page + '的' + part.field).join('、')}，注册完成时一并写入，`
-    + `比分开送出省下重复的角色卡、世界书与聊天。结果会填进${parts.map((part) => part.page).join('、')}的预览，仍可在那里微调后重新写入。`;
+  return `一个请求同时生成${getRegisterBundleParts().map((part) => part.label).join('、')}，结果可到各页微调后重新写入。`;
 }
 
 /** 注册页各异步操作的按钮与状态栏绑定 */
@@ -488,6 +484,7 @@ function clearBreedingInferenceDraftFor(registeredName) {
 }
 
 function resetRegisterPageState() {
+  document.getElementById('bs-bt-initial-cognition-rows')?.replaceChildren();
   registryBreedingInferenceDraft = null;
   registryInferenceResultName = '';
   setRegisterTab('inference');
@@ -1267,6 +1264,52 @@ function describeMissingSpecialFetus(request, character) {
   return `注意：模型没有实现 ${missing.join('、')}，可重跑一次注册。`;
 }
 
+function readInitialCognitionRows() {
+  return [...document.querySelectorAll('#bs-bt-initial-cognition-rows .bs-bt-cognition-row')].map((row) => ({
+    time: row.querySelector('[data-cognition-time]').value.trim(),
+    method: row.querySelector('[data-cognition-method]').value,
+    content: row.querySelector('[data-cognition-content]').value.trim(),
+  })).filter((x) => x.time || x.content);
+}
+
+function addInitialCognitionRow() {
+  const container = document.getElementById('bs-bt-initial-cognition-rows');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'bs-bt-cognition-row settings_section';
+  row.innerHTML = `<label>故事日期<input class="text_pole" data-cognition-time placeholder="例如：旅途第六日" /></label>
+    <label>认知方式<select class="text_pole" data-cognition-method>${['亲历／自觉','猜测／自算','被告知','验孕','产检'].map((label,i) => `<option value="${COGNITION_METHODS[i]}">${label}</option>`).join('')}</select></label>
+    <label>认知内容<textarea class="text_pole bs-bt-textarea" rows="2" data-cognition-content placeholder="她从什么线索得知了什么、如何相信或误解"></textarea></label>
+    <button type="button" class="menu_button" data-cognition-remove>移除此笔</button>`;
+  row.querySelector('[data-cognition-remove]').addEventListener('click', () => row.remove());
+  container.append(row);
+}
+
+function readReproductiveControls(settings) {
+  const next = { ...normalizeReproductiveSettings(settings.reproductiveSettings) };
+  for (const key of ['condomCapacity', 'condomReliability', 'emergencyEffectiveness']) {
+    const node = document.getElementById(`bs-bt-reproductive-${key}`);
+    if (!node) continue;
+    const value = Number(node.value);
+    if (!node.value.trim() || !Number.isFinite(value)) throw new Error('生殖世界基准必须填有效数值。');
+    next[key] = value;
+  }
+  return normalizeReproductiveSettings(next);
+}
+
+function renderReproductiveControls(settings) {
+  const node = document.getElementById('bs-bt-reproductive-controls');
+  if (!node) return;
+  const c = normalizeReproductiveSettings(settings.reproductiveSettings);
+  const fields = [
+    ['condomCapacity', '套子容量（与精液量同单位）'],
+    ['condomReliability', '套子可靠度（0～1）'],
+    ['emergencyEffectiveness', '即时事后避孕成功率（0～1）'],
+  ];
+  node.innerHTML = fields.map(([key,label]) => `<label>${label}<input id="bs-bt-reproductive-${key}" class="text_pole" type="number" step="any" value="${c[key]}" /></label>`).join('');
+  node.dataset.initialized = 'true';
+}
+
 function getRegisterFormValues(ctx = getContextSafe()) {
   const sourceChildKey = String(document.getElementById('bs-bt-register-source')?.value || '');
   const rawTargetName = String(document.getElementById('bs-bt-register-name')?.value || '').trim();
@@ -1275,6 +1318,7 @@ function getRegisterFormValues(ctx = getContextSafe()) {
     rawTargetName,
     declaredRace: String(document.getElementById('bs-bt-register-race')?.value || '').trim(),
     customNotes: String(document.getElementById('bs-bt-register-custom-notes')?.value || '').trim(),
+    initialCognitionRecords: readInitialCognitionRows(),
     specialFetus: getSpecialFetusRequest(),
     useGestationModifier: Boolean(document.getElementById('bs-bt-register-gestation-modifier')?.checked),
     gestationModifierMultiplier: Number(document.getElementById('bs-bt-register-gestation-multiplier')?.value ?? 1),
@@ -1316,6 +1360,8 @@ function formatBreedingInferencePreview(result) {
 function getApplicableBreedingInferenceDraft(values) {
   const draft = registryBreedingInferenceDraft;
   if (!draft?.result) return null;
+  if (draft.chatKey !== getChatKey(getContextSafe())) return null;
+  if (JSON.stringify(draft.initialCognitionRecords || []) !== JSON.stringify(values.initialCognitionRecords || [])) return null;
   if (draft.targetName !== values.targetName) return null;
   if (draft.declaredRace !== values.declaredRace) return null;
   if (draft.customNotes !== values.customNotes) return null;
@@ -2774,180 +2820,6 @@ function isPregnantStage(stage) {
   return ['已着床', ...PREGNANCY_STAGES, '产兆前驱', ...LABOR_STAGES].includes(String(stage || ''));
 }
 
-function getStageProgress(profile) {
-  const base = profile?.base || {};
-  const pregnant = profile?.pregnant || {};
-  const stage = String(base.stage || '').trim();
-  if (!stage) return null;
-  if (LABOR_STAGES.includes(stage)) {
-    if (stage === '第一产程') {
-      const phase = String(pregnant.laborPhase || '潜伏期');
-      const max = getLaborStageThreshold(profile, stage, { fullStage: true }) || 12;
-      const phaseOffset = phase === '过渡期'
-        ? max * 0.85
-        : phase === '活跃期'
-          ? max * 0.5
-          : 0;
-      return {
-        label: '产程进度',
-        value: phaseOffset + (Number(pregnant.effectiveLaborHours) || 0),
-        max,
-        unit: 'h',
-        integerDisplay: true,
-      };
-    }
-    if (stage === '第三产程') {
-      const phase = String(pregnant.laborPhase || '供养器官娩出');
-      const organHours = getLaborStageThreshold(profile, stage, { phase: '供养器官娩出' }) || 0.5;
-      const observationHours = getLaborStageThreshold(profile, stage, { phase: '产后观察' }) || LABOR_POSTPARTUM_OBSERVATION_HOURS;
-      return {
-        label: '产程进度',
-        value: (phase === '产后观察' ? organHours : 0) + (Number(pregnant.effectiveLaborHours) || 0),
-        max: organHours + observationHours,
-        unit: 'h',
-        integerDisplay: true,
-      };
-    }
-    return {
-      label: '产程进度',
-      value: Number(pregnant.effectiveLaborHours) || 0,
-      max: getLaborStageThreshold(profile, stage) || (stage === '第一产程' ? 12 : stage === '第二产程' ? 2 : 1),
-      unit: 'h',
-      integerDisplay: true,
-    };
-  }
-  if (stage === '产兆前驱') {
-    const max = 48 * Math.max(0.1, Math.min(100, Number(profile?.bio?.birthDifficulty) || 1));
-    const remaining = Math.max(0, Number(pregnant.prodromalRemainingHours) || 0);
-    return { label: '前驱进展', value: Math.max(0, max - remaining), max, unit: 'h', integerDisplay: true };
-  }
-  if (Object.prototype.hasOwnProperty.call(PREGNANCY_STAGE_DAYS, stage)) {
-    return {
-      label: '阶段进度',
-      value: Number(base.days) || 0,
-      max: PREGNANCY_STAGE_DAYS[stage],
-      unit: 'd',
-      displayStartAtOne: true,
-    };
-  }
-  if (stage === '逾期') {
-    return { label: '阶段进度', value: Number(base.days) || 0, unbounded: true, unit: 'd', displayStartAtOne: true };
-  }
-  if (stage === '延产期') {
-    // 延产期的天数从 42 周起算、跨多次延产连续计数；上限是这次延产的到期日
-    const untilDays = Number(profile?.pregnant?.extensionUntilDays);
-    return Number.isFinite(untilDays)
-      ? { label: '延产进度', value: Number(base.days) || 0, max: Math.max(1, untilDays - POSTTERM_START_DAYS), unit: 'd', displayStartAtOne: true }
-      : { label: '延产进度', value: Number(base.days) || 0, unbounded: true, unit: 'd', displayStartAtOne: true };
-  }
-  if (Object.prototype.hasOwnProperty.call(MENSTRUAL_STAGE_DAYS, stage)) {
-    const ratio = Math.max(0.1, Math.min(20, Number(profile?.bio?.menstrualLengthRatio) || 1));
-    return {
-      label: '阶段进度',
-      value: Number(base.days) || 0,
-      max: Math.max(1, MENSTRUAL_STAGE_DAYS[stage] * ratio),
-      unit: 'd',
-      displayStartAtOne: true,
-    };
-  }
-  return { label: '阶段进度', value: Number(base.days) || 0, max: 1, unit: 'd', displayStartAtOne: true };
-}
-
-function wrapLaborAngle(angle) {
-  const normalized = Number(angle);
-  if (!Number.isFinite(normalized)) return 0;
-  return ((normalized % 360) + 360) % 360;
-}
-
-function getLaborPositionDifficulty(angle, fetus) {
-  const normalized = wrapLaborAngle(angle);
-  const embryoType = String(fetus?.embryoType || '胎生');
-
-  if (embryoType === '胎转卵生') {
-    const targetAngles = [0, 90, 180, 270, 360];
-    let minDistance = 360;
-    for (const targetAngle of targetAngles) {
-      let distance = Math.abs(normalized - targetAngle);
-      if (targetAngle === 360) distance = Math.min(distance, Math.abs(normalized - 0));
-      if (distance < minDistance) minDistance = distance;
-    }
-    if (minDistance <= 5) return 1.5;
-    return Math.min(2.25, 1.5 + ((minDistance - 5) * 0.075));
-  }
-
-  if (embryoType === '不定型') {
-    const race = String(fetus?.race || '人类');
-    const combinedSeed = Math.round(normalized * 1000) + race.charCodeAt(0) + race.charCodeAt(Math.max(0, race.length - 1));
-    const seededValue = ((combinedSeed * 1664525 + 1013904223) % 2147483648) / 2147483648;
-    return 1.0 + seededValue;
-  }
-
-  if (embryoType === '卵胎生') {
-    if ((normalized >= 0 && normalized <= 5) || (normalized >= 355 && normalized <= 360)) return 1.0;
-    if ((normalized >= 0 && normalized <= 15) || (normalized >= 345 && normalized <= 360)) return 1.25;
-    if (normalized >= 175 && normalized <= 185) return 1.5;
-    if (normalized >= 165 && normalized <= 195) return 1.75;
-    if ((normalized >= 85 && normalized <= 95) || (normalized >= 275 && normalized <= 285)) return 2.0;
-    if ((normalized >= 75 && normalized <= 105) || (normalized >= 265 && normalized <= 285)) return 2.25;
-    return 1.33;
-  }
-
-  if (embryoType === '卵生') {
-    if ((normalized >= 0 && normalized <= 15) || (normalized >= 345 && normalized <= 360)) return 1.0;
-    if (normalized >= 165 && normalized <= 195) return 1.0;
-    if ((normalized >= 75 && normalized <= 105) || (normalized >= 265 && normalized <= 285)) return 1.5;
-    return 1.33;
-  }
-
-  if ((normalized >= 0 && normalized <= 15) || (normalized >= 345 && normalized <= 360)) return 1.0;
-  if (normalized >= 165 && normalized <= 195) return 1.5;
-  if ((normalized >= 75 && normalized <= 105) || (normalized >= 265 && normalized <= 285)) return 2.0;
-  return 1.33;
-}
-
-function getLaborStageThreshold(profile, stage, options = {}) {
-  if (!LABOR_STAGES.includes(stage)) return null;
-  const pregnant = profile?.pregnant || {};
-  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  const phase = String(options.phase || pregnant.laborPhase || '');
-  const birthDifficulty = Math.max(0.1, Math.min(100, Number(profile?.bio?.birthDifficulty) || 1));
-  const safeCount = Math.max(1, fetuses.length);
-  const baseHours = Number(LABOR_STAGE_BASE_HOURS[stage]) || 0;
-  const increment = Number(LABOR_STAGE_INCREMENT[stage]) || 0;
-  let threshold = (baseHours + ((safeCount - 1) * increment)) * birthDifficulty;
-
-  if (stage === '第一产程') {
-    const naturalBirthCount = Math.min(
-      FIRST_STAGE_NATURAL_BIRTH_EXPERIENCE.maxCount,
-      Math.floor(Math.max(0, Number(profile?.experience?.naturalBirthExperience) || 0)),
-    );
-    threshold *= Math.max(
-      FIRST_STAGE_NATURAL_BIRTH_EXPERIENCE.minMultiplier,
-      1 - (naturalBirthCount * FIRST_STAGE_NATURAL_BIRTH_EXPERIENCE.reductionPerBirth),
-    );
-    if (options.fullStage) return Math.max(0.1, threshold);
-    if (phase === '潜伏期') threshold *= 0.5;
-    else if (phase === '活跃期') threshold *= 0.35;
-    else if (phase === '过渡期') threshold *= 0.15;
-  }
-  if (stage === '第二产程' && fetuses.length > 0) {
-    if (phase === '间歇期') return Math.max(0.5, birthDifficulty * 0.5);
-    const firstFetus = getPresentingFetus(pregnant) || fetuses[0];
-    const fetalAngle = Number.isFinite(Number(firstFetus?.tendencyAngle)) ? wrapLaborAngle(firstFetus.tendencyAngle) : 0;
-    const positionDifficulty = getLaborPositionDifficulty(fetalAngle, firstFetus);
-    const fetalWeight = Math.max(0.33, Math.min(3.0, Number(firstFetus?.weight) || 1.0));
-    threshold = ((Number(LABOR_STAGE_BASE_HOURS['第二产程']) || 0) * birthDifficulty) * positionDifficulty * fetalWeight;
-    threshold *= phase === '胎体娩出' ? 0.4 : 0.6;
-  }
-  if (stage === '第三产程') {
-    threshold = phase === '产后观察'
-      ? Math.max(LABOR_POSTPARTUM_OBSERVATION_HOURS, birthDifficulty * LABOR_POSTPARTUM_OBSERVATION_HOURS)
-      : Math.max(0.5, (Number(LABOR_STAGE_BASE_HOURS['第三产程']) || 0) * birthDifficulty);
-  }
-
-  return Math.max(0.1, threshold);
-}
-
 // 与 tools.js 共用同一套上限：孕月让它们涨上去，子宫乏力再让它们往回缩
 function withStage(profile, stage) {
   return { ...(profile || {}), base: { ...(profile?.base || {}), stage } };
@@ -3172,37 +3044,34 @@ function parseDescriptionBlocks(text) {
 
 function getPsychologyView(profile = {}) {
   const preg = profile?.psychology?.preg || {};
-  const mens = profile?.psychology?.mens || {};
+  const mens = profile?.base?.stage === '产后恢复' ? {} : profile?.psychology?.mens || {};
   const stage = String(profile?.base?.stage || '');
-  if (isPregnantStage(stage)) {
+  if (psychologySide(stage) === 'preg') {
     return {
       title: '繁育心理',
       items: [
-        { label: '察觉', value: preg.cognition_value ?? 0, prompt: preg.cognition_interpret || '' },
-        { label: '依附', value: preg.bonding_value ?? 0, prompt: preg.bonding_interpret || '' },
-        { label: '导向', value: preg.stance_value ?? 0, prompt: preg.stance_interpret || '' },
+        { label: '信心', value: preg.confidence_value, prompt: preg.confidence_interpret || '未知／待推演' },
+        { label: '接纳联结', value: preg.bonding_value, prompt: preg.bonding_interpret || '' },
+        { label: '展现', value: preg.stance_value, prompt: preg.stance_interpret || '' },
       ],
       flags: [
-        { label: '知晓父源', active: Boolean(preg.knowsFatherSource) },
-        { label: '专业产检', active: Boolean(preg.hasProfessionalPrenatalCare) },
       ],
     };
   }
   return {
     title: '繁育心理',
     items: [
-      { label: '掌控', value: mens.mastery_value ?? 0, prompt: mens.mastery_interpret || '' },
-      { label: '欲望', value: mens.desire_value ?? 0, prompt: mens.desire_interpret || '' },
-      { label: '自主', value: mens.autonomy_value ?? 0, prompt: mens.autonomy_interpret || '' },
+      { label: '掌控', value: mens.mastery_value, prompt: mens.mastery_interpret || '' },
+      { label: '欲望', value: mens.desire_value, prompt: mens.desire_interpret || '' },
+      { label: '自主', value: mens.autonomy_value, prompt: mens.autonomy_interpret || '' },
     ],
     flags: [
-      { label: '贞洁/单伴侣', active: Boolean(mens.isChaste) },
-      { label: '避孕措施', active: Boolean(mens.hasContraception) },
     ],
   };
 }
 
 function hasBreedingPsychologyProfile(profile = {}) {
+  if (profile?.psychology?.enabled) return true;
   const stageProfiles = profile?.psychology?.stageProfiles;
   return Boolean(stageProfiles && typeof stageProfiles === 'object' && !Array.isArray(stageProfiles)
     && Object.keys(stageProfiles).length > 0);
@@ -3230,9 +3099,7 @@ function buildRadarSvg(items) {
   const labels = points
     .map(
       (item) =>
-        `<text x="${item.lx}" y="${item.ly}" text-anchor="middle" dominant-baseline="middle" font-size="11">${escapeHtml(item.label)} ${Math.round(
-          Number(item.value) || 0,
-        )}</text>`,
+        `<text x="${item.lx}" y="${item.ly}" text-anchor="middle" dominant-baseline="middle" font-size="11">${escapeHtml(item.label)} ${item.value === null || item.value === undefined ? '未知' : Math.round(Number(item.value))}</text>`,
     )
     .join('');
   const axes = points.map((item) => `<line x1="${cx}" y1="${cy}" x2="${item.x}" y2="${item.y}" stroke="currentColor" opacity="0.25" />`).join('');
@@ -3678,7 +3545,7 @@ function buildTrackCharacterViewModel(character) {
   const stage = String(base.stage || '未设定');
   const totalSperm = (Array.isArray(base.sperms) ? base.sperms : []).reduce((sum, item) => sum + (Number(item?.value) || 0), 0);
   const eggs = Number(base.eggs) || 0;
-  const allowsNaturalConception = [...MENSTRUAL_STAGES, '产后恢复'].includes(stage) && stage !== '月经期';
+  const allowsNaturalConception = MENSTRUAL_STAGES.includes(stage) && stage !== '月经期';
   const conceptionPreview = eggs > 0 && totalSperm > 0 && allowsNaturalConception
     ? calculateFertilizationPreview({
       eggRace: base.race,
@@ -3720,6 +3587,7 @@ function buildTrackCharacterViewModel(character) {
     },
     description: {
       normalBlocks: parseDescriptionBlocks(descriptions.normalDescription),
+      cognitionRecords: profile.cognitionRecords || [],
       psychology: hasBreedingPsychologyProfile(profile) ? getPsychologyView(profile) : null,
     },
     pregnancy: {
@@ -3775,12 +3643,13 @@ function buildTrackCharacterViewModel(character) {
       items: [
         ['初次对象', experience.virginity ?? '无'],
         ['最近对象', experience.latestSexPartner ?? '无'],
-        ['情感对象', experience.emotionalMate ?? '无'],
-        ['婚姻对象', experience.marriageMate ?? '无'],
+        ['情感对象', (experience.emotionalMates || []).join('、') || '无'],
+        ['婚姻对象', (experience.marriageMates || []).join('、') || '无'],
         ['怀孕次数', `${Number(experience.pregnantExperience) || 0}次`],
         ['自然产', `${Number(experience.naturalBirthExperience) || 0}次`],
         ['手术产', `${Number(experience.surgicalBirthExperience) || 0}次`],
-        ['流产/堕胎', `${Number(experience.miscarriageExperience) || 0}次`],
+        ['流产', `${Number(experience.miscarriageExperience) || 0}次`],
+        ['堕胎', `${Number(experience.abortionExperience) || 0}次`],
       ],
       children: Array.isArray(profile.children) ? profile.children.map((child) => ({
         ...child,
@@ -3873,19 +3742,22 @@ function renderProgressList(items) {
     .map((item) => {
       const value = Math.max(0, Number(item.value) || 0);
       const unbounded = item.unbounded === true;
-      const cap = Math.max(1, Number(item.cap) || 1);
+      const cap = Math.max(item.unit ? Number.EPSILON : 1, Number(item.cap) || 1);
       const displayOffset = item.displayStartAtOne ? 1 : 0;
       const fillValue = item.displayStartAtOne ? Math.min(cap, value + 1) : value;
       const fill = unbounded ? '100%' : `${Math.min(100, (fillValue / cap) * 100)}%`;
-      const scale = unbounded ? '100%' : `${Math.max(25, (cap / MAX_PROGRESS_BAR_CAP) * 100)}%`;
+      const scale = unbounded || item.unit ? '100%' : `${Math.max(25, (cap / MAX_PROGRESS_BAR_CAP) * 100)}%`;
       const displayCap = item.integerDisplay ? Math.ceil(cap) : cap;
       const displayCurrent = unbounded
         ? Math.floor(value) + displayOffset
         : Math.min(displayCap, Math.floor(value) + displayOffset);
-      const displayValue = unbounded ? String(displayCurrent) : `${displayCurrent} / ${displayCap}`;
+      const unit = item.unit === 'h' ? ' 小时' : item.unit === 'd' ? ' 天' : '';
+      const displayValue = item.unit
+        ? `${unbounded ? formatProgressNumber(value) : `${formatProgressNumber(Math.min(cap, value))} / ${formatProgressNumber(cap)}`}${unit}`
+        : unbounded ? String(displayCurrent) : `${displayCurrent} / ${displayCap}`;
       return `<div class="bs-bt-track-progress">
         <div class="bs-bt-track-progress-head"><span>${escapeHtml(item.label)}</span><span>${displayValue}</span></div>
-        <div class="bs-bt-track-progress-bar" style="width:${scale};"><div class="bs-bt-track-progress-fill" style="width:${fill};"></div></div>
+        ${unbounded ? '' : `<div class="bs-bt-track-progress-bar" style="width:${scale};"><div class="bs-bt-track-progress-fill" style="width:${fill};"></div></div>`}
       </div>`;
     })
     .join('');
@@ -3943,7 +3815,7 @@ function renderTrackOverview(viewModel) {
   const progress = viewModel.overview.stageProgress;
   const currentStage = viewModel.overview.stage;
   const stageBadge = viewModel.pregnancy?.showLaborFields
-    ? `${viewModel.pregnancy?.laborPhase || '产程'}${Number(viewModel.pregnancy?.laborBirthNumber) > 0 ? ` ${viewModel.pregnancy.laborBirthNumber}胎` : ''}`
+    ? `${progress?.phase || viewModel.pregnancy?.laborPhase || '产程'}${Number(viewModel.pregnancy?.laborBirthNumber) > 0 ? ` ${viewModel.pregnancy.laborBirthNumber}胎` : ''}`
     : '';
   const laborPain = Math.max(0, Math.min(10, Number(viewModel.pregnancy?.laborPain) || 0));
   const stageSectionClass = viewModel.pregnancy?.showLaborPainBadge
@@ -3953,11 +3825,13 @@ function renderTrackOverview(viewModel) {
     ? ` style="--bsbt-labor-pain:${laborPain / 10};"`
     : '';
   const progressLabel = currentStage === '第二产程'
-    ? `第二产程·第${Math.max(1, Number(viewModel.pregnancy?.laborBirthNumber) || 1)}胎${viewModel.pregnancy?.laborPhase || '胎体下降'}`
+    ? `第二产程·第${Math.max(1, Number(viewModel.pregnancy?.laborBirthNumber) || 1)}胎${progress?.phase || viewModel.pregnancy?.laborPhase || '胎体下降'}`
     : currentStage;
   const progressHtml = progress
-    ? renderProgressList([{ label: progressLabel, value: progress.value, cap: progress.max, unbounded: progress.unbounded, integerDisplay: progress.integerDisplay }])
-    : '';
+    ? progress.max === 0
+      ? `<div class="bs-bt-track-description-empty">${escapeHtml(progress.emptyLabel || '阶段已完成')}</div>`
+      : renderProgressList([{ label: progressLabel, value: progress.value, cap: progress.max, unbounded: progress.unbounded, unit: progress.unit }])
+    : '<div class="bs-bt-track-description-empty">本阶段无计时进度</div>';
   return `
     <div class="bs-bt-track-section">
       <div class="bs-bt-track-section-title">角色概览</div>
@@ -3967,7 +3841,7 @@ function renderTrackOverview(viewModel) {
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">年龄</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.age ?? '未知')}</span></div>
       </div>
     </div>
-    <div class="bs-bt-track-section${stageSectionClass}"${stageSectionStyle}>
+    <div class="bs-bt-track-section bs-bt-track-stage-progress${stageSectionClass}"${stageSectionStyle}>
       <div class="bs-bt-track-section-title">${renderTrackTitle('阶段', stageBadge)}</div>
       ${progressHtml}
     </div>
@@ -4606,6 +4480,7 @@ function renderTrackLineageEntry(viewModel) {
           <span class="bs-bt-track-meta-label">${escapeHtml(summary)}</span>
           <button type="button" class="menu_button bs-bt-lineage-open" data-lineage-center="${escapeHtml(name)}">族谱</button>
         </div>
+        ${children.map((child, index) => `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">${escapeHtml(child.name || `子女 ${index + 1}`)}</span><span class="bs-bt-track-meta-value">选定父亲：${escapeHtml(child.selectedFather || '未指定')}</span></div>`).join('')}
       </div>
     </div>
   `;
@@ -4811,11 +4686,63 @@ function openLineageWindow(ctx, centerName) {
   centerLineageCard(root);
 }
 
+function rememberCognitionTimeline(content) {
+  const timeline = content?.querySelector('.bs-bt-cognition-timeline');
+  const owner = timeline?.dataset.cognitionOwner;
+  if (!owner || timeline.dataset.cognitionRestorePending || !timeline.getClientRects().length) return;
+  cognitionTimelineViews.set(owner, {
+    scrollTop: timeline.scrollTop,
+    expanded: new Set([...timeline.querySelectorAll('[data-cognition-record]')]
+      .filter((entry) => entry.open).map((entry) => entry.dataset.cognitionRecord)),
+  });
+  while (cognitionTimelineViews.size > 50) cognitionTimelineViews.delete(cognitionTimelineViews.keys().next().value);
+}
+
+function restoreCognitionTimeline(content, owner) {
+  const timeline = content.querySelector('.bs-bt-cognition-timeline');
+  if (!timeline) return;
+  timeline.dataset.cognitionOwner = owner;
+  // A hidden page has no scroll range; restore only after setView makes it visible.
+  if (!timeline.getClientRects().length) {
+    timeline.dataset.cognitionRestorePending = 'true';
+    return;
+  }
+  delete timeline.dataset.cognitionRestorePending;
+  const state = cognitionTimelineViews.get(owner);
+  const entries = [...timeline.querySelectorAll('[data-cognition-record]')];
+  entries.forEach((entry) => { entry.open = state?.expanded.has(entry.dataset.cognitionRecord) ?? false; });
+  timeline.scrollTop = state?.scrollTop || 0;
+  timeline.addEventListener('scroll', () => {
+    if (timeline.isConnected) rememberCognitionTimeline(content);
+  }, { passive: true });
+  entries.forEach((entry) => entry.addEventListener('toggle', () => {
+    if (entry.isConnected) rememberCognitionTimeline(content);
+  }));
+}
+
+function renderCognitionTimeline(records) {
+  if (!records.length) return '<div class="bs-bt-track-description-empty">暂无认知纪录；不代表角色相信未孕。</div>';
+  const methodLabels = { test: '验孕', prenatal: '产检', perception: '感知', informed: '告知', guess: '猜测' };
+  return `<div class="bs-bt-cognition-timeline" tabindex="0" role="region" aria-label="认知纪录时间轴">
+    <ol class="bs-bt-cognition-timeline-list">
+      ${records.map((item, index) => `<li class="bs-bt-cognition-timeline-stop">
+        <details class="bs-bt-track-card bs-bt-cognition-entry" data-cognition-record="${escapeHtml(JSON.stringify([item.id ?? null, item.sequence ?? index, item.time, item.method]))}">
+          <summary class="bs-bt-track-card-title"><span>${escapeHtml(item.time)} · ${escapeHtml(methodLabels[item.method] || item.method)}</span></summary>
+          <div class="bs-bt-track-card-note">${escapeHtml(item.content)}</div>
+        </details>
+      </li>`).join('')}
+    </ol>
+  </div>`;
+}
+
 function renderTrackDiary(viewModel) {
   const diaryEnabled = viewModel.diary?.enabled !== false;
   const entries = Array.isArray(viewModel.diary?.entries) ? viewModel.diary.entries : [];
   return `
     ${viewModel.description?.psychology ? renderTrackPsychology(viewModel) : ''}
+    <div class="bs-bt-track-section"><div class="bs-bt-track-section-title">认知纪录</div>
+      ${renderCognitionTimeline(viewModel.description?.cognitionRecords || [])}
+    </div>
     ${diaryEnabled ? renderCardCarouselSection(
       '日记',
       entries,
@@ -4982,7 +4909,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
           <span class="bs-bt-track-debug-state">${Number(counts.children) || 0}</span>
         </button>
       </div>
-      <div class="bs-bt-track-debug-hint">淨空胎儿时，若当前已是着床后的妊娠状态，会追加一次流产/堕胎经验；尚未着床的受精卵不计入。</div>
+      <div class="bs-bt-track-debug-hint">淨空胎儿时，若当前已是着床后的妊娠状态，会追加一次流产经验；尚未着床的受精卵不计入。</div>
     </div>
     <div class="bs-bt-track-section" style="margin-top: 10px;">
       <div class="bs-bt-track-section-title">妊娠需求症状调试</div>
@@ -6165,6 +6092,7 @@ function renderStatusPanel(ctx) {
   const list = document.getElementById('bs-bt-track-character-list');
   const latestCall = document.getElementById('bs-bt-track-last-call');
   const content = document.getElementById('bs-bt-track-content');
+  rememberCognitionTimeline(content);
   const tabs = document.querySelectorAll('#bs-bt-track-tabs .bs-bt-track-tab');
   if (!list) return;
   updateBatteryIndicator(settings);
@@ -6200,7 +6128,7 @@ function renderStatusPanel(ctx) {
 
   if (characters.length === 0) {
     selectedTrackName = '';
-    if (content) content.innerHTML = '';
+    if (content) { content.innerHTML = ''; trackContentRenderCache.delete(content); }
     return;
   }
 
@@ -6231,12 +6159,24 @@ function renderStatusPanel(ctx) {
 
   if (!selectedTrackName) {
     content.innerHTML = '';
+    trackContentRenderCache.delete(content);
     return;
   }
 
   const current = characters.find((item) => item.name === selectedTrackName);
   const viewModel = buildTrackCharacterViewModel(current);
-  content.innerHTML = renderTrackCharacterContent(viewModel);
+  const owner = JSON.stringify([getChatKey(ctx), selectedTrackName]);
+  const viewKey = JSON.stringify([owner, selectedTrackSubpage]);
+  const markup = renderTrackCharacterContent(viewModel);
+  const cached = trackContentRenderCache.get(content);
+  // Unchanged poll/status refreshes must not replace the reader's scroll/focus DOM.
+  if (selectedTrackSubpage === 'diary' && cached?.viewKey === viewKey && cached.markup === markup) {
+    if (content.querySelector('.bs-bt-cognition-timeline')?.dataset.cognitionRestorePending) restoreCognitionTimeline(content, owner);
+    return;
+  }
+  content.innerHTML = markup;
+  trackContentRenderCache.set(content, { viewKey, markup });
+  restoreCognitionTimeline(content, owner);
   fitSkillNumerals(content);
   mountWombView(ctx, content, viewModel);
   bindDebugPregnancyDraftControls(content, () => renderStatusPanel(ctx));
@@ -6693,6 +6633,7 @@ function validateManualCharacterState(next, currentName) {
   for (const path of ['base', 'pregnant', 'experience', 'bio', 'metabolism', 'notify', 'immune', 'psychology', 'wardrobe', 'outfit', 'descriptions', 'cooldown']) {
     if (profile[path] !== undefined && !isPlainObject(profile[path])) errors.push(`profile.${path} 必须是对象。`);
   }
+  if (profile.cognitionRecords !== undefined && !Array.isArray(profile.cognitionRecords)) errors.push('profile.cognitionRecords 必须是数组。');
   if (profile.children !== undefined && !Array.isArray(profile.children)) errors.push('profile.children 必须是数组。');
   if (profile.skills !== undefined && !Array.isArray(profile.skills)) errors.push('profile.skills 必须是数组。');
   if (profile.talents !== undefined && !Array.isArray(profile.talents)) errors.push('profile.talents 必须是数组。');
@@ -7199,6 +7140,11 @@ function setView(view) {
     globalThis.localStorage?.setItem(LAST_VIEW_STORAGE_KEY, next);
   } catch {}
   document.querySelectorAll('#bs-biotracker-settings .bs-bt-view').forEach((node) => node.classList.toggle('is-active', node.dataset.view === next));
+  if (next === 'track-char') {
+    const content = document.getElementById('bs-bt-track-content');
+    const timeline = content?.querySelector('.bs-bt-cognition-timeline');
+    if (timeline?.dataset.cognitionRestorePending) restoreCognitionTimeline(content, timeline.dataset.cognitionOwner);
+  }
   if (next === 'help') {
     const viewport = document.getElementById('bs-bt-viewport');
     if (viewport) viewport.scrollTop = 0;
@@ -7281,6 +7227,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-tracker-worldbook-mode', normalizeWorldbookMode(settings.trackerWorldbookMode));
   setValue('bs-bt-system-prompt', settings.systemPrompt);
   setValue('bs-bt-world-baseline-prompt', settings.worldBaselinePrompt);
+  renderReproductiveControls(settings);
   setValue('bs-bt-register-custom-notes', settings.registryCustomNotes);
   setValue('bs-bt-register-skill-prompt', settings.registrySkillPrompt);
   setValue('bs-bt-register-outfit-prompt', settings.registryOutfitPrompt);
@@ -7866,6 +7813,7 @@ function readSettingsFromForm(ctx) {
   if (settings.trackerWorldbookMode === 'allowlist_all') settings.trackerGlobalWorldbookIncludeNames = globalFilterNames;
   else settings.trackerGlobalWorldbookExcludeNames = globalFilterNames;
   settings.systemPrompt = String(getValue('bs-bt-system-prompt')).trim() || DEFAULT_SYSTEM_PROMPT;
+  settings.reproductiveSettings = readReproductiveControls(settings);
   settings.worldBaselinePrompt = String(getValue('bs-bt-world-baseline-prompt')).trim();
   settings.registryCustomNotes = String(getValue('bs-bt-register-custom-notes')).trim();
   settings.registrySkillPrompt = String(getValue('bs-bt-register-skill-prompt')).trim();
@@ -8694,6 +8642,16 @@ async function ensureModal(ctx) {
     });
     globalThis.toastr?.success?.('[BS BioTracker] 已将全部种族与衍生类型加入提示词名录');
   });
+  document.getElementById('bs-bt-initial-cognition-add')?.addEventListener('click', addInitialCognitionRow);
+  document.getElementById('bs-bt-reproductive-save')?.addEventListener('click', () => {
+    try {
+      const settings = getSettings(ctx);
+      settings.reproductiveSettings = readReproductiveControls(settings);
+      renderReproductiveControls(settings);
+      saveSettings(ctx);
+      globalThis.toastr?.success?.('生殖世界基准已保存。');
+    } catch (error) { globalThis.toastr?.error?.(error.message); }
+  });
   document.getElementById('bs-bt-world-baseline-save')?.addEventListener('click', () => {
     const value = document.getElementById('bs-bt-world-baseline-prompt')?.value || '';
     saveWorldBaselinePrompt(ctx, value);
@@ -9064,7 +9022,7 @@ async function ensureModal(ctx) {
       globalThis.toastr?.info?.('[BS BioTracker] 注册请求正在进行中，请等待完成');
       return;
     }
-    const { targetName, declaredRace, customNotes, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier } = getRegisterFormValues();
+    const { targetName, declaredRace, customNotes, initialCognitionRecords, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier } = getRegisterFormValues();
     if (specialFetus?.error) {
       setRegisterStatus(specialFetus.error, true);
       globalThis.toastr?.warning?.(specialFetus.error, '[BS BioTracker]');
@@ -9080,7 +9038,7 @@ async function ensureModal(ctx) {
     let breedingInference = null;
     try {
       const breedingInferencePrompt = String(document.getElementById('bs-bt-breeding-inference-prompt')?.value || '').trim();
-      breedingInference = getApplicableBreedingInferenceDraft({ targetName, declaredRace, customNotes, breedingInferencePrompt });
+      breedingInference = getApplicableBreedingInferenceDraft({ ...getRegisterFormValues(), targetName, declaredRace, customNotes: '', breedingInferencePrompt });
     } catch (error) {
       const message = String(error?.message || error);
       setRegisterStatus(message, true);
@@ -9100,7 +9058,7 @@ async function ensureModal(ctx) {
     const bundleReport = {};
     try {
       const character = await runRegistry(ctx, {
-        targetName, customNotes, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier,
+        targetName, customNotes, initialCognitionRecords, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier,
         ...(useGestationModifier ? { gestationModifierMultiplier } : {}),
         ...(bundleOptions ? { bundle: bundleOptions, bundleReport } : {}),
       });

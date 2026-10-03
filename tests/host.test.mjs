@@ -587,7 +587,7 @@ test('middle-pregnancy training passes talent to one randomly selected fetus thr
   assert.equal(chatState.characters.Alice.profile.children[0].birthWeightRatio, 1.25);
   assert.equal(chatState.characters.Alice.profile.children[0].birthAffinity, 50);
   assert.equal(applyToolCall(chatState, {
-    name: 'bsNameChild', arguments: { female: 'Alice', childIndex: 0, name: '莉亚' },
+    name: 'bsRecordExperience', arguments: { female: 'Alice', action: 'child', time: '今日', childIndex: 0, name: '莉亚' },
   }).applied, true);
   chatState.characters['莉亚'] = state.createDefaultFemaleState('莉亚');
   const registered = applyInitialSkillTalentConfig(chatState, '莉亚', {

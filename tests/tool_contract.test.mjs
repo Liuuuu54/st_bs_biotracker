@@ -120,13 +120,13 @@ test('bsUpdateCharacterStatus 是变化量而不是目标值，且被夹在上�
   assert.ok(up.characters['A'].profile.base.vitality > 80);
 });
 
-test('bsNameChild 的 childIndex 从 0 起算', () => {
+test('bsRecordExperience 的 childIndex 从 0 起算', () => {
   const chatState = one();
   chatState.characters['A'].profile.children = [{ id: 'c1', name: null }, { id: 'c2', name: null }];
-  assert.equal(call(chatState, 'bsNameChild', { female: 'A', childIndex: 0, name: '甲' }).applied, true);
+  assert.equal(call(chatState, 'bsRecordExperience', { female: 'A', action: 'child', time: '第六日', childIndex: 0, name: '甲' }).applied, true);
   assert.equal(chatState.characters['A'].profile.children[0].name, '甲');
-  assert.equal(call(chatState, 'bsNameChild', { female: 'A', childIndex: 2, name: '丙' }).applied, false, '越界该拒绝');
-  assert.match(toolOf('bsNameChild').description, /0 起算/);
+  assert.equal(call(chatState, 'bsRecordExperience', { female: 'A', action: 'child', time: '第六日', childIndex: 2, name: '丙' }).applied, false, '越界该拒绝');
+  assert.match(toolOf('bsRecordExperience').description, /从\s*0\s*起/);
 });
 
 test('bsAbortion 的 fetusIndex 从 0 起算，只拿掉那一胎', () => {
@@ -147,5 +147,5 @@ test('bsAbortion 的 fetusIndex 从 0 起算，只拿掉那一胎', () => {
     ['男', '双'],
     'fetusIndex 0 该拿掉第一胎',
   );
-  assert.match(toolOf('bsAbortion').description, /0 起算/);
+  assert.match(toolOf('bsAbortion').description, /从\s*0\s*起/);
 });

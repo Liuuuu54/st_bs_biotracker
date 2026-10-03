@@ -19,10 +19,10 @@
 
 | 工具 | 參數 | 成功效果與拒絕條件 |
 | --- | --- | --- |
-| [`bsAddSperm`](../../scripts/tools.js#L6999) | 必填 `female`、`male`、`race`、`action`、`amount`；`action=insert/deposit/withdraw`。 | `insert` 與 `withdraw` 的 `amount` 必須是 0；只有已 `insert` 且來源相同時，`deposit` 才能加入正數精源，之後狀態變 `spent`，再沉積要重新插入。插入會更新近期性伴、初次性經歷與可能的產程推回；沉積會增氣味，產兆時可催熟。實際受精留待時間推進。 |
+| [`bsAddSperm`](../../scripts/tools.js) | 必填 `female/male/race/action/amount`；`action=insert/deposit/withdraw`，可傳 bool `hasCondom`。 | insert／withdraw 的量為 0；deposit 必須來源相同且已插入，量須正數。insert 預設未戴套，deposit 省略時承接、明示時更新。量超容量必失敗，否則抽可靠度；成功全擋，失敗全進。每次有效 deposit 有來源時間，重試不重抽，不清旧殘留。受精留待時間推進。 |
 | [`bsDrainSperm`](../../scripts/tools.js#L7093) | 必填 `female`、正數 `amount`。 | 按各精源目前比例減少殘留；量足夠時全清。清空後下次時間推進便沒有該批精源的受孕機會。零、負數或非有限值拒絕。 |
 | [`bsImplantEmbryo`](../../scripts/tools.js#L5287) | 必填 `female`、`provider`；可傳 `fathers`、`count`（1–50）、`race`、`fatherRace`。 | 建立外源、**尚未著床**的胚胎；`provider` 必須異於承載者。`count` 是有效胎兒卡數，不是伴生卵枚數。孕期追加只允許孕早期有已著床胎且異期窗口未關閉；回歸期拒絕。供體歸屬與種族細節見[特殊流程](special-cases.md#外源胚胎植入)。 |
-| [`bsAbortion`](../../scripts/tools.js#L5156) | 必填 `female`；可傳 `fetusIndex`（可見胎兒從 0 起算）、`force`。 | 有索引時移除該可見胎及依附的內胎；沒索引時結束整個受精／妊娠。`immune.miscarriage` 開啟時須 `force=true`。無受孕狀態、索引無效或沒有胎兒的假孕會拒絕；著床前與孕期結束走不同階段／經歷分支。 |
+| [`bsAbortion`](../../scripts/tools.js) | 必填 `female`；可傳 `purpose=emergency/termination/miscarriage`（省略為 termination）；非 emergency 可傳 `fetusIndex/force`。 | emergency 只处理服用前、來源與時間已知的著床前接觸，逐次成功率為 `E × max(0, 1−d/T)`，T 沿用角色著床時長（標準人類 6 天）；不能 force、選胎或繞过免疫，保留殘留、不计損失、不保護未來。確定結果分別累計人工終止／自然流產，著床前不计损失；減胎未結束整次妊娠時不计整次損失。 |
 | [`bsExtendPregnancy`](../../scripts/tools.js#L4474) | 必填 `female`、`action=extend/induce`、`reason`。 | `extend`：在逾期，或由逾期／延產期進入的產兆前驅延產，第一次延到 52 週、之後每次 28 天，第二次起子宮乏力 +1；已破水、已進產程時拒絕。`induce`：只在延產期，立即進入產兆前驅。 |
 | [`bsWombReturn`](../../scripts/tools.js#L917) | 必填 `female`、`returner`；可傳 `returnerRace`、非負 `hours`。 | 清空承載者原有子宮內容、建立回歸胎並按小時過渡；已註冊回歸者凍結。只可在月經階段／無經期使用，不可自我回歸或重複回歸。詳見[胎內回歸](special-cases.md#胎內回歸)。 |
 | [`bsChildbirth`](../../scripts/tools.js#L5438) | 必填 `female`。 | 將剩餘已著床胎兒轉為 `children`，結束妊娠並進產後恢復；直接呼叫記為手術產，自然走完產程則記自然產。沒有已著床胎兒或未進入妊娠／產兆／產程時拒絕。 |
@@ -34,11 +34,10 @@
 | 工具 | 參數 | 成功效果與拒絕條件 |
 | --- | --- | --- |
 | [`bsExcreteMetabolism`](../../scripts/tools.js#L3533) | 必填 `female`；可在 `options` 傳 `excretion`、`hunger`、`sleep`、`milk`、`odor`、`companionship`、`flux` 的非負減量。 | 普通角色不帶選項時使用預設直接減量；衍生類型不帶選項時預設釋放 `flux`。堵塞降低效果，進食／睡眠／排泄有交叉回升，處理前後需求等級還會影響胎兒供養。代謝免疫會拒絕。[代謝細節](character-systems.md#需求累積與處理)。 |
-| [`bsUpdatePsychology`](../../scripts/tools.js#L6912) | 必填 `female`、`options.mens` 或 `options.preg`；數值欄位為增減量，布林欄位為新值。 | 月經側可改 `mastery/desire/autonomy/isChaste/hasContraception`；孕育側可改 `cognition/bonding/stance/knowsFatherSource/hasProfessionalPrenatalCare`。依當前階段選側，數值夾在 0–100；未推論心理、側別錯誤或本故事小時已更新會拒絕。 |
+| [`bsUpdatePsychology`](../../scripts/tools.js) | 必填 `female/options`，數值為變化量；mens 可改 `mastery/desire/autonomy`，preg 可改 `confidence/bonding/stance`。 | 只改当前侧已初始化的值，未知 null 不累加；恢復期、轉側待推演、未啟用或本故事小時已成功更新时拒絕。數值夾在 0–100，無心理 bool。 |
 | [`bsWriteDiary`](../../scripts/tools.js#L6350) | 必填 `female`、日期標題 `time`、正文 `content`。 | 追加一則主觀日記並記錄故事日；同角色同故事日（`floor(minutesPassed/1440)`）已有日記時拒絕。`time` 是文字標題，不決定故事日索引；角色離場仍可寫。 |
 | [`bsSetDescription`](../../scripts/tools.js#L6694) | 必填 `female`、`options.normalDescription` 或 `pregnantDescription`。 | 文字格式為 `子欄名|內容;;`，逐子欄合併；省略子欄表示保留，空補丁不清空。已有描述時不得新增未知子欄，格式錯誤會拒絕整次更新；原本空白的描述可首次建立子欄。[合併實作](../../scripts/tools.js#L6464)。 |
-| [`bsUpdateExperience`](../../scripts/tools.js#L6746) | 必填 `female`、`options`；可設 `virginity/latestSexPartner/emotionalMate/marriageMate`，以及四種懷孕／生產／流產經歷數。 | 直接設定欄位，非增減量；數字限制 0–9999，不觸發額外生理規則。沒有可更新欄位時拒絕。 |
-| [`bsNameChild`](../../scripts/tools.js#L6779) | 必填 `female`、從 0 起算的 `childIndex`、非空 `name`。 | 只更改 `children[childIndex].name`；索引越界或名字空白會拒絕，不改血緣來源。 |
+| [`bsRecordExperience`](../../scripts/tools.js) | 必填 `female/action/time`；`cognition` 另需 `method/content`，方法為 `perception/guess/informed/test/prenatal`；四種關係 action 需 `partner`；`child` 需從 0 起的 `childIndex` 及 `name` 或 `selectedFather`。 | action 參數互斥，認知只追加角色主觀紀錄；關係每次改一人且婚姻與交往互不連動。`selectedFather=null` 取消、省略保留，不改實際血緣與後臺經驗次數。 |
 
 ## 服裝與技能
 
