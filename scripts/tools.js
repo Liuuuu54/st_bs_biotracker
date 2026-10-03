@@ -296,7 +296,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         female: { type: 'string', minLength: 1 },
         action: { type: 'string', enum: ['cognition', 'date', 'breakup', 'marry', 'divorce', 'child'] },
         time: { type: 'string', minLength: 1 },
-        method: { type: 'string', enum: ['perception', 'guess', 'informed', 'test', 'prenatal'] },
+        method: { type: 'string', enum: ['perception', 'guess', 'informed', 'test', 'prenatal'], description: 'perception 亲历或身体自觉；guess 猜测或自行推算；informed 被他人告知；test 借助检测手段（验孕棒、药草、占卜、魔法等，只用世界观里已有的手段）；prenatal 由专业者诊察（医师、产婆、祭司、治疗师等）。不得引入世界观没有的器具。' },
         content: { type: 'string', minLength: 1 }, partner: { type: 'string', minLength: 1 },
         childIndex: { type: 'integer', minimum: 0 }, name: { type: 'string', minLength: 1 },
         selectedFather: { type: ['string', 'null'], minLength: 1 },
@@ -383,7 +383,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         male: { type: 'string' },
         race: { type: 'string' },
         action: { type: 'string', enum: ['insert', 'deposit', 'withdraw'] },
-        hasCondom: { type: 'boolean', description: '本次是否戴套；insert 设置、deposit 可显式更新、省略沿用，withdraw 不结算。' },
+        hasCondom: { type: 'boolean', description: '本次是否使用屏障式避孕（套子，或世界观中的等效手段，如羊肠套、魔法屏障）；只有剧情确实使用时才为 true，不得引入世界观没有的器具。insert 设置、deposit 可显式更新、省略沿用，withdraw 不结算。' },
         amount: { type: 'number', description: 'insert／withdraw 必须为 0；deposit 必须为正数。' },
       },
       required: ['female', 'male', 'race', 'action', 'amount'],
@@ -446,7 +446,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAbortion',
-    description: 'purpose=emergency 表示事后避孕药/紧急避孕尝试，仅著床前处理服药前已有接触，按各自接触时间结算，窗口沿用该角色的着床时长，成功不清可见残留，不提供未来保护；服药不等于成功、结果下轮承接，不代表角色知道。purpose=termination（旧调用默认）表示已明确成功的人工终止，purpose=miscarriage 落实非人工流产；确定结果不重抽，不自动 force。' + '已成立妊娠的自然流产与人工终止分别累计，著床前不计妊娠损失。'
+    description: 'purpose=emergency 表示事后避孕药/紧急避孕尝试（或世界观中的等效手段，如药草、魔法；世界观没有的手段不得引入），仅著床前处理服药前已有接触，按各自接触时间结算，窗口沿用该角色的着床时长，成功不清可见残留，不提供未来保护；服药不等于成功，结果只在下一次叙事提示，不代表角色知道。purpose=termination（旧调用默认）表示已明确成功的人工终止，purpose=miscarriage 落实非人工流产；确定结果不重抽，不自动 force。' + '已成立妊娠的自然流产与人工终止分别累计，著床前不计妊娠损失。'
       + '可指定 fetusIndex 做减胎（只拿掉那一胎，其余继续）；fetusIndex 从 0 起算，越界会被拒绝——'
       + '系统通知与介面说的「第 2 胎」对应 fetusIndex=1，不要直接照抄那个序号。省略 fetusIndex 则终止整个妊娠。'
       + '若 miscarriage 保护开启，则需 force=true 才会生效。',

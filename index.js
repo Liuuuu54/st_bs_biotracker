@@ -1278,7 +1278,7 @@ function addInitialCognitionRow() {
   const row = document.createElement('div');
   row.className = 'bs-bt-cognition-row settings_section';
   row.innerHTML = `<label>故事日期<input class="text_pole" data-cognition-time placeholder="例如：旅途第六日" /></label>
-    <label>认知方式<select class="text_pole" data-cognition-method>${['亲历／自觉','猜测／自算','被告知','验孕','产检'].map((label,i) => `<option value="${COGNITION_METHODS[i]}">${label}</option>`).join('')}</select></label>
+    <label>认知方式<select class="text_pole" data-cognition-method>${['亲历／自觉','猜测／自算','被告知','检测','诊察'].map((label,i) => `<option value="${COGNITION_METHODS[i]}">${label}</option>`).join('')}</select></label>
     <label>认知内容<textarea class="text_pole bs-bt-textarea" rows="2" data-cognition-content placeholder="她从什么线索得知了什么、如何相信或误解"></textarea></label>
     <button type="button" class="menu_button" data-cognition-remove>移除此笔</button>`;
   row.querySelector('[data-cognition-remove]').addEventListener('click', () => row.remove());
@@ -4722,7 +4722,7 @@ function restoreCognitionTimeline(content, owner) {
 
 function renderCognitionTimeline(records) {
   if (!records.length) return '<div class="bs-bt-track-description-empty">暂无认知纪录；不代表角色相信未孕。</div>';
-  const methodLabels = { test: '验孕', prenatal: '产检', perception: '感知', informed: '告知', guess: '猜测' };
+  const methodLabels = { test: '检测', prenatal: '诊察', perception: '感知', informed: '告知', guess: '猜测' };
   return `<div class="bs-bt-cognition-timeline" tabindex="0" role="region" aria-label="认知纪录时间轴">
     <ol class="bs-bt-cognition-timeline-list">
       ${records.map((item, index) => `<li class="bs-bt-cognition-timeline-stop">
