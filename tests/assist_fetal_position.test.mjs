@@ -138,6 +138,17 @@ test('双胎互锁：托回无效，把其中一胎转开才解得开，第二�
   assert.equal('inletIntruder' in P(chatState).pregnant.fetuses[1], false);
 });
 
+test('互锁解开后，难产警示与「产程持续受阻」不留给下一轮叙事', () => {
+  const chatState = setup('第一产程', [
+    fetus(1, { descentStage: 0, tendencyAngle: 180 }), fetus(2, { descentStage: 0, inletIntruder: true, tendencyAngle: 0 }),
+  ], { pregnant: { laborPhase: '潜伏期', presentingEmbryoId: 1 }, realistic: true });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { minute: 10 } });
+  assert.match(String(P(chatState).notify.firstly), /难产警示.*互锁/);
+  assert.equal(assist(chatState, 'rotate', { fetusIndex: 1, targetAngle: 30 }).applied, true);
+  assert.doesNotMatch(String(P(chatState).notify.firstly), /难产警示/);
+  assert.doesNotMatch(String(P(chatState).notify.secondly), /产程持续受阻/);
+});
+
 test('肩难产：不给角度直接转动肩部即可解开，不向已归零的母体收取活力；之后照常出生', () => {
   Math.random = () => 0.99;
   const chatState = setup('第二产程', [fetus(1, { descentStage: 3, shoulderDystocia: true })], {

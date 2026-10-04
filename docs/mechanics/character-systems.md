@@ -28,12 +28,12 @@
 
 ## 技能與天賦
 
-技能目錄是聊天共用的定義，角色各自保存技能、天賦與歷史。技能最高 10 級、天賦最高 5 級，歷史最多保留 100 筆；技能經驗門檻及升級由 [skill_config.js](../../scripts/skill_config.js#L1)計算。`bsRegisterSkillDefinition` 建立／重用定義；`bsTrainSkill` 須有原因和整數技能經驗，尚未覺醒的技能還須 `awaken=true`。LLM 工具不能直接修改角色天賦。孕中期至部分產程階段，訓練可依隨機選中的已著床胎兒親近度，將正或負的經驗傳至其天賦。[定義工具](../../scripts/tools.js#L6831)、[訓練工具](../../scripts/tools.js#L6846)。初始化時也可由角色卡推論初始技能與天賦，[註冊子流程](../../scripts/registry.js#L1946)。
+技能目錄是聊天共用的定義，角色各自保存技能、天賦與歷史。技能最高 10 級、天賦最高 5 級，歷史最多保留 100 筆；技能經驗門檻及升級由 [skill_config.js](../../scripts/skill_config.js#L1)計算。`bsRegisterSkillDefinition` 建立／重用定義；`bsTrainSkill` 須有原因和整數技能經驗，尚未覺醒的技能還須 `awaken=true`。LLM 工具不能直接修改角色天賦。孕中期至部分產程階段，訓練可依隨機選中的已著床胎兒親近度，將正或負的經驗傳至其天賦。[定義工具](../../scripts/tools.js#L6837)、[訓練工具](../../scripts/tools.js#L6852)。初始化時也可由角色卡推論初始技能與天賦，[註冊子流程](../../scripts/registry.js#L1946)。
 
 ## 衣櫃、服裝和描述
 
-衣櫃保存長期物件；`outfit` 保存目前主服、配件、臨時衣物及穿著狀態。衣物有遮蔽、支撐、容納、方便四維度，主服與配件另有各自的欄位規則。[欄位及正規化](../../scripts/wardrobe_config.js#L1)。`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` 改變資料；懷孕和產後穿著壓力依身體狀態與衣物尺寸計算，供 PDA 顯示。[衣物工具](../../scripts/tools.js#L6554)、[穿著壓力](../../scripts/tools.js#L737)。
+衣櫃保存長期物件；`outfit` 保存目前主服、配件、臨時衣物及穿著狀態。衣物有遮蔽、支撐、容納、方便四維度，主服與配件另有各自的欄位規則。[欄位及正規化](../../scripts/wardrobe_config.js#L1)。`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` 改變資料；懷孕和產後穿著壓力依身體狀態與衣物尺寸計算，供 PDA 顯示。[衣物工具](../../scripts/tools.js#L6560)、[穿著壓力](../../scripts/tools.js#L737)。
 
-`descriptions.normalDescription` 與 `pregnantDescription` 是角色狀態文字，`bsSetDescription` 可合併／替換。這些文字隨提示投影送給模型；它們本身不是生理數值的計算來源。[描述工具](../../scripts/tools.js#L6493)、[追蹤狀態投影](../../scripts/tracker.js#L1301)。
+`descriptions.normalDescription` 與 `pregnantDescription` 是角色狀態文字，`bsSetDescription` 可合併／替換。這些文字隨提示投影送給模型；它們本身不是生理數值的計算來源。[描述工具](../../scripts/tools.js#L6499)、[追蹤狀態投影](../../scripts/tracker.js#L1301)。
 
 認知時間軸每筆標題預設折疊，點擊展開內容；刷新與切頁保留手動開合狀態，新追加紀錄預設折疊。

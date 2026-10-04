@@ -4,7 +4,7 @@
 
 ## 時間怎樣推進
 
-`bsPassedTime` 接受分鐘、時、日、週、月、年，可相加；月按 30 日，年按 365 日，總量必須大於零。一次呼叫會走訪**本聊天所有已註冊角色**，最後增加聊天的 `minutesPassed`。[工具入口](../../scripts/tools.js#L6419)。被 `bsWombReturn` 收進另一角色體內者暫時凍結生理；承載者已不存在時會先解除凍結。
+`bsPassedTime` 接受分鐘、時、日、週、月、年，可相加；月按 30 日，年按 365 日，總量必須大於零。一次呼叫會走訪**本聊天所有已註冊角色**，最後增加聊天的 `minutesPassed`。[工具入口](../../scripts/tools.js#L6420)。被 `bsWombReturn` 收進另一角色體內者暫時凍結生理；承載者已不存在時會先解除凍結。
 
 每角色保存時、日、週零頭。`deltaDays` 可是小數，用於連續累積；`passedHours`、`passedDays`、`passedLifestyleWeeks` 只在跨過整個單位時觸發對應效果。因此分成幾次推進一小時，仍會在累積滿一小時後產生小時效果。[buildTimeTick](../../scripts/tools.js#L6032)。
 

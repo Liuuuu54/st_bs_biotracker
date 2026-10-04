@@ -564,7 +564,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     description: '剧情明确出现人工、器械或魔法的胎位操作，或胎儿有意识地自己转身、往上缩、往下钻、踢破胎膜时才调用；自然胎动与下降由 bsPassedTime 自动处理，不要为了「肚子下沉」「胎儿踢了一下」之类的描写调用。'
       + 'actor=fetus 表示这一胎自己动（任何胎儿都可以）：不消耗母体活力，但母体一样承受疼痛或心理压力；胎儿不能把自己拉出来（extract），也解不开自己卡住的肩膀。其余限制与外力操作相同：入盆后只能自己小幅转动（30° 以内）、胎背只能前后对调，产程中不能自己缩回、也不能自己往下钻（下降交给宫缩），但仍可踢破胎膜；互锁的那一胎可以自己转开。省略 actor 即为外力操作。'
       + 'fetusIndex 是 fetuses 列表下标（从 0 起算），省略时作用于正在下降／即将娩出的那一胎。每个动作都要通过检查才会生效，被拒绝时状态完全不变，叙事不得写成已成功。'
-      + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位），也可以用 backSide 把胎背转到 左前／右前／左后／右后（两者可同时给，至少给一个）；已入盆的胎儿只能小幅校正角度，胎背只能前后对调、不能换左右（例如把枕后位的右后转成右前）；肩难产时可不给角度直接转动肩部解开卡点。'
+      + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位），也可以用 backSide 把胎背转到 左前／右前／左后／右后（两者可同时给，至少给一个）；已入盆的胎儿只能小幅校正角度（与目前角度相差最多 30°，超过会被拒绝），胎背只能前后对调、不能换左右（例如把枕后位的右后转成右前）；肩难产时可不给角度直接转动肩部解开卡点。'
       + 'lift：把胎儿往上托回一格；产兆前驱托高领头胎儿会把分娩延后，这是要跟宫缩对抗的，母体活力不足会被拒绝，并带来一阵剧痛。产程中已入盆的胎儿不能再托回；双胎互锁只能用 rotate 转开其中一胎。'
       + 'descend：把胎儿往下推送一格；产兆前驱推送领头胎儿会缩短前驱，时间归零即进入第一产程；正式产程中不能用。'
       + 'rupture：破水（每一胎有各自的羊膜，同卵共囊一起破）。只有在产兆前驱且宫压已达上限的 66%，或已在第一／第二产程时才会生效；产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用，系统未确认前不要擅自描写破水。孕中孕内胎的胎膜破了代表它被宿主在宫内生出来，不算母亲破水。'
@@ -3884,7 +3884,7 @@ const INLET_INTRUSION_CHANCE = 0.2;
 /** 各类硬阻塞可用的助产解法，写进难产警示 */
 const OBSTRUCTION_ADVICE = Object.freeze({
   transverse: '可用 bsAssistFetalPosition（action=rotate）把胎儿转成头位或臀位，',
-  twin_lock: '可用 bsAssistFetalPosition（action=rotate）转动其中一胎解开互锁，',
+  twin_lock: '可用 bsAssistFetalPosition（action=rotate）把其中一胎小幅转开解开互锁（两胎都已入盆，最多转 30°，例如头位那胎转到 targetAngle=30），',
   shoulder_dystocia: '可用 bsAssistFetalPosition（action=rotate）转动肩部或（action=extract）助产拉出，',
 });
 
@@ -6414,7 +6414,8 @@ function applyTimeToCharacter(character, tick) {
   const currentNotify = profile.notify || notify;
   profile.notify = {
     ...currentNotify,
-    firstly: stageChanged ? `${next.name}进入了${stage}` : currentNotify.firstly || '',
+    // 同一 tick 写下的提示（异期胎揭晓、难产警示）不能被阶段提示盖掉；已含阶段提示就不重复
+    firstly: stageChanged ? mergeStageNotice(`${next.name}进入了${stage}`, notify.firstly || currentNotify.firstly) : currentNotify.firstly || '',
   };
   profile.cooldown = {
     ...cooldown,
@@ -6482,6 +6483,11 @@ export function writeDiaryEntry(chatState, female, { time, content } = {}, { rep
   next.profile = profile;
   chatState.characters[female] = next;
   return { applied: true, replaced: sameDayIndex >= 0, message: `bsWriteDiary applied to ${female}: ${title}.` };
+}
+
+function mergeStageNotice(stageText, own) {
+  const text = String(own || '');
+  return text.includes(stageText) ? text : [stageText, text].filter(Boolean).join('；');
 }
 
 function applyPassedTime(chatState, args) {
@@ -7831,6 +7837,7 @@ export function applyToolCall(chatState, call) {
     const stage = character.profile?.base?.stage;
     if (result.applied && stage === '月经期' && oldStage !== stage && call.name !== 'bsPassedTime') refreshCognition(character.profile);
     if (result.applied && call.name !== 'bsPassedTime') syncPsychologyLifecycle(character.profile, oldStage); if (result.applied && !['bsPassedTime', 'bsExcreteMetabolism'].includes(call.name) && (oldStage !== stage || oldIntact[name] !== hasIntactPresentingSac(character.profile))) refreshAdvisoryNotify(character.profile, name);
+    if (result.applied && call.name !== 'bsPassedTime') clearResolvedObstructionNotice(character.profile);
   }
   if (guarded && result.applied) {
     const profile = chatState.characters[args.female].profile;
@@ -7939,6 +7946,15 @@ export function applyToolCallsResult(ctx, result, sourceId = '') {
 /** 破水、娩出、引产等直接改变阶段或胎膜的工具：重建提醒，否则旁白会同时看到「破水了」与「尚未破水」；跨日的日记提醒照旧保留 */
 function hasIntactPresentingSac(profile) {
   return clampNumber(getPresentingAmnionDurability(profile?.pregnant || {}), -100, 100, 0) > 0;
+}
+
+/** 助产、离场或手术解开阻塞后，不留下「难产警示／产程持续受阻」给下一轮叙事 */
+function clearResolvedObstructionNotice(profile) {
+  const notify = profile?.notify;
+  if (!notify || getLaborObstruction(profile)) return;
+  const strip = (text, marker) => String(text || '').split('；').filter((part) => !part.includes(marker)).join('；');
+  if (String(notify.firstly || '').includes('发生难产警示')) notify.firstly = strip(notify.firstly, '发生难产警示');
+  if (String(notify.secondly || '').includes('产程持续受阻')) notify.secondly = strip(notify.secondly, '产程持续受阻');
 }
 
 function refreshAdvisoryNotify(profile, female) {

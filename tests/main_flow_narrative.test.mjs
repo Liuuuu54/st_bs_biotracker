@@ -118,6 +118,6 @@ test('an obstruction warning reaches the narrator without the tool advice', () =
   for (let i = 0; i < 4 && !/难产/.test(chatState.characters['甲'].profile.notify.firstly); i += 1) applyToolCall(chatState, { name: 'bsPassedTime', arguments: { minute: 30 } });
   assert.match(chatState.characters['甲'].profile.notify.firstly, /横位，无法入盆，可用 bsAssistFetalPosition/);
   const prompt = buildMainFlowPrompt(ctx, settings);
-  assert.match(prompt, /"firstly":"甲发生难产警示：领头的胎儿呈横位，无法入盆"/);
+  assert.match(prompt, /"firstly":"(甲进入了第一产程；)?甲发生难产警示：领头的胎儿呈横位，无法入盆"/);
   assert.doesNotMatch(prompt, /\bbs[A-Z]\w*/);
 });

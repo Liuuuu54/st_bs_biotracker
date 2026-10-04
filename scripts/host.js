@@ -185,6 +185,11 @@ function getFallbackHostChatId(ctx) {
   return `${ctx?.characterId ?? 'char'}:${ctx?.groupId ?? 'solo'}`;
 }
 
+/** 宿主还没给聊天 id 时的临时键（角色索引:群组）；切卡瞬间常见，不能当成一个真的聊天 */
+export function isPlaceholderHostChatId(ctx, chatId = getHostChatId(ctx)) {
+  return chatId === `${ctx?.characterId ?? 'char'}:${ctx?.groupId ?? 'solo'}`;
+}
+
 export async function resolveHostChatId(ctx) {
   const fallbackId = getFallbackHostChatId(ctx);
   if (getHostKind() !== 'tauritavern') return fallbackId;

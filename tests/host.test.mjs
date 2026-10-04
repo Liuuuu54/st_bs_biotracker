@@ -142,6 +142,27 @@ test('Luker 2.7 envelopes: ok state hydrates, ok:false read stays unconfirmed, o
   resetGlobals();
 });
 
+test('a forked chat inherits a matching snapshot, but the placeholder key during a card switch does not', () => {
+  resetGlobals();
+  const chat = [{ name: 'A', is_user: false, mes: '开场' }, { name: 'U', is_user: true, mes: '你好' }];
+  const extensionSettings = {};
+  const source = { chatId: 'origin', characterId: 3, chat, extensionSettings, saveSettingsDebounced() {} };
+  globalThis.SillyTavern = { getContext: () => source };
+  const settings = state.getSettings(source);
+  const origin = state.getChatState(source, settings);
+  origin.characters.甲 = state.createDefaultFemaleState('甲');
+  state.recordChatStateSnapshot(source, origin, { reason: 'seed' });
+
+  const switching = { characterId: 3, chat, extensionSettings, saveSettingsDebounced() {} };
+  assert.equal(host.isPlaceholderHostChatId(switching), true);
+  assert.equal(Object.keys(state.getChatState(switching, settings).characters).length, 0, '临时键不复制分支资料');
+
+  const fork = { chatId: 'fork', characterId: 3, chat, extensionSettings, saveSettingsDebounced() {} };
+  assert.equal(host.isPlaceholderHostChatId(fork), false);
+  assert.ok(state.getChatState(fork, settings).characters.甲, '真正的分支聊天照常继承');
+  resetGlobals();
+});
+
 test('character additional worldbooks come from charLore for the current character only', async () => {
   resetGlobals();
   const ctx = {

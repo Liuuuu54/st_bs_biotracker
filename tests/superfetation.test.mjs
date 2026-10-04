@@ -146,6 +146,18 @@ test('进入孕中期才揭晓，可见胎数同时增加', () => {
   assert.equal(P(chatState).pregnant.fetuses.filter(isFetusKnownToCharacter).length, 2, '揭晓后胎数才增加');
 });
 
+test('一次推进跨进孕中期时，揭晓提示与阶段提示并存', () => {
+  const chatState = one({ stage: '孕早期' }, {
+    pregnantDays: 78, effectivePregnantDays: 78, fetusesCount: 2,
+    fetuses: [fetus(), lateFetus({ conceivedAtDays: 30, revealed: undefined })],
+  });
+  step(chatState, 28);
+  assert.equal(P(chatState).base.stage, '孕中期');
+  assert.equal(lateOf(chatState).revealed, true);
+  assert.match(P(chatState).notify.firstly, /进入了孕中期/);
+  assert.match(P(chatState).notify.firstly, /另有 1 胎/, '揭晓提示不能被阶段提示盖掉');
+});
+
 test('每胎用自己的孕龄，不是共用时钟', () => {
   const chatState = one({ stage: '孕中期' }, {
     pregnantDays: 100, effectivePregnantDays: 100, fetusesCount: 2,

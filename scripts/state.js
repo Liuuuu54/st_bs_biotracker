@@ -30,6 +30,7 @@ import {
   getHostExtensionSettings,
   getHostKind,
   isHostChatStateConfirmed,
+  isPlaceholderHostChatId,
   getHostWorldBook,
   hasAbsoluteHostChatView,
   loadHostWorldInfo,
@@ -1068,7 +1069,8 @@ export function getChatState(ctx, settings) {
   const chatKey = getChatKey(ctx);
   if (!settings.chatStates[chatKey]) {
     settings.chatStates[chatKey] = createEmptyChatState();
-    inheritChatStateFromMatchingChat(ctx, settings);
+    // 临时键只是切卡过渡，复制分支资料过去只会在设定里留下无主副本
+    if (!isPlaceholderHostChatId(ctx, chatKey)) inheritChatStateFromMatchingChat(ctx, settings);
   }
   const chatState = settings.chatStates[chatKey];
   let shouldSave = false;
