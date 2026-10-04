@@ -172,7 +172,7 @@ export function canWriteCardSettings(ctx) {
   return Boolean(target && typeof target.context?.writeExtensionField === 'function');
 }
 
-// Native ST deep-merges objects on disk. Tombstones prevent removed nested overrides
+// ST and TauriTavern deep-merge objects on disk. Tombstones prevent removed nested overrides
 // from resurrecting after reload; Luker replaces the complete extension namespace.
 function withDeletions(previous, next) {
   if (!object(previous) || !object(next)) return next;
@@ -211,7 +211,7 @@ export async function updateCardSettings(ctx, patch) {
     }
     const clean = sanitizeCardSettings(next);
     const empty = Object.keys(clean).length === 1;
-    const payload = empty ? UNSET_VALUE : (getHostKind() === 'sillytavern' ? withDeletions(previous, clean) : clean);
+    const payload = empty ? UNSET_VALUE : (getHostKind() === 'luker' ? clean : withDeletions(previous, clean));
     const previousJson = target.card.json_data;
     try {
       await ctx.writeExtensionField(target.id, CARD_SETTINGS_KEY, payload);
@@ -222,7 +222,7 @@ export async function updateCardSettings(ctx, patch) {
       }
       // These native APIs log HTTP failures without rejecting. Re-read the stored
       // card before reporting success; never rely on their optimistic memory update.
-      if (getHostKind() !== 'tauritavern' && typeof ctx.getRequestHeaders === 'function' && target.card.avatar) {
+      if (typeof ctx.getRequestHeaders === 'function' && target.card.avatar) {
         const response = await fetch('/api/characters/get', { method: 'POST', headers: ctx.getRequestHeaders(), body: JSON.stringify({ avatar_url: target.card.avatar }) });
         if (!response.ok) throw new Error('无法确认角色卡是否已保存。');
         const stored = await response.json();

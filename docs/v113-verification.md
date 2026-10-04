@@ -39,16 +39,18 @@
 |---|---|
 | SillyTavern 1.19.0 | 隔離實機通過：匯入卡片、自動技能種子、保存回讀、巢狀刪除、種子匯出不含 ID、命名空間刪除與其他擴充保留；未處理例外 0 |
 | Luker 2.7.0 | 隔離實機通過：匯入卡片、自動技能種子、保存回讀、巢狀刪除、種子匯出不含 ID、命名空間刪除與其他擴充保留；未處理例外 0 |
-| TauriTavern | 安裝存在，未有可用原生 WebView 驅動；真實宿主驗收待測 |
+| TauriTavern 2.3.0 | 正常安裝以 WebView2 除錯埠驅動（非隔離，先備份資料夾，測試卡與聊天事後刪除）通過：匯入卡片、自動技能種子、存卡回讀、巢狀刪除、命名空間刪除與其他擴充保留；百科「目前角色卡」選項、存世界基準、清除卡片基準回落全域、技能頁帶入／存卡／清除按鈕；切到別張卡不帶出卡片設定 |
 
 重現命令：`node tests/check-card-settings-host.mjs D:/SillyTavern sillytavern`、`node tests/check-card-settings-host.mjs D:/Luker luker`。兩者使用獨立插件名稱 `st_bs_biotracker_v113_test`，避開宿主全域插件路徑優先載入舊版檔案的情況；正常使用的設定、卡片與插件沒有被本次測試改寫。
 
 最終實機日誌與結果位於 `%TEMP%/biotracker-sillytavern-real-kgYaUh`、`%TEMP%/biotracker-luker-real-ddS72c`；mock 截圖與結果位於 `%TEMP%/biotracker-card-ui-E7To7p`。實機載入的 `index.js` SHA-256 為 `ed03bcc16ea461b7dec7abd8b54086926687fe0eaf70bdef33b46e1bcaf599aa`，兩宿主均與工作樹比對一致。
 
+TauriTavern 實測發現：它的 `writeExtensionField` 與 SillyTavern 相同，走 `/api/characters/merge-attributes` 深合併並處理巢狀刪除標記，原本只對 SillyTavern 送標記，導致刪掉的巢狀欄位（例如卡片上某物種的單一參數）留在磁碟、重載後復活；`/api/characters/get` 也可用。現改為除 Luker 外都送刪除標記，並在 TauriTavern 一併回讀核對；修正後重測通過，回歸 866 項通過。
+
 ## 宿主介面來源與限制
 
 `writeExtensionField(characterId, key, value)`、`UNSET_VALUE`、`getRequestHeaders()` 與 `/api/characters/get` 依本機 SillyTavern 1.19.0、Luker 2.7.0 的 `public/scripts/extensions.js`、`st-context.js`、`src/endpoints/characters.js` 查證。SillyTavern 的伺服器會深合併並處理刪除標記；Luker 的寫入宣告為命名空間整份取代。原生寫卡介面可能記錄 HTTP 失敗後仍正常返回，因此插件在提供讀取介面的宿主回讀已保存卡片核對。
 
-TauriTavern 只按實際暴露的寫卡函式探測；未提供時隱藏寫卡操作、仍讀取卡片設定，沒有發明另一套寫卡 API。插件沒有新增第三方函式庫或遠端載入依賴。
+各宿主只按實際暴露的寫卡函式探測（TauriTavern 2.3.0 有提供）；未提供時隱藏寫卡操作、仍讀取卡片設定，沒有發明另一套寫卡 API。插件沒有新增第三方函式庫或遠端載入依賴。
 
-完整跨宿主匯出／再匯入、真實模型對避孕結果的承接、刪樓／分支與原生 TauriTavern WebView 操作仍需實機證據。無此避孕手段的世界觀開關未新增；本版沿用世界基準文字與既有工具約束。
+完整跨宿主匯出／再匯入、真實模型對避孕結果的承接、刪樓／分支與 TauriTavern 的每聊天 sidecar 回退仍需實機證據。無此避孕手段的世界觀開關未新增；本版沿用世界基準文字與既有工具約束。

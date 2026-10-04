@@ -194,6 +194,22 @@ test('native ST deep-merge deletion sends nested tombstones then canonical JSON 
   assert.equal(getCardSettings(ctx).skills.catalog.length, 1);
 });
 
+test('TauriTavern deep-merges like ST and gets tombstones; Luker replaces the namespace and does not', async () => {
+  for (const kind of ['tauritavern', 'luker']) {
+    const ctx = context({ ...seed(), racePhysiologyOverrides: { 人类: { breedTolerance: 3, embryoType: '卵生' } } });
+    if (kind === 'tauritavern') globalThis.__TAURITAVERN__ = {};
+    else globalThis.Luker = { getContext: () => ctx };
+    try {
+      const calls = []; const writer = ctx.writeExtensionField;
+      ctx.writeExtensionField = async function(...args) { calls.push(clone(args[2])); return writer.apply(this, args); };
+      await updateCardSettings(ctx, { racePhysiologyOverrides: { 人类: { embryoType: '胎生' } } });
+      assert.equal(calls[0].racePhysiologyOverrides.人类.breedTolerance, kind === 'tauritavern' ? '__@@UNSET@@__' : undefined, kind);
+      assert.equal(calls.length, kind === 'tauritavern' ? 2 : 1, kind);
+      assert.equal(getCardSettings(ctx).racePhysiologyOverrides.人类.breedTolerance, undefined, kind);
+    } finally { delete globalThis.__TAURITAVERN__; delete globalThis.Luker; }
+  }
+});
+
 test('concurrent card writes serialize and merge the latest namespace, failed writes restore memory', async () => {
   const ctx = context();
   await Promise.all([updateCardSettings(ctx, { worldBaselinePrompt: 'A' }), updateCardSettings(ctx, { reproductiveSettings: { condomCapacity: 25 } })]);
