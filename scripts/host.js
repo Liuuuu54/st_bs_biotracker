@@ -436,8 +436,8 @@ async function waitForTauriChatStoreHandle(timeoutMs = TAURI_HANDLE_WAIT_TIMEOUT
   return null;
 }
 
-// Luker 2.7 的 getChatState／updateChatState 回 {ok, state|reason, hint} 信封、失败不抛错；
-// 旧版直接回 payload。ok:false 当成读写失败抛出：读取失败不能当成「没有存档」去写空，写入失败不能当成已保存。
+// Luker 2.8 的 getChatState／updateChatState 回 {ok, state|reason, hint} 信封、失败不抛错；
+// 2.7 及更早直接回 payload。ok:false 当成读写失败抛出：读取失败不能当成「没有存档」去写空，写入失败不能当成已保存。
 function unwrapLukerStateResult(result) {
   if (!result || typeof result !== 'object' || typeof result.ok !== 'boolean' || 'version' in result) return result;
   if (!result.ok) throw new Error(`Luker chat state ${result.reason || 'error'}${result.hint ? `: ${result.hint}` : ''}`);

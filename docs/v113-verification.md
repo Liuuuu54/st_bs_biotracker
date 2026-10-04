@@ -38,7 +38,7 @@
 | 宿主 | 狀態 |
 |---|---|
 | SillyTavern 1.19.0 | 隔離實機通過：匯入卡片、自動技能種子、保存回讀、巢狀刪除、種子匯出不含 ID、命名空間刪除與其他擴充保留；未處理例外 0 |
-| Luker 2.7.0 | 隔離實機通過：匯入卡片、自動技能種子、保存回讀、巢狀刪除、種子匯出不含 ID、命名空間刪除與其他擴充保留；未處理例外 0 |
+| Luker 2.7.0 之後的開發版（v2.7.0-442，已是 2.8 的介面） | 隔離實機通過：匯入卡片、自動技能種子、保存回讀、巢狀刪除、種子匯出不含 ID、命名空間刪除與其他擴充保留；未處理例外 0 |
 | TauriTavern 2.3.0 | 正常安裝以 WebView2 除錯埠驅動（非隔離，先備份資料夾，測試卡與聊天事後刪除）通過：匯入卡片、自動技能種子、存卡回讀、巢狀刪除、命名空間刪除與其他擴充保留；百科「目前角色卡」選項、存世界基準、清除卡片基準回落全域、技能頁帶入／存卡／清除按鈕；切到別張卡不帶出卡片設定 |
 
 重現命令：`node tests/check-card-settings-host.mjs D:/SillyTavern sillytavern`、`node tests/check-card-settings-host.mjs D:/Luker luker`。兩者使用獨立插件名稱 `st_bs_biotracker_v113_test`，避開宿主全域插件路徑優先載入舊版檔案的情況；正常使用的設定、卡片與插件沒有被本次測試改寫。
@@ -49,7 +49,7 @@ TauriTavern 實測發現：它的 `writeExtensionField` 與 SillyTavern 相同�
 
 ## 不花錢的實機回歸（2026-10-04）
 
-不呼叫模型：工具結算直接呼叫插件的 `applyToolCallsResult`，聊天訊息用 `/send`、`/cut`。SillyTavern 1.19.0、Luker 2.7.0 用臨時資料目錄與工作樹 junction 隔離；TauriTavern 2.3.0 在使用者安裝上以 WebView2 除錯埠驅動，測試卡、聊天、群組與自動備份事後刪除，插件檔案還原。
+不呼叫模型：工具結算直接呼叫插件的 `applyToolCallsResult`，聊天訊息用 `/send`、`/cut`。SillyTavern 1.19.0、Luker（先以 v2.7.0-442 開發版，修正後再以 2.8.0 重跑全套）用臨時資料目錄與工作樹 junction 隔離；TauriTavern 2.3.0 在使用者安裝上以 WebView2 除錯埠驅動，測試卡、聊天、群組與自動備份事後刪除，插件檔案還原。
 
 | 項目 | SillyTavern | Luker | TauriTavern |
 |---|---|---|---|
@@ -65,7 +65,7 @@ TauriTavern 實測發現：它的 `writeExtensionField` 與 SillyTavern 相同�
 | schema 4 舊存檔遷移到 6：由種族字串推出血脈比例 | 通過 | 通過 | — |
 | 族譜圖示在真實宿主顯示（13 張卡） | 通過 | 通過 | — |
 
-Luker 的 R8 原本失敗：重載後追蹤資料消失。追查發現 Luker 2.7.0 的 `getChatState`／`updateChatState` 回傳 `{ok, state}` 外殼且失敗不拋錯，插件仍按舊的 `{version, chatState}` 讀取，每次都讀成沒有存檔；重載後帶入技能種子並存檔，把原資料覆蓋。修正見 [`host.js`](../scripts/host.js)，回歸 867 項通過。
+Luker 的 R8 原本失敗：重載後追蹤資料消失。追查發現 Luker 2.8 的 `getChatState`／`updateChatState` 回傳 `{ok, state}` 外殼且失敗不拋錯（正式版 2.7.0 仍直接回傳資料），插件仍按舊的 `{version, chatState}` 讀取，每次都讀成沒有存檔；重載後帶入技能種子並存檔，把原資料覆蓋。修正見 [`host.js`](../scripts/host.js)，兩種格式都接受；回歸 867 項通過，Luker 2.8.0（v2.8.0-19）整套與跨宿主匯入重跑通過。
 
 TauriTavern 刪樓後，回退要等下一次追蹤或重載才套用（宿主只提供分頁聊天視圖，`getChatState` 不在稀疏視圖下比對快照）；重載後狀態正確。這是既有設計，本版未改。
 
