@@ -1,4 +1,5 @@
 import { inferPendingPsychology } from './registry.js';
+import { syncCardSettings } from './card_settings.js';
 import { naturalNoticeDays, psychologySide } from './reproductive.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
@@ -1321,6 +1322,7 @@ export function getMainflowContextSnapshot(ctx) {
 }
 
 export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexExclusive = null) {
+  settings = syncCardSettings(ctx, settings);
   const currentCharacter = getCharacterCard(ctx);
   const chatState = getChatState(ctx, settings);
   const existingState = chatState.characters || {};

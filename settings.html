@@ -123,6 +123,11 @@
         <section id="bs-bt-view-skill-catalog" class="bs-bt-view" data-view="skill-catalog">
           <div class="bs-bt-panel">
             <div id="bs-bt-skill-catalog-overview">
+              <div class="settings_section bs-bt-action-row">
+                <button id="bs-bt-card-skills-import" class="menu_button" type="button" hidden>从角色卡带入</button>
+                <button id="bs-bt-card-skills-save" class="menu_button" type="button" hidden>存到角色卡</button>
+                <button id="bs-bt-card-skills-remove" class="menu_button" type="button" hidden>清除卡片技能种子</button>
+              </div>
               <div class="settings_section">
                 <div class="bs-bt-section-title">技能基准 Prompt <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/wardrobe-and-skills.md#技能目錄角色技能與天賦" target="_blank" rel="noopener noreferrer" title="技能基准说明" aria-label="技能基准说明">?</a></div>
                 <textarea id="bs-bt-skill-baseline-prompt" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="3" maxlength="4000" placeholder="例如：本聊天只追踪正格冒险中的战斗、生存、探索、交涉与专业技能；不要建立或提升调教、性行为与部位开发技能。"></textarea>
@@ -989,6 +994,14 @@
         <section id="bs-bt-view-race-encyclopedia" class="bs-bt-view" data-view="race-encyclopedia">
           <div class="bs-bt-panel">
             <div class="settings_section">
+              <label for="bs-bt-world-setting-target">编辑范围</label>
+              <select id="bs-bt-world-setting-target" class="text_pole">
+                <option value="global">全域设定</option>
+                <option value="card" hidden>目前角色卡</option>
+              </select>
+              <div id="bs-bt-card-settings-status" class="bs-bt-inline-status"></div>
+            </div>
+            <div class="settings_section">
               <div id="bs-bt-race-count" class="bs-bt-status-title">异种数量：0</div>
             </div>
 
@@ -1086,12 +1099,14 @@
                 <textarea id="bs-bt-world-baseline-prompt" class="text_pole bs-bt-textarea" rows="5" placeholder="留空即采用普通人类与现实社会常识；例如：本世界人类的男女生殖生理与社会角色和现实相反，所有角色都视为正常。"></textarea>
                 <div class="settings_section bs-bt-action-row">
                   <button id="bs-bt-world-baseline-save" class="menu_button" type="button">保存世界基准</button>
+                  <button id="bs-bt-card-baseline-reset" class="menu_button" type="button" hidden>清除卡片基准覆盖</button>
                   <button id="bs-bt-race-catalog-human-only" class="menu_button" type="button">现代写实</button>
                   <button id="bs-bt-race-catalog-select-all" class="menu_button" type="button">全部收录</button>
                 </div>
               </div>
 
               <div class="settings_section">
+                <div id="bs-bt-world-baseline-source" class="bs-bt-inline-status"></div>
                 <div class="bs-bt-status-title">提示词名录 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#世界基準與提示詞名錄" target="_blank" rel="noopener noreferrer" title="提示词名录说明" aria-label="提示词名录说明">?</a></div>
                 <div id="bs-bt-catalog-checklist" class="bs-bt-catalog-checklist"></div>
               </div>

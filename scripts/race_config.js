@@ -1218,7 +1218,7 @@ export const RACE_EMBRYO_TYPE_FIELD = "embryoType";
 let customRacePhysiologyProfiles = {};
 let customDerivedTypeProfiles = {};
 
-function sanitizeDerivedTypeProfilePatch(profile) {
+export function sanitizeDerivedTypeProfilePatch(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return null;
   const result = {};
   for (const field of ['introductionLine', 'fluxDefinition']) {
@@ -1261,7 +1261,7 @@ export function getDerivedTypeIntroductionLine(derivedType) {
   return String(DERIVED_TYPE_INTRODUCTION_LINES[baseName] || '').trim();
 }
 
-function sanitizeRacePhysiologyProfilePatch(profile) {
+export function sanitizeRacePhysiologyProfilePatch(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return null;
   const result = {};
   if (Object.prototype.hasOwnProperty.call(profile, RACE_INTRODUCTION_FIELD)) {

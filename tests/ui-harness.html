@@ -332,6 +332,37 @@
   sampleDetails.append(sampleSummary, sampleList);
   document.getElementById('harness-info').appendChild(sampleDetails);
 
+  // 族谱种族图示展示：/tests/ui-harness.html?lineage=1 另外种一个三代家族，不动原有测试角色。
+  // 每人一个衍生外框（11 种），混血拼色底从两块到五块；九尾 50／50 平手时按母方取妖狐。
+  // 追踪 → 莉瑟 → 经历 → 族谱。
+  if (new URLSearchParams(location.search).get('lineage') === '1') {
+    const q = 0.25, e = 0.125;
+    const lise = { 妖狐: q, 白泽: q, 精灵: q, 矮人: q };
+    const halfLise = (other) => ({ 妖狐: e, 白泽: e, 精灵: e, 矮人: e, [other]: 0.5 });
+    const kid = (fields) => ({ talents: [], ...fields });
+    const seed = (name, base, children) => {
+      chatState.characters[name] = makeCharacter(name, { base: { isHere: false, ...base }, profile: { children } });
+    };
+    seed('玉藻', { race: '妖狐', bloodline: { 妖狐: 1 }, bloodlineSource: 'pure', derivedType: '神祇', age: 900 }, [
+      kid({ id: 'show-1', name: '九尾', gender: '女', race: '妖狐x白泽', bloodline: { 妖狐: 0.5, 白泽: 0.5 }, derivedType: '妖怪', fathers: '泽', fatherRace: '白泽', fatherDerivedType: '修炼', age: 300, registeredAs: '九尾' }),
+    ]);
+    seed('艾莉丝', { race: '精灵', bloodline: { 精灵: 1 }, bloodlineSource: 'pure', derivedType: '魔导', age: 260 }, [
+      kid({ id: 'show-2', name: '洛恩', gender: '男', race: '精灵x矮人', bloodline: { 精灵: 0.5, 矮人: 0.5 }, derivedType: '兽化', fathers: '格雷', fatherRace: '矮人', fatherDerivedType: '器灵', age: 140, registeredAs: '洛恩' }),
+    ]);
+    seed('九尾', { race: '妖狐x白泽', bloodline: { 妖狐: 0.5, 白泽: 0.5 }, bloodlineSource: 'inherited', derivedType: '妖怪', age: 300 }, [
+      kid({ id: 'show-3', name: '莉瑟', gender: '女', race: '妖狐x白泽x精灵x矮人', bloodline: lise, derivedType: '变异', fathers: '洛恩', fatherRace: '精灵x矮人', fatherBloodline: { 精灵: 0.5, 矮人: 0.5 }, fatherDerivedType: '兽化', age: 24, registeredAs: '莉瑟' }),
+    ]);
+    seed('洛恩', { race: '精灵x矮人', bloodline: { 精灵: 0.5, 矮人: 0.5 }, bloodlineSource: 'inherited', derivedType: '兽化', age: 140 }, []);
+    seed('莉瑟', { race: '妖狐x白泽x精灵x矮人', bloodline: lise, bloodlineSource: 'inherited', derivedType: '变异', age: 24, isHere: true }, [
+      kid({ id: 'show-5', name: '红鳞', gender: '男', race: '妖狐x白泽x精灵x矮人x西方龙', bloodline: halfLise('西方龙'), derivedType: '血族', fathers: '夜王', fatherRace: '西方龙', fatherDerivedType: '不死', age: 3 }),
+      kid({ id: 'show-6', name: '汐', gender: '女', race: '妖狐x白泽x精灵x矮人x人鱼', bloodline: halfLise('人鱼'), fathers: '海德', fatherRace: '人鱼', age: 1 }),
+      kid({ id: 'show-7', name: '零', gender: '无', race: '妖狐x白泽x精灵x矮人x宝石人', bloodline: halfLise('宝石人'), derivedType: '机械', fathers: '晶', fatherRace: '宝石人', age: 0 }),
+    ]);
+    const note = document.createElement('div');
+    note.textContent = '已加载族谱展示家族：追踪名单选择「莉瑟」→ 经历 → 族谱。';
+    document.getElementById('harness-info').appendChild(note);
+  }
+
   // Optional stage matrix: /tests/ui-harness.html?progress=1 keeps the ordinary seeds intact.
   if (new URLSearchParams(location.search).get('progress') === '1') {
     const { stageProgressFixtures } = await import('/tests/stage-progress-fixtures.mjs');

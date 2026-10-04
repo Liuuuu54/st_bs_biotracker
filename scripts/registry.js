@@ -1,5 +1,6 @@
 import { normalizeExperience, initializeCognitionRecords, normalizeReproductiveSettings, psychologySide } from './reproductive.js';
 import { callOpenAICompatible } from './api.js';
+import { getEffectiveSettings } from './card_settings.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
 import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt, buildWorldBaselineBlock } from './race_prompt_context.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
@@ -465,7 +466,7 @@ export function applyStartingOutfit(chatState, targetName, raw) {
 }
 
 export async function runRegistryOutfitInference(ctx, options = {}) {
-  const settings = getSettings(ctx);
+  const settings = getEffectiveSettings(ctx, getSettings(ctx));
   if (!isWardrobeSystemEnabled(settings)) throw new Error('着衣系统已在系统页关闭');
   const chatState = getChatState(ctx, settings);
   const requestedTargetName = String(options.targetName || '').trim();
@@ -700,7 +701,7 @@ async function buildRegistryPayload(ctx, settings, chatState, options = {}) {
 }
 
 export async function runRegistryWardrobeInference(ctx, options = {}) {
-  const settings = getSettings(ctx);
+  const settings = getEffectiveSettings(ctx, getSettings(ctx));
   if (!isWardrobeSystemEnabled(settings)) throw new Error('着衣系统已在系统页关闭');
   const chatState = getChatState(ctx, settings);
   const requestedTargetName = String(options.targetName || '').trim();
@@ -727,7 +728,7 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
 }
 
 export async function runRegistryDiaryInference(ctx, options = {}) {
-  const settings = getSettings(ctx);
+  const settings = getEffectiveSettings(ctx, getSettings(ctx));
   const chatState = getChatState(ctx, settings);
   const requestedTargetName = String(options.targetName || '').trim();
   if (!requestedTargetName) throw new Error('日记生成需要 targetName');
@@ -757,7 +758,7 @@ export async function runRegistryDiaryInference(ctx, options = {}) {
 }
 
 export async function runRegistryBreedingInference(ctx, options = {}) {
-  const settings = getSettings(ctx);
+  const settings = getEffectiveSettings(ctx, getSettings(ctx));
   const chatState = getChatState(ctx, settings);
   const targetName = resolveRegistryTargetName(ctx, options.targetName);
   const initialProfile = chatState.characters[targetName]?.profile;
@@ -2049,7 +2050,7 @@ function sanitizeRegistrySkillInferenceResult(result) {
 }
 
 export async function runRegistrySkillInference(ctx, options = {}) {
-  const settings = getSettings(ctx);
+  const settings = getEffectiveSettings(ctx, getSettings(ctx));
   if (!isSkillSystemEnabled(settings)) throw new Error('技能系统已在系统页关闭');
   const chatState = getChatState(ctx, settings);
   const requestedTargetName = String(options.targetName || '').trim();
@@ -2262,7 +2263,7 @@ export function applyBreedingInferenceResult(chatState, targetName, inference) {
 }
 
 export function applyRegistryBreedingInference(ctx, options = {}) {
-  const settings = getSettings(ctx);
+  const settings = getEffectiveSettings(ctx, getSettings(ctx));
   const chatState = getChatState(ctx, settings);
   const targetName = resolveRegistryTargetName(ctx, options.targetName);
   const character = applyBreedingInferenceResult(chatState, targetName, options.breedingInference);
@@ -2390,7 +2391,7 @@ function applyRegistryBundle(chatState, targetName, bundleOutput, workingSkills,
 
 export async function runRegistry(ctx, options = {}) {
   if (options.initialCognitionRecords !== undefined) initializeCognitionRecords(options.initialCognitionRecords);
-  const settings = getSettings(ctx);
+  const settings = getEffectiveSettings(ctx, getSettings(ctx));
   const chatState = getChatState(ctx, settings);
   const targetName = resolveRegistryTargetName(ctx, options.targetName);
   // 玩家勾的特殊来历分两半：需要模型编出胎儿结构的走提示词，只需要名字的在结果回来后硬套

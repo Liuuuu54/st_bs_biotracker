@@ -1,4 +1,5 @@
 import { recordExperience, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
+import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import {
   cloneValue,
@@ -7906,7 +7907,7 @@ function getDisabledSystemToolMessage(settings, name) {
 }
 
 export function applyToolCallsResult(ctx, result, sourceId = '') {
-  const settings = getSettings(ctx);
+  const settings = syncCardSettings(ctx, getSettings(ctx));
   const chatState = getChatState(ctx, settings);
   const toolCalls = Array.isArray(result?.tool_calls) ? result.tool_calls : [];
   const logs = [];

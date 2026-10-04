@@ -1,4 +1,5 @@
 import { normalizeExperience, normalizeCognitionRecords, normalizeReproductiveSettings } from './reproductive.js';
+import { syncCardSettings, importCardSkillSeed } from './card_settings.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import {
   buildEmptyPsychologyGroup,
@@ -28,6 +29,7 @@ import {
   getHostContext,
   getHostExtensionSettings,
   getHostKind,
+  isHostChatStateConfirmed,
   getHostWorldBook,
   hasAbsoluteHostChatView,
   loadHostWorldInfo,
@@ -677,6 +679,7 @@ export function createEmptyChatState() {
     skillBaselinePrompt: '',
     skillCatalog: [],
     nextSkillId: 1,
+    cardSkillSeedApplied: false,
     // null-proto：角色名直接作键，模型吐出 constructor/toString/__proto__ 之类的名字时
     // 不会取到继承来的内建属性（那会让本该 skip 的调用变成拿函数当角色对象崩掉）
     characters: Object.create(null),
@@ -1020,6 +1023,7 @@ export function getSettings(ctx) {
     shouldSave = true;
   }
   if (shouldSave) saveHostSettings(ctx);
+  syncCardSettings(ctx, settings);
   return settings;
 }
 
@@ -1046,7 +1050,7 @@ export async function hydrateChatStateFromHost(ctx, settings) {
   const localState = settings.chatStates[initialKey];
   if (localState && !isChatStateEffectivelyEmpty(localState)) return false;
   const storedState = await loadHostChatState(ctx);
-  if (!storedState || isChatStateEffectivelyEmpty(storedState)) return false;
+  if (!storedState) return false;
   // 载入过程本身可能才等到宿主句柄就绪，这时稳定 id 才算得出来。
   // 必须用最终的 key 落盘：否则资料会留在 fallback key 下，
   // 而面板之后是用稳定 id 去读的，等于载入了却还是显示「没有注册角色」。
@@ -1062,7 +1066,10 @@ export function getChatKey(ctx) {
 
 export function getChatState(ctx, settings) {
   const chatKey = getChatKey(ctx);
-  if (!settings.chatStates[chatKey]) settings.chatStates[chatKey] = createEmptyChatState();
+  if (!settings.chatStates[chatKey]) {
+    settings.chatStates[chatKey] = createEmptyChatState();
+    inheritChatStateFromMatchingChat(ctx, settings);
+  }
   const chatState = settings.chatStates[chatKey];
   let shouldSave = false;
   // 存档是 JSON，每次读回来 characters 都是普通物件，要重建为 null-proto（见 createEmptyChatState）
@@ -1124,6 +1131,15 @@ export function getChatState(ctx, settings) {
       if (item?.profile && !Array.isArray(item.profile.diary)) item.profile.diary = [];
     }
   }
+  // A pending sidecar may contain old data: never seed or save its blank placeholder.
+  if (isHostChatStateConfirmed(ctx) && getHostChatId(ctx)) {
+    const seed = importCardSkillSeed(ctx, settings, chatState);
+    if (seed.applied || seed.processed) {
+      recordChatStateSnapshot(ctx, chatState, { reason: 'card_skill_seed' });
+      saveSettings(ctx);
+      if (seed.applied) globalThis.toastr?.info?.(`已从角色卡带入 ${seed.created} 个技能。`);
+    }
+  }
   return chatState;
 }
 
@@ -1134,6 +1150,8 @@ export function getChatState(ctx, settings) {
 function migrateChatStateSchema(chatState) {
   const fromVersion = getChatStateSchemaVersion(chatState);
   if (fromVersion >= CHAT_STATE_SCHEMA_VERSION) return false;
+  // Existing chats (including empty ones) must not acquire author seeds on upgrade.
+  if (fromVersion < 6) chatState.cardSkillSeedApplied = true;
   migrateCharacters(chatState.characters, fromVersion);
   if (Array.isArray(chatState.snapshots) && chatState.snapshots.length > 0) {
     const source = chatState.snapshots;
@@ -1142,6 +1160,7 @@ function migrateChatStateSchema(chatState) {
     const rebuilt = [];
     for (let index = 0; index < source.length; index += 1) {
       const payload = materializeSnapshotPayloadAt(source, index, cache);
+      if (fromVersion < 6) payload.cardSkillSeedApplied = true;
       const characters = unpackSnapshotCharacters(payload.characters, false, true);
       migrateCharacters(characters, fromVersion);
       rebuilt.push(createStoredSnapshotState(rebuilt, { ...payload, characters: packSnapshotCharacters(characters) }, source[index], rebuiltCache));
@@ -1161,7 +1180,7 @@ export function isChatStateEffectivelyEmpty(chatState) {
   const hasSnapshots = Array.isArray(chatState.snapshots) && chatState.snapshots.length > 0;
   const hasSceneSummary = Boolean(String(chatState.sceneSummary || '').trim());
   const hasMinutesPassed = Number(chatState.minutesPassed) > 0;
-  return !(hasCharacters || hasSkillCatalog || hasSkillBaseline || hasConsumedSkillIds || hasSnapshots || hasSceneSummary || hasMinutesPassed);
+  return !(hasCharacters || hasSkillCatalog || hasSkillBaseline || hasConsumedSkillIds || hasSnapshots || hasSceneSummary || hasMinutesPassed || chatState.cardSkillSeedApplied === true);
 }
 
 export function inheritChatStateFromMatchingChat(ctx, settings) {
@@ -1870,6 +1889,7 @@ function exportChatStateSnapshotPayload(chatState) {
     skillBaselinePrompt: String(chatState.skillBaselinePrompt || ''),
     skillCatalog: normalizeSkillCatalog(chatState.skillCatalog),
     nextSkillId: normalizeNextSkillId(chatState.skillCatalog, chatState.nextSkillId),
+    cardSkillSeedApplied: chatState.cardSkillSeedApplied === true,
     lastAttemptedSignature: sanitizeStoredSignature(chatState.lastAttemptedSignature),
     lastProcessedSignature: sanitizeStoredSignature(chatState.lastProcessedSignature),
     lastRunAt: chatState.lastRunAt || 0,
@@ -2207,6 +2227,7 @@ export function restoreChatStateFromSnapshot(chatState, snapshot) {
   if (payload.skillBaselinePrompt !== undefined) chatState.skillBaselinePrompt = String(payload.skillBaselinePrompt || '');
   if (payload.skillCatalog !== undefined) chatState.skillCatalog = normalizeSkillCatalog(payload.skillCatalog);
   if (payload.nextSkillId !== undefined) chatState.nextSkillId = normalizeNextSkillId(chatState.skillCatalog, payload.nextSkillId);
+  if (payload.cardSkillSeedApplied !== undefined) chatState.cardSkillSeedApplied = payload.cardSkillSeedApplied === true;
   chatState.characters = unpackSnapshotCharacters(payload.characters);
   chatState.lastRawResult = payload.lastRawResult || null;
   chatState.lastOperationLogs = Array.isArray(payload.lastOperationLogs) ? payload.lastOperationLogs : [];

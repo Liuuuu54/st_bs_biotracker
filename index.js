@@ -22,6 +22,7 @@ import {
   DERIVED_TYPE_FLUX_PROFILES,
   DERIVED_TYPE_INHERITANCE_PROFILES,
   DERIVED_TYPE_RACES,
+  DERIVED_TYPE_INTRODUCTION_LINES,
   EMBRYO_TYPES,
   RACE_EMBRYO_TYPE_FIELD,
   RACE_INHERITANCE_FIELD,
@@ -82,6 +83,10 @@ import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
 import { appendSkillHistory, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
+import {
+  canWriteCardSettings, getCardSettings, getEffectiveSettings, getSettingSource,
+  syncCardSettings, updateCardSettings, importCardSkillSeed, exportCardSkillSeed,
+} from './scripts/card_settings.js';
 import {
   DEFAULT_MAIN_FIT_PROFILE,
   WARDROBE_ACCESSORY_CATEGORY_LABELS,
@@ -642,6 +647,13 @@ function renderSkillCatalogPage(ctx) {
   const container = document.getElementById('bs-bt-skill-catalog-list');
   if (!container) return;
   const chatState = getChatState(ctx, getSettings(ctx));
+  const cardSkills = getCardSettings(ctx)?.skills;
+  const importButton = document.getElementById('bs-bt-card-skills-import');
+  if (importButton) importButton.hidden = !cardSkills;
+  for (const id of ['bs-bt-card-skills-save', 'bs-bt-card-skills-remove']) {
+    const button = document.getElementById(id);
+    if (button) button.hidden = !canWriteCardSettings(ctx) || (id.endsWith('remove') && !cardSkills);
+  }
   const baselinePrompt = document.getElementById('bs-bt-skill-baseline-prompt');
   if (baselinePrompt && document.activeElement !== baselinePrompt) baselinePrompt.value = String(chatState.skillBaselinePrompt || '');
   const catalog = Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [];
@@ -1310,7 +1322,7 @@ function renderReproductiveControls(settings) {
     ['condomReliability', '套子可靠度（0～1）'],
     ['emergencyEffectiveness', '即时事后避孕成功率（0～1）'],
   ];
-  node.innerHTML = fields.map(([key,label]) => `<label>${label}<input id="bs-bt-reproductive-${key}" class="text_pole" type="number" step="any" value="${c[key]}" /></label>`).join('');
+  node.innerHTML = fields.map(([key,label]) => `<label>${label}<span class="bs-bt-race-editor-badge">${escapeHtml(getEditorFieldSource('reproductiveSettings', undefined, key))}</span><input id="bs-bt-reproductive-${key}" class="text_pole" type="number" step="any" min="0"${key === 'condomCapacity' ? '' : ' max="1"'} value="${c[key]}" /></label>`).join('');
   node.dataset.initialized = 'true';
 }
 
@@ -1826,15 +1838,56 @@ function updateBatteryIndicator(settings = null) {
   if (input.text && !usingCachedCount) queueHostTokenCount(input, settings);
 }
 
-function syncRacePhysiologyOverrides(settings) {
+function syncRacePhysiologyOverrides(settings, ctx = getContextSafe()) {
   // 先把旧键收敛成基名再套用：覆写一律按基名生效，键位不一致的旧资料
   // 会变成删不掉的幽灵覆写（早期版本存下的「人类」就是这样从百科里消失的）。
   if (settings) {
     settings.racePhysiologyOverrides = normalizeRaceOverrideMap(settings.racePhysiologyOverrides);
     settings.derivedTypeOverrides = normalizeDerivedOverrideMap(settings.derivedTypeOverrides);
   }
-  setRacePhysiologyOverrides(settings?.racePhysiologyOverrides || {});
-  setDerivedTypeOverrides(settings?.derivedTypeOverrides || {});
+  syncCardSettings(ctx, settings);
+}
+
+function isEditingCard() {
+  return document.getElementById('bs-bt-world-setting-target')?.value === 'card';
+}
+
+function getEncyclopediaEditorSettings(ctx = getContextSafe()) {
+  const settings = getSettings(ctx);
+  return isEditingCard() ? getEffectiveSettings(ctx, settings) : settings;
+}
+
+function getEditorOverrideMap(ctx, key) {
+  return isEditingCard() ? (getCardSettings(ctx)?.[key] || {}) : (getSettings(ctx)[key] || {});
+}
+
+function getEditorFieldSource(key, name, field) {
+  const ctx = getContextSafe();
+  const settings = getSettings(ctx);
+  if (isEditingCard()) return getSettingSource(ctx, settings, key, name, field);
+  const value = name === undefined ? settings[key] : settings[key]?.[name];
+  return Object.hasOwn(value || {}, field) ? '全域覆盖' : '内置';
+}
+
+async function saveEncyclopediaPatch(ctx, patch) {
+  if (isEditingCard()) await updateCardSettings(ctx, patch);
+  else Object.assign(getSettings(ctx), typeof patch === 'function' ? patch(getSettings(ctx)) : patch);
+  syncRacePhysiologyOverrides(getSettings(ctx), ctx);
+  saveSettings(ctx);
+  updateMainFlowPrompt(ctx);
+  renderRaceEncyclopediaPage(ctx);
+}
+
+async function runWorldSettingAction(ctx, action) {
+  const controls = [...document.querySelectorAll('#bs-bt-view-race-encyclopedia button, #bs-bt-world-setting-target, #bs-bt-catalog-checklist input')];
+  const disabled = controls.map(node => node.disabled);
+  controls.forEach(node => { node.disabled = true; });
+  try { await action(); }
+  catch (error) { globalThis.toastr?.error?.(error.message); }
+  finally {
+    controls.forEach((node, index) => { node.disabled = disabled[index]; });
+    renderRaceEncyclopediaPage(ctx);
+  }
 }
 
 function listOverrideInventory(settings) {
@@ -1847,26 +1900,16 @@ function listOverrideInventory(settings) {
   return [...races, ...derivedTypes];
 }
 
-function clearOverrideEntry(ctx, kind, name) {
+async function clearOverrideEntry(ctx, kind, name) {
   if (!ctx || !name) return;
-  const settings = getSettings(ctx);
-  if (kind === 'derived') settings.derivedTypeOverrides = removeDerivedOverrideEntry(settings.derivedTypeOverrides, name);
-  else settings.racePhysiologyOverrides = removeRaceOverrideEntry(settings.racePhysiologyOverrides, name);
-  syncRacePhysiologyOverrides(settings);
-  saveSettings(ctx);
-  updateMainFlowPrompt(ctx);
-  renderRaceEncyclopediaPage(ctx);
+  const key = kind === 'derived' ? 'derivedTypeOverrides' : 'racePhysiologyOverrides';
+  const remove = kind === 'derived' ? removeDerivedOverrideEntry : removeRaceOverrideEntry;
+  await saveEncyclopediaPatch(ctx, current => ({ [key]: remove(current[key], name) }));
 }
 
-function clearAllOverrideEntries(ctx) {
+async function clearAllOverrideEntries(ctx) {
   if (!ctx) return;
-  const settings = getSettings(ctx);
-  settings.racePhysiologyOverrides = {};
-  settings.derivedTypeOverrides = {};
-  syncRacePhysiologyOverrides(settings);
-  saveSettings(ctx);
-  updateMainFlowPrompt(ctx);
-  renderRaceEncyclopediaPage(ctx);
+  await saveEncyclopediaPatch(ctx, { racePhysiologyOverrides: {}, derivedTypeOverrides: {} });
 }
 
 function getRaceCatalogSelection(settings) {
@@ -1880,26 +1923,23 @@ function getRaceCatalogSelection(settings) {
   return { races, derivedTypes };
 }
 
-function saveRaceCatalogSelection(ctx, selection) {
-  const settings = getSettings(ctx);
-  settings.raceCatalogSelection = {
+async function saveRaceCatalogSelection(ctx, selection) {
+  const raceCatalogSelection = {
     races: RACE_ENCYCLOPEDIA_LIST.filter((race) => selection.races.includes(race)),
     derivedTypes: DERIVED_ENCYCLOPEDIA_LIST.filter((type) => selection.derivedTypes.includes(type)),
   };
-  saveSettings(ctx);
-  updateMainFlowPrompt(ctx);
-  renderRaceEncyclopediaPage(ctx);
+  await saveEncyclopediaPatch(ctx, { raceCatalogSelection });
 }
 
 function setRaceCatalogEntryIncluded(ctx, kind, name, included) {
-  const settings = getSettings(ctx);
+  const settings = getEncyclopediaEditorSettings(ctx);
   const selection = getRaceCatalogSelection(settings);
   const key = kind === 'derived' ? 'derivedTypes' : 'races';
   const values = new Set(selection[key]);
   if (included) values.add(name);
   else values.delete(name);
   selection[key] = [...values];
-  saveRaceCatalogSelection(ctx, selection);
+  return saveRaceCatalogSelection(ctx, selection);
 }
 
 /** 基准页的名录勾选：异种按胚胎型态分组，衍生类型另成一组；每组可整组勾选或清空 */
@@ -1933,7 +1973,7 @@ function renderRaceCatalogChecklist(settings) {
 function toggleRaceCatalogGroup(ctx, index) {
   const group = getRaceCatalogChecklistGroups()[index];
   if (!group) return;
-  const selection = getRaceCatalogSelection(getSettings(ctx));
+  const selection = getRaceCatalogSelection(getEncyclopediaEditorSettings(ctx));
   const key = group.kind === 'derived' ? 'derivedTypes' : 'races';
   const values = new Set(selection[key]);
   const allPicked = group.names.every((name) => values.has(name));
@@ -1942,14 +1982,11 @@ function toggleRaceCatalogGroup(ctx, index) {
     else values.add(name);
   }
   selection[key] = [...values];
-  saveRaceCatalogSelection(ctx, selection);
+  return saveRaceCatalogSelection(ctx, selection);
 }
 
-function saveWorldBaselinePrompt(ctx, value) {
-  const settings = getSettings(ctx);
-  settings.worldBaselinePrompt = String(value || '').trim();
-  saveSettings(ctx);
-  updateMainFlowPrompt(ctx);
+async function saveWorldBaselinePrompt(ctx, value) {
+  await saveEncyclopediaPatch(ctx, { worldBaselinePrompt: String(value || '').trim() });
 }
 
 function setEncyclopediaSubpage(page) {
@@ -1981,7 +2018,7 @@ function getRacePhysiologyFieldMin(field) {
 }
 
 function getRacePhysiologyInputValue(race, field) {
-  const override = getRacePhysiologyOverride(race);
+  const override = getEncyclopediaEditorSettings().racePhysiologyOverrides?.[race];
   if (override && Object.prototype.hasOwnProperty.call(override, field)) {
     return override[field] === null ? '' : String(override[field]);
   }
@@ -1991,7 +2028,7 @@ function getRacePhysiologyInputValue(race, field) {
 }
 
 function getRaceIntroductionInputValue(race) {
-  return getRaceIntroductionLine(race);
+  return getEncyclopediaEditorSettings().racePhysiologyOverrides?.[race]?.[RACE_INTRODUCTION_FIELD] || getBuiltinRacePhysiologyProfile(race)?.[RACE_INTRODUCTION_FIELD] || '';
 }
 
 function renderRacePhysiologyEditor(race) {
@@ -1999,12 +2036,12 @@ function renderRacePhysiologyEditor(race) {
   const statusNode = document.getElementById('bs-bt-race-editor-status');
   if (!editorNode) return;
   editorNode.innerHTML = '';
-  if (statusNode) statusNode.textContent = '只保存与内置值不同的字段。';
+  if (statusNode) statusNode.textContent = isEditingCard() ? '保存到角色卡；未覆盖的字段沿用全域与内置。' : '保存到全域；卡片覆盖的字段仍优先生效。';
   if (!race) {
     editorNode.textContent = '请选择种族后编辑参数。';
     return;
   }
-  const override = getRacePhysiologyOverride(race);
+  const override = getEncyclopediaEditorSettings().racePhysiologyOverrides?.[race];
   const builtin = getBuiltinRacePhysiologyProfile(race);
   if (!builtin) {
     editorNode.textContent = '此种族没有内置生理资料。';
@@ -2028,10 +2065,10 @@ function renderRacePhysiologyEditor(race) {
   introductionInput.placeholder = '可留空；填入后会作为该物种的提示词短句。';
   introductionLabel.appendChild(introductionInput);
 
-  if (override && Object.prototype.hasOwnProperty.call(override, RACE_INTRODUCTION_FIELD)) {
+  {
     const badge = document.createElement('span');
     badge.className = 'bs-bt-race-editor-badge';
-    badge.textContent = '已覆盖';
+    badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, RACE_INTRODUCTION_FIELD);
     introductionLabel.appendChild(badge);
   }
 
@@ -2055,10 +2092,10 @@ function renderRacePhysiologyEditor(race) {
   }
   inheritanceSelect.value = String((override && override[RACE_INHERITANCE_FIELD]) || builtin[RACE_INHERITANCE_FIELD] || RACE_INHERITANCE_MODES.NORMAL);
   inheritanceLabel.appendChild(inheritanceSelect);
-  if (override && Object.prototype.hasOwnProperty.call(override, RACE_INHERITANCE_FIELD)) {
+  {
     const badge = document.createElement('span');
     badge.className = 'bs-bt-race-editor-badge';
-    badge.textContent = '已覆盖';
+    badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, RACE_INHERITANCE_FIELD);
     inheritanceLabel.appendChild(badge);
   }
   editorNode.appendChild(inheritanceLabel);
@@ -2082,10 +2119,10 @@ function renderRacePhysiologyEditor(race) {
   }
   embryoSelect.value = String((override && override[RACE_EMBRYO_TYPE_FIELD]) || builtin[RACE_EMBRYO_TYPE_FIELD] || '胎生');
   embryoLabel.appendChild(embryoSelect);
-  if (override && Object.prototype.hasOwnProperty.call(override, RACE_EMBRYO_TYPE_FIELD)) {
+  {
     const badge = document.createElement('span');
     badge.className = 'bs-bt-race-editor-badge';
-    badge.textContent = '已覆盖';
+    badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, RACE_EMBRYO_TYPE_FIELD);
     embryoLabel.appendChild(badge);
   }
   editorNode.appendChild(embryoLabel);
@@ -2113,10 +2150,10 @@ function renderRacePhysiologyEditor(race) {
     input.placeholder = RACE_PHYSIOLOGY_FIELD_HINTS[field] || '';
     label.appendChild(input);
 
-    if (override && Object.prototype.hasOwnProperty.call(override, field)) {
+    {
       const badge = document.createElement('span');
       badge.className = 'bs-bt-race-editor-badge';
-      badge.textContent = '已覆盖';
+      badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, field);
       label.appendChild(badge);
     }
 
@@ -2125,13 +2162,14 @@ function renderRacePhysiologyEditor(race) {
 }
 
 function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
-  const builtin = getBuiltinRacePhysiologyProfile(race);
+  const base = getBuiltinRacePhysiologyProfile(race);
+  const builtin = base && { ...base, ...(isEditingCard() ? getSettings(getContextSafe()).racePhysiologyOverrides?.[race] : {}) };
   if (!builtin) return null;
   const result = {};
   const introductionInput = document.querySelector(`[data-race-introduction-field="${RACE_INTRODUCTION_FIELD}"]`);
   if (introductionInput instanceof HTMLTextAreaElement) {
     const value = String(introductionInput.value || '').trim();
-    const baseValue = '';
+    const baseValue = builtin[RACE_INTRODUCTION_FIELD] || '';
     const changed = value !== baseValue;
     if (value && (!onlyDiff || changed)) result[RACE_INTRODUCTION_FIELD] = value;
   }
@@ -2162,28 +2200,23 @@ function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
   return result;
 }
 
-function saveRacePhysiologyOverrideFromEditor(ctx, mode = 'diff') {
+async function saveRacePhysiologyOverrideFromEditor(ctx, mode = 'diff') {
   if (!ctx || !selectedRaceEncyclopedia) return;
-  const settings = getSettings(ctx);
   const profile = collectRacePhysiologyEditorProfile(selectedRaceEncyclopedia, { onlyDiff: mode === 'diff' });
   if (!profile) return;
-  const currentOverrides = removeRaceOverrideEntry(settings.racePhysiologyOverrides, selectedRaceEncyclopedia);
-  if (Object.keys(profile).length > 0) currentOverrides[selectedRaceEncyclopedia] = profile;
-  settings.racePhysiologyOverrides = currentOverrides;
-  syncRacePhysiologyOverrides(settings);
-  saveSettings(ctx);
-  updateMainFlowPrompt(ctx);
+  const name = selectedRaceEncyclopedia;
+  await saveEncyclopediaPatch(ctx, current => {
+    const overrides = removeRaceOverrideEntry(current.racePhysiologyOverrides, name);
+    if (Object.keys(profile).length) overrides[name] = profile;
+    return { racePhysiologyOverrides: overrides };
+  });
   racePhysiologyEditorOpen = false;
   renderRaceEncyclopediaPage(ctx);
 }
 
-function resetRacePhysiologyOverride(ctx) {
+async function resetRacePhysiologyOverride(ctx) {
   if (!ctx || !selectedRaceEncyclopedia) return;
-  const settings = getSettings(ctx);
-  settings.racePhysiologyOverrides = removeRaceOverrideEntry(settings.racePhysiologyOverrides, selectedRaceEncyclopedia);
-  syncRacePhysiologyOverrides(settings);
-  saveSettings(ctx);
-  updateMainFlowPrompt(ctx);
+  await clearOverrideEntry(ctx, 'race', selectedRaceEncyclopedia);
   racePhysiologyEditorOpen = false;
   renderRaceEncyclopediaPage(ctx);
 }
@@ -2223,13 +2256,21 @@ function renderDerivedTypeEditor(derivedType) {
   const builtinFlux = DERIVED_TYPE_FLUX_PROFILES[derivedType];
   const builtinInheritance = DERIVED_TYPE_INHERITANCE_PROFILES[derivedType];
   if (!editor || !builtinFlux || !builtinInheritance) return;
-  const flux = getDerivedTypeFluxProfile(derivedType) || builtinFlux;
-  const introductionLine = getDerivedTypeIntroductionLine(derivedType);
-  const inheritance = getDerivedTypeInheritanceProfile(derivedType) || builtinInheritance;
+  const override = getEncyclopediaEditorSettings().derivedTypeOverrides?.[derivedType] || {};
+  const flux = { ...builtinFlux, ...override };
+  const introductionLine = override.introductionLine || DERIVED_TYPE_INTRODUCTION_LINES[derivedType] || '';
+  const inheritance = { ...builtinInheritance, ...override };
   editor.innerHTML =
     '<label class="bs-bt-race-editor-field bs-bt-race-editor-field-wide"><span>衍生短敘述</span><textarea id="bs-bt-derived-introduction-line" class="text_pole bs-bt-race-introduction-input">' + escapeHtml(introductionLine) + '</textarea></label>' +
     '<label class="bs-bt-race-editor-field bs-bt-race-editor-field-wide"><span>Flux 描述</span><textarea id="bs-bt-derived-flux-definition" class="text_pole bs-bt-race-introduction-input">' + escapeHtml(flux.fluxDefinition || '') + '</textarea></label>' +
     '<label class="bs-bt-race-editor-field"><span>遗传速度</span><input id="bs-bt-derived-inheritance-speed" class="text_pole" type="number" min="0" step="0.01" value="' + escapeHtml(inheritance.inheritanceSpeed) + '" /></label>';
+  const fields = ['introductionLine', 'fluxDefinition', 'inheritanceSpeed'];
+  editor.querySelectorAll('label').forEach((label, index) => {
+    const badge = document.createElement('span');
+    badge.className = 'bs-bt-race-editor-badge';
+    badge.textContent = getEditorFieldSource('derivedTypeOverrides', derivedType, fields[index]);
+    label.appendChild(badge);
+  });
 }
 
 function collectDerivedTypeEditorOverride(derivedType) {
@@ -2237,12 +2278,13 @@ function collectDerivedTypeEditorOverride(derivedType) {
   const builtinInheritance = DERIVED_TYPE_INHERITANCE_PROFILES[derivedType];
   if (!builtinFlux || !builtinInheritance) return null;
   const result = {};
+  const globalOverride = isEditingCard() ? getSettings(getContextSafe()).derivedTypeOverrides?.[derivedType] || {} : {};
   const introductionLine = String(document.getElementById('bs-bt-derived-introduction-line')?.value || '').trim();
   const fluxDefinition = String(document.getElementById('bs-bt-derived-flux-definition')?.value || '').trim();
   const speed = Number(document.getElementById('bs-bt-derived-inheritance-speed')?.value);
-  if (introductionLine) result.introductionLine = introductionLine;
-  if (fluxDefinition && fluxDefinition !== builtinFlux.fluxDefinition) result.fluxDefinition = fluxDefinition;
-  if (Number.isFinite(speed) && speed >= 0 && Math.abs(speed - builtinInheritance.inheritanceSpeed) > 0.0001) result.inheritanceSpeed = speed;
+  if (introductionLine && introductionLine !== (globalOverride.introductionLine || DERIVED_TYPE_INTRODUCTION_LINES[derivedType] || '')) result.introductionLine = introductionLine;
+  if (fluxDefinition && fluxDefinition !== (globalOverride.fluxDefinition || builtinFlux.fluxDefinition)) result.fluxDefinition = fluxDefinition;
+  if (Number.isFinite(speed) && speed >= 0 && Math.abs(speed - (globalOverride.inheritanceSpeed ?? builtinInheritance.inheritanceSpeed)) > 0.0001) result.inheritanceSpeed = speed;
   return result;
 }
 
@@ -2252,28 +2294,23 @@ function closeDerivedTypeEditor() {
   if (modal) modal.hidden = true;
 }
 
-function saveDerivedTypeOverrideFromEditor(ctx) {
+async function saveDerivedTypeOverrideFromEditor(ctx) {
   if (!ctx || !selectedDerivedEncyclopedia) return;
-  const settings = getSettings(ctx);
   const profile = collectDerivedTypeEditorOverride(selectedDerivedEncyclopedia);
   if (!profile) return;
-  const overrides = removeDerivedOverrideEntry(settings.derivedTypeOverrides, selectedDerivedEncyclopedia);
-  if (Object.keys(profile).length) overrides[selectedDerivedEncyclopedia] = profile;
-  settings.derivedTypeOverrides = overrides;
-  syncRacePhysiologyOverrides(settings);
-  saveSettings(ctx);
-  updateMainFlowPrompt(ctx);
+  const name = selectedDerivedEncyclopedia;
+  await saveEncyclopediaPatch(ctx, current => {
+    const overrides = removeDerivedOverrideEntry(current.derivedTypeOverrides, name);
+    if (Object.keys(profile).length) overrides[name] = profile;
+    return { derivedTypeOverrides: overrides };
+  });
   closeDerivedTypeEditor();
   renderRaceEncyclopediaPage(ctx);
 }
 
-function resetDerivedTypeOverride(ctx) {
+async function resetDerivedTypeOverride(ctx) {
   if (!ctx || !selectedDerivedEncyclopedia) return;
-  const settings = getSettings(ctx);
-  settings.derivedTypeOverrides = removeDerivedOverrideEntry(settings.derivedTypeOverrides, selectedDerivedEncyclopedia);
-  syncRacePhysiologyOverrides(settings);
-  saveSettings(ctx);
-  updateMainFlowPrompt(ctx);
+  await clearOverrideEntry(ctx, 'derived', selectedDerivedEncyclopedia);
   closeDerivedTypeEditor();
   renderRaceEncyclopediaPage(ctx);
 }
@@ -2318,8 +2355,24 @@ function renderOverrideInventory(settings) {
 }
 
 function renderRaceEncyclopediaPage(ctx = null) {
-  const settings = ctx ? getSettings(ctx) : null;
-  if (settings) syncRacePhysiologyOverrides(settings);
+  const globalSettings = ctx ? getSettings(ctx) : null;
+  if (globalSettings) syncRacePhysiologyOverrides(globalSettings, ctx);
+  const target = document.getElementById('bs-bt-world-setting-target');
+  const cardOption = target?.querySelector('option[value="card"]');
+  if (cardOption) cardOption.hidden = !canWriteCardSettings(ctx);
+  if (target && !canWriteCardSettings(ctx)) target.value = 'global';
+  const settings = globalSettings && (isEditingCard() ? getEffectiveSettings(ctx, globalSettings) : globalSettings);
+  const status = document.getElementById('bs-bt-card-settings-status');
+  const card = getCardSettings(ctx);
+  if (status) status.textContent = card
+    ? '此卡附带世界设定：卡片覆盖 > 全域覆盖 > 内置。' + (!canWriteCardSettings(ctx) ? '当前宿主仅可读取。' : '')
+    : '当前采用全域与内置设定。';
+  for (const id of ['bs-bt-race-reset-override', 'bs-bt-derived-reset-override']) {
+    const button = document.getElementById(id);
+    if (button) button.textContent = isEditingCard() ? '清除卡片覆盖' : '清除全域覆盖';
+  }
+  const resetBaseline = document.getElementById('bs-bt-card-baseline-reset');
+  if (resetBaseline) resetBaseline.hidden = !isEditingCard();
   initializeCalculatorUi();
   bindCalculatorRacePalette();
   bindRacePaletteModal(ctx);
@@ -2340,8 +2393,14 @@ function renderRaceEncyclopediaPage(ctx = null) {
   if (!countNode || !selectNode || !outputNode || !derivedSelectNode || !derivedOutputNode) return;
 
   countNode.innerHTML = `异种数量：${RACE_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.races.length}）<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.derivedTypes.length}）`;
-  renderOverrideInventory(settings);
+  renderOverrideInventory(globalSettings && { ...settings,
+    racePhysiologyOverrides: getEditorOverrideMap(ctx, 'racePhysiologyOverrides'),
+    derivedTypeOverrides: getEditorOverrideMap(ctx, 'derivedTypeOverrides'),
+  });
   renderRaceCatalogChecklist(settings);
+  if (settings) renderReproductiveControls(settings);
+  const baselineSource = document.getElementById('bs-bt-world-baseline-source');
+  if (baselineSource) baselineSource.textContent = `世界基准来源：${getSettingSource(ctx, globalSettings, 'worldBaselinePrompt')}；名录来源：${getSettingSource(ctx, globalSettings, 'raceCatalogSelection')}。`;
   if (worldBaselineInput && document.activeElement !== worldBaselineInput) {
     worldBaselineInput.value = String(settings?.worldBaselinePrompt || '');
   }
@@ -7848,8 +7907,6 @@ function readSettingsFromForm(ctx) {
   if (settings.trackerWorldbookMode === 'allowlist_all') settings.trackerGlobalWorldbookIncludeNames = globalFilterNames;
   else settings.trackerGlobalWorldbookExcludeNames = globalFilterNames;
   settings.systemPrompt = String(getValue('bs-bt-system-prompt')).trim() || DEFAULT_SYSTEM_PROMPT;
-  settings.reproductiveSettings = readReproductiveControls(settings);
-  settings.worldBaselinePrompt = String(getValue('bs-bt-world-baseline-prompt')).trim();
   settings.registryCustomNotes = String(getValue('bs-bt-register-custom-notes')).trim();
   settings.registrySkillPrompt = String(getValue('bs-bt-register-skill-prompt')).trim();
   settings.registryOutfitPrompt = String(getValue('bs-bt-register-outfit-prompt')).trim();
@@ -8654,44 +8711,49 @@ async function ensureModal(ctx) {
     racePhysiologyEditorOpen = false;
     renderRaceEncyclopediaPage(ctx);
   });
+  document.getElementById('bs-bt-world-setting-target')?.addEventListener('change', () => {
+    closeRacePhysiologyEditor();
+    closeDerivedTypeEditor();
+    renderRaceEncyclopediaPage(ctx);
+  });
+  document.getElementById('bs-bt-card-baseline-reset')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    await saveEncyclopediaPatch(ctx, { worldBaselinePrompt: undefined, raceCatalogSelection: undefined, reproductiveSettings: undefined });
+    globalThis.toastr?.success?.('已清除卡片基准覆盖，沿用全域。');
+  }));
   document.getElementById('bs-bt-catalog-checklist')?.addEventListener('change', (event) => {
     const input = event.target;
     if (!(input instanceof HTMLInputElement) || !input.dataset.catalogName) return;
-    setRaceCatalogEntryIncluded(ctx, input.dataset.catalogKind === 'derived' ? 'derived' : 'race', input.dataset.catalogName, input.checked);
+    runWorldSettingAction(ctx, () => setRaceCatalogEntryIncluded(ctx, input.dataset.catalogKind === 'derived' ? 'derived' : 'race', input.dataset.catalogName, input.checked));
   });
   document.getElementById('bs-bt-catalog-checklist')?.addEventListener('click', (event) => {
     const button = event.target instanceof Element ? event.target.closest('[data-catalog-group]') : null;
-    if (button) toggleRaceCatalogGroup(ctx, Number(button.getAttribute('data-catalog-group')));
+    if (button) runWorldSettingAction(ctx, () => toggleRaceCatalogGroup(ctx, Number(button.getAttribute('data-catalog-group'))));
   });
-  document.getElementById('bs-bt-race-catalog-human-only')?.addEventListener('click', () => {
-    saveWorldBaselinePrompt(ctx, '');
+  document.getElementById('bs-bt-race-catalog-human-only')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    await saveWorldBaselinePrompt(ctx, '');
     const input = document.getElementById('bs-bt-world-baseline-prompt');
     if (input) input.value = '';
-    saveRaceCatalogSelection(ctx, { races: [], derivedTypes: [] });
+    await saveRaceCatalogSelection(ctx, { races: [], derivedTypes: [] });
     globalThis.toastr?.success?.('[BS BioTracker] 已切换为现代写实基准');
-  });
-  document.getElementById('bs-bt-race-catalog-select-all')?.addEventListener('click', () => {
-    saveRaceCatalogSelection(ctx, {
+  }));
+  document.getElementById('bs-bt-race-catalog-select-all')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    await saveRaceCatalogSelection(ctx, {
       races: [...RACE_ENCYCLOPEDIA_LIST],
       derivedTypes: [...DERIVED_ENCYCLOPEDIA_LIST],
     });
     globalThis.toastr?.success?.('[BS BioTracker] 已将全部种族与衍生类型加入提示词名录');
-  });
+  }));
   document.getElementById('bs-bt-initial-cognition-add')?.addEventListener('click', addInitialCognitionRow);
-  document.getElementById('bs-bt-reproductive-save')?.addEventListener('click', () => {
-    try {
-      const settings = getSettings(ctx);
-      settings.reproductiveSettings = readReproductiveControls(settings);
-      renderReproductiveControls(settings);
-      saveSettings(ctx);
+  document.getElementById('bs-bt-reproductive-save')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+      const reproductiveSettings = readReproductiveControls(getEncyclopediaEditorSettings(ctx));
+      await saveEncyclopediaPatch(ctx, { reproductiveSettings });
       globalThis.toastr?.success?.('生殖世界基准已保存。');
-    } catch (error) { globalThis.toastr?.error?.(error.message); }
-  });
-  document.getElementById('bs-bt-world-baseline-save')?.addEventListener('click', () => {
+  }));
+  document.getElementById('bs-bt-world-baseline-save')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
     const value = document.getElementById('bs-bt-world-baseline-prompt')?.value || '';
-    saveWorldBaselinePrompt(ctx, value);
+    await saveWorldBaselinePrompt(ctx, value);
     globalThis.toastr?.success?.('[BS BioTracker] 世界基准提示词已保存');
-  });
+  }));
   document.getElementById('bs-bt-tracker-worldbook-mode')?.addEventListener('change', async () => {
     readSettingsFromForm(ctx);
     syncWorldbookFilterInput(ctx);
@@ -8748,16 +8810,16 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-derived-editor-modal')?.addEventListener('click', (event) => {
     if (event.target === event.currentTarget) closeDerivedTypeEditor();
   });
-  document.getElementById('bs-bt-derived-save-override')?.addEventListener('click', () => {
+  document.getElementById('bs-bt-derived-save-override')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
     const name = selectedDerivedEncyclopedia;
-    saveDerivedTypeOverrideFromEditor(ctx);
+    await saveDerivedTypeOverrideFromEditor(ctx);
     globalThis.toastr?.success?.(`[BS BioTracker] 已保存 ${name} 的衍生参数覆盖`);
-  });
-  document.getElementById('bs-bt-derived-reset-override')?.addEventListener('click', () => {
+  }));
+  document.getElementById('bs-bt-derived-reset-override')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
     const name = selectedDerivedEncyclopedia;
-    resetDerivedTypeOverride(ctx);
-    globalThis.toastr?.success?.(`[BS BioTracker] 已恢复 ${name} 的内置衍生参数`);
-  });
+    await resetDerivedTypeOverride(ctx);
+    globalThis.toastr?.success?.(`[BS BioTracker] 已清除 ${name} 的当前范围覆盖`);
+  }));
   document.getElementById('bs-bt-race-open-editor')?.addEventListener('click', () => {
     setEncyclopediaSubpage('race');
     scrollEncyclopediaToTop();
@@ -8774,25 +8836,27 @@ async function ensureModal(ctx) {
     const status = document.getElementById('bs-bt-race-editor-status');
     if (status) status.textContent = '已填入人类数值，点击“保存覆盖”后生效。';
   });
-  document.getElementById('bs-bt-race-save-override')?.addEventListener('click', () => {
-    saveRacePhysiologyOverrideFromEditor(ctx, 'diff');
+  document.getElementById('bs-bt-race-save-override')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    await saveRacePhysiologyOverrideFromEditor(ctx, 'diff');
     globalThis.toastr?.success?.(`[BS BioTracker] 已保存 ${selectedRaceEncyclopedia} 的种族参数覆盖`);
-  });
-  document.getElementById('bs-bt-race-reset-override')?.addEventListener('click', () => {
-    resetRacePhysiologyOverride(ctx);
-    globalThis.toastr?.success?.(`[BS BioTracker] 已恢复 ${selectedRaceEncyclopedia} 的内置种族参数`);
-  });
+  }));
+  document.getElementById('bs-bt-race-reset-override')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    await resetRacePhysiologyOverride(ctx);
+    globalThis.toastr?.success?.(`[BS BioTracker] 已清除 ${selectedRaceEncyclopedia} 的当前范围覆盖`);
+  }));
   document.getElementById('bs-bt-override-list')?.addEventListener('click', (event) => {
     const button = event.target?.closest?.('[data-override-name]');
     if (!button) return;
     const name = String(button.dataset.overrideName || '');
-    clearOverrideEntry(ctx, String(button.dataset.overrideKind || 'race'), name);
-    globalThis.toastr?.success?.(`[BS BioTracker] 已清除 ${name} 的参数覆写`);
+    runWorldSettingAction(ctx, async () => {
+      await clearOverrideEntry(ctx, String(button.dataset.overrideKind || 'race'), name);
+      globalThis.toastr?.success?.(`[BS BioTracker] 已清除 ${name} 的当前范围覆写`);
+    });
   });
-  document.getElementById('bs-bt-override-clear-all')?.addEventListener('click', () => {
-    clearAllOverrideEntries(ctx);
+  document.getElementById('bs-bt-override-clear-all')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    await clearAllOverrideEntries(ctx);
     globalThis.toastr?.success?.('[BS BioTracker] 已清除全部种族与衍生参数覆写');
-  });
+  }));
   document.getElementById('bs-bt-connect')?.addEventListener('click', async () => {
     readSettingsFromForm(ctx);
     await connectAndLoadModels(ctx);
@@ -8835,6 +8899,35 @@ async function ensureModal(ctx) {
       setRegisterTab(String(node.getAttribute('data-register-tab') || 'inference'));
     });
   });
+  for (const [id, action] of [
+    ['bs-bt-card-skills-import', 'import'], ['bs-bt-card-skills-save', 'save'], ['bs-bt-card-skills-remove', 'remove'],
+  ]) {
+    document.getElementById(id)?.addEventListener('click', async () => {
+      const buttons = ['bs-bt-card-skills-import', 'bs-bt-card-skills-save', 'bs-bt-card-skills-remove'].map(key => document.getElementById(key)).filter(Boolean);
+      if (buttons.some(button => button.disabled)) return;
+      buttons.forEach(button => { button.disabled = true; });
+      try {
+        await hydrateChatStateFromHost(ctx, getSettings(ctx));
+        if (!isHostChatStateConfirmed(ctx)) throw new Error('聊天状态尚未载入，请稍后重试。');
+        const settings = getSettings(ctx);
+        const chatState = getChatState(ctx, settings);
+        if (!isSkillSystemEnabled(settings)) throw new Error('技能系统已关闭。');
+        if (action === 'import') {
+          const result = importCardSkillSeed(ctx, settings, chatState, { manual: true });
+          if (!result.applied) throw new Error('角色卡没有可带入的技能种子。');
+          recordChatStateSnapshot(ctx, chatState, { reason: 'manual_card_skill_seed' });
+          saveSettings(ctx);
+          setSkillCatalogStatus(`已从角色卡带入 ${result.created} 个新技能；同名沿用现有定义。`);
+        } else {
+          await updateCardSettings(ctx, { skills: action === 'save' ? exportCardSkillSeed(chatState) : undefined });
+          setSkillCatalogStatus(action === 'save' ? '技能图鉴与基准已存到角色卡。' : '已清除卡片技能种子，聊天技能保留。');
+        }
+        renderSkillCatalogPage(ctx);
+        updateMainFlowPrompt(ctx);
+      } catch (error) { setSkillCatalogStatus(error.message, true); }
+      finally { buttons.forEach(button => { button.disabled = false; }); }
+    });
+  }
   document.getElementById('bs-bt-skill-definition-add')?.addEventListener('click', () => {
     const nameNode = document.getElementById('bs-bt-skill-definition-name');
     const descriptionNode = document.getElementById('bs-bt-skill-definition-description');
