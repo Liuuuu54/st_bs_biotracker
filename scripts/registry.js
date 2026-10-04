@@ -1510,12 +1510,13 @@ function normalizeRegisteredPregnancy(profile, chatState) {
       : deriveFetusAncestry(eggBase, { race: explicitFatherRace, ...getBloodlineInfo(explicitFatherRace,
         fetus.fatherBloodline ?? fatherBase?.bloodline, fetus.fatherBloodlineSource ?? fatherBase?.bloodlineSource) });
     const fetusRace = ancestry.race;
-    const embryoType = fetus?.embryoType || getEmbryoTypeByRace(fetusRace, ancestry.bloodline);
+    const motherBloodline = eggBase ? getBloodlineInfo(eggBase.race || motherRace, eggBase.bloodline, eggBase.bloodlineSource).bloodline : null;
+    const embryoType = fetus?.embryoType || getEmbryoTypeByRace(fetusRace, ancestry.bloodline, motherBloodline);
     const companionEggCount = embryoType === '胎生' || embryoType === '胎转卵生'
       ? 0
       : (Number.isFinite(Number(fetus?.companionEggCount))
         ? Math.max(0, Math.min(12499, Math.round(Number(fetus.companionEggCount))))
-        : rollCompanionEggCount(fetusRace, Math.random, 20, ancestry.bloodline));
+        : rollCompanionEggCount(fetusRace, Math.random, 20, ancestry.bloodline, motherBloodline));
     return {
       ...fetus,
       ...ancestry,
@@ -1541,7 +1542,7 @@ function normalizeRegisteredPregnancy(profile, chatState) {
         original.fatherBloodlineSource ?? fatherBase?.bloodlineSource),
     });
     Object.assign(pregnant.fetuses[index], ancestry);
-    if (!original.embryoType) pregnant.fetuses[index].embryoType = getEmbryoTypeByRace(ancestry.race, ancestry.bloodline);
+    if (!original.embryoType) pregnant.fetuses[index].embryoType = getEmbryoTypeByRace(ancestry.race, ancestry.bloodline, host.bloodline);
   }
   pregnant.fetusesCount = pregnant.fetuses.length;
   // 发育进度（gestationalAgeDays）直接就是有效孕日，实际天数反推；没给才用实际天数乘妊娠速度。

@@ -2,7 +2,7 @@
 
 [返回機制索引](README.md) · [使用步驟](../guide.md)
 
-註冊是一輪獨立的 API 初始化：送入指定角色名、角色卡、經篩選的角色／全域／附加世界書、近期對話、補充設定與可能的既有狀態，再由模型產生角色資料。程式會正規化結果、補預設值、推導種族生理和階段，最後保存快照。使用者指定的目標名稱會覆蓋模型回傳的 `name`。[payload](../../scripts/registry.js#L698)、[執行](../../scripts/registry.js#L2406)、[套用](../../scripts/registry.js#L1770)。
+註冊是一輪獨立的 API 初始化：送入指定角色名、角色卡、經篩選的角色／全域／附加世界書、近期對話、補充設定與可能的既有狀態，再由模型產生角色資料。程式會正規化結果、補預設值、推導種族生理和階段，最後保存快照。使用者指定的目標名稱會覆蓋模型回傳的 `name`。[payload](../../scripts/registry.js#L698)、[執行](../../scripts/registry.js#L2407)、[套用](../../scripts/registry.js#L1771)。
 
 ## 註冊頁的幾條路徑
 
@@ -12,15 +12,15 @@
 | `注册` | 建立／更新基本狀態、經歷、既有孩子、開局妊娠與描述；不含服裝。[註冊提示](../../scripts/registry.js#L853) |
 | `着衣` | 已註冊後另行決定**起始服裝**（依「起始著衣細則」），預覽可微調後寫入並換上。[著衣推演](../../scripts/registry.js#L532)、[寫入](../../scripts/registry.js#L506) |
 | `日记` | 已註冊後另行產生主觀日記，再寫入角色記錄。[日記推演](../../scripts/registry.js#L788) |
-| `技能` | 已註冊後另行推論技能定義、初始技能與天賦；技能目錄屬於本聊天共用。[技能推演](../../scripts/registry.js#L2044) |
+| `技能` | 已註冊後另行推論技能定義、初始技能與天賦；技能目錄屬於本聊天共用。[技能推演](../../scripts/registry.js#L2045) |
 
 `一次注册` 把著衣、日記、技能三頁的提示附在同一個註冊請求裡，註冊完成後依序換上起始服裝、寫入技能與日記；關閉的系統不附帶。比分開送出省下重複的角色卡、世界書與聊天；結果會填進各頁預覽，可在那裡微調後重新寫入。
 
-註冊可選擇已出生孩子作來源；此時該孩子的種族及衍生類型會被固定，天賦也會依原子女紀錄繼承，並標記該子女已註冊成哪名角色。[子女來源](../../scripts/registry.js#L2289)、[繼承套用](../../scripts/registry.js#L2301)。
+註冊可選擇已出生孩子作來源；此時該孩子的種族及衍生類型會被固定，天賦也會依原子女紀錄繼承，並標記該子女已註冊成哪名角色。[子女來源](../../scripts/registry.js#L2290)、[繼承套用](../../scripts/registry.js#L2302)。
 
 ## 活力等級與情壓等級
 
-兩個等級都是 **1–7 的長期特質**，由角色資料推定；不要因為角色這一幕疲倦、哭泣或短暫受傷就改特質等級。註冊時傳入的小數會四捨五入並夾在 1–7。`base.vitality`、`base.psyStress` 即使出現在模型結果也不作初始值來源：套用結果時由等級重新計算。[註冊規則](../../scripts/registry.js#L911)、[欄位清理](../../scripts/registry.js#L1702)、[套用](../../scripts/registry.js#L1835)。
+兩個等級都是 **1–7 的長期特質**，由角色資料推定；不要因為角色這一幕疲倦、哭泣或短暫受傷就改特質等級。註冊時傳入的小數會四捨五入並夾在 1–7。`base.vitality`、`base.psyStress` 即使出現在模型結果也不作初始值來源：套用結果時由等級重新計算。[註冊規則](../../scripts/registry.js#L911)、[欄位清理](../../scripts/registry.js#L1703)、[套用](../../scripts/registry.js#L1836)。
 
 | 等級 | 活力特質語義 | 初始活力＝活力上限 | 情壓特質語義 | 初始情壓／上限 |
 | --- | --- | ---: | --- | ---: |
@@ -32,31 +32,31 @@
 | 6 | 經過鍛鍊 | 175 | 強烈波動焦躁 | 85／170 |
 | 7 | 無堅不摧 | 200 | 極端情緒 | 100／200 |
 
-缺省等級都是 4，因此預設初始活力為 125、情壓為 55。[上限表與初始公式](../../scripts/state.js#L241)。這裡的「情壓等級」不是當下情壓值越高越糟的直接設定；它決定可波動的上限和初始中點。後續 `bsUpdateCharacterStatus` 改的是當前值，不改等級。等級還參與月經時長浮動與產程疼痛計算。[狀態工具](../../scripts/tools.js#L6456)、[週期浮動](../../scripts/tools.js#L6059)、[產痛](../../scripts/tools.js#L4779)。
+缺省等級都是 4，因此預設初始活力為 125、情壓為 55。[上限表與初始公式](../../scripts/state.js#L241)。這裡的「情壓等級」不是當下情壓值越高越糟的直接設定；它決定可波動的上限和初始中點。後續 `bsUpdateCharacterStatus` 改的是當前值，不改等級。等級還參與月經時長浮動與產程疼痛計算。[狀態工具](../../scripts/tools.js#L6457)、[週期浮動](../../scripts/tools.js#L6060)、[產痛](../../scripts/tools.js#L4780)。
 
-**重新註冊同名角色也會按這兩個等級重設當前活力與情壓。** 若只是想修正當前數值，應從狀態工具或完整變數編輯處理。[applyRegistryResult](../../scripts/registry.js#L1770)。
+**重新註冊同名角色也會按這兩個等級重設當前活力與情壓。** 若只是想修正當前數值，應從狀態工具或完整變數編輯處理。[applyRegistryResult](../../scripts/registry.js#L1771)。
 
 ## 其他基本欄位
 
 | 欄位 | 初始化規則及後續作用 |
 | --- | --- |
-| `base.race`、`base.derivedType` | 種族描述可帶混血、子類與 `[衍生類型]`；清理時分解後存種族與衍生類型。種族生理會填週期倍率、妊娠速度、承載力、受孕難度等 `bio` 欄位。[種族解析](../../scripts/registry.js#L1663)、[生理合成](../../scripts/race_config.js#L1687) |
-| `base.age` | 角色年齡；有有限數值就採用，故事時間會按年累加。[註冊清理](../../scripts/registry.js#L1663)、[時間推進](../../scripts/tools.js#L6307) |
-| `base.libido` | 開局性欲，註冊清理限制 0–150；後續使用角色當下上限，孕期上限可變。性欲變動可連動乳意與高潮排卵。[註冊清理](../../scripts/registry.js#L1663)、[狀態工具](../../scripts/tools.js#L6456) |
-| `base.uterinePressure` | 開局宮壓，註冊清理限制 0–150；正常開局宜低，因孕早期相對個人上限達 50% 就可能先觸發警告。[註冊清理](../../scripts/registry.js#L1663)、[宮壓危機](../../scripts/tools.js#L4636) |
-| `base.latestSexDays` | 距最近性行為的故事天數；超過按種族倍率換算的週期長度時，套用註冊結果會標為 `-1`。後續時間推進也會讓它失效，並清理近期性伴。[套用](../../scripts/registry.js#L1868) |
-| `base.penetrationState`、`penetrationSource` | `idle/inserted/spent` 與來源。來源缺失時強制回 `idle`；插入與沉積的後續有效順序見 [`bsAddSperm`](tool-reference.md#精源受孕與分娩)。[清理](../../scripts/registry.js#L1723) |
-| `base.sperms` | 每項保留 `male/race/derivedType/value`；沒有姓名／種族或量不大於 0 的項目被丟棄，量夾在 0–9999。故事時間會使精源衰減。[清理](../../scripts/registry.js#L1249)、[精源生命週期](../../scripts/tools.js#L2334) |
-| `metabolism` | 可設排泄、飢餓、睡眠、泌乳、氣味、陪伴（0–150），衍生類型可設 `flux`（−150 至 150）；省略時用預設零值。[清理](../../scripts/registry.js#L1723)、[預設值](../../scripts/state.js#L777) |
+| `base.race`、`base.derivedType` | 種族描述可帶混血、子類與 `[衍生類型]`；清理時分解後存種族與衍生類型。種族生理會填週期倍率、妊娠速度、承載力、受孕難度等 `bio` 欄位。[種族解析](../../scripts/registry.js#L1664)、[生理合成](../../scripts/race_config.js#L1687) |
+| `base.age` | 角色年齡；有有限數值就採用，故事時間會按年累加。[註冊清理](../../scripts/registry.js#L1664)、[時間推進](../../scripts/tools.js#L6308) |
+| `base.libido` | 開局性欲，註冊清理限制 0–150；後續使用角色當下上限，孕期上限可變。性欲變動可連動乳意與高潮排卵。[註冊清理](../../scripts/registry.js#L1664)、[狀態工具](../../scripts/tools.js#L6457) |
+| `base.uterinePressure` | 開局宮壓，註冊清理限制 0–150；正常開局宜低，因孕早期相對個人上限達 50% 就可能先觸發警告。[註冊清理](../../scripts/registry.js#L1664)、[宮壓危機](../../scripts/tools.js#L4637) |
+| `base.latestSexDays` | 距最近性行為的故事天數；超過按種族倍率換算的週期長度時，套用註冊結果會標為 `-1`。後續時間推進也會讓它失效，並清理近期性伴。[套用](../../scripts/registry.js#L1869) |
+| `base.penetrationState`、`penetrationSource` | `idle/inserted/spent` 與來源。來源缺失時強制回 `idle`；插入與沉積的後續有效順序見 [`bsAddSperm`](tool-reference.md#精源受孕與分娩)。[清理](../../scripts/registry.js#L1724) |
+| `base.sperms` | 每項保留 `male/race/derivedType/value`；沒有姓名／種族或量不大於 0 的項目被丟棄，量夾在 0–9999。故事時間會使精源衰減。[清理](../../scripts/registry.js#L1249)、[精源生命週期](../../scripts/tools.js#L2335) |
+| `metabolism` | 可設排泄、飢餓、睡眠、泌乳、氣味、陪伴（0–150），衍生類型可設 `flux`（−150 至 150）；省略時用預設零值。[清理](../../scripts/registry.js#L1724)、[預設值](../../scripts/state.js#L777) |
 
 模型的 `base.vitality`、`base.psyStress` 不在允許清理清單內；`base.stage` 也不是註冊模型直接指定的入口。沒有有效孕胎且無保留階段時，程式會隨機選一個月經階段與該階段已經過的天數。[階段同步](../../scripts/state.js#L525)、[隨機階段](../../scripts/state.js#L462)。
 
 ## 經歷、心理、孩子與描述
 
-- `experience` 可初始化初次性對象、近期性伴、情感／婚姻伴侶，以及懷孕、自然產、手術產、流產次數；省略欄位沿用預設／既有資料。[套用](../../scripts/registry.js#L1845)。
-- 有採用繁育推演時，非孕期填 `psychology.mens`，孕期填 `psychology.preg`，數值與階段解釋正規化。沒有採用推演時，模型即使輸出心理資料，註冊流程也不採用這次新增的心理結果。[提示](../../scripts/registry.js#L891)、[套用](../../scripts/registry.js#L1770)。
+- `experience` 可初始化初次性對象、近期性伴、情感／婚姻伴侶，以及懷孕、自然產、手術產、流產次數；省略欄位沿用預設／既有資料。[套用](../../scripts/registry.js#L1846)。
+- 有採用繁育推演時，非孕期填 `psychology.mens`，孕期填 `psychology.preg`，數值與階段解釋正規化。沒有採用推演時，模型即使輸出心理資料，註冊流程也不採用這次新增的心理結果。[提示](../../scripts/registry.js#L891)、[套用](../../scripts/registry.js#L1771)。
 - `children` 接受既有孩子的姓名、父方、性別、種族、年齡等；程式為紀錄補 ID 並保存天賦／來源資料。這不會自動為每個孩子註冊獨立角色。[孩子清理](../../scripts/registry.js#L1205)。
-- `descriptions.normalDescription` 和 `pregnantDescription` 使用 `欄名|內容;;` 的子欄格式，後續工具只能更新既有子欄；註冊時可先建立格式。[註冊提示](../../scripts/registry.js#L1039)、[更新規則](../../scripts/tools.js#L6499)。
+- `descriptions.normalDescription` 和 `pregnantDescription` 使用 `欄名|內容;;` 的子欄格式，後續工具只能更新既有子欄；註冊時可先建立格式。[註冊提示](../../scripts/registry.js#L1039)、[更新規則](../../scripts/tools.js#L6500)。
 
 ## 開局已懷孕與特殊效果
 
@@ -72,4 +72,4 @@
 
 註冊本身不設服裝，新角色是 `mainItemId=null`（衣著未記錄），不是全裸。起始服裝來自著衣頁或一次註冊的 `currentOutfit`：`main` 是一整套主服，`accessories` 是正在穿戴的配件，`nude=true` 才是明確全裸。衣物照實填原本的版型檔位（例如孕前修身衣的 `capacity=tight`），合不合身由系統依孕期換算。寫入時衣物以名稱收進衣櫃，同名即更新，所以反覆微調重寫不會堆出重複衣物；接著整套換上，配件以這份清單為準。任一步失敗整份不寫。長期衣物另由衣櫃頁的「衣櫃補充」或[服裝工具](wardrobe-and-skills.md)增加。[起始著衣](../../scripts/registry.js#L506)。
 
-同名重新註冊會以現有角色作基底，衣櫃與穿著不受影響；既有技能與天賦也沿用，因技能初始化是獨立流程。其餘欄位依模型這次輸出、預設及既有資料合併，活力與情壓則如上重新初始化。[合併流程](../../scripts/registry.js#L1770)。
+同名重新註冊會以現有角色作基底，衣櫃與穿著不受影響；既有技能與天賦也沿用，因技能初始化是獨立流程。其餘欄位依模型這次輸出、預設及既有資料合併，活力與情壓則如上重新初始化。[合併流程](../../scripts/registry.js#L1771)。

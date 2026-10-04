@@ -983,7 +983,7 @@ function applyWombReturn(chatState, args) {
     fatherBloodlineSource: fatherAncestry.bloodlineSource,
     fatherDerivedType,
     gender: deriveFetusGender(fetusRace, ancestry.bloodline),
-    embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline),
+    embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline, getBloodlineInfo(base.race || '人类', base.bloodline, base.bloodlineSource).bloodline),
     // 回归者本身就是唯一的有效个体，没有伴生卵。
     companionEggCount: 0,
     // 刚进去时是一个成人的体积，之后随回归期线性回落到 1.0
@@ -1756,6 +1756,7 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
   const motherRace = parseRaceDescriptor(geneticProfile?.base?.race || '人类').race || '人类';
   const fatherRace = parseRaceDescriptor(sperm?.race || motherRace || '人类').race || motherRace || '人类';
   const ancestry = deriveFetusAncestry({ ...geneticProfile.base, race: motherRace }, { ...sperm, race: fatherRace });
+  const motherBloodline = getBloodlineInfo(motherRace, geneticProfile?.base?.bloodline, geneticProfile?.base?.bloodlineSource).bloodline;
   const fetusRace = ancestry.race;
   const inheritanceTag = getFetusInheritanceTag(motherRace, fatherRace);
   const gender = deriveFetusGender(fetusRace, ancestry.bloodline);
@@ -1778,9 +1779,9 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     fatherBloodlineSource: getBloodlineInfo(fatherRace, sperm?.bloodline, sperm?.bloodlineSource).bloodlineSource,
     fatherDerivedType,
     gender,
-    embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline),
+    embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline, motherBloodline),
     // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
-    companionEggCount: rollCompanionEggCount(fetusRace, Math.random, sperm?.value, ancestry.bloodline),
+    companionEggCount: rollCompanionEggCount(fetusRace, Math.random, sperm?.value, ancestry.bloodline, motherBloodline),
     weight: getConceptionWeight(cycleStage, gender, weightRatio),
     tendencyAngle: randomInt(0, 360),
     backSide: randomBackSide(),

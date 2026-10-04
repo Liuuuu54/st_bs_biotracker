@@ -45,4 +45,4 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 
 ## 查一個數值時的路線
 
-先從 [state.js](../../scripts/state.js#L685)確認欄位預設值，再到 [tools.js](../../scripts/tools.js#L7806)找哪個工具會改它；若涉及時間，從 [applyTimeToCharacter](../../scripts/tools.js#L6122)追到該階段分支。機率與預覽看 [calculator.js](../../scripts/calculator.js)，種族係數看 [race_config.js](../../scripts/race_config.js)，畫面解釋則看 `index.js` 及對應的 render 模組。最後檢查 [tracker.js](../../scripts/tracker.js#L1301)是否把該欄位提供給模型；有些內部數值只參與程式計算。
+先從 [state.js](../../scripts/state.js#L685)確認欄位預設值，再到 [tools.js](../../scripts/tools.js#L7807)找哪個工具會改它；若涉及時間，從 [applyTimeToCharacter](../../scripts/tools.js#L6123)追到該階段分支。機率與預覽看 [calculator.js](../../scripts/calculator.js)，種族係數看 [race_config.js](../../scripts/race_config.js)，畫面解釋則看 `index.js` 及對應的 render 模組。最後檢查 [tracker.js](../../scripts/tracker.js#L1301)是否把該欄位提供給模型；有些內部數值只參與程式計算。

@@ -1771,20 +1771,29 @@ export function getFetusInheritanceTag(eggRace, spermRace) {
   return activeMode === RACE_INHERITANCE_MODES.PATERNAL ? 'androgenesis' : 'gynogenesis';
 }
 
-export function getEmbryoTypeByRace(race, bloodline = null) {
-  const parts = getWeightedRaceParts(race, bloodline).map((part) => part.name);
+/**
+ * 混血胚型：血脉占比最高的成分决定；占比相同时取孕期较长（gestationSpeciesSpeed 较低）的，
+ * 仍相同再取母系（卵源）占比较高的，都相同则按种族写法的先后。
+ */
+export function getEmbryoTypeByRace(race, bloodline = null, motherBloodline = null) {
+  const parts = getWeightedRaceParts(race, bloodline);
   if (parts.length === 0) return '胎生';
-
-  let dominantRace = parts[0];
-  let lowestGestationSpeciesSpeed = Number.POSITIVE_INFINITY;
-  for (const part of parts) {
-    const profile = getEffectiveRacePhysiologyProfileValue(part);
-    const gestationSpeciesSpeed = Number(profile?.gestationSpeciesSpeed);
-    if (Number.isFinite(gestationSpeciesSpeed) && gestationSpeciesSpeed < lowestGestationSpeciesSpeed) {
-      lowestGestationSpeciesSpeed = gestationSpeciesSpeed;
-      dominantRace = part;
-    }
+  const motherShares = new Map(motherBloodline && typeof motherBloodline === 'object'
+    ? getWeightedRaceParts(Object.keys(motherBloodline).join('x'), motherBloodline).map((part) => [part.name, part.weight]) : []);
+  const gestationSpeed = (name) => {
+    const value = Number(getEffectiveRacePhysiologyProfileValue(name)?.gestationSpeciesSpeed);
+    return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+  };
+  const EPSILON = 1e-9;
+  let dominant = parts[0];
+  for (const part of parts.slice(1)) {
+    const shareDiff = part.weight - dominant.weight;
+    if (Math.abs(shareDiff) > EPSILON) { if (shareDiff > 0) dominant = part; continue; }
+    const speedDiff = gestationSpeed(part.name) - gestationSpeed(dominant.name);
+    if (Math.abs(speedDiff) > EPSILON) { if (speedDiff < 0) dominant = part; continue; }
+    if ((motherShares.get(part.name) || 0) > (motherShares.get(dominant.name) || 0) + EPSILON) dominant = part;
   }
+  const dominantRace = dominant.name;
 
   // 百科可以改胚型：先看生效中的覆写，没有覆写才落回内置分组
   const embryoType = getEffectiveRacePhysiologyProfileValue(dominantRace)?.[RACE_EMBRYO_TYPE_FIELD];
@@ -1792,12 +1801,12 @@ export function getEmbryoTypeByRace(race, bloodline = null) {
 }
 
 /**
- * 混血先沿用既有规则：孕期最长（gestationSpeciesSpeed 最低）的成分决定胚型。
+ * 混血胚型见 getEmbryoTypeByRace：占比最高者决定，平手看孕期长短，再看母系。
  * 胎生与胎转卵生恒无伴生卵；其余类型在「整群＝伴生卵＋1」的尺度上对所有成分做几何平均再减一，
  * 与旧的卵群几何平均完全一致（全为 0 的仍是 0）。
  */
-export function getCompanionEggsMeanByRace(race, bloodline = null) {
-  const embryoType = getEmbryoTypeByRace(race, bloodline);
+export function getCompanionEggsMeanByRace(race, bloodline = null, motherBloodline = null) {
+  const embryoType = getEmbryoTypeByRace(race, bloodline, motherBloodline);
   if (embryoType === '胎生' || embryoType === '胎转卵生') return 0;
   const parts = getWeightedRaceParts(race, bloodline);
   if (parts.length === 0) return 0;
@@ -1830,8 +1839,8 @@ export function getSpermDoseDifficultyBonus(totalSperm) {
  * 每个独立受精形成的有效胚胎抽一次并落盘。在「整群＝伴生卵＋1」的尺度上乘精液倍率与 ±10% 波动，
  * 取整后再减一，分布与旧卵群完全相同。均值 0 是硬特例：任何浮动或倍率都不会凭空产生伴生卵。
  */
-export function rollCompanionEggCount(race, random = Math.random, spermValue = 20, bloodline = null) {
-  const mean = getCompanionEggsMeanByRace(race, bloodline);
+export function rollCompanionEggCount(race, random = Math.random, spermValue = 20, bloodline = null, motherBloodline = null) {
+  const mean = getCompanionEggsMeanByRace(race, bloodline, motherBloodline);
   if (!Number.isFinite(mean) || mean <= 0) return 0;
   const variation = 0.9 + (Math.max(0, Math.min(1, Number(random()) || 0)) * 0.2);
   const clutch = (mean + 1) * getSpermDoseCompanionMultiplier(spermValue) * variation;

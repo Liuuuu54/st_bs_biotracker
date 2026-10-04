@@ -102,3 +102,23 @@ test('the race prompt sends one weighted block per race and share, listing every
   assert.equal(prompt.match(/【混血加权参考】/g)?.length, 1, '三胞胎与另一名同比例角色只出一块');
   assert.match(prompt, /【甲、乙 \/ 精灵x人类】/);
 });
+
+test('混血胚型：占比最高者决定，平手取孕期较长者，再平手取母系占比较高者', async () => {
+  // 占比决定：深潜者（卵生、孕期较短）占多数时就是卵生，不再一律取孕期最长的人类
+  assert.equal(getEmbryoTypeByRace('深潜者x人类', { 深潜者: 0.75, 人类: 0.25 }), '卵生');
+  assert.equal(getEmbryoTypeByRace('深潜者x人类', { 深潜者: 0.25, 人类: 0.75 }), '胎生');
+  // 平手看孕期：人类孕期较长（速度 1 < 1.25）
+  assert.equal(getEmbryoTypeByRace('深潜者x人类', { 深潜者: 0.5, 人类: 0.5 }), '胎生');
+  // 占比与孕期都平手：找一对孕期速度相同、胚型不同的内置种族，交给母系决定
+  const { ALL_BUILTIN_RACES } = await import('../scripts/race_config.js');
+  const speed = (race) => getMergedRacePhysiologyProfile(race).gestationSpeciesSpeed;
+  let pair = null;
+  for (const a of ALL_BUILTIN_RACES) for (const b of ALL_BUILTIN_RACES) {
+    if (!pair && a < b && speed(a) === speed(b) && getEmbryoTypeByRace(a) !== getEmbryoTypeByRace(b)) pair = [a, b];
+  }
+  assert.ok(pair, '需要一对孕期速度相同、胚型不同的种族');
+  const [a, b] = pair; const half = { [a]: 0.5, [b]: 0.5 };
+  assert.equal(getEmbryoTypeByRace(`${a}x${b}`, half, { [b]: 1 }), getEmbryoTypeByRace(b));
+  assert.equal(getEmbryoTypeByRace(`${a}x${b}`, half, { [a]: 1 }), getEmbryoTypeByRace(a));
+  assert.equal(getEmbryoTypeByRace(`${b}x${a}`, { [b]: 0.5, [a]: 0.5 }, { [a]: 0.5, 人类: 0.5 }), getEmbryoTypeByRace(a));
+});

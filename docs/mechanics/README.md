@@ -31,7 +31,7 @@ flowchart LR
     G --> I[PDA、子宮畫板、主流程提示]
 ```
 
-追蹤模型負責判斷故事發生了甚麼；[工具分派器](../../scripts/tools.js#L7806)才負責真正修改狀態。`bsPassedTime` 是大量生理規則的入口：它一次推進本聊天的全部已註冊角色。模型回傳的 `scene_summary`、最後原始結果及工具操作紀錄分別存入聊天狀態，方便 UI 顯示和排錯。見 [applyToolCallsResult](../../scripts/tools.js#L7864)。
+追蹤模型負責判斷故事發生了甚麼；[工具分派器](../../scripts/tools.js#L7807)才負責真正修改狀態。`bsPassedTime` 是大量生理規則的入口：它一次推進本聊天的全部已註冊角色。模型回傳的 `scene_summary`、最後原始結果及工具操作紀錄分別存入聊天狀態，方便 UI 顯示和排錯。見 [applyToolCallsResult](../../scripts/tools.js#L7865)。
 
 ## 幾個容易混淆的量
 
@@ -45,7 +45,7 @@ flowchart LR
 | `runtime.*CarryMinutes` | 每角色的時、日、週零頭；避免多次短時間推進漏掉整點。 |
 | `profile.notify` | 最新一次運算產生的三層提示，會隨後續操作更新。 |
 
-資料結構見 [state.js](../../scripts/state.js#L662)，時間運算見 [tools.js](../../scripts/tools.js#L6032)。
+資料結構見 [state.js](../../scripts/state.js#L662)，時間運算見 [tools.js](../../scripts/tools.js#L6033)。
 
 ## 說明邊界
 

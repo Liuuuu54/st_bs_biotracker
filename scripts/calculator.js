@@ -1,6 +1,7 @@
 import {
   deriveFetusRace,
   deriveFetusAncestry,
+  getBloodlineInfo,
   getCompanionEggsMeanByRace,
   getDerivedTypeInheritanceProfile,
   getEmbryoTypeByRace,
@@ -171,9 +172,10 @@ export function calculateOffspringPreview({
 } = {}) {
   const ancestry = deriveFetusAncestry(eggRace, spermRace);
   const fetusRace = ancestry.race;
-  const embryoType = getEmbryoTypeByRace(fetusRace);
+  const motherBloodline = getBloodlineInfo(eggRace).bloodline;
+  const embryoType = getEmbryoTypeByRace(fetusRace, ancestry.bloodline, motherBloodline);
   // 伴生卵在「整群＝伴生卵＋1」的尺度上乘倍率与波动，取整后再减一，与正式抽取一致
-  const companionEggsMean = getCompanionEggsMeanByRace(fetusRace, ancestry.bloodline);
+  const companionEggsMean = getCompanionEggsMeanByRace(fetusRace, ancestry.bloodline, motherBloodline);
   const companionMultiplier = getSpermDoseCompanionMultiplier(spermValue);
   const adjustedClutch = (companionEggsMean + 1) * companionMultiplier;
   const toEggs = (clutch) => Math.max(0, Math.min(12499, clutch - 1));

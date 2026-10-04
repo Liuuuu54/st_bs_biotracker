@@ -298,7 +298,7 @@ function buildHybridAverageBlock(race, bloodline = null) {
     `- 平均分娩难度: ${getBirthDifficultyText(merged.birthDifficulty)}`,
     `- 平均承载耐受: ${getBreedToleranceText(merged.breedTolerance)}`,
     `- 平均受精难度: ${getImpregnationDifficultyText(merged.impregnationDifficulty)}`,
-    `- 混血典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race, bloodline))}（先由孕期最长的成分决定胚型；胎生／胎转卵生恒为 0，其余按血脉比例对整群规模做加权几何平均）`,
+    `- 混血典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race, bloodline))}（先由血脉占比最高的成分决定胚型（平手取孕期较长者，再平手取母系）；胎生／胎转卵生恒为 0，其余按血脉比例对整群规模做加权几何平均）`,
     `- 平均多产性参考: ${getProlificacyText(merged.orgasmOvulationAmount, merged.identicalProbability)}；额外排卵倾向 ${formatNumber(merged.orgasmOvulationAmount)}，同卵多胎概率 ${formatNumber(merged.identicalProbability)}%`,
     `- 平均性别比参考: ${getGenderRatioText(merged.genderRatio)}`,
   ].filter(Boolean).join('\n');
