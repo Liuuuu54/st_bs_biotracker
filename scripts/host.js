@@ -350,7 +350,9 @@ function cloneHostValue(value) {
 
 function getCurrentTauriChatHandle() {
   const api = getTauriTavernApi()?.chat;
-  return typeof api?.current?.handle === 'function' ? api.current.handle() : null;
+  if (typeof api?.current?.handle !== 'function') return null;
+  // TT 2.3 在还没开聊天（欢迎页）时直接抛错；没有聊天就没有句柄，不能让存设定跟着失败
+  try { return api.current.handle(); } catch { return null; }
 }
 
 /**
@@ -380,7 +382,8 @@ function isHostChatStateBlank(chatState) {
  */
 function shouldSkipBlankHostChatStateSave(chatId, chatState) {
   if (!isHostChatStateBlank(chatState)) return false;
-  return !TAURI_STATE_HYDRATED_IDS.has(chatId);
+  // 未确认：不能拿空的覆盖；确认过本来就没有存档：没有东西要清，不留空档案
+  return !TAURI_STATE_HYDRATED_IDS.has(chatId) || TAURI_STATE_KNOWN_MISSING_IDS.has(chatId);
 }
 
 /**
@@ -457,8 +460,13 @@ export async function loadHostChatState(ctx = null) {
     try {
       const stored = unwrapLukerStateResult(await runtime.getChatState(TAURI_STATE_NAMESPACE));
       // 读到了（无论有没有资料）就算确认过内容，之后才允许写空
-      TAURI_STATE_HYDRATED_IDS.add(getHostChatId(ctx));
-      if (stored?.version === 1 && stored.chatState && typeof stored.chatState === 'object') return cloneHostValue(stored.chatState);
+      const lukerChatId = getHostChatId(ctx);
+      TAURI_STATE_HYDRATED_IDS.add(lukerChatId);
+      if (stored?.version === 1 && stored.chatState && typeof stored.chatState === 'object') {
+        TAURI_STATE_KNOWN_MISSING_IDS.delete(lukerChatId);
+        return cloneHostValue(stored.chatState);
+      }
+      TAURI_STATE_KNOWN_MISSING_IDS.add(lukerChatId);
     } catch (error) {
       // 读取失败＝内容未知，保持未确认状态，避免拿空的覆盖掉
       console.warn('[BS BioTracker] unable to load Luker chat state', error);
@@ -533,6 +541,7 @@ function prepareHostChatStateSave(ctx, chatState) {
     if (typeof ctx?.updateChatState !== 'function') return null;
     const chatId = getHostChatId(ctx);
     if (shouldSkipBlankHostChatStateSave(chatId, chatState)) return null;
+    TAURI_STATE_KNOWN_MISSING_IDS.delete(chatId);
     const payload = { version: 1, chatState: cloneHostValue(chatState) };
     return {
       chatId,

@@ -163,6 +163,46 @@ test('a forked chat inherits a matching snapshot, but the placeholder key during
   resetGlobals();
 });
 
+test('TauriTavern without an open chat: a throwing chat handle does not break saving settings', async () => {
+  resetGlobals();
+  globalThis.__TAURITAVERN__ = { ready: Promise.resolve(), api: { chat: { current: { handle() { throw new Error('Failed to resolve active character id'); } } } } };
+  const ctx = { extensionSettings: {}, saveSettingsDebounced() {} };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  state.getChatState(ctx, settings);
+  assert.doesNotThrow(() => state.saveSettings(ctx));
+  await assert.doesNotReject(state.saveSettingsNow(ctx));
+  resetGlobals();
+});
+
+test('a confirmed-empty chat gets no blank sidecar; real data and its later clearing are still written', async () => {
+  for (const kind of ['luker', 'tauritavern']) {
+    resetGlobals();
+    const writes = [];
+    const ctx = { chatId: `empty-${kind}`, extensionSettings: {}, saveSettingsDebounced() {} };
+    if (kind === 'luker') {
+      Object.assign(ctx, { async getChatState() { return { ok: true, state: null }; }, async updateChatState(ns, updater) { writes.push(await updater({})); return { ok: true }; } });
+      globalThis.Luker = { getContext: () => ctx };
+    } else {
+      const store = { async hasKey() { return false; }, async getJson() { return null; }, async setJson({ value }) { writes.push(value); } };
+      globalThis.__TAURITAVERN__ = { ready: Promise.resolve(), api: { chat: { current: { handle: () => ({ stableId: async () => `empty-${kind}`, store }), windowInfo: async () => ({ totalCount: 0 }) } } } };
+      globalThis.SillyTavern = { getContext: () => ctx };
+    }
+    const settings = state.getSettings(ctx);
+    await state.hydrateChatStateFromHost(ctx, settings);
+    assert.equal(host.isHostChatStateConfirmed(ctx), true, kind);
+    await state.saveSettingsNow(ctx);
+    assert.equal(writes.length, 0, `${kind}: blank state for a chat without a sidecar`);
+    state.getChatState(ctx, settings).characters.甲 = { initialized: true };
+    await state.saveSettingsNow(ctx);
+    assert.equal(writes.length, 1, `${kind}: real data is written`);
+    delete state.getChatState(ctx, settings).characters.甲;
+    await state.saveSettingsNow(ctx);
+    assert.equal(writes.length, 2, `${kind}: clearing written data still reaches the sidecar`);
+  }
+  resetGlobals();
+});
+
 test('character additional worldbooks come from charLore for the current character only', async () => {
   resetGlobals();
   const ctx = {
@@ -248,6 +288,9 @@ test('TauriTavern chat state load caches Not-found results and dedupes concurren
 
   await host.resolveHostChatId(ctx);
   host.scheduleHostChatStateSave(ctx, { characters: {}, snapshots: [] });
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  assert.equal(saved, null, 'a blank state is not written for a chat known to have no sidecar');
+  host.scheduleHostChatStateSave(ctx, { characters: { 甲: { initialized: true } }, snapshots: [] });
   await new Promise((resolve) => setTimeout(resolve, 350));
   assert.equal(saved?.version, 1);
   await host.loadHostChatState(ctx);
@@ -824,7 +867,7 @@ test('an unhydrated blank state never overwrites an existing TauriTavern sidecar
   assert.deepEqual(writes, [], '未确认存档内容前不得写入空状态');
 });
 
-test('a blank state may be persisted once the sidecar content is confirmed', async () => {
+test('a confirmed-missing sidecar is not created just to hold a blank state', async () => {
   resetGlobals();
   const writes = [];
   const handle = {
@@ -845,9 +888,8 @@ test('a blank state may be persisted once the sidecar content is confirmed', asy
   state.saveSettings(ctx);
   await new Promise((resolve) => setTimeout(resolve, 350));
 
-  // 已确认没有存档 → 写空无害，使用者主动「清除」也才能落盘
-  assert.equal(writes.length, 1);
-  assert.deepEqual(writes[0].chatState.characters, {});
+  // 已确认没有存档 → 没有东西要清，不为空状态建档；写过真资料后的清除见下一则测试
+  assert.equal(writes.length, 0);
 });
 
 test('real registration data still saves normally while unhydrated', async () => {
