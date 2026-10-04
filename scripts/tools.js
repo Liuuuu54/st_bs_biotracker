@@ -564,7 +564,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     description: '剧情明确出现人工、器械或魔法的胎位操作，或胎儿有意识地自己转身、往上缩、往下钻、踢破胎膜时才调用；自然胎动与下降由 bsPassedTime 自动处理，不要为了「肚子下沉」「胎儿踢了一下」之类的描写调用。'
       + 'actor=fetus 表示这一胎自己动（任何胎儿都可以）：不消耗母体活力，但母体一样承受疼痛或心理压力；胎儿不能把自己拉出来（extract），也解不开自己卡住的肩膀。其余限制与外力操作相同：入盆后只能自己小幅转动（30° 以内）、胎背只能前后对调，产程中不能自己缩回、也不能自己往下钻（下降交给宫缩），但仍可踢破胎膜；互锁的那一胎可以自己转开。省略 actor 即为外力操作。'
       + 'fetusIndex 是 fetuses 列表下标（从 0 起算），省略时作用于正在下降／即将娩出的那一胎。每个动作都要通过检查才会生效，被拒绝时状态完全不变，叙事不得写成已成功。'
-      + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位），也可以用 backSide 把胎背转到 左前／右前／左后／右后（两者可同时给，至少给一个）；已入盆的胎儿只能小幅校正角度（与目前角度相差最多 30°，超过会被拒绝），胎背只能前后对调、不能换左右（例如把枕后位的右后转成右前）；肩难产时可不给角度直接转动肩部解开卡点。'
+      + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位），也可以用 backSide 把胎背转到 左前／右前／左后／右后（两者可同时给，至少给一个）；已入盆的胎儿只能小幅校正角度（与目前角度相差最多 30°，超过会被拒绝），胎背只能前后对调、不能换左右（例如把枕后位的右后转成右前）；卵生、胎转卵生是蛋，没有胎背，只能给 targetAngle；肩难产时可不给角度直接转动肩部解开卡点。'
       + 'lift：把胎儿往上托回一格；产兆前驱托高领头胎儿会把分娩延后，这是要跟宫缩对抗的，母体活力不足会被拒绝，并带来一阵剧痛。产程中已入盆的胎儿不能再托回；双胎互锁只能用 rotate 转开其中一胎。'
       + 'descend：把胎儿往下推送一格；产兆前驱推送领头胎儿会缩短前驱，时间归零即进入第一产程；正式产程中不能用。'
       + 'rupture：破水（每一胎有各自的羊膜，同卵共囊一起破）。只有在产兆前驱且宫压已达上限的 66%，或已在第一／第二产程时才会生效；产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用，系统未确认前不要擅自描写破水。孕中孕内胎的胎膜破了代表它被宿主在宫内生出来，不算母亲破水。'
@@ -1379,8 +1379,14 @@ function mirrorBackSide(side) {
   return `${value[0] === '左' ? '右' : '左'}${value[1]}`;
 }
 
+/** 卵生、胎转卵生出生时是蛋：没有头、胎背、下巴与肩，胎背方位、枕后位与双胎互锁都不适用 */
+const SHELLED_AT_BIRTH_EMBRYO_TYPES = new Set(['卵生', '胎转卵生']);
+export function isShelledAtBirth(fetus) {
+  return SHELLED_AT_BIRTH_EMBRYO_TYPES.has(String(fetus?.embryoType || '胎生'));
+}
+
 export function isPosteriorBack(fetus) {
-  return String(fetus?.backSide || '').endsWith('后');
+  return !isShelledAtBirth(fetus) && String(fetus?.backSide || '').endsWith('后');
 }
 
 /** 缺胎背方位的胎儿（注册、手动编辑写入的）补一个随机值；只补同一格式内的缺值 */
@@ -1395,6 +1401,7 @@ function ensureBackSideMetadata(pregnant) {
  * 横位时胎儿横躺，左右那一轴变成朝上或朝下，前后照旧
  */
 export function describeBackSide(fetus) {
+  if (isShelledAtBirth(fetus)) return '';
   const side = normalizeBackSide(fetus?.backSide);
   if (!side) return '';
   const angle = ((Number(fetus?.tendencyAngle) || 0) % 360 + 360) % 360;
@@ -1972,7 +1979,8 @@ function calculatePositionDifficulty(angle, fetus) {
     return 1.33;
   }
 
-  if (embryoType === '卵生') {
+  // 胎转卵生到出生时已合拢成蛋，与卵生同表：头尾对称，只有横放较难
+  if (embryoType === '卵生' || embryoType === '胎转卵生') {
     if ((normalized >= 0 && normalized <= 15) || (normalized >= 345 && normalized <= 360)) return 1.0;
     if (normalized >= 165 && normalized <= 195) return 1.0;
     if ((normalized >= 75 && normalized <= 105) || (normalized >= 265 && normalized <= 285)) return 1.5;
@@ -3905,6 +3913,7 @@ function isHardTransverse(fetus) {
  * 反过来（先露头位、第二胎臀位）不算，第二胎只会在子宫低位等候
  */
 function isLockedTwins(presenting, second) {
+  if (isShelledAtBirth(presenting) || isShelledAtBirth(second)) return false;
   const lead = Number.isFinite(Number(presenting?.tendencyAngle)) ? wrapAngle(presenting.tendencyAngle) : 0;
   const breech = lead >= 165 && lead <= 195;
   return breech && isHeadPresentation(second);
@@ -5825,6 +5834,7 @@ function applyAssistFetalPosition(chatState, args) {
     const hasBackSide = args?.backSide !== undefined && args?.backSide !== null && String(args.backSide).trim() !== '';
     const desiredBack = hasBackSide ? normalizeBackSide(String(args.backSide).trim()) : null;
     if (hasBackSide && !desiredBack) return skip(`backSide must be one of ${BACK_SIDES.join('/')}.`);
+    if (desiredBack && isShelledAtBirth(target)) return skip(`a ${target.embryoType} fetus is an egg and has no back to turn; use targetAngle only.`);
     if (!hasAngle && !desiredBack && !shoulderStuck) {
       return skip('rotate needs targetAngle (0/360 head-down, 180 breech, 90/270 transverse) or backSide.');
     }

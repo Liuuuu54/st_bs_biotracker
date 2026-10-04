@@ -183,3 +183,23 @@ test('调试工具可以直接设定胎背方位（不受入盆限制），乱�
   assert.equal(debug('').applied, true, '留空表示不变');
   assert.equal(P(chatState).pregnant.fetuses[0].backSide, '左前');
 });
+
+test('卵生、胎转卵生出生时是蛋：没有胎背描写、不受枕后位拖慢、不能指定胎背', () => {
+  Math.random = () => 0.99;
+  for (const embryoType of ['卵生', '胎转卵生']) {
+    assert.equal(describeBackSide({ backSide: '右后', tendencyAngle: 0, embryoType }), '', embryoType);
+    const run = (backSide) => {
+      const chatState = labor({ backSide });
+      P(chatState).pregnant.fetuses[0].embryoType = embryoType;
+      applyToolCall(chatState, { name: 'bsPassedTime', arguments: { minute: 30 } });
+      return P(chatState).pregnant;
+    };
+    assert.equal(run('右后').effectiveLaborHours, run('右前').effectiveLaborHours, embryoType);
+    const chatState = labor({ backSide: '右后' });
+    P(chatState).pregnant.fetuses[0].embryoType = embryoType;
+    const result = assist(chatState, { backSide: '右前' });
+    assert.equal(result.applied, false, embryoType);
+    assert.match(result.message, /egg/);
+  }
+  assert.equal(describeBackSide({ backSide: '右后', tendencyAngle: 0, embryoType: '卵胎生' }), '胎背朝右后', '卵胎生照常有胎背');
+});

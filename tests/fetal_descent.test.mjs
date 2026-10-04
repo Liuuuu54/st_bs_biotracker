@@ -399,6 +399,16 @@ test('双胎互锁：臀位先露胎在入口，头位、胎重相近、宫压�
   assert.deepEqual(depths(fond), [0, 0], '亲近母体的第二胎一样会互锁');
 });
 
+test('蛋没有下巴可勾：卵生或胎转卵生的双胎不会互锁', () => {
+  for (const embryoType of ['卵生', '胎转卵生']) {
+    Math.random = () => 0;
+    const chatState = crowdingSetup({ embryoType }, { embryoType });
+    passHours(chatState, 3);
+    assert.ok(P(chatState).pregnant.fetuses.every((f) => !f.inletIntruder), embryoType);
+    assert.doesNotMatch(String(P(chatState).notify.firstly), /互锁/, embryoType);
+  }
+});
+
 test('构型成立也只有 20% 的机率卡上：没抽中时第二胎留在子宫低位', () => {
   const rolls = [0, 0, 0, 0.3];
   let i = 0;
