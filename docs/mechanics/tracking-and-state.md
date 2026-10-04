@@ -50,7 +50,7 @@
 
 快照與聊天訊息邊界綁定。回頭編輯訊息後，[對帳邏輯](../../scripts/tracker.js#L1427)會尋找仍吻合的最近快照，將狀態還原到該邊界再往前處理；不能假設會從最早一則訊息完整重跑。快照以差量為主，定期或差量過大時改存完整內容，修剪時保留可還原的基底。[快照記錄／還原](../../scripts/state.js#L1976)、[匹配](../../scripts/state.js#L2248)。
 
-SillyTavern 的聊天狀態在擴充設定內；TauriTavern／Luker 使用每聊天的宿主 sidecar。載入前避免把空狀態覆寫尚未水合的資料，保存會合併／延遲，必要時立即 flush。[宿主載入](../../scripts/host.js#L439)、[延遲保存](../../scripts/host.js#L553)、[立即保存](../../scripts/host.js#L573)。
+SillyTavern 的聊天狀態在擴充設定內；TauriTavern／Luker 使用每聊天的宿主 sidecar。載入前避免把空狀態覆寫尚未水合的資料，保存會合併／延遲，必要時立即 flush。[宿主載入](../../scripts/host.js#L447)、[延遲保存](../../scripts/host.js#L561)、[立即保存](../../scripts/host.js#L581)。
 
 樓層快照不保存 `runtime` 的時間進位等暫態，但會保存孕期的孕前原值（`runtime.originalPregnancyBio`），回溯後分娩才能還原正確的承載耐受、分娩難度與孕速。
 

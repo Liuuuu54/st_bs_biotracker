@@ -47,10 +47,34 @@
 
 TauriTavern 實測發現：它的 `writeExtensionField` 與 SillyTavern 相同，走 `/api/characters/merge-attributes` 深合併並處理巢狀刪除標記，原本只對 SillyTavern 送標記，導致刪掉的巢狀欄位（例如卡片上某物種的單一參數）留在磁碟、重載後復活；`/api/characters/get` 也可用。現改為除 Luker 外都送刪除標記，並在 TauriTavern 一併回讀核對；修正後重測通過，回歸 866 項通過。
 
+## 不花錢的實機回歸（2026-10-04）
+
+不呼叫模型：工具結算直接呼叫插件的 `applyToolCallsResult`，聊天訊息用 `/send`、`/cut`。SillyTavern 1.19.0、Luker 2.7.0 用臨時資料目錄與工作樹 junction 隔離；TauriTavern 2.3.0 在使用者安裝上以 WebView2 除錯埠驅動，測試卡、聊天、群組與自動備份事後刪除，插件檔案還原。
+
+| 項目 | SillyTavern | Luker | TauriTavern |
+|---|---|---|---|
+| 三張卡（A、B、無設定）切換：各自生效、不串卡、全域不被改寫 | 通過 | 通過 | — |
+| 重載後卡片設定與技能種子不重複 | 通過 | 通過 | — |
+| 匯出 PNG／JSON 再匯入，`bs_biotracker` 與其他擴充欄位保留 | 通過 | 通過 | — |
+| 跨宿主：ST 匯出匯入 Luker、TauriTavern；Luker 匯出匯入 ST | 通過 | 通過 | 通過 |
+| 技能種子：清空不重帶、技能頁手動帶入、總開關關閉不帶、開回後新聊天帶入、schema 5 舊聊天遷移不帶 | 通過 | 通過 | — |
+| 群聊忽略卡片設定、隱藏寫卡 | 通過 | 通過 | 通過 |
+| R1–R3：卡A 可靠度 0 → 破裂；卡B 容量 5 → 撐爆全進；無設定卡用全域 → 全擋 | 通過 | 通過 | — |
+| R5–R6：即時事後避孕結算、同來源重試不重抽、無接觸不建立保護 | 通過 | 通過 | — |
+| R8：破套與事後避孕結果重載保留；刪兩樓退回、再重載仍一致；技能種子標記不受回退影響 | 通過 | 修正後通過 | 通過（見下） |
+| schema 4 舊存檔遷移到 6：由種族字串推出血脈比例 | 通過 | 通過 | — |
+| 族譜圖示在真實宿主顯示（13 張卡） | 通過 | 通過 | — |
+
+Luker 的 R8 原本失敗：重載後追蹤資料消失。追查發現 Luker 2.7.0 的 `getChatState`／`updateChatState` 回傳 `{ok, state}` 外殼且失敗不拋錯，插件仍按舊的 `{version, chatState}` 讀取，每次都讀成沒有存檔；重載後帶入技能種子並存檔，把原資料覆蓋。修正見 [`host.js`](../scripts/host.js)，回歸 867 項通過。
+
+TauriTavern 刪樓後，回退要等下一次追蹤或重載才套用（宿主只提供分頁聊天視圖，`getChatState` 不在稀疏視圖下比對快照）；重載後狀態正確。這是既有設計，本版未改。
+
+宿主主題（Dark Lite、Cappuccino、Celestial Macaron、Azure）不影響插件面板，族譜圖示的配色跟著插件自己的主題。
+
 ## 宿主介面來源與限制
 
 `writeExtensionField(characterId, key, value)`、`UNSET_VALUE`、`getRequestHeaders()` 與 `/api/characters/get` 依本機 SillyTavern 1.19.0、Luker 2.7.0 的 `public/scripts/extensions.js`、`st-context.js`、`src/endpoints/characters.js` 查證。SillyTavern 的伺服器會深合併並處理刪除標記；Luker 的寫入宣告為命名空間整份取代。原生寫卡介面可能記錄 HTTP 失敗後仍正常返回，因此插件在提供讀取介面的宿主回讀已保存卡片核對。
 
 各宿主只按實際暴露的寫卡函式探測（TauriTavern 2.3.0 有提供）；未提供時隱藏寫卡操作、仍讀取卡片設定，沒有發明另一套寫卡 API。插件沒有新增第三方函式庫或遠端載入依賴。
 
-完整跨宿主匯出／再匯入、真實模型對避孕結果的承接、刪樓／分支與 TauriTavern 的每聊天 sidecar 回退仍需實機證據。無此避孕手段的世界觀開關未新增；本版沿用世界基準文字與既有工具約束。
+真實模型對避孕結果的承接（R4、R7）、開分支，以及 TauriTavern 的切卡、匯出再匯入與技能種子細項仍需實機證據。無此避孕手段的世界觀開關未新增；本版沿用世界基準文字與既有工具約束。

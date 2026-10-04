@@ -436,13 +436,21 @@ async function waitForTauriChatStoreHandle(timeoutMs = TAURI_HANDLE_WAIT_TIMEOUT
   return null;
 }
 
+// Luker 2.7 的 getChatState／updateChatState 回 {ok, state|reason, hint} 信封、失败不抛错；
+// 旧版直接回 payload。ok:false 当成读写失败抛出：读取失败不能当成「没有存档」去写空，写入失败不能当成已保存。
+function unwrapLukerStateResult(result) {
+  if (!result || typeof result !== 'object' || typeof result.ok !== 'boolean' || 'version' in result) return result;
+  if (!result.ok) throw new Error(`Luker chat state ${result.reason || 'error'}${result.hint ? `: ${result.hint}` : ''}`);
+  return result.state;
+}
+
 export async function loadHostChatState(ctx = null) {
   const hostKind = getHostKind();
   if (hostKind === 'luker') {
     const runtime = ctx || getHostContext();
     if (typeof runtime?.getChatState !== 'function') return null;
     try {
-      const stored = await runtime.getChatState(TAURI_STATE_NAMESPACE);
+      const stored = unwrapLukerStateResult(await runtime.getChatState(TAURI_STATE_NAMESPACE));
       // 读到了（无论有没有资料）就算确认过内容，之后才允许写空
       TAURI_STATE_HYDRATED_IDS.add(getHostChatId(ctx));
       if (stored?.version === 1 && stored.chatState && typeof stored.chatState === 'object') return cloneHostValue(stored.chatState);
@@ -524,7 +532,7 @@ function prepareHostChatStateSave(ctx, chatState) {
     return {
       chatId,
       hostKind,
-      write: () => ctx.updateChatState(TAURI_STATE_NAMESPACE, () => payload),
+      write: async () => { unwrapLukerStateResult(await ctx.updateChatState(TAURI_STATE_NAMESPACE, () => payload)); },
     };
   }
   if (hostKind !== 'tauritavern') return null;

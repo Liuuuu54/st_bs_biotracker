@@ -114,6 +114,34 @@ test('Luker uses its chat sidecar without persisting chatStates globally', async
   assert.equal(saved?.chatState?.characters?.Alice?.initialized, true);
 });
 
+test('Luker 2.7 envelopes: ok state hydrates, ok:false read stays unconfirmed, ok:false write rejects', async () => {
+  resetGlobals();
+  let read = { ok: true, state: { version: 1, chatState: { characters: { Alice: { initialized: true } }, snapshots: [] } } };
+  let write = { ok: true, state: {}, updated: true };
+  const ctx = {
+    chatId: 'luker-envelope',
+    extensionSettings: {},
+    saveSettingsDebounced() {},
+    async getChatState() { return read; },
+    async updateChatState(namespace, updater) { await updater({}); return write; },
+  };
+  globalThis.Luker = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  assert.equal(await state.hydrateChatStateFromHost(ctx, settings), true);
+  assert.equal(state.getChatState(ctx, settings).characters.Alice.initialized, true);
+  write = { ok: false, reason: 'conflict', hint: 'retry later' };
+  await assert.rejects(state.saveSettingsNow(ctx), /conflict/);
+
+  resetGlobals();
+  read = { ok: false, state: null, reason: 'transport_error' };
+  const other = { ...ctx, chatId: 'luker-envelope-failed' };
+  globalThis.Luker = { getContext: () => other };
+  const otherSettings = state.getSettings(other);
+  assert.equal(await state.hydrateChatStateFromHost(other, otherSettings), false);
+  assert.equal(host.isHostChatStateConfirmed(other), false);
+  resetGlobals();
+});
+
 test('character additional worldbooks come from charLore for the current character only', async () => {
   resetGlobals();
   const ctx = {
