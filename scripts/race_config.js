@@ -812,7 +812,8 @@ export const DERIVED_TYPE_METABOLISM_EXEMPTIONS = Object.freeze({
   "血族": Object.freeze(["hunger", "excretion", "odor"]),
   "不死": Object.freeze(["odor", "sleep", "milk"]),
   "修炼": Object.freeze(["hunger", "excretion", "companionship"]),
-  "魔导": Object.freeze(["sleep", "companionship", "odor"]),
+  // 冥想代替睡眠，清洁术处理体味与代谢
+  "魔导": Object.freeze(["sleep", "odor", "excretion"]),
   "妖怪": Object.freeze(["hunger", "excretion", "sleep"]),
   "神祇": Object.freeze(["hunger", "sleep", "companionship"]),
   "机械": Object.freeze(["hunger", "milk", "companionship"]),

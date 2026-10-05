@@ -106,6 +106,20 @@ test('咒缚随血脉全族入约：遗传最快、契约主抵免陪伴，豁�
   assert.ok(buildRaceCatalogBlock({ withHints: true }).includes('咒缚(Hexbound'), '名录应带咒缚提示');
 });
 
+test('每种衍生恰好豁免三项不同需求，且豁免组合两两不重复', async () => {
+  const raceConfig = await import('../scripts/race_config.js');
+  const needs = ['excretion', 'hunger', 'sleep', 'milk', 'odor', 'companionship'];
+  const seen = new Map();
+  for (const type of raceConfig.DERIVED_TYPE_RACES) {
+    const exemptions = raceConfig.getDerivedTypeMetabolismExemptions(type);
+    assert.equal(new Set(exemptions).size, 3, `${type} 应豁免三项不同需求`);
+    assert.ok(exemptions.every((need) => needs.includes(need)), `${type} 的豁免应是已知需求`);
+    const key = [...exemptions].sort().join();
+    assert.equal(seen.get(key), undefined, `${type} 与 ${seen.get(key)} 的豁免组合重复`);
+    seen.set(key, type);
+  }
+});
+
 test('短敘述与名录提示都走使用者覆写', async () => {
   const { setRacePhysiologyOverrides } = await import('../scripts/race_config.js');
   try {
