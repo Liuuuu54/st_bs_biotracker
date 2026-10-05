@@ -26,10 +26,14 @@ function makeHost(name, race) {
   };
 }
 
-test('内建名录为人类加 72 个异种，新增种族进入正确胚胎分组', () => {
-  assert.equal(ALL_BUILTIN_RACES.length, 73);
-  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 72);
+test('内建名录为人类加 76 个异种，新增种族进入正确胚胎分组', () => {
+  assert.equal(ALL_BUILTIN_RACES.length, 77);
+  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 76);
   const expected = {
+    卓尔: '胎生',
+    米诺陶族: '胎生',
+    魔族: '胎生',
+    蝎罗: '卵胎生',
     怪兽类: '胎生',
     怪鸟类: '卵生',
     怪鱼类: '卵胎生',

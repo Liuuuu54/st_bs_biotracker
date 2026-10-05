@@ -54,7 +54,7 @@ test('追踪与注册提示词共用百科名录选择', () => {
   assert.equal(filtered.includes('鱼人('), false);
 });
 
-test('世界基准独立于 72+12 名录并进入四条提示词', () => {
+test('世界基准独立于异种与衍生类型名录并进入四条提示词', () => {
   const world = '本世界人类的男女生殖生理与社会角色完全翻转。';
   assert.equal(buildWorldBaselineBlock(''), '');
   assert.match(buildWorldBaselineBlock(world), /\[世界基准\][\s\S]*男女生殖生理/);
@@ -90,6 +90,7 @@ test('序列兼容三大女性向设定，兽化使用独立兽性与乳意抵�
   );
   assert.match(raceConfig.getDerivedTypeFluxProfile('兽化').fluxDefinition, /乳意由兽性抵免而不单独追踪/);
 });
+
 
 test('短敘述与名录提示都走使用者覆写', async () => {
   const { setRacePhysiologyOverrides } = await import('../scripts/race_config.js');
@@ -139,20 +140,33 @@ test('名录提示至少含一句中文，不会只剩英文原名', () => {
   assert.deepEqual(englishOnly.map((match) => match[1]), [], '提示不应只剩英文原名');
 });
 
-test('杜拉罕填补胎生组「难受孕 + 高承载」的空缺', async () => {
+test('米诺陶族的承载耐受为胎生之最，杜拉罕只是难受孕', async () => {
   const { VIVIPAROUS_RACES, getRacePhysiologyProfile, getEmbryoTypeByRace } = await import('../scripts/race_config.js');
-  const profile = getRacePhysiologyProfile('杜拉罕');
-  assert.ok(profile, '杜拉罕应有生理参数');
+  // 承载耐受同时放大泌乳，牛系是胎生组唯一的高承载顶点
+  const ranked = VIVIPAROUS_RACES
+    .map((race) => [race, getRacePhysiologyProfile(race).breedTolerance])
+    .sort((a, b) => b[1] - a[1]);
+  assert.equal(ranked[0][0], '米诺陶族');
+  assert.ok(ranked[0][1] > ranked[1][1], '米诺陶族应独占胎生最高承载');
+
+  const dullahan = getRacePhysiologyProfile('杜拉罕');
   assert.equal(getEmbryoTypeByRace('杜拉罕'), '胎生');
-  // 躯体不依赖头颅运作 → 承载力强；妖精血统 → 难受孕。
-  // 胎生组此前是一条负相关（越难怀越扛不住），杜拉罕是唯一的例外点。
-  const quadrant = VIVIPAROUS_RACES.filter((race) => {
-    const item = getRacePhysiologyProfile(race);
-    return item && item.impregnationDifficulty >= 2 && item.breedTolerance >= 2;
-  });
-  assert.deepEqual(quadrant, ['杜拉罕']);
+  assert.ok(dullahan.impregnationDifficulty >= 2, '妖精血统 → 难受孕');
+  assert.ok(dullahan.breedTolerance < 2, '头颅离体与哺育能力无关，不再给高承载');
   // 出生时头颅仍与躯干相连，分娩难度不该低于人类
-  assert.equal(profile.birthDifficulty, getRacePhysiologyProfile('人类').birthDifficulty);
+  assert.equal(dullahan.birthDifficulty, getRacePhysiologyProfile('人类').birthDifficulty);
+});
+
+test('卓尔沿用精灵数值，只是较易受精、较难分娩', async () => {
+  const { getRacePhysiologyProfile, RACE_PHYSIOLOGY_FIELDS } = await import('../scripts/race_config.js');
+  const elf = getRacePhysiologyProfile('精灵');
+  const drow = getRacePhysiologyProfile('卓尔');
+  for (const field of RACE_PHYSIOLOGY_FIELDS) {
+    if (field === 'impregnationDifficulty' || field === 'birthDifficulty') continue;
+    assert.equal(drow[field], elf[field], `卓尔的 ${field} 应与精灵相同`);
+  }
+  assert.ok(drow.impregnationDifficulty < elf.impregnationDifficulty);
+  assert.ok(drow.birthDifficulty > elf.birthDifficulty);
 });
 
 test('承载耐受进入提示词，且偏移不再被胎儿种族放大', async () => {

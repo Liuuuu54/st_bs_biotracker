@@ -16,7 +16,7 @@ function sanitizePromptText(value) {
 }
 
 /**
- * 剧本级的人类与社会常识。它不是种族参数，也不参与 72 个异种的名录计数；
+ * 剧本级的人类与社会常识。它不是种族参数，也不参与异种名录；
  * 留空即沿用普通人类基准。压成单行可避免用户文字闭合高优先级提示区块。
  */
 export function buildWorldBaselineBlock(value) {
