@@ -1,99 +1,7 @@
-export const VIVIPAROUS_RACES = Object.freeze([
-  "人类",
-  "精灵",
-  "兽耳族",
-  "怪兽类",
-  "袋兽族",
-  "哥布林",
-  "兽人",
-  "矮人",
-  "半身人",
-  "半人马",
-  "巨人",
-  "媚魔",
-  "雪族",
-  "夜叉",
-  "妖狐",
-  "貓又",
-  "月兔族",
-  "杜拉罕"
-]);
-
-export const OVIPAROUS_RACES = Object.freeze([
-  "鸟人",
-  "怪鸟类",
-  "植物亚人",
-  "社会虫族",
-  "蜥蜴人",
-  "触手怪",
-  "妖精",
-  "真菌亚人",
-  "海蛞蝓族",
-  "龟族",
-  "甲壳族",
-  "宝箱怪",
-  "阿拉克涅",
-  "百足姬",
-  "天狗",
-  "深潜者",
-  "狗头人"
-]);
-
-export const OVOVIVIPAROUS_RACES = Object.freeze([
-  "人鱼",
-  "鱼人",
-  "怪鱼类",
-  "海妖",
-  "独居虫族",
-  "蛇人",
-  "蛙人",
-  "眼魔",
-  "水母族",
-  "海马族",
-  "河童",
-  "梅杜莎"
-]);
-
-export const METOVIVIPAROUS_RACES = Object.freeze([
-  "西方龙",
-  "东方龙",
-  "狮鹫族",
-  "天使",
-  "恶魔",
-  "奇美拉",
-  "麒麟",
-  "凤凰",
-  "白泽",
-  "独角兽",
-  "空鲸",
-  "星繭族",
-  "修格斯"
-]);
-
-export const AMORPHOUS_RACES = Object.freeze([
-  "史萊姆",
-  "石像鬼",
-  "烛灵",
-  "人偶",
-  "心魇",
-  "夢魔",
-  "宝石人",
-  "奈米丛族",
-  "元素灵",
-  "灯神",
-  "影魔",
-  "活体铠甲",
-  "伪人"
-]);
-
-export const ALL_BUILTIN_RACES = Object.freeze([
-  ...VIVIPAROUS_RACES,
-  ...OVIPAROUS_RACES,
-  ...OVOVIVIPAROUS_RACES,
-  ...METOVIVIPAROUS_RACES,
-  ...AMORPHOUS_RACES,
-]);
-
+export const EMBRYO_TYPES = Object.freeze(["胎生", "卵生", "卵胎生", "胎转卵生", "不定型"]);
+/** 胚型是字串，不进 RACE_PHYSIOLOGY_FIELDS（那里的栏位会被当数值平均） */
+export const RACE_EMBRYO_TYPE_FIELD = "embryoType";
+export const RACE_INTRODUCTION_FIELD = "introductionLine";
 export const RACE_INHERITANCE_FIELD = "inheritanceMode";
 export const RACE_INHERITANCE_MODES = Object.freeze({
   NORMAL: "normal",
@@ -101,103 +9,642 @@ export const RACE_INHERITANCE_MODES = Object.freeze({
   MATERNAL: "maternal",
 });
 
-export const RACE_INHERITANCE_PROFILES = Object.freeze(Object.assign(
-  Object.fromEntries(ALL_BUILTIN_RACES.map((race) => [race, RACE_INHERITANCE_MODES.NORMAL])),
-  {
-    "哥布林": RACE_INHERITANCE_MODES.PATERNAL,
-    "狗头人": RACE_INHERITANCE_MODES.PATERNAL,
-    "海马族": RACE_INHERITANCE_MODES.PATERNAL,
-    "怪兽类": RACE_INHERITANCE_MODES.PATERNAL,
-    "怪鸟类": RACE_INHERITANCE_MODES.PATERNAL,
-    "怪鱼类": RACE_INHERITANCE_MODES.PATERNAL,
-    "媚魔": RACE_INHERITANCE_MODES.MATERNAL,
-    "夢魔": RACE_INHERITANCE_MODES.MATERNAL,
-    "心魇": RACE_INHERITANCE_MODES.MATERNAL,
-    "星繭族": RACE_INHERITANCE_MODES.MATERNAL,
-    "社会虫族": RACE_INHERITANCE_MODES.MATERNAL,
-    "梅杜莎": RACE_INHERITANCE_MODES.MATERNAL,
-  },
-));
+/** 可被百科覆写、混血时按血统加权的数值栏位 */
+export const RACE_PHYSIOLOGY_FIELDS = Object.freeze([
+  "menstrualLengthRatio",
+  "gestationSpeciesSpeed",
+  "birthDifficulty",
+  "breedTolerance",
+  "impregnationDifficulty",
+  "orgasmOvulationAmount",
+  "identicalProbability",
+  "companionEggsMean",
+  "recoveryCoefficient",
+  "genderRatio"
+]);
 
-export const RACE_INTRODUCTION_LINES = Object.freeze(Object.assign(
-  // 未列出的种族留空，提示词会自动略过该行
-  Object.fromEntries(ALL_BUILTIN_RACES.map((race) => [race, ""])),
-  {
-    "精灵": "Elf，长寿的尖耳亚人，面容姣好、擅长魔法；肤色深青的亚种称黑暗精灵（卓尔）。",
-    "兽耳族": "Kemonomimi／Beastfolk，保有人形、带兽耳兽尾的亚人；日系兽娘与西方 furry 皆归此类。",
-    "怪兽类": "Beast，异种交配情境中的完整兽形动物；具体物种写作怪兽类-狼、怪兽类-马等。",
-    "袋兽族": "Marsupial-folk，有袋目亚人。幼体极早产出后转入育儿袋，因此承载耐受极低。",
-    "哥布林": "Goblin，西幻小型怪物，繁殖力旺盛且几乎只诞下雄性；少数雌性个体存在。",
-    "兽人": "即 Orc（绿皮），高大粗野的战斗种族；与「兽耳族」无关，勿混用。",
-    "矮人": "Dwarf，居于矿山、擅长锻造的短躯亚人。",
-    "半身人": "Halfling，又称哈比人，身形矮小的和平亚人。",
-    "半人马": "Centaur，上身为人、下身为马的亚人，源自希腊神话。",
-    "巨人": "Giant，体型远超人类的种族；巨魔、山怪、独眼巨人、泰坦皆归此类。",
-    "媚魔": "Succubus，近乎纯女性的性欲特化恶魔系亚人；与近乎纯男性的夢魔为对应种族。",
-    "雪族": "Yuki-onna／Yeti，雪女与雪怪的复合群体，栖于严寒。",
-    "夜叉": "Yaksha／Oni，头生角的日系鬼族，罗刹与阿修罗皆归此类。",
-    "妖狐": "Kitsune，祖先为兽耳族，沾妖后独立演化的狐系妖族，修行增尾；未沾妖的兽耳狐娘应写作兽耳族-狐。",
-    "貓又": "Nekomata，祖先为兽耳族，沾妖后独立演化的猫系妖族，久养成妖、尾端分岔；未沾妖的兽耳猫娘应写作兽耳族-猫。",
-    "鸟人": "Harpy，典型形象为哈比，带翼的鸟类亚人；现代创作已性别比正常化。",
-    "怪鸟类": "Monstrous Bird，异种交配情境中的完整鸟形动物；具体物种写作怪鸟类-鹰、怪鸟类-鸦等。",
-    "植物亚人": "Dryad／Plant-folk，植物拟人，具自花授粉特性。",
-    "社会虫族": "Eusocial Insectfolk，蜜蜂与蚂蚁一类的真社会性虫族，以雌性为绝对多数。",
-    "蜥蜴人": "Lizardfolk，又称亚龙人的鳞甲亚人；设定上从部落怪物到与人平起平坐皆有。",
-    "触手怪": "Tentacle Monster，起源不明、擅长拟态的异形外星群体生命；主要向异族宿主植入同族胚体扩散，真正与宿主发生遗传融合的案例极少。",
-    "妖精": "fairy，娇小带翅的精怪；与长身尖耳的「精灵」不同。",
-    "真菌亚人": "Myconid，菌类拟人，具自体授粉特性。",
-    "海蛞蝓族": "Sea Slug-folk，海兔拟人，雌雄同体；交配方式奇特（交配列车、阴茎击剑）。",
-    "龟族": "Turtle-folk，龟类拟人，长寿而孕期极长。",
-    "甲壳族": "Crustacean-folk，蟹虾一类的甲壳拟人。",
-    "宝箱怪": "Mimic，宝箱拟态怪，雌雄同体；所产之卵呈金币状。",
-    "阿拉克涅": "Arachne，上身为人、下身为蜘蛛的亚人，源自希腊神话。",
-    "百足姬": "Centipede-folk，上身为人、下身为蜈蚣的亚人，雅称天龙；可视为蜈蚣版的阿拉克涅。",
-    "天狗": "Tengu，日系妖怪，形象有鸦、狼、长鼻数种；族群政治性强。",
-    "深潜者": "Deep One，源自克苏鲁的海系异种，潜伏于人类社会；胚胎类型刻意与其他海系亚人不同。",
-    "人鱼": "Mermaid，以鱼尾替代双足的美人鱼；可借魔法置换双足上陆。",
-    "鱼人": "Fishfolk，人形而带鱼类特徵与粗尾鳍，可视为海中的精灵——孕期长、产子少。萨尔达的佐拉族属此。",
-    "怪鱼类": "Monstrous Fish，异种交配情境中的完整鱼形动物；具体物种写作怪鱼类-鲨、怪鱼类-鲤等。",
-    "海妖": "Scylla，章鱼乌贼一类，以触腕替代双足；无须变形即可上陆。",
-    "独居虫族": "Solitary Insectfolk，与社会虫族相对的独居性虫族；蛾、螳螂等拟人归此，部分会将卵寄入异族代孕孵化。",
-    "蛇人": "Lamia，上身为人、下身为蛇的亚人，形象参考拉米亚。",
-    "蛙人": "Frogfolk，蛙类拟人，出生时性别由外在环境决定，故不适用固定男女比。",
-    "眼魔": "Beholder，引用 D&D 的眼球暴君，经拟人化后的形象。",
-    "水母族": "Jellyfish-folk，水母拟人，幼体（水螅体）与成体（水母体）形态差异极大。",
-    "海马族": "Seahorse-folk，海马拟人的海系亚人，属雄性孕育系。",
-    "河童": "Kappa，头顶盛水皿的日系妖怪，蛙人的妖系分支。",
-    "西方龙": "Western Dragon，近似 D&D 的西方巨龙，可在人态与完全龙形间转换；性欲旺盛、乐于跨种族交配，龙卵产量也高于东方龙。",
-    "东方龙": "Eastern Dragon，汲取天地灵气的东方神龙，可化为人形；孕期漫长而自身承载耐受很低，产后需要长期恢复。",
-    "狮鹫族": "Griffin，鹰首狮身的上位幻兽，可在人态与完全态之间转换。",
-    "天使": "Angel，天界种族，以「天使之卵」孕育。",
-    "恶魔": "Demon，魔界种族，以「恶魔之卵」孕育；与已分家的媚魔及夢魔不同。",
-    "奇美拉": "Chimera，合成兽。胎转卵生的过程可在孕育期平衡混杂血脉的冲突。",
-    "麒麟": "Qilin，东方上位神兽，汲取环境灵气孕育，自身承载耐受偏低；可拟人化。",
-    "凤凰": "Phoenix，东方上位神兽，浴火重生，汲取环境灵气孕育；可拟人化。",
-    "白泽": "Bai Ze，东方上位神兽，通晓万物，汲取环境灵气孕育；自身承载耐受偏低。",
-    "独角兽": "Unicorn，额生独角的上位幻兽，可在人态与完全态之间转换。",
-    "空鲸": "Sky Whale，翱翔天际的巨鲸，可在常态人形与巨态鱼形间切换（鲲鹏之属），孕期为全表最长。",
-    "星繭族": "Astral Cocoon-folk，特化的寰宇虫娘，单胎于子宫中度过幼虫期，分娩时产下虫繭而非虫卵；会让异族女性以假孕分摊孕育能量。",
-    "史萊姆": "Slime，繁殖策略极多样：可无性分裂，可孕育任何种族之胎，亦可寄入异族子宫。",
-    "石像鬼": "Gargoyle，人类造物之一，石质无性种族；受精难度极高，繁殖基本限于同族。",
-    "烛灵": "Candle Spirit，人类造物之一，烛火所寄的无性种族；受精难度极高，繁殖基本限于同族。",
-    "人偶": "Living Doll，人类造物之一，得灵的人偶，无性；受精难度极高，繁殖基本限于同族。",
-    "心魇": "Kaijin，由人心黑暗与负面情绪孕育而生的异形种族，常作为魔法少女的敌人；其后代通常继承母方的心魇外貌与异形特徵。",
-    "夢魔": "Incubus，近乎纯男性的性欲特化恶魔系不定型种族；胚胎发育随母体调整外形，但基因定序仍属夢魔。",
-    "宝石人": "Gem-folk，矿物构成的种族，可参考宝石之国一类的设定。",
-    "奈米丛族": "Nanite Swarm，由亿级奈米机械单元构成的液态金属体。",
-    "元素灵": "Elemental，自然元素的拟人体，如水元素温蒂妮。",
-    "灯神": "Djinn，阿拉丁神灯一类的愿望精灵。",
-    "影魔": "Shadow-folk，可在平面与立体之间切换、投影于影中的种族。",
-    "月兔族": "Moon Rabbit，居于月球的兔系亚人；繁殖力为胎生种族之最，族中多为雌性。",
-    "狗头人": "Kobold，与哥布林同生态位的小型犬首亚人；却如鸭嘴兽般产卵，分娩负担远低于哥布林。",
-    "梅杜莎": "Medusa，蛇人沾妖后独立演化的分支，发为群蛇；比蛇人更难受孕、孕期更长。",
-    "修格斯": "Shoggoth，形似史莱姆却更为古老的太古存在，承载力极强而极难受孕。",
-    "活体铠甲": "Living Armor，寄生型无性种族，附着于冒险者身上；将卵寄入宿主体内孵化，不自行孕育。",
-    "伪人": "Doppelganger，模仿并取代人类的不定型种族；各项生理刻意贴近人类，同卵分裂倾向极高。",
-    "杜拉罕": "Dullahan，可将头颅离体持握的亚人，青春期后头颅方与躯干分离，颈上或燃着无实体的火焰；躯体不依赖头颅运作，承载力极强。爱尔兰原典近于妖精，奇幻创作多作不死——取后者写作 [不死]杜拉罕。",
+/**
+ * 内置种族的唯一资料来源：新增种族只在这里加一笔，下方的种族清单与生理表都由此推导。
+ * 栏位名与百科覆写一致，键的先后即名录、调色盘与百科的排列顺序。
+ *
+ * - embryoType：EMBRYO_TYPES 之一，决定卵壳、胎背、伴生卵与嵌套宿主等行为
+ * - introductionLine：名录与提示词的短敘述，「英文原名，一句中文」；留空则提示词略过该行
+ * - inheritanceMode：normal 一般；paternal 雄核（仅一方具核型时后代取精方种族，如哥布林）；
+ *   maternal 雌核（取卵方种族，如媚魔）
+ * - menstrualLengthRatio：经期长度倍率，人类为 1
+ * - gestationSpeciesSpeed：孕速倍率，越高孕期越短；混血按「280／孕速」加权平均
+ * - birthDifficulty：分娩难度；breedTolerance：承载耐受，越高孕期负担越轻
+ * - impregnationDifficulty：受精难度，越高越难受孕、跨种越难
+ * - orgasmOvulationAmount：高潮额外排卵数（整数）；identicalProbability：同卵分裂率（%）
+ * - genderRatio：后代雄性百分比；null 为雌雄同体或双性，-1 为无性
+ * - companionEggsMean：每个有效胚胎平均伴随多少颗不会发育成胎儿卡的背景卵（伴生卵）。
+ *   胚型只代表「允许多卵」，不会让卵生／卵胎生／不定型自动高产；胎生与胎转卵生恒无伴生卵
+ * - recoveryCoefficient：产后恢复系数，以人类 56 天为 1，只看母体物种（混血取各成分平均），衍生类型不参与；
+ *   实际天数在分娩／流产当下再乘活力、经产与胎数因子，见 computePostpartumRecoveryDays
+ *
+ * 种族图示另存于 race_icons.js（由预览工具汇出），tests/race_icons.test.mjs 会核对两边名单一致。
+ */
+const RACE_DEFINITIONS = Object.freeze({
+  "人类": {
+    embryoType: "胎生",
+    introductionLine: "",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 1, breedTolerance: 1,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 1,
   },
-));
-export const RACE_INTRODUCTION_FIELD = "introductionLine";
+  "精灵": {
+    embryoType: "胎生",
+    introductionLine: "Elf，长寿的尖耳亚人，面容姣好、擅长魔法；肤色深青的亚种称黑暗精灵（卓尔）。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.5, birthDifficulty: 0.8, breedTolerance: 0.33,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 2, genderRatio: 45,
+    companionEggsMean: 0, recoveryCoefficient: 4.86,
+  },
+  "兽耳族": {
+    embryoType: "胎生",
+    introductionLine: "Kemonomimi／Beastfolk，保有人形、带兽耳兽尾的亚人；日系兽娘与西方 furry 皆归此类。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.6, birthDifficulty: 0.8, breedTolerance: 3,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 45, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.25,
+  },
+  "怪兽类": {
+    embryoType: "胎生",
+    introductionLine: "Beast，异种交配情境中的完整兽形动物；具体物种写作怪兽类-狼、怪兽类-马等。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 2, birthDifficulty: 0.8, breedTolerance: 3,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 1, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.25,
+  },
+  "袋兽族": {
+    embryoType: "胎生",
+    introductionLine: "Marsupial-folk，有袋目亚人。幼体极早产出后转入育儿袋，因此承载耐受极低。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 5, birthDifficulty: 0.3, breedTolerance: 0.01,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 1, identicalProbability: 25, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "哥布林": {
+    embryoType: "胎生",
+    introductionLine: "Goblin，西幻小型怪物，繁殖力旺盛且几乎只诞下雄性；少数雌性个体存在。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2.5, birthDifficulty: 2, breedTolerance: 1,
+    impregnationDifficulty: 0.2, orgasmOvulationAmount: 2, identicalProbability: 40, genderRatio: 95,
+    companionEggsMean: 0, recoveryCoefficient: 0.8,
+  },
+  "兽人": {
+    embryoType: "胎生",
+    introductionLine: "即 Orc（绿皮），高大粗野的战斗种族；与「兽耳族」无关，勿混用。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 1, breedTolerance: 2,
+    impregnationDifficulty: 0.8, orgasmOvulationAmount: 1, identicalProbability: 50, genderRatio: 75,
+    companionEggsMean: 0, recoveryCoefficient: 0.39,
+  },
+  "矮人": {
+    embryoType: "胎生",
+    introductionLine: "Dwarf，居于矿山、擅长锻造的短躯亚人。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 2, breedTolerance: 1,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 1, identicalProbability: 2, genderRatio: 60,
+    companionEggsMean: 0, recoveryCoefficient: 2,
+  },
+  "半身人": {
+    embryoType: "胎生",
+    introductionLine: "Halfling，又称哈比人，身形矮小的和平亚人。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 1.5, breedTolerance: 2,
+    impregnationDifficulty: 0.8, orgasmOvulationAmount: 3, identicalProbability: 30, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.61,
+  },
+  "半人马": {
+    embryoType: "胎生",
+    introductionLine: "Centaur，上身为人、下身为马的亚人，源自希腊神话。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 0.5,
+    impregnationDifficulty: 2, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 66,
+    companionEggsMean: 0, recoveryCoefficient: 3.75,
+  },
+  "巨人": {
+    embryoType: "胎生",
+    introductionLine: "Giant，体型远超人类的种族；巨魔、山怪、独眼巨人、泰坦皆归此类。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.4, birthDifficulty: 3, breedTolerance: 1,
+    impregnationDifficulty: 4, orgasmOvulationAmount: 0, identicalProbability: 2, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "媚魔": {
+    embryoType: "胎生",
+    introductionLine: "Succubus，近乎纯女性的性欲特化恶魔系亚人；与近乎纯男性的夢魔为对应种族。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 3,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 33, genderRatio: 5,
+    companionEggsMean: 0, recoveryCoefficient: 0.25,
+  },
+  "雪族": {
+    embryoType: "胎生",
+    introductionLine: "Yuki-onna／Yeti，雪女与雪怪的复合群体，栖于严寒。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.25, gestationSpeciesSpeed: 1, birthDifficulty: 1, breedTolerance: 0.8,
+    impregnationDifficulty: 0.75, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 40,
+    companionEggsMean: 0, recoveryCoefficient: 1.25,
+  },
+  "夜叉": {
+    embryoType: "胎生",
+    introductionLine: "Yaksha／Oni，头生角的日系鬼族，罗刹与阿修罗皆归此类。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 0.5, birthDifficulty: 4, breedTolerance: 0.8,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 1, identicalProbability: 50, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "妖狐": {
+    embryoType: "胎生",
+    introductionLine: "Kitsune，祖先为兽耳族，沾妖后独立演化的狐系妖族，修行增尾；未沾妖的兽耳狐娘应写作兽耳族-狐。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 0.5,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 3.75,
+  },
+  "貓又": {
+    embryoType: "胎生",
+    introductionLine: "Nekomata，祖先为兽耳族，沾妖后独立演化的猫系妖族，久养成妖、尾端分岔；未沾妖的兽耳猫娘应写作兽耳族-猫。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1, birthDifficulty: 1, breedTolerance: 1.5,
+    impregnationDifficulty: 2.5, orgasmOvulationAmount: 2, identicalProbability: 20, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.66,
+  },
+  "月兔族": {
+    embryoType: "胎生",
+    introductionLine: "Moon Rabbit，居于月球的兔系亚人；繁殖力为胎生种族之最，族中多为雌性。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2, birthDifficulty: 0.6, breedTolerance: 2.5,
+    impregnationDifficulty: 0.4, orgasmOvulationAmount: 4, identicalProbability: 30, genderRatio: 30,
+    companionEggsMean: 0, recoveryCoefficient: 0.25,
+  },
+  "杜拉罕": {
+    embryoType: "胎生",
+    introductionLine: "Dullahan，可将头颅离体持握的亚人，青春期后头颅方与躯干分离，颈上或燃着无实体的火焰；躯体不依赖头颅运作，承载力极强。爱尔兰原典近于妖精，奇幻创作多作不死——取后者写作 [不死]杜拉罕。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.8, birthDifficulty: 1, breedTolerance: 3,
+    impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.41,
+  },
+  "鸟人": {
+    embryoType: "卵生",
+    introductionLine: "Harpy，典型形象为哈比，带翼的鸟类亚人；现代创作已性别比正常化。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 2, birthDifficulty: 0.33, breedTolerance: 1,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 15, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.5,
+  },
+  "怪鸟类": {
+    embryoType: "卵生",
+    introductionLine: "Monstrous Bird，异种交配情境中的完整鸟形动物；具体物种写作怪鸟类-鹰、怪鸟类-鸦等。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 20, birthDifficulty: 0.2, breedTolerance: 1,
+    impregnationDifficulty: 0.4, orgasmOvulationAmount: 3, identicalProbability: 1, genderRatio: 50,
+    companionEggsMean: 3, recoveryCoefficient: 0.25,
+  },
+  "植物亚人": {
+    embryoType: "卵生",
+    introductionLine: "Dryad／Plant-folk，植物拟人，具自花授粉特性。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 2.5, birthDifficulty: 0.25, breedTolerance: 1,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 6, identicalProbability: 5, genderRatio: null,
+    companionEggsMean: 4, recoveryCoefficient: 0.3,
+  },
+  "社会虫族": {
+    embryoType: "卵生",
+    introductionLine: "Eusocial Insectfolk，蜜蜂与蚂蚁一类的真社会性虫族，以雌性为绝对多数。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 2.5, birthDifficulty: 0.2, breedTolerance: 1.33,
+    impregnationDifficulty: 0.2, orgasmOvulationAmount: 8, identicalProbability: 0, genderRatio: 10,
+    companionEggsMean: 16, recoveryCoefficient: 0.25,
+  },
+  "蜥蜴人": {
+    embryoType: "卵生",
+    introductionLine: "Lizardfolk，又称亚龙人的鳞甲亚人；设定上从部落怪物到与人平起平坐皆有。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.8, breedTolerance: 1,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 3, identicalProbability: 20, genderRatio: null,
+    companionEggsMean: 4, recoveryCoefficient: 0.77,
+  },
+  "触手怪": {
+    embryoType: "卵生",
+    introductionLine: "Tentacle Monster，起源不明、擅长拟态的异形外星群体生命；主要向异族宿主植入同族胚体扩散，真正与宿主发生遗传融合的案例极少。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 5, birthDifficulty: 0.2, breedTolerance: 1.67,
+    impregnationDifficulty: 0.25, orgasmOvulationAmount: 9, identicalProbability: 25, genderRatio: -1,
+    companionEggsMean: 3, recoveryCoefficient: 0.25,
+  },
+  "妖精": {
+    embryoType: "卵生",
+    introductionLine: "fairy，娇小带翅的精怪；与长身尖耳的「精灵」不同。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.8, birthDifficulty: 1, breedTolerance: 1,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 2, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 3.75,
+  },
+  "真菌亚人": {
+    embryoType: "卵生",
+    introductionLine: "Myconid，菌类拟人，具自体授粉特性。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 3.3, birthDifficulty: 0.25, breedTolerance: 1,
+    impregnationDifficulty: 0.8, orgasmOvulationAmount: 4, identicalProbability: 5, genderRatio: null,
+    companionEggsMean: 6, recoveryCoefficient: 0.25,
+  },
+  "海蛞蝓族": {
+    embryoType: "卵生",
+    introductionLine: "Sea Slug-folk，海兔拟人，雌雄同体；交配方式奇特（交配列车、阴茎击剑）。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 3.3, birthDifficulty: 0.25, breedTolerance: 0.25,
+    impregnationDifficulty: 0.25, orgasmOvulationAmount: 5, identicalProbability: 30, genderRatio: null,
+    companionEggsMean: 9, recoveryCoefficient: 0.91,
+  },
+  "龟族": {
+    embryoType: "卵生",
+    introductionLine: "Turtle-folk，龟类拟人，长寿而孕期极长。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.625, birthDifficulty: 0.3, breedTolerance: 0.8,
+    impregnationDifficulty: 2, orgasmOvulationAmount: 4, identicalProbability: 15, genderRatio: 50,
+    companionEggsMean: 7, recoveryCoefficient: 1.8,
+  },
+  "甲壳族": {
+    embryoType: "卵生",
+    introductionLine: "Crustacean-folk，蟹虾一类的甲壳拟人。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 3, gestationSpeciesSpeed: 1.6, birthDifficulty: 0.4, breedTolerance: 1,
+    impregnationDifficulty: 2.5, orgasmOvulationAmount: 4, identicalProbability: 20, genderRatio: 50,
+    companionEggsMean: 20, recoveryCoefficient: 0.46,
+  },
+  "宝箱怪": {
+    embryoType: "卵生",
+    introductionLine: "Mimic，宝箱拟态怪，雌雄同体；所产之卵呈金币状。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.67, birthDifficulty: 0.6, breedTolerance: 1.2,
+    impregnationDifficulty: 0.6, orgasmOvulationAmount: 6, identicalProbability: 66, genderRatio: null,
+    companionEggsMean: 7, recoveryCoefficient: 0.3,
+  },
+  "阿拉克涅": {
+    embryoType: "卵生",
+    introductionLine: "Arachne，上身为人、下身为蜘蛛的亚人，源自希腊神话。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 2, birthDifficulty: 1.5, breedTolerance: 1.33,
+    impregnationDifficulty: 2, orgasmOvulationAmount: 6, identicalProbability: 0, genderRatio: 25,
+    companionEggsMean: 12, recoveryCoefficient: 0.57,
+  },
+  "百足姬": {
+    embryoType: "卵生",
+    introductionLine: "Centipede-folk，上身为人、下身为蜈蚣的亚人，雅称天龙；可视为蜈蚣版的阿拉克涅。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 2, birthDifficulty: 3.5, breedTolerance: 1.33,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 6, identicalProbability: 0, genderRatio: 40,
+    companionEggsMean: 10, recoveryCoefficient: 1.32,
+  },
+  "天狗": {
+    embryoType: "卵生",
+    introductionLine: "Tengu，日系妖怪，形象有鸦、狼、长鼻数种；族群政治性强。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 1, breedTolerance: 1,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 1, identicalProbability: 20, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 2,
+  },
+  "深潜者": {
+    embryoType: "卵生",
+    introductionLine: "Deep One，源自克苏鲁的海系异种，潜伏于人类社会；胚胎类型刻意与其他海系亚人不同。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 1.25, birthDifficulty: 1.2, breedTolerance: 1,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 10, genderRatio: 75,
+    companionEggsMean: 0, recoveryCoefficient: 0.96,
+  },
+  "狗头人": {
+    embryoType: "卵生",
+    introductionLine: "Kobold，与哥布林同生态位的小型犬首亚人；却如鸭嘴兽般产卵，分娩负担远低于哥布林。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2.5, birthDifficulty: 0.4, breedTolerance: 1,
+    impregnationDifficulty: 0.3, orgasmOvulationAmount: 3, identicalProbability: 20, genderRatio: 50,
+    companionEggsMean: 1, recoveryCoefficient: 0.39,
+  },
+  "人鱼": {
+    embryoType: "卵胎生",
+    introductionLine: "Mermaid，以鱼尾替代双足的美人鱼；可借魔法置换双足上陆。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 0.75,
+    impregnationDifficulty: 2, orgasmOvulationAmount: 2, identicalProbability: 20, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 5,
+  },
+  "鱼人": {
+    embryoType: "卵胎生",
+    introductionLine: "Fishfolk，人形而带鱼类特徵与粗尾鳍，可视为海中的精灵——孕期长、产子少。萨尔达的佐拉族属此。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.5, birthDifficulty: 2, breedTolerance: 1,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 2, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "怪鱼类": {
+    embryoType: "卵胎生",
+    introductionLine: "Monstrous Fish，异种交配情境中的完整鱼形动物；具体物种写作怪鱼类-鲨、怪鱼类-鲤等。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 4, birthDifficulty: 0.2, breedTolerance: 2,
+    impregnationDifficulty: 0.3, orgasmOvulationAmount: 8, identicalProbability: 0, genderRatio: 50,
+    companionEggsMean: 32, recoveryCoefficient: 0.25,
+  },
+  "海妖": {
+    embryoType: "卵胎生",
+    introductionLine: "Scylla，章鱼乌贼一类，以触腕替代双足；无须变形即可上陆。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 1, birthDifficulty: 3, breedTolerance: 0.3,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 5, genderRatio: 33,
+    companionEggsMean: 10, recoveryCoefficient: 6,
+  },
+  "独居虫族": {
+    embryoType: "卵胎生",
+    introductionLine: "Solitary Insectfolk，与社会虫族相对的独居性虫族；蛾、螳螂等拟人归此，部分会将卵寄入异族代孕孵化。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 4, birthDifficulty: 0.5, breedTolerance: 1,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 4, identicalProbability: 0, genderRatio: 30,
+    companionEggsMean: 6, recoveryCoefficient: 0.25,
+  },
+  "蛇人": {
+    embryoType: "卵胎生",
+    introductionLine: "Lamia，上身为人、下身为蛇的亚人，形象参考拉米亚。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 1.2, breedTolerance: 2,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 1.2,
+  },
+  "蛙人": {
+    embryoType: "卵胎生",
+    introductionLine: "Frogfolk，蛙类拟人，出生时性别由外在环境决定，故不适用固定男女比。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 3.3, birthDifficulty: 0.25, breedTolerance: 1,
+    impregnationDifficulty: 0.7, orgasmOvulationAmount: 4, identicalProbability: 30, genderRatio: null,
+    companionEggsMean: 35, recoveryCoefficient: 0.25,
+  },
+  "眼魔": {
+    embryoType: "卵胎生",
+    introductionLine: "Beholder，引用 D&D 的眼球暴君，经拟人化后的形象。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.5, breedTolerance: 0.75,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 2, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 1.07,
+  },
+  "水母族": {
+    embryoType: "卵胎生",
+    introductionLine: "Jellyfish-folk，水母拟人，幼体（水螅体）与成体（水母体）形态差异极大。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.2, breedTolerance: 0.5,
+    impregnationDifficulty: 0.33, orgasmOvulationAmount: 5, identicalProbability: 50, genderRatio: null,
+    companionEggsMean: 14, recoveryCoefficient: 0.64,
+  },
+  "海马族": {
+    embryoType: "卵胎生",
+    introductionLine: "Seahorse-folk，海马拟人的海系亚人，属雄性孕育系。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.625, birthDifficulty: 2, breedTolerance: 0.4,
+    impregnationDifficulty: 4, orgasmOvulationAmount: 2, identicalProbability: 25, genderRatio: 66,
+    companionEggsMean: 12, recoveryCoefficient: 6,
+  },
+  "河童": {
+    embryoType: "卵胎生",
+    introductionLine: "Kappa，头顶盛水皿的日系妖怪，蛙人的妖系分支。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 1.5,
+    impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 15, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 2.5,
+  },
+  "梅杜莎": {
+    embryoType: "卵胎生",
+    introductionLine: "Medusa，蛇人沾妖后独立演化的分支，发为群蛇；比蛇人更难受孕、孕期更长。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.7, birthDifficulty: 1.5, breedTolerance: 1,
+    impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 20,
+    companionEggsMean: 0, recoveryCoefficient: 4.29,
+  },
+  "西方龙": {
+    embryoType: "胎转卵生",
+    introductionLine: "Western Dragon，近似 D&D 的西方巨龙，可在人态与完全龙形间转换；性欲旺盛、乐于跨种族交配，龙卵产量也高于东方龙。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 4, gestationSpeciesSpeed: 0.25, birthDifficulty: 4, breedTolerance: 2,
+    impregnationDifficulty: 2, orgasmOvulationAmount: 2, identicalProbability: 25, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "东方龙": {
+    embryoType: "胎转卵生",
+    introductionLine: "Eastern Dragon，汲取天地灵气的东方神龙，可化为人形；孕期漫长而自身承载耐受很低，产后需要长期恢复。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 4, gestationSpeciesSpeed: 0.25, birthDifficulty: 4, breedTolerance: 1 / 3,
+    impregnationDifficulty: 5, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "狮鹫族": {
+    embryoType: "胎转卵生",
+    introductionLine: "Griffin，鹰首狮身的上位幻兽，可在人态与完全态之间转换。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 3.5, gestationSpeciesSpeed: 0.33, birthDifficulty: 3, breedTolerance: 1.8,
+    impregnationDifficulty: 4, orgasmOvulationAmount: 2, identicalProbability: 25, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 5.05,
+  },
+  "天使": {
+    embryoType: "胎转卵生",
+    introductionLine: "Angel，天界种族，以「天使之卵」孕育。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 13, gestationSpeciesSpeed: 0.8, birthDifficulty: 2.5, breedTolerance: 1.4,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 10, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 2.23,
+  },
+  "恶魔": {
+    embryoType: "胎转卵生",
+    introductionLine: "Demon，魔界种族，以「恶魔之卵」孕育；与已分家的媚魔及夢魔不同。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 13, gestationSpeciesSpeed: 0.8, birthDifficulty: 2.5, breedTolerance: 1.4,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 10, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 2.23,
+  },
+  "奇美拉": {
+    embryoType: "胎转卵生",
+    introductionLine: "Chimera，合成兽。胎转卵生的过程可在孕育期平衡混杂血脉的冲突。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.4, birthDifficulty: 4, breedTolerance: 2.4,
+    impregnationDifficulty: 4, orgasmOvulationAmount: 1, identicalProbability: 20, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 4.16,
+  },
+  "麒麟": {
+    embryoType: "胎转卵生",
+    introductionLine: "Qilin，东方上位神兽，汲取环境灵气孕育，自身承载耐受偏低；可拟人化。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.75, gestationSpeciesSpeed: 0.3, birthDifficulty: 3, breedTolerance: 0.8,
+    impregnationDifficulty: 4, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "凤凰": {
+    embryoType: "胎转卵生",
+    introductionLine: "Phoenix，东方上位神兽，浴火重生，汲取环境灵气孕育；可拟人化。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.75, gestationSpeciesSpeed: 0.4, birthDifficulty: 5, breedTolerance: 0.5,
+    impregnationDifficulty: 3.5, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "白泽": {
+    embryoType: "胎转卵生",
+    introductionLine: "Bai Ze，东方上位神兽，通晓万物，汲取环境灵气孕育；自身承载耐受偏低。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.75, gestationSpeciesSpeed: 0.35, birthDifficulty: 4, breedTolerance: 0.4,
+    impregnationDifficulty: 5, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "独角兽": {
+    embryoType: "胎转卵生",
+    introductionLine: "Unicorn，额生独角的上位幻兽，可在人态与完全态之间转换。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.5, birthDifficulty: 3.5, breedTolerance: 1.6,
+    impregnationDifficulty: 5, orgasmOvulationAmount: 1, identicalProbability: 25, genderRatio: 66,
+    companionEggsMean: 0, recoveryCoefficient: 4.38,
+  },
+  "空鲸": {
+    embryoType: "胎转卵生",
+    introductionLine: "Sky Whale，翱翔天际的巨鲸，可在常态人形与巨态鱼形间切换（鲲鹏之属），孕期为全表最长。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.2, birthDifficulty: 5, breedTolerance: 2,
+    impregnationDifficulty: 6, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 33,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "星繭族": {
+    embryoType: "胎转卵生",
+    introductionLine: "Astral Cocoon-folk，特化的寰宇虫娘，单胎于子宫中度过幼虫期，分娩时产下虫繭而非虫卵；会让异族女性以假孕分摊孕育能量。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.6666666666666666, birthDifficulty: 3, breedTolerance: 1,
+    impregnationDifficulty: 0.1, orgasmOvulationAmount: 0, identicalProbability: 0, genderRatio: 0,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "修格斯": {
+    embryoType: "胎转卵生",
+    introductionLine: "Shoggoth，形似史莱姆却更为古老的太古存在，承载力极强而极难受孕。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.3, birthDifficulty: 2, breedTolerance: 2.4,
+    impregnationDifficulty: 5, orgasmOvulationAmount: 2, identicalProbability: 50, genderRatio: null,
+    companionEggsMean: 0, recoveryCoefficient: 2.79,
+  },
+  "史萊姆": {
+    embryoType: "不定型",
+    introductionLine: "Slime，繁殖策略极多样：可无性分裂，可孕育任何种族之胎，亦可寄入异族子宫。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 0.5, birthDifficulty: 0.25, breedTolerance: 2,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 3, identicalProbability: 75, genderRatio: null,
+    companionEggsMean: 3, recoveryCoefficient: 0.25,
+  },
+  "石像鬼": {
+    embryoType: "不定型",
+    introductionLine: "Gargoyle，人类造物之一，石质无性种族；受精难度极高，繁殖基本限于同族。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.4, birthDifficulty: 2.5, breedTolerance: 1,
+    impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: -1,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "烛灵": {
+    embryoType: "不定型",
+    introductionLine: "Candle Spirit，人类造物之一，烛火所寄的无性种族；受精难度极高，繁殖基本限于同族。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.6, birthDifficulty: 0.5, breedTolerance: 1,
+    impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 40, genderRatio: -1,
+    companionEggsMean: 0, recoveryCoefficient: 0.63,
+  },
+  "人偶": {
+    embryoType: "不定型",
+    introductionLine: "Living Doll，人类造物之一，得灵的人偶，无性；受精难度极高，繁殖基本限于同族。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 1,
+    impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 10, genderRatio: -1,
+    companionEggsMean: 0, recoveryCoefficient: 3.75,
+  },
+  "心魇": {
+    embryoType: "不定型",
+    introductionLine: "Kaijin，由人心黑暗与负面情绪孕育而生的异形种族，常作为魔法少女的敌人；其后代通常继承母方的心魇外貌与异形特徵。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 2.5, breedTolerance: 0.8,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 0, identicalProbability: 20, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "夢魔": {
+    embryoType: "不定型",
+    introductionLine: "Incubus，近乎纯男性的性欲特化恶魔系不定型种族；胚胎发育随母体调整外形，但基因定序仍属夢魔。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 1,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 33, genderRatio: 95,
+    companionEggsMean: 0, recoveryCoefficient: 0.66,
+  },
+  "宝石人": {
+    embryoType: "不定型",
+    introductionLine: "Gem-folk，矿物构成的种族，可参考宝石之国一类的设定。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.8, birthDifficulty: 3, breedTolerance: 1,
+    impregnationDifficulty: 7, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+  },
+  "奈米丛族": {
+    embryoType: "不定型",
+    introductionLine: "Nanite Swarm，由亿级奈米机械单元构成的液态金属体。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 2, birthDifficulty: 1, breedTolerance: 1.5,
+    impregnationDifficulty: 7, orgasmOvulationAmount: 0, identicalProbability: 1, genderRatio: null,
+    companionEggsMean: 0, recoveryCoefficient: 0.34,
+  },
+  "元素灵": {
+    embryoType: "不定型",
+    introductionLine: "Elemental，自然元素的拟人体，如水元素温蒂妮。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 1.25,
+    impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: -1,
+    companionEggsMean: 0, recoveryCoefficient: 0.39,
+  },
+  "灯神": {
+    embryoType: "不定型",
+    introductionLine: "Djinn，阿拉丁神灯一类的愿望精灵。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.66, birthDifficulty: 2, breedTolerance: 1.5,
+    impregnationDifficulty: 5, orgasmOvulationAmount: 1, identicalProbability: 0, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 2.02,
+  },
+  "影魔": {
+    embryoType: "不定型",
+    introductionLine: "Shadow-folk，可在平面与立体之间切换、投影于影中的种族。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.75, birthDifficulty: 0.6, breedTolerance: 1.25,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 0, identicalProbability: 33, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.64,
+  },
+  "活体铠甲": {
+    embryoType: "不定型",
+    introductionLine: "Living Armor，寄生型无性种族，附着于冒险者身上；将卵寄入宿主体内孵化，不自行孕育。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.5, birthDifficulty: 1.5, breedTolerance: 1,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 4, identicalProbability: 15, genderRatio: -1,
+    companionEggsMean: 5, recoveryCoefficient: 2,
+  },
+  "伪人": {
+    embryoType: "不定型",
+    introductionLine: "Doppelganger，模仿并取代人类的不定型种族；各项生理刻意贴近人类，同卵分裂倾向极高。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 1, breedTolerance: 1,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 33, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 2,
+  },
+});
+
+export const ALL_BUILTIN_RACES = Object.freeze(Object.keys(RACE_DEFINITIONS));
+const racesByEmbryoType = (type) => Object.freeze(ALL_BUILTIN_RACES.filter((race) => RACE_DEFINITIONS[race].embryoType === type));
+export const VIVIPAROUS_RACES = racesByEmbryoType("胎生");
+export const OVIPAROUS_RACES = racesByEmbryoType("卵生");
+export const OVOVIVIPAROUS_RACES = racesByEmbryoType("卵胎生");
+export const METOVIVIPAROUS_RACES = racesByEmbryoType("胎转卵生");
+export const AMORPHOUS_RACES = racesByEmbryoType("不定型");
+
+const BASE_PHYSIOLOGY_FIELDS = RACE_PHYSIOLOGY_FIELDS.filter((field) => field !== "companionEggsMean" && field !== "recoveryCoefficient");
+/** 只含八项基础生理数值的内置表（伴生卵、恢复系数、核型与胚型见 getBuiltinRacePhysiologyProfile） */
+export const RACE_PHYSIOLOGY_PROFILES = Object.freeze(Object.fromEntries(ALL_BUILTIN_RACES.map((race) => [
+  race,
+  Object.fromEntries(BASE_PHYSIOLOGY_FIELDS.map((field) => [field, RACE_DEFINITIONS[race][field]])),
+])));
 
 export const DERIVED_TYPE_RACES = Object.freeze([
   "修炼",
@@ -333,887 +780,6 @@ export const DERIVED_TYPE_METABOLISM_EXEMPTIONS = Object.freeze({
   "序列": Object.freeze(["sleep", "odor", "companionship"]),
   "兽化": Object.freeze(["milk", "odor", "companionship"]),
 });
-
-/**
- * 每个独立有效胚胎平均伴随多少颗不会发育成胎儿卡的背景卵（伴生卵）。
- * 默认 0；胚胎类型本身只代表「允许多卵」，不会让所有卵生／卵胎生／不定型种族自动变成高产。
- * 数值是旧「典型卵群数量」减一：整群里扣掉唯一能长大的那一名有效后代。
- */
-export const RACE_COMPANION_EGGS_MEANS = Object.freeze(Object.assign(
-  Object.fromEntries(ALL_BUILTIN_RACES.map((race) => [race, 0])),
-  {
-    "怪鸟类": 3,
-    "植物亚人": 4,
-    "真菌亚人": 6,
-    "社会虫族": 16,
-    "独居虫族": 6,
-    "蜥蜴人": 4,
-    "海蛞蝓族": 9,
-    "龟族": 7,
-    "甲壳族": 20,
-    "宝箱怪": 7,
-    "阿拉克涅": 12,
-    "百足姬": 10,
-    "触手怪": 3,
-    "狗头人": 1,
-    "怪鱼类": 32,
-    "海妖": 10,
-    "蛙人": 35,
-    "水母族": 14,
-    "海马族": 12,
-    "蛇人": 0,
-    "人鱼": 0,
-    "深潜者": 0,
-    "史萊姆": 3,
-    "活体铠甲": 5,
-  },
-));
-
-/**
- * 产后恢复系数：以人类 56 天为 1，只看母体物种（混血取各成分平均），衍生类型不参与。
- * 实际恢复天数在分娩／流产当下再乘活力、经产与胎数因子，见 computePostpartumRecoveryDays。
- */
-export const RACE_RECOVERY_COEFFICIENTS = Object.freeze({
-  "人类": 1,
-  "精灵": 4.86,
-  "兽耳族": 0.25,
-  "怪兽类": 0.25,
-  "袋兽族": 6,
-  "哥布林": 0.8,
-  "兽人": 0.39,
-  "矮人": 2,
-  "半身人": 0.61,
-  "半人马": 3.75,
-  "巨人": 6,
-  "媚魔": 0.25,
-  "雪族": 1.25,
-  "夜叉": 6,
-  "妖狐": 3.75,
-  "貓又": 0.66,
-  "月兔族": 0.25,
-  "杜拉罕": 0.41,
-  "人鱼": 5,
-  "鱼人": 6,
-  "怪鱼类": 0.25,
-  "海妖": 6,
-  "独居虫族": 0.25,
-  "蛇人": 1.2,
-  "蛙人": 0.25,
-  "眼魔": 1.07,
-  "水母族": 0.64,
-  "海马族": 6,
-  "河童": 2.5,
-  "梅杜莎": 4.29,
-  "鸟人": 0.5,
-  "怪鸟类": 0.25,
-  "植物亚人": 0.3,
-  "社会虫族": 0.25,
-  "蜥蜴人": 0.77,
-  "触手怪": 0.25,
-  "妖精": 3.75,
-  "真菌亚人": 0.25,
-  "海蛞蝓族": 0.91,
-  "龟族": 1.8,
-  "甲壳族": 0.46,
-  "宝箱怪": 0.3,
-  "阿拉克涅": 0.57,
-  "百足姬": 1.32,
-  "天狗": 2,
-  "深潜者": 0.96,
-  "狗头人": 0.39,
-  "西方龙": 6,
-  "东方龙": 6,
-  "狮鹫族": 5.05,
-  "天使": 2.23,
-  "恶魔": 2.23,
-  "奇美拉": 4.16,
-  "麒麟": 6,
-  "凤凰": 6,
-  "白泽": 6,
-  "独角兽": 4.38,
-  "空鲸": 6,
-  "星繭族": 6,
-  "修格斯": 2.79,
-  "史萊姆": 0.25,
-  "石像鬼": 6,
-  "烛灵": 0.63,
-  "人偶": 3.75,
-  "心魇": 6,
-  "夢魔": 0.66,
-  "宝石人": 6,
-  "奈米丛族": 0.34,
-  "元素灵": 0.39,
-  "灯神": 2.02,
-  "影魔": 0.64,
-  "活体铠甲": 2,
-  "伪人": 2,
-});
-
-export const EMBRYO_TYPES = Object.freeze(["胎生", "卵生", "卵胎生", "胎转卵生", "不定型"]);
-
-const BUILTIN_EMBRYO_TYPE_GROUPS = Object.freeze([
-  ["胎生", VIVIPAROUS_RACES],
-  ["卵生", OVIPAROUS_RACES],
-  ["卵胎生", OVOVIVIPAROUS_RACES],
-  ["胎转卵生", METOVIVIPAROUS_RACES],
-  ["不定型", AMORPHOUS_RACES],
-]);
-
-function getBuiltinEmbryoType(race) {
-  for (const [type, races] of BUILTIN_EMBRYO_TYPE_GROUPS) {
-    if (races.includes(race)) return type;
-  }
-  return "胎生";
-}
-
-export const RACE_PHYSIOLOGY_PROFILES = Object.freeze({
-  "人类": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 1,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 5,
-    "genderRatio": 50
-  },
-  "精灵": {
-    "menstrualLengthRatio": 3,
-    "gestationSpeciesSpeed": 0.5,
-    "birthDifficulty": 0.8,
-    "breedTolerance": 0.33,
-    "impregnationDifficulty": 3,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 2,
-    "genderRatio": 45
-  },
-  "兽耳族": {
-    "menstrualLengthRatio": 0.75,
-    "gestationSpeciesSpeed": 1.6,
-    "birthDifficulty": 0.8,
-    "breedTolerance": 3,
-    "impregnationDifficulty": 0.5,
-    "orgasmOvulationAmount": 3,
-    "identicalProbability": 45,
-    "genderRatio": 50
-  },
-  "怪兽类": {
-    "menstrualLengthRatio": 0.75,
-    "gestationSpeciesSpeed": 2,
-    "birthDifficulty": 0.8,
-    "breedTolerance": 3,
-    "impregnationDifficulty": 0.5,
-    "orgasmOvulationAmount": 3,
-    "identicalProbability": 1,
-    "genderRatio": 50
-  },
-  "袋兽族": {
-    "menstrualLengthRatio": 0.75,
-    "gestationSpeciesSpeed": 5,
-    "birthDifficulty": 0.3,
-    "breedTolerance": 0.01,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 25,
-    "genderRatio": 50
-  },
-  "哥布林": {
-    "menstrualLengthRatio": 0.5,
-    "gestationSpeciesSpeed": 2.5,
-    "birthDifficulty": 2,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 0.2,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 40,
-    "genderRatio": 95
-  },
-  "兽人": {
-    "menstrualLengthRatio": 0.75,
-    "gestationSpeciesSpeed": 1.25,
-    "birthDifficulty": 1,
-    "breedTolerance": 2,
-    "impregnationDifficulty": 0.8,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 50,
-    "genderRatio": 75
-  },
-  "矮人": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 2,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 2,
-    "genderRatio": 60
-  },
-  "半身人": {
-    "menstrualLengthRatio": 0.75,
-    "gestationSpeciesSpeed": 1.25,
-    "birthDifficulty": 1.5,
-    "breedTolerance": 2,
-    "impregnationDifficulty": 0.8,
-    "orgasmOvulationAmount": 3,
-    "identicalProbability": 30,
-    "genderRatio": 50
-  },
-  "媚魔": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 0.5,
-    "breedTolerance": 3,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 33,
-    "genderRatio": 5
-  },
-  "半人马": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 0.8,
-    "birthDifficulty": 1.5,
-    "breedTolerance": 0.5,
-    "impregnationDifficulty": 2,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 5,
-    "genderRatio": 66
-  },
-  "巨人": {
-    "menstrualLengthRatio": 2,
-    "gestationSpeciesSpeed": 0.4,
-    "birthDifficulty": 3,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 4,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 2,
-    "genderRatio": 50
-  },
-  "雪族": {
-    "menstrualLengthRatio": 1.25,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 1,
-    "breedTolerance": 0.8,
-    "impregnationDifficulty": 0.75,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 5,
-    "genderRatio": 40
-  },
-  "夜叉": {
-    "menstrualLengthRatio": 0.75,
-    "gestationSpeciesSpeed": 0.5,
-    "birthDifficulty": 4,
-    "breedTolerance": 0.8,
-    "impregnationDifficulty": 0.5,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 50,
-    "genderRatio": 50
-  },
-  "妖狐": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 0.8,
-    "birthDifficulty": 1.5,
-    "breedTolerance": 0.5,
-    "impregnationDifficulty": 3,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 5,
-    "genderRatio": 50
-  },
-  "貓又": {
-    "menstrualLengthRatio": 0.75,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 1,
-    "breedTolerance": 1.5,
-    "impregnationDifficulty": 2.5,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 20,
-    "genderRatio": 50
-  },
-  "鸟人": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 2,
-    "birthDifficulty": 0.33,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 0.5,
-    "orgasmOvulationAmount": 3,
-    "identicalProbability": 15,
-    "genderRatio": 50
-  },
-  "怪鸟类": {
-    "menstrualLengthRatio": 0.25,
-    "gestationSpeciesSpeed": 20,
-    "birthDifficulty": 0.2,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 0.4,
-    "orgasmOvulationAmount": 3,
-    "identicalProbability": 1,
-    "genderRatio": 50
-  },
-  "植物亚人": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 2.5,
-    "birthDifficulty": 0.25,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 6,
-    "identicalProbability": 5,
-    "genderRatio": null
-  },
-  "真菌亚人": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 3.3,
-    "birthDifficulty": 0.25,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 0.8,
-    "orgasmOvulationAmount": 4,
-    "identicalProbability": 5,
-    "genderRatio": null
-  },
-  "社会虫族": {
-    "menstrualLengthRatio": 0.75,
-    "gestationSpeciesSpeed": 2.5,
-    "birthDifficulty": 0.2,
-    "breedTolerance": 1.33,
-    "impregnationDifficulty": 0.2,
-    "orgasmOvulationAmount": 8,
-    "identicalProbability": 0,
-    "genderRatio": 10
-  },
-  "触手怪": {
-    "menstrualLengthRatio": 0.25,
-    "gestationSpeciesSpeed": 5,
-    "birthDifficulty": 0.2,
-    "breedTolerance": 1.67,
-    "impregnationDifficulty": 0.25,
-    "orgasmOvulationAmount": 9,
-    "identicalProbability": 25,
-    "genderRatio": -1
-  },
-  "妖精": {
-    "menstrualLengthRatio": 3,
-    "gestationSpeciesSpeed": 0.8,
-    "birthDifficulty": 1,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 3,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 2,
-    "genderRatio": 50
-  },
-  "龟族": {
-    "menstrualLengthRatio": 2,
-    "gestationSpeciesSpeed": 0.625,
-    "birthDifficulty": 0.3,
-    "breedTolerance": 0.8,
-    "impregnationDifficulty": 2,
-    "orgasmOvulationAmount": 4,
-    "identicalProbability": 15,
-    "genderRatio": 50
-  },
-  "甲壳族": {
-    "menstrualLengthRatio": 3,
-    "gestationSpeciesSpeed": 1.6,
-    "birthDifficulty": 0.4,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 2.5,
-    "orgasmOvulationAmount": 4,
-    "identicalProbability": 20,
-    "genderRatio": 50
-  },
-  "蜥蜴人": {
-    "menstrualLengthRatio": 0.75,
-    "gestationSpeciesSpeed": 1.25,
-    "birthDifficulty": 0.8,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 1.5,
-    "orgasmOvulationAmount": 3,
-    "identicalProbability": 20,
-    "genderRatio": null
-  },
-  "海蛞蝓族": {
-    "menstrualLengthRatio": 0.5,
-    "gestationSpeciesSpeed": 3.3,
-    "birthDifficulty": 0.25,
-    "breedTolerance": 0.25,
-    "impregnationDifficulty": 0.25,
-    "orgasmOvulationAmount": 5,
-    "identicalProbability": 30,
-    "genderRatio": null
-  },
-  "宝箱怪": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1.67,
-    "birthDifficulty": 0.6,
-    "breedTolerance": 1.2,
-    "impregnationDifficulty": 0.6,
-    "orgasmOvulationAmount": 6,
-    "identicalProbability": 66,
-    "genderRatio": null
-  },
-  "阿拉克涅": {
-    "menstrualLengthRatio": 0.75,
-    "gestationSpeciesSpeed": 2,
-    "birthDifficulty": 1.5,
-    "breedTolerance": 1.33,
-    "impregnationDifficulty": 2,
-    "orgasmOvulationAmount": 6,
-    "identicalProbability": 0,
-    "genderRatio": 25
-  },
-  "百足姬": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 2,
-    "birthDifficulty": 3.5,
-    "breedTolerance": 1.33,
-    "impregnationDifficulty": 1.5,
-    "orgasmOvulationAmount": 6,
-    "identicalProbability": 0,
-    "genderRatio": 40
-  },
-  "天狗": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 1,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 20,
-    "genderRatio": 50
-  },
-  "深潜者": {
-    "menstrualLengthRatio": 1.5,
-    "gestationSpeciesSpeed": 1.25,
-    "birthDifficulty": 1.2,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 0.5,
-    "orgasmOvulationAmount": 3,
-    "identicalProbability": 10,
-    "genderRatio": 75
-  },
-  "人鱼": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 0.8,
-    "birthDifficulty": 1.5,
-    "breedTolerance": 0.75,
-    "impregnationDifficulty": 2,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 20,
-    "genderRatio": 50
-  },
-  "鱼人": {
-    "menstrualLengthRatio": 2,
-    "gestationSpeciesSpeed": 0.5,
-    "birthDifficulty": 2,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 3,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 2,
-    "genderRatio": 50
-  },
-  "怪鱼类": {
-    "menstrualLengthRatio": 0.25,
-    "gestationSpeciesSpeed": 4,
-    "birthDifficulty": 0.2,
-    "breedTolerance": 2,
-    "impregnationDifficulty": 0.3,
-    "orgasmOvulationAmount": 8,
-    "identicalProbability": 0,
-    "genderRatio": 50
-  },
-  "海妖": {
-    "menstrualLengthRatio": 0.5,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 3,
-    "breedTolerance": 0.3,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 5,
-    "genderRatio": 33
-  },
-  "水母族": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1.25,
-    "birthDifficulty": 0.2,
-    "breedTolerance": 0.5,
-    "impregnationDifficulty": 0.33,
-    "orgasmOvulationAmount": 5,
-    "identicalProbability": 50,
-    "genderRatio": null
-  },
-  "海马族": {
-    "menstrualLengthRatio": 1.5,
-    "gestationSpeciesSpeed": 0.625,
-    "birthDifficulty": 2,
-    "breedTolerance": 0.4,
-    "impregnationDifficulty": 4,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 25,
-    "genderRatio": 66
-  },
-  "河童": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 0.8,
-    "birthDifficulty": 1.5,
-    "breedTolerance": 1.5,
-    "impregnationDifficulty": 2.5,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 15,
-    "genderRatio": 50
-  },
-  "蛇人": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 1.2,
-    "breedTolerance": 2,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 10,
-    "genderRatio": 50
-  },
-  "蛙人": {
-    "menstrualLengthRatio": 0.5,
-    "gestationSpeciesSpeed": 3.3,
-    "birthDifficulty": 0.25,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 0.7,
-    "orgasmOvulationAmount": 4,
-    "identicalProbability": 30,
-    "genderRatio": null
-  },
-  "眼魔": {
-    "menstrualLengthRatio": 2,
-    "gestationSpeciesSpeed": 1.25,
-    "birthDifficulty": 0.5,
-    "breedTolerance": 0.75,
-    "impregnationDifficulty": 3,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 2,
-    "genderRatio": 50
-  },
-  "独居虫族": {
-    "menstrualLengthRatio": 0.5,
-    "gestationSpeciesSpeed": 4,
-    "birthDifficulty": 0.5,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 0.5,
-    "orgasmOvulationAmount": 4,
-    "identicalProbability": 0,
-    "genderRatio": 30
-  },
-  "西方龙": {
-    "menstrualLengthRatio": 4,
-    "gestationSpeciesSpeed": 0.25,
-    "birthDifficulty": 4,
-    "breedTolerance": 2,
-    "impregnationDifficulty": 2,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 25,
-    "genderRatio": 50
-  },
-  "东方龙": {
-    "menstrualLengthRatio": 4,
-    "gestationSpeciesSpeed": 0.25,
-    "birthDifficulty": 4,
-    "breedTolerance": 1 / 3,
-    "impregnationDifficulty": 5,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 5,
-    "genderRatio": 50
-  },
-  "狮鹫族": {
-    "menstrualLengthRatio": 3.5,
-    "gestationSpeciesSpeed": 0.33,
-    "birthDifficulty": 3,
-    "breedTolerance": 1.8,
-    "impregnationDifficulty": 4,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 25,
-    "genderRatio": 50
-  },
-  "天使": {
-    "menstrualLengthRatio": 13,
-    "gestationSpeciesSpeed": 0.8,
-    "birthDifficulty": 2.5,
-    "breedTolerance": 1.4,
-    "impregnationDifficulty": 3,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 10,
-    "genderRatio": 50
-  },
-  "恶魔": {
-    "menstrualLengthRatio": 13,
-    "gestationSpeciesSpeed": 0.8,
-    "birthDifficulty": 2.5,
-    "breedTolerance": 1.4,
-    "impregnationDifficulty": 3,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 10,
-    "genderRatio": 50
-  },
-  "灯神": {
-    "menstrualLengthRatio": 1.5,
-    "gestationSpeciesSpeed": 0.66,
-    "birthDifficulty": 2,
-    "breedTolerance": 1.5,
-    "impregnationDifficulty": 5,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 0,
-    "genderRatio": 50
-  },
-  "麒麟": {
-    "menstrualLengthRatio": 1.75,
-    "gestationSpeciesSpeed": 0.3,
-    "birthDifficulty": 3,
-    "breedTolerance": 0.8,
-    "impregnationDifficulty": 4,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 5,
-    "genderRatio": 50
-  },
-  "凤凰": {
-    "menstrualLengthRatio": 1.75,
-    "gestationSpeciesSpeed": 0.4,
-    "birthDifficulty": 5,
-    "breedTolerance": 0.5,
-    "impregnationDifficulty": 3.5,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 5,
-    "genderRatio": 50
-  },
-  "白泽": {
-    "menstrualLengthRatio": 1.75,
-    "gestationSpeciesSpeed": 0.35,
-    "birthDifficulty": 4,
-    "breedTolerance": 0.4,
-    "impregnationDifficulty": 5,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 5,
-    "genderRatio": 50
-  },
-  "独角兽": {
-    "menstrualLengthRatio": 1.5,
-    "gestationSpeciesSpeed": 0.5,
-    "birthDifficulty": 3.5,
-    "breedTolerance": 1.6,
-    "impregnationDifficulty": 5,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 25,
-    "genderRatio": 66
-  },
-  "空鲸": {
-    "menstrualLengthRatio": 3,
-    "gestationSpeciesSpeed": 0.2,
-    "birthDifficulty": 5,
-    "breedTolerance": 2,
-    "impregnationDifficulty": 6,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 5,
-    "genderRatio": 33
-  },
-  "星繭族": {
-    "menstrualLengthRatio": 1.5,
-    "gestationSpeciesSpeed": 2 / 3,
-    "birthDifficulty": 3,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 0.1,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 0,
-    "genderRatio": 0
-  },
-  "史萊姆": {
-    "menstrualLengthRatio": 0.25,
-    "gestationSpeciesSpeed": 0.5,
-    "birthDifficulty": 0.25,
-    "breedTolerance": 2,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 3,
-    "identicalProbability": 75,
-    "genderRatio": null
-  },
-  "石像鬼": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 0.4,
-    "birthDifficulty": 2.5,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 6,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 5,
-    "genderRatio": -1
-  },
-  "烛灵": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1.6,
-    "birthDifficulty": 0.5,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 6,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 40,
-    "genderRatio": -1
-  },
-  "人偶": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 0.8,
-    "birthDifficulty": 1.5,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 6,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 10,
-    "genderRatio": -1
-  },
-  "心魇": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 2.5,
-    "breedTolerance": 0.8,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 20,
-    "genderRatio": 50
-  },
-  "夢魔": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 0.5,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 1,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 33,
-    "genderRatio": 95
-  },
-  "元素灵": {
-    "menstrualLengthRatio": 0.5,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 0.5,
-    "breedTolerance": 1.25,
-    "impregnationDifficulty": 6,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 5,
-    "genderRatio": -1
-  },
-  "宝石人": {
-    "menstrualLengthRatio": 3,
-    "gestationSpeciesSpeed": 0.8,
-    "birthDifficulty": 3,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 7,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 5,
-    "genderRatio": 50
-  },
-  "奈米丛族": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 2,
-    "birthDifficulty": 1,
-    "breedTolerance": 1.5,
-    "impregnationDifficulty": 7,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 1,
-    "genderRatio": null
-  },
-  "奇美拉": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 0.4,
-    "birthDifficulty": 4,
-    "breedTolerance": 2.4,
-    "impregnationDifficulty": 4,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 20,
-    "genderRatio": 50
-  },
-  "影魔": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 0.75,
-    "birthDifficulty": 0.6,
-    "breedTolerance": 1.25,
-    "impregnationDifficulty": 0.5,
-    "orgasmOvulationAmount": 0,
-    "identicalProbability": 33,
-    "genderRatio": 50
-  },
-  "月兔族": {
-    "menstrualLengthRatio": 0.5,
-    "gestationSpeciesSpeed": 2,
-    "birthDifficulty": 0.6,
-    "breedTolerance": 2.5,
-    "impregnationDifficulty": 0.4,
-    "orgasmOvulationAmount": 4,
-    "identicalProbability": 30,
-    "genderRatio": 30
-  },
-  "狗头人": {
-    "menstrualLengthRatio": 0.5,
-    "gestationSpeciesSpeed": 2.5,
-    "birthDifficulty": 0.4,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 0.3,
-    "orgasmOvulationAmount": 3,
-    "identicalProbability": 20,
-    "genderRatio": 50
-  },
-  "梅杜莎": {
-    "menstrualLengthRatio": 1.5,
-    "gestationSpeciesSpeed": 0.7,
-    "birthDifficulty": 1.5,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 2.5,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 5,
-    "genderRatio": 20
-  },
-  "修格斯": {
-    "menstrualLengthRatio": 2,
-    "gestationSpeciesSpeed": 0.3,
-    "birthDifficulty": 2,
-    "breedTolerance": 2.4,
-    "impregnationDifficulty": 5,
-    "orgasmOvulationAmount": 2,
-    "identicalProbability": 50,
-    "genderRatio": null
-  },
-  "活体铠甲": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1.5,
-    "birthDifficulty": 1.5,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 0.5,
-    "orgasmOvulationAmount": 4,
-    "identicalProbability": 15,
-    "genderRatio": -1
-  },
-  "伪人": {
-    "menstrualLengthRatio": 1,
-    "gestationSpeciesSpeed": 1,
-    "birthDifficulty": 1,
-    "breedTolerance": 1,
-    "impregnationDifficulty": 3,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 33,
-    "genderRatio": 50
-  },
-  "杜拉罕": {
-    "menstrualLengthRatio": 2,
-    "gestationSpeciesSpeed": 0.8,
-    "birthDifficulty": 1,
-    "breedTolerance": 3,
-    "impregnationDifficulty": 2.5,
-    "orgasmOvulationAmount": 1,
-    "identicalProbability": 5,
-    "genderRatio": 50
-  }
-});
-
-export const RACE_PHYSIOLOGY_FIELDS = Object.freeze([
-  "menstrualLengthRatio",
-  "gestationSpeciesSpeed",
-  "birthDifficulty",
-  "breedTolerance",
-  "impregnationDifficulty",
-  "orgasmOvulationAmount",
-  "identicalProbability",
-  "companionEggsMean",
-  "recoveryCoefficient",
-  "genderRatio"
-]);
-
-/** 胚型是字串，不进 RACE_PHYSIOLOGY_FIELDS（那里的栏位会被当数值平均） */
-export const RACE_EMBRYO_TYPE_FIELD = "embryoType";
 
 let customRacePhysiologyProfiles = {};
 let customDerivedTypeProfiles = {};
@@ -1365,14 +931,11 @@ export function removeDerivedOverrideEntry(overrides, derivedType) {
 
 export function getBuiltinRacePhysiologyProfile(race) {
   const key = getBaseRaceName(race);
-  const profile = RACE_PHYSIOLOGY_PROFILES[key];
-  return profile ? {
-    ...profile,
-    companionEggsMean: RACE_COMPANION_EGGS_MEANS[key] || 0,
-    recoveryCoefficient: RACE_RECOVERY_COEFFICIENTS[key] ?? 1,
-    [RACE_INHERITANCE_FIELD]: RACE_INHERITANCE_PROFILES[key] || RACE_INHERITANCE_MODES.NORMAL,
-    [RACE_EMBRYO_TYPE_FIELD]: getBuiltinEmbryoType(key),
-  } : null;
+  const definition = Object.prototype.hasOwnProperty.call(RACE_DEFINITIONS, key) ? RACE_DEFINITIONS[key] : null;
+  if (!definition) return null;
+  // 短敘述走 getRaceIntroductionLine，不混进生理资料
+  const { [RACE_INTRODUCTION_FIELD]: _introductionLine, ...profile } = definition;
+  return profile;
 }
 
 export function getRaceIntroductionLine(race) {
@@ -1380,7 +943,7 @@ export function getRaceIntroductionLine(race) {
   if (!key) return '';
   const customLine = customRacePhysiologyProfiles[key]?.[RACE_INTRODUCTION_FIELD];
   if (customLine !== undefined) return String(customLine || '').trim();
-  return String(RACE_INTRODUCTION_LINES[key] || '').trim();
+  return String(RACE_DEFINITIONS[key]?.[RACE_INTRODUCTION_FIELD] || '').trim();
 }
 
 function getEffectiveRacePhysiologyProfileValue(race) {
