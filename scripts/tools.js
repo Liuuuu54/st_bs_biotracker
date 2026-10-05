@@ -7924,18 +7924,45 @@ function getDisabledSystemToolMessage(settings, name) {
   return '';
 }
 
+/**
+ * 模型给的 fetusIndex 对应它收到 payload 时的可见列表；同一批里前面的工具（例如 bsPassedTime 的胎动换位、
+ * 减胎）会改变阵列顺序。先记下这批开始时各角色可见胎儿的 embryoId 顺序，执行每个工具前换成当下的下标；
+ * 那一胎已不在（出生、被移除）时给 -1，让工具照常以无效下标拒绝。
+ */
+function captureVisibleFetusOrder(chatState) {
+  const order = {};
+  for (const [name, character] of Object.entries(chatState?.characters || {})) {
+    const fetuses = Array.isArray(character?.profile?.pregnant?.fetuses) ? character.profile.pregnant.fetuses : [];
+    order[name] = fetuses.filter(isFetusKnownToCharacter).map((fetus) => fetus?.embryoId);
+  }
+  return order;
+}
+
+function remapBatchFetusIndex(chatState, batchOrder, call) {
+  const args = call?.arguments;
+  if (!args || !Number.isInteger(args.fetusIndex) || call.name === 'bsDebugSetFetalPosition') return;
+  const female = String(args.female || '').trim();
+  const embryoId = batchOrder[female]?.[args.fetusIndex];
+  if (embryoId === undefined || embryoId === null) return;
+  const fetuses = chatState?.characters?.[female]?.profile?.pregnant?.fetuses;
+  const visible = (Array.isArray(fetuses) ? fetuses : []).filter(isFetusKnownToCharacter);
+  args.fetusIndex = visible.findIndex((fetus) => fetus?.embryoId === embryoId);
+}
+
 export function applyToolCallsResult(ctx, result, sourceId = '') {
   const settings = syncCardSettings(ctx, getSettings(ctx));
   const chatState = getChatState(ctx, settings);
   const toolCalls = Array.isArray(result?.tool_calls) ? result.tool_calls : [];
   const logs = [];
   chatState.reproductiveSettings = normalizeReproductiveSettings(settings.reproductiveSettings);
+  const batchFetusOrder = captureVisibleFetusOrder(chatState);
   for (const [callIndex, call] of toolCalls.entries()) {
     const normalizedCall = {
       name: String(call?.name || '').trim(),
       arguments: resolvePersonNameArgs(normalizeToolCallArguments(call?.arguments)),
       sourceId: sourceId ? `${sourceId}:${callIndex}` : String(call?.id || ''),
     };
+    remapBatchFetusIndex(chatState, batchFetusOrder, normalizedCall);
     const disabledMessage = getDisabledSystemToolMessage(settings, normalizedCall.name);
     const appliedResult = disabledMessage
       ? { applied: false, message: disabledMessage }

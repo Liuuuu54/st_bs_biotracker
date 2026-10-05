@@ -1602,14 +1602,17 @@ export function resolveRegisteredCharacterName(chatState, targetName, options = 
   return '';
 }
 
-export function buildRecentMessages(ctx, settings, endIndexExclusive = null) {
+/** settledBefore：这个绝对楼层之前的讯息已经被追踪结算过，标上 already_settled，供上下文理解、不得重复结算 */
+export function buildRecentMessages(ctx, settings, endIndexExclusive = null, settledBefore = null) {
   const count = Math.max(2, Number(settings.contextSize) || 12);
   const chat = getHostChat(ctx);
   const end = Number.isInteger(endIndexExclusive) ? Math.max(0, Math.min(chat.length, endIndexExclusive)) : chat.length;
-  return chat.slice(Math.max(0, end - count), end).map((message) => ({
+  const start = Math.max(0, end - count);
+  return chat.slice(start, end).map((message, offset) => ({
     name: message.name || (message.is_user ? ctx.name1 : ctx.name2) || '',
     role: message.is_user ? 'user' : 'assistant',
     text: String(message.mes || ''),
+    ...(Number.isInteger(settledBefore) && start + offset < settledBefore ? { already_settled: true } : {}),
   }));
 }
 

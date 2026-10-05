@@ -310,9 +310,14 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
   const skillBaselinePrompt = payload?.skill_enabled === false ? '' : String(payload?.skill_baseline_prompt || '').trim();
   const parts = [
     [
+      '[只结算新讯息]',
+      '- recent_messages 里带 already_settled=true 的讯息，已在先前的追踪中结算过（时间、技能经验、生殖操作、衣着、关系、认知、日记等），只用来理解前情，不得再依据它们调用任何工具。',
+      '- 只为没有 already_settled 标记的新讯息结算；新讯息没有写到的事，即使旧讯息里有，也不要再处理一次。',
+    ].join('\n'),
+    [
       '[bsPassedTime 强制规则]',
       '- bsPassedTime 是每一轮 tracker 分析都必须优先考虑的第一工具。',
-      '- 你应先根据 recent_messages 判断本轮累计了多少分钟/小时/天，再调用 bsPassedTime 推进时间。',
+      '- 你应先根据 recent_messages 中的新讯息（未标 already_settled）判断本轮累计了多少分钟/小时/天，再调用 bsPassedTime 推进时间。',
       '- 只有在确认本轮完全没有任何可推进的时间量时，才允许不调用 bsPassedTime。',
       '- 其他状态工具默认建立在时间推进之后，不要跳过 bsPassedTime 直接更新长程状态。\n- 例外：剧情里的操作（转胎、托高、破水、助产、手术产等）发生在这段时间中途、而推进时间可能先改变条件（例如胎儿入盆后只能小幅转动）时，把 bsPassedTime 拆成操作前、操作后两次调用，中间放该操作。',
     ].join('\n'),

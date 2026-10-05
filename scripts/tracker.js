@@ -1321,12 +1321,12 @@ export function getMainflowContextSnapshot(ctx) {
   };
 }
 
-export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexExclusive = null) {
+export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexExclusive = null, settledBefore = null) {
   settings = syncCardSettings(ctx, settings);
   const currentCharacter = getCharacterCard(ctx);
   const chatState = getChatState(ctx, settings);
   const existingState = chatState.characters || {};
-  const recentMessages = buildRecentMessages(ctx, settings, endIndexExclusive);
+  const recentMessages = buildRecentMessages(ctx, settings, endIndexExclusive, settledBefore);
   const useMainflowMode = normalizeWorldbookMode(settings?.trackerWorldbookMode) === 'mainflow';
   let mainflowContextSnapshot = useMainflowMode ? getMainflowContextSnapshot(ctx) : null;
   if (mainflowContextSnapshot && settings?.useStPresetForAsync) {
@@ -1455,6 +1455,16 @@ function findProcessedResumeCount(ctx, chatState, chatLength) {
     if (buildSignature(ctx, count) === processed) return count;
   }
   return null;
+}
+
+/** 最近一次实际分析（非 skip 记帐）的快照所涵盖的楼层数；找不到时回 0，等同全部视为新内容 */
+function getLastAnalyzedMessageCount(chatState, upTo) {
+  let best = 0;
+  for (const snapshot of Array.isArray(chatState?.snapshots) ? chatState.snapshots : []) {
+    const count = Number.isInteger(snapshot?.messageCount) ? snapshot.messageCount : 0;
+    if (count <= upTo && count > best && String(snapshot?.reason || '') !== 'skip') best = count;
+  }
+  return best;
 }
 
 function reconcileChatStateSnapshots(ctx, chatState, settings) {
@@ -1612,7 +1622,7 @@ function isAfterAiMessageSettled(ctx, settings, chatState) {
   return true;
 }
 
-async function processTrackerMessage(ctx, settings, chatState, deps, reason, messageIndex) {
+async function processTrackerMessage(ctx, settings, chatState, deps, reason, messageIndex, settledBefore = null) {
   const chat = getHostChat(ctx);
   const message = chat[messageIndex];
   const shouldTrigger = reason === 'manual' ? true : shouldTriggerForMessage(settings, message);
@@ -1627,7 +1637,7 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   // 在 runTracker 开头就亮会让使用者看到「输入时也在追踪」的假象
   showTrackerBusyToast();
 
-  const payload = buildTrackerPayload(ctx, settings, reason, messageIndex + 1);
+  const payload = buildTrackerPayload(ctx, settings, reason, messageIndex + 1, settledBefore);
   if (payload.mainflow_context_snapshot) {
     payload.character_worldbook_name = null;
   } else if (!payload.character_worldbook && !payload.character_worldbook_name) {
@@ -1898,9 +1908,12 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     let processedCount = 0;
     let triggeredCount = 0;
     let discarded = false;
+    // 已经实际送去分析过的楼层边界：之前的讯息只供上下文，不得重复结算；跳过的使用者楼层不算
+    let settledBefore = getLastAnalyzedMessageCount(chatState, nextMessageIndex);
     for (let index = nextMessageIndex; index < chat.length; index += 1) {
       markTrackerRunProgress();
-      const outcome = await processTrackerMessage(ctx, settings, chatState, deps, reason, index);
+      const outcome = await processTrackerMessage(ctx, settings, chatState, deps, reason, index, settledBefore);
+      if (outcome?.triggered) settledBefore = index + 1;
       // 聊天在分析途中被改动：后面的索引已经不可信，交给下一轮重新对账
       if (outcome?.discarded) {
         discarded = true;
