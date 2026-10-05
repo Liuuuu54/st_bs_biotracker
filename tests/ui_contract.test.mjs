@@ -47,7 +47,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   );
   assert.deepEqual(
     [...html.matchAll(/data-encyclopedia-tab="[^"]+">([^<]+)<\/button>/g)].map((match) => match[1]),
-    ['异种', '衍生', '基准', '计算'],
+    ['物种', '衍生', '基准', '计算'],
   );
   assert.match(html, /data-encyclopedia-page="world"[\s\S]*?id="bs-bt-world-baseline-prompt"/);
   assert.match(html, /data-encyclopedia-page="calculator"[\s\S]*?id="bs-bt-calculator-tabs"/);

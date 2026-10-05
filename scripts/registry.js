@@ -884,7 +884,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
   const declaredRace = String(options.declaredRace || '').trim();
   const sourceChild = options.payload?.source_child || null;
   const embryoTypeLorePrompt = buildEmbryoTypeLorePrompt(options.payload || {}, { includeAllIfEmpty: true });
-  const racePhysiologyPrompt = buildRegistryRacePhysiologyPrompt(options.payload || {});
+  const racePhysiologyPrompt = buildRegistryRacePhysiologyPrompt(options.payload || {}, { selection: settings?.raceCatalogSelection || null });
   // 注册是一次性请求，附上辨识提示帮模型在形近种族间选对（人鱼／鱼人、精灵／妖精）
   const raceCatalogPrompt = buildRaceCatalogBlock({
     withHints: true,

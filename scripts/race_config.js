@@ -47,7 +47,7 @@ export const RACE_PHYSIOLOGY_FIELDS = Object.freeze([
 const RACE_DEFINITIONS = Object.freeze({
   "人类": {
     embryoType: "胎生",
-    introductionLine: "",
+    introductionLine: "Human，其余物种的参照：经期约 28 天、孕期约 280 天、产后约 56 天恢复，各物种的倍率都以人类预设值为 1。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 1, breedTolerance: 1,
     impregnationDifficulty: 1, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
@@ -1012,7 +1012,30 @@ export function getRacePhysiologyProfile(race) {
   return profile ? { ...profile } : null;
 }
 
-/** 内置异种按「当前生效」的胚型分组（百科改过胚型的物种会移到新组） */
+/**
+ * 名录勾选的存档版本。v2 起人类与其他物种一样可勾选；v1（1.1.3 以前）的勾选里从来没有人类，
+ * 因为当时人类恒被视为可用。读到 v1 时：有勾任何项目的视为奇幻设定，补回人类；
+ * 全部清空的视为现代设定，维持不送人类。
+ */
+export const RACE_CATALOG_SELECTION_VERSION = 2;
+
+export function normalizeRaceCatalogSelection(selection) {
+  if (!selection || typeof selection !== 'object' || !Array.isArray(selection.races) || !Array.isArray(selection.derivedTypes)) return null;
+  const races = selection.races.map((race) => String(race || '').trim()).filter(Boolean);
+  const derivedTypes = selection.derivedTypes.map((type) => String(type || '').trim()).filter(Boolean);
+  if (selection.version !== RACE_CATALOG_SELECTION_VERSION && (races.length > 0 || derivedTypes.length > 0) && !races.includes('人类')) {
+    races.unshift('人类');
+  }
+  return { version: RACE_CATALOG_SELECTION_VERSION, races, derivedTypes };
+}
+
+/** 没有勾选设定时全部启用 */
+export function isRaceInCatalogSelection(selection, race) {
+  const normalized = normalizeRaceCatalogSelection(selection);
+  return !normalized || normalized.races.includes(race);
+}
+
+/** 内置物种按「当前生效」的胚型分组（百科改过胚型的物种会移到新组） */
 export function getRaceGroupsByEmbryoType() {
   const groups = new Map(EMBRYO_TYPES.map((type) => [type, []]));
   for (const race of ALL_BUILTIN_RACES) {

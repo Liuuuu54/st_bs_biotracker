@@ -28,6 +28,8 @@ import {
   RACE_INHERITANCE_FIELD,
   RACE_INHERITANCE_MODES,
   RACE_INTRODUCTION_FIELD,
+  RACE_CATALOG_SELECTION_VERSION,
+  normalizeRaceCatalogSelection,
   RACE_PHYSIOLOGY_FIELDS,
   getEmbryoTypeByRace,
   getBuiltinRacePhysiologyProfile,
@@ -289,12 +291,12 @@ const RACE_ENCYCLOPEDIA_LIST = Array.from(
     ...OVOVIVIPAROUS_RACES,
     ...METOVIVIPAROUS_RACES,
     ...AMORPHOUS_RACES,
-  ].filter((race) => race !== '人类')),
+  ]),
 ).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
 function getRaceEncyclopediaGroups() {
   return getRacePaletteGroups().map((group) => ({
     label: group.label,
-    races: Array.from(new Set(group.races.filter((race) => race !== '人类'))),
+    races: Array.from(new Set(group.races)),
   })).filter((group) => group.races.length > 0);
 }
 const DERIVED_ENCYCLOPEDIA_LIST = Array.from(new Set(DERIVED_TYPE_RACES)).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
@@ -313,7 +315,7 @@ const RACE_PHYSIOLOGY_FIELD_LABELS = Object.freeze({
 const RACE_PHYSIOLOGY_FIELD_HINTS = Object.freeze({
   genderRatio: '0-100；空白=双性，-1=无性',
   companionEggsMean: '每名有效后代伴随的背景卵数；0=没有伴生卵',
-  recoveryCoefficient: '人类 56 天为 1；实际再依活力、经产与胎数调整',
+  recoveryCoefficient: '人类预设 56 天为 1；实际再依活力、经产与胎数调整',
 });
 const EDITABLE_RACE_PHYSIOLOGY_FIELDS = RACE_PHYSIOLOGY_FIELDS;
 const RACE_INTRODUCTION_LABEL = '物种短敘述';
@@ -1914,11 +1916,11 @@ async function clearAllOverrideEntries(ctx) {
 }
 
 function getRaceCatalogSelection(settings) {
-  const raw = settings?.raceCatalogSelection;
-  const races = raw && Array.isArray(raw.races)
+  const raw = normalizeRaceCatalogSelection(settings?.raceCatalogSelection);
+  const races = raw
     ? RACE_ENCYCLOPEDIA_LIST.filter((race) => raw.races.includes(race))
     : [...RACE_ENCYCLOPEDIA_LIST];
-  const derivedTypes = raw && Array.isArray(raw.derivedTypes)
+  const derivedTypes = raw
     ? DERIVED_ENCYCLOPEDIA_LIST.filter((type) => raw.derivedTypes.includes(type))
     : [...DERIVED_ENCYCLOPEDIA_LIST];
   return { races, derivedTypes };
@@ -1926,6 +1928,7 @@ function getRaceCatalogSelection(settings) {
 
 async function saveRaceCatalogSelection(ctx, selection) {
   const raceCatalogSelection = {
+    version: RACE_CATALOG_SELECTION_VERSION,
     races: RACE_ENCYCLOPEDIA_LIST.filter((race) => selection.races.includes(race)),
     derivedTypes: DERIVED_ENCYCLOPEDIA_LIST.filter((type) => selection.derivedTypes.includes(type)),
   };
@@ -1943,7 +1946,7 @@ function setRaceCatalogEntryIncluded(ctx, kind, name, included) {
   return saveRaceCatalogSelection(ctx, selection);
 }
 
-/** 基准页的名录勾选：异种按胚胎型态分组，衍生类型另成一组；每组可整组勾选或清空 */
+/** 基准页的名录勾选：物种按胚胎型态分组，衍生类型另成一组；每组可整组勾选或清空 */
 function getRaceCatalogChecklistGroups() {
   return [
     ...getRaceEncyclopediaGroups().map((group) => ({ kind: 'race', label: group.label, names: group.races })),
@@ -2325,7 +2328,7 @@ async function resetDerivedTypeOverride(ctx) {
 /**
  * 列出设定档里所有还在生效的参数覆写。
  *
- * 只靠「选中某个种族 → 恢复内置」是不够的：种族名录会随版本增删（人类就被移出过异种名录），
+ * 只靠「选中某个种族 → 恢复内置」是不够的：种族名录会随版本增删（人类曾一度被移出名录），
  * 被移出名录的覆写照样参与运算，却再也选不到、删不掉。这份清单把覆写本身当成第一公民，
  * 让任何一笔都有对应的清除按钮，不必再去翻 SillyTavern 的设定档。
  */
@@ -2399,7 +2402,7 @@ function renderRaceEncyclopediaPage(ctx = null) {
   const worldBaselineInput = document.getElementById('bs-bt-world-baseline-prompt');
   if (!countNode || !selectNode || !outputNode || !derivedSelectNode || !derivedOutputNode) return;
 
-  countNode.innerHTML = `异种数量：${RACE_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.races.length}）<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.derivedTypes.length}）`;
+  countNode.innerHTML = `物种数量：${RACE_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.races.length}）<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.derivedTypes.length}）`;
   renderOverrideInventory(globalSettings && { ...settings,
     racePhysiologyOverrides: getEditorOverrideMap(ctx, 'racePhysiologyOverrides'),
     derivedTypeOverrides: getEditorOverrideMap(ctx, 'derivedTypeOverrides'),

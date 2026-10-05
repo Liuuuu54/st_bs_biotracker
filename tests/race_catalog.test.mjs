@@ -12,8 +12,8 @@ test('名录涵盖全部内建种族与衍生类型', () => {
   for (const race of ['鱼人', '人鱼', '空鲸', '史萊姆', '深潜者']) {
     assert.ok(block.includes(race), `名录应含 ${race}`);
   }
-  assert.equal(block.includes('- 胎生: 人类'), false, '人类是隐含基准，不列入异种名录');
-  assert.ok(block.includes('人类是始终可用的系统基准'));
+  assert.ok(block.includes('- 胎生: 人类、'), '人类与其他物种一样列在胎生组');
+  assert.equal(block.includes('始终可用'), false, '人类不再是隐含基准');
   for (const derived of ['血族', '序列', '器灵']) {
     assert.ok(block.includes(derived), `名录应含衍生类型 ${derived}`);
   }
@@ -30,18 +30,20 @@ test('紧凑模式不带辨识提示，注册模式带', () => {
   assert.ok(hinted.length > compact.length);
 });
 
-test('百科选择会筛选名录，人类不会作为百科项目出现', () => {
-  const selection = { races: ['人类'], derivedTypes: [] };
-  const block = buildRaceCatalogBlock({ selection });
-  assert.equal(block, '');
-  assert.equal(buildRaceCatalogBlock({ selection: { races: [], derivedTypes: [] } }), '');
+test('百科选择会筛选名录，人类与其他物种一样可勾选', () => {
+  const humanOnly = buildRaceCatalogBlock({ selection: { version: 2, races: ['人类'], derivedTypes: [] } });
+  assert.ok(humanOnly.includes('- 胎生: 人类'));
+  assert.equal(humanOnly.includes('精灵'), false);
+  assert.equal(buildRaceCatalogBlock({ selection: { version: 2, races: [], derivedTypes: [] } }), '');
+  const noHuman = buildRaceCatalogBlock({ selection: { version: 2, races: ['精灵'], derivedTypes: [] } });
+  assert.ok(noHuman.includes('- 胎生: 精灵'));
+  assert.equal(noHuman.includes('人类'), false, '取消勾选人类后名录不再提人类');
 });
 
 test('追踪与注册提示词共用百科名录选择', () => {
-  const selection = { races: ['人类', '精灵'], derivedTypes: ['血族'] };
+  const selection = { version: 2, races: ['人类', '精灵'], derivedTypes: ['血族'] };
   const tracked = buildTrackerSystemPrompt('base', null, { race_catalog_selection: selection });
-  assert.ok(tracked.includes('- 胎生: 精灵'));
-  assert.ok(tracked.includes('人类是始终可用的系统基准'));
+  assert.ok(tracked.includes('- 胎生: 人类、精灵'));
   assert.ok(tracked.includes('血族'));
   assert.equal(tracked.includes('鱼人'), false);
 

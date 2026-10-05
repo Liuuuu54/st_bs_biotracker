@@ -111,11 +111,13 @@ try {
     await click('[data-nav-view="race-encyclopedia"]');
     await click('[data-encyclopedia-tab="world"]');
     await expect("document.querySelector('#bs-bt-world-baseline-prompt').value==='全域世界'", host + ': global editor');
+    await expect("!!document.querySelector('[data-catalog-kind=\"race\"][data-catalog-name=\"人类\"]')", host + ': human catalog checkbox');
     await set('#bs-bt-world-setting-target', 'card');
     await expect("document.querySelector('#bs-bt-world-baseline-prompt').value==='卡片世界'", host + ': card editor');
     await set('#bs-bt-world-baseline-prompt', '保存的卡片世界'); await click('#bs-bt-world-baseline-save');
     await expect("__cardUiCtx.characters[0].data.extensions.bs_biotracker.worldBaselinePrompt==='保存的卡片世界' && __cardUiState.getSettings(__cardUiCtx).worldBaselinePrompt==='全域世界'", host + ': baseline isolation');
     await click('[data-encyclopedia-tab="race"]');
+    await expect("[...document.querySelectorAll('#bs-bt-race-select option')].some((option) => option.value==='人类') && document.querySelector('#bs-bt-race-count').textContent.startsWith('物种数量：77')", host + ': human in encyclopedia');
     await set('#bs-bt-race-select', '西方龙'); await click('#bs-bt-race-open-editor');
     await expect("document.querySelector('#bs-bt-race-introduction-line').value.startsWith('Western Dragon')", host + ': builtin introduction prefilled');
     await set('#bs-bt-race-field-breedTolerance', '4'); await click('#bs-bt-race-save-override');

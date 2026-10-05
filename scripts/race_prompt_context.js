@@ -1,4 +1,4 @@
-import { DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace } from './race_config.js';
+import { DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN } from './stage_config.js';
 
 /**
@@ -16,7 +16,7 @@ function sanitizePromptText(value) {
 }
 
 /**
- * 剧本级的人类与社会常识。它不是种族参数，也不参与异种名录；
+ * 剧本级的人类与社会常识。它不是种族参数，也不参与物种名录；
  * 留空即沿用普通人类基准。压成单行可避免用户文字闭合高优先级提示区块。
  */
 export function buildWorldBaselineBlock(value) {
@@ -62,15 +62,12 @@ function buildRaceCatalogHint(text) {
  * withHints=true 附极短辨识提示，适合一次性的注册请求。
  */
 export function buildRaceCatalogBlock({ withHints = false, selection = null } = {}) {
-  const selectedRaces = selection && Array.isArray(selection.races)
-    ? new Set(selection.races.map((race) => String(race || '').trim()).filter(Boolean))
-    : null;
-  const selectedDerivedTypes = selection && Array.isArray(selection.derivedTypes)
-    ? new Set(selection.derivedTypes.map((type) => String(type || '').trim()).filter(Boolean))
-    : null;
+  const normalized = normalizeRaceCatalogSelection(selection);
+  const selectedRaces = normalized ? new Set(normalized.races) : null;
+  const selectedDerivedTypes = normalized ? new Set(normalized.derivedTypes) : null;
   // 按当前生效的胚型分组：百科改过胚型的物种要列在新组下
   const groupLines = getRaceGroupsByEmbryoType().map(({ label, races }) => {
-    const names = races.filter((race) => race !== '人类' && (!selectedRaces || selectedRaces.has(race))).map((race) => {
+    const names = races.filter((race) => !selectedRaces || selectedRaces.has(race)).map((race) => {
       const hint = withHints ? buildRaceCatalogHint(getRaceIntroductionLine(race)) : '';
       return hint ? `${race}(${hint})` : race;
     });
@@ -80,14 +77,14 @@ export function buildRaceCatalogBlock({ withHints = false, selection = null } = 
   if (groupLines.length === 0 && derivedTypes.length === 0) return '';
   return [
     '[可用种族名录]',
-    '人类是始终可用的系统基准；以下是本故事启用的系统内建异种，写 base.race、fatherRace、bsAddSperm.race 时应优先从人类或下列项目中选择。',
+    '以下是本故事启用的系统内建物种，写 base.race、fatherRace、bsAddSperm.race 时应从下列项目中选择。',
     ...groupLines,
     derivedTypes.length > 0 ? `- 衍生类型（写作 [类型]种族，如 [血族]人类）: ${derivedTypes.map((type) => {
       const hint = withHints ? buildRaceCatalogHint(getDerivedTypeIntroductionLine(type)) : '';
       return hint ? `${type}(${hint})` : type;
     }).join('、')}` : '',
     '名录外的形象请就近归入本次名录中最相似的一项，不要自创种族名——自创名称在系统内查不到生理参数。',
-    '混血以 x 分隔，装饰子项以 - 附加；两侧只能使用人类或本次名录列出的种族名。',
+    '混血以 x 分隔，装饰子项以 - 附加；两侧只能使用本次名录列出的种族名。',
   ].filter(Boolean).join('\n');
 }
 
@@ -304,17 +301,28 @@ function buildHybridAverageBlock(race, bloodline = null) {
   ].filter(Boolean).join('\n');
 }
 
-function buildRacePhysiologyLoreBlock(race, includeAverage = true) {
+/**
+ * 人类的生理块只在名录勾选了人类时才送：奇幻设定需要拿它与其他物种比较，
+ * 现代设定取消勾选后由模型的常识与世界基准负责。其他物种的生理块不受名录影响，照常送出。
+ */
+function shouldSendRaceBlock(race, selection) {
+  return race !== '人类' || isRaceInCatalogSelection(selection, '人类');
+}
+
+function buildRacePhysiologyLoreBlock(race, includeAverage = true, selection = null) {
   const value = String(race || '').trim();
   if (!value) return '';
   const components = getRaceComponents(value);
   if (components.length === 0) return '';
-  if (components.length === 1) return [`[种族生理补充设定]`, buildSingleRacePhysiologyBlock(components[0])].join('\n');
+  if (components.length === 1) {
+    if (!shouldSendRaceBlock(components[0], selection)) return '';
+    return [`[种族生理补充设定]`, buildSingleRacePhysiologyBlock(components[0])].join('\n');
+  }
   return [
     '[种族生理补充设定]',
     `该角色为混血/复合种族：${components.map(sanitizePromptText).join(' x ')}`,
     '请同时理解各族生理参数，不要把混血直接脑补成单一物种。',
-    ...components.map((part) => buildSingleRacePhysiologyBlock(part)).filter(Boolean),
+    ...components.filter((part) => shouldSendRaceBlock(part, selection)).map((part) => buildSingleRacePhysiologyBlock(part)).filter(Boolean),
     includeAverage ? buildHybridAverageBlock(value) : '',
   ].join('\n\n');
 }
@@ -554,7 +562,7 @@ export function buildRacePhysiologyPrompt(payload = {}, { includeAllRelevant = t
     }
   }
   const weightedRaces = new Set([...weighted.values()].map(({ record }) => record.race));
-  const blocks = (includeAllRelevant ? races : races.slice(0, 1)).map((race) => buildRacePhysiologyLoreBlock(race, !weightedRaces.has(race))).filter(Boolean);
+  const blocks = (includeAllRelevant ? races : races.slice(0, 1)).map((race) => buildRacePhysiologyLoreBlock(race, !weightedRaces.has(race), payload?.race_catalog_selection || null)).filter(Boolean);
   const weightedBlocks = [...weighted.values()].map(({ record, owners }) => [
     `【${[...owners].map(sanitizePromptText).join('、')} / ${sanitizePromptText(record.race)}】`,
     buildHybridAverageBlock(record.race, record.bloodline),
@@ -581,10 +589,10 @@ export function buildRacePhysiologyPrompt(payload = {}, { includeAllRelevant = t
   ].join('\n\n');
 }
 
-export function buildRegistryRacePhysiologyPrompt(payload = {}) {
+export function buildRegistryRacePhysiologyPrompt(payload = {}, { selection = null } = {}) {
   const races = collectRelevantRaces(payload, { includeExistingState: false, includeCurrentCharacter: false });
   const derivedTypes = collectRelevantDerivedTypes(payload, { includeExistingState: false, includeCurrentCharacter: false });
-  const blocks = races.map((race) => buildRacePhysiologyLoreBlock(race)).filter(Boolean);
+  const blocks = races.map((race) => buildRacePhysiologyLoreBlock(race, true, selection)).filter(Boolean);
   const derivedBlocks = derivedTypes.map((derivedType) => buildDerivedFluxLoreBlock(derivedType)).filter(Boolean);
   if (blocks.length === 0 && derivedBlocks.length === 0) return '';
   return [

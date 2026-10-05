@@ -1,7 +1,7 @@
 import {
   normalizeRaceOverrideMap, normalizeDerivedOverrideMap,
   sanitizeRacePhysiologyProfilePatch, sanitizeDerivedTypeProfilePatch,
-  setRacePhysiologyOverrides, setDerivedTypeOverrides,
+  setRacePhysiologyOverrides, setDerivedTypeOverrides, RACE_CATALOG_SELECTION_VERSION,
 } from './race_config.js';
 import { normalizeReproductiveSettings } from './reproductive.js';
 import { normalizeSkillCatalog, registerSkillDefinition } from './skill_config.js';
@@ -70,6 +70,8 @@ export function sanitizeCardSettings(value) {
   if (object(value.raceCatalogSelection) && Array.isArray(value.raceCatalogSelection.races) && Array.isArray(value.raceCatalogSelection.derivedTypes)) {
     const names = list => [...new Set(list.filter(item => typeof item === 'string').map(item => text(item, 80)).filter(Boolean))].slice(0, 500);
     result.raceCatalogSelection = { races: names(value.raceCatalogSelection.races), derivedTypes: names(value.raceCatalogSelection.derivedTypes) };
+    // 版本标记决定人类是否需要按旧规则补回，见 normalizeRaceCatalogSelection
+    if (value.raceCatalogSelection.version === RACE_CATALOG_SELECTION_VERSION) result.raceCatalogSelection.version = RACE_CATALOG_SELECTION_VERSION;
   }
   if (typeof value.worldBaselinePrompt === 'string') result.worldBaselinePrompt = text(value.worldBaselinePrompt, 12000);
   if (object(value.reproductiveSettings)) {
