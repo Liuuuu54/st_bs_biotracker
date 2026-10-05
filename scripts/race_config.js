@@ -690,7 +690,8 @@ export const DERIVED_TYPE_RACES = Object.freeze([
   "器灵",
   "变异",
   "序列",
-  "兽化"
+  "兽化",
+  "咒缚"
 ]);
 
 export const DERIVED_TYPE_INTRODUCTION_LINES = Object.freeze({
@@ -706,6 +707,7 @@ export const DERIVED_TYPE_INTRODUCTION_LINES = Object.freeze({
   "变异": "Mutant，基因突变而获得超自然能力的个体。",
   "序列": "Secondary Dynamics，在原有性别与种族之外具有第二生理或精神序列的个体；涵盖 ABO、哨兵／向导与 Dom／Sub Universe。",
   "兽化": "Therian，原种族个体带有动物性身体特征与本能；程度可仅有兽耳、尾巴、敏锐感官与发情周期，也可进一步半兽化或化为完整兽形。",
+  "咒缚": "Hexbound，先祖与某个存在立约、诅咒随血脉代代相传的一族，近似整个家系都签了约的邪术师（Warlock）；契约主常伴左右，无论本人意愿。",
 });
 
 export const DERIVED_TYPE_INHERITANCE_PROFILES = Object.freeze({
@@ -744,6 +746,10 @@ export const DERIVED_TYPE_INHERITANCE_PROFILES = Object.freeze({
   }),
   "兽化": Object.freeze({
     inheritanceSpeed: 1.4
+  }),
+  // 整个家系都在约中：遗传速度取系统上限，最难摆脱
+  "咒缚": Object.freeze({
+    inheritanceSpeed: 3
   })
 });
 
@@ -795,6 +801,10 @@ export const DERIVED_TYPE_FLUX_PROFILES = Object.freeze({
   "兽化": Object.freeze({
     fluxName: "兽性",
     fluxDefinition: "动物性身体特征、感官与本能的显化程度；轻度可仅有兽耳、尾巴、发情周期与动物习性，重度可进入半兽或完整兽形。乳意由兽性抵免而不单独追踪：哺乳型个体在妊娠、育幼、发情或乳房刺激下可迅速泌乳，具体产量依物种与敘事表现；非哺乳型个体则无此需求。\n[平衡] 兽征与人性自然协调，感官、本能和社会行为皆可自主控制。\n[正极] 表现为‘野性显化’：兽耳、尾巴、爪牙或体毛更鲜明，发情、护群、领地、追猎等本能增强；重度者会进入半兽或纯兽形态。\n[负极] 表现为‘本能失调’：兽征萎靡、感官错乱、尾耳失去控制；个体既无法顺从动物本能，也难以适应纯人类行为，产生强烈的身分残缺与不安。"
+  }),
+  "咒缚": Object.freeze({
+    fluxName: "咒蚀",
+    fluxDefinition: "先祖与契约主立下、随血脉代代相传的咒缚之力；后代一出生即在约中，契约主始终随侍在侧，无论本人意愿。子项可写作咒缚-深渊、咒缚-妖精等，标明契约主。排泄与乳意由契约收取与供养，不单独追踪。\n[平衡] 咒印沉睡、契约静默；代价按约支付，借来的力量运用自如，与契约主的低语维持着彼此心知肚明的距离。\n[正极] 表现为‘咒印反噬’：生理上咒纹自体表蔓延、灼热发光，瞳色或声线染上契约主的特征；心理上契约主的意志渗入，言行带着不属于自己的古老口吻，为履约不择手段，视违约者与阻碍者为必须清偿的债。\n[负极] 表现为‘欠契追讨’：生理上体力衰败、伤口难愈、厄运缠身，咒纹转为溃烂的黑痕，连血亲也开始出现同样的征兆；心理上被‘全族都被拖下水’的愧疚与恐惧折磨，焦躁地寻找还债或毁约的方法，对契约主的低语既抗拒又依赖。"
   })
 });
 
@@ -811,6 +821,8 @@ export const DERIVED_TYPE_METABOLISM_EXEMPTIONS = Object.freeze({
   "变异": Object.freeze(["sleep", "hunger", "odor"]),
   "序列": Object.freeze(["sleep", "odor", "companionship"]),
   "兽化": Object.freeze(["milk", "odor", "companionship"]),
+  // 契约主随侍在侧，后代由契约哺育，身体的残渣被当作供品收走
+  "咒缚": Object.freeze(["excretion", "milk", "companionship"]),
 });
 
 let customRacePhysiologyProfiles = {};
@@ -1054,6 +1066,7 @@ export function getRecoveryCoefficientByRace(race, bloodline = null) {
 const DERIVED_TYPE_ALIASES = Object.freeze({
   修煉: '修炼',
   魔導: '魔导',
+  咒縛: '咒缚',
 });
 
 export function getBaseDerivedTypeName(derivedType) {

@@ -79,7 +79,6 @@ test('衍生类型有内建短敘述并进入名录', () => {
 
 test('序列兼容三大女性向设定，兽化使用独立兽性与乳意抵免', async () => {
   const raceConfig = await import('../scripts/race_config.js');
-  assert.equal(raceConfig.DERIVED_TYPE_RACES.length, 12);
   assert.match(raceConfig.getDerivedTypeIntroductionLine('序列'), /ABO、哨兵／向导与 Dom／Sub/);
   assert.equal(raceConfig.getDerivedTypeFluxProfile('序列').fluxName, '序列活性');
   assert.equal(raceConfig.getDerivedTypeFluxProfile('兽化-猫').fluxName, '兽性');
@@ -91,6 +90,21 @@ test('序列兼容三大女性向设定，兽化使用独立兽性与乳意抵�
   assert.match(raceConfig.getDerivedTypeFluxProfile('兽化').fluxDefinition, /乳意由兽性抵免而不单独追踪/);
 });
 
+test('咒缚随血脉全族入约：遗传最快、契约主抵免陪伴，豁免组合不与其他衍生重复', async () => {
+  const raceConfig = await import('../scripts/race_config.js');
+  const speeds = raceConfig.DERIVED_TYPE_RACES.map((type) => raceConfig.getDerivedTypeInheritanceProfile(type).inheritanceSpeed);
+  assert.equal(raceConfig.getDerivedTypeInheritanceProfile('咒缚-深渊').inheritanceSpeed, Math.max(...speeds));
+  assert.equal(raceConfig.getDerivedTypeFluxProfile('咒縛').fluxName, '咒蚀', '繁体写法也应认得');
+
+  const exemptions = raceConfig.getDerivedTypeMetabolismExemptions('咒缚');
+  assert.ok(exemptions.includes('companionship'), '契约主始终随侍，陪伴需求必须豁免');
+  const key = (list) => [...list].sort().join();
+  const others = raceConfig.DERIVED_TYPE_RACES.filter((type) => type !== '咒缚')
+    .map((type) => key(raceConfig.getDerivedTypeMetabolismExemptions(type)));
+  assert.equal(others.includes(key(exemptions)), false);
+
+  assert.ok(buildRaceCatalogBlock({ withHints: true }).includes('咒缚(Hexbound'), '名录应带咒缚提示');
+});
 
 test('短敘述与名录提示都走使用者覆写', async () => {
   const { setRacePhysiologyOverrides } = await import('../scripts/race_config.js');

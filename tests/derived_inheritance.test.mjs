@@ -10,7 +10,7 @@ import {
   getDerivedTypeInheritanceProfile,
 } from '../scripts/race_config.js';
 
-test('all twelve derived types use distinct inheritance speeds', () => {
+test('all thirteen derived types use distinct inheritance speeds', () => {
   const expected = {
     神祇: 0.25,
     机械: 0.5,
@@ -24,13 +24,14 @@ test('all twelve derived types use distinct inheritance speeds', () => {
     星际: 1.7,
     血族: 1.9,
     不死: 2.5,
+    咒缚: 3,
   };
-  assert.equal(DERIVED_TYPE_RACES.length, 12);
+  assert.equal(DERIVED_TYPE_RACES.length, 13);
   assert.deepEqual(
     Object.fromEntries(DERIVED_TYPE_RACES.map((name) => [name, getDerivedTypeInheritanceProfile(name).inheritanceSpeed])),
     Object.fromEntries(DERIVED_TYPE_RACES.map((name) => [name, expected[name]])),
   );
-  assert.equal(new Set(Object.values(expected)).size, 12);
+  assert.equal(new Set(Object.values(expected)).size, 13);
 });
 
 test('neutral human inheritance reaches but does not cross the threshold at 140 days', () => {
