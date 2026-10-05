@@ -31,6 +31,7 @@ import {
   RACE_PHYSIOLOGY_FIELDS,
   getEmbryoTypeByRace,
   getBuiltinRacePhysiologyProfile,
+  getBuiltinRaceIntroductionLine,
   getMergedRacePhysiologyProfile,
   formatBloodline,
   getDerivedTypeFluxProfile,
@@ -2027,8 +2028,14 @@ function getRacePhysiologyInputValue(race, field) {
   return builtin[field] === null ? '' : String(builtin[field]);
 }
 
+// 编辑卡片时，未覆写的短敘述沿用全域覆写，再落回内置
+function getRaceIntroductionBaseValue(race) {
+  const globalLine = isEditingCard() ? getSettings(getContextSafe()).racePhysiologyOverrides?.[race]?.[RACE_INTRODUCTION_FIELD] : '';
+  return globalLine || getBuiltinRaceIntroductionLine(race);
+}
+
 function getRaceIntroductionInputValue(race) {
-  return getEncyclopediaEditorSettings().racePhysiologyOverrides?.[race]?.[RACE_INTRODUCTION_FIELD] || getBuiltinRacePhysiologyProfile(race)?.[RACE_INTRODUCTION_FIELD] || '';
+  return getEncyclopediaEditorSettings().racePhysiologyOverrides?.[race]?.[RACE_INTRODUCTION_FIELD] || getRaceIntroductionBaseValue(race);
 }
 
 function renderRacePhysiologyEditor(race) {
@@ -2169,7 +2176,7 @@ function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
   const introductionInput = document.querySelector(`[data-race-introduction-field="${RACE_INTRODUCTION_FIELD}"]`);
   if (introductionInput instanceof HTMLTextAreaElement) {
     const value = String(introductionInput.value || '').trim();
-    const baseValue = builtin[RACE_INTRODUCTION_FIELD] || '';
+    const baseValue = getRaceIntroductionBaseValue(race);
     const changed = value !== baseValue;
     if (value && (!onlyDiff || changed)) result[RACE_INTRODUCTION_FIELD] = value;
   }

@@ -117,8 +117,10 @@ try {
     await expect("__cardUiCtx.characters[0].data.extensions.bs_biotracker.worldBaselinePrompt==='保存的卡片世界' && __cardUiState.getSettings(__cardUiCtx).worldBaselinePrompt==='全域世界'", host + ': baseline isolation');
     await click('[data-encyclopedia-tab="race"]');
     await set('#bs-bt-race-select', '西方龙'); await click('#bs-bt-race-open-editor');
+    await expect("document.querySelector('#bs-bt-race-introduction-line').value.startsWith('Western Dragon')", host + ': builtin introduction prefilled');
     await set('#bs-bt-race-field-breedTolerance', '4'); await click('#bs-bt-race-save-override');
     await expect("__cardUiCtx.characters[0].data.extensions.bs_biotracker.racePhysiologyOverrides.西方龙.breedTolerance===4 && __cardUiState.getSettings(__cardUiCtx).racePhysiologyOverrides.西方龙.breedTolerance===3", host + ': physiology isolation');
+    await expect("!('introductionLine' in __cardUiCtx.characters[0].data.extensions.bs_biotracker.racePhysiologyOverrides.西方龙)", host + ': unchanged introduction not saved');
     await click('#bs-bt-race-open-editor'); await click('#bs-bt-race-reset-override');
     await expect("!__cardUiCtx.characters[0].data.extensions.bs_biotracker.racePhysiologyOverrides && document.querySelector('#bs-bt-race-output').textContent.includes('卵生')", host + ': clear card fallback');
     await click('[data-encyclopedia-tab="world"]');

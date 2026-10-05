@@ -938,6 +938,11 @@ export function getBuiltinRacePhysiologyProfile(race) {
   return profile;
 }
 
+/** 只看内置的短敘述，不含百科覆写；百科编辑器用来预填与比对差异 */
+export function getBuiltinRaceIntroductionLine(race) {
+  return String(RACE_DEFINITIONS[getBaseRaceName(race)]?.[RACE_INTRODUCTION_FIELD] || '').trim();
+}
+
 export function getRaceIntroductionLine(race) {
   const key = getBaseRaceName(race);
   if (!key) return '';
