@@ -143,11 +143,11 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "巨人": {
     embryoType: "胎生",
-    introductionLine: "Giant，体型远超人类的种族；巨魔、山怪、独眼巨人、泰坦皆归此类。",
+    introductionLine: "Giant，体型远超人类的种族；巨魔、山怪、独眼巨人、泰坦皆归此类。难以受孕，但庞大的身躯承载妊娠游刃有余。",
     inheritanceMode: "normal",
-    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.4, birthDifficulty: 3, breedTolerance: 1,
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.4, birthDifficulty: 3, breedTolerance: 2.5,
     impregnationDifficulty: 4, orgasmOvulationAmount: 0, identicalProbability: 2, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 8,
   },
   "媚魔": {
     embryoType: "胎生",
@@ -171,7 +171,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 0.5, birthDifficulty: 4, breedTolerance: 0.8,
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 1, identicalProbability: 50, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 5,
   },
   "妖狐": {
     embryoType: "胎生",
@@ -363,7 +363,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.5, birthDifficulty: 2, breedTolerance: 1,
     impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 2, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 5,
   },
   "怪鱼类": {
     embryoType: "卵胎生",
@@ -379,7 +379,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 1, birthDifficulty: 3, breedTolerance: 0.3,
     impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 5, genderRatio: 33,
-    companionEggsMean: 10, recoveryCoefficient: 6,
+    companionEggsMean: 10, recoveryCoefficient: 10,
   },
   "独居虫族": {
     embryoType: "卵胎生",
@@ -427,7 +427,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "paternal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.625, birthDifficulty: 2, breedTolerance: 0.4,
     impregnationDifficulty: 4, orgasmOvulationAmount: 2, identicalProbability: 25, genderRatio: 66,
-    companionEggsMean: 12, recoveryCoefficient: 6,
+    companionEggsMean: 12, recoveryCoefficient: 0.5,
   },
   "河童": {
     embryoType: "卵胎生",
@@ -459,7 +459,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 4, gestationSpeciesSpeed: 0.25, birthDifficulty: 4, breedTolerance: 2,
     impregnationDifficulty: 2, orgasmOvulationAmount: 2, identicalProbability: 25, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 7,
   },
   "东方龙": {
     embryoType: "胎转卵生",
@@ -467,7 +467,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 4, gestationSpeciesSpeed: 0.25, birthDifficulty: 4, breedTolerance: 1 / 3,
     impregnationDifficulty: 5, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 10,
   },
   "狮鹫族": {
     embryoType: "胎转卵生",
@@ -507,7 +507,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1.75, gestationSpeciesSpeed: 0.3, birthDifficulty: 3, breedTolerance: 0.8,
     impregnationDifficulty: 4, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 8,
   },
   "凤凰": {
     embryoType: "胎转卵生",
@@ -515,7 +515,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1.75, gestationSpeciesSpeed: 0.4, birthDifficulty: 5, breedTolerance: 0.5,
     impregnationDifficulty: 3.5, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 3,
   },
   "白泽": {
     embryoType: "胎转卵生",
@@ -523,7 +523,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1.75, gestationSpeciesSpeed: 0.35, birthDifficulty: 4, breedTolerance: 0.4,
     impregnationDifficulty: 5, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 9,
   },
   "独角兽": {
     embryoType: "胎转卵生",
@@ -539,7 +539,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.2, birthDifficulty: 5, breedTolerance: 2,
     impregnationDifficulty: 6, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 33,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 12,
   },
   "星繭族": {
     embryoType: "胎转卵生",
@@ -547,7 +547,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.6666666666666666, birthDifficulty: 3, breedTolerance: 1,
     impregnationDifficulty: 0.1, orgasmOvulationAmount: 0, identicalProbability: 0, genderRatio: 0,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 5,
   },
   "修格斯": {
     embryoType: "胎转卵生",
@@ -571,7 +571,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.4, birthDifficulty: 2.5, breedTolerance: 1,
     impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: -1,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 8,
   },
   "烛灵": {
     embryoType: "不定型",
@@ -595,7 +595,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 2.5, breedTolerance: 0.8,
     impregnationDifficulty: 1, orgasmOvulationAmount: 0, identicalProbability: 20, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 5,
   },
   "夢魔": {
     embryoType: "不定型",
@@ -611,7 +611,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.8, birthDifficulty: 3, breedTolerance: 1,
     impregnationDifficulty: 7, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 10,
   },
   "奈米丛族": {
     embryoType: "不定型",

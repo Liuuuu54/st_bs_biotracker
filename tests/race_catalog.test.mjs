@@ -185,6 +185,38 @@ test('米诺陶族的承载耐受为胎生之最，杜拉罕只是难受孕', as
   assert.equal(dullahan.birthDifficulty, getRacePhysiologyProfile('人类').birthDifficulty);
 });
 
+test('巨人独占胎生组「难受孕 + 高承载」', async () => {
+  const { VIVIPAROUS_RACES, getRacePhysiologyProfile } = await import('../scripts/race_config.js');
+  const quadrant = VIVIPAROUS_RACES.filter((race) => {
+    const item = getRacePhysiologyProfile(race);
+    return item.impregnationDifficulty >= 2 && item.breedTolerance >= 2;
+  });
+  assert.deepEqual(quadrant, ['巨人']);
+});
+
+test('长恢复种族的恢复系数彼此拉开，海马族产后几乎可立即再孕', async () => {
+  const { ALL_BUILTIN_RACES, getRacePhysiologyProfile } = await import('../scripts/race_config.js');
+  const counts = new Map();
+  for (const race of ALL_BUILTIN_RACES) {
+    const value = getRacePhysiologyProfile(race).recoveryCoefficient;
+    if (value >= 5) counts.set(value, [...(counts.get(value) || []), race]);
+  }
+  for (const [value, races] of counts) {
+    assert.ok(races.length <= 5, `恢复系数 ${value} 挤了 ${races.length} 个种族：${races.join('、')}`);
+  }
+  // 雄性育儿袋孕育，产后很快就能再次受孕
+  assert.ok(getRacePhysiologyProfile('海马族').recoveryCoefficient < 1);
+});
+
+test('天使与恶魔刻意对称：胚型、核型与生理数值完全相同', async () => {
+  const { RACE_PHYSIOLOGY_FIELDS, getRacePhysiologyProfile } = await import('../scripts/race_config.js');
+  const angel = getRacePhysiologyProfile('天使');
+  const demon = getRacePhysiologyProfile('恶魔');
+  for (const field of [...RACE_PHYSIOLOGY_FIELDS, 'embryoType', 'inheritanceMode']) {
+    assert.equal(angel[field], demon[field], `天使与恶魔的 ${field} 应对称`);
+  }
+});
+
 test('卓尔沿用精灵数值，只是较易受精、较难分娩', async () => {
   const { getRacePhysiologyProfile, RACE_PHYSIOLOGY_FIELDS } = await import('../scripts/race_config.js');
   const elf = getRacePhysiologyProfile('精灵');
