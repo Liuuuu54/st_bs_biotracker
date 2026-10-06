@@ -1,6 +1,8 @@
 import { normalizeExperience, psychologySide } from './reproductive.js';
 import {
   RACE_PHYSIOLOGY_PROFILES,
+  canonicalizeRaceDescriptor,
+  canonicalizeRaceName,
   computePostpartumRecoveryDays,
   getRaceComponents,
   getBloodlineInfo,
@@ -11,7 +13,7 @@ import {
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 6;
+export const CHAT_STATE_SCHEMA_VERSION = 7;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -29,6 +31,9 @@ const LEGACY_BREED_TOLERANCE_V1 = Object.freeze({
   石像鬼: 4, 烛灵: 2, 人偶: 2, 心魇: 0.8, 夢魔: 3, 宝石人: 2, 奈米丛族: 6, 元素灵: 5, 灯神: 6, 影魔: 5,
   活体铠甲: 2, 伪人: 2,
 });
+const LEGACY_BREED_TOLERANCE_BY_NAME = Object.freeze(Object.fromEntries(
+  Object.entries(LEGACY_BREED_TOLERANCE_V1).map(([race, value]) => [canonicalizeRaceName(race), value]),
+));
 
 function clamp(value, min, max, fallback) {
   const num = Number(value);
@@ -67,7 +72,7 @@ function migrateCharacterV1ToV2(character) {
   const fetusCount = Array.isArray(profile.pregnant?.fetuses) ? profile.pregnant.fetuses.length : 0;
   const originalBio = character.runtime?.originalPregnancyBio;
 
-  const legacy = averageTolerance(base.race, (part) => Number(LEGACY_BREED_TOLERANCE_V1[part]));
+  const legacy = averageTolerance(base.race, (part) => Number(LEGACY_BREED_TOLERANCE_BY_NAME[part]));
   const next = averageTolerance(base.race, (part) => Number(RACE_PHYSIOLOGY_PROFILES[part]?.breedTolerance));
   if (legacy !== null && next !== null && !isClose(legacy, next)) {
     const modifier = getToleranceCountModifier(fetusCount);
@@ -160,11 +165,52 @@ export function normalizeCharacterBloodlines(character) {
   }
 }
 
+/**
+ * v6 → v7（1.1.4 改名）：把存下的种族字串与血统比例的键换成新名（百足姬→百足氏等，见 RACE_RENAMES），
+ * 繁体或混写的内置名称一并收敛成规范字形。只认栏位名：race、*Race 是种族字串，bloodline、*Bloodline 是比例表；
+ * 名字与人物（fathers、provider 等）不动。查不到的自订种族原样保留。
+ */
+function isRaceKey(key) {
+  return key === 'race' || /^[a-z]+Race$/.test(key);
+}
+
+function isBloodlineKey(key) {
+  return key === 'bloodline' || /^[a-z]+Bloodline$/.test(key);
+}
+
+function renameBloodlineKeys(bloodline) {
+  const result = {};
+  for (const [name, value] of Object.entries(bloodline)) {
+    const key = canonicalizeRaceName(name);
+    result[key] = typeof value === 'number' && typeof result[key] === 'number' ? result[key] + value : value;
+  }
+  return result;
+}
+
+function renameRacesDeep(node, seen = new Set()) {
+  if (!node || typeof node !== 'object' || seen.has(node)) return;
+  seen.add(node);
+  if (Array.isArray(node)) {
+    for (const item of node) renameRacesDeep(item, seen);
+    return;
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (typeof value === 'string' && isRaceKey(key)) node[key] = canonicalizeRaceDescriptor(value);
+    else if (value && typeof value === 'object' && !Array.isArray(value) && isBloodlineKey(key)) node[key] = renameBloodlineKeys(value);
+    else renameRacesDeep(value, seen);
+  }
+}
+
+function migrateCharacterV6ToV7(character) {
+  renameRacesDeep(character);
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
   2: migrateCharacterV2ToV3,
   3: migrateCharacterV3ToV4,
   4: normalizeCharacterBloodlines,
+  6: migrateCharacterV6ToV7,
 });
 
 export function getChatStateSchemaVersion(chatState) {

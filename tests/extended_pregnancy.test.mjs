@@ -229,7 +229,7 @@ test('存档 v2 → v3：补上延产与乏力栏位', () => {
   chatState.schemaVersion = 2;
   settings.chatStates['migration-v3'] = chatState;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 6);
+  assert.equal(migrated.schemaVersion, 7);
   assert.equal(migrated.characters.A.profile.pregnant.extensionCount, 0);
   assert.equal(migrated.characters.A.profile.pregnant.extensionUntilDays, null);
   assert.equal(migrated.characters.A.profile.base.uterineAtony, 0);

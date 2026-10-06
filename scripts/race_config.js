@@ -1,3 +1,5 @@
+import { toSimplifiedName } from './race_names.js';
+
 export const EMBRYO_TYPES = Object.freeze(["胎生", "卵生", "卵胎生", "胎转卵生", "不定型"]);
 /** 胚型是字串，不进 RACE_PHYSIOLOGY_FIELDS（那里的栏位会被当数值平均） */
 export const RACE_EMBRYO_TYPE_FIELD = "embryoType";
@@ -189,10 +191,10 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 2.5, orgasmOvulationAmount: 2, identicalProbability: 20, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 0.66,
   },
-  "月兔族": {
+  "月兔": {
     embryoType: "胎生",
-    introductionLine: "Moon Rabbit，居于月球的兔系亚人；繁殖力为胎生种族之最，族中多为雌性。",
-    inheritanceMode: "normal",
+    introductionLine: "Moon Rabbit，居于月球的兔系亚人；繁殖力为胎生种族之最，族中多为雌性。雄核遗传：月兔女子所生皆随父族，因而成为各族争夺的孕母，能延续族裔的雄兔被视为至宝。",
+    inheritanceMode: "paternal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2, birthDifficulty: 0.6, breedTolerance: 2.5,
     impregnationDifficulty: 0.4, orgasmOvulationAmount: 4, identicalProbability: 30, genderRatio: 30,
     companionEggsMean: 0, recoveryCoefficient: 0.25,
@@ -213,7 +215,7 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 2, orgasmOvulationAmount: 0, identicalProbability: 3, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 2.5,
   },
-  "鸟人": {
+  "鸟族": {
     embryoType: "卵生",
     introductionLine: "Harpy，典型形象为哈比，带翼的鸟类亚人；现代创作已性别比正常化。",
     inheritanceMode: "normal",
@@ -229,7 +231,7 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 0.4, orgasmOvulationAmount: 3, identicalProbability: 1, genderRatio: 50,
     companionEggsMean: 3, recoveryCoefficient: 0.25,
   },
-  "植物亚人": {
+  "植物族": {
     embryoType: "卵生",
     introductionLine: "Dryad／Plant-folk，植物拟人，具自花授粉特性。",
     inheritanceMode: "normal",
@@ -269,7 +271,7 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 2, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 3.75,
   },
-  "真菌亚人": {
+  "真菌族": {
     embryoType: "卵生",
     introductionLine: "Myconid，菌类拟人，具自体授粉特性。",
     inheritanceMode: "normal",
@@ -317,7 +319,7 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 2, orgasmOvulationAmount: 6, identicalProbability: 0, genderRatio: 25,
     companionEggsMean: 12, recoveryCoefficient: 0.57,
   },
-  "百足姬": {
+  "百足氏": {
     embryoType: "卵生",
     introductionLine: "Centipede-folk，上身为人、下身为蜈蚣的亚人，雅称天龙；可视为蜈蚣版的阿拉克涅。",
     inheritanceMode: "normal",
@@ -335,16 +337,24 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "深潜者": {
     embryoType: "卵生",
-    introductionLine: "Deep One，源自克苏鲁的海系异种，潜伏于人类社会；胚胎类型刻意与其他海系亚人不同。",
-    inheritanceMode: "normal",
+    introductionLine: "Deep One，源自克苏鲁的海系异种，潜伏于人类社会；雄核遗传，与人类所生的后代终将成为深潜者（印斯茅斯之相）。胚胎类型刻意与其他海系亚人不同。",
+    inheritanceMode: "paternal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 1.25, birthDifficulty: 1.2, breedTolerance: 1,
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 10, genderRatio: 75,
     companionEggsMean: 0, recoveryCoefficient: 0.96,
   },
+  "拜亚基": {
+    embryoType: "卵生",
+    introductionLine: "Byakhee，哈斯塔的眷族，蝠翼与虫豸特徵混杂的有翼使魔，能穿越星际虚空；与深潜者所属的克苏鲁一系对立。族中多为雌性、雄核遗传：女子怀上外族的孩子会生出纯种外族，因而沦为主人与信徒差遣的孕母，族裔只靠稀有的雄性延续。孕期短、一窝常带数枚伴生卵。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.6, birthDifficulty: 0.6, breedTolerance: 1.5,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 3, identicalProbability: 10, genderRatio: 25,
+    companionEggsMean: 2, recoveryCoefficient: 0.7,
+  },
   "狗头人": {
     embryoType: "卵生",
     introductionLine: "Kobold，与哥布林同生态位的小型犬首亚人；却如鸭嘴兽般产卵，分娩负担远低于哥布林。",
-    inheritanceMode: "paternal",
+    inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2.5, birthDifficulty: 0.4, breedTolerance: 1,
     impregnationDifficulty: 0.3, orgasmOvulationAmount: 3, identicalProbability: 20, genderRatio: 50,
     companionEggsMean: 1, recoveryCoefficient: 0.39,
@@ -397,7 +407,7 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 1.2,
   },
-  "蛙人": {
+  "蛙族": {
     embryoType: "卵胎生",
     introductionLine: "Frogfolk，蛙类拟人，出生时性别由外在环境决定，故不适用固定男女比。",
     inheritanceMode: "normal",
@@ -431,7 +441,7 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "河童": {
     embryoType: "卵胎生",
-    introductionLine: "Kappa，头顶盛水皿的日系妖怪，蛙人的妖系分支。",
+    introductionLine: "Kappa，头顶盛水皿的日系妖怪，蛙族的妖系分支。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 1.5,
     impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 15, genderRatio: 50,
@@ -442,16 +452,24 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Medusa，蛇人沾妖后独立演化的分支，发为群蛇；比蛇人更难受孕、孕期更长。",
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.7, birthDifficulty: 1.5, breedTolerance: 1,
-    impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 20,
+    impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 4.29,
   },
-  "蝎罗": {
+  "蝎罗氏": {
     embryoType: "卵胎生",
     introductionLine: "Scorpion-folk，带蝎尾、螯钳与甲壳的亚人，人形占比高于阿拉克涅；幼体出生后会攀在母体背上一段时间。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.25, birthDifficulty: 1.2, breedTolerance: 1.8,
     impregnationDifficulty: 1.5, orgasmOvulationAmount: 3, identicalProbability: 0, genderRatio: 40,
     companionEggsMean: 6, recoveryCoefficient: 0.8,
+  },
+  "华根蕴桃": {
+    embryoType: "卵胎生",
+    introductionLine: "Huagen Peach，修仙系的灵植娘：胎内由一颗种子发芽结桃、枝干化为人参，生下的是抱着人参的桃子娘，伴生的嫩参嫩桃是珍贵灵物。雌核遗传，族中全为雌性；栖于小灵地，以食人藤蔓捕食散修。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.4, birthDifficulty: 0.8, breedTolerance: 2,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 35, genderRatio: 0,
+    companionEggsMean: 2, recoveryCoefficient: 1,
   },
   "西方龙": {
     embryoType: "胎转卵生",
@@ -469,7 +487,15 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 5, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 10,
   },
-  "狮鹫族": {
+  "海德拉": {
+    embryoType: "胎转卵生",
+    introductionLine: "Hydra，多头龙族，一具身躯生有多个头颅，仍是单一个体；以断首再生著称，是胎转卵生中产后恢复最快的一族，同卵分裂也格外常见。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.4, birthDifficulty: 4, breedTolerance: 1.5,
+    impregnationDifficulty: 4, orgasmOvulationAmount: 1, identicalProbability: 60, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 1.5,
+  },
+  "狮鹫": {
     embryoType: "胎转卵生",
     introductionLine: "Griffin，鹰首狮身的上位幻兽，可在人态与完全态之间转换。",
     inheritanceMode: "normal",
@@ -661,9 +687,67 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 33, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 2,
   },
+  "核焰族": {
+    embryoType: "不定型",
+    introductionLine: "Fusionkin，体内燃着核聚变之火的等离子生命，概念近似 Starbound 的 Novakid 与漫威的活体星球 Ego。族中多为雄性，四处播种；雌核遗传——父方只是点燃的契机，如超新星的冲击触发星云坍缩，孩子的物质与形貌皆来自母体，唯有核焰族母亲这片恒星育婴室能孕育纯种的恒星之子。孕期漫长；如恒星常伴伴星般多生双胎，但从不同卵分裂。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.5, birthDifficulty: 2.5, breedTolerance: 1,
+    impregnationDifficulty: 0.7, orgasmOvulationAmount: 1, identicalProbability: 0, genderRatio: 90,
+    companionEggsMean: 0, recoveryCoefficient: 0.5,
+  },
 });
 
 export const ALL_BUILTIN_RACES = Object.freeze(Object.keys(RACE_DEFINITIONS));
+
+/**
+ * 1.1.4 的改名：旧名在读取时一律换成新名（存档另由 state_migration 一次改写）。
+ * 只列内置种族的基名，装饰子项（百足姬-赤）由 canonicalizeRaceName 保留。
+ */
+export const RACE_RENAMES = Object.freeze({
+  百足姬: '百足氏',
+  蝎罗: '蝎罗氏',
+  植物亚人: '植物族',
+  真菌亚人: '真菌族',
+  月兔族: '月兔',
+  狮鹫族: '狮鹫',
+  蛙人: '蛙族',
+  鸟人: '鸟族',
+});
+
+// 以简体字形为键：模型写繁体、简体或混用都能对上内置名称
+const RACE_NAME_LOOKUP = new Map([
+  ...ALL_BUILTIN_RACES.map((race) => [toSimplifiedName(race), race]),
+  ...Object.entries(RACE_RENAMES).map(([from, to]) => [toSimplifiedName(from), to]),
+]);
+
+/** 单一成分（可带 -装饰子项）的规范名；查不到的自订种族原样返回 */
+export function canonicalizeRaceName(component) {
+  const value = String(component || '').trim();
+  if (!value) return '';
+  const separatorIndex = value.indexOf('-');
+  const base = separatorIndex >= 0 ? value.slice(0, separatorIndex).trim() : value;
+  const subtype = separatorIndex >= 0 ? value.slice(separatorIndex) : '';
+  return (RACE_NAME_LOOKUP.get(toSimplifiedName(base)) || base) + subtype;
+}
+
+/**
+ * 整串种族描述的规范化：保留 [衍生] 前缀、x 分隔与 1/4、25% 之类的比例写法，只换种族与衍生的名称。
+ * 存档迁移与 parseRaceDescriptor 共用。
+ */
+export function canonicalizeRaceDescriptor(rawRace) {
+  const value = String(rawRace || '').trim();
+  if (!value) return value;
+  const derivedMatch = value.match(/^\[([^\]]+)\](.*)$/);
+  const prefix = derivedMatch ? `[${canonicalizeDerivedTypeName(derivedMatch[1])}]` : '';
+  const body = derivedMatch ? derivedMatch[2] : value;
+  const canonicalBody = body.split(/([xX×])/).map((part, index) => {
+    if (index % 2 === 1) return part;
+    const match = part.match(/^(\s*(?:\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*%)?\s*)(.*?)(\s*(?:\d+(?:\.\d+)?\s*%)?\s*)$/);
+    if (!match || !match[2]) return part;
+    return match[1] + canonicalizeRaceName(match[2]) + match[3];
+  }).join('');
+  return prefix + canonicalBody;
+}
 const racesByEmbryoType = (type) => Object.freeze(ALL_BUILTIN_RACES.filter((race) => RACE_DEFINITIONS[race].embryoType === type));
 export const VIVIPAROUS_RACES = racesByEmbryoType("胎生");
 export const OVIPAROUS_RACES = racesByEmbryoType("卵生");
@@ -1021,8 +1105,8 @@ export const RACE_CATALOG_SELECTION_VERSION = 2;
 
 export function normalizeRaceCatalogSelection(selection) {
   if (!selection || typeof selection !== 'object' || !Array.isArray(selection.races) || !Array.isArray(selection.derivedTypes)) return null;
-  const races = selection.races.map((race) => String(race || '').trim()).filter(Boolean);
-  const derivedTypes = selection.derivedTypes.map((type) => String(type || '').trim()).filter(Boolean);
+  const races = [...new Set(selection.races.map((race) => canonicalizeRaceName(race)).filter(Boolean))];
+  const derivedTypes = [...new Set(selection.derivedTypes.map((type) => canonicalizeDerivedTypeName(type)).filter(Boolean))];
   if (selection.version !== RACE_CATALOG_SELECTION_VERSION && (races.length > 0 || derivedTypes.length > 0) && !races.includes('人类')) {
     races.unshift('人类');
   }
@@ -1087,18 +1171,24 @@ export function getRecoveryCoefficientByRace(race, bloodline = null) {
 }
 
 /** 衍生类型的繁体写法映射到简体基名，模型写哪种字形都认得 */
-const DERIVED_TYPE_ALIASES = Object.freeze({
-  修煉: '修炼',
-  魔導: '魔导',
-  咒縛: '咒缚',
-});
+const DERIVED_TYPE_LOOKUP = new Map(DERIVED_TYPE_RACES.map((type) => [toSimplifiedName(type), type]));
+
+/** 衍生类型（可带 -子项）的规范名；繁体、简体都认得 */
+export function canonicalizeDerivedTypeName(derivedType) {
+  const value = String(derivedType || '').trim();
+  if (!value) return '';
+  const separatorIndex = value.indexOf('-');
+  const base = separatorIndex >= 0 ? value.slice(0, separatorIndex).trim() : value;
+  const subtype = separatorIndex >= 0 ? value.slice(separatorIndex) : '';
+  return (DERIVED_TYPE_LOOKUP.get(toSimplifiedName(base)) || base) + subtype;
+}
 
 export function getBaseDerivedTypeName(derivedType) {
   const value = String(derivedType || '').trim();
   if (!value) return '';
   const subtypeMatch = value.match(/^(.+?)-(.+)$/);
-  const base = subtypeMatch ? subtypeMatch[1] : value;
-  return DERIVED_TYPE_ALIASES[base] || base;
+  const base = subtypeMatch ? subtypeMatch[1].trim() : value;
+  return DERIVED_TYPE_LOOKUP.get(toSimplifiedName(base)) || base;
 }
 
 export function getDerivedTypeInheritanceProfile(derivedType) {
@@ -1129,7 +1219,7 @@ export function getDerivedTypeMetabolismExemptions(derivedType) {
 }
 
 export function parseRaceDescriptor(rawRace) {
-  const value = String(rawRace || '').trim();
+  const value = canonicalizeRaceDescriptor(rawRace);
   if (!value) {
     return {
       race: '',
@@ -1187,7 +1277,12 @@ export function getBloodlineInfo(race, bloodline = null, source = null) {
   const parts = [...new Set(getRaceDescriptorComponents(parsed.race))];
   const raw = bloodline ?? parsed.bloodline;
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    const entries = Object.entries(raw);
+    const merged = new Map();
+    for (const [key, value] of Object.entries(raw)) {
+      const name = canonicalizeRaceName(key);
+      merged.set(name, merged.has(name) && typeof value === 'number' ? merged.get(name) + value : value);
+    }
+    const entries = [...merged];
     const allowed = new Set(parts);
     const valid = entries.length > 0 && entries.every(([key, value]) => allowed.has(key) && typeof value === 'number' && Number.isFinite(value) && value >= 0);
     const sum = valid ? entries.reduce((total, [, value]) => total + value, 0) : 0;
@@ -1269,7 +1364,7 @@ function getWeightedRaceParts(race, bloodline) {
 }
 
 function canonicalizeRaceComponent(component) {
-  return String(component || '').trim();
+  return canonicalizeRaceName(component);
 }
 
 export function getRaceDescriptorComponents(race) {

@@ -210,6 +210,26 @@ test('长恢复种族的恢复系数彼此拉开，海马族产后几乎可立�
   assert.ok(getRacePhysiologyProfile('海马族').recoveryCoefficient < 1);
 });
 
+test('核焰族与华根蕴桃雌核遗传，海德拉是胎转卵生中恢复最快的', async () => {
+  const { METOVIVIPAROUS_RACES, deriveFetusRace, getRacePhysiologyProfile } = await import('../scripts/race_config.js');
+  // 活体星球式：与异族所生顺应母体，只有核焰族母亲才得纯种
+  assert.equal(deriveFetusRace('人类', '核焰族'), '人类');
+  assert.equal(deriveFetusRace('核焰族', '人类'), '核焰族');
+  const fusion = getRacePhysiologyProfile('核焰族');
+  assert.equal(fusion.identicalProbability, 0, '恒星伴星式双胎，从不同卵分裂');
+  assert.ok(fusion.gestationSpeciesSpeed < 1, '孕期漫长');
+
+  assert.equal(deriveFetusRace('华根蕴桃', '人类'), '华根蕴桃');
+  const peach = getRacePhysiologyProfile('华根蕴桃');
+  assert.equal(peach.genderRatio, 0, '孤雌，族中全为雌性');
+  assert.equal(peach.orgasmOvulationAmount, 0);
+  assert.ok(peach.companionEggsMean > 0, '伴生的嫩参嫩桃');
+
+  const recovery = (race) => getRacePhysiologyProfile(race).recoveryCoefficient;
+  const others = METOVIVIPAROUS_RACES.filter((race) => race !== '海德拉');
+  assert.ok(others.every((race) => recovery('海德拉') < recovery(race)), '断首再生，恢复最快');
+});
+
 test('天使与恶魔刻意对称：胚型、核型与生理数值完全相同', async () => {
   const { RACE_PHYSIOLOGY_FIELDS, getRacePhysiologyProfile } = await import('../scripts/race_config.js');
   const angel = getRacePhysiologyProfile('天使');

@@ -153,12 +153,12 @@ test('embryo race follows the provider, not the carrier', () => {
 test('decorated hybrid descriptors preserve every subtype while physiology uses each base race', () => {
   const descriptor = '[魔女]獸耳族-兔x精靈-木';
   assert.deepEqual(parseRaceDescriptor(descriptor), {
-    race: '獸耳族-兔x精靈-木',
+    race: '兽耳族-兔x精灵-木',
     derivedType: '魔女',
   });
-  assert.deepEqual(getRaceDescriptorComponents(descriptor), ['獸耳族-兔', '精靈-木']);
-  assert.deepEqual(getRaceComponents(descriptor), ['獸耳族', '精靈']);
-  assert.equal(getBaseRaceName(descriptor), '獸耳族');
+  assert.deepEqual(getRaceDescriptorComponents(descriptor), ['兽耳族-兔', '精灵-木'], '繁体写法对应到内置种族');
+  assert.deepEqual(getRaceComponents(descriptor), ['兽耳族', '精灵']);
+  assert.equal(getBaseRaceName(descriptor), '兽耳族');
 
   const chatState = state.createEmptyChatState();
   chatState.characters['孕母'] = makeHost('孕母', '人类');
@@ -174,7 +174,7 @@ test('decorated hybrid descriptors preserve every subtype while physiology uses 
   });
 
   const fetus = chatState.characters['孕母'].profile.pregnant.fetuses[0];
-  assert.equal(fetus.race, '獸耳族-兔x精靈-木', '同血统配对不可丢失任一装饰子项');
+  assert.equal(fetus.race, '兽耳族-兔x精灵-木', '同血统配对不可丢失任一装饰子项');
   assert.equal(fetus.fatherDerivedType, '魔女', 'fatherRace 无 derivedType 时仍应从卵源描述符回退');
 });
 
@@ -466,8 +466,8 @@ test('two early embryos can fuse across races and keep dual parents under the ca
   assert.equal(chimera.gender, '待定');
   assert.equal(chimera.fathers, '父A × 父B');
   assert.deepEqual(chimera.providerSources, ['母A', '母B']);
-  assert.match(chimera.race, /獸耳族-兔/);
-  assert.match(chimera.race, /精靈-木/);
+  assert.match(chimera.race, /兽耳族-兔/);
+  assert.match(chimera.race, /精灵-木/);
   assert.equal(chimera.chimera.sourceCount, 2);
 
   Math.random = () => 0.99;

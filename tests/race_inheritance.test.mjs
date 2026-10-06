@@ -26,14 +26,18 @@ function makeHost(name, race) {
   };
 }
 
-test('内建名录为人类加 76 个异种，新增种族进入正确胚胎分组', () => {
-  assert.equal(ALL_BUILTIN_RACES.length, 77);
-  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 76);
+test('内建名录共 81 个物种，新增种族进入正确胚胎分组', () => {
+  assert.equal(ALL_BUILTIN_RACES.length, 81);
+  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 80);
   const expected = {
     卓尔: '胎生',
     米诺陶族: '胎生',
     魔族: '胎生',
     蝎罗: '卵胎生',
+    拜亚基: '卵生',
+    海德拉: '胎转卵生',
+    华根蕴桃: '卵胎生',
+    核焰族: '不定型',
     怪兽类: '胎生',
     怪鸟类: '卵生',
     怪鱼类: '卵胎生',
@@ -86,9 +90,9 @@ test('内建名录为人类加 76 个异种，新增种族进入正确胚胎分�
   assert.equal(getRacePhysiologyProfile('白泽').breedTolerance, 0.4, '白泽承载耐受应提升至 0.4');
 });
 
-test('六个雄核与六个雌核种族配置完整', () => {
-  const paternal = ['哥布林', '狗头人', '海马族', '怪兽类', '怪鸟类', '怪鱼类'];
-  const maternal = ['媚魔', '夢魔', '心魇', '星繭族', '社会虫族', '梅杜莎'];
+test('八个雄核与八个雌核种族配置完整', () => {
+  const paternal = ['哥布林', '深潜者', '海马族', '怪兽类', '怪鸟类', '怪鱼类', '拜亚基', '月兔族'];
+  const maternal = ['媚魔', '夢魔', '心魇', '星繭族', '社会虫族', '梅杜莎', '华根蕴桃', '核焰族'];
   for (const race of paternal) {
     assert.equal(getRaceInheritanceMode(race), RACE_INHERITANCE_MODES.PATERNAL, race);
   }
@@ -97,11 +101,11 @@ test('六个雄核与六个雌核种族配置完整', () => {
   }
   assert.equal(
     ALL_BUILTIN_RACES.filter((race) => getRaceInheritanceMode(race) === RACE_INHERITANCE_MODES.PATERNAL).length,
-    6,
+    8,
   );
   assert.equal(
     ALL_BUILTIN_RACES.filter((race) => getRaceInheritanceMode(race) === RACE_INHERITANCE_MODES.MATERNAL).length,
-    6,
+    8,
   );
 });
 
@@ -112,7 +116,7 @@ test('精方与卵方核型依完整九格矩阵决定胎儿种族', () => {
     ['精方雌核 x 卵方一般', '人类', '媚魔', '人类'],
     ['精方一般 x 卵方雄核', '哥布林', '人类', '人类'],
     ['精方一般 x 卵方雌核', '媚魔', '人类', '媚魔'],
-    ['雄核 x 雄核', '狗头人', '哥布林', '哥布林x狗头人'],
+    ['雄核 x 雄核', '深潜者', '哥布林', '哥布林x深潜者'],
     ['雄核 x 雌核', '媚魔', '哥布林', '哥布林x媚魔'],
     ['雌核 x 雄核', '哥布林', '媚魔', '媚魔x哥布林'],
     ['雌核 x 雌核', '心魇', '媚魔', '媚魔x心魇'],
@@ -128,7 +132,7 @@ test('只有单侧特殊核型会产生雄核或雌核胎儿标签', () => {
   assert.equal(getFetusInheritanceTag('人类', '媚魔'), 'gynogenesis');
   assert.equal(getFetusInheritanceTag('媚魔', '人类'), 'gynogenesis');
   assert.equal(getFetusInheritanceTag('人类', '精灵'), null);
-  assert.equal(getFetusInheritanceTag('狗头人', '哥布林'), null);
+  assert.equal(getFetusInheritanceTag('深潜者', '哥布林'), null);
   assert.equal(getFetusInheritanceTag('心魇', '媚魔'), null);
 });
 

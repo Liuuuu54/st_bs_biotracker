@@ -17,7 +17,7 @@ const payloadWith = (race, selection) => ({
 });
 
 test('物种总数包含人类，人类有内建短敘述', () => {
-  assert.equal(ALL_BUILTIN_RACES.length, 77);
+  assert.equal(ALL_BUILTIN_RACES.length, 81);
   assert.ok(ALL_BUILTIN_RACES.includes('人类'));
   assert.match(getRaceIntroductionLine('人类'), /^Human，其余物种的参照/);
 });
