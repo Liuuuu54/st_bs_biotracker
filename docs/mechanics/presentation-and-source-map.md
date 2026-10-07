@@ -4,13 +4,13 @@
 
 ## 畫面讀到甚麼
 
-PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化。追蹤器另產生 `existing_state` 的精簡投影給非同步模型，[buildTrackerPayload](../../scripts/tracker.js#L1301)；主流程提示使用[buildMainFlowStatePrompt](../../scripts/tracker_prompt_context.js#L435)將狀態轉成給聊天模型看的文字。兩者並非完整存檔，也不保證顯示每個內部欄位。種族與胚胎的背景提示分別由 [race_prompt_context.js](../../scripts/race_prompt_context.js#L539)及 [embryo_prompt_context.js](../../scripts/embryo_prompt_context.js#L80)組成。
+PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化。追蹤器另產生 `existing_state` 的精簡投影給非同步模型，[buildTrackerPayload](../../scripts/tracker.js#L1326)；主流程提示使用[buildMainFlowStatePrompt](../../scripts/tracker_prompt_context.js#L464)將狀態轉成給聊天模型看的文字。兩者並非完整存檔，也不保證顯示每個內部欄位。種族與胚胎的背景提示分別由 [race_prompt_context.js](../../scripts/race_prompt_context.js#L548)及 [embryo_prompt_context.js](../../scripts/embryo_prompt_context.js#L80)組成。
 
 像素子宮畫板先由 [computeUterusLayout](../../scripts/uterus_layout.js#L140)根據已知且可顯示的胎兒、胎位、宮壓等計算位置；同屏最多繪製五胎。接著 [fetus_sprite.js](../../scripts/fetus_sprite.js#L308)產生胎兒格點，[uterus_render.js](../../scripts/uterus_render.js#L520)負責色盤、像素、動態及親近表情。畫板是狀態的視圖，繪圖本身不會推進妊娠。
 
 家系圖由 [lineage.js](../../scripts/lineage.js#L31)把子女和父母來源組成圖，再由 [lineage_view.js](../../scripts/lineage_view.js#L65)建立聚焦視圖。若來源欄位不完整，圖上自然只能呈現已記錄的關係。
 
-家系卡片的肖像顯示種族圖示（七巧板風，見 [race_icons.js](../../scripts/race_icons.js)）：每個內建種族一個象徵物，衍生類型加上專屬外框（修煉八卦爻、魔導法陣與盧恩、妖怪勾玉、神祇光芒祭壇、不死棺木、血族蝙蝠血滴、星際行星、機械齒輪、器靈劍魂、變異輻射、序列階章、獸化爪痕）。混血時圖示取有圖示的成分中血統占比最高者；平手時取母方（遺傳母親，代孕時為卵源）占比較高的，母方也平手才取種族文字中排在前面的。血統比例本身仍是父母各半，母系只在選圖示時稍占上風，並在底下墊按血統占比斜切的拼色底；自訂或未知種族沒有圖示，肖像退回姓名首字。圖形以 `currentColor` 填色，隨主題變色。
+家系卡片的肖像顯示種族圖示（七巧板風，見 [race_icons.js](../../scripts/race_icons.js)）：每個內建種族一個象徵物，衍生類型加上專屬外框（修煉八卦爻、魔導法陣與盧恩、妖怪勾玉、神祇光芒祭壇、不死棺木、血族蝙蝠血滴、星際行星、機械齒輪、器靈劍魂、變異輻射、序列階章、獸化爪痕、咒縛鎖鏈與契約鎖）。混血時圖示取有圖示的成分中血統占比最高者；平手時取母方（遺傳母親，代孕時為卵源）占比較高的，母方也平手才取種族文字中排在前面的。血統比例本身仍是父母各半，母系只在選圖示時稍占上風，並在底下墊按血統占比斜切的拼色底；自訂或未知種族沒有圖示，肖像退回姓名首字。圖形以 `currentColor` 填色，隨主題變色。
 
 ## 模組索引
 
@@ -45,4 +45,4 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 
 ## 查一個數值時的路線
 
-先從 [state.js](../../scripts/state.js#L685)確認欄位預設值，再到 [tools.js](../../scripts/tools.js#L7817)找哪個工具會改它；若涉及時間，從 [applyTimeToCharacter](../../scripts/tools.js#L6133)追到該階段分支。機率與預覽看 [calculator.js](../../scripts/calculator.js)，種族係數看 [race_config.js](../../scripts/race_config.js)，畫面解釋則看 `index.js` 及對應的 render 模組。最後檢查 [tracker.js](../../scripts/tracker.js#L1301)是否把該欄位提供給模型；有些內部數值只參與程式計算。
+先從 [state.js](../../scripts/state.js#L687)確認欄位預設值，再到 [tools.js](../../scripts/tools.js#L7867)找哪個工具會改它；若涉及時間，從 [applyTimeToCharacter](../../scripts/tools.js#L6238)追到該階段分支。機率與預覽看 [calculator.js](../../scripts/calculator.js)，種族係數看 [race_config.js](../../scripts/race_config.js)，畫面解釋則看 `index.js` 及對應的 render 模組。最後檢查 [tracker.js](../../scripts/tracker.js#L1303)是否把該欄位提供給模型；有些內部數值只參與程式計算。
