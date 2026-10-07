@@ -8,8 +8,10 @@ import {
   calculateOffspringPreview,
   calculateRaceImplantationDays,
   calculateSpermExposure,
+  FERTILIZATION_RATE,
   getDerivedInheritanceSeed,
 } from '../scripts/calculator.js';
+import { getSpermDoseDifficultyBonus } from '../scripts/race_config.js';
 
 test('fertilization calculator removes source-order bias while preserving source shares', () => {
   const result = calculateFertilizationPreview({
@@ -22,23 +24,21 @@ test('fertilization calculator removes source-order bias while preserving source
   });
   assert.equal(result.totalSperm, 40);
   assert.equal(result.sources.length, 2);
-  assert.equal(result.sources[0].chance, 0.5);
-  assert.ok(Math.abs(result.sources[0].winChance - 0.375) < 1e-12);
-  assert.ok(Math.abs(result.sources[1].winChance - 0.375) < 1e-12);
-  assert.ok(Math.abs(result.successChance - 0.75) < 1e-12);
+  const [first, second] = result.sources;
+  assert.equal(first.chance, second.chance, '同量同族的两个精源机率相同');
+  assert.ok(Math.abs(result.successChance - (1 - (1 - first.chance) ** 2)) < 1e-12);
+  assert.ok(Math.abs(first.winChance - result.successChance / 2) < 1e-12);
+  assert.ok(Math.abs(second.winChance - result.successChance / 2) < 1e-12);
 });
-
-test('fertilization calculator allows sufficiently favorable conditions to reach certainty', () => {
-  const result = calculateFertilizationPreview({
-    eggRace: '人类',
-    elapsedDays: 1,
-    spermSources: [{ race: '人类', value: 20 }],
-  });
-  assert.equal(result.sources[0].chance, 1);
-  assert.equal(result.successChance, 1);
-  assert.equal(result.failureChance, 0);
+test('fertilization chance saturates toward certainty without capping at it', () => {
+  const day = calculateFertilizationPreview({ eggRace: '人类', elapsedDays: 1, spermSources: [{ race: '人类', value: 20 }] });
+  assert.ok(day.successChance > 0.2 && day.successChance < 0.4, '人类同房后一天的单卵受精率应在合理区间');
+  const easy = calculateFertilizationPreview({ eggRace: '星繭族', elapsedDays: 1, spermSources: [{ race: '星繭族', value: 40 }] });
+  assert.ok(easy.successChance > day.successChance, '易孕物种更高');
+  assert.ok(easy.successChance < 1, '再有利也不会封顶到必中');
+  const longer = calculateFertilizationPreview({ eggRace: '人类', elapsedDays: 2, spermSources: [{ race: '人类', value: 20 }] });
+  assert.ok(longer.successChance > day.successChance, '暴露越久越高');
 });
-
 test('fertilization uses only the time before residual sperm naturally reaches zero', () => {
   assert.deepEqual(calculateSpermExposure(1, 1), {
     startingValue: 1,
@@ -53,13 +53,13 @@ test('fertilization uses only the time before residual sperm naturally reaches z
   });
   assert.equal(trace.effectiveExposureDays, 0.1);
   assert.equal(trace.effectiveTotalSperm, 0.5);
-  assert.ok(Math.abs(trace.successChance - 0.3) < 1e-12);
+  const expected = 1 - Math.exp(-FERTILIZATION_RATE * 0.1 / (1 / getSpermDoseDifficultyBonus(0.5)));
+  assert.ok(Math.abs(trace.successChance - expected) < 1e-12, '只按残留实际存在的 0.1 天计算');
 });
-
 test('cross-race difficulty uses a moderate geometric penalty instead of adding both difficulties', () => {
   const result = calculateFertilizationPreview({
     eggRace: '人类',
-    elapsedDays: 0.1,
+    elapsedDays: 1,
     spermSources: [{ race: '石像鬼', value: 20 }],
   });
   const source = result.sources[0];
@@ -67,9 +67,11 @@ test('cross-race difficulty uses a moderate geometric penalty instead of adding 
   assert.equal(source.sameRace, false);
   assert.equal(source.embryoTypeMismatch, true);
   assert.ok(source.effectiveDifficulty < formerAdditiveDifficulty);
-  assert.ok(result.successChance > 0.1, '异种受精不应被双重难度压到极低');
+  const additiveChance = 1 - Math.exp(-FERTILIZATION_RATE * result.effectiveExposureDays / formerAdditiveDifficulty);
+  assert.ok(result.successChance > additiveChance, '异种受精不应被双重难度压得更低');
+  const sameRace = calculateFertilizationPreview({ eggRace: '人类', elapsedDays: 1, spermSources: [{ race: '人类', value: 20 }] });
+  assert.ok(result.successChance < sameRace.successChance, '异种仍比同族难');
 });
-
 test('fertilization calculator uses race difficulty when override is blank', () => {
   const automatic = calculateFertilizationPreview({
     eggRace: '精灵',
@@ -114,7 +116,7 @@ test('offspring calculator keeps companion-free species at 0 and previews prolif
     conceptionStage: '排卵期',
   });
   assert.equal(hybrid.implantationDays, 6);
-  assert.equal(hybrid.identicalProbability, 3.5);
+  assert.equal(hybrid.identicalProbability, 1.5, '人类 1% 与精灵 2% 的平均');
   assert.ok(hybrid.fetalWeightRange.min < hybrid.fetalWeightRange.typical);
   assert.ok(hybrid.fetalWeightRange.max > hybrid.fetalWeightRange.typical);
 });

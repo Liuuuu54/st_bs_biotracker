@@ -104,11 +104,11 @@ test('the race prompt sends one weighted block per race and share, listing every
 });
 
 test('混血胚型：占比最高者决定，平手取孕期较长者，再平手取母系占比较高者', async () => {
-  // 占比决定：深潜者（卵生、孕期较短）占多数时就是卵生，不再一律取孕期最长的人类
-  assert.equal(getEmbryoTypeByRace('深潜者x人类', { 深潜者: 0.75, 人类: 0.25 }), '卵生');
-  assert.equal(getEmbryoTypeByRace('深潜者x人类', { 深潜者: 0.25, 人类: 0.75 }), '胎生');
+  // 占比决定：蜥蜴人（卵生、孕期较短）占多数时就是卵生，不再一律取孕期最长的人类
+  assert.equal(getEmbryoTypeByRace('蜥蜴人x人类', { 蜥蜴人: 0.75, 人类: 0.25 }), '卵生');
+  assert.equal(getEmbryoTypeByRace('蜥蜴人x人类', { 蜥蜴人: 0.25, 人类: 0.75 }), '胎生');
   // 平手看孕期：人类孕期较长（速度 1 < 1.25）
-  assert.equal(getEmbryoTypeByRace('深潜者x人类', { 深潜者: 0.5, 人类: 0.5 }), '胎生');
+  assert.equal(getEmbryoTypeByRace('蜥蜴人x人类', { 蜥蜴人: 0.5, 人类: 0.5 }), '胎生');
   // 占比与孕期都平手：找一对孕期速度相同、胚型不同的内置种族，交给母系决定
   const { ALL_BUILTIN_RACES } = await import('../scripts/race_config.js');
   const speed = (race) => getMergedRacePhysiologyProfile(race).gestationSpeciesSpeed;

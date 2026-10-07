@@ -17,6 +17,11 @@ import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, MENSTRUAL_STAGE_DAYS, MENSTRU
 export const SPERM_DECAY_PER_DAY = 10;
 export const CROSS_RACE_DIFFICULTY_MULTIPLIER = 1.5;
 export const EMBRYO_TYPE_MISMATCH_MULTIPLIER = 1.25;
+/**
+ * 受精率常数：每颗卵的机率 = 1 − e^(−k × 有效暴露天数 ÷ 有效难度)。
+ * 以「人类在排卵期同房一次（精液量 20）整个周期受孕约 30%」校准，见 plan/FERTILIZATION_CALIBRATION_PLAN.md。
+ */
+export const FERTILIZATION_RATE = 0.3;
 
 function clampNumber(value, min, max, fallback = min) {
   const numeric = Number(value);
@@ -95,8 +100,10 @@ export function calculateFertilizationPreview({
     if (embryoTypeMismatch) effectiveDifficulty *= EMBRYO_TYPE_MISMATCH_MULTIPLIER;
     effectiveDifficulty /= spermDoseBonus;
 
+    // 指数饱和：暴露越久越接近必中但不会顶到 1，难度照比例拉长所需的暴露。
+    // 旧式「天数 × 6 ÷ 难度」在人类身上暴露 4 小时就封顶 100%，每颗卵必定受精。
     const baseChance = clampNumber(
-      (effectiveExposureDays * 12 * 0.5) / effectiveDifficulty,
+      1 - Math.exp(-FERTILIZATION_RATE * effectiveExposureDays / effectiveDifficulty),
       0.001,
       1,
       0.001,

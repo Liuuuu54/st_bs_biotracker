@@ -412,7 +412,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     name: 'bsSetMenstrualPhases',
     description: '直接设置月经相关阶段，用于催情、药物、外力或剧情推进。'
       + 'stage 只接受这几个值：卵泡期、排卵期、黄体期、月经期、产后恢复、假孕期；其他值（含妊娠阶段与回归期）一律拒绝，无法用本工具让角色怀孕或结束妊娠。'
-      + '切到排卵期时会重新允许高潮排卵；假孕期可留精但不会排卵或受孕。'
+      + '切到排卵期时会重新允许高潮排卵，切到黄体期时也会刷新一次；假孕期可留精但不会排卵或受孕。'
       + '角色体内已有胎儿或受精进行中，或正处于真妊娠、回归期、产兆前驱、产程时，本工具会被拒绝，不会覆盖这些状态。',
     input_schema: {
       type: 'object',
@@ -1093,16 +1093,15 @@ function refreshOutfitPregFit(profile) {
   return outfit;
 }
 /**
- * 单个排卵期自然排出的卵数 = 1 颗基础 + orgasmOvulationAmount 额外排卵倾向。
+ * 单个排卵期自然排出的卵数：所有物种都是 1 颗。
  *
- * 旧算法是「每天至少 1 颗 x 排卵天数」，而排卵天数随 menstrualLengthRatio 线性拉长，
- * 于是长周期种族按窗口长度虚增：精灵额外倾向明明是 0 却每周期排 6 颗、西方龙排 8 颗，
- * 与该字段的语义（高潮诱发的额外排卵量，见 applyOrgasmOvulation）完全无关。
- * 周期越长排得越多也让「一年一次经期」这类设定无法成立。
+ * orgasmOvulationAmount 只在高潮时作用（见 maybeTriggerOrgasmOvulation，按活力占比排出），
+ * 不再加进自然排卵：否则人类每周期固定 2 颗，受孕率与双胎率绑死，双胎压不下来；
+ * 多产物种平时也只排 1 颗，要靠高潮才成窝。
+ * 自然排卵也不随排卵期长短累加，「一年一次经期」这类长周期设定才成立。
  */
-function getNaturalOvulationTotal(profile) {
-  const extra = clampNumber(profile?.bio?.orgasmOvulationAmount, 0, 100, 1);
-  return Math.max(1, Math.round(1 + extra));
+function getNaturalOvulationTotal() {
+  return 1;
 }
 
 /** 自然排卵每个排卵期只发生一次，离开排卵期即重置 */
@@ -1187,8 +1186,11 @@ const SUPERFETATION_STAGE = '孕早期';
 const SUPERFETATION_FULL_TERM_DAYS = DUE_DATE_DAYS;
 /** 孕早期长度，也就是可以再受精的原始视窗。从阶段表推导，别再写死一次 */
 const SUPERFETATION_RAW_WINDOW_DAYS = Number(PREGNANCY_STAGE_DAYS['孕早期']) || 84;
-/** 孕期受精的机率系数：正常受孕几乎是每天 80%，不压低的话异期会变成常态 */
-const SUPERFETATION_CHANCE_FACTOR = 0.10;
+/**
+ * 孕期受精的机率系数：人类同房后一天的单卵受精率约 23%，乘上 0.35 约为每天 8%，
+ * 维持异期受孕「可能但罕见」的原意；不压低的话异期会变成常态。
+ */
+const SUPERFETATION_CHANCE_FACTOR = 0.35;
 /**
  * 揭晓时机：孕中期一开始，也就是孕早期结束的那一刻。
  * 在此之前模型与追踪页都看不到这一胎。
@@ -1839,24 +1841,24 @@ function applyPregnancyPhysiology(profile, runtime) {
     breedTolerance: clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0),
   };
 
-  let gestationDaysAccumulator = 0;
+  // 孕期取最长（最慢）那一胎：母体要怀到最慢的那胎长好，快的那胎只是多待。
+  // 胎儿大小按孕程进度计，不按实际天数，所以多待不会撑出异常巨大的胎儿。
+  let slowestGestation = GESTATION_SPEED_MAX;
   let birthAccumulator = 0;
 
   for (const fetus of fetuses) {
     const raceProfile = getMergedRacePhysiologyProfile(fetus?.race, fetus?.bloodline) || {};
     const gestationSpeed = clampNumber(raceProfile.gestationSpeciesSpeed, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0);
-    gestationDaysAccumulator += 280 / gestationSpeed;
+    slowestGestation = Math.min(slowestGestation, gestationSpeed);
     birthAccumulator += clampNumber(raceProfile.birthDifficulty, 0.1, 100, 1.0);
   }
 
-  const averageGestationDays = gestationDaysAccumulator / fetuses.length;
-  const averageGestation = averageGestationDays > 0 ? 280 / averageGestationDays : 1.0;
   const averageBirth = birthAccumulator / fetuses.length;
-  const fetusCountModifier = 1 + ((fetuses.length - 1) * 0.08);
+  const fetusCountModifier = getFetusCountBirthModifier(fetuses.length);
   const toleranceCountModifier = Math.max(0.6, 1 - ((fetuses.length - 1) * 0.04));
   const gestationModifierMultiplier = getGestationModifierMultiplier(profile);
 
-  const gestationEffectiveSpeed = clampNumber(averageGestation * gestationModifierMultiplier, 0, GESTATION_SPEED_MAX, averageGestation);
+  const gestationEffectiveSpeed = clampNumber(slowestGestation * gestationModifierMultiplier, 0, GESTATION_SPEED_MAX, slowestGestation);
   const birthDifficulty = clampNumber(averageBirth * fetusCountModifier, 0.1, 100, originalBio.birthDifficulty);
   // 承载耐受只取母体自身 x 胎数修正：breedTolerance 描述「这具身体多能扛妊娠」，
   // 是承载者的属性。此前还乘上胎儿族的 breedTolerance，等于把胎儿族的承载力
@@ -1867,12 +1869,29 @@ function applyPregnancyPhysiology(profile, runtime) {
 
   profile.bio = {
     ...(profile.bio || {}),
-    gestationSpeciesSpeed: clampNumber(averageGestation, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0),
+    gestationSpeciesSpeed: clampNumber(slowestGestation, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1.0),
     gestationEffectiveSpeed,
     birthDifficulty,
     breedTolerance,
   };
   return true;
+}
+
+/** 多胎让产程更吃力：每多一胎分娩难度 +8% */
+function getFetusCountBirthModifier(fetusCount) {
+  return 1 + ((Math.max(1, fetusCount) - 1) * 0.08);
+}
+
+/**
+ * 第二产程逐胎娩出，用正在娩出那一胎自己的分娩难度（仍乘胎数修正）；
+ * 第一、三产程与间歇期沿用全体平均（bio.birthDifficulty）。同族多胎两者相同。
+ */
+function getPresentingBirthDifficulty(profile) {
+  const fetuses = Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : [];
+  const fetus = getPresentingFetus(profile?.pregnant);
+  if (!fetus) return clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
+  const raceDifficulty = clampNumber(getMergedRacePhysiologyProfile(fetus.race, fetus.bloodline)?.birthDifficulty, 0.1, 100, 1);
+  return clampNumber(raceDifficulty * getFetusCountBirthModifier(fetuses.length), 0.1, 100, 1);
 }
 
 function restorePregnancyPhysiology(profile, runtime) {
@@ -2372,17 +2391,20 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
     const unknown = Math.max(0, Number(item.value) - total);
     return [...sources.filter((x) => !x.blocked && x.value > 0), ...(unknown > 0 ? [{ ...item, value: unknown }] : [])];
   }).filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
-  let eggs = clampNumber(base.eggs, 0, 99, 0);
+  const eggs = clampNumber(base.eggs, 0, 99, 0);
+  if (eggs <= 0 || availableSperms.length === 0) return eggs;
 
-  while (eggs > 0 && availableSperms.length > 0) {
-    const preview = calculateFertilizationPreview({
-      eggRace: profile?.base?.race,
-      impregnationDifficulty: profile?.bio?.impregnationDifficulty,
-      elapsedDays: deltaDays,
-      chanceFactor,
-      spermSources: availableSperms,
-    });
-    const totalSperm = preview.totalSperm;
+  // 每颗卵各自擲骰：多胎由卵数与单颗机率自然决定，多产物种不需要特例；没受精的卵留到下次推进
+  const preview = calculateFertilizationPreview({
+    eggRace: profile?.base?.race,
+    impregnationDifficulty: profile?.bio?.impregnationDifficulty,
+    elapsedDays: deltaDays,
+    chanceFactor,
+    spermSources: availableSperms,
+  });
+  const totalSperm = preview.totalSperm;
+  let remaining = eggs;
+  for (let attempt = 0; attempt < eggs; attempt += 1) {
     let winner = null;
     if (preview.successChance > 0 && Math.random() <= preview.successChance) {
       let selectedSource = preview.sources[0] || null;
@@ -2417,11 +2439,10 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
       notify.secondly = nestedHost
         ? `${name}体内的一胎之中又结出了新的受精卵`
         : (superfetation ? `${name}在妊娠中再度受精` : `${name}受精成功`);
-      eggs -= 1;
+      remaining -= 1;
     }
-    break;
   }
-  return eggs;
+  return remaining;
 }
 
 /**
@@ -2547,11 +2568,14 @@ function processSimpleConception(profile, tick, notify, name) {
 
     if (stage === '月经期' && passedHours > 0) {
       base.eggs = 0;
-    } else if (base.eggs > 0 && fullDays > 0 && stage !== '排卵期') {
-      base.eggs = Math.max(0, clampNumber(base.eggs, 0, 99, 0) - fullDays);
+    } else {
+      // 先让这段时间里还活着的卵受精，再扣掉过期的：先扣的话，黄体期里的卵在整天推进时
+      // 一颗都轮不到受精（黄体期高潮排卵、排卵期残留的卵都会白白消失）
+      base.eggs = attemptFertilization(profile, { deltaDays, stage, name, notify });
+      if (base.eggs > 0 && fullDays > 0 && stage !== '排卵期') {
+        base.eggs = Math.max(0, clampNumber(base.eggs, 0, 99, 0) - fullDays);
+      }
     }
-
-    base.eggs = attemptFertilization(profile, { deltaDays, stage, name, notify });
   } else if (stage === SUPERFETATION_STAGE) {
     // 异期复孕。卵不是这里排的——高潮排卵本来就不挡妊娠，而孕期中卵子既不衰减
     // 也不清除，所以「这个周期没用掉的排卵留到孕早期」是现成行为，不必新增。
@@ -4738,8 +4762,8 @@ function applyPressureCrisis(profile, runtime, female) {
 }
 
 function resolveSecondPhaseHours(profile, phase) {
-  const birthDifficulty = clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
-  if (phase === '间歇期') return Math.max(0.5, birthDifficulty * 0.5);
+  if (phase === '间歇期') return Math.max(0.5, clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1) * 0.5);
+  const birthDifficulty = getPresentingBirthDifficulty(profile);
   const firstFetus = getPresentingFetus(profile?.pregnant);
   const fetalAngle = Number.isFinite(Number(firstFetus?.tendencyAngle)) ? wrapAngle(firstFetus.tendencyAngle) : 0;
   const positionDifficulty = firstFetus ? calculatePositionDifficulty(fetalAngle, firstFetus) : 1;
@@ -4804,7 +4828,9 @@ function updateLaborPain(profile, stage, phase, progress = 0, obstruction = fals
   };
   const range = stage === '产兆前驱' ? ranges.产兆前驱 : (ranges[phase] || [0, 0]);
   let pain = range[0] + ((range[1] - range[0]) * ratio);
-  const birthDifficulty = clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
+  const birthDifficulty = ['胎体下降', '胎体娩出'].includes(phase)
+    ? getPresentingBirthDifficulty(profile)
+    : clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
   const difficultyWeight = stage === '产兆前驱' ? (0.25 + (ratio * 0.25)) : (phase === '潜伏期' ? (0.25 + (ratio * 0.75)) : (phase === '产后观察' ? 0.5 : 1));
   pain += clampNumber((birthDifficulty - 1) * 1.5, -1.5, 3, 0) * difficultyWeight;
   const toleranceWeight = stage === '产兆前驱' ? 0.5 : (phase === '潜伏期' ? (0.5 + (ratio * 0.5)) : (phase === '产后观察' ? 0.5 : 1));
@@ -6029,31 +6055,41 @@ function applyMaternalFetalInteraction(chatState, args) {
   return { applied: true, message: `bsMaternalFetalInteraction applied to ${female}.` };
 }
 
-function applyEggGain(profile, amount) {
-  const nextAmount = Math.max(0, Number(amount) || 0);
-  if (nextAmount <= 0) return { applied: false, usedCooldown: false };
+/**
+ * 高潮排卵的冷却：月经期与产后恢复整个重置；进入黄体期时额外刷新一次。
+ * 所以每个周期有两次机会：黄体期以前一次（含排卵期），黄体期一次——
+ * 后者可以趁排卵期受精后再多怀几胎，没受精的卵也会带进孕早期，留给异期受孕。
+ */
+function nextOrgasmOvulationCooldown(stage, cooldown = {}) {
+  if (shouldResetOrgasmOvulation(stage)) return { orgasmOvulationUsed: false, lutealOrgasmRefreshed: false };
+  if (stage === '黄体期' && !cooldown.lutealOrgasmRefreshed) return { orgasmOvulationUsed: false, lutealOrgasmRefreshed: true };
+  return {
+    orgasmOvulationUsed: Boolean(cooldown.orgasmOvulationUsed),
+    lutealOrgasmRefreshed: Boolean(cooldown.lutealOrgasmRefreshed),
+  };
+}
 
+/** 一次高潮排卵：冷却中或假孕期不触发；排出 0 颗也算用掉这次机会 */
+function applyEggGain(profile, amount) {
+  const nextAmount = Math.max(0, Math.floor(Number(amount) || 0));
   const base = profile.base || {};
   const cooldown = profile.cooldown || {};
-  const stage = String(base.stage || '');
-
-  if (stage === '假孕期') {
-    return { applied: false, usedCooldown: false };
-  }
-
-  if (stage === '排卵期') {
+  if (String(base.stage || '') === '假孕期' || cooldown.orgasmOvulationUsed) return { applied: false };
+  if (nextAmount > 0) {
     base.eggs = clampNumber(base.eggs, 0, 999, 0) + nextAmount;
     base.uterinePressure = clampNumber(base.uterinePressure, 0, 999, 0) + 2;
-    return { applied: true, usedCooldown: false };
   }
+  return { applied: true };
+}
 
-  if (cooldown.orgasmOvulationUsed) {
-    return { applied: false, usedCooldown: true };
-  }
-
-  base.eggs = clampNumber(base.eggs, 0, 999, 0) + nextAmount;
-  base.uterinePressure = clampNumber(base.uterinePressure, 0, 999, 0) + 2;
-  return { applied: true, usedCooldown: true };
+/** 额外排卵倾向的每一颗，以「当前活力 ÷ 活力上限」的机率排出：累垮时高潮也排不太出卵 */
+function rollOrgasmOvulationEggs(profile, random = Math.random) {
+  const tendency = Math.max(0, Math.round(clampNumber(profile?.bio?.orgasmOvulationAmount, 0, 100, 1)));
+  const vitalityCap = Math.max(1, getVitalityInitByLevel(profile?.base?.vitalityLevel));
+  const ratio = clampNumber(clampNumber(profile?.base?.vitality, 0, 9999, vitalityCap) / vitalityCap, 0, 1, 1);
+  let eggs = 0;
+  for (let index = 0; index < tendency; index += 1) if (random() < ratio) eggs += 1;
+  return eggs;
 }
 
 function maybeTriggerOrgasmOvulation(character) {
@@ -6067,19 +6103,19 @@ function maybeTriggerOrgasmOvulation(character) {
   const currentLibido = clampNumber(base.libido, 0, 9999, 0);
   const libidoCap = getLibidoCap(profile);
   if (currentLibido < libidoCap || cooldown.orgasmOvulationUsed) return false;
+  // 没有额外排卵倾向的物种（如精灵）不会因高潮排卵
+  if (Math.round(clampNumber(bio.orgasmOvulationAmount, 0, 100, 1)) <= 0) return false;
 
-  const amount = Math.max(0, clampNumber(bio.orgasmOvulationAmount, 0, 100, 1));
-  const eggResult = applyEggGain(profile, amount);
-  if (!eggResult.applied) return false;
-  setVisualCue(profile, 'ovulation');
+  const amount = rollOrgasmOvulationEggs(profile);
+  if (!applyEggGain(profile, amount).applied) return false;
+  if (amount > 0) setVisualCue(profile, 'ovulation');
   base.libido = 0;
-  profile.cooldown = {
-    ...cooldown,
-    orgasmOvulationUsed: eggResult.usedCooldown ? true : Boolean(cooldown.orgasmOvulationUsed),
-  };
+  profile.cooldown = { ...cooldown, orgasmOvulationUsed: true };
   profile.notify = {
     ...notify,
-    secondly: `${next.name}因高潮而额外排卵，性欲归零`,
+    secondly: amount > 0
+      ? `${next.name}因高潮而额外排卵${amount > 1 ? ` ${amount} 颗` : ''}，性欲归零`
+      : `${next.name}达到高潮，但体力不济，这次没有额外排卵，性欲归零`,
   };
   return true;
 }
@@ -6157,6 +6193,7 @@ function advanceMenstrualStage(profile, stage, daysValue) {
   let nextDays = daysValue;
   let changed = false;
   let enteredFollicular = false;
+  let flushedEmbryos = 0;
   while (MENSTRUAL_STAGES.includes(nextStage)) {
     const limit = getStageLimit(profile, nextStage);
     if (limit === null || nextDays <= limit) break;
@@ -6166,6 +6203,15 @@ function advanceMenstrualStage(profile, stage, daysValue) {
     if (nextStage === '月经期') {
       if (shouldEnterPseudoPregnancy(profile, '黄体期', nextStage)) return { stage: '假孕期', days: 0, changed: true, enteredFollicular };
       refreshCognition(profile);
+      // 月经来潮时还没着床的受精卵随经血排出：黄体期太晚才受精就来不及着床
+      const pregnant = profile.pregnant || {};
+      if (Array.isArray(pregnant.fetuses) && pregnant.fetuses.length > 0) {
+        flushedEmbryos += pregnant.fetuses.length;
+        pregnant.fetuses = [];
+        pregnant.fetusesCount = 0;
+        pregnant.fetalEnergyDrain = 0;
+        if (profile.base) profile.base.fertilizationDays = 0;
+      }
     }
     if (nextStage === '卵泡期') enteredFollicular = true;
     changed = true;
@@ -6175,6 +6221,7 @@ function advanceMenstrualStage(profile, stage, daysValue) {
     days: Math.max(0, nextDays),
     changed,
     enteredFollicular,
+    flushedEmbryos,
   };
 }
 
@@ -6229,6 +6276,7 @@ function applyTimeToCharacter(character, tick) {
     days = advanced.days;
     stageChanged = advanced.changed;
     enteredFollicular = advanced.enteredFollicular;
+    if (advanced.flushedEmbryos > 0) notify.secondly = `${next.name}的月经来潮，还没着床的受精卵随之排出`;
     if (stage === '假孕期') {
       stage = '假孕期';
       days = 0;
@@ -6430,7 +6478,7 @@ function applyTimeToCharacter(character, tick) {
   };
   profile.cooldown = {
     ...cooldown,
-    orgasmOvulationUsed: shouldResetOrgasmOvulation(stage) ? false : Boolean(cooldown.orgasmOvulationUsed),
+    ...nextOrgasmOvulationCooldown(stage, cooldown),
     naturalOvulationUsed: shouldResetNaturalOvulation(stage) ? false : Boolean((profile.cooldown || cooldown).naturalOvulationUsed),
     pregnancyPressureWarning: shouldKeepPregnancyPressureWarning(profile) ? Boolean((profile.cooldown || cooldown).pregnancyPressureWarning) : false,
     psychologyUpdateUsed: tick.passedHours > 0 ? false : Boolean(cooldown.psychologyUpdateUsed),
@@ -7250,15 +7298,17 @@ function applySetMenstrualPhases(chatState, args) {
     metabolism.milk = 0;
     profile.metabolism = metabolism;
   }
+  // 手动切阶段视同进入该阶段：排卵期从新的一轮开始，黄体期吃到那一次刷新
   if (stage === '排卵期') {
     profile.cooldown = {
       ...cooldown,
       orgasmOvulationUsed: false,
+      lutealOrgasmRefreshed: false,
     };
   } else {
     profile.cooldown = {
       ...cooldown,
-      orgasmOvulationUsed: shouldResetOrgasmOvulation(stage) ? false : Boolean(cooldown.orgasmOvulationUsed),
+      ...nextOrgasmOvulationCooldown(stage, stage === '黄体期' ? { ...cooldown, lutealOrgasmRefreshed: false } : cooldown),
       naturalOvulationUsed: false,
     };
   }

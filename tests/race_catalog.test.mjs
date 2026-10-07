@@ -221,7 +221,7 @@ test('核焰族与华根蕴桃雌核遗传，海德拉是胎转卵生中恢复�
 
   assert.equal(deriveFetusRace('华根蕴桃', '人类'), '华根蕴桃');
   const peach = getRacePhysiologyProfile('华根蕴桃');
-  assert.equal(peach.genderRatio, 0, '孤雌，族中全为雌性');
+  assert.equal(peach.genderRatio, 50, '雌为仙桃娘、雄为人参精，性别比趋近平衡');
   assert.equal(peach.orgasmOvulationAmount, 0);
   assert.ok(peach.companionEggsMean > 0, '伴生的嫩参嫩桃');
 

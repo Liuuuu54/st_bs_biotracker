@@ -52,7 +52,7 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Human，其余物种的参照：经期约 28 天、孕期约 280 天、产后约 56 天恢复，各物种的倍率都以人类预设值为 1。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 1, breedTolerance: 1,
-    impregnationDifficulty: 1, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 1, identicalProbability: 1, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 1,
   },
   "精灵": {
@@ -76,7 +76,7 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Kemonomimi／Beastfolk，保有人形、带兽耳兽尾的亚人；日系兽娘与西方 furry 皆归此类；牛系另列为米诺陶族。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.6, birthDifficulty: 0.8, breedTolerance: 3,
-    impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 45, genderRatio: 50,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 10, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 0.25,
   },
   "米诺陶族": {
@@ -108,7 +108,7 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Goblin，西幻小型怪物，繁殖力旺盛且几乎只诞下雄性；少数雌性个体存在。",
     inheritanceMode: "paternal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2.5, birthDifficulty: 2, breedTolerance: 1,
-    impregnationDifficulty: 0.2, orgasmOvulationAmount: 2, identicalProbability: 40, genderRatio: 95,
+    impregnationDifficulty: 0.2, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 95,
     companionEggsMean: 0, recoveryCoefficient: 0.8,
   },
   "兽人": {
@@ -132,7 +132,7 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Halfling，又称哈比人，身形矮小的和平亚人。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 1.5, breedTolerance: 2,
-    impregnationDifficulty: 0.8, orgasmOvulationAmount: 3, identicalProbability: 30, genderRatio: 50,
+    impregnationDifficulty: 0.8, orgasmOvulationAmount: 3, identicalProbability: 10, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 0.61,
   },
   "半人马": {
@@ -156,7 +156,7 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Succubus，近乎纯女性的性欲特化恶魔系亚人；与近乎纯男性的夢魔为对应种族。",
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 3,
-    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 33, genderRatio: 5,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 5,
     companionEggsMean: 0, recoveryCoefficient: 0.25,
   },
   "雪族": {
@@ -169,10 +169,10 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "夜叉": {
     embryoType: "胎生",
-    introductionLine: "Yaksha／Oni，头生角的日系鬼族，罗刹与阿修罗皆归此类。",
+    introductionLine: "Yaksha／Oni，头生角的日系鬼族，罗刹与阿修罗皆归此类；长寿而易受孕，与人类所生的半鬼屡见于传说。双胎与人类同样罕见，族中视之为不祥。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 0.5, birthDifficulty: 4, breedTolerance: 0.8,
-    impregnationDifficulty: 0.5, orgasmOvulationAmount: 1, identicalProbability: 50, genderRatio: 50,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 1, identicalProbability: 3, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 5,
   },
   "妖狐": {
@@ -196,7 +196,7 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Moon Rabbit，居于月球的兔系亚人；繁殖力为胎生种族之最，族中多为雌性。雄核遗传：月兔女子所生皆随父族，因而成为各族争夺的孕母，能延续族裔的雄兔被视为至宝。",
     inheritanceMode: "paternal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2, birthDifficulty: 0.6, breedTolerance: 2.5,
-    impregnationDifficulty: 0.4, orgasmOvulationAmount: 4, identicalProbability: 30, genderRatio: 30,
+    impregnationDifficulty: 0.4, orgasmOvulationAmount: 4, identicalProbability: 10, genderRatio: 30,
     companionEggsMean: 0, recoveryCoefficient: 0.25,
   },
   "杜拉罕": {
@@ -284,7 +284,7 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Sea Slug-folk，海兔拟人，雌雄同体；交配方式奇特（交配列车、阴茎击剑）。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 3.3, birthDifficulty: 0.25, breedTolerance: 0.25,
-    impregnationDifficulty: 0.25, orgasmOvulationAmount: 5, identicalProbability: 30, genderRatio: null,
+    impregnationDifficulty: 0.25, orgasmOvulationAmount: 5, identicalProbability: 10, genderRatio: null,
     companionEggsMean: 9, recoveryCoefficient: 0.91,
   },
   "龟族": {
@@ -337,11 +337,11 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "深潜者": {
     embryoType: "卵生",
-    introductionLine: "Deep One，源自克苏鲁的海系异种，潜伏于人类社会；雄核遗传，与人类所生的后代终将成为深潜者（印斯茅斯之相）。胚胎类型刻意与其他海系亚人不同。",
+    introductionLine: "Deep One，潜伏人类社会的克苏鲁系海洋异种，雄核遗传。本为卵生却伪装成胎生：孕期与人类相同，长出似胎盘的组织但养分仍来自卵黄，总以包膜分娩；撕破卵膜即是早产，跳过与产后恢复等长的孵化期，生下的婴儿与人类无异，成年后受深海呼唤才渐渐显出原形（印斯茅斯之相）。",
     inheritanceMode: "paternal",
-    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 1.25, birthDifficulty: 1.2, breedTolerance: 1,
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 1, birthDifficulty: 1.2, breedTolerance: 1,
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 10, genderRatio: 75,
-    companionEggsMean: 0, recoveryCoefficient: 0.96,
+    companionEggsMean: 0, recoveryCoefficient: 2,
   },
   "拜亚基": {
     embryoType: "卵生",
@@ -412,7 +412,7 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Frogfolk，蛙类拟人，出生时性别由外在环境决定，故不适用固定男女比。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 3.3, birthDifficulty: 0.25, breedTolerance: 1,
-    impregnationDifficulty: 0.7, orgasmOvulationAmount: 4, identicalProbability: 30, genderRatio: null,
+    impregnationDifficulty: 0.7, orgasmOvulationAmount: 4, identicalProbability: 10, genderRatio: null,
     companionEggsMean: 35, recoveryCoefficient: 0.25,
   },
   "眼魔": {
@@ -465,10 +465,10 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "华根蕴桃": {
     embryoType: "卵胎生",
-    introductionLine: "Huagen Peach，修仙系的灵植娘：胎内由一颗种子发芽结桃、枝干化为人参，生下的是抱着人参的桃子娘，伴生的嫩参嫩桃是珍贵灵物。雌核遗传，族中全为雌性；栖于小灵地，以食人藤蔓捕食散修。",
+    introductionLine: "Huagen Peach，修仙系的灵植族：胎内由一颗种子发芽结桃，雌性生为仙桃娘，雄性是形似曼德拉草的人参精，伴生的嫩参嫩桃是珍贵灵物。雌核遗传；栖于小灵地，以食人藤蔓捕食散修。",
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.4, birthDifficulty: 0.8, breedTolerance: 2,
-    impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 35, genderRatio: 0,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 35, genderRatio: 50,
     companionEggsMean: 2, recoveryCoefficient: 1,
   },
   "西方龙": {
@@ -489,10 +489,10 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "海德拉": {
     embryoType: "胎转卵生",
-    introductionLine: "Hydra，多头龙族，一具身躯生有多个头颅，仍是单一个体；以断首再生著称，是胎转卵生中产后恢复最快的一族，同卵分裂也格外常见。",
+    introductionLine: "Hydra，多头龙族，一具身躯生有多个头颅，仍是单一个体；以断首再生著称，是胎转卵生中产后恢复最快的一族。",
     inheritanceMode: "normal",
-    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.4, birthDifficulty: 4, breedTolerance: 1.5,
-    impregnationDifficulty: 4, orgasmOvulationAmount: 1, identicalProbability: 60, genderRatio: 50,
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.4, birthDifficulty: 3, breedTolerance: 1.5,
+    impregnationDifficulty: 4, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 1.5,
   },
   "狮鹫": {
@@ -628,7 +628,7 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Incubus，近乎纯男性的性欲特化恶魔系不定型种族；胚胎发育随母体调整外形，但基因定序仍属夢魔。",
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 1,
-    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 33, genderRatio: 95,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 95,
     companionEggsMean: 0, recoveryCoefficient: 0.66,
   },
   "宝石人": {

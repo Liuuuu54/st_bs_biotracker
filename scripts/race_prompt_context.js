@@ -194,11 +194,12 @@ function getProlificacyText(orgasmOvulationAmount, identicalProbability) {
   }
 
   let ovulationText = '异卵多胎倾向未知';
-  if (safeOvulation <= 0) ovulationText = '异卵倾向很低，几乎不具备额外排卵能力。';
-  else if (safeOvulation <= 1) ovulationText = '异卵倾向偏低，额外排卵能力较弱。';
-  else if (safeOvulation <= 3) ovulationText = '异卵倾向中等，存在形成多枚受精卵并行发育的可能。';
-  else if (safeOvulation <= 6) ovulationText = '异卵倾向偏高，较容易形成多枚受精卵并行发育。';
-  else ovulationText = '异卵倾向极高，多枚卵同时参与受精是常见风险。';
+  // 自然排卵每周期只有 1 颗；额外排卵只在高潮时按当下活力排出，异卵多胎主要由此而来
+  if (safeOvulation <= 0) ovulationText = '每周期只排 1 颗卵，高潮也不会额外排卵，异卵多胎几乎不会发生。';
+  else if (safeOvulation <= 1) ovulationText = '平时只排 1 颗卵；高潮时可额外排出 1 颗，异卵双胎主要由此而来。';
+  else if (safeOvulation <= 3) ovulationText = '平时只排 1 颗卵；高潮时可额外排出数颗，高潮前后同房容易形成异卵多胎。';
+  else if (safeOvulation <= 6) ovulationText = '平时只排 1 颗卵；高潮时一次排出多颗，高潮前后同房常形成异卵多胎。';
+  else ovulationText = '平时只排 1 颗卵；高潮时一次排出大量卵，高潮前后同房几乎必成一窝。';
 
   let identicalText = '同卵倾向未知';
   if (safeIdentical <= 5) identicalText = '同卵分裂倾向很低，由单胎扩增出的同卵多胎较少见。';
@@ -272,7 +273,7 @@ function buildSingleRacePhysiologyBlock(race) {
     `- 受精难度: ${getImpregnationDifficultyText(profile.impregnationDifficulty)}`,
     `- 遗传核型: ${getInheritanceModeText(race)}`,
     `- 典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race))}（每名有效后代伴随的背景卵；自然受精会依有效精液量调整后再作约 ±10% 波动；均值 0 恒为 0）`,
-    `- 多产性: ${getProlificacyText(profile.orgasmOvulationAmount, profile.identicalProbability)}；额外排卵倾向 ${formatNumber(profile.orgasmOvulationAmount)}，同卵多胎概率 ${formatNumber(profile.identicalProbability)}%`,
+    `- 多产性: ${getProlificacyText(profile.orgasmOvulationAmount, profile.identicalProbability)}；额外排卵倾向 ${formatNumber(profile.orgasmOvulationAmount)}（高潮时按当下活力占比排出，每周期黄体期前、黄体期各一次），同卵多胎概率 ${formatNumber(profile.identicalProbability)}%`,
     `- 性别比: ${getGenderRatioText(profile.genderRatio)}`,
   ].filter(Boolean).join('\n');
 }
@@ -296,7 +297,7 @@ function buildHybridAverageBlock(race, bloodline = null) {
     `- 平均承载耐受: ${getBreedToleranceText(merged.breedTolerance)}`,
     `- 平均受精难度: ${getImpregnationDifficultyText(merged.impregnationDifficulty)}`,
     `- 混血典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race, bloodline))}（先由血脉占比最高的成分决定胚型（平手取孕期较长者，再平手取母系）；胎生／胎转卵生恒为 0，其余按血脉比例对整群规模做加权几何平均）`,
-    `- 平均多产性参考: ${getProlificacyText(merged.orgasmOvulationAmount, merged.identicalProbability)}；额外排卵倾向 ${formatNumber(merged.orgasmOvulationAmount)}，同卵多胎概率 ${formatNumber(merged.identicalProbability)}%`,
+    `- 平均多产性参考: ${getProlificacyText(merged.orgasmOvulationAmount, merged.identicalProbability)}；额外排卵倾向 ${formatNumber(merged.orgasmOvulationAmount)}（高潮时按当下活力占比排出，每周期黄体期前、黄体期各一次），同卵多胎概率 ${formatNumber(merged.identicalProbability)}%`,
     `- 平均性别比参考: ${getGenderRatioText(merged.genderRatio)}`,
   ].filter(Boolean).join('\n');
 }
