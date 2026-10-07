@@ -340,7 +340,7 @@ function buildDerivedFluxLoreBlock(derivedType) {
     '[衍生需求补充设定]',
     `【${sanitizePromptText(value)}】`,
     ...(introductionLine ? [introductionLine] : []),
-    `该衍生类型由 flux 抵免的普通需求：${exemptions.length > 0 ? exemptions.join(' / ') : '无'}。未被抵免的需求仍会作为 metabolism 保留。`,
+    `该衍生类型体质上豁免的普通需求：${exemptions.length > 0 ? exemptions.join(' / ') : '无'}；flux 自成一项，不顶替其他需求。未豁免的需求仍会作为 metabolism 保留。`,
     fluxDefinition,
   ].join('\n');
 }

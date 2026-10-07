@@ -833,7 +833,7 @@ test('derived type overrides affect base types and custom subtypes', () => {
   assert.equal(raceConfig.getDerivedTypeIntroductionLine('不死-僵尸'), '亡者衍生类型的简短说明。');
   assert.equal(raceConfig.getDerivedTypeFluxProfile('不死').fluxDefinition, '自定义描述');
   assert.equal(raceConfig.getDerivedTypeInheritanceProfile('不死-僵尸').inheritanceSpeed, 3.5);
-  assert.deepEqual(raceConfig.getDerivedTypeMetabolismExemptions('不死'), ['odor', 'sleep', 'milk']);
+  assert.deepEqual(raceConfig.getDerivedTypeMetabolismExemptions('不死'), ['sleep', 'milk']);
   assert.equal(raceConfig.getDerivedTypeOverride('不死-僵尸').metabolismExemptions, undefined);
   raceConfig.setDerivedTypeOverrides({});
   assert.equal(raceConfig.getDerivedTypeFluxProfile('不死').fluxName, '死气');

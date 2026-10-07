@@ -79,7 +79,7 @@ test('衍生类型有内建短敘述并进入名录', () => {
   assert.ok(hinted.includes('兽化(Therian'), '名录应带兽化提示');
 });
 
-test('序列兼容三大女性向设定，兽化使用独立兽性与乳意抵免', async () => {
+test('序列兼容三大女性向设定、以信息素豁免体味，兽化保留乳意', async () => {
   const raceConfig = await import('../scripts/race_config.js');
   assert.match(raceConfig.getDerivedTypeIntroductionLine('序列'), /ABO、哨兵／向导与 Dom／Sub/);
   assert.equal(raceConfig.getDerivedTypeFluxProfile('序列').fluxName, '序列活性');
@@ -87,9 +87,10 @@ test('序列兼容三大女性向设定，兽化使用独立兽性与乳意抵�
   assert.equal(raceConfig.getDerivedTypeInheritanceProfile('兽化-猫').inheritanceSpeed, 1.4);
   assert.deepEqual(
     raceConfig.getDerivedTypeMetabolismExemptions('兽化-猫'),
-    ['milk', 'odor', 'companionship'],
+    ['excretion', 'odor'],
   );
-  assert.match(raceConfig.getDerivedTypeFluxProfile('兽化').fluxDefinition, /乳意由兽性抵免而不单独追踪/);
+  assert.ok(raceConfig.getDerivedTypeMetabolismExemptions('序列-ABO').includes('odor'), '信息素比体味更全面');
+  assert.doesNotMatch(raceConfig.getDerivedTypeFluxProfile('兽化').fluxDefinition, /乳意/);
 });
 
 test('咒缚随血脉全族入约：遗传最快、契约主抵免陪伴，豁免组合不与其他衍生重复', async () => {
@@ -108,13 +109,14 @@ test('咒缚随血脉全族入约：遗传最快、契约主抵免陪伴，豁�
   assert.ok(buildRaceCatalogBlock({ withHints: true }).includes('咒缚(Hexbound'), '名录应带咒缚提示');
 });
 
-test('每种衍生恰好豁免三项不同需求，且豁免组合两两不重复', async () => {
+test('每种衍生恰好豁免两项不同需求，且豁免组合两两不重复', async () => {
   const raceConfig = await import('../scripts/race_config.js');
   const needs = ['excretion', 'hunger', 'sleep', 'milk', 'odor', 'companionship'];
   const seen = new Map();
   for (const type of raceConfig.DERIVED_TYPE_RACES) {
     const exemptions = raceConfig.getDerivedTypeMetabolismExemptions(type);
-    assert.equal(new Set(exemptions).size, 3, `${type} 应豁免三项不同需求`);
+    assert.equal(exemptions.length, 2, `${type} 应只豁免两项需求`);
+    assert.equal(new Set(exemptions).size, 2, `${type} 应豁免两项不同需求`);
     assert.ok(exemptions.every((need) => needs.includes(need)), `${type} 的豁免应是已知需求`);
     const key = [...exemptions].sort().join();
     assert.equal(seen.get(key), undefined, `${type} 与 ${seen.get(key)} 的豁免组合重复`);
@@ -156,7 +158,7 @@ test('修炼与魔导的繁体写法、带装饰子项都解析得到', async ()
   const canonical = raceConfig.getDerivedTypeFluxProfile('修炼');
   assert.equal(canonical.fluxName, '炁');
   assert.equal(raceConfig.getDerivedTypeInheritanceProfile('修炼').inheritanceSpeed, 0.8);
-  assert.deepEqual(raceConfig.getDerivedTypeMetabolismExemptions('修炼'), ['hunger', 'excretion', 'companionship']);
+  assert.deepEqual(raceConfig.getDerivedTypeMetabolismExemptions('修炼'), ['hunger', 'companionship']);
   // 繁体写法一并映射；带装饰子项也要能解析
   assert.equal(raceConfig.getDerivedTypeFluxProfile('修煉').fluxName, '炁');
   assert.equal(raceConfig.getDerivedTypeFluxProfile('修炼-剑修').fluxName, '炁');

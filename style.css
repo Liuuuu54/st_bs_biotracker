@@ -2596,8 +2596,10 @@
   gap: 8px;
 }
 
-#bs-biotracker-settings .bs-bt-track-metabolism-grid.is-derived {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+/* 衍生：四项普通需求分列左右，flux 居中占上下两排 */
+#bs-biotracker-settings .bs-bt-track-metabolism-grid.is-derived .bs-bt-need-tile--flux {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 #bs-biotracker-settings .bs-bt-need-tile {

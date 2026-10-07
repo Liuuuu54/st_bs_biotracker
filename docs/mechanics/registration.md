@@ -40,7 +40,7 @@
 
 | 欄位 | 初始化規則及後續作用 |
 | --- | --- |
-| `base.race`、`base.derivedType` | 種族描述可帶混血、子類與 `[衍生類型]`；寫實世界開啟時，註冊提示要求一律填人類，也不送名錄與種族說明；清理時分解後存種族與衍生類型。種族生理會填週期倍率、妊娠速度、承載力、受孕難度等 `bio` 欄位。[種族解析](../../scripts/registry.js#L1668)、[生理合成](../../scripts/race_config.js#L1421) |
+| `base.race`、`base.derivedType` | 種族描述可帶混血、子類與 `[衍生類型]`；寫實世界開啟時，註冊提示要求一律填人類，也不送名錄與種族說明；清理時分解後存種族與衍生類型。種族生理會填週期倍率、妊娠速度、承載力、受孕難度等 `bio` 欄位。[種族解析](../../scripts/registry.js#L1668)、[生理合成](../../scripts/race_config.js#L1432) |
 | `base.age` | 角色年齡；有有限數值就採用，故事時間會按年累加。[註冊清理](../../scripts/registry.js#L1668)、[時間推進](../../scripts/tools.js#L6366) |
 | `base.libido` | 開局性欲，註冊清理限制 0–150；後續使用角色當下上限，孕期上限可變。性欲變動可連動乳意與高潮排卵。[註冊清理](../../scripts/registry.js#L1668)、[狀態工具](../../scripts/tools.js#L6515) |
 | `base.uterinePressure` | 開局宮壓，註冊清理限制 0–150；正常開局宜低，因孕早期相對個人上限達 50% 就可能先觸發警告。[註冊清理](../../scripts/registry.js#L1668)、[宮壓危機](../../scripts/tools.js#L4670) |

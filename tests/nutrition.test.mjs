@@ -117,11 +117,11 @@ test('进食连带把泄意推上爆：同一次处理内一加一扣', () => {
   assert.deepEqual(P(chatState).pregnant.nutritionBurst, { excretion: 0 });
 });
 
-test('flux 按绝对值判定；血族只剩 4 项需求，点数按 6/4 折算', () => {
+test('flux 按绝对值判定；血族只剩 5 项需求，点数按 6/5 折算', () => {
   const chatState = one({ base: { derivedType: '血族' }, metabolism: { flux: -80 } });
   excrete(chatState, { flux: 60 });
   assert.equal(P(chatState).metabolism.flux, -20);
-  assert.equal(total(chatState), 1.5);
+  assert.equal(total(chatState), 1.2);
 });
 
 test('被衍生类型抵免的需求不参与', () => {
