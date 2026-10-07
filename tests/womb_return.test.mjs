@@ -379,7 +379,7 @@ test('returnerRace 优先于已注册角色自己的种族', () => {
   call(chatState, 'bsWombReturn', {
     female: '艾拉', returner: '琪拉', returnerRace: '兽人', hours: 1,
   });
-  assert.equal(hostOf(chatState).pregnant.fetuses[0].fatherRace, '兽人');
+  assert.equal(hostOf(chatState).pregnant.fetuses[0].fatherRace, '欧克', '旧名兽人对应到欧克');
 });
 
 test('未注册的回归者没有冻结这回事，也没有天赋可继承', () => {

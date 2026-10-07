@@ -32,7 +32,7 @@ test('每个内置种族与衍生类型的繁体、简体写法都对到规范�
 });
 
 test('旧名对到新名，保留装饰子项、衍生前缀与比例写法', () => {
-  assert.equal(Object.keys(RACE_RENAMES).length, 8);
+  assert.equal(Object.keys(RACE_RENAMES).length, 10);
   for (const [from, to] of Object.entries(RACE_RENAMES)) {
     assert.equal(canonicalizeRaceName(from), to);
     assert.equal(canonicalizeRaceName(toTraditionalName(from)), to, `${from} 的繁体旧名`);

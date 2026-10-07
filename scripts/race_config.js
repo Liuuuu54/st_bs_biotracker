@@ -111,9 +111,9 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 0.2, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 95,
     companionEggsMean: 0, recoveryCoefficient: 0.8,
   },
-  "兽人": {
+  "欧克": {
     embryoType: "胎生",
-    introductionLine: "即 Orc（绿皮），高大粗野的战斗种族；与「兽耳族」无关，勿混用。",
+    introductionLine: "Orc，绿皮的高大战斗种族，旧称兽人、半兽人。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 1, breedTolerance: 2,
     impregnationDifficulty: 0.8, orgasmOvulationAmount: 1, identicalProbability: 50, genderRatio: 75,
@@ -712,6 +712,8 @@ export const RACE_RENAMES = Object.freeze({
   狮鹫族: '狮鹫',
   蛙人: '蛙族',
   鸟人: '鸟族',
+  兽人: '欧克',
+  半兽人: '欧克',
 });
 
 // 以简体字形为键：模型写繁体、简体或混用都能对上内置名称
