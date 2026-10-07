@@ -1,4 +1,5 @@
 import { inferPendingPsychology } from './registry.js';
+import { getDisabledSpecialToolNames, isRealisticWorld } from './world_mode.js';
 import { syncCardSettings } from './card_settings.js';
 import { naturalNoticeDays, psychologySide } from './reproductive.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
@@ -724,6 +725,7 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
     hiddenTools.add('bsRegisterSkillDefinition');
     hiddenTools.add('bsTrainSkill');
   }
+  for (const name of getDisabledSpecialToolNames(settings)) hiddenTools.add(name);
   return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name));
 }
 
@@ -1367,6 +1369,8 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     available_tools: getTrackerToolDefinitions(settings, existingState),
     diary_enabled: diaryEnabled,
     race_catalog_selection: settings?.raceCatalogSelection || null,
+    realistic_world: isRealisticWorld(settings),
+    disabled_special_tools: getDisabledSpecialToolNames(settings),
     recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => ['bsAddSperm', 'bsAbortion'].includes(log.name) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),
     world_baseline_prompt: String(settings?.worldBaselinePrompt || '').trim(),
     require_full_description_updates: settings?.requireFullDescriptionUpdates === true,

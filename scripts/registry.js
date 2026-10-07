@@ -1,6 +1,7 @@
 import { normalizeExperience, initializeCognitionRecords, normalizeReproductiveSettings, psychologySide } from './reproductive.js';
 import { callOpenAICompatible } from './api.js';
 import { getEffectiveSettings } from './card_settings.js';
+import { isRealisticWorld } from './world_mode.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
 import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt, buildWorldBaselineBlock } from './race_prompt_context.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
@@ -883,10 +884,12 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
   const customNotes = String(options.customNotes !== undefined ? options.customNotes : (settings?.registryCustomNotes || '')).trim();
   const declaredRace = String(options.declaredRace || '').trim();
   const sourceChild = options.payload?.source_child || null;
-  const embryoTypeLorePrompt = buildEmbryoTypeLorePrompt(options.payload || {}, { includeAllIfEmpty: true });
-  const racePhysiologyPrompt = buildRegistryRacePhysiologyPrompt(options.payload || {}, { selection: settings?.raceCatalogSelection || null });
+  // 写实世界只有人类：名录、种族生理与胚型说明都不送
+  const realisticWorld = isRealisticWorld(settings);
+  const embryoTypeLorePrompt = realisticWorld ? '' : buildEmbryoTypeLorePrompt(options.payload || {}, { includeAllIfEmpty: true });
+  const racePhysiologyPrompt = realisticWorld ? '' : buildRegistryRacePhysiologyPrompt(options.payload || {}, { selection: settings?.raceCatalogSelection || null });
   // 注册是一次性请求，附上辨识提示帮模型在形近种族间选对（人鱼／鱼人、精灵／妖精）
-  const raceCatalogPrompt = buildRaceCatalogBlock({
+  const raceCatalogPrompt = realisticWorld ? '' : buildRaceCatalogBlock({
     withHints: true,
     selection: settings?.raceCatalogSelection || null,
   });
@@ -905,6 +908,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     racePhysiologyPrompt,
     raceCatalogPrompt,
     '你是 AIRP 角色注册初始化器。',
+    realisticWorld ? '本故事为写实世界，只有人类：base.race 一律填 人类，不填 bloodline 与衍生类型。' : '',
     '只在用户明确要求注册指定角色时工作，不得擅自新增其他角色。',
     '根据角色卡、用户要求、已有资料，输出角色初始化 JSON。',
     sourceChild ? '本次注册来源为已有角色的孩子。payload.source_child 是固定事实：base.race 必须沿用其 race／derivedType；其 talents 会由系统确定性继承。你只能参考这些天赋塑造初始化内容，不得删除、改名、换向或重算天赋。' : '',

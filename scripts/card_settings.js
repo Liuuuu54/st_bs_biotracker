@@ -6,6 +6,7 @@ import {
 import { normalizeReproductiveSettings } from './reproductive.js';
 import { normalizeSkillCatalog, registerSkillDefinition } from './skill_config.js';
 import { getHostKind, getHostContext } from './host.js';
+import { SPECIAL_TOOLS, normalizeSpecialTools } from './world_mode.js';
 
 export const CARD_SETTINGS_KEY = 'bs_biotracker';
 export const CARD_SETTINGS_VERSION = 1;
@@ -74,6 +75,12 @@ export function sanitizeCardSettings(value) {
     if (value.raceCatalogSelection.version === RACE_CATALOG_SELECTION_VERSION) result.raceCatalogSelection.version = RACE_CATALOG_SELECTION_VERSION;
   }
   if (typeof value.worldBaselinePrompt === 'string') result.worldBaselinePrompt = text(value.worldBaselinePrompt, 12000);
+  if (typeof value.realisticWorld === 'boolean') result.realisticWorld = value.realisticWorld;
+  if (object(value.specialTools)) {
+    const tools = {};
+    for (const key of Object.keys(SPECIAL_TOOLS)) if (typeof value.specialTools[key] === 'boolean') tools[key] = value.specialTools[key];
+    if (Object.keys(tools).length) result.specialTools = tools;
+  }
   if (object(value.reproductiveSettings)) {
     const patch = {};
     const normalized = normalizeReproductiveSettings(value.reproductiveSettings);
@@ -118,6 +125,8 @@ export function getEffectiveSettings(ctx, settings) {
     derivedTypeOverrides: mergeMaps(normalizeDerivedOverrideMap(settings?.derivedTypeOverrides), card?.derivedTypeOverrides),
     raceCatalogSelection: card && own(card, 'raceCatalogSelection') ? card.raceCatalogSelection : settings?.raceCatalogSelection,
     worldBaselinePrompt: card && own(card, 'worldBaselinePrompt') ? card.worldBaselinePrompt : settings?.worldBaselinePrompt,
+    realisticWorld: card && own(card, 'realisticWorld') ? card.realisticWorld : settings?.realisticWorld === true,
+    specialTools: normalizeSpecialTools({ ...normalizeSpecialTools(settings?.specialTools), ...card?.specialTools }),
     reproductiveSettings: normalizeReproductiveSettings({ ...settings?.reproductiveSettings, ...card?.reproductiveSettings }),
   };
 }

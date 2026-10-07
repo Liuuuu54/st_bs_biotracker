@@ -116,6 +116,12 @@ try {
     await expect("document.querySelector('#bs-bt-world-baseline-prompt').value==='卡片世界'", host + ': card editor');
     await set('#bs-bt-world-baseline-prompt', '保存的卡片世界'); await click('#bs-bt-world-baseline-save');
     await expect("__cardUiCtx.characters[0].data.extensions.bs_biotracker.worldBaselinePrompt==='保存的卡片世界' && __cardUiState.getSettings(__cardUiCtx).worldBaselinePrompt==='全域世界'", host + ': baseline isolation');
+    await click('#bs-bt-realistic-world');
+    await expect("__cardUiCtx.characters[0].data.extensions.bs_biotracker.realisticWorld===true && __cardUiState.getSettings(__cardUiCtx).realisticWorld!==true && document.querySelector('#bs-bt-catalog-checklist').classList.contains('is-disabled')", host + ': realistic world on card');
+    await click('#bs-bt-special-tool-wombReturn');
+    await expect("__cardUiCtx.characters[0].data.extensions.bs_biotracker.specialTools.wombReturn===false && !('implantEmbryo' in __cardUiCtx.characters[0].data.extensions.bs_biotracker.specialTools)", host + ': special tool on card');
+    await click('#bs-bt-realistic-world');
+    await expect("__cardUiCtx.characters[0].data.extensions.bs_biotracker.realisticWorld===false && !document.querySelector('#bs-bt-catalog-checklist').classList.contains('is-disabled')", host + ': realistic world off');
     await click('[data-encyclopedia-tab="race"]');
     await expect("[...document.querySelectorAll('#bs-bt-race-select option')].some((option) => option.value==='人类') && document.querySelector('#bs-bt-race-count').textContent.startsWith('物种数量：81')", host + ': human in encyclopedia');
     await set('#bs-bt-race-select', '西方龙'); await click('#bs-bt-race-open-editor');

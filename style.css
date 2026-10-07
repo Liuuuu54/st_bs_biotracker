@@ -4627,6 +4627,11 @@
   margin-top: 6px;
 }
 
+/* 写实世界开启时名录不会送出 */
+#bs-biotracker-settings .bs-bt-catalog-checklist.is-disabled {
+  opacity: 0.55;
+}
+
 #bs-biotracker-settings .bs-bt-catalog-group {
   min-width: 0;
   margin: 0;

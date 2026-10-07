@@ -85,6 +85,7 @@ import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
 import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
+import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
 import { appendSkillHistory, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
 import {
   canWriteCardSettings, getCardSettings, getEffectiveSettings, getSettingSource,
@@ -1974,6 +1975,26 @@ function renderRaceCatalogChecklist(settings) {
   }).join('');
 }
 
+/** 写实世界与特殊工具开关；写实世界开启时名录不会送出，勾选区变灰 */
+function renderWorldModeControls(ctx, globalSettings, settings) {
+  const realistic = isRealisticWorld(settings);
+  const realisticInput = document.getElementById('bs-bt-realistic-world');
+  if (realisticInput instanceof HTMLInputElement) realisticInput.checked = realistic;
+  const tools = normalizeSpecialTools(settings?.specialTools);
+  document.querySelectorAll('[data-special-tool]').forEach((input) => {
+    if (input instanceof HTMLInputElement) input.checked = tools[input.getAttribute('data-special-tool')] !== false;
+  });
+  const checklist = document.getElementById('bs-bt-catalog-checklist');
+  if (checklist) {
+    checklist.classList.toggle('is-disabled', realistic);
+    checklist.querySelectorAll('input, button').forEach((node) => { node.disabled = realistic; });
+  }
+  const selectAll = document.getElementById('bs-bt-race-catalog-select-all');
+  if (selectAll) selectAll.disabled = realistic;
+  const source = document.getElementById('bs-bt-world-mode-source');
+  if (source) source.textContent = `写实世界来源：${getSettingSource(ctx, globalSettings, 'realisticWorld')}；特殊工具来源：${getSettingSource(ctx, globalSettings, 'specialTools')}。${realistic ? '名录在写实世界下不会送出。' : ''}`;
+}
+
 function toggleRaceCatalogGroup(ctx, index) {
   const group = getRaceCatalogChecklistGroups()[index];
   if (!group) return;
@@ -2408,6 +2429,7 @@ function renderRaceEncyclopediaPage(ctx = null) {
     derivedTypeOverrides: getEditorOverrideMap(ctx, 'derivedTypeOverrides'),
   });
   renderRaceCatalogChecklist(settings);
+  renderWorldModeControls(ctx, globalSettings, settings);
   if (settings) renderReproductiveControls(settings);
   const baselineSource = document.getElementById('bs-bt-world-baseline-source');
   if (baselineSource) baselineSource.textContent = `世界基准来源：${getSettingSource(ctx, globalSettings, 'worldBaselinePrompt')}；名录来源：${getSettingSource(ctx, globalSettings, 'raceCatalogSelection')}。`;
@@ -8727,7 +8749,7 @@ async function ensureModal(ctx) {
     renderRaceEncyclopediaPage(ctx);
   });
   document.getElementById('bs-bt-card-baseline-reset')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
-    await saveEncyclopediaPatch(ctx, { worldBaselinePrompt: undefined, raceCatalogSelection: undefined, reproductiveSettings: undefined });
+    await saveEncyclopediaPatch(ctx, { worldBaselinePrompt: undefined, raceCatalogSelection: undefined, reproductiveSettings: undefined, realisticWorld: undefined, specialTools: undefined });
     globalThis.toastr?.success?.('已清除卡片基准覆盖，沿用全域。');
   }));
   document.getElementById('bs-bt-catalog-checklist')?.addEventListener('change', (event) => {
@@ -8739,12 +8761,15 @@ async function ensureModal(ctx) {
     const button = event.target instanceof Element ? event.target.closest('[data-catalog-group]') : null;
     if (button) runWorldSettingAction(ctx, () => toggleRaceCatalogGroup(ctx, Number(button.getAttribute('data-catalog-group'))));
   });
-  document.getElementById('bs-bt-race-catalog-human-only')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
-    await saveWorldBaselinePrompt(ctx, '');
-    const input = document.getElementById('bs-bt-world-baseline-prompt');
-    if (input) input.value = '';
-    await saveRaceCatalogSelection(ctx, { races: [], derivedTypes: [] });
-    globalThis.toastr?.success?.('[BS BioTracker] 已切换为现代写实基准');
+  document.getElementById('bs-bt-realistic-world')?.addEventListener('change', (event) => {
+    const checked = event.target instanceof HTMLInputElement && event.target.checked;
+    runWorldSettingAction(ctx, () => saveEncyclopediaPatch(ctx, { realisticWorld: checked }));
+  });
+  document.querySelectorAll('[data-special-tool]').forEach((input) => input.addEventListener('change', () => {
+    const key = input.getAttribute('data-special-tool');
+    const checked = input instanceof HTMLInputElement && input.checked;
+    // 卡片只存改过的那一项，其余照旧沿用全域
+    runWorldSettingAction(ctx, () => saveEncyclopediaPatch(ctx, (current) => ({ specialTools: { ...(current?.specialTools || {}), [key]: checked } })));
   }));
   document.getElementById('bs-bt-race-catalog-select-all')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
     await saveRaceCatalogSelection(ctx, {

@@ -210,6 +210,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   formattedOutputV4: true,
   raceCatalogSelection: null,
   worldBaselinePrompt: '',
+  realisticWorld: false,
+  specialTools: { implantEmbryo: true, wombReturn: true, extendPregnancy: true },
   reproductiveSettings: normalizeReproductiveSettings(),
   triggerTiming: 'after_ai',
   pollMs: 1800,

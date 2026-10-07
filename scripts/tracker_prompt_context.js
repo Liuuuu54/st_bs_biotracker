@@ -248,6 +248,24 @@ const TRACKER_DIARY_SECTION = [
   '',
 ].join('\n');
 
+/** 写实世界不会出现这些字段：衍生类型、血统份额、伴生卵、flux */
+const REALISTIC_WORLD_DROPPED_LINES = [
+  '- derivedType:', '- sperms[*].derivedType:', '- base.bloodline / fetuses[*].bloodline:', '- fetuses[*].fatherDerivedType:',
+  '- fetuses[*].maternalDerivedTypeProgress:', '- fetuses[*].companionEggCount:', '- children[*].derivedType:',
+  '- children[*].birthCompanionEggCount:', '- 若角色具有 derivedType', '- fluxPositive / fluxNegative', '- 对 derivedType 角色来说',
+];
+/** 特殊工具关掉时，它产生的状态也不会出现 */
+const SPECIAL_TOOL_DROPPED_LINES = {
+  bsWombReturn: ['- 回归期：', '- 回归期不受', '- pregnant.wombReturn:'],
+  bsExtendPregnancy: ['- 延产期：', '- base.uterineAtony：'],
+  bsImplantEmbryo: ['- fetuses[*].provider:', '- fetuses[*].providerSources:'],
+};
+
+function dropGuideLines(guide, prefixes) {
+  if (prefixes.length === 0) return guide;
+  return guide.split('\n').filter((line) => !prefixes.some((prefix) => line.startsWith(prefix))).join('\n');
+}
+
 function buildTrackerMetabolismGuide(payload = null) {
   const fluxNames = collectRelevantFluxNames(payload || {});
   const diaryEnabled = payload?.diary_enabled !== false;
@@ -273,6 +291,10 @@ function buildTrackerMetabolismGuide(payload = null) {
       .replace(/\n- children\[\*\]\.talents:[^\n]*/, '')
       .replace(/\n?\[skills \/ talents\][\s\S]*?\n\[children\]/, '\n[children]');
   }
+  baseGuide = dropGuideLines(baseGuide, [
+    ...(payload?.realistic_world === true ? REALISTIC_WORLD_DROPPED_LINES : []),
+    ...(Array.isArray(payload?.disabled_special_tools) ? payload.disabled_special_tools : []).flatMap((name) => SPECIAL_TOOL_DROPPED_LINES[name] || []),
+  ]);
   // 只解释本轮真的出现过的标签，与种族短叙述同规则：没用到就不占 token
   const fetusTagLines = describeFetusTags(collectRelevantFetusTags(payload || {}));
   if (fetusTagLines.length > 0) {
@@ -325,7 +347,8 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     buildWorldBaselineBlock(payload?.world_baseline_prompt),
     metabolismGuide,
     // 名录只给名字：模型写 bsAddSperm.race 时需要词汇表，但每轮都发，不附辨识提示
-    buildRaceCatalogBlock({ selection: payload?.race_catalog_selection || null }),
+    // 写实世界只有人类，不需要名录
+    payload?.realistic_world === true ? '' : buildRaceCatalogBlock({ selection: payload?.race_catalog_selection || null }),
   ];
   if (skillBaselinePrompt) {
     parts.push([
@@ -355,7 +378,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
       '- 若剧情明确显示某角色进入当前场景、开始参与当前互动或重新同行，调用 bsSetCharacterPresence，参数必须为 {"female":"角色名","isPresent":true}；明确离开、失联或转为幕外时才传 false。不要以 isHere 作为参数名，也不要无依据切换。',
     ].join('\n'));
   }
-  const embryoTypeLorePrompt = buildEmbryoTypeLorePrompt(payload || {});
+  const embryoTypeLorePrompt = payload?.realistic_world === true ? '' : buildEmbryoTypeLorePrompt(payload || {});
   if (embryoTypeLorePrompt) parts.push(embryoTypeLorePrompt);
   if (!diaryEnabled) {
     parts.push('[diary]\n- diary 系统当前已关闭（settings.diaryRecentLimit = 0）。本轮不要参考 diary，也不要调用 bsWriteDiary。');
@@ -442,7 +465,7 @@ export function buildMainFlowStatePrompt(payload = {}) {
   const trackedState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {};
   if (Object.keys(trackedState).length === 0) return '';
   const existingState = projectNarrativeState(trackedState, payload.recent_operation_results);
-  const racePhysiologyPrompt = buildRacePhysiologyPrompt(payload || {});
+  const racePhysiologyPrompt = payload?.realistic_world === true ? '' : buildRacePhysiologyPrompt(payload || {});
   // 特殊来历的胎儿只丢一串 tags 给主线模型，它无从判断该怎么写。
   // 与种族短叙述同规则：只解释本轮真的出现过的标签，没出现就不占 token。
   const fetusTagLines = describeFetusTags(collectRelevantFetusTags(payload || {}));
