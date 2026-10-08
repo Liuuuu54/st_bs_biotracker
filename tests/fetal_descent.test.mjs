@@ -146,7 +146,7 @@ test('左右换位只交换阵列位置，胎儿的身分与资料不变；不�
   for (let seed = 11; seed <= 20; seed += 1) {
     Math.random = seeded(seed);
     const originals = [fetus(1), fetus(2, { fathers: '乙' }), fetus(3, { fathers: '丙' })];
-    const chatState = setup('孕早期', originals, { pregnantDays: 40, effectivePregnantDays: 40 });
+    const chatState = setup('孕中期', originals, { pregnantDays: 130, effectivePregnantDays: 130 });
     passDays(chatState, 10);
     const now = P(chatState).pregnant.fetuses;
     orders.add(now.map((f) => f.embryoId).join(','));
@@ -576,7 +576,7 @@ test('左右换位以胎囊为单位：别的胎儿不会夹进同一胎囊中�
   const orders = new Set();
   for (let seed = 1; seed <= 30; seed += 1) {
     Math.random = seeded(seed);
-    const chatState = setup('孕早期', [fetus(1, twin), fetus(2, twin), fetus(3), fetus(4)], { pregnantDays: 40, effectivePregnantDays: 40 });
+    const chatState = setup('孕中期', [fetus(1, twin), fetus(2, twin), fetus(3), fetus(4)], { pregnantDays: 130, effectivePregnantDays: 130 });
     for (let day = 0; day < 10; day += 1) {
       passDays(chatState, 1);
       const ids = P(chatState).pregnant.fetuses.map((f) => f.embryoId);
@@ -585,4 +585,17 @@ test('左右换位以胎囊为单位：别的胎儿不会夹进同一胎囊中�
     }
   }
   assert.ok([...orders].some((order) => order.indexOf('3') < order.indexOf('1')), '整个胎囊应能与旁边的胎儿换位');
+});
+
+test('孕早期的胚胎不浮动，也不会发出「降到子宫低位」之类的位置通知', () => {
+  for (let seed = 1; seed <= 20; seed += 1) {
+    Math.random = seeded(seed);
+    const chatState = setup('孕早期', [fetus(1), fetus(2, { fathers: '乙' })], { pregnantDays: 30, effectivePregnantDays: 30 });
+    passDays(chatState, 1); // 先让缺省的位置栏位补齐，之后才比较有没有浮动
+    const before = JSON.stringify(P(chatState).pregnant.fetuses.map((f) => [f.embryoId, f.descentStage, f.tendencyAngle, f.backSide]));
+    passDays(chatState, 10);
+    assert.equal(P(chatState).base.stage, '孕早期');
+    assert.equal(JSON.stringify(P(chatState).pregnant.fetuses.map((f) => [f.embryoId, f.descentStage, f.tendencyAngle, f.backSide])), before);
+    assert.doesNotMatch(JSON.stringify(P(chatState).notify || {}), /子宫低位|宫顶/);
+  }
 });

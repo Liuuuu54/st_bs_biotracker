@@ -17,7 +17,7 @@
 3. 對帳快照後逐樓處理。手動分析使用自己的尾樓重放路徑；自動分析從尚未處理的樓層繼續。[主迴圈](../../scripts/tracker.js#L1853)。
 4. [buildTrackerPayload](../../scripts/tracker.js#L1326)組出角色卡、世界書或主流程上下文、近期訊息、已註冊角色、優先角色、精簡既有狀態、可用工具和功能開關。這是給模型看的投影，不是整份持久化資料。近期訊息裡，上一次實際送去分析的樓層以前的訊息會標上 `already_settled`：它們只供理解前情，提示詞要求模型只為新訊息結算時間、技能、衣著等，避免同一件事被算兩次（只記 skip 的使用者訊息不算已分析）。
 5. [callOpenAICompatible](../../scripts/api.js#L1520)送往所選 OpenAI 相容端點，按設定套用 API 格式、超時、預設提示與 JSON 回覆模式。若 JSON 解析失敗，API 層有修正請求／重試路徑。
-6. 回覆正規化後，[applyToolCallsResult](../../scripts/tools.js#L8016)按順序執行每個工具；呼叫順序會影響結果。它保存場景摘要、原始結果摘要和每步操作紀錄。
+6. 回覆正規化後，[applyToolCallsResult](../../scripts/tools.js#L8018)按順序執行每個工具；呼叫順序會影響結果。它保存場景摘要、原始結果摘要和每步操作紀錄。
 7. 處理完成後記錄對應訊息簽名與快照。若請求期間聊天被編輯或刪除，當次結果可被丟棄，交由下一輪重新對帳。[單樓處理](../../scripts/tracker.js#L1605)。
 
 ### 為甚麼有時候沒有追蹤
@@ -28,7 +28,7 @@
 
 ## 工具呼叫是狀態邊界
 
-模型只能選擇[公開工具定義](../../scripts/tools.js#L102)中的名稱與參數。分派器再次處理角色名和參數；未知工具或未知角色會回報未套用。[applyToolCall](../../scripts/tools.js#L7891)在前後整理胚胎 ID、羊膜、胎位與供養扣分。多個工具不是交易：前一步已成功套用時，後一步跳過不會自動撤回前一步。工具結果及 `applied` 旗標會進操作紀錄。
+模型只能選擇[公開工具定義](../../scripts/tools.js#L102)中的名稱與參數。分派器再次處理角色名和參數；未知工具或未知角色會回報未套用。[applyToolCall](../../scripts/tools.js#L7893)在前後整理胚胎 ID、羊膜、胎位與供養扣分。多個工具不是交易：前一步已成功套用時，後一步跳過不會自動撤回前一步。工具結果及 `applied` 旗標會進操作紀錄。
 
 主要工具分組：
 
@@ -40,7 +40,7 @@
 | 技能與衣物 | `bsRegisterSkillDefinition`、`bsTrainSkill`、`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` |
 | 測試／診斷 | `bsDebugInjectPregnancy`、`bsDebugClearContainers`、`bsDebugSetGestationModifier`、`bsDebugFetalActivity`、`bsDebugSetProdromal`、`bsDebugSetFetalPosition` |
 
-實際支援的名稱以[分派器](../../scripts/tools.js#L7881)為準；可送給追蹤模型的清單還會依設定及角色狀態過濾，見 [getTrackerToolDefinitions](../../scripts/tracker.js#L709)。
+實際支援的名稱以[分派器](../../scripts/tools.js#L7883)為準；可送給追蹤模型的清單還會依設定及角色狀態過濾，見 [getTrackerToolDefinitions](../../scripts/tracker.js#L709)。
 
 這個投影有兩個容易踩到的邊界。世界書排除／白名單處理後，會重新建立只含書名與通過篩選條目的物件；宿主原物件的 `originalData` 可能仍有被排除的完整條目，不能整包傳給模型。[世界書投影](../../scripts/state.js#L1248)。角色狀態則遞迴省略 `null`、空字串、空陣列與空物件，但保留 `outfit.mainItemId=null`，因為它表示「衣著未記錄」。只有妊娠相關階段才傳 `pregnantDescription`。[狀態投影](../../scripts/tracker.js#L1060)、[妊娠欄位條件](../../scripts/tracker.js#L734)。
 

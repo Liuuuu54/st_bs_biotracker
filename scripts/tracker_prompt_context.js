@@ -3,7 +3,7 @@ import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
 import { buildRaceCatalogBlock, buildRacePhysiologyPrompt, buildWorldBaselineBlock, isOwnMetabolismHidden } from './race_prompt_context.js';
 import { getDerivedTypeFluxProfile } from './race_config.js';
 import { deriveFetusTags, describeFetusTags } from './fetus_tags.js';
-import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js';
+import { LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGES } from './stage_config.js';
 
 /** 本轮 payload 里真的出现过的胎儿标签；没出现的标签不必浪费 token 去解释 */
 function collectRelevantFetusTags(payload = {}) {
@@ -501,7 +501,8 @@ const NARRATIVE_REMINDER_RULES = [
   [/^(.+?)渴望陪伴，可优先给予陪伴、交流或安抚$/, '$1渴望陪伴'],
   [/^(.+?)渴望陪伴，但当前臭意会妨碍社交舒适度$/, '$1渴望陪伴，但身上的气味令人在意'],
 ];
-const NARRATIVE_REMINDER_DROPS = [/供养力/, /^若释放量足够大/, /^清洁后再给予陪伴/, /\bbs[A-Z]\w*/];
+// 受精本身无从察觉（着床前身体没有任何变化），旁白读到「受精成功」会让角色提早出现孕兆、去验孕
+const NARRATIVE_REMINDER_DROPS = [/供养力/, /^若释放量足够大/, /^清洁后再给予陪伴/, /\bbs[A-Z]\w*/, /受精成功/, /再度受精/, /结出了新的受精卵/];
 
 /** 旁白不能调用工具：禁令留下，「须先调用某工具」这类句子或分句拿掉，仍带工具名的片段整段丢弃 */
 export function narrativeReminders(text) {
@@ -527,6 +528,8 @@ export function projectNarrativeState(existingState = {}, recentResults = []) {
     const profile = { ...item.profile };
     if (!condomFresh.has(name)) delete profile.lastCondomResult;
     if (!emergencyFresh.has(name)) delete profile.lastEmergencyResult;
+    // 还在经期阶段就已经有胎儿，是受精卵尚未着床：旁白看不到，等着床进入孕早期才出现
+    if (profile.pregnant && MENSTRUAL_STAGES.includes(String(profile.base?.stage || ''))) delete profile.pregnant;
     if (profile.notify) {
       // 难产警示、阶段通知同样可能写着「可用某工具」，三栏一起改写
       const notify = Object.fromEntries(Object.entries(profile.notify)

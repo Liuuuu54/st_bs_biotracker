@@ -121,3 +121,29 @@ test('an obstruction warning reaches the narrator without the tool advice', () =
   assert.match(prompt, /"firstly":"(甲进入了第一产程；)?甲发生难产警示：领头的胎儿呈横位，无法入盆"/);
   assert.doesNotMatch(prompt, /\bbs[A-Z]\w*/);
 });
+
+test('a fertilized egg stays hidden from the narrator until it implants; the tracker still sees it', () => {
+  const { ctx, settings, chatState } = setup([['甲', '排卵期', (p) => {
+    p.bio.impregnationDifficulty = 0.01;
+    p.base.eggs = 1;
+    p.base.days = 0;
+    p.base.sperms = [{ male: 'M', race: '人类', bloodline: { 人类: 1 }, bloodlineSource: 'pure', value: 30 }];
+  }]]);
+  const profile = () => chatState.characters['甲'].profile;
+  // 状态 JSON 注入时把 </ 转义成 <\/，解析前还原
+  const narratedState = () => JSON.parse(buildMainFlowPrompt(ctx, settings).match(/\[当前已注册角色状态\]\n(.+)/)[1].split('<\\/').join('</'));
+  // 受孕难度下限 0.1：暴露两天受精几乎必成，半天只有约七成
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 2 } });
+  assert.equal(profile().pregnant.fetuses.length > 0, true, 'fixture should fertilize');
+  assert.match(profile().notify.secondly, /受精成功/);
+
+  assert.doesNotMatch(buildMainFlowPrompt(ctx, settings), /受精成功/);
+  assert.equal(narratedState()['甲'].profile.pregnant, undefined, 'no fetus data before implantation');
+  const tracked = buildTrackerPayload(ctx, settings, 'manual').existing_state['甲'].profile;
+  assert.match(tracked.notify.secondly, /受精成功/);
+  assert.ok(tracked.pregnant.fetuses.length > 0);
+
+  for (let day = 0; day < 20 && profile().base.stage !== '孕早期'; day += 1) applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 1 } });
+  assert.equal(profile().base.stage, '孕早期');
+  assert.ok(narratedState()['甲'].profile.pregnant, 'after implantation the narrator sees the pregnancy');
+});

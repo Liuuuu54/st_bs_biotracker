@@ -2091,7 +2091,7 @@ function swapLateral(fetuses, fetus, other, movers, swapped) {
 }
 
 // 胎背翻身：孕期每天、没有位移的那天才可能翻；胎儿越大越难翻
-const FETAL_ROLL_CHANCE = Object.freeze({ 孕早期: 0.1, 孕中期: 0.06, 孕晚期: 0.03, 临产期: 0.02, 逾期: 0.01, 延产期: 0.01 });
+const FETAL_ROLL_CHANCE = Object.freeze({ 孕中期: 0.06, 孕晚期: 0.03, 临产期: 0.02, 逾期: 0.01, 延产期: 0.01 });
 // 产兆前驱与产程中，还在高位自由活动的胎儿每小时
 const LABOR_FETAL_ROLL_CHANCE = 0.01;
 // 已入盆的枕后位胎儿每小时自然转成枕前位（左右不变）；现实中多数枕后位会在产程中自己转正
@@ -2193,6 +2193,8 @@ function updateFetalPositions(profile, tick, female) {
   const stage = String(profile?.base?.stage || '');
   const pregnant = profile.pregnant || {};
   if (!Array.isArray(pregnant.fetuses) || pregnant.fetuses.length === 0 || !PREGNANCY_STAGES.includes(stage)) return;
+  // 孕早期的胚胎只有几毫米，谈不上胎位或「降到子宫低位」；孕中期（约略也是能感觉到胎动的时候）才开始浮动
+  if (stage === '孕早期') return;
 
   const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
   // 逐日步进的上限：bsPassedTime 可以叠出十几万天，逐日推进会拖死 UI。

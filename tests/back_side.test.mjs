@@ -128,15 +128,15 @@ test('已入盆的胎儿胎背只能前后对调，不能换左右', () => {
 test('孕期没有位移的日子偶尔会翻身，结果永远是合法值', () => {
   let seed = 7;
   Math.random = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
-  const chatState = setup('孕早期', [fetus(1, { backSide: '左前' })], { pregnantDays: 20, effectivePregnantDays: 20 });
+  const chatState = setup('孕中期', [fetus(1, { backSide: '左前' })], { pregnantDays: 100, effectivePregnantDays: 100 });
   const seen = new Set();
-  for (let day = 0; day < 40; day += 1) {
+  for (let day = 0; day < 80; day += 1) {
     applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 1 } });
     const side = P(chatState).pregnant.fetuses[0].backSide;
     assert.ok(BACK_SIDES.includes(side));
     seen.add(side);
   }
-  assert.ok(seen.size > 1, '孕早期四十天里应该至少翻过一次身');
+  assert.ok(seen.size > 1, '孕中期八十天里应该至少翻过一次身');
 });
 
 function labor({ backSide, realistic = true }) {
