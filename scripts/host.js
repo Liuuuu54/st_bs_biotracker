@@ -163,6 +163,28 @@ export function getHostCharacters(ctx) {
   return Array.isArray(ctx?.characters) ? ctx.characters : EMPTY_LIST;
 }
 
+/**
+ * 聊天删除事件里被删的是哪个聊天。SillyTavern 传的是聊天档名字串（不含 .jsonl），
+ * 其他宿主可能包成物件。认不出来就回空字串、不清任何资料：以前退回「目前开着的聊天」，
+ * 结果删掉别的聊天时，正在玩的这个聊天的追踪状态被整个清空。
+ */
+export function extractDeletedChatKey(payload) {
+  if (typeof payload === 'string') return payload.replace(/\.jsonl$/i, '').trim();
+  const candidates = [
+    payload?.chatId,
+    payload?.chat_id,
+    payload?.id,
+    payload?.data?.chatId,
+    payload?.data?.chat_id,
+    payload?.data?.id,
+  ];
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
 export function getHostChatId(ctx) {
   const fallbackId = getFallbackHostChatId(ctx);
   if (getHostKind() === 'tauritavern') {

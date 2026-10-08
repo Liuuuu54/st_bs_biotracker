@@ -1172,3 +1172,12 @@ test('loading settings drops empty placeholder-key shells left by older versions
   assert.deepEqual(keys.sort(), ['12:solo', '角色 - 2026-10-08@15h54m10s329ms'].sort());
   resetGlobals();
 });
+
+test('a chat-deleted event only clears the chat it names, never the one that is open', () => {
+  assert.equal(host.extractDeletedChatKey('角色 - 2026-10-08@18h04m41s444ms'), '角色 - 2026-10-08@18h04m41s444ms', 'SillyTavern passes the chat file name');
+  assert.equal(host.extractDeletedChatKey('角色 - 2026-10-08@18h04m41s444ms.jsonl'), '角色 - 2026-10-08@18h04m41s444ms');
+  assert.equal(host.extractDeletedChatKey({ chatId: 'abc' }), 'abc');
+  assert.equal(host.extractDeletedChatKey({ data: { chat_id: 'def' } }), 'def');
+  assert.equal(host.extractDeletedChatKey(undefined), '', 'an unrecognised event must not fall back to the open chat');
+  assert.equal(host.extractDeletedChatKey({}), '');
+});

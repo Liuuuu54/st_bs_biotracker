@@ -99,6 +99,7 @@ import {
 } from './scripts/wardrobe_config.js';
 import {
   canLoadHostWorldInfo,
+  extractDeletedChatKey,
   getHostChatCompletionSettings,
   getHostContext,
   getHostKind,
@@ -9496,24 +9497,6 @@ function resetClockTicker() {
   globalThis[CLOCK_RUNTIME_KEY] = globalThis.setInterval(() => updateClock(), 1000);
 }
 
-function extractDeletedChatKey(ctx, payload) {
-  const directCandidates = [
-    payload?.chatId,
-    payload?.chat_id,
-    payload?.id,
-    payload?.data?.chatId,
-    payload?.data?.chat_id,
-    payload?.data?.id,
-  ];
-  for (const candidate of directCandidates) {
-    const value = String(candidate || '').trim();
-    if (value) return value;
-  }
-
-  const currentKey = getChatKey(ctx);
-  return String(currentKey || '').trim();
-}
-
 function cleanupOrphanedChatStateByKey(ctx, chatKey, reason = 'chat_deleted') {
   const settings = getSettings(ctx);
   const normalizedKey = String(chatKey || '').trim();
@@ -9775,7 +9758,7 @@ async function bootstrap() {
       'chatDeleted',
       globalThis[CHAT_DELETED_HANDLER_KEY],
       (payload) => {
-        const chatKey = extractDeletedChatKey(ctx, payload);
+        const chatKey = extractDeletedChatKey(payload);
         cleanupOrphanedChatStateByKey(ctx, chatKey, 'chat_deleted');
       },
     );
@@ -9784,7 +9767,7 @@ async function bootstrap() {
       'groupChatDeleted',
       globalThis[GROUP_CHAT_DELETED_HANDLER_KEY],
       (payload) => {
-        const chatKey = extractDeletedChatKey(ctx, payload);
+        const chatKey = extractDeletedChatKey(payload);
         cleanupOrphanedChatStateByKey(ctx, chatKey, 'group_chat_deleted');
       },
     );
