@@ -550,12 +550,14 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsChildbirth',
-    description: '让角色立即结束分娩并进入产后恢复，并把剩余胎儿转为 children 记录。外部直接调用视为手术产；产程自然结束时则记为自然产。'
+    description: '让角色立即结束分娩并进入产后恢复，并把剩余胎儿转为 children 记录。省略 mode 或 mode=surgical 记为手术产（剖腹、急救等）；产程自然结束时系统自己记为自然产。'
+      + 'mode=natural 只用来同步剧情：剧情已经写出阴道自然分娩、系统却还在临产期、产兆前驱或第一产程，没走到第二产程时用它一次结束，记为自然产；已在第二产程时改用 bsAssistFetalPosition（action=extract）逐胎同步。孕早期、孕中期不能自然分娩。'
       + '只有角色已着床进入妊娠阶段（孕早期起，含产兆前驱与各产程）才能调用；月经阶段、着床前、回归期都会被拒绝，此时不得叙述成已经生产。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
+        mode: { type: 'string', enum: ['surgical', 'natural'] },
       },
       required: ['female'],
       additionalProperties: false,
@@ -3541,6 +3543,10 @@ function updateAdvisoryNotify(profile, female) {
       reminders.push(`${female}已破水`);
     }
   }
+  // 与破水同理写成禁令：第二产程前旁白很常一口气写完分娩，系统只能事后补记
+  if (['临产期', '逾期', '产兆前驱', '第一产程'].includes(stage)) {
+    reminders.push(`${female}尚未进入第二产程：禁止描写胎儿娩出或生下孩子。若剧情已经写出自然分娩，以 bsChildbirth（mode=natural）同步`);
+  }
 
   if (stage === '产兆前驱') {
     reminders.push(Boolean(profile?.immune?.realisticLabor)
@@ -5573,9 +5579,14 @@ function applyChildbirth(chatState, args) {
   if (!childbirthAllowedStages.includes(childbirthStage)) {
     return { applied: false, message: `bsChildbirth skipped for ${female}: stage ${childbirthStage || '(none)'} 不允许手术分娩（需已着床进入妊娠阶段）。` };
   }
+  // 剧情抢在第二产程前写出自然分娩时，没有别的工具能如实记录；孕早、中期的娩出是流产，不算分娩
+  const natural = args?.mode === 'natural';
+  if (natural && ['孕早期', '孕中期'].includes(childbirthStage)) {
+    return { applied: false, message: `bsChildbirth skipped for ${female}: ${childbirthStage}不能自然分娩；胎儿娩出属于流产。` };
+  }
 
   profile.__runtimeRef = next.runtime || {};
-  applyChildbirthInternal(profile, female, false);
+  applyChildbirthInternal(profile, female, natural);
   delete profile.__runtimeRef;
   next.profile = profile;
   chatState.characters[female] = syncCharacterStageFromProfile(next);

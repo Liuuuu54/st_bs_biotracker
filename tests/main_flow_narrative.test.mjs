@@ -147,3 +147,48 @@ test('a fertilized egg stays hidden from the narrator until it implants; the tra
   assert.equal(profile().base.stage, '孕早期');
   assert.ok(narratedState()['甲'].profile.pregnant, 'after implantation the narrator sees the pregnancy');
 });
+
+test('before the second stage the narrator is banned from writing the birth, without the tool hint', () => {
+  const { ctx, settings, chatState } = setup([['甲', '卵泡期']]);
+  applyToolCall(chatState, { name: 'bsDebugInjectPregnancy', arguments: { female: '甲', fetusCount: 1, equivalentDays: 265 } });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { minute: 10 } });
+  const profile = chatState.characters['甲'].profile;
+  assert.equal(profile.base.stage, '临产期');
+  assert.match(profile.notify.thirdly, /尚未进入第二产程：禁止描写胎儿娩出或生下孩子。若剧情已经写出自然分娩，以 bsChildbirth（mode=natural）同步/);
+  const narration = buildMainFlowPrompt(ctx, settings);
+  assert.match(narration, /甲尚未进入第二产程：禁止描写胎儿娩出或生下孩子/);
+  assert.doesNotMatch(narration, /mode=natural/);
+});
+
+test('raising the uterine pressure at term warns on the next time step and starts the prodromal stage on the one after', () => {
+  const { chatState } = setup([['甲', '卵泡期']]);
+  applyToolCall(chatState, { name: 'bsDebugInjectPregnancy', arguments: { female: '甲', fetusCount: 1, equivalentDays: 265 } });
+  applyToolCall(chatState, { name: 'bsUpdateCharacterStatus', arguments: { female: '甲', options: { uterinePressure: 150 } } });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } });
+  assert.equal(chatState.characters['甲'].profile.base.stage, '临产期');
+  assert.match(chatState.characters['甲'].profile.notify.secondly, /有提前发动产程的风险/);
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } });
+  assert.equal(chatState.characters['甲'].profile.base.stage, '产兆前驱');
+});
+
+test('bsChildbirth records a natural birth only when asked, and refuses it before late pregnancy', () => {
+  const deliver = (equivalentDays, mode) => {
+    const { chatState } = setup([['甲', '卵泡期']]);
+    applyToolCall(chatState, { name: 'bsDebugInjectPregnancy', arguments: { female: '甲', fetusCount: 2, equivalentDays } });
+    const result = applyToolCall(chatState, { name: 'bsChildbirth', arguments: { female: '甲', ...(mode ? { mode } : {}) } });
+    return { result, profile: chatState.characters['甲'].profile };
+  };
+  const natural = deliver(265, 'natural');
+  assert.equal(natural.result.applied, true);
+  assert.equal(natural.profile.experience.naturalBirthExperience, 1);
+  assert.equal(natural.profile.experience.surgicalBirthExperience, 0);
+  assert.equal(natural.profile.children.length, 2);
+
+  const surgical = deliver(265);
+  assert.equal(surgical.profile.experience.surgicalBirthExperience, 1, 'omitting mode stays a surgical birth');
+  assert.equal(surgical.profile.experience.naturalBirthExperience, 0);
+
+  const early = deliver(150, 'natural');
+  assert.equal(early.result.applied, false, 'a mid-pregnancy delivery is a miscarriage, not a birth');
+  assert.equal(early.profile.base.stage, '孕中期');
+});

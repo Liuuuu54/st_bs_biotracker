@@ -74,7 +74,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- sperms[*].value: 当前残留量，用于多父竞争与受精判定；每天自动衰减 10，无需手动清除。',
   '- eggs: 当前可受精卵子数。',
   '- libido: 性欲。角色在剧情中达到高潮时，用 bsUpdateCharacterStatus 传 options.orgasm=true（同一段性事只传一次），由系统结算高潮排卵并让性欲归零；事后的满足不要用减少 libido 代替。',
-  '- uterinePressure: 宫压，越高越接近妊娠风险或分娩。',
+  '- uterinePressure: 宫压，越高越接近妊娠风险或分娩。临产期或逾期时，剧情出现规律宫缩、见红等分娩发动的迹象，用 bsUpdateCharacterStatus 把 uterinePressure 加到接近上限（可直接给 +150，系统会夹在上限内），系统在下一次推进时间时先发出示警，再下一次推进时进入产兆前驱；孕早期、孕中期不要这样做，宫压过高在那时是流产风险。',
   '- vitality: 活力。',
   '- psyStress: 情压/精神压力。',
   '- vitalityLevel / psyStressLevel: 个体等级，决定对应数值上限与体质倾向。',
