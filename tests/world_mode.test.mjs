@@ -62,3 +62,19 @@ test('写实世界的注册提示不送名录与种族说明，并要求种族�
   assert.equal(realistic.includes('[可用种族名录]'), false);
   assert.match(realistic, /只有人类：base\.race 一律填 人类/);
 });
+
+test('写实世界的注册提示拿掉血脉比例、衍生、伴生卵与非人示例', () => {
+  const fantasy = buildRegistrySystemPrompt({}, {});
+  const realistic = buildRegistrySystemPrompt({ realisticWorld: true }, {});
+  for (const marker of ['- base.bloodline:', '- 衍生种族:', '- companionEggCount:', '- 精灵怀孕500天:', '{如果角色不是人类']) {
+    assert.ok(fantasy.includes(marker), `奇幻世界应保留 ${marker}`);
+    assert.equal(realistic.includes(marker), false, `写实世界不应出现 ${marker}`);
+  }
+  assert.match(realistic, /- base\.age: 必填/, '写实世界一样要求年龄');
+});
+
+test('注册提示要求一定填写年龄', () => {
+  const prompt = buildRegistrySystemPrompt({}, {});
+  assert.match(prompt, /- base\.age: 必填，不得省略或填 null/);
+  assert.match(prompt, /可以省略字段或给 null（base\.age 除外）/);
+});

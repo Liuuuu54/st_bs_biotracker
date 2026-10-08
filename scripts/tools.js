@@ -134,6 +134,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   {
     name: 'bsUpdateCharacterStatus',
     description: '对单一角色的活力、情压、性欲、宫压做增减更新。会联动代谢累积、高潮排卵、羊膜耐久警告等状态。'
+      + '剧情中角色确实达到高潮时传 options.orgasm=true：系统把性欲推到上限、结算高潮排卵（每周期有冷却，按当下活力排出），之后性欲归零；同一段性事里多次高潮只传一次。不要用减少 libido 代替高潮。'
       + '四个数值传入的都是「变化量(delta)」而不是目标值：当前 vitality=80 传 -10 会变成 70，不是设为 -10。'
       + '结果会被夹在该角色的上限内，上限随其 vitalityLevel／psyStressLevel 与妊娠状态而不同，可从 existing_state 的 *_interpret 与上限文字判断，不必自行计算。',
     input_schema: {
@@ -147,6 +148,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
             libido: { type: 'integer' },
             uterinePressure: { type: 'integer' },
             psyStress: { type: 'integer' },
+            orgasm: { type: 'boolean' },
           },
           additionalProperties: false,
         },
@@ -6613,10 +6615,22 @@ function applyCharacterStatus(chatState, args) {
     base.uterinePressure = clampNumber((base.uterinePressure || 0) + Number(options.uterinePressure || 0), 0, uterinePressureCap, base.uterinePressure || 0);
     applyAmnionDurabilityFromPressure(profile, base.uterinePressure, female);
   }
+  // 高潮＝性欲顶到上限：模型不必知道上限是多少，由这里推满再走同一条高潮排卵结算
+  const orgasm = options.orgasm === true;
+  if (orgasm) {
+    const before = clampNumber(base.libido, 0, libidoCap, 0);
+    base.libido = libidoCap;
+    applyMilkFromLibido(profile, libidoCap - before);
+  }
   applyDerivedMetabolismExemptions(profile);
 
   next.profile.base = base;
-  maybeTriggerOrgasmOvulation(next);
+  const ovulationSettled = maybeTriggerOrgasmOvulation(next);
+  // 冷却中、不排卵的物种或假孕：没有排卵结算，高潮本身仍让性欲归零，不能停在上限像持续发情
+  if (orgasm && !ovulationSettled) {
+    next.profile.base.libido = 0;
+    next.profile.notify = { ...(next.profile.notify || {}), secondly: `${female}达到高潮，性欲归零` };
+  }
   chatState.characters[female] = next;
   return { applied: true, message: `bsUpdateCharacterStatus applied to ${female}.` };
 }

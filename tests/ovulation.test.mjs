@@ -132,3 +132,24 @@ test('手动切到黄体期也吃到那一次刷新', () => {
   assert.equal(F(chatState).cooldown.orgasmOvulationUsed, false);
   assert.equal(F(chatState).cooldown.lutealOrgasmRefreshed, true);
 });
+
+test('options.orgasm 推满性欲走高潮排卵；冷却中或不排卵的物种也让性欲归零，不卡在上限', () => {
+  const climax = (chatState) => applyToolCall(chatState, { name: 'bsUpdateCharacterStatus', arguments: { female: 'F', options: { orgasm: true } } });
+  const chatState = makeChatState({ orgasmOvulationAmount: 1 });
+  F(chatState).base.vitality = 125;
+  climax(chatState);
+  assert.equal(F(chatState).base.eggs, 1, '第一次高潮排卵');
+  assert.equal(F(chatState).base.libido, 0);
+  assert.ok(F(chatState).metabolism.milk > 0, '性欲推满照样带出乳意');
+
+  F(chatState).base.libido = 40;
+  climax(chatState);
+  assert.equal(F(chatState).base.eggs, 1, '冷却中不再排卵');
+  assert.equal(F(chatState).base.libido, 0, '冷却中高潮仍让性欲归零');
+  assert.match(F(chatState).notify.secondly, /达到高潮，性欲归零/);
+
+  const elf = makeChatState({ orgasmOvulationAmount: 0 });
+  climax(elf);
+  assert.equal(F(elf).base.eggs, 0);
+  assert.equal(F(elf).base.libido, 0, '不排卵的物种高潮后性欲也归零');
+});

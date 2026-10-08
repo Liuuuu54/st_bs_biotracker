@@ -869,6 +869,16 @@ export async function inferPendingPsychology(ctx, settings, chatState, isCurrent
 }
 
 
+// 写实世界只有人类：血脉比例、衍生、伴生卵与非人示例都用不到，比照追踪提示词整行拿掉
+const REALISTIC_REGISTRY_DROPPED_LINES = [
+  '- base.bloodline:', '- 若 base.derivedType 不为 null', '- 混血:', '- 衍生种族:', '- 子类物种:', '- 复杂种族:',
+  '- companionEggCount:', '- 精灵怀孕500天:', '{如果角色不是人类',
+];
+
+function dropRealisticRegistryLines(prompt) {
+  return prompt.split('\n').filter((line) => !REALISTIC_REGISTRY_DROPPED_LINES.some((prefix) => line.trimStart().startsWith(prefix))).join('\n');
+}
+
 export function buildRegistrySystemPrompt(settings, options = {}) {
   // 注册页的「此角色使用妊娠变速」：没勾就不让模型写变速，免得把「怀很久／过了预产期」都塞进倍率
   const useGestationModifier = options.useGestationModifier === true;
@@ -924,7 +934,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '4. 既有孩子记录：children',
     '5. 初登场即怀孕：pregnant.gestationalAgeDays（或 pregnantDays）、pregnant.fetusesCount、pregnant.fetuses；正在延产再加 pregnant.extensionCount',
     '6. 文字描述栏位：descriptions',
-    '如果资料不足，可以省略字段或给 null；不要为了凑完整而编造。',
+    '如果资料不足，可以省略字段或给 null（base.age 除外）；不要为了凑完整而编造。',
     embryoTypeLorePrompt,
     '以下字段定义、参数说明、注意事项与示例，均视为必要规则：',
     '【1. 角色基础注册】',
@@ -933,7 +943,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- base.bloodline: 原文写明血脉比例时，可把比例直接写进 base.race，或另填 bloodline 对象（键与 race 成分一致，值为0到1、合计1）。其余成分已知就写全，例如祖母是精灵、其余祖辈是人类：race="1/4精灵x3/4人类"（或 race="精灵x人类"、bloodline={"精灵":0.25,"人类":0.75}）。其余成分不详就只写已知那一份，例如「八分之一龙血，其余血统不详」：race="1/8西方龙"，系统会把剩下的87.5%记为未知；不得擅自补成人类。没有比例依据就省略；系统会标为比例推定。衍生类型不占种族血脉份额。',
     '- base.vitalityLevel: 1-7，默认语义为 一推就倒(1)-身怀病弱(2)-难产体态(3)-均衡活力(4)-安产体态(5)-经过锻炼(6)-无坚不摧(7)',
     '- base.psyStressLevel: 1-7，默认语义为 情感丧失麻木不仁(1)-内向压抑冷感(2)-情绪平缓理性(3)-情绪均衡稳定(4)-情绪丰富敏感(5)-强烈波动焦躁(6)-极端情绪精神异常(7)',
-    '- base.age: 角色年龄',
+    '- base.age: 必填，不得省略或填 null。依角色卡、世界书与对话推断实际年龄；长生种只写外表年龄时，按设定推估实际岁数；资料完全没有提到时，按外貌、身分与经历推估一个合理年龄。',
     '- base.libido: 初始性欲。非妊娠上限100；妊娠後会随孕期提升，临产最后一天上限可达150。若角色开场就在发情、催情、强欲状态，可给较高值。',
     '- base.uterinePressure: 初始宫压。非妊娠上限50；妊娠後会随进度平滑提升，臨產期上限达150。【危险警告】孕早期与孕中期前期上限极低，超过15便极易触发流产警告！除非开局正在临盆或剧烈腹痛，否则强烈建议填 0。',
     '- base.latestSexDays: 距最近一次性行为经过的天数。若 experience.latestSexPartner 有意义，建议一并填写；若已超过最近一月经周期或无从判断，可为 null。',
@@ -1126,7 +1136,11 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '如果角色没有孩子，children 返回 [] 或省略。',
     '如果角色没有明确经验背景，experience 只填能确定的部分。',
   ].join('\n');
-  if (includeBreedingPsychology) return prompt;
+  const finalPrompt = includeBreedingPsychology ? prompt : stripBreedingPsychologySections(prompt);
+  return realisticWorld ? dropRealisticRegistryLines(finalPrompt) : finalPrompt;
+}
+
+function stripBreedingPsychologySections(prompt) {
   return prompt
     .replace(/【3\. 繁育心理】[\s\S]*?(?=【4\. 既有孩子记录】)/, '')
     .replace(/\n\s*"psychology": \{[\s\S]*?\n\s*\},\n\s*"metabolism": \{/, '\n    "metabolism": {')
