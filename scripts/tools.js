@@ -4358,9 +4358,15 @@ function applyLaborAmnionWear(profile, female, options = {}) {
   return ruptured.length > 0;
 }
 
-export function getProdromalInitialHours(profile) {
-  return 48 * clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
+/**
+ * 产兆前驱的初始时长。前驱是子宫在准备发动，跟胎儿过不过得了产道无关，所以不乘分娩难度：
+ * 难产的苦留给产程本身（龙族难度 4，产程约三天三夜），不再让前驱拖上一周多。
+ */
+export function getProdromalInitialHours(_profile) {
+  return PRODROMAL_BASE_HOURS;
 }
+
+const PRODROMAL_BASE_HOURS = 48;
 
 /** 真实产程下产兆前驱的累计延后上限（占初始时长的比例）：只能拖，拖不掉 */
 const REALISTIC_PRODROMAL_DELAY_CAP_RATIO = 1.0;
@@ -6627,6 +6633,13 @@ function applyCharacterStatus(chatState, args) {
   if (options.uterinePressure !== undefined) {
     base.uterinePressure = clampNumber((base.uterinePressure || 0) + Number(options.uterinePressure || 0), 0, uterinePressureCap, base.uterinePressure || 0);
     applyAmnionDurabilityFromPressure(profile, base.uterinePressure, female);
+    // 剧情写出分娩前兆而推高宫压：前兆已经发生，当下进入产兆前驱，不走「示警、下次推进才发动」。
+    // 示警那一轮是留给宫压自己慢慢累积时让剧情反应的；这里剧情已经先反应了
+    const stage = String(base.stage || '');
+    if (Number(options.uterinePressure) > 0 && (stage === '临产期' || stage === '逾期')
+      && base.uterinePressure >= uterinePressureCap * 0.66) {
+      enterProdromalStage(profile, female, stage, `${female}出现分娩前兆，进入产兆前驱`);
+    }
   }
   // 高潮＝性欲顶到上限：模型不必知道上限是多少，由这里推满再走同一条高潮排卵结算
   const orgasm = options.orgasm === true;

@@ -160,15 +160,30 @@ test('before the second stage the narrator is banned from writing the birth, wit
   assert.doesNotMatch(narration, /mode=natural/);
 });
 
-test('raising the uterine pressure at term warns on the next time step and starts the prodromal stage on the one after', () => {
+test('story contractions at term start the prodromal stage at once, and descend shortens it by half a stage', () => {
   const { chatState } = setup([['甲', '卵泡期']]);
   applyToolCall(chatState, { name: 'bsDebugInjectPregnancy', arguments: { female: '甲', fetusCount: 1, equivalentDays: 265 } });
   applyToolCall(chatState, { name: 'bsUpdateCharacterStatus', arguments: { female: '甲', options: { uterinePressure: 150 } } });
-  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } });
+  const profile = () => chatState.characters['甲'].profile;
+  assert.equal(profile().base.stage, '产兆前驱', 'no warning round when the story already shows the signs');
+  assert.equal(profile().pregnant.prodromalRemainingHours, 48);
+  applyToolCall(chatState, { name: 'bsAssistFetalPosition', arguments: { female: '甲', action: 'descend' } });
+  assert.equal(profile().pregnant.prodromalRemainingHours, 24);
+});
+
+test('a small pressure rise at term still goes through the warning round', () => {
+  const { chatState } = setup([['甲', '卵泡期']]);
+  applyToolCall(chatState, { name: 'bsDebugInjectPregnancy', arguments: { female: '甲', fetusCount: 1, equivalentDays: 265 } });
+  applyToolCall(chatState, { name: 'bsUpdateCharacterStatus', arguments: { female: '甲', options: { uterinePressure: 10 } } });
   assert.equal(chatState.characters['甲'].profile.base.stage, '临产期');
-  assert.match(chatState.characters['甲'].profile.notify.secondly, /有提前发动产程的风险/);
-  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } });
-  assert.equal(chatState.characters['甲'].profile.base.stage, '产兆前驱');
+});
+
+test('the prodromal stage lasts 48 hours regardless of birth difficulty', () => {
+  const { chatState } = setup([['甲', '卵泡期', (p) => { p.base.race = '巨人'; }]]);
+  applyToolCall(chatState, { name: 'bsDebugInjectPregnancy', arguments: { female: '甲', fetusCount: 1, equivalentDays: 265, race: '巨人' } });
+  assert.ok(chatState.characters['甲'].profile.bio.birthDifficulty >= 3, 'fixture should be a hard birth');
+  applyToolCall(chatState, { name: 'bsUpdateCharacterStatus', arguments: { female: '甲', options: { uterinePressure: 999 } } });
+  assert.equal(chatState.characters['甲'].profile.pregnant.prodromalRemainingHours, 48);
 });
 
 test('bsChildbirth records a natural birth only when asked, and refuses it before late pregnancy', () => {

@@ -77,8 +77,9 @@ test('third labor stage includes organ time plus observation without ceiling fra
 });
 
 test('prodromal missing countdown starts at zero; delaying past the initial window does not fabricate negative progress', () => {
-  const p=progressProfile('产兆前驱',{bio:{birthDifficulty:2},pregnant:{prodromalRemainingHours:48}});
-  assert.equal(getStageProgress(p).max,96);assert.equal(getStageProgress(p).value,48);
+  // 前驱时长不再乘分娩难度：难度 2 也是 48 小时
+  const p=progressProfile('产兆前驱',{bio:{birthDifficulty:2},pregnant:{prodromalRemainingHours:24}});
+  assert.equal(getStageProgress(p).max,48);assert.equal(getStageProgress(p).value,24);
   p.pregnant.prodromalRemainingHours=120;assert.equal(getStageProgress(p).value,0);
   delete p.pregnant.prodromalRemainingHours;assert.equal(getStageProgress(p).value,0);
 });

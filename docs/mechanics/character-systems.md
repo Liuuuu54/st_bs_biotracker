@@ -32,20 +32,20 @@
 
 心理只在使用者啟用推演後存在。月經側為掌控／欲望／自主，妊娠側為母職信心／接納與聯結／社會展現；四個旧旗標及认知數值軸已撤除。只初始化当前侧三軸与六階段角色解释，转侧重新推演，產後恢復暫停；未知值為 null，不補成 0 或接受 delta。`bsUpdatePsychology` 仍受每故事小時一次的冷卻。[欄位定義](../../scripts/registry_psy_config.js)、[生命週期与紀錄](reproductive-tracking.md)。
 
-`bsMaternalFetalInteraction` 處理母胎互動與多胎之間的互踢、推擠、依偎（`direction=sibling`，只改角度或左右位置），三者共用每故事小時一次的限制；胎兒的親近度限制在 -50 至 50，母方結果受情壓影響。[互動實作](../../scripts/tools.js#L5924)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L505)。
+`bsMaternalFetalInteraction` 處理母胎互動與多胎之間的互踢、推擠、依偎（`direction=sibling`，只改角度或左右位置），三者共用每故事小時一次的限制；胎兒的親近度限制在 -50 至 50，母方結果受情壓影響。[互動實作](../../scripts/tools.js#L5930)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L505)。
 
 `experience` 保存初次／近期性伴、獨立的交往与婚姻名單及後臺懷孕／生產／損失次數。`bsRecordExperience` 以必填 `female/action/time` 定位角色与分支；認知追加至 `profile.cognitionRecords`，關係與子女更新长期資料。子女 `selectedFather` 是角色選定身份，`fathers` 仍是實際遺傳来源。[工具參考](tool-reference.md)、[詳細機制](reproductive-tracking.md)。
 
-`bsWriteDiary` 追加角色主觀日記；工具定義要求同一角色每故事日最多一篇，日期標題需是故事日期而非時刻。日記是模型產生的敘述記錄，不參與時間或生理公式。[定義](../../scripts/tools.js#L120)、[實作](../../scripts/tools.js#L6453)。
+`bsWriteDiary` 追加角色主觀日記；工具定義要求同一角色每故事日最多一篇，日期標題需是故事日期而非時刻。日記是模型產生的敘述記錄，不參與時間或生理公式。[定義](../../scripts/tools.js#L120)、[實作](../../scripts/tools.js#L6459)。
 
 ## 技能與天賦
 
-技能目錄是聊天共用的定義，角色各自保存技能、天賦與歷史。技能最高 10 級、天賦最高 5 級，歷史最多保留 100 筆；技能經驗門檻及升級由 [skill_config.js](../../scripts/skill_config.js#L1)計算。`bsRegisterSkillDefinition` 建立／重用定義；`bsTrainSkill` 須有原因和整數技能經驗，尚未覺醒的技能還須 `awaken=true`。LLM 工具不能直接修改角色天賦。孕中期至部分產程階段，訓練可依隨機選中的已著床胎兒親近度，將正或負的經驗傳至其天賦。[定義工具](../../scripts/tools.js#L6923)、[訓練工具](../../scripts/tools.js#L6938)。初始化時也可由角色卡推論初始技能與天賦，[註冊子流程](../../scripts/registry.js#L1965)。
+技能目錄是聊天共用的定義，角色各自保存技能、天賦與歷史。技能最高 10 級、天賦最高 5 級，歷史最多保留 100 筆；技能經驗門檻及升級由 [skill_config.js](../../scripts/skill_config.js#L1)計算。`bsRegisterSkillDefinition` 建立／重用定義；`bsTrainSkill` 須有原因和整數技能經驗，尚未覺醒的技能還須 `awaken=true`。LLM 工具不能直接修改角色天賦。孕中期至部分產程階段，訓練可依隨機選中的已著床胎兒親近度，將正或負的經驗傳至其天賦。[定義工具](../../scripts/tools.js#L6936)、[訓練工具](../../scripts/tools.js#L6951)。初始化時也可由角色卡推論初始技能與天賦，[註冊子流程](../../scripts/registry.js#L1965)。
 
 ## 衣櫃、服裝和描述
 
-衣櫃保存長期物件；`outfit` 保存目前主服、配件、臨時衣物及穿著狀態。衣物有遮蔽、支撐、容納、方便四維度，主服與配件另有各自的欄位規則。[欄位及正規化](../../scripts/wardrobe_config.js#L1)。`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` 改變資料；懷孕和產後穿著壓力依身體狀態與衣物尺寸計算，供 PDA 顯示。[衣物工具](../../scripts/tools.js#L6634)、[穿著壓力](../../scripts/tools.js#L741)。
+衣櫃保存長期物件；`outfit` 保存目前主服、配件、臨時衣物及穿著狀態。衣物有遮蔽、支撐、容納、方便四維度，主服與配件另有各自的欄位規則。[欄位及正規化](../../scripts/wardrobe_config.js#L1)。`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` 改變資料；懷孕和產後穿著壓力依身體狀態與衣物尺寸計算，供 PDA 顯示。[衣物工具](../../scripts/tools.js#L6647)、[穿著壓力](../../scripts/tools.js#L741)。
 
-`descriptions.normalDescription` 與 `pregnantDescription` 是角色狀態文字，`bsSetDescription` 可合併／替換。這些文字隨提示投影送給模型；它們本身不是生理數值的計算來源。[描述工具](../../scripts/tools.js#L6573)、[追蹤狀態投影](../../scripts/tracker.js#L1303)。
+`descriptions.normalDescription` 與 `pregnantDescription` 是角色狀態文字，`bsSetDescription` 可合併／替換。這些文字隨提示投影送給模型；它們本身不是生理數值的計算來源。[描述工具](../../scripts/tools.js#L6579)、[追蹤狀態投影](../../scripts/tracker.js#L1303)。
 
 認知時間軸每筆標題預設折疊，點擊展開內容；刷新與切頁保留手動開合狀態，新追加紀錄預設折疊。
