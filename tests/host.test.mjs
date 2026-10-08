@@ -156,6 +156,7 @@ test('a forked chat inherits a matching snapshot, but the placeholder key during
   const switching = { characterId: 3, chat, extensionSettings, saveSettingsDebounced() {} };
   assert.equal(host.isPlaceholderHostChatId(switching), true);
   assert.equal(Object.keys(state.getChatState(switching, settings).characters).length, 0, '临时键不复制分支资料');
+  assert.equal('3:solo' in settings.chatStates, false, '临时键的空状态不写进设定');
 
   const fork = { chatId: 'fork', characterId: 3, chat, extensionSettings, saveSettingsDebounced() {} };
   assert.equal(host.isPlaceholderHostChatId(fork), false);
@@ -1152,4 +1153,22 @@ test('immediate sidecar save waits behind an older in-flight write', async () =>
   assert.equal(writes.length, 2);
   assert.ok(writes[0].chatState.characters.Alice);
   assert.deepEqual(writes[1].chatState.characters, {}, '最后落盘的必须是删除后的状态');
+});
+
+test('loading settings drops empty placeholder-key shells left by older versions, but keeps any with data', () => {
+  resetGlobals();
+  const filled = state.createEmptyChatState();
+  filled.characters.乙 = state.createDefaultFemaleState('乙');
+  const extensionSettings = { bs_biotracker: { chatStates: {
+    'char:solo': state.createEmptyChatState(),
+    '80:solo': state.createEmptyChatState(),
+    '5:1700000000000': state.createEmptyChatState(),
+    '12:solo': filled,
+    '角色 - 2026-10-08@15h54m10s329ms': state.createEmptyChatState(),
+  } } };
+  const ctx = { chatId: 'x', characterId: 1, extensionSettings, saveSettingsDebounced() {} };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const keys = Object.keys(state.getSettings(ctx).chatStates);
+  assert.deepEqual(keys.sort(), ['12:solo', '角色 - 2026-10-08@15h54m10s329ms'].sort());
+  resetGlobals();
 });

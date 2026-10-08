@@ -185,6 +185,9 @@ function getFallbackHostChatId(ctx) {
   return `${ctx?.characterId ?? 'char'}:${ctx?.groupId ?? 'solo'}`;
 }
 
+/** 临时键的样子：角色索引或 char，冒号后接 solo 或群组 id（ST 群组 id 是时间戳数字） */
+export const PLACEHOLDER_CHAT_KEY_PATTERN = /^(?:\d+|char):(?:solo|\d+)$/;
+
 /** 宿主还没给聊天 id 时的临时键（角色索引:群组）；切卡瞬间常见，不能当成一个真的聊天 */
 export function isPlaceholderHostChatId(ctx, chatId = getHostChatId(ctx)) {
   return chatId === `${ctx?.characterId ?? 'char'}:${ctx?.groupId ?? 'solo'}`;

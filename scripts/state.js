@@ -31,6 +31,7 @@ import {
   getHostKind,
   isHostChatStateConfirmed,
   isPlaceholderHostChatId,
+  PLACEHOLDER_CHAT_KEY_PATTERN,
   getHostWorldBook,
   hasAbsoluteHostChatView,
   loadHostWorldInfo,
@@ -937,6 +938,13 @@ export function getSettings(ctx) {
     settings.chatStates = {};
     shouldSave = true;
   }
+  // 旧版切卡时留下的临时键空壳（见 getChatState）：只清完全没有资料的，有内容的一律保留
+  for (const key of Object.keys(settings.chatStates)) {
+    if (PLACEHOLDER_CHAT_KEY_PATTERN.test(key) && isChatStateEffectivelyEmpty(settings.chatStates[key])) {
+      delete settings.chatStates[key];
+      shouldSave = true;
+    }
+  }
   if (!Array.isArray(settings.modelOptions)) {
     settings.modelOptions = [];
     shouldSave = true;
@@ -1070,9 +1078,11 @@ export function getChatKey(ctx) {
 export function getChatState(ctx, settings) {
   const chatKey = getChatKey(ctx);
   if (!settings.chatStates[chatKey]) {
+    // 临时键只是切卡过渡，不是真的聊天：给一份不落盘的空状态，
+    // 写进设定的话每次切卡都会留下一份无主空壳；也不复制分支资料
+    if (isPlaceholderHostChatId(ctx, chatKey)) return createEmptyChatState();
     settings.chatStates[chatKey] = createEmptyChatState();
-    // 临时键只是切卡过渡，复制分支资料过去只会在设定里留下无主副本
-    if (!isPlaceholderHostChatId(ctx, chatKey)) inheritChatStateFromMatchingChat(ctx, settings);
+    inheritChatStateFromMatchingChat(ctx, settings);
   }
   const chatState = settings.chatStates[chatKey];
   let shouldSave = false;
