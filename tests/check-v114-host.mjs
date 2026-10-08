@@ -292,12 +292,50 @@ try {
     const womb = document.querySelector('#bs-bt-special-tool-wombReturn');
     assert(realistic.checked && !womb.checked, 'Switches did not persist across reload');
     assert(document.querySelector('#bs-bt-special-tool-implantEmbryo').checked, 'Untouched tool lost');
-    realistic.click(); await new Promise(ok => setTimeout(ok, 400));
-    womb.click(); await new Promise(ok => setTimeout(ok, 400));
-    assert(!realistic.checked && womb.checked, 'Switches did not toggle back');
     return true;
   })()`);
   await screenshot('world-switches.png');
+
+  // 4b. Realistic lineage: life-stage icons and stage labels instead of the human hand
+  results.realisticLineage = await evaluate(`(async()=>{
+    const { ctx, assert, mods } = __v114; const { s } = await mods();
+    const wait = ms => new Promise(ok => setTimeout(ok, ms));
+    const chat = s.getChatState(ctx(), s.getSettings(ctx()));
+    chat.characters['旧档月兔'].profile.children = [
+      { id: 'v114-1', name: '小兔', gender: '女', race: '人类', bloodline: { 人类: 1 }, fathers: '路人', age: 5, talents: [] },
+      { id: 'v114-2', name: '代孕儿', gender: '男', race: '人类', bloodline: { 人类: 1 }, fathers: '路人', provider: '捐卵者', age: 0, talents: [] },
+    ];
+    s.recordChatStateSnapshot(ctx(), chat, { reason: 'v114-lineage' });
+    s.saveSettings(ctx()); await s.saveSettingsNow(ctx());
+    document.querySelector('[aria-label="HOME"]')?.click(); await wait(300);
+    await __v114.openPanel('track-list');
+    [...document.querySelectorAll('.bs-bt-track-character-button')].find(b => b.textContent.includes('旧档月兔')).click(); await wait(400);
+    document.querySelector('[data-track-tab="experience"]').click(); await wait(300);
+    document.querySelector('[data-lineage-center="旧档月兔"]').click(); await wait(500);
+    const cards = Object.fromEntries([...document.querySelectorAll('#bs-bt-lineage .bs-bt-lineage__card')].map(card => [
+      card.querySelector('.bs-bt-lineage__card-name').textContent,
+      { icon: card.querySelector('.bs-bt-life-icon')?.getAttribute('aria-label') || null, subs: [...card.querySelectorAll('.bs-bt-lineage__card-sub')].map(n => n.textContent).join('|') },
+    ]));
+    const expected = { 旧档月兔: '成人', 小兔: '孩童', 代孕儿: '婴儿', 路人: '精方', 捐卵者: '卵方' };
+    for (const [name, stage] of Object.entries(expected)) {
+      assert(cards[name]?.icon === stage && cards[name]?.subs === stage, name + ' should show ' + stage + ': ' + JSON.stringify(cards[name]));
+    }
+    return expected;
+  })()`);
+  await screenshot('lineage-realistic.png');
+  await evaluate(`(async()=>{
+    const { assert } = __v114; const wait = ms => new Promise(ok => setTimeout(ok, ms));
+    document.querySelector('.bs-bt-lineage__close')?.click(); await wait(200);
+    document.querySelector('[aria-label="HOME"]')?.click(); await wait(300);
+    await __v114.openPanel('race-encyclopedia');
+    document.querySelector('[data-encyclopedia-tab="world"]').click(); await wait(400);
+    const realistic = document.querySelector('#bs-bt-realistic-world');
+    const womb = document.querySelector('#bs-bt-special-tool-wombReturn');
+    realistic.click(); await wait(400);
+    womb.click(); await wait(400);
+    assert(!realistic.checked && womb.checked, 'Switches did not toggle back');
+    return true;
+  })()`);
 
   // 5. Card switches and reloads above must not leave placeholder-key shells in the saved settings
   await evaluate(`(async()=>{ const { s } = await __v114.mods(); await s.saveSettingsNow(__v114.ctx()); return true; })()`);
