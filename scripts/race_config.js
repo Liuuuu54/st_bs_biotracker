@@ -469,7 +469,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.4, birthDifficulty: 0.8, breedTolerance: 2,
     impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 35, genderRatio: 50,
-    companionEggsMean: 2, recoveryCoefficient: 1,
+    companionEggsMean: 1, recoveryCoefficient: 1,
   },
   "西方龙": {
     embryoType: "胎转卵生",
