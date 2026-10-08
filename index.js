@@ -55,7 +55,7 @@ import {
   OVOVIVIPAROUS_RACES,
   VIVIPAROUS_RACES,
 } from './scripts/race_config.js';
-import { initializeCalculatorUi } from './scripts/calculator_ui.js'; import { raceIconSvg } from './scripts/race_icons.js';
+import { initializeCalculatorUi } from './scripts/calculator_ui.js'; import { lifeStageIconSvg, raceIconSvg } from './scripts/race_icons.js';
 import { createRacePaletteSelection, appendRacePaletteTag, removeRacePaletteTag, equalizeRacePalette,
   setRacePalettePercent, palettePercentText, buildRacePaletteValue } from './scripts/race_palette.js';
 import { createDocViewer, parseDocHref } from './scripts/doc_viewer.js';
@@ -4593,8 +4593,9 @@ const LINEAGE_ID = 'bs-bt-lineage';
 function lineageDetailRows(node) {
   if (!node) return '';
   const rows = [
-    ['种族', node.raceLabel || '未知'],
-    ['血脉', node.bloodlineLabel || '未知'],
+    ...(lineageViewCache?.realisticWorld
+      ? [['阶段', node.lifeStage || '未知']]
+      : [['种族', node.raceLabel || '未知'], ['血脉', node.bloodlineLabel || '未知']]),
     ['性别', node.gender || '—'],
     ['年龄', node.ageLabel || '未知'],
     ['世代', node.generation === 0 ? '本人' : (node.generation < 0 ? `上${Math.abs(node.generation)}代` : `下${node.generation}代`)],
@@ -4645,9 +4646,15 @@ function lineageSexGlyph(node) {
   return '⚥';
 }
 
-function renderLineageCard(node) {
-  const sex = lineageSexGlyph(node); const icon = raceIconSvg({ race: node.race, bloodline: node.bloodline, motherBloodline: node.motherBloodline, derivedType: node.derivedType, label: node.raceLabel }); // 没有对应图示（自订或未知种族）时退回姓名首字
-  const sub = node.raceLabel || (node.kind === 'unregistered' ? '未注册' : '—');
+function renderLineageCard(node, realistic = false) {
+  const sex = lineageSexGlyph(node);
+  // 写实世界全是人类，种族图示与「人类」一行都不带资讯：改用人生阶段（精方／卵方与按年龄分段）。
+  // 没有对应图示（自订或未知种族、判断不出阶段）时退回姓名首字
+  const icon = realistic
+    ? lifeStageIconSvg(node.lifeStage)
+    : raceIconSvg({ race: node.race, bloodline: node.bloodline, motherBloodline: node.motherBloodline, derivedType: node.derivedType, label: node.raceLabel });
+  const sub = (realistic ? node.lifeStage : node.raceLabel) || (node.kind === 'unregistered' ? '未注册' : '—');
+  const bloodlineLabel = realistic ? '' : node.bloodlineLabel;
   return `
     <button type="button"
       class="bs-bt-lineage__card${node.isCenter ? ' is-center' : ''}${node.kind === 'unregistered' ? ' is-ghost' : ''}"
@@ -4659,7 +4666,7 @@ function renderLineageCard(node) {
       </span>
       <span class="bs-bt-lineage__card-name">${escapeHtml(node.displayName)}</span>
       <span class="bs-bt-lineage__card-sub">${escapeHtml(sub)}</span>
-      ${node.bloodlineLabel ? `<span class="bs-bt-lineage__card-sub" title="${escapeHtml(node.bloodlineLabel)}">${escapeHtml(node.bloodlineLabel)}</span>` : ''}
+      ${bloodlineLabel ? `<span class="bs-bt-lineage__card-sub" title="${escapeHtml(bloodlineLabel)}">${escapeHtml(bloodlineLabel)}</span>` : ''}
       <span class="bs-bt-lineage__card-age">${escapeHtml(node.ageLabel || '')}</span>
       ${node.isCenter ? '<span class="bs-bt-lineage__badge">本人</span>' : ''}
     </button>
@@ -4667,7 +4674,7 @@ function renderLineageCard(node) {
 }
 
 /** 一丛手足共用的亲代标注，兼作连接线的起点 */
-function renderLineageCluster(cluster) {
+function renderLineageCluster(cluster, realistic = false) {
   const caption = cluster.parents
     .map((item) => `${item.relation} ${item.name}`)
     .join(' × ');
@@ -4675,7 +4682,7 @@ function renderLineageCluster(cluster) {
     <div class="bs-bt-lineage__cluster">
       ${caption ? `<div class="bs-bt-lineage__cluster-parents">${escapeHtml(caption)}</div>` : ''}
       <div class="bs-bt-lineage__cluster-cards${caption ? ' has-link' : ''}">
-        ${cluster.nodes.map(renderLineageCard).join('')}
+        ${cluster.nodes.map((node) => renderLineageCard(node, realistic)).join('')}
       </div>
     </div>
   `;
@@ -4691,7 +4698,7 @@ function renderLineageChart(view) {
         <div class="bs-bt-lineage__row-label"><span>${escapeHtml(row.label)}</span></div>
         <div class="bs-bt-lineage__row-scroll">
           <div class="bs-bt-lineage__clusters">
-            ${row.clusters.map(renderLineageCluster).join('')}
+            ${row.clusters.map((cluster) => renderLineageCluster(cluster, view.realisticWorld)).join('')}
           </div>
         </div>
       </div>
@@ -4779,6 +4786,8 @@ function openLineageWindow(ctx, centerName) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const view = buildLineageView(chatState, centerName);
+  // 写实世界可能绑在角色卡上，按这个聊天的生效设定判断
+  view.realisticWorld = isRealisticWorld(getEffectiveSettings(ctx, settings));
   lineageViewCache = view;
   const root = ensureLineageWindow(ctx);
   root.className = `bs-bt-lineage theme-${settings.theme || 'retro'}`;

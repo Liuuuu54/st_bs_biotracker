@@ -363,6 +363,31 @@
     document.getElementById('harness-info').appendChild(note);
   }
 
+  // 写实世界族谱：/tests/ui-harness.html?realistic=1 开启写实世界，另种一个三代人类家族，
+  // 一次涵盖精方、卵方（代孕的卵源）与婴儿到长者六段。追踪 → 外婆 → 经历 → 族谱。
+  if (new URLSearchParams(location.search).get('realistic') === '1') {
+    ctx.extensionSettings.bs_biotracker.realisticWorld = true;
+    const kid = (fields) => ({ talents: [], race: '人类', bloodline: { 人类: 1 }, ...fields });
+    const seed = (name, base, children) => {
+      chatState.characters[name] = makeCharacter(name, { base: { isHere: false, race: '人类', bloodline: { 人类: 1 }, bloodlineSource: 'pure', ...base }, profile: { children } });
+    };
+    seed('外婆', { age: 72 }, [
+      kid({ id: 'real-1', name: '妈妈', gender: '女', fathers: '外公', age: 47, registeredAs: '妈妈' }),
+    ]);
+    seed('妈妈', { age: 47 }, [
+      kid({ id: 'real-2', name: '晓雯', gender: '女', fathers: '爸爸', age: 24, registeredAs: '晓雯' }),
+      kid({ id: 'real-3', name: '妹妹', gender: '女', fathers: '爸爸', age: 15 }),
+      kid({ id: 'real-4', name: '弟弟', gender: '男', fathers: '爸爸', age: 8 }),
+    ]);
+    seed('晓雯', { age: 24, isHere: true }, [
+      kid({ id: 'real-5', name: '宝宝', gender: '男', fathers: '丈夫', age: 1 }),
+      kid({ id: 'real-6', name: '代孕女', gender: '女', fathers: '丈夫', provider: '捐卵者', age: 0 }),
+    ]);
+    const note = document.createElement('div');
+    note.textContent = '已开启写实世界并加载人类家族：追踪名单选择「晓雯」→ 经历 → 族谱。';
+    document.getElementById('harness-info').appendChild(note);
+  }
+
   // Optional stage matrix: /tests/ui-harness.html?progress=1 keeps the ordinary seeds intact.
   if (new URLSearchParams(location.search).get('progress') === '1') {
     const { stageProgressFixtures } = await import('/tests/stage-progress-fixtures.mjs');

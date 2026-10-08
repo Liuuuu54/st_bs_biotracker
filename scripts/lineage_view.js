@@ -31,6 +31,37 @@ function raceLabel(race, derivedType) {
 const EDGE_LABELS = { mother: '母', father: '父', carrier: '承载', rebirth: '前身' };
 
 /**
+ * 写实世界族谱的人生阶段：年龄未满门槛即属该段。少年从初潮（约 12 岁）起，
+ * 中年从更年期（约 45 岁）起。按显示的整数岁判定，与卡片上的岁数一致。
+ */
+export const LIFE_STAGE_AGE_BOUNDS = Object.freeze([
+  [3, '婴儿'],
+  [12, '孩童'],
+  [18, '少年'],
+  [45, '成人'],
+  [60, '中年'],
+  [Infinity, '长者'],
+]);
+
+/**
+ * 节点的人生阶段。未注册的人只有配子来源这层身分：当父方（含胎内回归的前身）是精方、
+ * 当遗传母方是卵方，两者都当过或都没有就判断不了；已注册角色与孩子按年龄分段，没有年龄也回 null，
+ * 由渲染层退回姓名首字。
+ */
+export function getLifeStage(kind, age, childRelations = []) {
+  if (kind === 'unregistered') {
+    const sire = childRelations.some((relation) => relation === '父' || relation === '前身');
+    const dam = childRelations.includes('母');
+    if (sire === dam) return null;
+    return sire ? '精方' : '卵方';
+  }
+  const value = Number(age);
+  if (age === null || age === undefined || age === '' || !Number.isFinite(value)) return null;
+  const years = Math.max(0, Math.round(value));
+  return LIFE_STAGE_AGE_BOUNDS.find(([limit]) => years < limit)[1];
+}
+
+/**
  * 年龄取整数岁，与追踪页概览同一套算法——同一个角色在两个画面显示不同岁数
  * 会被当成 bug。未注册的路人没有年龄资料，回空字串让渲染层整行略过。
  */
@@ -125,6 +156,7 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
       bloodlineLabel: formatBloodline(node.race, node.bloodline, node.bloodlineSource),
       motherBloodline: motherBloodlineOf(node.id),
       ageLabel: ageLabel(node.age),
+      lifeStage: getLifeStage(node.kind, node.age, childrenOf.flatMap((item) => item.relations)),
       parents,
       geneticParents: parents.filter(isGenetic),
       carriers: parents.filter((item) => !isGenetic(item)),

@@ -91,8 +91,31 @@ try {
   await call('Emulation.setDeviceMetricsOverride',{width:320,height:900,deviceScaleFactor:1,mobile:false});
   if(!await evaluate(`(()=>{const modal=document.querySelector('#bs-bt-race-palette-modal');return modal.scrollWidth<=modal.clientWidth&&document.documentElement.scrollWidth<=320})()`))throw Error('Mobile palette overflow');
   const mobile=await call('Page.captureScreenshot',{format:'png'});writeFileSync(join(artifacts,'palette-mobile.png'),Buffer.from(mobile.data,'base64'));
+  // 写实世界：族谱改用人生阶段图示与类别名，不显示种族与血脉
+  await call('Emulation.setDeviceMetricsOverride',{width:1400,height:1000,deviceScaleFactor:1,mobile:false});
+  await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/tests/ui-harness.html?realistic=1`});
+  for(let i=0;i<150;i++){if(await evaluate("!!document.querySelector('[data-nav-view=\"track-list\"]')&&document.querySelector('#bs-biotracker-modal')?.getBoundingClientRect().width>0"))break;await sleep(100)}
+  const realistic=await evaluate(`(async()=>{
+    const wait=ms=>new Promise(ok=>setTimeout(ok,ms));
+    document.querySelector('[data-nav-view="track-list"]').click();await wait(200);
+    [...document.querySelectorAll('.bs-bt-track-character-button')].find(b=>b.querySelector('.bs-bt-track-character-name').textContent==='妈妈').click();await wait(200);
+    document.querySelector('[data-track-tab="experience"]').click();document.querySelector('[data-lineage-center="妈妈"]').click();await wait(300);
+    const cards=Object.fromEntries([...document.querySelectorAll('#bs-bt-lineage .bs-bt-lineage__card')].map(card=>[card.querySelector('.bs-bt-lineage__card-name').textContent,{
+      icon:card.querySelector('.bs-bt-life-icon')?.getAttribute('aria-label')||null,
+      raceIcon:!!card.querySelector('.bs-bt-race-icon:not(.bs-bt-life-icon)'),
+      subs:[...card.querySelectorAll('.bs-bt-lineage__card-sub')].map(n=>n.textContent)}]));
+    return cards;
+  })()`);
+  const expectedStages={外公:'精方',捐卵者:'卵方',宝宝:'婴儿',弟弟:'孩童',妹妹:'少年',晓雯:'成人',妈妈:'中年',外婆:'长者'};
+  for(const [name,stage] of Object.entries(expectedStages)){
+    const card=realistic[name];
+    if(!card)throw Error('Realistic lineage missing '+name+': '+Object.keys(realistic));
+    if(card.icon!==stage||card.raceIcon)throw Error(`${name} should show the ${stage} icon: ${JSON.stringify(card)}`);
+    if(card.subs.join('|')!==stage)throw Error(`${name} should be labelled ${stage} without race or bloodline: ${card.subs}`);
+  }
+  const lifeShot=await call('Page.captureScreenshot',{format:'png'});writeFileSync(join(artifacts,'lineage-realistic.png'),Buffer.from(lifeShot.data,'base64'));
   if(errors.length)throw Error(JSON.stringify(errors));
-  console.log(JSON.stringify({overview:true,lineage:true,palette:{...palette,registration:true,reopen:true,mobileWidth:320},browserErrors:errors,artifacts,mockHost:true}));
+  console.log(JSON.stringify({overview:true,lineage:true,realisticLineage:Object.keys(expectedStages).length,palette:{...palette,registration:true,reopen:true,mobileWidth:320},browserErrors:errors,artifacts,mockHost:true}));
 } finally {
   if(ws){try{await call('Browser.close')}catch{}ws.close()}chrome.kill();server.close();
 }

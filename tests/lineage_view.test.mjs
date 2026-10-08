@@ -213,3 +213,35 @@ test('each node carries its genetic mother bloodline for icon tie-breaks; a surr
   assert.deepEqual(node('乙').motherBloodline, { 人类: 1 }, '代孕时卵源才是母方，承载者不算');
   assert.equal(node('狐母').motherBloodline, null);
 });
+
+test('人生阶段按显示的整数岁分段：初潮 12 岁起为少年、更年期 45 岁起为中年', async () => {
+  const { getLifeStage, LIFE_STAGE_AGE_BOUNDS } = await import('../scripts/lineage_view.js');
+  const cases = [[0, '婴儿'], [2, '婴儿'], [2.6, '孩童'], [11, '孩童'], [12, '少年'], [17, '少年'], [18, '成人'], [44, '成人'], [45, '中年'], [59, '中年'], [60, '长者'], [120, '长者']];
+  for (const [age, stage] of cases) assert.equal(getLifeStage('character', age), stage, `${age} 岁`);
+  assert.equal(getLifeStage('child', 5), '孩童', '孩子纪录同样按年龄');
+  assert.equal(getLifeStage('character', null), null, '没有年龄判断不了');
+  assert.equal(LIFE_STAGE_AGE_BOUNDS.at(-1)[1], '长者');
+});
+
+test('未注册的人按配子身分：父方（含前身）是精方、遗传母方是卵方，两种都当过就判断不了', async () => {
+  const { getLifeStage } = await import('../scripts/lineage_view.js');
+  assert.equal(getLifeStage('unregistered', null, ['父']), '精方');
+  assert.equal(getLifeStage('unregistered', null, ['前身']), '精方');
+  assert.equal(getLifeStage('unregistered', null, ['母']), '卵方');
+  assert.equal(getLifeStage('unregistered', null, ['父', '母']), null);
+  assert.equal(getLifeStage('unregistered', 30, []), null, '未注册的人不按年龄');
+});
+
+test('视图节点带上人生阶段：代孕的卵源是卵方、路人父亲是精方', () => {
+  const state = {
+    characters: {
+      承载者: ch('承载者', [{ id: 's1', name: '代孕女', gender: '女', age: 0, fathers: '路人乙', provider: '代母甲' }], { age: 30 }),
+    },
+  };
+  const view = buildLineageView(state, '承载者');
+  const byName = (name) => view.nodes.find((node) => node.displayName === name);
+  assert.equal(byName('承载者').lifeStage, '成人');
+  assert.equal(byName('代孕女').lifeStage, '婴儿');
+  assert.equal(byName('路人乙').lifeStage, '精方');
+  assert.equal(byName('代母甲').lifeStage, '卵方');
+});

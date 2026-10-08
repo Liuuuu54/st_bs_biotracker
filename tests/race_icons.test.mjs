@@ -53,3 +53,17 @@ test('the icon svg carries the backing only for hybrids and the frame for derive
   assert.match(derived, /<g opacity="0\.85">/);
   assert.match(raceIconSvg({ race: '人类', label: '<script>' }), /aria-label="&lt;script&gt;"/);
 });
+
+test('life-stage icons cover the gamete providers and six age bands, without hybrid backing or frames', async () => {
+  const { LIFE_STAGE_NAMES, lifeStageIconSvg } = await import('../scripts/race_icons.js');
+  const { LIFE_STAGE_AGE_BOUNDS } = await import('../scripts/lineage_view.js');
+  assert.deepEqual([...LIFE_STAGE_NAMES], ['精方', '卵方', ...LIFE_STAGE_AGE_BOUNDS.map(([, stage]) => stage)]);
+  const markups = LIFE_STAGE_NAMES.map((stage) => lifeStageIconSvg(stage));
+  assert.equal(new Set(markups).size, markups.length, 'every stage has its own drawing');
+  for (const svg of markups) {
+    assert.match(svg, /class="bs-bt-race-icon bs-bt-life-icon"/);
+    assert.doesNotMatch(svg, /<g opacity="0\.85">/);
+  }
+  assert.equal(lifeStageIconSvg('人类'), '', 'unknown stages fall back to the name initial');
+  assert.equal(lifeStageIconSvg(null), '');
+});
