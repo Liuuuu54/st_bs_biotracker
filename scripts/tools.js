@@ -1944,7 +1944,7 @@ function isObliquePosition(angle, fetus) {
   const normalized = wrapAngle(angle);
   if ((normalized >= 0 && normalized <= 15) || (normalized >= 345 && normalized <= 360)) return false;
   if (normalized >= 165 && normalized <= 195) return false;
-  if ((normalized >= 75 && normalized <= 105) || (normalized >= 265 && normalized <= 285)) return false;
+  if (getTransverseDistance(normalized) <= 15) return false;
   return true;
 }
 
@@ -1963,26 +1963,30 @@ function calculateNearestMainPosition(angle) {
   return nearest;
 }
 
-function isTransversePosition(angle) {
+/** 离最近的横位（90° 或 270°）几度；两侧对称，以前 270° 那侧写成 265–285，与 90° 侧不一致 */
+function getTransverseDistance(angle) {
   const normalized = wrapAngle(angle);
-  return (normalized >= 75 && normalized <= 105) || (normalized >= 255 && normalized <= 285);
+  return Math.min(angleDistance(normalized, 90), angleDistance(normalized, 270));
+}
+
+function isTransversePosition(angle) {
+  return getTransverseDistance(angle) <= 15;
 }
 
 
-function calculatePositionDifficulty(angle, fetus) {
+export function calculatePositionDifficulty(angle, fetus) {
   const normalized = wrapAngle(angle);
   const embryoType = String(fetus?.embryoType || '胎生');
 
+  // 胎转卵生的蛋在体内还在合拢：与卵生一样头尾对称（头位、臀位 1.0、横位 1.5），
+  // 但必须对得很准，偏离最近的正位超过 5° 就每度加 0.075，最高 2.25。
+  // 卵生则只要不是横放就固定 1.33，两者刻意不同，不要并入卵生那一段
   if (embryoType === '胎转卵生') {
-    const targetAngles = [0, 90, 180, 270, 360];
-    let minDistance = 360;
-    for (const targetAngle of targetAngles) {
-      let distance = Math.abs(normalized - targetAngle);
-      if (targetAngle === 360) distance = Math.min(distance, Math.abs(normalized - 0));
-      if (distance < minDistance) minDistance = distance;
-    }
-    if (minDistance <= 5) return 1.5;
-    return Math.min(2.25, 1.5 + ((minDistance - 5) * 0.075));
+    const headTail = Math.min(angleDistance(normalized, 0), angleDistance(normalized, 180));
+    const side = Math.min(angleDistance(normalized, 90), angleDistance(normalized, 270));
+    const [baseDifficulty, deviation] = headTail <= side ? [1.0, headTail] : [1.5, side];
+    if (deviation <= 5) return baseDifficulty;
+    return Math.min(2.25, baseDifficulty + ((deviation - 5) * 0.075));
   }
 
   if (embryoType === '不定型') {
@@ -1997,22 +2001,21 @@ function calculatePositionDifficulty(angle, fetus) {
     if ((normalized >= 0 && normalized <= 15) || (normalized >= 345 && normalized <= 360)) return 1.25;
     if (normalized >= 175 && normalized <= 185) return 1.5;
     if (normalized >= 165 && normalized <= 195) return 1.75;
-    if ((normalized >= 85 && normalized <= 95) || (normalized >= 275 && normalized <= 285)) return 2.0;
-    if ((normalized >= 75 && normalized <= 105) || (normalized >= 265 && normalized <= 285)) return 2.25;
+    if (getTransverseDistance(normalized) <= 5) return 2.0;
+    if (getTransverseDistance(normalized) <= 15) return 2.25;
     return 1.33;
   }
 
-  // 胎转卵生到出生时已合拢成蛋，与卵生同表：头尾对称，只有横放较难
-  if (embryoType === '卵生' || embryoType === '胎转卵生') {
+  if (embryoType === '卵生') {
     if ((normalized >= 0 && normalized <= 15) || (normalized >= 345 && normalized <= 360)) return 1.0;
     if (normalized >= 165 && normalized <= 195) return 1.0;
-    if ((normalized >= 75 && normalized <= 105) || (normalized >= 265 && normalized <= 285)) return 1.5;
+    if (getTransverseDistance(normalized) <= 15) return 1.5;
     return 1.33;
   }
 
   if ((normalized >= 0 && normalized <= 15) || (normalized >= 345 && normalized <= 360)) return 1.0;
   if (normalized >= 165 && normalized <= 195) return 1.5;
-  if ((normalized >= 75 && normalized <= 105) || (normalized >= 265 && normalized <= 285)) return 2.0;
+  if (getTransverseDistance(normalized) <= 15) return 2.0;
   return 1.33;
 }
 
