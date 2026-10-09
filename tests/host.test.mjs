@@ -1181,3 +1181,15 @@ test('a chat-deleted event only clears the chat it names, never the one that is 
   assert.equal(host.extractDeletedChatKey(undefined), '', 'an unrecognised event must not fall back to the open chat');
   assert.equal(host.extractDeletedChatKey({}), '');
 });
+
+test('the retired after_user trigger setting is dropped on load; tracking only follows AI replies', () => {
+  resetGlobals();
+  const ctx = { chatId: 'x', characterId: 1, extensionSettings: { bs_biotracker: { triggerTiming: 'after_user', chatStates: {} } }, saveSettingsDebounced() {} };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  assert.equal('triggerTiming' in settings, false);
+  assert.equal(state.shouldTriggerForMessage({ is_user: false, mes: '回复' }), true);
+  assert.equal(state.shouldTriggerForMessage({ is_user: true, mes: '送出' }), false);
+  assert.equal(state.shouldTriggerForMessage(undefined), false);
+  resetGlobals();
+});

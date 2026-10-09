@@ -285,7 +285,7 @@ export function installMvuFetchHook() {
 export function shouldWaitForMvuExtraAnalysis(ctx, _settings) {
   const chat = getHostChat(ctx);
   const last = chat[chat.length - 1];
-  // after_user 等时机下 MVU 的解析早已完成，无需等待
+  // 尾楼是使用者消息（例如手动分析）时没有 MVU 解析要等
   if (!last || last.is_user) return false;
 
   // fetch 钩子必须在首次评估前就装好：否则正文后第一时间启动的 MVU 请求会被漏观测
@@ -1593,7 +1593,6 @@ function buildStreamingGuardSignature(ctx) {
 }
 
 function isAfterAiMessageSettled(ctx, settings, chatState) {
-  if (settings.triggerTiming !== 'after_ai') return true;
   const chat = getHostChat(ctx);
   const lastMessage = chat[chat.length - 1];
   if (!lastMessage || lastMessage.is_user) {
@@ -1629,7 +1628,7 @@ function isAfterAiMessageSettled(ctx, settings, chatState) {
 async function processTrackerMessage(ctx, settings, chatState, deps, reason, messageIndex, settledBefore = null) {
   const chat = getHostChat(ctx);
   const message = chat[messageIndex];
-  const shouldTrigger = reason === 'manual' ? true : shouldTriggerForMessage(settings, message);
+  const shouldTrigger = reason === 'manual' ? true : shouldTriggerForMessage(message);
   if (!shouldTrigger) {
     // 触发时机不符的楼层只记一笔 skip 快照，不发请求；这是纯记帐流程，必须全程静默
     recordChatStateSnapshot(ctx, chatState, { messageCount: messageIndex + 1, reason: 'skip' });

@@ -7348,7 +7348,6 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-reasoning-effort', normalizeReasoningEffort(settings.reasoningEffort));
   updateApiEndpointPreview();
   setValue('bs-bt-formatted-output-v4', settings.formattedOutputV4 !== false);
-  setValue('bs-bt-trigger', settings.triggerTiming);
   setValue('bs-bt-poll-ms', settings.pollMs);
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
   setValue('bs-bt-context-size', settings.contextSize);
@@ -7924,7 +7923,6 @@ function readSettingsFromForm(ctx) {
   settings.reasoningEffort = normalizeReasoningEffort(getValue('bs-bt-reasoning-effort'));
   const formattedOutputToggle = document.getElementById('bs-bt-formatted-output-v4');
   if (formattedOutputToggle) settings.formattedOutputV4 = Boolean(formattedOutputToggle.checked);
-  settings.triggerTiming = String(getValue('bs-bt-trigger')).trim() || 'after_ai';
   settings.pollMs = Math.max(800, Number(getValue('bs-bt-poll-ms')) || 1800);
   const rawApiTimeoutSec = String(getValue('bs-bt-api-timeout-sec')).trim();
   const apiTimeoutSec = rawApiTimeoutSec === '' ? NaN : Number(rawApiTimeoutSec);

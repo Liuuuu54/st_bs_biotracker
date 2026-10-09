@@ -73,7 +73,6 @@ function makeCtx(chatId = 'skip-report-chat') {
   globalThis.SillyTavern = { getContext: () => ctx };
   const settings = state.getSettings(ctx);
   settings.enabled = true;
-  settings.triggerTiming = 'after_ai';
   state.getChatState(ctx, settings).characters['艾拉'] = {
     name: '艾拉', initialized: true, profile: { base: {} },
   };

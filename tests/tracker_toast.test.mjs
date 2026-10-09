@@ -50,7 +50,6 @@ function setupChat(messages) {
   globalThis.SillyTavern = { getContext: () => ctx };
   const settings = state.getSettings(ctx);
   settings.enabled = true;
-  settings.triggerTiming = 'after_ai';
   settings.apiUrl = 'https://example.invalid/v1';
   settings.apiKey = 'k';
   settings.model = 'test-model';

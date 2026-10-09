@@ -203,7 +203,7 @@ test('宽限期超时且 MVU 从未解析时放行', () => {
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), false);
 });
 
-test('尾楼是用户消息（after_user 时机）时不等待', () => {
+test('尾楼是用户消息（例如手动分析）时不等待', () => {
   resetGate();
   setDuring(true);
   const ctx = makeCtx({

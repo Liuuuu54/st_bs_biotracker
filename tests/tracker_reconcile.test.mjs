@@ -133,7 +133,6 @@ test('a long chat without snapshots replays a bounded window instead of every me
   settings.apiUrl = 'https://example.test/v1';
   settings.model = 'test-model';
   settings.contextSize = 12;
-  settings.triggerTiming = 'after_ai';
   const chatState = state.getChatState(ctx, settings);
   chatState.characters['艾拉'] = { name: '艾拉', initialized: true, profile: { base: {} } };
   chatState.snapshots = [];
@@ -161,7 +160,6 @@ test('a lost snapshot resumes from the last processed message rather than from z
   settings.apiUrl = 'https://example.test/v1';
   settings.model = 'test-model';
   settings.contextSize = 12;
-  settings.triggerTiming = 'after_ai';
   const chatState = state.getChatState(ctx, settings);
   chatState.characters['艾拉'] = { name: '艾拉', initialized: true, profile: { base: {} } };
 
@@ -282,7 +280,6 @@ test('the tracker marks floors it already analyzed so they are not settled twice
   const settings = state.getSettings(ctx);
   settings.apiUrl = 'https://example.test/v1';
   settings.model = 'test-model';
-  settings.triggerTiming = 'after_ai';
   const chatState = state.getChatState(ctx, settings);
   chatState.characters['艾拉'] = { name: '艾拉', initialized: true, profile: { base: {} } };
   chatState.snapshots = [];

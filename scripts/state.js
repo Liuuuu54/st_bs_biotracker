@@ -214,7 +214,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   realisticWorld: false,
   specialTools: { implantEmbryo: true, wombReturn: true, extendPregnancy: true },
   reproductiveSettings: normalizeReproductiveSettings(),
-  triggerTiming: 'after_ai',
   pollMs: 1800,
   apiTimeoutMs: 180000,
   contextSize: 12,
@@ -948,6 +947,11 @@ export function getSettings(ctx) {
   }
   if (!settings.chatStates || typeof settings.chatStates !== 'object') {
     settings.chatStates = {};
+    shouldSave = true;
+  }
+  // 触发时机已固定为 AI 回复后（见 shouldTriggerForMessage），旧设定里的选项不再有作用
+  if (Object.prototype.hasOwnProperty.call(settings, 'triggerTiming')) {
+    delete settings.triggerTiming;
     shouldSave = true;
   }
   // 旧版切卡时留下的临时键空壳（见 getChatState）：只清完全没有资料的，有内容的一律保留
@@ -2328,9 +2332,10 @@ export function buildSignature(ctx, endIndexExclusive = null) {
   ].join('|');
 }
 
-export function shouldTriggerForMessage(settings, lastMessage) {
-  if (!lastMessage) return false;
-  if (settings.triggerTiming === 'after_ai') return !lastMessage.is_user;
-  if (settings.triggerTiming === 'after_user') return !!lastMessage.is_user;
-  return false;
+/**
+ * 自动追踪只在 AI 回复定稿后进行。旧版另有 after_user（使用者一送出就追踪），但那时主线已经组好提示、
+ * 正在生成：追踪结果赶不上这一轮，AI 这轮写的事也要等下次送出才被记录，还会与主线复制、MVU 解析抢时序
+ */
+export function shouldTriggerForMessage(lastMessage) {
+  return Boolean(lastMessage) && !lastMessage.is_user;
 }
