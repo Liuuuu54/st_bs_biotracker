@@ -1,4 +1,4 @@
-import { DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
+import { BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN } from './stage_config.js';
 
 /**
@@ -131,6 +131,26 @@ function formatRecoveryDays(value) {
 function formatRecoveryBaseline(coefficient) {
   const value = Number.isFinite(Number(coefficient)) && Number(coefficient) > 0 ? Number(coefficient) : 1;
   return `基准${formatRecoveryDays(computePostpartumRecoveryDays({ recoveryCoefficient: value }))}（恢复系数 ${formatNumber(value)}；实际再依活力等级、经产次数与该次胎数调整）`;
+}
+
+const BODY_SIZE_HEIGHT_REFERENCES = Object.freeze(['30 cm 以下', '约 90–120 cm', '约 120–150 cm', '约 150–190 cm', '约 190–250 cm 或人身加大型下半身', '约 3–6 m', '6 m 以上']);
+
+function formatBodySizeLevel(value) {
+  const num = Number(value);
+  const index = Math.max(0, Math.min(BODY_SIZE_LEVEL_NAMES.length - 1, Math.round(num) - 1));
+  return `${formatNumber(num, 1)} 级（${BODY_SIZE_LEVEL_NAMES[index]}，${BODY_SIZE_HEIGHT_REFERENCES[index]}）`;
+}
+
+/** 体型 1–7 级，人类为 4；只供叙述参考，不限制交合与受孕 */
+function getBodySizeText({ bodySize, bodySizeSd, altFormBodySize } = {}) {
+  if (bodySize === null || bodySize === undefined) return '可变，能随对象调整形体，与任何对象都恰好契合。';
+  if (bodySize === BODY_SIZE_INDIVIDUAL) return '依个体而定：同族大小差异极大，按子项或个体判断。';
+  const hasAltForm = typeof altFormBodySize === 'number';
+  const parts = [`${hasAltForm ? '常态 ' : ''}${formatBodySizeLevel(bodySize)}`];
+  const sd = Number(bodySizeSd);
+  if (Number.isFinite(sd) && sd > 0) parts.push(`族内个体差异约 ±${formatNumber(sd)} 级`);
+  if (hasAltForm) parts.push(`变化态 ${formatBodySizeLevel(altFormBodySize)}`);
+  return `${parts.join('；')}。1–7 级，人类为 4。`;
 }
 
 function getBirthDifficultyText(value) {
@@ -275,6 +295,7 @@ function buildSingleRacePhysiologyBlock(race) {
     `- 典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race))}（每名有效后代伴随的背景卵；自然受精会依有效精液量调整后再作约 ±10% 波动；均值 0 恒为 0）`,
     `- 多产性: ${getProlificacyText(profile.orgasmOvulationAmount, profile.identicalProbability)}；额外排卵倾向 ${formatNumber(profile.orgasmOvulationAmount)}（高潮时按当下活力占比排出，每周期黄体期前、黄体期各一次），同卵多胎概率 ${formatNumber(profile.identicalProbability)}%`,
     `- 性别比: ${getGenderRatioText(profile.genderRatio)}`,
+    `- 体型: ${getBodySizeText(profile)}`,
   ].filter(Boolean).join('\n');
 }
 
@@ -299,6 +320,7 @@ function buildHybridAverageBlock(race, bloodline = null) {
     `- 混血典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race, bloodline))}（先由血脉占比最高的成分决定胚型（平手取孕期较长者，再平手取母系）；胎生／胎转卵生恒为 0，其余按血脉比例对整群规模做加权几何平均）`,
     `- 平均多产性参考: ${getProlificacyText(merged.orgasmOvulationAmount, merged.identicalProbability)}；额外排卵倾向 ${formatNumber(merged.orgasmOvulationAmount)}（高潮时按当下活力占比排出，每周期黄体期前、黄体期各一次），同卵多胎概率 ${formatNumber(merged.identicalProbability)}%`,
     `- 平均性别比参考: ${getGenderRatioText(merged.genderRatio)}`,
+    `- 平均体型参考: ${getBodySizeText(merged)}`,
   ].filter(Boolean).join('\n');
 }
 

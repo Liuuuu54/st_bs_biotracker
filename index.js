@@ -31,6 +31,9 @@ import {
   RACE_CATALOG_SELECTION_VERSION,
   normalizeRaceCatalogSelection,
   RACE_PHYSIOLOGY_FIELDS,
+  BODY_SIZE_INDIVIDUAL,
+  BODY_SIZE_LEVEL_NAMES,
+  BODY_SIZE_SD_MAX,
   getEmbryoTypeByRace,
   getBuiltinRacePhysiologyProfile,
   getBuiltinRaceIntroductionLine,
@@ -321,6 +324,7 @@ const RACE_PHYSIOLOGY_FIELD_HINTS = Object.freeze({
   recoveryCoefficient: '人类预设 56 天为 1；实际再依活力、经产与胎数调整',
 });
 const EDITABLE_RACE_PHYSIOLOGY_FIELDS = RACE_PHYSIOLOGY_FIELDS;
+const BODY_SIZE_VARIABLE_OPTION = 'variable';
 const RACE_INTRODUCTION_LABEL = '物种短敘述';
 const RACE_INHERITANCE_LABELS = Object.freeze({
   [RACE_INHERITANCE_MODES.NORMAL]: '一般',
@@ -2192,6 +2196,105 @@ function renderRacePhysiologyEditor(race) {
 
     editorNode.appendChild(label);
   }
+
+  renderRaceBodySizeEditorFields(editorNode, race);
+}
+
+function getRaceBodySizeInputValue(race, field) {
+  const override = getEncyclopediaEditorSettings().racePhysiologyOverrides?.[race];
+  if (override && Object.prototype.hasOwnProperty.call(override, field)) return override[field];
+  return getBuiltinRacePhysiologyProfile(race)?.[field] ?? null;
+}
+
+function encodeBodySizeOption(value) {
+  if (value === BODY_SIZE_INDIVIDUAL) return BODY_SIZE_INDIVIDUAL;
+  return typeof value === 'number' ? String(value) : BODY_SIZE_VARIABLE_OPTION;
+}
+
+function decodeBodySizeOption(value) {
+  if (value === BODY_SIZE_INDIVIDUAL) return BODY_SIZE_INDIVIDUAL;
+  const num = Number(value);
+  return value !== BODY_SIZE_VARIABLE_OPTION && value !== '' && Number.isFinite(num) ? num : null;
+}
+
+function appendBodySizeLevelOptions(select) {
+  BODY_SIZE_LEVEL_NAMES.forEach((name, index) => {
+    const option = document.createElement('option');
+    option.value = String(index + 1);
+    option.textContent = `${index + 1} ${name}`;
+    select.appendChild(option);
+  });
+}
+
+// 体型三栏：常态体型可为 1–7、可变或依个体；变化态可为 1–7 或无
+function renderRaceBodySizeEditorFields(editorNode, race) {
+  const appendField = (field, labelText, control) => {
+    const label = document.createElement('label');
+    label.className = 'bs-bt-race-editor-field';
+    label.setAttribute('for', control.id);
+    const text = document.createElement('span');
+    text.textContent = labelText;
+    label.appendChild(text);
+    control.className = 'text_pole';
+    control.dataset.raceBodySizeField = field;
+    label.appendChild(control);
+    const badge = document.createElement('span');
+    badge.className = 'bs-bt-race-editor-badge';
+    badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, field);
+    label.appendChild(badge);
+    editorNode.appendChild(label);
+  };
+
+  const sizeSelect = document.createElement('select');
+  sizeSelect.id = 'bs-bt-race-field-bodySize';
+  sizeSelect.title = '1–7 级，人类为 4；可变＝随对象调整，与任何对象都恰好契合；依个体＝同族差异过大，由子项或个体决定';
+  appendBodySizeLevelOptions(sizeSelect);
+  for (const [value, text] of [[BODY_SIZE_VARIABLE_OPTION, '可变'], [BODY_SIZE_INDIVIDUAL, '依个体']]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    sizeSelect.appendChild(option);
+  }
+  sizeSelect.value = encodeBodySizeOption(getRaceBodySizeInputValue(race, 'bodySize'));
+  appendField('bodySize', '体型', sizeSelect);
+
+  const sdInput = document.createElement('input');
+  sdInput.id = 'bs-bt-race-field-bodySizeSd';
+  sdInput.type = 'number';
+  sdInput.step = '0.05';
+  sdInput.min = '0';
+  sdInput.max = String(BODY_SIZE_SD_MAX);
+  sdInput.placeholder = '族内个体差异（级）；人类 0.4';
+  const sd = getRaceBodySizeInputValue(race, 'bodySizeSd');
+  sdInput.value = sd === null ? '' : String(sd);
+  appendField('bodySizeSd', '体型标准差', sdInput);
+
+  const altSelect = document.createElement('select');
+  altSelect.id = 'bs-bt-race-field-altFormBodySize';
+  altSelect.title = '龙的真身、妖精的适应态等；无＝没有变化态';
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = '无';
+  altSelect.appendChild(none);
+  appendBodySizeLevelOptions(altSelect);
+  const alt = getRaceBodySizeInputValue(race, 'altFormBodySize');
+  altSelect.value = typeof alt === 'number' ? String(alt) : '';
+  appendField('altFormBodySize', '变化态体型', altSelect);
+}
+
+function readRaceBodySizeEditorValues() {
+  const values = {};
+  const size = document.querySelector('[data-race-body-size-field="bodySize"]');
+  if (size instanceof HTMLSelectElement) values.bodySize = decodeBodySizeOption(size.value);
+  const sd = document.querySelector('[data-race-body-size-field="bodySizeSd"]');
+  if (sd instanceof HTMLInputElement) {
+    const text = String(sd.value || '').trim();
+    const num = Number(text);
+    values.bodySizeSd = text === '' || !Number.isFinite(num) ? null : num;
+  }
+  const alt = document.querySelector('[data-race-body-size-field="altFormBodySize"]');
+  if (alt instanceof HTMLSelectElement) values.altFormBodySize = alt.value === '' ? null : Number(alt.value);
+  return values;
 }
 
 function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
@@ -2228,6 +2331,13 @@ function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
     }
     const baseValue = builtin[field];
     const changed = value === null ? baseValue !== null : Math.abs(Number(value) - Number(baseValue)) > 0.0001;
+    if (!onlyDiff || changed) result[field] = value;
+  }
+  for (const [field, value] of Object.entries(readRaceBodySizeEditorValues())) {
+    const baseValue = builtin[field] ?? null;
+    const changed = typeof value === 'number' && typeof baseValue === 'number'
+      ? Math.abs(value - baseValue) > 0.0001
+      : value !== baseValue;
     if (!onlyDiff || changed) result[field] = value;
   }
   return result;
@@ -2270,6 +2380,12 @@ function copyHumanPhysiologyToEditor() {
     if (!(input instanceof HTMLInputElement)) continue;
     input.value = human[field] === null ? '' : String(human[field]);
   }
+  const size = document.querySelector('[data-race-body-size-field="bodySize"]');
+  if (size instanceof HTMLSelectElement) size.value = encodeBodySizeOption(human.bodySize);
+  const sd = document.querySelector('[data-race-body-size-field="bodySizeSd"]');
+  if (sd instanceof HTMLInputElement) sd.value = human.bodySizeSd === null ? '' : String(human.bodySizeSd);
+  const alt = document.querySelector('[data-race-body-size-field="altFormBodySize"]');
+  if (alt instanceof HTMLSelectElement) alt.value = '';
 }
 
 function openRacePhysiologyEditor(ctx) {
