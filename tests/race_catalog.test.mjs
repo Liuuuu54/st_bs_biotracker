@@ -24,9 +24,9 @@ test('紧凑模式不带辨识提示，注册模式带', () => {
   const compact = buildRaceCatalogBlock();
   const hinted = buildRaceCatalogBlock({ withHints: true });
   assert.equal(compact.includes('Fishfolk'), false, '紧凑模式不应带提示');
-  assert.ok(hinted.includes('鱼人(Fishfolk，人形而带鱼类特徵与粗尾鳍)'), '注册模式应带提示');
+  assert.ok(hinted.includes('鱼人(Fishfolk，人形而带鱼类特徵与粗尾鳍·4级·人形)'), '注册模式应带提示');
   // 短敘述以英文原名开头时，提示不能只剩英文
-  assert.ok(hinted.includes('精灵(Elf，长寿的尖耳亚人)'), '提示应至少含一句中文');
+  assert.ok(hinted.includes('精灵(Elf，长寿的尖耳亚人·4级·人形)'), '提示应至少含一句中文');
   assert.ok(hinted.length > compact.length);
 });
 
@@ -49,9 +49,9 @@ test('追踪与注册提示词共用百科名录选择', () => {
 
   const on = buildRegistrySystemPrompt({}, {});
   assert.ok(on.includes('[可用种族名录]'), '默认应带名录');
-  assert.ok(on.includes('鱼人(Fishfolk，人形而带鱼类特徵与粗尾鳍)'), '注册应带辨识提示');
+  assert.ok(on.includes('鱼人(Fishfolk，人形而带鱼类特徵与粗尾鳍·4级·人形)'), '注册应带辨识提示');
   const filtered = buildRegistrySystemPrompt({ raceCatalogSelection: selection }, {});
-  assert.ok(filtered.includes('精灵(Elf，长寿的尖耳亚人)'));
+  assert.ok(filtered.includes('精灵(Elf，长寿的尖耳亚人·4级·人形)'));
   assert.ok(filtered.includes('血族('));
   assert.equal(filtered.includes('鱼人('), false);
 });
@@ -129,7 +129,7 @@ test('短敘述与名录提示都走使用者覆写', async () => {
   try {
     setRacePhysiologyOverrides({ 精灵: { introductionLine: '本世界的精灵全为扶她。' } });
     assert.equal(getRaceIntroductionLine('精灵'), '本世界的精灵全为扶她。');
-    assert.ok(buildRaceCatalogBlock({ withHints: true }).includes('精灵(本世界的精灵全为扶她)'), '名录提示应跟随覆写');
+    assert.ok(buildRaceCatalogBlock({ withHints: true }).includes('精灵(本世界的精灵全为扶她·4级·人形)'), '名录提示应跟随覆写');
   } finally {
     setRacePhysiologyOverrides({});
   }

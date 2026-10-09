@@ -1,4 +1,4 @@
-import { ALL_BUILTIN_RACES, BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
+import { ALL_BUILTIN_RACES, BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, RACE_BODY_PLAN_LABELS, DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN } from './stage_config.js';
 
 /**
@@ -68,7 +68,8 @@ export function buildRaceCatalogBlock({ withHints = false, selection = null } = 
   // 按当前生效的胚型分组：百科改过胚型的物种要列在新组下
   const groupLines = getRaceGroupsByEmbryoType().map(({ label, races }) => {
     const names = races.filter((race) => !selectedRaces || selectedRaces.has(race)).map((race) => {
-      const hint = withHints ? buildRaceCatalogHint(getRaceIntroductionLine(race)) : '';
+      // 注册时附体型与体态，方便选种族、填 base.bodySize；追踪请求不带提示以省 token
+      const hint = withHints ? [buildRaceCatalogHint(getRaceIntroductionLine(race)), getRaceCatalogBodyTag(race)].filter(Boolean).join('·') : '';
       return hint ? `${race}(${hint})` : race;
     });
     return names.length > 0 ? `- ${label}: ${names.join('、')}` : '';
@@ -139,6 +140,29 @@ function formatBodySizeLevel(value) {
   const num = Number(value);
   const index = Math.max(0, Math.min(BODY_SIZE_LEVEL_NAMES.length - 1, Math.round(num) - 1));
   return `${formatNumber(num, 1)} 级（${BODY_SIZE_LEVEL_NAMES[index]}，${BODY_SIZE_HEIGHT_REFERENCES[index]}）`;
+}
+
+const BODY_PLAN_DESCRIPTIONS = Object.freeze({
+  humanoid: '胸、腰、臀三围都适用，孕肚是前腹隆起',
+  hybrid: '人类上身接动物下半身，只有胸围适用，子宫与孕肚在下半身',
+  beast: '动物或异形体型，不套用人类的三围与孕肚描写',
+  any: '形体不固定，能变化形体或同族形态差异大，按个体当下的形态描写',
+});
+
+/** 体态：告诉模型这个种族怎么出场、孕肚长在哪；能变形的种族记常态 */
+function getBodyPlanText(bodyPlan) {
+  const label = RACE_BODY_PLAN_LABELS[bodyPlan];
+  return label ? `${label}：${BODY_PLAN_DESCRIPTIONS[bodyPlan]}。` : '';
+}
+
+/** 注册名录的辨识提示后缀：「5级·半人形」，有变化态写「4→7级」 */
+function getRaceCatalogBodyTag(race) {
+  const profile = getRacePhysiologyProfile(race) || {};
+  const size = profile.bodySize === null || profile.bodySize === undefined ? '可变'
+    : profile.bodySize === BODY_SIZE_INDIVIDUAL ? '依个体'
+      : `${profile.bodySize}${typeof profile.altFormBodySize === 'number' ? `→${profile.altFormBodySize}` : ''}级`;
+  const plan = RACE_BODY_PLAN_LABELS[profile.bodyPlan];
+  return plan ? `${size}·${plan}` : size;
 }
 
 /** 体型 1–7 级，人类为 4；只供叙述参考，不限制交合与受孕 */
@@ -312,6 +336,7 @@ function buildSingleRacePhysiologyBlock(race) {
     `- 多产性: ${getProlificacyText(profile.orgasmOvulationAmount, profile.identicalProbability)}；额外排卵倾向 ${formatNumber(profile.orgasmOvulationAmount)}（高潮时按当下活力占比排出，每周期黄体期前、黄体期各一次），同卵多胎概率 ${formatNumber(profile.identicalProbability)}%`,
     `- 性别比: ${getGenderRatioText(profile.genderRatio)}`,
     `- 体型: ${getBodySizeText(profile)}`,
+    profile.bodyPlan ? `- 体态: ${getBodyPlanText(profile.bodyPlan)}` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -337,6 +362,7 @@ function buildHybridAverageBlock(race, bloodline = null) {
     `- 平均多产性参考: ${getProlificacyText(merged.orgasmOvulationAmount, merged.identicalProbability)}；额外排卵倾向 ${formatNumber(merged.orgasmOvulationAmount)}（高潮时按当下活力占比排出，每周期黄体期前、黄体期各一次），同卵多胎概率 ${formatNumber(merged.identicalProbability)}%`,
     `- 平均性别比参考: ${getGenderRatioText(merged.genderRatio)}`,
     `- 平均体型参考: ${getBodySizeText(merged)}`,
+    merged.bodyPlan ? `- 体态参考: ${getBodyPlanText(merged.bodyPlan)}` : '',
   ].filter(Boolean).join('\n');
 }
 

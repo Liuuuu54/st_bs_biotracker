@@ -34,6 +34,8 @@ import {
   BODY_SIZE_INDIVIDUAL,
   BODY_SIZE_LEVEL_NAMES,
   BODY_SIZE_SD_MAX,
+  RACE_BODY_PLANS,
+  RACE_BODY_PLAN_LABELS,
   getEmbryoTypeByRace,
   getBuiltinRacePhysiologyProfile,
   getBuiltinRaceIntroductionLine,
@@ -2292,6 +2294,18 @@ function renderRaceBodySizeEditorFields(editorNode, race) {
   const alt = getRaceBodySizeInputValue(race, 'altFormBodySize');
   altSelect.value = typeof alt === 'number' ? String(alt) : '';
   appendField('altFormBodySize', '变化态体型', altSelect);
+
+  const planSelect = document.createElement('select');
+  planSelect.id = 'bs-bt-race-field-bodyPlan';
+  planSelect.title = '人形：三围都适用；半人形：人身接动物下半身，孕肚在下半身；非人形：三围不适用；任意：形体不固定';
+  for (const plan of RACE_BODY_PLANS) {
+    const option = document.createElement('option');
+    option.value = plan;
+    option.textContent = RACE_BODY_PLAN_LABELS[plan];
+    planSelect.appendChild(option);
+  }
+  planSelect.value = String(getRaceBodySizeInputValue(race, 'bodyPlan') || 'humanoid');
+  appendField('bodyPlan', '体态', planSelect);
 }
 
 function readRaceBodySizeEditorValues() {
@@ -2306,6 +2320,8 @@ function readRaceBodySizeEditorValues() {
   }
   const alt = document.querySelector('[data-race-body-size-field="altFormBodySize"]');
   if (alt instanceof HTMLSelectElement) values.altFormBodySize = alt.value === '' ? null : Number(alt.value);
+  const plan = document.querySelector('[data-race-body-size-field="bodyPlan"]');
+  if (plan instanceof HTMLSelectElement && RACE_BODY_PLANS.includes(plan.value)) values.bodyPlan = plan.value;
   return values;
 }
 
@@ -2398,6 +2414,8 @@ function copyHumanPhysiologyToEditor() {
   if (sd instanceof HTMLInputElement) sd.value = human.bodySizeSd === null ? '' : String(human.bodySizeSd);
   const alt = document.querySelector('[data-race-body-size-field="altFormBodySize"]');
   if (alt instanceof HTMLSelectElement) alt.value = '';
+  const plan = document.querySelector('[data-race-body-size-field="bodyPlan"]');
+  if (plan instanceof HTMLSelectElement) plan.value = human.bodyPlan || 'humanoid';
 }
 
 function openRacePhysiologyEditor(ctx) {

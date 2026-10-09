@@ -49,7 +49,7 @@ test('依个体的父母以个体体型代入：一人高的大蟑螂与人类�
 });
 
 test('变化态沿用个体偏差：比龙族平均高 0.6 的龙娘，真身截在 7', () => {
-  const dragon = resolveBodySize({ race: '西方龙', bodySize: 4.6 });
+  const dragon = resolveBodySize({ race: '东方龙', bodySize: 4.6 });
   assert.equal(getAltFormBodySize(dragon), 7);
   const fairy = resolveBodySize({ race: '妖精', bodySize: 0.8 });
   assert.equal(fairy.size, 1);

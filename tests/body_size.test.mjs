@@ -33,7 +33,7 @@ test('81 个内置物种都有体型资料，值在合法范围内', () => {
 
 test('人类为 4 级、标准差 0.4、没有变化态；变形种族的常态记人态', () => {
   assert.deepEqual(pickBodySize(getRacePhysiologyProfile('人类')), { bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null });
-  assert.deepEqual(pickBodySize(getRacePhysiologyProfile('西方龙')), { bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 7 });
+  assert.deepEqual(pickBodySize(getRacePhysiologyProfile('东方龙')), { bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 7 });
   assert.deepEqual(pickBodySize(getRacePhysiologyProfile('妖精')), { bodySize: 1, bodySizeSd: 0.4, altFormBodySize: 4 });
   assert.equal(getRacePhysiologyProfile('史萊姆').bodySize, null);
   assert.equal(getRacePhysiologyProfile('怪兽类').bodySize, BODY_SIZE_INDIVIDUAL);
@@ -51,8 +51,8 @@ test('混血按血统加权；可变与依个体不参与平均', () => {
 });
 
 test('混血变化态：没有变化态的成分以常态参与加权', () => {
-  assert.deepEqual(getMergedRaceBodySize('西方龙x人类'), { bodySize: 4, bodySizeSd: 0.45, altFormBodySize: 5.5 });
-  assert.equal(getMergedRaceBodySize('西方龙x人类', { 西方龙: 0.75, 人类: 0.25 }).altFormBodySize, 6.3);
+  assert.deepEqual(getMergedRaceBodySize('东方龙x人类'), { bodySize: 4, bodySizeSd: 0.45, altFormBodySize: 5.5 });
+  assert.equal(getMergedRaceBodySize('东方龙x人类', { 东方龙: 0.75, 人类: 0.25 }).altFormBodySize, 6.3);
 });
 
 test('混血生理档带上体型栏位，其他栏位不受影响', () => {
@@ -82,9 +82,9 @@ test('覆写生效：可从数值改成可变，也能改回', () => {
 });
 
 test('物种生理块含体型行；变化态标出常态，可变与依个体各有说法', () => {
-  const lastLine = (race) => buildSingleRacePhysiologyText(race).split('\n').pop();
+  const lastLine = (race) => buildSingleRacePhysiologyText(race).split('\n').find((line) => line.startsWith('- 体型'));
   assert.equal(lastLine('人类'), '- 体型: 4 级（人类，约 150–190 cm）；族内个体差异约 ±0.4 级。1–7 级，人类为 4。');
-  assert.match(lastLine('西方龙'), /^- 体型: 常态 4 级（人类，约 150–190 cm）；族内个体差异约 ±0\.5 级；变化态 7 级（巨兽，6 m 以上）。/);
+  assert.match(lastLine('东方龙'), /^- 体型: 常态 4 级（人类，约 150–190 cm）；族内个体差异约 ±0\.5 级；变化态 7 级（巨兽，6 m 以上）。/);
   assert.match(lastLine('史萊姆'), /可变，能随对象调整形体，与任何对象都恰好契合/);
   assert.match(lastLine('怪兽类'), /依个体而定/);
 });
@@ -92,3 +92,36 @@ test('物种生理块含体型行；变化态标出常态，可变与依个体�
 function pickBodySize({ bodySize, bodySizeSd, altFormBodySize }) {
   return { bodySize, bodySizeSd, altFormBodySize };
 }
+
+test('体态：四种分类、蝎罗氏为半人形、混血按血统且任意不投票，覆写可改', async () => {
+  const { RACE_BODY_PLANS, getMergedRaceBodyPlan } = await import('../scripts/race_config.js');
+  const counts = {};
+  for (const race of ALL_BUILTIN_RACES) {
+    const plan = getRacePhysiologyProfile(race).bodyPlan;
+    assert.ok(RACE_BODY_PLANS.includes(plan), `${race} bodyPlan ${plan}`);
+    counts[plan] = (counts[plan] || 0) + 1;
+  }
+  assert.deepEqual(counts, { humanoid: 61, beast: 3, hybrid: 5, any: 12 });
+  assert.equal(getRacePhysiologyProfile('蝎罗氏').bodyPlan, 'hybrid');
+  assert.equal(getRacePhysiologyProfile('修格斯').bodyPlan, 'any');
+  assert.equal(getMergedRaceBodyPlan('史萊姆x人类'), 'humanoid', '任意不参与投票');
+  assert.equal(getMergedRaceBodyPlan('修格斯x史萊姆'), 'any');
+  assert.equal(getMergedRaceBodyPlan('半人马x人类', { 半人马: 0.75, 人类: 0.25 }), 'hybrid');
+  assert.equal(getMergedRaceBodyPlan('半人马x人类'), 'humanoid', '平手取较接近人类的');
+  assert.equal(sanitizeRacePhysiologyProfilePatch({ bodyPlan: 'x' }), null);
+  try {
+    setRacePhysiologyOverrides({ 眼魔: { bodyPlan: 'humanoid' } });
+    assert.equal(getRacePhysiologyProfile('眼魔').bodyPlan, 'humanoid');
+  } finally {
+    setRacePhysiologyOverrides({});
+  }
+  assert.match(buildSingleRacePhysiologyText('半人马'), /- 体态: 半人形：人类上身接动物下半身，只有胸围适用，子宫与孕肚在下半身/);
+});
+
+test('变形种族的人态不全是 4：西方龙、空鲸、海德拉高大，麒麟、独角兽娇小，真身不变', () => {
+  const pairs = Object.fromEntries(['西方龙', '空鲸', '海德拉', '麒麟', '独角兽'].map((race) => {
+    const { bodySize, altFormBodySize } = getRacePhysiologyProfile(race);
+    return [race, [bodySize, altFormBodySize]];
+  }));
+  assert.deepEqual(pairs, { 西方龙: [5, 7], 空鲸: [5, 7], 海德拉: [5, 7], 麒麟: [3, 5], 独角兽: [3, 5] });
+});
