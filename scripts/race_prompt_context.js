@@ -1,4 +1,4 @@
-import { BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
+import { ALL_BUILTIN_RACES, BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN } from './stage_config.js';
 
 /**
@@ -151,6 +151,22 @@ function getBodySizeText({ bodySize, bodySizeSd, altFormBodySize } = {}) {
   if (Number.isFinite(sd) && sd > 0) parts.push(`族内个体差异约 ±${formatNumber(sd)} 级`);
   if (hasAltForm) parts.push(`变化态 ${formatBodySizeLevel(altFormBodySize)}`);
   return `${parts.join('；')}。1–7 级，人类为 4。`;
+}
+
+/**
+ * 追踪端的 maleBodySize 提示：依当前生效资料（含百科覆写）列出依个体的物种，
+ * 插入当下精方还不在状态里、他的生理块不会送出，模型只能靠这一段知道要不要填体型。
+ */
+export function buildBodySizeToolNote({ selection = null } = {}) {
+  const individual = ALL_BUILTIN_RACES.filter((race) => isRaceInCatalogSelection(selection, race)
+    && getRacePhysiologyProfile(race)?.bodySize === BODY_SIZE_INDIVIDUAL);
+  return [
+    '[体型参数]',
+    individual.length > 0
+      ? `- bsAddSperm insert 时，精方种族体型为依个体者必须按剧情传 maleBodySize：${individual.join('、')}。未收录的自订种族同样要传。`
+      : '- bsAddSperm insert 时，精方为未收录的自订种族必须按剧情传 maleBodySize。',
+    '- 其余种族只在剧情写明对方比同族明显高大或矮小时传；精方是已注册角色时省略。',
+  ].join('\n');
 }
 
 function getBirthDifficultyText(value) {

@@ -180,3 +180,18 @@ test('族谱：路人父亲带上子女记录的体型，已注册角色带个�
   assert.equal(graph.nodes.find((node) => node.id === 'name:大蟑螂').bodySize, 4.5);
   assert.equal(graph.nodes.find((node) => node.id === 'char:冒险者').bodySize, 4);
 });
+
+test('追踪提示的依个体名单跟着百科覆写走，写实世界不送', async () => {
+  const { buildTrackerSystemPrompt } = await import('../scripts/tracker_prompt_context.js');
+  const { setRacePhysiologyOverrides } = await import('../scripts/race_config.js');
+  const note = (payload = {}) => buildTrackerSystemPrompt('', null, payload).split('\n').find((line) => line.includes('必须按剧情传 maleBodySize')) || '';
+  assert.match(note(), /怪兽类.*独居虫族.*心魇/);
+  try {
+    setRacePhysiologyOverrides({ 怪兽类: { bodySize: 5, bodySizeSd: 1 }, 人类: { bodySize: 'individual' } });
+    assert.ok(!note().includes('怪兽类'));
+    assert.ok(note().includes('人类'));
+  } finally {
+    setRacePhysiologyOverrides({});
+  }
+  assert.equal(note({ realistic_world: true }), '');
+});

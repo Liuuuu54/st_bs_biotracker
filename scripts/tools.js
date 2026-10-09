@@ -394,7 +394,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         action: { type: 'string', enum: ['insert', 'deposit', 'withdraw'] },
         hasCondom: { type: 'boolean', description: '本次是否使用屏障式避孕（套子，或世界观中的等效手段，如羊肠套、魔法屏障）；只有剧情确实使用时才为 true，不得引入世界观没有的器具。insert 设置、deposit 可显式更新、省略沿用，withdraw 不结算。' },
         amount: { type: 'number', description: 'insert／withdraw 必须为 0；deposit 必须为正数。' },
-        maleBodySize: { type: 'number', description: '精方常态（人态）的个体体型，1–7 级（人类 4，可带小数，约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7）。insert 时给出。精方是已注册角色时省略；种族为依个体（怪兽类、怪鸟类、怪鱼类、植物族、真菌族、独居虫族、心魇）时按剧情填写，例如一人高的大蟑螂填 4；其余种族只在剧情写明对方比同族明显高大或矮小时填写。' },
+        maleBodySize: { type: 'number', description: '精方常态（人态）的个体体型，1–7 级（人类 4，可带小数，约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7）。insert 时给出。精方是已注册角色时省略；种族为依个体（名单见追踪提示的 [体型参数] 段）或未收录的自订种族时必须按剧情填写，例如一人高的大蟑螂填 4；其余种族只在剧情写明对方比同族明显高大或矮小时填写。' },
         femaleAltForm: { type: 'boolean', description: '本次卵方以变化态进行（龙的真身、妖精以魔法变成人类大小等）；只有该种族有变化态、剧情确实变身时才为 true。insert 设置。' },
         maleAltForm: { type: 'boolean', description: '本次精方以变化态进行，规则同 femaleAltForm。insert 设置。' },
         sizeBridge: { type: 'boolean', description: '本次以魔法、变形等手段消弭双方体型差，视为恰好契合；比照 hasCondom，只有剧情确实使用、且世界观存在该手段时才为 true。insert 设置。' },

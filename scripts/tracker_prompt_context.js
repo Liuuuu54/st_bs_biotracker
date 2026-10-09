@@ -1,6 +1,6 @@
 import { PSY_MENS_FIELDS, PSY_PREG_FIELDS } from './registry_psy_config.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
-import { buildRaceCatalogBlock, buildRacePhysiologyPrompt, buildWorldBaselineBlock, isOwnMetabolismHidden } from './race_prompt_context.js';
+import { buildBodySizeToolNote, buildRaceCatalogBlock, buildRacePhysiologyPrompt, buildWorldBaselineBlock, isOwnMetabolismHidden } from './race_prompt_context.js';
 import { getDerivedTypeFluxProfile } from './race_config.js';
 import { deriveFetusTags, describeFetusTags } from './fetus_tags.js';
 import { LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGES } from './stage_config.js';
@@ -384,6 +384,8 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
   }
   const embryoTypeLorePrompt = payload?.realistic_world === true ? '' : buildEmbryoTypeLorePrompt(payload || {});
   if (embryoTypeLorePrompt) parts.push(embryoTypeLorePrompt);
+  // 写实世界全是人类，没有依个体的物种；对方特别高大或矮小时仍可依工具说明传 maleBodySize
+  if (payload?.realistic_world !== true) parts.push(buildBodySizeToolNote({ selection: payload?.race_catalog_selection || null }));
   if (!diaryEnabled) {
     parts.push('[diary]\n- diary 系统当前已关闭（settings.diaryRecentLimit = 0）。本轮不要参考 diary，也不要调用 bsWriteDiary。');
   }
