@@ -38,7 +38,7 @@ export const COMPANION_EGGS_DEFINITION_PROMPT = [
  * 目的是让模型在名录阶段就能分辨形近种族（人鱼／鱼人、精灵／妖精），
  * 完整介绍仍由 buildSingleRacePhysiologyBlock 在该族真正登场时给出。
  */
-function buildRaceCatalogHint(text) {
+export function buildRaceCatalogHint(text) {
   const line = sanitizePromptText(text);
   if (!line) return '';
   const clauses = line.split(/[；。]/)[0].split('，').map((part) => part.trim()).filter(Boolean);

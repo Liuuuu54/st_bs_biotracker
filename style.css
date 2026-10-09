@@ -2316,6 +2316,12 @@
   opacity: 0.82;
 }
 
+#bs-biotracker-settings .bs-bt-race-editor-hint {
+  font-size: 0.76em;
+  line-height: 1.45;
+  opacity: 0.72;
+}
+
 #bs-biotracker-settings .bs-bt-race-editor-badge {
   width: fit-content;
   padding: 1px 6px;

@@ -91,7 +91,7 @@ import { applyToolCall, writeDiaryEntry } from './scripts/tools.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
-import { buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
+import { buildRaceCatalogHint, buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
 import { appendSkillHistory, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
 import {
@@ -2105,6 +2105,17 @@ function renderRacePhysiologyEditor(race) {
   introductionInput.value = getRaceIntroductionInputValue(race);
   introductionInput.placeholder = '可留空；填入后会作为该物种的提示词短句。';
   introductionLabel.appendChild(introductionInput);
+
+  // 注册名录只截取开头当辨识提示，写的人要知道哪几个字会被送出去
+  const introductionHint = document.createElement('span');
+  introductionHint.className = 'bs-bt-race-editor-hint';
+  const updateIntroductionHint = () => {
+    const preview = buildRaceCatalogHint(introductionInput.value);
+    introductionHint.textContent = `注册时的物种名录只截取开头一两个分句（到第一个句号或分号为止，约 10–28 字）当辨识提示，最能辨认形象的描述请写在最前面；完整内容在该物种有角色在场时随生理说明送出。名录提示预览：${preview || '（空白，名录只列名称）'}`;
+  };
+  updateIntroductionHint();
+  introductionInput.addEventListener('input', updateIntroductionHint);
+  introductionLabel.appendChild(introductionHint);
 
   {
     const badge = document.createElement('span');
