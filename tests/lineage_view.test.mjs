@@ -34,7 +34,7 @@ test('节点带上关系摘要与种族显示字串', () => {
   assert.equal(mother.raceLabel, '精灵');
 });
 
-test('未注册的路人不可展开详情', () => {
+test('没有父方快照的未注册路人不可展开详情', () => {
   const view = buildLineageView(sample(), '我');
   const stranger = view.nodes.find((node) => node.displayName === '祖父');
   assert.equal(stranger.kind, 'unregistered');
@@ -244,4 +244,15 @@ test('视图节点带上人生阶段：代孕的卵源是卵方、路人父亲�
   assert.equal(byName('代孕女').lifeStage, '婴儿');
   assert.equal(byName('路人乙').lifeStage, '精方');
   assert.equal(byName('代母甲').lifeStage, '卵方');
+});
+
+test('带父方快照的路人父亲可展开详情（种族、体型来自子女记录）', () => {
+  const chatState = sample();
+  const mine = chatState.characters['我'].profile;
+  mine.children = [...(mine.children || []), { id: 'roach-kid', name: '虫仔', fathers: '大蟑螂', fatherRace: '独居虫族-蟑螂', fatherBodySize: 4.5, race: '独居虫族x人类', gender: '男', age: 0 }];
+  const view = buildLineageView(chatState, '我');
+  const roach = view.nodes.find((node) => node.displayName === '大蟑螂');
+  assert.equal(roach.kind, 'unregistered');
+  assert.equal(roach.hasDetail, true);
+  assert.equal(roach.bodySize, 4.5);
 });

@@ -5,6 +5,7 @@ import { isRealisticWorld } from './world_mode.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
 import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt, buildWorldBaselineBlock } from './race_prompt_context.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
+import { clampIndividualBodySize, getExpectedBodySize, sampleBodySize } from './body_size.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -662,6 +663,7 @@ async function buildRegistryPayload(ctx, settings, chatState, options = {}) {
       childIndex: options.sourceChildContext.childIndex,
       name: options.sourceChildContext.child?.name ?? null,
       fathers: options.sourceChildContext.child?.fathers ?? null,
+      fatherBodySize: options.sourceChildContext.child?.fatherBodySize ?? null,
       gender: options.sourceChildContext.child?.gender ?? null,
       race: options.sourceChildContext.child?.race ?? null,
       derivedType: options.sourceChildContext.child?.derivedType ?? null,
@@ -928,7 +930,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '你只需要填写角色注册时真正需要声明的内容，不需要补充其他无关信息。',
     '不要扩写额外分类，不要发散到注册步骤之外的内容。',
     '你只需要填写以下声明内容：',
-    '1. 角色基础注册：base.age、base.race、base.vitalityLevel、base.psyStressLevel、base.libido、base.uterinePressure、base.latestSexDays、base.penetrationState、base.penetrationSource、base.sperms、metabolism',
+    '1. 角色基础注册：base.age、base.race、base.bodySize、base.vitalityLevel、base.psyStressLevel、base.libido、base.uterinePressure、base.latestSexDays、base.penetrationState、base.penetrationSource、base.sperms、metabolism',
     '2. 情感与妊娠经验：experience',
     ...(includeBreedingPsychology ? ['3. 繁育心理：psychology.mens 或 psychology.preg（二选一，互斥）'] : []),
     '4. 既有孩子记录：children',
@@ -944,6 +946,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- base.vitalityLevel: 1-7，默认语义为 一推就倒(1)-身怀病弱(2)-难产体态(3)-均衡活力(4)-安产体态(5)-经过锻炼(6)-无坚不摧(7)',
     '- base.psyStressLevel: 1-7，默认语义为 情感丧失麻木不仁(1)-内向压抑冷感(2)-情绪平缓理性(3)-情绪均衡稳定(4)-情绪丰富敏感(5)-强烈波动焦躁(6)-极端情绪精神异常(7)',
     '- base.age: 必填，不得省略或填 null。依角色卡、世界书与对话推断实际年龄；长生种只写外表年龄时，按设定推估实际岁数；资料完全没有提到时，按外貌、身分与经历推估一个合理年龄。',
+    '- base.bodySize: 常态（人态）的个体体型，1–7 级，人类为 4，可带一位小数。依角色卡写明的身高或身材换算：约 30 cm＝1.5、120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7，锚点之间按比例内插；萝莉体型约 3–3.5，八尺约 5.3。半人马、拉弥亚等大型下半身看整体量体，以种族体型为准再增减。能变形的种族只填常态，变化态由系统按种族推算。未成年角色填当下的体型。卡上没写身材就省略，系统按种族分布抽取；种族体型为依个体时（怪兽类、怪鸟类、怪鱼类、植物族、真菌族、独居虫族、心魇）必须按子项或描述填写；种族体型为可变时省略。',
     '- base.libido: 初始性欲。非妊娠上限100；妊娠後会随孕期提升，临产最后一天上限可达150。若角色开场就在发情、催情、强欲状态，可给较高值。',
     '- base.uterinePressure: 初始宫压。非妊娠上限50；妊娠後会随进度平滑提升，臨產期上限达150。【危险警告】孕早期与孕中期前期上限极低，超过15便极易触发流产警告！除非开局正在临盆或剧烈腹痛，否则强烈建议填 0。',
     '- base.latestSexDays: 距最近一次性行为经过的天数。若 experience.latestSexPartner 有意义，建议一并填写；若已超过最近一月经周期或无从判断，可为 null。',
@@ -1072,6 +1075,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '    "base": {',
     '      "age": 0,',
     '      "race": "string",',
+    '      "bodySize": 4,',
     '      "libido": 0,',
     '      "uterinePressure": 0,',
     '      "latestSexDays": 0,',
@@ -1684,6 +1688,10 @@ function sanitizeRegistryProfile(profile, baseProfile) {
       const age = Number(profile.base.age);
       if (Number.isFinite(age)) nextBase.age = age;
     }
+    if (profile.base.bodySize !== undefined) {
+      const bodySize = clampIndividualBodySize(profile.base.bodySize);
+      if (bodySize !== null) nextBase.bodySize = bodySize;
+    }
     if (profile.base.libido !== undefined) {
       const libido = sanitizeMeter(profile.base.libido, { min: 0, max: 150 });
       if (libido !== null) nextBase.libido = libido;
@@ -1776,7 +1784,7 @@ function getRegisteredRecoveryDays(profile) {
   });
 }
 
-export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true, useGestationModifier = true, gestationModifierMultiplier = null, initialCognitionRecords = undefined } = {}) {
+export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true, useGestationModifier = true, gestationModifierMultiplier = null, initialCognitionRecords = undefined, bodySizeParents = [], random = Math.random } = {}) {
   const name = String(result?.name || '').trim();
   if (!name) throw new Error('注册结果缺少角色名称');
   const current = chatState.characters[name];
@@ -1847,6 +1855,10 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
         ...base.profile.base,
         ...(sanitizedProfile.base || {}),
         ...ancestry,
+        // 卡上没写身材时按种族（与已知父母）的体型分布抽一次；可变与依个体抽不出来，留空
+        bodySize: sanitizedProfile.base?.bodySize
+          ?? (effectiveRace === base.profile.base.race ? clampIndividualBodySize(base.profile.base.bodySize) : null)
+          ?? sampleBodySize(getExpectedBodySize(effectiveRace, ancestry.bloodline, bodySizeParents), random),
         vitality: getVitalityInitByLevel(sanitizedProfile.base?.vitalityLevel ?? base.profile.base.vitalityLevel),
         psyStress: getPsyStressInitByLevel(sanitizedProfile.base?.psyStressLevel ?? base.profile.base.psyStressLevel),
       },
@@ -2541,6 +2553,10 @@ export async function runRegistry(ctx, options = {}) {
       useGestationModifier: options.useGestationModifier === true,
       gestationModifierMultiplier: options.gestationModifierMultiplier ?? null,
       initialCognitionRecords: options.initialCognitionRecords,
+      bodySizeParents: sourceChildContext ? [
+        { race: sourceChildContext.child?.fatherRace, bodySize: sourceChildContext.child?.fatherBodySize },
+        { race: chatState.characters[sourceChildContext.motherName]?.profile?.base?.race, bodySize: chatState.characters[sourceChildContext.motherName]?.profile?.base?.bodySize },
+      ] : [],
     });
     if (sourceChildContext) character = applyRegistryChildInheritance(chatState, targetName, requestedSource).character;
     if (bundleOutput) character = applyRegistryBundle(chatState, targetName, bundleOutput, workingSkills, bundleReport);

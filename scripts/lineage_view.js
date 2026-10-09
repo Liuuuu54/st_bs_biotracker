@@ -162,8 +162,8 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
       carriers: parents.filter((item) => !isGenetic(item)),
       children: childrenOf,
       carriedChildren: childrenOf.filter((item) => !isGenetic(item)),
-      // 未注册的路人不能点进详情，没有可展开的资料
-      hasDetail: node.kind !== 'unregistered',
+      // 未注册的路人只有在子女记录带了父方快照（种族或体型）时才有资料可展开
+      hasDetail: node.kind !== 'unregistered' || Boolean(node.race) || typeof node.bodySize === 'number',
     };
   });
 

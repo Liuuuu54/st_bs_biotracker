@@ -58,6 +58,7 @@ import {
   OVOVIVIPAROUS_RACES,
   VIVIPAROUS_RACES,
 } from './scripts/race_config.js';
+import { clampIndividualBodySize, getAltFormBodySize, resolveBodySize } from './scripts/body_size.js';
 import { initializeCalculatorUi } from './scripts/calculator_ui.js'; import { lifeStageIconSvg, raceIconSvg } from './scripts/race_icons.js';
 import { createRacePaletteSelection, appendRacePaletteTag, removeRacePaletteTag, equalizeRacePalette,
   setRacePalettePercent, palettePercentText, buildRacePaletteValue } from './scripts/race_palette.js';
@@ -2206,6 +2207,17 @@ function getRaceBodySizeInputValue(race, field) {
   return getBuiltinRacePhysiologyProfile(race)?.[field] ?? null;
 }
 
+// 追踪页的体型：个体值优先，没有就标示种族平均；变化态另附
+function formatCharacterBodySizeLabel(base = {}) {
+  const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
+  if (resolved.kind === 'variable') return '可变';
+  if (resolved.kind === 'unknown') return '未记录（依个体）';
+  const level = (value) => `${Math.round(value * 10) / 10} 级（${BODY_SIZE_LEVEL_NAMES[Math.max(0, Math.min(6, Math.round(value) - 1))]}）`;
+  const own = clampIndividualBodySize(base.bodySize) !== null;
+  const alt = getAltFormBodySize(resolved);
+  return `${level(resolved.size)}${own ? '' : '，种族平均'}${alt === null ? '' : `；变化态 ${level(alt)}`}`;
+}
+
 function encodeBodySizeOption(value) {
   if (value === BODY_SIZE_INDIVIDUAL) return BODY_SIZE_INDIVIDUAL;
   return typeof value === 'number' ? String(value) : BODY_SIZE_VARIABLE_OPTION;
@@ -3785,6 +3797,7 @@ function buildTrackCharacterViewModel(character) {
       raceLabel: formatRaceLabel(base.race, base.derivedType),
       bloodlineLabel: formatBloodline(base.race, base.bloodline, base.bloodlineSource),
       age: Number.isFinite(Number(base.age)) ? Math.round(Number(base.age)) : null,
+      bodySizeLabel: formatCharacterBodySizeLabel(base),
       stage,
       stageProgress: getStageProgress(profile),
       stats: [
@@ -4058,6 +4071,7 @@ function renderTrackOverview(viewModel) {
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">种族</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.raceLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">血脉</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bloodlineLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">年龄</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.age ?? '未知')}</span></div>
+        <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodySizeLabel)}</span></div>
       </div>
     </div>
     <div class="bs-bt-track-section bs-bt-track-stage-progress${stageSectionClass}"${stageSectionStyle}>
@@ -4708,6 +4722,13 @@ function renderTrackLineageEntry(viewModel) {
 
 const LINEAGE_ID = 'bs-bt-lineage';
 
+// 族谱的体型：已注册角色照追踪页的写法；路人父亲只在子女记录里记过体型时才显示；未注册的孩子不显示
+function lineageBodySizeRow(node) {
+  if (node.kind === 'character') return [['体型', formatCharacterBodySizeLabel(node)]];
+  if (node.kind === 'unregistered' && typeof node.bodySize === 'number') return [['体型', `${formatCharacterBodySizeLabel(node)}（据子女记录）`]];
+  return [];
+}
+
 function lineageDetailRows(node) {
   if (!node) return '';
   const rows = [
@@ -4716,7 +4737,9 @@ function lineageDetailRows(node) {
       : [['种族', node.raceLabel || '未知'], ['血脉', node.bloodlineLabel || '未知']]),
     ['性别', node.gender || '—'],
     ['年龄', node.ageLabel || '未知'],
-    ['世代', node.generation === 0 ? '本人' : (node.generation < 0 ? `上${Math.abs(node.generation)}代` : `下${node.generation}代`)],
+    ...lineageBodySizeRow(node),
+    // 配偶与中心同一世代，不是「本人」
+    ['世代', node.generation === 0 ? (node.isCenter ? '本人' : '同辈') : (node.generation < 0 ? `上${Math.abs(node.generation)}代` : `下${node.generation}代`)],
     ['亲代', node.geneticParents.map((item) => `${item.relation}：${item.name}`).join('、') || '无记录'],
     ['子代', node.children.map((item) => item.name).join('、') || '无记录'],
   ];

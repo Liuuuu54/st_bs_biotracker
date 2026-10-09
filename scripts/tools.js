@@ -1,6 +1,7 @@
 import { recordExperience, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
 import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
+import { CONCEPTION_WEIGHT_RATIO_MAX, CONCEPTION_WEIGHT_RATIO_MIN, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeWeightRatio, resolveBodySize } from './body_size.js';
 import {
   cloneValue,
   createChildId,
@@ -381,6 +382,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + 'action=insert／withdraw 时 amount=0；只有 insert 后才能以 action=deposit 沉积正数精液，沉积后若要再次射精须重新 insert。不同来源 insert 会直接交棒。'
       + 'amount 建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
       + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。'
+      + 'insert 会按双方体型结算体型契合（只影响叙述，不限制交合与受孕），结果写在回传讯息与次级提示；体型参数见 maleBodySize、femaleAltForm、maleAltForm、sizeBridge。'
       + '产兆前驱与产程中插入会顶到最前面的胎儿：前驱时把领头胎儿往上顶、延后前驱；第二产程把产道里的先露胎往回顶、产程进度倒退，着冠时倒退更多且可能顶破胎膜；第一产程只会痛。被顶的胎儿亲和下降。产兆前驱中射精则会缩短前驱。结果写在回传讯息里，供下一次回复承接，不要求重写当轮正文。',
     input_schema: {
       type: 'object',
@@ -392,6 +394,10 @@ export const TOOL_DEFINITIONS = Object.freeze([
         action: { type: 'string', enum: ['insert', 'deposit', 'withdraw'] },
         hasCondom: { type: 'boolean', description: '本次是否使用屏障式避孕（套子，或世界观中的等效手段，如羊肠套、魔法屏障）；只有剧情确实使用时才为 true，不得引入世界观没有的器具。insert 设置、deposit 可显式更新、省略沿用，withdraw 不结算。' },
         amount: { type: 'number', description: 'insert／withdraw 必须为 0；deposit 必须为正数。' },
+        maleBodySize: { type: 'number', description: '精方常态（人态）的个体体型，1–7 级（人类 4，可带小数，约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7）。insert 时给出。精方是已注册角色时省略；种族为依个体（怪兽类、怪鸟类、怪鱼类、植物族、真菌族、独居虫族、心魇）时按剧情填写，例如一人高的大蟑螂填 4；其余种族只在剧情写明对方比同族明显高大或矮小时填写。' },
+        femaleAltForm: { type: 'boolean', description: '本次卵方以变化态进行（龙的真身、妖精以魔法变成人类大小等）；只有该种族有变化态、剧情确实变身时才为 true。insert 设置。' },
+        maleAltForm: { type: 'boolean', description: '本次精方以变化态进行，规则同 femaleAltForm。insert 设置。' },
+        sizeBridge: { type: 'boolean', description: '本次以魔法、变形等手段消弭双方体型差，视为恰好契合；比照 hasCondom，只有剧情确实使用、且世界观存在该手段时才为 true。insert 设置。' },
       },
       required: ['female', 'male', 'race', 'action', 'amount'],
       additionalProperties: false,
@@ -953,6 +959,7 @@ function applyWombReturn(chatState, args) {
   base.fertilizationDays = 0;
   base.penetrationState = 'idle';
   base.penetrationSource = null;
+  base.penetrationFit = null;
   pregnant.fetuses = [];
   pregnant.fetusesCount = 0;
   pregnant.fetalEnergyDrain = 0;
@@ -986,6 +993,7 @@ function applyWombReturn(chatState, args) {
     fatherBloodline: fatherAncestry.bloodline,
     fatherBloodlineSource: fatherAncestry.bloodlineSource,
     fatherDerivedType,
+    fatherBodySize: clampIndividualBodySize(returnerBase.bodySize),
     gender: deriveFetusGender(fetusRace, ancestry.bloodline),
     embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline, getBloodlineInfo(base.race || '人类', base.bloodline, base.bloodlineSource).bloodline),
     // 回归者本身就是唯一的有效个体，没有伴生卵。
@@ -1314,12 +1322,24 @@ function pickImplantedFetusIndex(fetuses) {
   return eligible[randomInt(0, eligible.length - 1)];
 }
 
+/**
+ * 受精胎重系数，两套算法同在 0.5–2：
+ * - 双方体型都有数值时看体型差（getBodySizeWeightRatio）
+ * - 任一方可变或依个体又没记体型时，退回承载耐受的强弱：2^强弱，强弱介于 −1 与 1
+ * 两套不叠加，免得巨人既高耐受又大被重复放大。
+ */
 function getConceptionWeightRatio(profile, sperm) {
+  const base = profile?.base || {};
+  const sizeRatio = getBodySizeWeightRatio(
+    { race: base.race, bloodline: base.bloodline, bodySize: base.bodySize },
+    { race: sperm?.race, bloodline: sperm?.bloodline, bodySize: sperm?.bodySize },
+  );
+  if (sizeRatio !== null) return sizeRatio;
   const motherBreedTolerance = clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0);
   const fatherProfile = getMergedRacePhysiologyProfile(sperm?.race, sperm?.bloodline);
   const fatherBreedTolerance = clampNumber(fatherProfile?.breedTolerance, 0.1, 100, 1.0);
   const dominance = (fatherBreedTolerance - motherBreedTolerance) / Math.max(motherBreedTolerance + fatherBreedTolerance, 0.1);
-  return clampNumber(1 + (dominance * 0.65), 0.625, 1.6, 1.0);
+  return clampNumber(2 ** dominance, CONCEPTION_WEIGHT_RATIO_MIN, CONCEPTION_WEIGHT_RATIO_MAX, 1.0);
 }
 
 function updateDerivedTypeProgress(profile, tick) {
@@ -1545,6 +1565,12 @@ export function calculateChimeraFusionProbability(fetusA, fetusB) {
   return clampNumber(identicalFactor * difficultyFactor * typeMultiplier * derivedMultiplier, 0, 75, 0);
 }
 
+/** 嵌合胎的父方体型：两边都有取平均，只有一边有就沿用 */
+function mergeFatherBodySize(fetusA, fetusB) {
+  const sizes = [fetusA?.fatherBodySize, fetusB?.fatherBodySize].map(clampIndividualBodySize).filter((size) => size !== null);
+  return sizes.length === 0 ? null : clampIndividualBodySize(sizes.reduce((sum, size) => sum + size, 0) / sizes.length);
+}
+
 function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
   const fathers = uniqueNonEmptyStrings([...getFetusFatherSources(fetusA), ...getFetusFatherSources(fetusB)]);
   const maternalSources = uniqueNonEmptyStrings([
@@ -1586,6 +1612,7 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
     fatherBloodline: fatherAncestry.bloodline,
     fatherBloodlineSource: fatherAncestry.bloodlineSource,
     fatherDerivedType,
+    fatherBodySize: mergeFatherBodySize(fetusA, fetusB),
     gender,
     embryoType,
     // 嵌合不是新的独立受精：不重新抽签，承接两边伴生卵的总和
@@ -1791,6 +1818,8 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     fatherBloodline: getBloodlineInfo(fatherRace, sperm?.bloodline, sperm?.bloodlineSource).bloodline,
     fatherBloodlineSource: getBloodlineInfo(fatherRace, sperm?.bloodline, sperm?.bloodlineSource).bloodlineSource,
     fatherDerivedType,
+    // 精液纪录只在个体已知时带体型；精液清掉后仍查得到父方多大
+    fatherBodySize: clampIndividualBodySize(sperm?.bodySize),
     gender,
     embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline, motherBloodline),
     // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
@@ -3768,6 +3797,7 @@ function appendChildrenFromFetuses(profile, fetuses) {
       fatherBloodline: fetus?.fatherBloodline ? cloneValue(fetus.fatherBloodline) : null,
       fatherBloodlineSource: fetus?.fatherBloodlineSource || null,
       fatherDerivedType: fetus?.fatherDerivedType ? String(fetus.fatherDerivedType) : null,
+      fatherBodySize: clampIndividualBodySize(fetus?.fatherBodySize),
       derivedType: childDerivedType,
       age: 0,
       birthWeightRatio: clampNumber(fetus?.weight, 0.33, 3.0, 1.0),
@@ -7147,6 +7177,51 @@ function applyUpdatePsychology(chatState, args) {
   return { applied: true, message: `bsUpdatePsychology applied to ${female}.` };
 }
 
+/**
+ * 插入时的体型契合：卵方看自己的个体体型，精方依序看已注册角色、本次 maleBodySize、种族平均。
+ * 回传 record 存在 base.penetrationFit（拔出时清除），notice 进次级提示，message 进回传讯息。
+ */
+function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args }) {
+  const maleBodySize = clampIndividualBodySize(fatherBase ? fatherBase.bodySize : args?.maleBodySize);
+  const female = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
+  const maleResolved = fatherBase
+    ? resolveBodySize({ race: fatherBase.race, bloodline: fatherBase.bloodline, bodySize: fatherBase.bodySize })
+    : resolveBodySize({ race, bloodline, bodySize: maleBodySize });
+  const notes = [];
+  const applyAltForm = (resolved, flag, label) => {
+    if (flag !== true) return resolved;
+    const formSize = getAltFormBodySize(resolved);
+    if (formSize === null) {
+      notes.push(`${label}没有可用的变化态，按常态计算`);
+      return resolved;
+    }
+    return { ...resolved, formSize, altForm: true };
+  };
+  const sizeBridge = args?.sizeBridge === true;
+  const fit = describeBodySizeFit({
+    female: applyAltForm(female, args?.femaleAltForm, '卵方'),
+    male: applyAltForm(maleResolved, args?.maleAltForm, '精方'),
+    sizeBridge,
+  });
+  const record = fit || maleBodySize !== null
+    ? {
+      male,
+      maleBodySize,
+      label: fit?.label ?? null,
+      gap: fit?.gap ?? null,
+      text: fit?.text ?? null,
+      femaleAltForm: args?.femaleAltForm === true,
+      maleAltForm: args?.maleAltForm === true,
+      sizeBridge,
+    }
+    : null;
+  const unknownNote = !fit && maleResolved.kind === 'unknown' ? '精方体型未知（依个体种族未给 maleBodySize），不结算体型契合。' : '';
+  const message = [fit?.text || unknownNote, ...notes.map((note) => `${note}。`)].filter(Boolean).join(' ');
+  // 恰好契合又没变身就不打扰叙述
+  const noteworthy = fit && (fit.gap >= 0.5 || fit.bridged || args?.femaleAltForm === true || args?.maleAltForm === true);
+  return { record, notice: noteworthy ? fit.text.replace(/。$/, '') : '', message };
+}
+
 function applyAddSperm(chatState, args) {
   const female = String(args?.female || '').trim();
   const male = String(args?.male || '').trim();
@@ -7185,13 +7260,16 @@ function applyAddSperm(chatState, args) {
     const experience = { ...(next.profile?.experience || {}), latestSexPartner: male };
     if (experience.virginity === null || experience.virginity === undefined) experience.virginity = male;
     next.profile.experience = experience;
+    const fit = buildPenetrationFit(base, { male, race, bloodline: ancestry.bloodline, fatherBase, args });
+    base.penetrationFit = fit.record;
     const pushback = applyInsertionPushback(next.profile, female);
-    if (pushback) next.profile.notify = { ...(next.profile.notify || {}), secondly: pushback };
+    const secondly = [pushback, fit.notice].filter(Boolean).join('；');
+    if (secondly) next.profile.notify = { ...(next.profile.notify || {}), secondly };
     chatState.characters[female] = pushback ? syncCharacterStageFromProfile(next) : next;
     const handoff = currentState !== 'idle' && currentSource && currentSource !== male;
     return {
       applied: true,
-      message: `bsAddSperm insert applied to ${female}: ${handoff ? `${currentSource} → ${male} handoff, ` : ''}penetrationState=inserted.${pushback ? ` ${pushback}。` : ''}`,
+      message: `bsAddSperm insert applied to ${female}: ${handoff ? `${currentSource} → ${male} handoff, ` : ''}penetrationState=inserted.${pushback ? ` ${pushback}。` : ''}${fit.message ? ` ${fit.message}` : ''}`,
     };
   }
 
@@ -7203,6 +7281,7 @@ function applyAddSperm(chatState, args) {
     base.penetrationState = 'idle';
     base.penetrationSource = null;
     base.penetrationCondom = false;
+    base.penetrationFit = null;
     next.profile.base = base;
     chatState.characters[female] = next;
     return { applied: true, message: `bsAddSperm withdraw applied to ${female}: penetrationState=idle.` };
@@ -7224,16 +7303,21 @@ function applyAddSperm(chatState, args) {
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   const maleDerivedType = parsedRace.derivedType || null;
   const existing = sperms.find((item) => String(item?.male || '') === male);
+  // 只记个体已知的体型（已注册角色或本次插入给过）；种族平均不必存，受孕时再查
+  const maleBodySize = clampIndividualBodySize(fatherBase?.bodySize)
+    ?? (base.penetrationFit?.male === male ? clampIndividualBodySize(base.penetrationFit.maleBodySize) : null)
+    ?? clampIndividualBodySize(args?.maleBodySize);
   if (enteredAmount > 0) {
     if (existing) {
       existing.value = Math.max(0, clampNumber(existing.value, 0, 999999, 0) + enteredAmount);
       existing.race = race;
       existing.derivedType = maleDerivedType;
       Object.assign(existing, ancestry);
-    } else sperms.push({ male, race, ...ancestry, derivedType: maleDerivedType, value: enteredAmount });
+      if (maleBodySize !== null) existing.bodySize = maleBodySize;
+    } else sperms.push({ male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, value: enteredAmount });
     base.nextSpermContactId = (Number(base.nextSpermContactId) || 0) + 1;
     base.spermContacts = [...(base.spermContacts || []), {
-      id: base.nextSpermContactId, male, race, ...ancestry, derivedType: maleDerivedType,
+      id: base.nextSpermContactId, male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize,
       minutesPassed: Number(chatState.minutesPassed) || 0, value: enteredAmount, blocked: false,
     }];
   }

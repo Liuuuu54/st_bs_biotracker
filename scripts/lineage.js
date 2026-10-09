@@ -54,6 +54,8 @@ export function buildLineageGraph(chatState) {
     if (traits?.race && !node.race) node.race = traits.race;
     if (traits?.race && !node.bloodline) Object.assign(node, getBloodlineInfo(traits.race, traits.bloodline, traits.bloodlineSource));
     if (traits?.derivedType && !node.derivedType) node.derivedType = traits.derivedType;
+    // 路人父亲的体型只来自子女记录（受孕当下的精液纪录）；多个子女都记了就取第一笔
+    if (typeof traits?.bodySize === 'number' && typeof node.bodySize !== 'number') node.bodySize = traits.bodySize;
     return id;
   };
 
@@ -68,6 +70,7 @@ export function buildLineageGraph(chatState) {
       ...getBloodlineInfo(profile.base?.race, profile.base?.bloodline, profile.base?.bloodlineSource),
       derivedType: profile.base?.derivedType ?? null,
       age: profile.base?.age ?? null,
+      bodySize: profile.base?.bodySize ?? null,
     });
   }
 
@@ -127,7 +130,7 @@ export function buildLineageGraph(chatState) {
       if (fatherInfo.first && fatherInfo.first !== '未知') {
         const singleFather = fatherInfo.all.length <= 1;
         const from = resolveParent(fatherInfo.first, singleFather
-          ? { race: child.fatherRace ?? null, bloodline: child.fatherBloodline, bloodlineSource: child.fatherBloodlineSource, derivedType: child.fatherDerivedType ?? null }
+          ? { race: child.fatherRace ?? null, bloodline: child.fatherBloodline, bloodlineSource: child.fatherBloodlineSource, derivedType: child.fatherDerivedType ?? null, bodySize: child.fatherBodySize ?? null }
           : null);
         if (from) edges.push({ from, to: childNodeId, type: isRebirth ? 'rebirth' : 'father' });
       }

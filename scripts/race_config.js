@@ -1564,11 +1564,22 @@ function mergeWeightedGenderRatio(genders) {
  * - 变化态：任一成分有变化态即有，没有的成分以常态体型参与加权（半龙半人 = 5.5）
  * - 没有任何数值成分时：含依个体即为依个体，否则为可变
  * 未收录的种族不参与；全部未收录时三栏皆为 null。
+ * individualSizes：依个体成分的已知体型（如父方大蟑螂一人高 → { 独居虫族: 4 }），以该值与
+ * BODY_SIZE_KNOWN_INDIVIDUAL_SD 参与加权；没给的依个体成分照旧排除。
  */
-export function getMergedRaceBodySize(race, bloodline = null) {
+export const BODY_SIZE_KNOWN_INDIVIDUAL_SD = 0.4;
+
+export function getMergedRaceBodySize(race, bloodline = null, { individualSizes = null } = {}) {
   const empty = { bodySize: null, bodySizeSd: null, altFormBodySize: null };
   const parts = getWeightedRaceParts(race, bloodline)
-    .map((part) => ({ profile: getRacePhysiologyProfile(part.name), weight: part.weight }))
+    .map((part) => {
+      const profile = getRacePhysiologyProfile(part.name);
+      const known = Number(individualSizes?.[part.name]);
+      if (profile?.bodySize === BODY_SIZE_INDIVIDUAL && Number.isFinite(known)) {
+        return { profile: { ...profile, bodySize: known, bodySizeSd: BODY_SIZE_KNOWN_INDIVIDUAL_SD }, weight: part.weight };
+      }
+      return { profile, weight: part.weight };
+    })
     .filter(({ profile }) => profile && typeof profile === 'object');
   if (parts.length === 0) return empty;
   const numeric = parts.filter(({ profile }) => typeof profile.bodySize === 'number' && Number.isFinite(profile.bodySize));

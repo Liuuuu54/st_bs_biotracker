@@ -402,6 +402,12 @@ export function normalizeCharacterPsychologyState(characterState) {
   characterState.profile.base.penetrationSource = characterState.profile.base.penetrationState === 'idle'
     ? null
     : penetrationSource;
+  // 体型契合只在插入期间有意义；来源换人或拔出后的残留一律清掉
+  const penetrationFit = characterState.profile.base.penetrationFit;
+  if (penetrationFit !== undefined && (characterState.profile.base.penetrationState === 'idle'
+    || !penetrationFit || typeof penetrationFit !== 'object' || penetrationFit.male !== characterState.profile.base.penetrationSource)) {
+    characterState.profile.base.penetrationFit = null;
+  }
   if (characterState.profile.childSource && typeof characterState.profile.childSource === 'object' && !Array.isArray(characterState.profile.childSource)) {
     const motherName = String(characterState.profile.childSource.motherName || '').trim();
     const childIndex = Number(characterState.profile.childSource.childIndex);
