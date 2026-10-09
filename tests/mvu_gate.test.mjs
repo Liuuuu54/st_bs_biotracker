@@ -546,7 +546,8 @@ test('替换改写不重启宽限：等待起点保持，宽限到期即放行',
   // 正文替换落库：同楼层改写 + 戳记晚于等待起点
   const tail = ctx.chat[ctx.chat.length - 1];
   tail.mes = '变量渲染后的正文';
-  tail.extra = { _acu_last_optimized_at: Date.now() };
+  // 戳记必须严格晚于等待起点；直接取 Date.now() 可能与起点落在同一毫秒而偶发失败
+  tail.extra = { _acu_last_optimized_at: pendingSince + 1 };
   assert.equal(shouldWaitForMvuExtraAnalysis(ctx, settings), true);
   assert.equal(__mvuGateStateForTest.pendingSince, pendingSince, '替换落库不得重排等待起点');
   // 宽限到期即放行（旧逻辑会被替换续杯、继续等待）
