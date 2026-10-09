@@ -4,7 +4,7 @@
 
 本頁按[公開工具定義](../../scripts/tools.js#L102)與[實際分派器](../../scripts/tools.js#L7910)逐項核對。`female` 是已註冊角色名稱，除 `bsRegisterSkillDefinition` 以外的公開工具都要指定它；未知角色會拒絕。`applied=false` 表示該次呼叫未完成其預定變更。多個工具依回覆順序執行，不會整批回滾。[結果紀錄](../../scripts/tools.js#L7968)。
 
-下表的「必填」依模型可見的 schema；實作仍會再次檢查有效值。`bsDebug*` 有分派實作，但不在公開 `TOOL_DEFINITIONS` 中；它們由 UI 診斷功能呼叫。[UI 入口](../../index.js#L5408)。
+下表的「必填」依模型可見的 schema；實作仍會再次檢查有效值。`bsDebug*` 有分派實作，但不在公開 `TOOL_DEFINITIONS` 中；它們由 UI 診斷功能呼叫。[UI 入口](../../index.js#L5409)。
 
 ## 時間與基本狀態
 
@@ -53,7 +53,7 @@
 
 ## UI 診斷工具
 
-以下六個工具由[診斷 UI](../../index.js#L5408)透過 `applyToolCall` 呼叫，沒有列入模型的公開 `TOOL_DEFINITIONS`。它們可直接改寫或清除狀態，與自然故事流程的機率／階段門檻不同。每次 UI 成功操作會記錄快照並保存。
+以下六個工具由[診斷 UI](../../index.js#L5409)透過 `applyToolCall` 呼叫，沒有列入模型的公開 `TOOL_DEFINITIONS`。它們可直接改寫或清除狀態，與自然故事流程的機率／階段門檻不同。每次 UI 成功操作會記錄快照並保存。
 
 | 工具 | 主要參數 | 效果與限制 |
 | --- | --- | --- |

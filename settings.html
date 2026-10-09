@@ -360,6 +360,12 @@
               </label>
             </div>
 
+            <div class="settings_section">
+              <label for="bs-bt-mainflow-copy-char-limit">主线复制字数上限</label>
+              <input id="bs-bt-mainflow-copy-char-limit" class="text_pole" type="number" min="0" step="10000" />
+              <small>世界书模式为「主流模式」时，追踪请求会复制主线的系统讯息与最近消息。主线上下文可能远大于这组 API 的上限，超过这个字数会先略去较旧的讯息、再截断系统讯息。0 为不限；随 API 配置组保存。</small>
+            </div>
+
             <hr class="sysHR" />
 
             <div class="settings_section">

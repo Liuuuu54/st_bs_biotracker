@@ -14,6 +14,7 @@ test('saving captures url, format, key and model under a name; same name overwri
   assert.deepEqual(settings.apiProfiles, [{
     name: '主力', apiUrl: 'https://a.example/v1', apiFormat: 'openai_compat', apiKey: 'sk-a', model: 'model-a',
     temperatureMode: 'legacy', temperature: null, reasoningEffort: 'auto', formattedOutputV4: true,
+    mainflowCopyCharLimit: 400000,
   }]);
 
   settings.model = 'model-b';
@@ -75,5 +76,6 @@ test('loading drops malformed and duplicate profiles and normalizes the format',
   assert.deepEqual(loaded.apiProfiles, [{
     name: '甲', apiUrl: 'https://a', apiFormat: state.normalizeApiFormat('bogus'), apiKey: 'k', model: 'm',
     temperatureMode: 'legacy', temperature: null, reasoningEffort: 'auto', formattedOutputV4: true,
+    mainflowCopyCharLimit: 400000,
   }]);
 });

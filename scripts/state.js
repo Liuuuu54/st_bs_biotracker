@@ -218,6 +218,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   pollMs: 1800,
   apiTimeoutMs: 180000,
   contextSize: 12,
+  mainflowCopyCharLimit: 400000,
   trackerTokenBudget: 4096,
   requireFullDescriptionUpdates: false,
   wombAnimation: true,
@@ -829,12 +830,22 @@ export function createDefaultFemaleState(name = '') {
 const API_PROFILE_LIMIT = 30;
 const API_PROFILE_FIELDS = Object.freeze([
   'apiUrl', 'apiFormat', 'apiKey', 'model', 'temperatureMode', 'temperature', 'reasoningEffort', 'formattedOutputV4',
+  // 主线复制的字数上限要跟着这组 API 的上下文大小走
+  'mainflowCopyCharLimit',
 ]);
 
 /**
  * 已命名的连接配置组：名称唯一（去头尾空白后比对）。
  * 保存系统页分隔线以上的整段连接设定：端点、格式、Key、模型、温度、思考强度与格式化输出
  */
+/** 主线复制字数上限：缺值用预设 40 万，0 表示不限，其余至少 1 万字（与 api.js 的解析一致） */
+export function normalizeMainflowCopyCharLimit(value) {
+  if (value === undefined || value === null || value === '') return 400000;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 400000;
+  return number <= 0 ? 0 : Math.max(10000, Math.floor(number));
+}
+
 export function normalizeApiProfiles(list) {
   const seen = new Set();
   const profiles = [];
@@ -853,6 +864,7 @@ export function normalizeApiProfiles(list) {
       temperature: resolveUserTemperature(entry),
       reasoningEffort: normalizeReasoningEffort(entry.reasoningEffort),
       formattedOutputV4: entry.formattedOutputV4 !== false,
+      mainflowCopyCharLimit: normalizeMainflowCopyCharLimit(entry.mainflowCopyCharLimit),
     });
     if (profiles.length >= API_PROFILE_LIMIT) break;
   }

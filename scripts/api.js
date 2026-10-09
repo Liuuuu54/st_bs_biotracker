@@ -784,6 +784,49 @@ function resolveMainflowCopyMessageLimit(settings) {
   return Math.max(2, Number(settings?.contextSize) || 12);
 }
 
+export const DEFAULT_MAINFLOW_COPY_CHAR_LIMIT = 400000;
+
+/** 主线复制的字数上限；0 表示不限，其余至少 1 万字 */
+export function resolveMainflowCopyCharLimit(settings) {
+  const raw = settings?.mainflowCopyCharLimit;
+  if (raw === undefined || raw === null || raw === '') return DEFAULT_MAINFLOW_COPY_CHAR_LIMIT;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return DEFAULT_MAINFLOW_COPY_CHAR_LIMIT;
+  return value <= 0 ? 0 : Math.max(10000, Math.floor(value));
+}
+
+/**
+ * 把复制来的主线内容压在字数上限内。主线的上下文上限可能远大于追踪 API 的上限
+ * （例如主线设 200 万、追踪端 104.8 万），而 strict 后处理会把整份系统内容合并成一则，
+ * 只限则数挡不住。先由旧到新丢掉复制来的聊天讯息，仍超过才从系统讯息尾端截断。
+ */
+export function capMainflowCopy(chatMessages, systemMessages, limit) {
+  const length = (list) => list.reduce((sum, message) => sum + String(message?.content || '').length, 0);
+  const chat = [...chatMessages];
+  if (!limit) return { chat, system: [...systemMessages], droppedMessages: 0, truncatedChars: 0 };
+  let droppedMessages = 0;
+  while (chat.length > 0 && length(chat) + length(systemMessages) > limit) {
+    chat.shift();
+    droppedMessages += 1;
+  }
+  let remaining = limit - length(chat);
+  let truncatedChars = 0;
+  const system = [];
+  for (const message of systemMessages) {
+    const content = String(message?.content || '');
+    if (content.length <= remaining) {
+      system.push(message);
+      remaining -= content.length;
+      continue;
+    }
+    const kept = Math.max(0, remaining);
+    truncatedChars += content.length - kept;
+    if (kept > 0) system.push({ ...message, content: `${content.slice(0, kept)}\n…（主线复制超过字数上限，已截断 ${content.length - kept} 字）` });
+    remaining = 0;
+  }
+  return { chat, system, droppedMessages, truncatedChars };
+}
+
 function buildPayloadWithMainflowCopy(payload, settings = null) {
   if (!payload || typeof payload !== 'object') {
     return { payload, hasMainflowCopy: false, messageCount: 0 };
@@ -799,8 +842,19 @@ function buildPayloadWithMainflowCopy(payload, settings = null) {
   const filteredMessages = INCLUDE_MAINFLOW_CHAT_MESSAGES
     ? copiedMessages.filter((message) => shouldKeepMainflowChatMessage(message.content))
     : [];
-  const filteredSystemMessages = copiedSystemMessages.filter((message) => shouldKeepMainflowSystemMessage(message.content));
-  const trimmedMessages = filteredMessages.slice(-resolveMainflowCopyMessageLimit(settings));
+  const charLimit = resolveMainflowCopyCharLimit(settings);
+  const capped = capMainflowCopy(
+    filteredMessages.slice(-resolveMainflowCopyMessageLimit(settings)),
+    copiedSystemMessages.filter((message) => shouldKeepMainflowSystemMessage(message.content)),
+    charLimit,
+  );
+  const filteredSystemMessages = capped.system;
+  const trimmedMessages = capped.chat;
+  if (capped.droppedMessages > 0 || capped.truncatedChars > 0) {
+    const notice = `[BS BioTracker] 主线复制超过字数上限（${charLimit} 字），已略去 ${capped.droppedMessages} 则较旧的讯息、截断 ${capped.truncatedChars} 字；可在系统页调整上限`;
+    console.warn(notice);
+    globalThis.toastr?.warning?.(notice);
+  }
   const recentMessagesFilter = filterRecentMessagesForMainflowCopy(payload.recent_messages, settings);
   const { mainflow_context_snapshot: _discarded, ...restPayload } = payload;
   if (trimmedMessages.length === 0 && filteredSystemMessages.length === 0) {
@@ -842,6 +896,9 @@ function buildPayloadWithMainflowCopy(payload, settings = null) {
         retained_system_message_count: filteredSystemMessages.length,
         stripped_messages: Math.max(0, copiedMessages.length - filteredMessages.length),
         stripped_system_messages: Math.max(0, copiedSystemMessages.length - filteredSystemMessages.length),
+        copy_char_limit: charLimit || null,
+        dropped_for_char_limit: capped.droppedMessages,
+        truncated_chars_for_char_limit: capped.truncatedChars,
         original_recent_message_count: recentMessagesFilter.originalCount,
         filtered_recent_message_count: recentMessagesFilter.filteredCount,
         retained_recent_message_count: recentMessagesFilter.retainedCount,

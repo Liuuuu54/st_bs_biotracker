@@ -151,6 +151,7 @@ import {
   resolveRegisteredCharacterName,
   sanitizeWorldbookEntryDisplayName,
   saveApiProfile,
+  normalizeMainflowCopyCharLimit,
   saveSettings,
   saveSettingsNow,
   THEME_CONFIG,
@@ -7351,6 +7352,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-poll-ms', settings.pollMs);
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
   setValue('bs-bt-context-size', settings.contextSize);
+  setValue('bs-bt-mainflow-copy-char-limit', normalizeMainflowCopyCharLimit(settings.mainflowCopyCharLimit));
   setValue('bs-bt-tracker-token-budget', settings.trackerTokenBudget);
   setValue('bs-bt-require-full-description-updates', settings.requireFullDescriptionUpdates);
   setValue('bs-bt-luker-multi-agent-manual-only', settings.lukerMultiAgentManualOnly);
@@ -7930,6 +7932,7 @@ function readSettingsFromForm(ctx) {
     ? 180000
     : (apiTimeoutSec <= 0 ? 0 : Math.max(1, Math.min(1800, Math.floor(apiTimeoutSec))) * 1000);
   settings.contextSize = Math.max(2, Number(getValue('bs-bt-context-size')) || 12);
+  settings.mainflowCopyCharLimit = normalizeMainflowCopyCharLimit(getValue('bs-bt-mainflow-copy-char-limit'));
   settings.trackerTokenBudget = Math.max(500, Math.min(100000, Math.floor(Number(getValue('bs-bt-tracker-token-budget')) || 4096)));
   settings.requireFullDescriptionUpdates = Boolean(document.getElementById('bs-bt-require-full-description-updates')?.checked);
   settings.lukerMultiAgentManualOnly = Boolean(document.getElementById('bs-bt-luker-multi-agent-manual-only')?.checked);
