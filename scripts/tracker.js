@@ -1373,7 +1373,6 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     disabled_special_tools: getDisabledSpecialToolNames(settings),
     recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => ['bsAddSperm', 'bsAbortion'].includes(log.name) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),
     world_baseline_prompt: String(settings?.worldBaselinePrompt || '').trim(),
-    require_full_description_updates: settings?.requireFullDescriptionUpdates === true,
     ...(psychologyEnabled ? { breeding_psychology_enabled: true } : {}),
     wardrobe_enabled: isWardrobeSystemEnabled(settings),
     recent_messages: recentMessages,

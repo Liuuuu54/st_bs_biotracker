@@ -383,17 +383,11 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
   if (!diaryEnabled) {
     parts.push('[diary]\n- diary 系统当前已关闭（settings.diaryRecentLimit = 0）。本轮不要参考 diary，也不要调用 bsWriteDiary。');
   }
-  parts.push(payload?.require_full_description_updates === true
-    ? [
-      '[descriptions 完整更新模式：强制提示约束]',
-      '- 只要调用 bsSetDescription 更新 normalDescription 或 pregnantDescription，其对应字符串必须带回该角色该栏位所有既有子字段，不得只传部分字段。',
-      '- 即使字段内容未改变，也必须原样带回；先完整检查，再按既有字段顺序输出。此规则优先于节省 token 的考虑。',
-      '- 若因上下文缺失无法可靠填写某个字段，则不要调用该栏位的 bsSetDescription；不要编造内容或交出不完整更新。',
-    ].join('\n')
-    : [
-      '[descriptions 更新勤勉规则]',
-      '- 若调用 bsSetDescription，先逐字段检查；所有受本轮影响的既有字段必须一并更新。省略只允许用于已确认完全不变的字段。',
-    ].join('\n'));
+  parts.push([
+    '[descriptions 更新规则]',
+    '- 调用 bsSetDescription 更新 normalDescription 或 pregnantDescription 时，对应字符串必须带回该角色该栏位所有既有子字段，按既有字段顺序输出，不得只传部分字段。',
+    '- 本轮未受影响的字段原样照抄；因上下文不足而没把握的字段也照抄原文，不要编造，其余字段照常更新。',
+  ].join('\n'));
 
   const trackedNames = Array.isArray(payload?.tracked_females)
     ? payload.tracked_females.map((name) => String(name || '').trim()).filter(Boolean)

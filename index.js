@@ -7353,7 +7353,6 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-context-size', settings.contextSize);
   setValue('bs-bt-mainflow-copy-char-limit', normalizeMainflowCopyCharLimit(settings.mainflowCopyCharLimit));
   setValue('bs-bt-tracker-token-budget', settings.trackerTokenBudget);
-  setValue('bs-bt-require-full-description-updates', settings.requireFullDescriptionUpdates);
   setValue('bs-bt-luker-multi-agent-manual-only', settings.lukerMultiAgentManualOnly);
   setValue('bs-bt-womb-animation', settings.wombAnimation !== false);
   setValue('bs-bt-wardrobe-system-enabled', isWardrobeSystemEnabled(settings));
@@ -7932,7 +7931,6 @@ function readSettingsFromForm(ctx) {
   settings.contextSize = Math.max(2, Number(getValue('bs-bt-context-size')) || 12);
   settings.mainflowCopyCharLimit = normalizeMainflowCopyCharLimit(getValue('bs-bt-mainflow-copy-char-limit'));
   settings.trackerTokenBudget = Math.max(500, Math.min(100000, Math.floor(Number(getValue('bs-bt-tracker-token-budget')) || 4096)));
-  settings.requireFullDescriptionUpdates = Boolean(document.getElementById('bs-bt-require-full-description-updates')?.checked);
   settings.lukerMultiAgentManualOnly = Boolean(document.getElementById('bs-bt-luker-multi-agent-manual-only')?.checked);
   settings.wombAnimation = Boolean(document.getElementById('bs-bt-womb-animation')?.checked);
   settings.wardrobeSystemEnabled = Boolean(document.getElementById('bs-bt-wardrobe-system-enabled')?.checked);

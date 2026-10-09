@@ -425,14 +425,23 @@ test('tracker token budget defaults to 4096 and is clamped', () => {
   assert.equal(settings.trackerTokenBudget, 4096);
   settings.trackerTokenBudget = 999999;
   assert.equal(state.getSettings(ctx).trackerTokenBudget, 100000);
-  assert.equal(settings.requireFullDescriptionUpdates, false);
   assert.equal(settings.lukerMultiAgentManualOnly, true);
 });
 
-test('full description update mode adds the strict tracker instruction', () => {
-  const prompt = buildTrackerSystemPrompt('', null, { require_full_description_updates: true });
-  assert.equal(prompt.includes('[descriptions 完整更新模式：强制提示约束]'), true);
+test('description updates always require every existing field and copy uncertain ones verbatim', () => {
+  const prompt = buildTrackerSystemPrompt('', null, {});
+  assert.equal(prompt.includes('[descriptions 更新规则]'), true);
   assert.equal(prompt.includes('所有既有子字段'), true);
+  assert.equal(prompt.includes('没把握的字段也照抄原文'), true);
+  assert.equal(prompt.includes('不要调用该栏位'), false);
+});
+
+test('the retired full description switch is dropped on load', () => {
+  resetGlobals();
+  const ctx = { chatId: 'x', characterId: 1, extensionSettings: { bs_biotracker: { requireFullDescriptionUpdates: true, chatStates: {} } }, saveSettingsDebounced() {} };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  assert.equal('requireFullDescriptionUpdates' in settings, false);
 });
 
 test('wardrobe supplement stays small and uses semantic clothing fields', () => {

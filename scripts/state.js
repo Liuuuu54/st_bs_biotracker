@@ -219,7 +219,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   contextSize: 12,
   mainflowCopyCharLimit: 400000,
   trackerTokenBudget: 4096,
-  requireFullDescriptionUpdates: false,
   wombAnimation: true,
   wardrobeSystemEnabled: true,
   skillSystemEnabled: true,
@@ -954,6 +953,11 @@ export function getSettings(ctx) {
     delete settings.triggerTiming;
     shouldSave = true;
   }
+  // 描述完整更新已改为固定规则（见 tracker_prompt_context.js），旧开关不再有作用
+  if (Object.prototype.hasOwnProperty.call(settings, 'requireFullDescriptionUpdates')) {
+    delete settings.requireFullDescriptionUpdates;
+    shouldSave = true;
+  }
   // 旧版切卡时留下的临时键空壳（见 getChatState）：只清完全没有资料的，有内容的一律保留
   for (const key of Object.keys(settings.chatStates)) {
     if (PLACEHOLDER_CHAT_KEY_PATTERN.test(key) && isChatStateEffectivelyEmpty(settings.chatStates[key])) {
@@ -987,11 +991,6 @@ export function getSettings(ctx) {
   const trackerTokenBudget = Math.max(500, Math.min(100000, Math.floor(Number.isFinite(rawTrackerTokenBudget) ? rawTrackerTokenBudget : DEFAULT_SETTINGS.trackerTokenBudget)));
   if (settings.trackerTokenBudget !== trackerTokenBudget) {
     settings.trackerTokenBudget = trackerTokenBudget;
-    shouldSave = true;
-  }
-  const requireFullDescriptionUpdates = settings.requireFullDescriptionUpdates === true;
-  if (settings.requireFullDescriptionUpdates !== requireFullDescriptionUpdates) {
-    settings.requireFullDescriptionUpdates = requireFullDescriptionUpdates;
     shouldSave = true;
   }
   const wombAnimation = settings.wombAnimation !== false;
