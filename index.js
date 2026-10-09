@@ -2309,7 +2309,7 @@ function renderRaceBodySizeEditorFields(editorNode, race) {
 
   const planSelect = document.createElement('select');
   planSelect.id = 'bs-bt-race-field-bodyPlan';
-  planSelect.title = '人形：三围都适用；半人形：人身接动物下半身，孕肚在下半身；非人形：三围不适用；任意：形体不固定';
+  planSelect.title = '人形：三围都适用；半人形：人身接非人下半身（兽躯的孕肚在兽躯，尾身的孕肚在前腹）；非人形：三围不适用；任意：形体不固定';
   for (const plan of RACE_BODY_PLANS) {
     const option = document.createElement('option');
     option.value = plan;

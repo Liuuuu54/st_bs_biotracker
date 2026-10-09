@@ -39,7 +39,8 @@ export const BODY_SIZE_LEVEL_NAMES = Object.freeze(["掌上", "矮小", "偏小"
 /**
  * 体态：给日后的三围与孕肚变化用，目前不接任何机制、也不送提示词。
  * - humanoid 人形：胸、腰、臀三围都能套用，孕肚是人类式的前腹隆起（人鱼、拉弥亚也算）
- * - hybrid 半人形：人类上身接动物下半身，只有胸围适用，子宫与孕肚在下半身（半人马、阿拉克涅）
+ * - hybrid 半人形：人类上身接非人下半身。兽躯（半人马、阿拉克涅）的子宫与孕肚在兽躯；
+ *   尾身（拉弥亚、人鱼、海妖）没有腿，孕肚在前腹
  * - beast 非人形：动物或异形体型，三围不适用
  * - any 任意：形体不固定，能变化形体（修格斯化成人形女仆），或同族形态差异大（心魇）
  * 能变形的种族与体型一样记常态（人态）。
@@ -175,12 +176,12 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "半人马": {
     embryoType: "胎生",
-    introductionLine: "Centaur，上身为人、下身为马的亚人，源自希腊神话。",
+    introductionLine: "Centaur，上身为人、下身为马的亚人，源自希腊神话。可借魔法化出人腿。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 0.5,
     impregnationDifficulty: 2, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 66,
     companionEggsMean: 0, recoveryCoefficient: 3.75,
-    bodySize: 5, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "hybrid",
+    bodySize: 5, bodySizeSd: 0.4, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "巨人": {
     embryoType: "胎生",
@@ -337,12 +338,12 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "海蛞蝓族": {
     embryoType: "卵生",
-    introductionLine: "Sea Slug-folk，海兔拟人，雌雄同体；交配方式奇特（交配列车、阴茎击剑）。",
+    introductionLine: "Sea Slug-folk，海兔拟人，下半身是蛞蝓的腹足，可借魔法化出人腿，化人后更娇小；雌雄同体，交配方式奇特（交配列车、阴茎击剑）。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 3.3, birthDifficulty: 0.25, breedTolerance: 0.25,
     impregnationDifficulty: 0.25, orgasmOvulationAmount: 5, identicalProbability: 10, genderRatio: null,
     companionEggsMean: 9, recoveryCoefficient: 0.91,
-    bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+    bodySize: 3, bodySizeSd: 0.4, altFormBodySize: 2, bodyPlan: "hybrid",
   },
   "龟族": {
     embryoType: "卵生",
@@ -364,30 +365,30 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "宝箱怪": {
     embryoType: "卵生",
-    introductionLine: "Mimic，宝箱拟态怪，雌雄同体；所产之卵呈金币状。",
+    introductionLine: "Mimic，宝箱拟态怪，人形少女寄居在宝箱里、以宝箱为壳，可爬出活动；雌雄同体，所产之卵呈金币状。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.67, birthDifficulty: 0.6, breedTolerance: 1.2,
     impregnationDifficulty: 0.6, orgasmOvulationAmount: 6, identicalProbability: 66, genderRatio: null,
     companionEggsMean: 7, recoveryCoefficient: 0.3,
-    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "hybrid",
+    bodySize: 3, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "阿拉克涅": {
     embryoType: "卵生",
-    introductionLine: "Arachne，上身为人、下身为蜘蛛的亚人，源自希腊神话。",
+    introductionLine: "Arachne，上身为人、下身为蜘蛛的亚人，源自希腊神话。可借魔法化出人腿。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 2, birthDifficulty: 1.5, breedTolerance: 1.33,
     impregnationDifficulty: 2, orgasmOvulationAmount: 6, identicalProbability: 0, genderRatio: 25,
     companionEggsMean: 12, recoveryCoefficient: 0.57,
-    bodySize: 5, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "hybrid",
+    bodySize: 5, bodySizeSd: 0.5, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "百足氏": {
     embryoType: "卵生",
-    introductionLine: "Centipede-folk，上身为人、下身为蜈蚣的亚人，雅称天龙；可视为蜈蚣版的阿拉克涅。",
+    introductionLine: "Centipede-folk，上身为人、下身为蜈蚣的亚人，雅称天龙；可视为蜈蚣版的阿拉克涅。可借魔法化出人腿。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 2, birthDifficulty: 3.5, breedTolerance: 1.33,
     impregnationDifficulty: 1.5, orgasmOvulationAmount: 6, identicalProbability: 0, genderRatio: 40,
     companionEggsMean: 10, recoveryCoefficient: 1.32,
-    bodySize: 5, bodySizeSd: 0.6, altFormBodySize: null, bodyPlan: "hybrid",
+    bodySize: 5, bodySizeSd: 0.6, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "天狗": {
     embryoType: "卵生",
@@ -432,7 +433,7 @@ const RACE_DEFINITIONS = Object.freeze({
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 0.75,
     impregnationDifficulty: 2, orgasmOvulationAmount: 2, identicalProbability: 20, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 5,
-    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "hybrid",
   },
   "鱼人": {
     embryoType: "卵胎生",
@@ -454,12 +455,12 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "海妖": {
     embryoType: "卵胎生",
-    introductionLine: "Scylla，章鱼乌贼一类，以触腕替代双足；无须变形即可上陆。",
+    introductionLine: "Scylla，章鱼乌贼一类，以触腕替代双足；无须变形即可上陆，亦可借魔法化出人腿。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 1, birthDifficulty: 3, breedTolerance: 0.3,
     impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 5, genderRatio: 33,
     companionEggsMean: 10, recoveryCoefficient: 10,
-    bodySize: 5, bodySizeSd: 0.6, altFormBodySize: null, bodyPlan: "humanoid",
+    bodySize: 5, bodySizeSd: 0.6, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "独居虫族": {
     embryoType: "卵胎生",
@@ -472,12 +473,12 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "蛇人": {
     embryoType: "卵胎生",
-    introductionLine: "Lamia，上身为人、下身为蛇的亚人，形象参考拉米亚。",
+    introductionLine: "Lamia，上身为人、下身为蛇的亚人，形象参考拉米亚。可借魔法化出人腿。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 1.2, breedTolerance: 2,
     impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 1.2,
-    bodySize: 5, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
+    bodySize: 5, bodySizeSd: 0.5, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "蛙族": {
     embryoType: "卵胎生",
@@ -499,7 +500,7 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "水母族": {
     embryoType: "卵胎生",
-    introductionLine: "Jellyfish-folk，水母拟人，幼体（水螅体）与成体（水母体）形态差异极大。",
+    introductionLine: "Jellyfish-folk，水母拟人，伞盖与触手垂落如裙摆；幼体（水螅体）与成体（水母体）形态差异极大。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.2, breedTolerance: 0.5,
     impregnationDifficulty: 0.33, orgasmOvulationAmount: 5, identicalProbability: 50, genderRatio: null,
@@ -508,12 +509,12 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "海马族": {
     embryoType: "卵胎生",
-    introductionLine: "Seahorse-folk，海马拟人的海系亚人，属雄性孕育系。",
+    introductionLine: "Seahorse-folk，海马与海龙一类（海龙科）拟人的海系亚人，属雄性孕育系；形如男孕的人鱼，下半身是卷曲的海马尾，可借魔法化出人腿。",
     inheritanceMode: "paternal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.625, birthDifficulty: 2, breedTolerance: 0.4,
     impregnationDifficulty: 4, orgasmOvulationAmount: 2, identicalProbability: 25, genderRatio: 66,
     companionEggsMean: 12, recoveryCoefficient: 0.5,
-    bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "hybrid",
   },
   "河童": {
     embryoType: "卵胎生",
@@ -526,21 +527,21 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "梅杜莎": {
     embryoType: "卵胎生",
-    introductionLine: "Medusa，蛇人沾妖后独立演化的分支，发为群蛇；比蛇人更难受孕、孕期更长。",
+    introductionLine: "Medusa，蛇人沾妖后独立演化的分支，发为群蛇；比蛇人更难受孕、孕期更长。可借魔法化出人腿。",
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.7, birthDifficulty: 1.5, breedTolerance: 1,
     impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 4.29,
-    bodySize: 5, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
+    bodySize: 5, bodySizeSd: 0.5, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "蝎罗氏": {
     embryoType: "卵胎生",
-    introductionLine: "Scorpion-folk，带蝎尾、螯钳与甲壳的亚人，人形占比高于阿拉克涅；幼体出生后会攀在母体背上一段时间。",
+    introductionLine: "Scorpion-folk，带蝎尾、螯钳与甲壳的亚人，人形占比高于阿拉克涅；幼体出生后会攀在母体背上一段时间。可借魔法化出人腿，化人后身形较娇小。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.25, birthDifficulty: 1.2, breedTolerance: 1.8,
     impregnationDifficulty: 1.5, orgasmOvulationAmount: 3, identicalProbability: 0, genderRatio: 40,
     companionEggsMean: 6, recoveryCoefficient: 0.8,
-    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "hybrid",
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 3, bodyPlan: "hybrid",
   },
   "华根蕴桃": {
     embryoType: "卵胎生",

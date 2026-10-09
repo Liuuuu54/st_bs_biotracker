@@ -144,7 +144,7 @@ function formatBodySizeLevel(value) {
 
 const BODY_PLAN_DESCRIPTIONS = Object.freeze({
   humanoid: '胸、腰、臀三围都适用，孕肚是前腹隆起',
-  hybrid: '人类上身接动物下半身，只有胸围适用，子宫与孕肚在下半身',
+  hybrid: '人类上身接非人下半身（马身、蛛身、蛇尾、鱼尾、触腕等），胸围适用；下半身为兽躯者子宫与孕肚在兽躯，下半身为尾或触腕者孕肚在前腹、没有腿',
   beast: '动物或异形体型，不套用人类的三围与孕肚描写',
   any: '形体不固定，能变化形体或同族形态差异大，按个体当下的形态描写',
 });

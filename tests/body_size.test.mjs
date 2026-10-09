@@ -101,7 +101,7 @@ test('体态：四种分类、蝎罗氏为半人形、混血按血统且任意�
     assert.ok(RACE_BODY_PLANS.includes(plan), `${race} bodyPlan ${plan}`);
     counts[plan] = (counts[plan] || 0) + 1;
   }
-  assert.deepEqual(counts, { humanoid: 61, beast: 3, hybrid: 5, any: 12 });
+  assert.deepEqual(counts, { humanoid: 56, beast: 3, hybrid: 10, any: 12 });
   assert.equal(getRacePhysiologyProfile('蝎罗氏').bodyPlan, 'hybrid');
   assert.equal(getRacePhysiologyProfile('修格斯').bodyPlan, 'any');
   assert.equal(getMergedRaceBodyPlan('史萊姆x人类'), 'humanoid', '任意不参与投票');
@@ -115,7 +115,7 @@ test('体态：四种分类、蝎罗氏为半人形、混血按血统且任意�
   } finally {
     setRacePhysiologyOverrides({});
   }
-  assert.match(buildSingleRacePhysiologyText('半人马'), /- 体态: 半人形：人类上身接动物下半身，只有胸围适用，子宫与孕肚在下半身/);
+  assert.match(buildSingleRacePhysiologyText('半人马'), /- 体态: 半人形：人类上身接非人下半身.*下半身为兽躯者子宫与孕肚在兽躯，下半身为尾或触腕者孕肚在前腹、没有腿/);
 });
 
 test('变形种族的人态不全是 4：西方龙、空鲸、海德拉高大，麒麟、独角兽娇小，真身不变', () => {
@@ -124,4 +124,24 @@ test('变形种族的人态不全是 4：西方龙、空鲸、海德拉高大，
     return [race, [bodySize, altFormBodySize]];
   }));
   assert.deepEqual(pairs, { 西方龙: [5, 7], 空鲸: [5, 7], 海德拉: [5, 7], 麒麟: [3, 5], 独角兽: [3, 5] });
+});
+
+test('半人形可借魔法化出人腿：变化态缩成人身，宝箱怪是寄居在宝箱里的人形', () => {
+  const pairs = Object.fromEntries(['半人马', '阿拉克涅', '百足氏', '蝎罗氏'].map((race) => {
+    const { bodySize, altFormBodySize, bodyPlan } = getRacePhysiologyProfile(race);
+    return [race, [bodySize, altFormBodySize, bodyPlan]];
+  }));
+  assert.deepEqual(pairs, { 半人马: [5, 4, 'hybrid'], 阿拉克涅: [5, 4, 'hybrid'], 百足氏: [5, 4, 'hybrid'], 蝎罗氏: [4, 3, 'hybrid'] });
+  const tailed = Object.fromEntries(['人鱼', '蛇人', '梅杜莎', '海妖'].map((race) => {
+    const { bodySize, altFormBodySize, bodyPlan } = getRacePhysiologyProfile(race);
+    return [race, [bodySize, altFormBodySize, bodyPlan]];
+  }));
+  assert.deepEqual(tailed, { 人鱼: [4, null, 'hybrid'], 蛇人: [5, 4, 'hybrid'], 梅杜莎: [5, 4, 'hybrid'], 海妖: [5, 4, 'hybrid'] }, '尾身人形并入半人形');
+  const sea = Object.fromEntries(['海马族', '水母族', '海蛞蝓族'].map((race) => {
+    const { bodySize, altFormBodySize, bodyPlan } = getRacePhysiologyProfile(race);
+    return [race, [bodySize, altFormBodySize, bodyPlan]];
+  }));
+  assert.deepEqual(sea, { 海马族: [4, null, 'hybrid'], 水母族: [4, null, 'humanoid'], 海蛞蝓族: [3, 2, 'hybrid'] }, '海马族是男孕的人鱼；水母族的伞盖触手是裙摆');
+  const mimic = getRacePhysiologyProfile('宝箱怪');
+  assert.deepEqual([mimic.bodySize, mimic.bodyPlan], [3, 'humanoid']);
 });
