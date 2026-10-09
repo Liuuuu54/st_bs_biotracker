@@ -1,6 +1,7 @@
 import { recordExperience, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
 import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
+import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
 import { CONCEPTION_WEIGHT_RATIO_MAX, CONCEPTION_WEIGHT_RATIO_MIN, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeWeightRatio, resolveBodySize } from './body_size.js';
 import {
   cloneValue,
@@ -261,7 +262,9 @@ export const TOOL_DEFINITIONS = Object.freeze([
   {
     name: 'bsSetDescription',
     description:
-      '更新单一角色的描述字段。调用前必须逐一检查该描述栏位的所有既有子字段；未传入某子字段仅表示它已检查且完全不变，不得因求简短而省略受本轮剧情、姿势、衣着、表情、身体状态或环境影响的字段。不能新增角色原本没有的子字段。描述内容必须使用格式：字段名|描述内容;;字段名|描述内容;;...字段名|描述内容;;，不可改成自然段或换行文本。',
+      '更新单一角色的描述字段。normalDescription／pregnantDescription 都是以字段名为键的物件 {"字段名":"描述内容"}，只传本轮有变化或被点名待确认的字段，未传的字段保留原值。'
+      + '字段名必须与 existing_state 该栏位已有的字段名一字不差；不存在的字段名会被略过并回报，其余字段照常更新。不能新增角色原本没有的字段（[pregnantDescription 初始化] 点名的空栏位除外）。'
+      + '被 [descriptions 待确认] 点名的字段：有变化就写新内容，确认没变就原样照抄，系统会记为已确认。空字串视为不改。内容不要换行。',
     input_schema: {
       type: 'object',
       properties: {
@@ -269,8 +272,8 @@ export const TOOL_DEFINITIONS = Object.freeze([
         options: {
           type: 'object',
           properties: {
-            normalDescription: { type: 'string' },
-            pregnantDescription: { type: 'string' },
+            normalDescription: { type: 'object', additionalProperties: { type: 'string' }, description: '{"字段名":"描述内容"}，只传要更新或确认的字段。' },
+            pregnantDescription: { type: 'object', additionalProperties: { type: 'string' }, description: '{"字段名":"描述内容"}，只在妊娠相关阶段使用。' },
           },
           additionalProperties: false,
         },
@@ -6694,69 +6697,6 @@ function applyCharacterStatus(chatState, args) {
   return { applied: true, message: `bsUpdateCharacterStatus applied to ${female}.` };
 }
 
-const DESCRIPTION_FIELD_NAMES = ['normalDescription', 'pregnantDescription'];
-
-function parseDescriptionText(text) {
-  const rawText = String(text || '').trim();
-  if (!rawText) return { entries: [], error: '' };
-
-  const entries = [];
-  const segments = rawText.split(';;').map((part) => part.trim()).filter(Boolean);
-  for (const segment of segments) {
-    const separatorIndex = segment.indexOf('|');
-    if (separatorIndex <= 0) {
-      return { entries: [], error: `invalid segment "${segment}"` };
-    }
-    const name = segment.slice(0, separatorIndex).trim();
-    const value = segment.slice(separatorIndex + 1).trim();
-    if (!name) return { entries: [], error: `invalid empty field name in "${segment}"` };
-    entries.push({ name, value });
-  }
-  return { entries, error: '' };
-}
-
-function mergeDescriptionText(currentText, patchText) {
-  const current = parseDescriptionText(currentText);
-  if (current.error) return { ok: false, value: String(currentText || ''), error: `existing description is malformed: ${current.error}` };
-
-  const patch = parseDescriptionText(patchText);
-  if (patch.error) return { ok: false, value: String(currentText || ''), error: `patch description is malformed: ${patch.error}` };
-  // 空补丁视为 no-op：模型常把「不改」表达成空字符串，清空整栏会造成静默数据丢失。
-  if (patch.entries.length === 0) return { ok: true, value: String(currentText || '') };
-
-  // Registration is allowed to leave a description field blank. In that
-  // state there is no schema to merge against yet, so the first tracker
-  // update must be able to establish its fields (for example, a pregnancy
-  // description after a debug injection). Once a field has content, keep
-  // the normal strict schema guard below.
-  if (current.entries.length === 0) {
-    return {
-      ok: true,
-      value: patch.entries.map((entry) => `${entry.name}|${entry.value};;`).join(''),
-    };
-  }
-
-  const allowedNames = new Set(current.entries.map((entry) => entry.name));
-  const unknownNames = patch.entries.map((entry) => entry.name).filter((name) => !allowedNames.has(name));
-  if (unknownNames.length > 0) {
-    return {
-      ok: false,
-      value: String(currentText || ''),
-      error: `unknown subfield(s): ${Array.from(new Set(unknownNames)).join(', ')}`,
-    };
-  }
-
-  const patchByName = new Map(patch.entries.map((entry) => [entry.name, entry.value]));
-  const merged = current.entries.map((entry) => ({
-    name: entry.name,
-    value: patchByName.has(entry.name) ? patchByName.get(entry.name) : entry.value,
-  }));
-  return {
-    ok: true,
-    value: merged.map((entry) => `${entry.name}|${entry.value};;`).join(''),
-  };
-}
-
 function applyAddWardrobeItem(chatState, args) {
   const female = String(args?.female || '').trim();
   const character = chatState.characters?.[female];
@@ -6936,22 +6876,28 @@ function applyDescription(chatState, args) {
   next.profile.descriptions = {
     ...(next.profile?.descriptions || {}),
   };
-  const failures = [];
-  const appliedKeys = [];
-  for (const key of DESCRIPTION_FIELD_NAMES) {
-    if (options[key] === undefined) continue;
-    const merged = mergeDescriptionText(next.profile.descriptions[key] || '', options[key]);
-    if (!merged.ok) {
-      failures.push(`${key}: ${merged.error}`);
-      continue;
-    }
-    next.profile.descriptions[key] = merged.value;
-    appliedKeys.push(key);
+  // 逐栏、逐字段处理：写错名称的字段只略过那一栏，其余照常更新
+  const minutesPassed = Number(chatState.minutesPassed) || 0;
+  const reports = [];
+  const skipped = [];
+  let changed = false;
+  for (const key of DESCRIPTION_FIELDS) {
+    if (options[key] === undefined || options[key] === null) continue;
+    const merged = applyDescriptionPatch(next.profile.descriptions[key], options[key], minutesPassed);
+    next.profile.descriptions[key] = merged.list;
+    if (merged.updated.length > 0 || merged.refreshed.length > 0) changed = true;
+    const parts = [
+      merged.established ? `建立 ${merged.updated.join('、')}` : (merged.updated.length > 0 ? `更新 ${merged.updated.join('、')}` : ''),
+      merged.refreshed.length > 0 ? `确认未变 ${merged.refreshed.join('、')}` : '',
+    ].filter(Boolean);
+    if (parts.length > 0) reports.push(`${key}: ${parts.join('；')}`);
+    if (merged.unknown.length > 0) skipped.push(`${key} 没有字段 ${merged.unknown.join('、')}，已略过`);
   }
-  if (failures.length > 0) return { applied: false, message: `bsSetDescription skipped for ${female}: ${failures.join('; ')}.` };
-  if (appliedKeys.length === 0) return { applied: false, message: `bsSetDescription skipped for ${female}: empty options.` };
+  if (!changed) {
+    return { applied: false, message: `bsSetDescription skipped for ${female}: ${skipped.length > 0 ? skipped.join('; ') : 'empty options'}.` };
+  }
   chatState.characters[female] = next;
-  return { applied: true, message: `bsSetDescription applied to ${female}: ${appliedKeys.join(', ')}.` };
+  return { applied: true, message: `bsSetDescription applied to ${female}: ${reports.join('; ')}.${skipped.length > 0 ? ` ${skipped.join('; ')}。` : ''}` };
 }
 
 function applySetCharacterPresence(chatState, args) {

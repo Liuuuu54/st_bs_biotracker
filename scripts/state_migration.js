@@ -1,4 +1,5 @@
 import { normalizeExperience, psychologySide } from './reproductive.js';
+import { DESCRIPTION_FIELDS, normalizeDescriptionList } from './descriptions.js';
 import {
   RACE_PHYSIOLOGY_PROFILES,
   canonicalizeRaceDescriptor,
@@ -13,7 +14,7 @@ import {
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 7;
+export const CHAT_STATE_SCHEMA_VERSION = 8;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -205,12 +206,26 @@ function migrateCharacterV6ToV7(character) {
   renameRacesDeep(character);
 }
 
+/**
+ * 1.1.5：描述从「字段名|内容;;」字串改成 [{ name, value, updatedAt }]。
+ * 切不出字段名的段落整段收进「未分类」；updatedAt 记为迁移当下的系统时钟，免得一升级就全部被点名。
+ */
+function migrateCharacterV7ToV8(character, { minutesPassed = 0 } = {}) {
+  const profile = character?.profile;
+  if (!profile || typeof profile !== 'object') return;
+  const descriptions = profile.descriptions && typeof profile.descriptions === 'object' && !Array.isArray(profile.descriptions)
+    ? profile.descriptions
+    : {};
+  profile.descriptions = Object.fromEntries(DESCRIPTION_FIELDS.map((field) => [field, normalizeDescriptionList(descriptions[field], minutesPassed)]));
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
   2: migrateCharacterV2ToV3,
   3: migrateCharacterV3ToV4,
   4: normalizeCharacterBloodlines,
   6: migrateCharacterV6ToV7,
+  7: migrateCharacterV7ToV8,
 });
 
 export function getChatStateSchemaVersion(chatState) {
@@ -218,12 +233,15 @@ export function getChatStateSchemaVersion(chatState) {
   return Number.isInteger(version) && version >= 1 ? version : 1;
 }
 
-/** 把一组角色从 fromVersion 逐版迁到最新；角色物件就地修改 */
-export function migrateCharacters(characters, fromVersion) {
+/**
+ * 把一组角色从 fromVersion 逐版迁到最新；角色物件就地修改。
+ * context.minutesPassed 是这组角色所在的系统时钟（聊天本体或该层快照），需要时间戳的迁移用它。
+ */
+export function migrateCharacters(characters, fromVersion, context = {}) {
   if (!characters || typeof characters !== 'object') return;
   for (let version = fromVersion; version < CHAT_STATE_SCHEMA_VERSION; version += 1) {
     const migrate = CHARACTER_MIGRATIONS[version];
     if (!migrate) continue;
-    for (const character of Object.values(characters)) migrate(character);
+    for (const character of Object.values(characters)) migrate(character, context);
   }
 }

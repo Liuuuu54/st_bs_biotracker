@@ -61,6 +61,7 @@ import {
   VIVIPAROUS_RACES,
 } from './scripts/race_config.js';
 import { clampIndividualBodySize, getAltFormBodySize, resolveBodySize } from './scripts/body_size.js';
+import { normalizeDescriptionList } from './scripts/descriptions.js';
 import { initializeCalculatorUi } from './scripts/calculator_ui.js'; import { lifeStageIconSvg, raceIconSvg } from './scripts/race_icons.js';
 import { createRacePaletteSelection, appendRacePaletteTag, removeRacePaletteTag, equalizeRacePalette,
   setRacePalettePercent, palettePercentText, buildRacePaletteValue } from './scripts/race_palette.js';
@@ -3270,23 +3271,27 @@ function renderMetabolismSummary(summary) {
   return `<div class="bs-bt-track-metabolism-grid${summary?.derived ? ' is-derived' : ''}">${items.map(renderMetabolismNeedIcon).join('')}</div>`;
 }
 
-function parseDescriptionBlocks(text) {
-  if (!text || !String(text).trim()) return [];
-  const fields = String(text).split(';;');
-  return fields
-    .map((field) => {
-      const trimmed = field.trim();
-      if (!trimmed) return null;
-      const parts = trimmed.split('|');
-      if (parts.length >= 2) {
-        return {
-          title: parts[0].trim(),
-          content: parts.slice(1).join('|').trim(),
-        };
-      }
-      return null;
-    })
-    .filter((item) => item !== null);
+// 存档是 [{ name, value, updatedAt }]；旧字串与物件也接受，切不出字段名的段落归到「未分类」
+function parseDescriptionBlocks(source, minutesPassed = null) {
+  return normalizeDescriptionList(source)
+    .filter((entry) => entry.value)
+    .map((entry) => ({
+      title: entry.name,
+      content: entry.value,
+      updatedLabel: minutesPassed === null ? '' : formatDescriptionAge(minutesPassed - entry.updatedAt),
+    }));
+}
+
+/** 滑鼠停在描述字段上看到的「多久前更新」，以游戏时间计 */
+function formatDescriptionAge(minutes) {
+  const value = Math.max(0, Math.floor(Number(minutes) || 0));
+  if (value < 1) return '游戏时间刚刚更新';
+  const days = Math.floor(value / 1440);
+  const hours = Math.floor((value % 1440) / 60);
+  const parts = days > 0
+    ? [`${days} 天`, ...(hours > 0 ? [`${hours} 小时`] : [])]
+    : hours > 0 ? [`${hours} 小时`] : [`${value % 60} 分钟`];
+  return `游戏时间 ${parts.join(' ')}前更新${days > 0 ? '（已超过一天，追踪会点名确认）' : ''}`;
 }
 
 function getPsychologyView(profile = {}) {
@@ -3753,7 +3758,7 @@ function showWardrobeItemBubble(ctx, characterName, itemId, anchor) {
   (document.getElementById(PANEL_ID) || document.body).appendChild(bubble);
   positionWardrobeItemBubble(bubble, anchor);
 }
-function buildTrackCharacterViewModel(character) {
+function buildTrackCharacterViewModel(character, minutesPassed = null) {
   const runtimeCtx = getContextSafe();
   const runtimeSettings = runtimeCtx ? getSettings(runtimeCtx) : null;
   const runtimeChatState = runtimeCtx && runtimeSettings ? getChatState(runtimeCtx, runtimeSettings) : null;
@@ -3835,7 +3840,7 @@ function buildTrackCharacterViewModel(character) {
       metabolismSummary: getMetabolismSummary(profile.metabolism, immune, base.derivedType, pregnant.blockage, pregnant.acceleration, pregnant.expansion),
     },
     description: {
-      normalBlocks: parseDescriptionBlocks(descriptions.normalDescription),
+      normalBlocks: parseDescriptionBlocks(descriptions.normalDescription, minutesPassed),
       cognitionRecords: profile.cognitionRecords || [],
       psychology: hasBreedingPsychologyProfile(profile) ? getPsychologyView(profile) : null,
     },
@@ -3870,7 +3875,7 @@ function buildTrackCharacterViewModel(character) {
         isPresenting: (stage === '产兆前驱' || LABOR_STAGES.includes(stage)) && fetus?.embryoId === pregnant.presentingEmbryoId,
         talents: (Array.isArray(fetus?.talents) ? fetus.talents : []).map(enrichTalent),
       })) : [],
-      pregnantBlocks: parseDescriptionBlocks(descriptions.pregnantDescription),
+      pregnantBlocks: parseDescriptionBlocks(descriptions.pregnantDescription, minutesPassed),
       womb: computeUterusLayout(profile, {
         libidoCap: getLibidoCap(stage, profile),
         pressureCap: getUterinePressureCap(stage, profile),
@@ -3976,7 +3981,7 @@ function renderDescriptionGroup(title, blocks, options = {}) {
     items.length > 0
       ? items
         .map(
-          (item) => `<div class="bs-bt-track-description-item">
+          (item) => `<div class="bs-bt-track-description-item"${item.updatedLabel ? ` title="${escapeHtml(item.updatedLabel)}"` : ''}>
         <div class="bs-bt-track-description-title">${escapeHtml(item.title || '内容')}</div>
         <div>${escapeHtml(item.content || '')}</div>
       </div>`,
@@ -6458,7 +6463,7 @@ function renderStatusPanel(ctx) {
   }
 
   const current = characters.find((item) => item.name === selectedTrackName);
-  const viewModel = buildTrackCharacterViewModel(current);
+  const viewModel = buildTrackCharacterViewModel(current, Number(chatState.minutesPassed) || 0);
   const owner = JSON.stringify([getChatKey(ctx), selectedTrackName]);
   const viewKey = JSON.stringify([owner, selectedTrackSubpage]);
   const markup = renderTrackCharacterContent(viewModel);

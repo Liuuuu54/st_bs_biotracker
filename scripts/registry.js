@@ -6,6 +6,7 @@ import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
 import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt, buildWorldBaselineBlock } from './race_prompt_context.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import { clampIndividualBodySize, getExpectedBodySize, sampleBodySize } from './body_size.js';
+import { descriptionListToObject, normalizeDescriptionList } from './descriptions.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -811,7 +812,7 @@ export async function runRegistryBreedingInference(ctx, options = {}) {
     diary: subject.diary || [], experience: subject.experience || {},
     children: (subject.children || []).map(({ name, selectedFather, age }) => ({ name, selectedFather, age })),
     psychology: initialSide ? { [initialSide]: subject.psychology?.[initialSide] || {} } : undefined,
-    descriptions: { normalDescription: subject.descriptions?.normalDescription },
+    descriptions: { normalDescription: descriptionListToObject(subject.descriptions?.normalDescription) },
   } };
   payload.initial_cognition_records = options.initialCognitionRecords || [];
   payload.psychology_side = options.psychologySide || null;
@@ -1050,10 +1051,10 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     ]),
     '【6. 文字描述栏位】',
     '参数说明：descriptions 包含 normalDescription、pregnantDescription。',
-    'normalDescription 与 pregnantDescription 必须使用旧版格式：字段名|描述内容;;字段名|描述内容;;...字段名|描述内容;;。',
-    '只能用 | 分隔字段名与描述内容，只能用 ;; 分隔字段；每个字段都要保留字段名，结尾也要补 ;;。',
-    '不要改成自然段、不要换行、不要写成纯长文。',
-    '示例：状态|处于饥饿与寒冷的边缘，精神高度焦虑且带有防御性;;表情|戴着苍白口罩，眼神涣散且带病态妆容;;行动|蜷缩在自动贩卖机旁躲雨，机械地刷手机;;',
+    'normalDescription 与 pregnantDescription 都是以字段名为键的物件 {"字段名":"描述内容"}，键的先后即字段顺序。',
+    '下方规则文本每行是「字段名|该字段要写什么」：字段名照抄作为键，| 后面的说明只是写作指引，不要写进内容。花括号里的是补充说明，可依其指示另加字段（如人外特征）。',
+    '内容不要换行、不要把多个字段并成一段，也不要写成纯长文。',
+    '示例：{"状态":"处于饥饿与寒冷的边缘，精神高度焦虑且带有防御性","表情":"戴着苍白口罩，眼神涣散且带病态妆容","行动":"蜷缩在自动贩卖机旁躲雨，机械地刷手机"}',
     '以下规则文本由用户自定义，注册时应严格遵守。',
     '[normalDescription]',
     String(guides.normalDescription || DEFAULT_REGISTRY_DESCRIPTION_GUIDES.normalDescription),
@@ -1065,7 +1066,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     ...(useGestationModifier ? [
       '若角色补充设定明确描述的是一种未来也会持续生效、且倍率不为 1 的妊娠体质、祝福、诅咒、冻结或延长效果，即使角色当前未怀孕，也必须写入 bio.gestationModifierMultiplier、bio.gestationModifierName、bio.gestationModifierDescription；普通妊娠不得补写 bio。',
     ] : []),
-    '注意：未怀孕角色不要硬填 pregnantDescription；描述内容应遵守旧系统文字栏位语义，不要换行。',
+    '注意：未怀孕角色不要硬填 pregnantDescription；描述内容不要换行。',
     '只输出 JSON，不要输出额外解释。',
     '【name】必须原样填写 payload.target_character，一字不差。那是用户指定要注册的角色名；即使它与角色卡名不同，也不得改用角色卡名、别名或称谓。',
     'JSON 结构必须是：',
@@ -1130,8 +1131,8 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '    },',
     '    "children": [],',
     '    "descriptions": {',
-    '      "normalDescription": "string",',
-    '      "pregnantDescription": "string"',
+    '      "normalDescription": { "字段名": "描述内容" },',
+    '      "pregnantDescription": { "字段名": "描述内容" }',
     '    }',
     '  }',
     '}',
@@ -1877,9 +1878,11 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
       skills: normalizeSkillList(base.profile.skills),
       talents: normalizeTalentList(base.profile.talents),
       psychology: nextPsychology,
+      // 模型给的是 { 字段名: 内容 }（旧字串格式也接受），存档统一转成带 updatedAt 的阵列；重新注册以新结果取代该栏
       descriptions: {
         ...base.profile.descriptions,
-        ...(sanitizedProfile.descriptions || {}),
+        ...Object.fromEntries(Object.entries(sanitizedProfile.descriptions || {})
+          .map(([field, value]) => [field, normalizeDescriptionList(value, Number(chatState.minutesPassed) || 0)])),
       },
       bio: {
         ...base.profile.bio,

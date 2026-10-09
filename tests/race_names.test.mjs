@@ -76,7 +76,7 @@ test('v6 存档迁移：角色、精液、胎儿、孩子与快照里的旧名�
   settings.chatStates['rename-v7'] = chatState;
 
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 7);
+  assert.equal(migrated.schemaVersion, 8);
   const profile = migrated.characters['兔娘'].profile;
   assert.equal(profile.base.race, '月兔x人类');
   assert.deepEqual(profile.base.bloodline, { 月兔: 0.5, 人类: 0.5 });

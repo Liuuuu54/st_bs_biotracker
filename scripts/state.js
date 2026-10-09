@@ -802,8 +802,8 @@ export function createDefaultFemaleState(name = '') {
         flux: 0,
       },
       descriptions: {
-        normalDescription: '',
-        pregnantDescription: '',
+        normalDescription: [],
+        pregnantDescription: [],
       },
       wardrobe: {
         enabled: true,
@@ -1187,7 +1187,7 @@ function migrateChatStateSchema(chatState) {
   if (fromVersion >= CHAT_STATE_SCHEMA_VERSION) return false;
   // Existing chats (including empty ones) must not acquire author seeds on upgrade.
   if (fromVersion < 6) chatState.cardSkillSeedApplied = true;
-  migrateCharacters(chatState.characters, fromVersion);
+  migrateCharacters(chatState.characters, fromVersion, { minutesPassed: Number(chatState.minutesPassed) || 0 });
   if (Array.isArray(chatState.snapshots) && chatState.snapshots.length > 0) {
     const source = chatState.snapshots;
     const cache = new Map();
@@ -1197,7 +1197,7 @@ function migrateChatStateSchema(chatState) {
       const payload = materializeSnapshotPayloadAt(source, index, cache);
       if (fromVersion < 6) payload.cardSkillSeedApplied = true;
       const characters = unpackSnapshotCharacters(payload.characters, false, true);
-      migrateCharacters(characters, fromVersion);
+      migrateCharacters(characters, fromVersion, { minutesPassed: Number(payload.minutesPassed) || 0 });
       rebuilt.push(createStoredSnapshotState(rebuilt, { ...payload, characters: packSnapshotCharacters(characters) }, source[index], rebuiltCache));
     }
     chatState.snapshots = rebuilt;
@@ -1821,8 +1821,8 @@ function createSnapshotCharacterBaseline(name = '') {
         companionship: 0,
       },
       descriptions: {
-        normalDescription: '',
-        pregnantDescription: '',
+        normalDescription: [],
+        pregnantDescription: [],
       },
       wardrobe: {
         enabled: true,

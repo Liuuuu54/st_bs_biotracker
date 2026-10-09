@@ -229,10 +229,10 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '',
   '[descriptions]',
   '- normalDescription / pregnantDescription 为文字描述栏位；pregnantDescription 只在妊娠相关阶段（有胎儿、孕期、产兆前驱、产程、产后恢复、假孕期）发送，其余阶段不要更新它。',
-  '- 两者格式固定为：字段名|描述内容;;字段名|描述内容;;...字段名|描述内容;;',
-  '- 使用 bsSetDescription 前，必须逐一检查该描述栏位全部既有子字段；未传入的子字段会保留旧值，且仅代表它已检查并确认完全不变。不得为了简短而省略受本轮剧情、姿势、衣着、表情、身体状态或环境影响的字段。',
-  '- 不要新增角色原本没有的描述子字段；只能更新 existing_state 中该角色该 descriptions 已存在的字段名。唯一例外：当本提示词包含 [pregnantDescription 初始化] 段时，可为其中点名角色的空 pregnantDescription 建立规范内的首批子字段。',
-  '- 不要改写成自然段，不要省略字段名，不要把 ;; 或 | 换成别的分隔方式。',
+  '- 两者都是以字段名为键的物件 {"字段名":"描述内容"}，键的先后即字段顺序。',
+  '- staleDescriptionFields 列出超过一天（游戏时间）没更新的字段，按栏位分组；没有就不出现。',
+  '- 不要新增角色原本没有的描述字段；只能更新 existing_state 中该角色该 descriptions 已存在的字段名。唯一例外：当本提示词包含 [pregnantDescription 初始化] 段时，可为其中点名角色的空 pregnantDescription 建立规范内的首批字段。',
+  '- 描述内容不要换行，也不要把多个字段并成一段。',
   '',
   '[notify]',
   '- firstly: 主要阶段变化或必须优先处理的警示，例如真实产程中的难产手术产建议；也可能用于提醒角色获得或失去妊娠变速效果。',
@@ -324,10 +324,28 @@ function collectPregnantDescriptionInitNames(payload = {}) {
     if (item?.offscreen === true) continue;
     const stage = String(item?.profile?.base?.stage || '');
     if (!PREGNANT_DESCRIPTION_STAGES.has(stage)) continue;
-    if (String(item?.profile?.descriptions?.pregnantDescription || '').trim()) continue;
+    const pregnantDescription = item?.profile?.descriptions?.pregnantDescription;
+    if (typeof pregnantDescription === 'string' ? pregnantDescription.trim() : Object.keys(pregnantDescription || {}).length > 0) continue;
     names.push(String(item?.name || key));
   }
   return names;
+}
+
+/** 在场角色超过一天没更新的描述字段，一人一行 */
+function collectStaleDescriptionLines(payload = {}) {
+  const existingState = payload?.existing_state;
+  if (!existingState || typeof existingState !== 'object') return [];
+  const lines = [];
+  for (const [key, item] of Object.entries(existingState)) {
+    if (item?.offscreen === true) continue;
+    const stale = item?.profile?.staleDescriptionFields;
+    if (!stale || typeof stale !== 'object') continue;
+    const groups = Object.entries(stale)
+      .filter(([, names]) => Array.isArray(names) && names.length > 0)
+      .map(([field, names]) => `${field}：${names.join('、')}`);
+    if (groups.length > 0) lines.push(`- ${String(item?.name || key)} ${groups.join('；')}`);
+  }
+  return lines;
 }
 
 export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = null, payload = null) {
@@ -391,9 +409,17 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
   }
   parts.push([
     '[descriptions 更新规则]',
-    '- 调用 bsSetDescription 更新 normalDescription 或 pregnantDescription 时，对应字符串必须带回该角色该栏位所有既有子字段，按既有字段顺序输出，不得只传部分字段。',
-    '- 本轮未受影响的字段原样照抄；因上下文不足而没把握的字段也照抄原文，不要编造，其余字段照常更新。',
+    '- 调用 bsSetDescription 时只传本轮受剧情、姿势、衣着、表情、身体状态或环境影响的字段，以及下方被点名待确认的字段；未传的字段保留原值。',
+    '- 不要为了简短而漏掉确实受影响的字段；因上下文不足而没把握的字段不要编造，留给下次。',
   ].join('\n'));
+  const staleDescriptionLines = collectStaleDescriptionLines(payload);
+  if (staleDescriptionLines.length > 0) {
+    parts.push([
+      '[descriptions 待确认]',
+      '- 以下字段超过一天（游戏时间）没有更新。请对照剧情检查：有变化就写新内容，确认没变就原样照抄（系统会记为已确认）。',
+      ...staleDescriptionLines,
+    ].join('\n'));
+  }
 
   const trackedNames = Array.isArray(payload?.tracked_females)
     ? payload.tracked_females.map((name) => String(name || '').trim()).filter(Boolean)
@@ -413,7 +439,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
       '[pregnantDescription 初始化]',
       `- 角色 ${pregnantInitNames.join('、')} 已进入妊娠相关阶段，但 pregnantDescription 仍为空。`,
       '- 这是「不要新增描述子字段」规则的唯一例外：请尽快用 bsSetDescription 按下方规范为该角色建立首批 pregnantDescription 子字段，只建立规范中列出的字段名。',
-      '- 格式仍为：字段名|描述内容;;字段名|描述内容;;，不可用自然段，不可省略字段名。',
+      '- 格式为以字段名为键的物件 {"字段名":"描述内容"}，不可用自然段，不可省略字段名。',
       '',
       '【pregnantDescription 规范】',
       pregnantGuide,
@@ -526,6 +552,8 @@ export function projectNarrativeState(existingState = {}, recentResults = []) {
   return Object.fromEntries(Object.entries(existingState || {}).map(([name, item]) => {
     if (!item?.profile) return [name, item];
     const profile = { ...item.profile };
+    // 点名过期字段是给追踪模型的，主线不需要
+    delete profile.staleDescriptionFields;
     if (!condomFresh.has(name)) delete profile.lastCondomResult;
     if (!emergencyFresh.has(name)) delete profile.lastEmergencyResult;
     // 还在经期阶段就已经有胎儿，是受精卵尚未着床：旁白看不到，等着床进入孕早期才出现

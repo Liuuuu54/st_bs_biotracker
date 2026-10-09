@@ -38,6 +38,7 @@ import {
 } from './state.js';
 import { getDerivedTypeMetabolismExemptions } from './race_config.js';
 import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js';
+import { DESCRIPTION_FIELDS, descriptionListToObject, getStaleDescriptionFields } from './descriptions.js';
 import { canLoadHostWorldInfo, getHostAgentRunBarrier, getHostChat, getHostExtensionSettings, getHostKind, loadHostWorldInfo, refreshHostChatView } from './host.js';
 
 export const POLL_RUNTIME_KEY = '__bs_biotracker_poll__';
@@ -876,7 +877,7 @@ function buildNarrativeWardrobeItem(entry) {
   };
 }
 
-function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true) {
+function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true, minutesPassed = 0) {
   const next = cloneValue(item);
   const profile = next?.profile || {};
   const base = profile.base || {};
@@ -986,6 +987,17 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   }
   // 孕态描述只在妊娠相关阶段有用；月经阶段照送等于每人白占一两百 token
   if (!sendPregnantState && profile.descriptions) delete profile.descriptions.pregnantDescription;
+  // 存档是带 updatedAt 的阵列；模型只看 { 字段名: 内容 }，另附超过一天没更新的字段名供点名
+  if (profile.descriptions && typeof profile.descriptions === 'object') {
+    const stale = {};
+    for (const field of DESCRIPTION_FIELDS) {
+      if (profile.descriptions[field] === undefined) continue;
+      const names = getStaleDescriptionFields(profile.descriptions[field], minutesPassed);
+      if (names.length > 0) stale[field] = names;
+      profile.descriptions[field] = descriptionListToObject(profile.descriptions[field]);
+    }
+    if (Object.keys(stale).length > 0) profile.staleDescriptionFields = stale;
+  }
 
   if (pregnant.noticeSample && base.isHere !== false) {
     // Existing gestational clocks include the LMP offset; natural cues use post-conception age.
@@ -1119,7 +1131,7 @@ function stripSkillFields(view) {
   return view;
 }
 
-function buildTrackerStateView(existingState, settings = null) {
+function buildTrackerStateView(existingState, settings = null, minutesPassed = 0) {
   const characterCount = Object.keys(existingState || {}).length;
   const diaryLimit = getDiaryRecentLimit(settings, characterCount);
   const wardrobeOn = isWardrobeSystemEnabled(settings);
@@ -1128,7 +1140,7 @@ function buildTrackerStateView(existingState, settings = null) {
     Object.entries(existingState).map(([name, item]) => {
       const view = item?.profile?.base?.isHere === false
         ? buildOffscreenCharacterState(item, diaryLimit, wardrobeOn)
-        : buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn);
+        : buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn, minutesPassed);
       return [name, pruneEmptyFields(skillOn ? view : stripSkillFields(view))];
     }),
   );
@@ -1365,7 +1377,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
       skill_baseline_prompt: String(chatState.skillBaselinePrompt || '').trim(),
       skill_catalog: Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [],
     } : {}),
-    existing_state: buildTrackerStateView(existingState, settings),
+    existing_state: buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0),
     available_tools: getTrackerToolDefinitions(settings, existingState),
     diary_enabled: diaryEnabled,
     race_catalog_selection: settings?.raceCatalogSelection || null,

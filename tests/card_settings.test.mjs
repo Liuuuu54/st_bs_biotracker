@@ -72,7 +72,7 @@ test('new chats seed once with their allocator; clearing and reload do not resee
   const ctx = context();
   const settings = state.getSettings(ctx);
   const chat = state.getChatState(ctx, settings);
-  assert.equal(chat.schemaVersion, 7);
+  assert.equal(chat.schemaVersion, 8);
   assert.deepEqual(chat.skillCatalog, [{ id: 1, name: '剑术', description: '长剑实战。' }]);
   assert.equal(chat.nextSkillId, 2);
   assert.equal(chat.cardSkillSeedApplied, true);
@@ -135,7 +135,7 @@ test('schema-5 empty chat and packed snapshots migrate as already processed, wit
   state.recordChatStateSnapshot(ctx, chat, { reason: 'old' });
   settings.chatStates[ctx.chatId] = chat;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 7); assert.equal(migrated.cardSkillSeedApplied, true);
+  assert.equal(migrated.schemaVersion, 8); assert.equal(migrated.cardSkillSeedApplied, true);
   assert.equal(migrated.skillCatalog.length, 0);
   state.restoreChatStateFromSnapshot(migrated, migrated.snapshots[0]);
   assert.equal(migrated.cardSkillSeedApplied, true);
@@ -274,7 +274,7 @@ for (const kind of ['tauritavern', 'luker']) test(`${kind} sidecar must hydrate 
     assert.equal(state.getChatState(active, settings).skillCatalog.length, 0);
     await state.hydrateChatStateFromHost(active, settings);
     const chat = state.getChatState(active, settings);
-    assert.equal(chat.schemaVersion, 7); assert.equal(chat.cardSkillSeedApplied, true);
+    assert.equal(chat.schemaVersion, 8); assert.equal(chat.cardSkillSeedApplied, true);
     assert.equal(chat.skillCatalog.length, 0);
     assert.equal(getEffectiveSettings(active, settings).chatStates, settings.chatStates);
     assert.equal(buildTrackerPayload(active, settings).world_baseline_prompt, '');

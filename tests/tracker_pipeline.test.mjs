@@ -23,7 +23,7 @@ function makeCharacter(name, overrides = {}) {
       },
       bio: {},
       metabolism: { excretion: 20, hunger: 30, sleep: 10, milk: 5, odor: 10, companionship: 15 },
-      descriptions: { normalDescription: '外貌|黑发碧眼;;', pregnantDescription: '' },
+      descriptions: { normalDescription: [{ name: '外貌', value: '黑发碧眼', updatedAt: 0 }], pregnantDescription: [] },
       diary: [],
       notify: {},
       ...overrides.profile,
@@ -207,7 +207,7 @@ test('empty description patches are a no-op instead of wiping the field', () => 
   applyToolCallsResult(ctx, {
     tool_calls: [{ name: 'bsSetDescription', arguments: { female: '艾拉', options: { normalDescription: '' } } }],
   });
-  assert.equal(
+  assert.deepEqual(
     settings.chatStates[CHAT_KEY].characters['艾拉'].profile.descriptions.normalDescription,
     before,
     'an empty-string patch must not erase the stored description',
@@ -341,12 +341,12 @@ test('状态视图省略空值与非妊娠期的孕态描述；outfit.mainItemId
   const ctx = makeContext();
   const settings = state.getSettings(ctx);
   const aila = settings.chatStates[CHAT_KEY].characters['艾拉'];
-  aila.profile.descriptions = { normalDescription: '外貌|黑发;;', pregnantDescription: '孕态|隆起;;' };
+  aila.profile.descriptions = { normalDescription: [{ name: '外貌', value: '黑发', updatedAt: 0 }], pregnantDescription: [{ name: '孕态', value: '隆起', updatedAt: 0 }] };
   aila.profile.base.derivedType = null;
   aila.profile.base.sperms = [];
   aila.profile.outfit.mainItemId = null;
   const sent = buildTrackerPayload(ctx, settings).existing_state['艾拉'].profile;
-  assert.equal(sent.descriptions.normalDescription, '外貌|黑发;;');
+  assert.deepEqual(sent.descriptions.normalDescription, { 外貌: '黑发' }, '模型看到的是 { 字段名: 内容 }，不带 updatedAt');
   assert.equal('pregnantDescription' in sent.descriptions, false, '卵泡期不送孕态描述');
   assert.equal('derivedType' in sent.base, false);
   assert.equal('sperms' in sent.base, false);
@@ -356,5 +356,5 @@ test('状态视图省略空值与非妊娠期的孕态描述；outfit.mainItemId
   aila.profile.base.stage = '孕中期';
   aila.profile.pregnant = { pregnantDays: 140, effectivePregnantDays: 140, fetuses: [] };
   const pregnant = buildTrackerPayload(ctx, settings).existing_state['艾拉'].profile;
-  assert.equal(pregnant.descriptions.pregnantDescription, '孕态|隆起;;');
+  assert.deepEqual(pregnant.descriptions.pregnantDescription, { 孕态: '隆起' });
 });

@@ -33,8 +33,8 @@
       bio: {},
       metabolism: { excretion: 20, hunger: 30, sleep: 10, milk: 5, odor: 10, companionship: 15, ...overrides.metabolism },
       descriptions: {
-        normalDescription: '外貌|黑发碧眼，身形修长;;神态|从容微笑;;',
-        pregnantDescription: '',
+        normalDescription: [{ name: '外貌', value: '黑发碧眼，身形修长', updatedAt: 0 }, { name: '神态', value: '从容微笑', updatedAt: 0 }],
+        pregnantDescription: [],
         ...overrides.descriptions,
       },
       experience: { sexCount: 0, birthCount: 0, records: [] },
@@ -138,7 +138,7 @@
             { male: '无名旅人', race: '西方龙', derivedType: null, value: 120 },
           ],
         },
-        descriptions: { pregnantDescription: '孕态|六胎撑得腹部巨大，几乎站不稳;;' },
+        descriptions: { pregnantDescription: [{ name: '孕态', value: '六胎撑得腹部巨大，几乎站不稳', updatedAt: 0 }] },
         profile: {
           pregnant: {
             pregnantDays: 210,

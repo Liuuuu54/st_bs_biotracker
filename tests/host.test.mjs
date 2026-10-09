@@ -428,12 +428,18 @@ test('tracker token budget defaults to 4096 and is clamped', () => {
   assert.equal(settings.lukerMultiAgentManualOnly, true);
 });
 
-test('description updates always require every existing field and copy uncertain ones verbatim', () => {
+test('description updates send only changed or flagged fields; stale fields are named per present character', () => {
   const prompt = buildTrackerSystemPrompt('', null, {});
   assert.equal(prompt.includes('[descriptions 更新规则]'), true);
-  assert.equal(prompt.includes('所有既有子字段'), true);
-  assert.equal(prompt.includes('没把握的字段也照抄原文'), true);
-  assert.equal(prompt.includes('不要调用该栏位'), false);
+  assert.equal(prompt.includes('只传本轮受剧情'), true);
+  assert.equal(prompt.includes('所有既有子字段'), false);
+  assert.equal(prompt.includes('[descriptions 待确认]'), false);
+  const flagged = buildTrackerSystemPrompt('', null, { existing_state: {
+    Alice: { name: 'Alice', profile: { staleDescriptionFields: { normalDescription: ['腹部', '症状'] } } },
+    Bea: { name: 'Bea', offscreen: true, profile: { staleDescriptionFields: { normalDescription: ['状态'] } } },
+  } });
+  assert.match(flagged, /\[descriptions 待确认\][\s\S]*- Alice normalDescription：腹部、症状/);
+  assert.equal(flagged.includes('Bea normalDescription'), false);
 });
 
 test('the retired full description switch is dropped on load', () => {
@@ -495,10 +501,10 @@ test('the first description update can initialize a blank registered field', () 
   chatState.characters.Alice.initialized = true;
   const result = applyToolCall(chatState, {
     name: 'bsSetDescription',
-    arguments: { female: 'Alice', options: { pregnantDescription: '胎况|已着床，等待后续观察;;' } },
+    arguments: { female: 'Alice', options: { pregnantDescription: { 胎况: '已着床，等待后续观察' } } },
   });
   assert.equal(result.applied, true);
-  assert.equal(chatState.characters.Alice.profile.descriptions.pregnantDescription, '胎况|已着床，等待后续观察;;');
+  assert.deepEqual(chatState.characters.Alice.profile.descriptions.pregnantDescription, [{ name: '胎况', value: '已着床，等待后续观察', updatedAt: 0 }]);
 });
 
 test('breeding inference accepts psychology-wrapped stage profiles', () => {

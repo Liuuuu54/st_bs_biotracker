@@ -293,7 +293,7 @@ test('with the skill and wardrobe systems off, bundled registration only adds th
 test('plain registration no longer asks for the outfit and keeps a well-formed JSON sample', () => {
   const prompt = buildRegistrySystemPrompt({}, {});
   assert.doesNotMatch(prompt, /currentOutfit|当前衣着/);
-  assert.match(prompt, /"pregnantDescription": "string"\n {4}\}\n {2}\}\n\}/);
+  assert.match(prompt, /"pregnantDescription": \{ "字段名": "描述内容" \}\n {4}\}\n {2}\}\n\}/);
   assert.match(prompt, /角色补充设定】/);
 });
 
