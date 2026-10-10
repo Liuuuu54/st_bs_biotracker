@@ -132,8 +132,15 @@ test('a fertilized egg stays hidden from the narrator until it implants; the tra
   const profile = () => chatState.characters['甲'].profile;
   // 状态 JSON 注入时把 </ 转义成 <\/，解析前还原
   const narratedState = () => JSON.parse(buildMainFlowPrompt(ctx, settings).match(/\[当前已注册角色状态\]\n(.+)/)[1].split('<\\/').join('</'));
-  // 受孕难度下限 0.1：暴露两天受精几乎必成，半天只有约七成
-  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 2 } });
+  // 受孕难度下限 0.1：暴露两天受精几乎必成，但仍是机率；钉住乱数，否则约数十轮会有一次没受精而失败。
+  // 取 0.05 而不是 0：0 会让所有机率事件都成立，两颗卵还会融合成嵌合胎，通知变成「融合」
+  const realRandom = Math.random;
+  Math.random = () => 0.05;
+  try {
+    applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 2 } });
+  } finally {
+    Math.random = realRandom;
+  }
   assert.equal(profile().pregnant.fetuses.length > 0, true, 'fixture should fertilize');
   assert.match(profile().notify.secondly, /受精成功/);
 

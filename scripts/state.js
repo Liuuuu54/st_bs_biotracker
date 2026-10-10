@@ -13,6 +13,7 @@ import {
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
 import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines } from './state_migration.js';
+import { announceSavedRevisions, claimChatRevision, clearHostSettingsPendingUpTo, markHostSettingsPending, queueRevisionAnnouncement, readLatestChatRevision } from './save_sync.js';
 import {
   createDefaultWardrobeItem,
   DEFAULT_WEAR_STATE,
@@ -1059,21 +1060,217 @@ export function getSettings(ctx) {
   return settings;
 }
 
+// ── 跨分页同步（见 save_sync.js）──────────────────────
+// 宿主整份写回插件资料：另一个分页存过更新的版本后，这个分页手上的旧副本一写就会把它盖掉。
+// 只有内容真的变了才领新版本号（载入时的例行存档不抢号）。存档时：
+// - 过期而且自己没改过的聊天：先从宿主读回，不拿旧副本覆盖
+// - 过期但自己刚有改动（两边都改了）：以这个分页为准，使用者刚在这里操作
+// 「改过」以上次同步时的内容杂凑判断。
+const STALE_REFRESH_ATTEMPTS = 3;
+const STALE_REFRESH_RETRY_MS = 1000;
+const syncedChatHashes = new Map();
+let staleRefreshInFlight = null;
+
+function getStoredChatStates(ctx) {
+  const chatStates = getHostExtensionSettings(ctx)?.[MODULE_NAME]?.chatStates;
+  return chatStates && typeof chatStates === 'object' ? chatStates : null;
+}
+
+/** 内容杂凑，不含版本号本身 */
+function hashChatState(chatState) {
+  const text = JSON.stringify(chatState ? { ...chatState, saveRevision: undefined } : null) || '';
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${(hash >>> 0).toString(36)}:${text.length}`;
+}
+
+/** 把记忆体里的内容记为「已与宿主同步」：载入、切换聊天、读回或写入后呼叫 */
+export function markChatStatesSynced(ctx, keys = null) {
+  const chatStates = getStoredChatStates(ctx);
+  if (!chatStates) return;
+  for (const key of keys || Object.keys(chatStates)) {
+    if (chatStates[key]) syncedChatHashes.set(key, hashChatState(chatStates[key]));
+  }
+}
+
+function isChatStateDirty(key, chatState) {
+  if (!chatState) return false;
+  // 这个分页还没记过基准：视为没改过，宁可读回也不拿可能过期的副本去覆盖
+  if (!syncedChatHashes.has(key)) return false;
+  return syncedChatHashes.get(key) !== hashChatState(chatState);
+}
+
+export function findStaleChatKeys(ctx) {
+  const chatStates = getStoredChatStates(ctx);
+  if (!chatStates) return [];
+  return Object.entries(chatStates)
+    .filter(([key, chatState]) => readLatestChatRevision(key) > (Number(chatState?.saveRevision) || 0))
+    .map(([key]) => key);
+}
+
+/** 过期且自己没改过的聊天才需要读回；自己刚改过的留给这次存档覆盖 */
+function findStaleCleanChatKeys(ctx) {
+  const chatStates = getStoredChatStates(ctx) || {};
+  return findStaleChatKeys(ctx).filter((key) => !isChatStateDirty(key, chatStates[key]));
+}
+
+/**
+ * 从宿主读回指定聊天的最新存档。SillyTavern 读 settings.json；TauriTavern／Luker 以聊天旁档案为准：
+ * 当前聊天直接读回，其他聊天丢掉记忆体里的旧副本，下次打开时再从档案载入。回传有更新的聊天键。
+ */
+export async function refreshChatStatesFromHost(ctx, keys) {
+  const chatStates = getStoredChatStates(ctx);
+  if (!chatStates || !Array.isArray(keys) || keys.length === 0) return [];
+  // 自己刚改过的聊天不读回，免得把这个分页的新改动洗掉
+  const targets = keys.filter((key) => !isChatStateDirty(key, chatStates[key]));
+  if (targets.length === 0) return [];
+  const refreshed = [];
+  const isNewer = (stored, key) => stored && (Number(stored.saveRevision) || 0) >= (Number(chatStates[key]?.saveRevision) || 0);
+  if (getHostKind() === 'sillytavern') {
+    try {
+      const headers = typeof ctx?.getRequestHeaders === 'function' ? ctx.getRequestHeaders() : { 'Content-Type': 'application/json' };
+      const response = await fetch('/api/settings/get', { method: 'POST', headers, body: '{}' });
+      if (!response.ok) return [];
+      const data = await response.json();
+      const onDisk = JSON.parse(data?.settings || '{}')?.extension_settings?.[MODULE_NAME]?.chatStates || {};
+      for (const key of targets) {
+        if (!isNewer(onDisk[key], key)) continue;
+        chatStates[key] = onDisk[key];
+        refreshed.push(key);
+      }
+    } catch (error) {
+      console.warn('[BS BioTracker] unable to refresh chat states from SillyTavern settings', error);
+      return [];
+    }
+  } else {
+    const currentKey = getChatKey(ctx);
+    for (const key of targets) {
+      if (key !== currentKey) {
+        delete chatStates[key];
+        syncedChatHashes.delete(key);
+        refreshed.push(key);
+        continue;
+      }
+      const stored = await loadHostChatState(ctx);
+      if (!isNewer(stored, key)) continue;
+      chatStates[key] = stored;
+      refreshed.push(key);
+    }
+  }
+  markChatStatesSynced(ctx, refreshed.filter((key) => chatStates[key]));
+  if (refreshed.length > 0 && typeof globalThis.dispatchEvent === 'function' && typeof globalThis.CustomEvent === 'function') {
+    globalThis.dispatchEvent(new CustomEvent('bs-biotracker:chat-states-refreshed', { detail: { keys: refreshed } }));
+  }
+  return refreshed;
+}
+
+/** 过期又没改过的聊天先读回；多次读回仍过期（对方还没写完）时以宿主内容为准放行，以免永远存不了档 */
+async function refreshStaleChatStatesBeforeSave(ctx) {
+  if (staleRefreshInFlight) return staleRefreshInFlight;
+  staleRefreshInFlight = (async () => {
+    try {
+      for (let attempt = 0; attempt < STALE_REFRESH_ATTEMPTS; attempt += 1) {
+        const stale = findStaleCleanChatKeys(ctx);
+        if (stale.length === 0) return;
+        await refreshChatStatesFromHost(ctx, stale);
+        if (findStaleCleanChatKeys(ctx).length === 0) return;
+        await new Promise((resolve) => setTimeout(resolve, STALE_REFRESH_RETRY_MS));
+      }
+      const chatStates = getStoredChatStates(ctx);
+      for (const key of findStaleCleanChatKeys(ctx)) {
+        if (chatStates?.[key]) chatStates[key].saveRevision = readLatestChatRevision(key);
+      }
+    } finally {
+      staleRefreshInFlight = null;
+    }
+  })();
+  return staleRefreshInFlight;
+}
+
+/** 当前聊天有改动才领新版本号；占位键不记 */
+function claimCurrentChatRevision(ctx) {
+  const chatKey = getChatKey(ctx);
+  const chatState = getStoredChatStates(ctx)?.[chatKey];
+  if (!chatState || isPlaceholderHostChatId(ctx, chatKey)) return { chatKey, chatState, revision: null };
+  // 基准不存在时（这个分页第一次存这个聊天）也算有改动，领号后记下基准
+  const changed = !syncedChatHashes.has(chatKey) || isChatStateDirty(chatKey, chatState);
+  if (!changed) return { chatKey, chatState, revision: null };
+  const claim = claimChatRevision(chatKey, chatState.saveRevision, { force: true });
+  if (claim.latest && claim.latest > (Number(chatState.saveRevision) || 0)) {
+    console.warn(`[BS BioTracker] chat ${chatKey} was also changed in another tab; keeping this tab's changes`);
+  }
+  chatState.saveRevision = claim.revision;
+  syncedChatHashes.set(chatKey, hashChatState(chatState));
+  queueRevisionAnnouncement(chatKey, claim.revision);
+  return { chatKey, chatState, revision: claim.revision };
+}
+
+/**
+ * SillyTavern 的设定存档：宿主自己的延迟是 1 秒，存档前还要先压缩整份设定；页面在这之前刷新就丢资料，
+ * 而离开确认框跳出时页面脚本是暂停的，补存来不及送出。插件的存档改为只合并 0.05 秒内的连续存档，
+ * 随即呼叫宿主的立即存档，并依序送出，避免较旧的内容后到而盖掉较新的。
+ * TauriTavern／Luker 不走这里：宿主设定照旧延迟，聊天状态另存在聊天旁档案。
+ */
+const HOST_SETTINGS_COALESCE_MS = 50;
+let hostSettingsSaveTimer = null;
+let hostSettingsSaveChain = Promise.resolve();
+
+function scheduleHostSettingsSave(ctx) {
+  markHostSettingsPending();
+  if (getHostKind() !== 'sillytavern') {
+    saveHostSettings(ctx);
+    return;
+  }
+  clearTimeout(hostSettingsSaveTimer);
+  hostSettingsSaveTimer = setTimeout(() => {
+    hostSettingsSaveTimer = null;
+    hostSettingsSaveChain = hostSettingsSaveChain.catch(() => {}).then(async () => {
+      const startedAt = Date.now();
+      try {
+        await saveHostSettingsImmediately(ctx);
+        clearHostSettingsPendingUpTo(startedAt);
+      } catch (error) {
+        // 立即存档不可用（例如宿主没开放）时退回宿主自己的延迟存档，资料仍会写入，只是慢一点
+        console.warn('[BS BioTracker] immediate settings save failed; falling back to the host debounce', error);
+        saveHostSettings(ctx);
+      }
+    });
+  }, HOST_SETTINGS_COALESCE_MS);
+}
+
+function writeSettingsDeferred(ctx) {
+  const { chatKey, chatState, revision } = claimCurrentChatRevision(ctx);
+  scheduleHostSettingsSave(ctx);
+  if (chatState) scheduleHostChatStateSave(ctx, chatState, revision ? () => announceSavedRevisions({ [chatKey]: revision }) : null);
+}
+
 export function saveSettings(ctx) {
-  saveHostSettings(ctx);
-  const root = getHostExtensionSettings(ctx);
-  const chatState = root?.[MODULE_NAME]?.chatStates?.[getChatKey(ctx)];
-  if (chatState) scheduleHostChatStateSave(ctx, chatState);
+  if (findStaleCleanChatKeys(ctx).length > 0) {
+    void refreshStaleChatStatesBeforeSave(ctx).then(() => writeSettingsDeferred(ctx));
+    return;
+  }
+  writeSettingsDeferred(ctx);
 }
 
 /** 保存全局设置，并等待 ST 立即存档或当前聊天的 TT／Luker sidecar 真正写入。 */
 export async function saveSettingsNow(ctx) {
+  if (findStaleCleanChatKeys(ctx).length > 0) await refreshStaleChatStatesBeforeSave(ctx);
+  const { chatKey, chatState, revision } = claimCurrentChatRevision(ctx);
+  clearTimeout(hostSettingsSaveTimer);
+  hostSettingsSaveTimer = null;
+  markHostSettingsPending();
   // 延后写入保留为收敛写：若已有旧的 ST 设置请求在飞，它会在稍后用当前状态再写一次。
   saveHostSettings(ctx);
-  await saveHostSettingsImmediately(ctx);
-  const root = getHostExtensionSettings(ctx);
-  const chatState = root?.[MODULE_NAME]?.chatStates?.[getChatKey(ctx)];
-  if (chatState) await flushHostChatStateSave(ctx, chatState);
+  const startedAt = Date.now();
+  // 呼叫端在等这次写入（删除、注销等），立刻送出；之后排程的存档接在它后面
+  const immediate = saveHostSettingsImmediately(ctx);
+  hostSettingsSaveChain = immediate.catch(() => {});
+  await immediate;
+  clearHostSettingsPendingUpTo(startedAt);
+  if (chatState) await flushHostChatStateSave(ctx, chatState, revision ? () => announceSavedRevisions({ [chatKey]: revision }) : null);
 }
 
 export async function hydrateChatStateFromHost(ctx, settings) {

@@ -1,3 +1,5 @@
+import { trackSidecarWrite } from './save_sync.js';
+
 const EMPTY_LIST = Object.freeze([]);
 const HOST_CHAT_VIEW_CACHE = new WeakMap();
 // 以 fallback id 为键而非 ctx：宿主 getContext() 每次都回新物件，
@@ -6,7 +8,8 @@ const HOST_STABLE_CHAT_ID_CACHE = new Map();
 const TAURI_HISTORY_PAGE_SIZE = 200;
 const TAURI_STATE_NAMESPACE = 'bs-biotracker';
 const TAURI_STATE_KEY = 'chat-state-v1';
-const TAURI_STATE_SAVE_DELAY_MS = 250;
+// 只合并 0.05 秒内的连续存档：拖得越久，页面在写入前刷新就丢得越多（离开确认框跳出时页面脚本是暂停的，补存送不出去）
+const TAURI_STATE_SAVE_DELAY_MS = 50;
 const TAURI_STATE_SAVE_QUEUE = new Map();
 // 同一聊天的 sidecar 写入必须严格按发起顺序完成。只取消尚未开始的防抖计时器
 // 不够：较旧的 setJson/updateChatState 若已在飞，仍可能晚于新写入完成，把刚删除
@@ -27,6 +30,7 @@ const HOST_EVENT_TYPE_KEYS = Object.freeze({
   chatDeleted: 'CHAT_DELETED',
   groupChatCreated: 'GROUP_CHAT_CREATED',
   groupChatDeleted: 'GROUP_CHAT_DELETED',
+  settingsUpdated: 'SETTINGS_UPDATED',
 });
 
 export function getHostKind() {
@@ -597,7 +601,8 @@ function warnHostChatStateSaveFailure(entry, error) {
   console.warn(`[BS BioTracker] unable to save ${hostName} chat state`, error);
 }
 
-export function scheduleHostChatStateSave(ctx, chatState) {
+/** onWritten：确实写进聊天旁档案后呼叫，用来通知其他分页同步 */
+export function scheduleHostChatStateSave(ctx, chatState, onWritten = null) {
   const entry = prepareHostChatStateSave(ctx, chatState);
   if (!entry) return;
   const { chatId } = entry;
@@ -607,22 +612,27 @@ export function scheduleHostChatStateSave(ctx, chatState) {
     const queued = TAURI_STATE_SAVE_QUEUE.get(chatId);
     if (!queued || queued.timer !== timer) return;
     TAURI_STATE_SAVE_QUEUE.delete(chatId);
-    enqueueHostChatStateWrite(chatId, queued.entry.write)
+    trackSidecarWrite(enqueueHostChatStateWrite(chatId, queued.entry.write), queued.onWritten)
       .catch((error) => warnHostChatStateSaveFailure(queued.entry, error));
   }, TAURI_STATE_SAVE_DELAY_MS);
-  TAURI_STATE_SAVE_QUEUE.set(chatId, { entry, timer });
+  TAURI_STATE_SAVE_QUEUE.set(chatId, { entry, timer, onWritten });
+}
+
+/** 排程中、还没开始写的聊天旁存档数 */
+export function getQueuedHostChatStateSaveCount() {
+  return TAURI_STATE_SAVE_QUEUE.size;
 }
 
 /**
  * 取消尚未开始的防抖保存，把当前状态排到同聊天既有写入之后，并等待真正落盘。
  * 用于注销／清除等不能在写入完成前宣告成功的破坏性操作。
  */
-export async function flushHostChatStateSave(ctx, chatState) {
+export async function flushHostChatStateSave(ctx, chatState, onWritten = null) {
   const entry = prepareHostChatStateSave(ctx, chatState);
   if (!entry) return false;
   const pending = TAURI_STATE_SAVE_QUEUE.get(entry.chatId);
   if (pending?.timer) clearTimeout(pending.timer);
   TAURI_STATE_SAVE_QUEUE.delete(entry.chatId);
-  await enqueueHostChatStateWrite(entry.chatId, entry.write);
+  await trackSidecarWrite(enqueueHostChatStateWrite(entry.chatId, entry.write), onWritten);
   return true;
 }

@@ -62,6 +62,7 @@ import {
 } from './scripts/race_config.js';
 import { clampIndividualBodySize, getAltFormBodySize, resolveBodySize } from './scripts/body_size.js';
 import { normalizeDescriptionList } from './scripts/descriptions.js';
+import { hasPendingHostSave, installSaveSync, settleHostSettingsSave } from './scripts/save_sync.js';
 import { initializeCalculatorUi } from './scripts/calculator_ui.js'; import { lifeStageIconSvg, raceIconSvg } from './scripts/race_icons.js';
 import { createRacePaletteSelection, appendRacePaletteTag, removeRacePaletteTag, equalizeRacePalette,
   setRacePalettePercent, palettePercentText, buildRacePaletteValue } from './scripts/race_palette.js';
@@ -118,6 +119,7 @@ import {
   loadHostWorldInfo,
   registerHostExtensionMenuItem,
   replaceHostEventSubscription,
+  getQueuedHostChatStateSaveCount,
 } from './scripts/host.js';
 import {
   applyApiProfile,
@@ -161,6 +163,9 @@ import {
   normalizeMainflowCopyCharLimit,
   saveSettings,
   saveSettingsNow,
+  refreshChatStatesFromHost,
+  findStaleChatKeys,
+  markChatStatesSynced,
   THEME_CONFIG,
   worldbookSelectionMatches,
 } from './scripts/state.js';
@@ -190,6 +195,8 @@ const APP_READY_HANDLER_KEY = '__bs_biotracker_app_ready_handler__';
 const CHAT_DELETED_HANDLER_KEY = '__bs_biotracker_chat_deleted_handler__';
 const GROUP_CHAT_DELETED_HANDLER_KEY = '__bs_biotracker_group_chat_deleted_handler__';
 const GROUP_CHAT_CREATED_HANDLER_KEY = '__bs_biotracker_group_chat_created_handler__';
+const SETTINGS_UPDATED_HANDLER_KEY = '__bs_biotracker_settings_updated_handler__';
+const SAVE_GUARD_INSTALLED_KEY = '__bs_biotracker_save_guard_installed__';
 const PENDING_CHAT_INHERIT_KEY = '__bs_biotracker_pending_chat_inherit__';
 const WORLDBOOK_RELOAD_TIMER_KEY = '__bs_biotracker_worldbook_reload_timer__';
 const HYDRATE_RETRY_TIMER_KEY = '__bs_biotracker_hydrate_retry_timer__';
@@ -9866,13 +9873,30 @@ async function hydrateChatStateSafely(ctx) {
  * 而重开存档若直接落在同一个聊天，不会触发 chatChanged，轮询又预设关闭，
  * 于是没有任何东西会再载入一次——使用者只能看到空面板并以为要重新注册。
  */
+/**
+ * 记下当前聊天「已与宿主同步」的内容基准（跨分页同步用，见 state.js）。
+ * 记之前先确认手上的不是别的分页存过之后的旧副本：是的话先读回，再正规化后记基准。
+ */
+async function syncCurrentChatBaseline(ctx) {
+  try {
+    const chatKey = getChatKey(ctx);
+    if (findStaleChatKeys(ctx).includes(chatKey)) await refreshChatStatesFromHost(ctx, [chatKey]);
+    getChatState(ctx, getSettings(ctx));
+    markChatStatesSynced(ctx, [chatKey]);
+  } catch (error) {
+    console.warn('[BS BioTracker] unable to record chat state baseline', error);
+  }
+}
+
 async function ensureChatStateHydrated(ctx) {
   clearTimeout(globalThis[HYDRATE_RETRY_TIMER_KEY]);
   await hydrateChatStateSafely(ctx);
+  await syncCurrentChatBaseline(ctx);
   if (isHostChatStateConfirmed(ctx)) return;
   let attempt = 0;
   const retry = async () => {
     await hydrateChatStateSafely(ctx);
+    await syncCurrentChatBaseline(ctx);
     if (isHostChatStateConfirmed(ctx)) {
       renderStatusPanel(ctx);
       renderFullStatePage(ctx);
@@ -9887,12 +9911,52 @@ async function ensureChatStateHydrated(ctx) {
   globalThis[HYDRATE_RETRY_TIMER_KEY] = setTimeout(retry, HYDRATE_RETRY_DELAYS_MS[0]);
 }
 
+/**
+ * 存档防护（见 save_sync.js）：
+ * - 宿主回报设定已写入时，清掉待存标记并通知其他分页
+ * - 别的分页存过更新的版本时，从宿主读回那些聊天并重绘
+ * - 还有存档没写完时关闭或刷新页面：立即补存，并请浏览器挡一下离开
+ */
+function installSaveGuards(ctx) {
+  globalThis[SETTINGS_UPDATED_HANDLER_KEY] = replaceHostEventSubscription(
+    ctx,
+    'settingsUpdated',
+    globalThis[SETTINGS_UPDATED_HANDLER_KEY],
+    () => settleHostSettingsSave(),
+  );
+  if (globalThis[SAVE_GUARD_INSTALLED_KEY]) return;
+  globalThis[SAVE_GUARD_INSTALLED_KEY] = true;
+  installSaveSync({
+    onRemoteSaved: (revisions) => {
+      const runtime = getContextSafe();
+      const chatStates = getSettings(runtime)?.chatStates || {};
+      const newer = Object.entries(revisions)
+        .filter(([key, revision]) => Number(revision) > (Number(chatStates[key]?.saveRevision) || 0))
+        .map(([key]) => key);
+      if (newer.length > 0) void refreshChatStatesFromHost(runtime, newer);
+    },
+  });
+  globalThis.addEventListener?.('bs-biotracker:chat-states-refreshed', () => {
+    const runtime = getContextSafe();
+    renderStatusPanel(runtime);
+    updateMainFlowPrompt(runtime);
+  });
+  globalThis.addEventListener?.('beforeunload', (event) => {
+    if (!hasPendingHostSave({ sidecarQueued: getQueuedHostChatStateSaveCount() })) return;
+    void saveSettingsNow(getContextSafe()).catch(() => {});
+    event.preventDefault();
+    event.returnValue = '';
+  });
+}
+
 async function bootstrap() {
   const ctx = getContextSafe();
   if (!ctx) return;
   if (globalThis[BOOTSTRAP_RUNTIME_KEY]) return;
   globalThis[BOOTSTRAP_RUNTIME_KEY] = true;
   try {
+    // 载入当下记忆体里的各聊天都视为与宿主同步，之后的改动才算这个分页的新改动
+    markChatStatesSynced(ctx);
     await ensureChatStateHydrated(ctx);
     installMainflowRequestCapture();
     await ensureModal(ctx);
@@ -9943,6 +10007,7 @@ async function bootstrap() {
         cleanupOrphanedChatStateByKey(ctx, chatKey, 'group_chat_deleted');
       },
     );
+    installSaveGuards(ctx);
     globalThis[GROUP_CHAT_CREATED_HANDLER_KEY] = replaceHostEventSubscription(
       ctx,
       'groupChatCreated',
