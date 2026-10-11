@@ -69,6 +69,25 @@ test('一般受孕可强制让每颗基础胚胎分裂为同卵双胎', () => {
   assert.ok(profile.pregnant.fetuses.every((fetus) => fetus.tags.includes('identical')));
 });
 
+test('强制同卵可逐颗指定分几胎：两颗胚胎分成 4+3', () => {
+  const chatState = setup();
+  const result = inject(chatState, { mode: 'normal', equivalentDays: 20, fetusCount: 2, genders: '男,女', forceIdentical: true, identicalSizes: '4,3' });
+  assert.equal(result.applied, true, result.message);
+  const fetuses = profileOf(chatState).pregnant.fetuses;
+  assert.equal(fetuses.length, 7);
+  const groups = Object.values(Object.groupBy(fetuses, (fetus) => fetus.identicalGroup));
+  assert.deepEqual(groups.map((group) => group.length).sort(), [3, 4]);
+  for (const group of groups) assert.equal(new Set(group.map((fetus) => fetus.gender)).size, 1);
+});
+
+test('强制同卵的胎数夹在 1–4，1 为不分裂', () => {
+  const chatState = setup();
+  inject(chatState, { mode: 'normal', equivalentDays: 20, fetusCount: 2, forceIdentical: true, identicalSizes: '9,1' });
+  const fetuses = profileOf(chatState).pregnant.fetuses;
+  assert.equal(fetuses.length, 5);
+  assert.equal(fetuses.filter((fetus) => fetus.tags?.includes('identical')).length, 4);
+});
+
 test('代孕／托卵保存卵源归属与卵源种族', () => {
   const chatState = setup();
   const result = inject(chatState, {

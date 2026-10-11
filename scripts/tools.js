@@ -1767,23 +1767,34 @@ function applyIdenticalSplit(profile, batch = null) {
   pregnant.fetusesCount = result.length;
 }
 
-/** 调试工具的确定性同卵分裂：每颗指定胚胎固定分成一组双胎。 */
-function forceIdenticalTwinSplit(profile, batch = null) {
+/**
+ * 调试工具的确定性同卵分裂。sizes 依序给每颗指定胚胎分成几胎（1–4，1 为不分裂）；
+ * 没给到的沿用最后一个值，完全没给时每颗固定分成双胎。
+ */
+function forceIdenticalTwinSplit(profile, batch = null, sizes = []) {
   const pregnant = profile.pregnant || {};
   const fetuses = ensureEmbryoMetadata(pregnant);
   if (fetuses.length === 0) return;
   const targets = batch ? new Set(batch) : new Set(fetuses);
   const result = [];
+  let targetIndex = 0;
   for (const fetus of fetuses) {
     result.push(fetus);
     if (!targets.has(fetus)) continue;
+    const size = sizes.length > 0 ? sizes[Math.min(targetIndex, sizes.length - 1)] : 2;
+    targetIndex += 1;
+    if (size < 2) continue;
     fetus.identicalGroup = fetus.embryoId;
     fetus.tags = sanitizeFetusTagList([...(fetus.tags || []), 'identical']);
-    const twin = cloneIdenticalFetus(fetus);
-    twin.embryoId = allocateEmbryoId(pregnant);
-    twin.identicalGroup = fetus.identicalGroup;
-    shareCompanionEggs([fetus, twin]);
-    result.push(twin);
+    const group = [fetus];
+    for (let count = 1; count < size; count += 1) {
+      const twin = cloneIdenticalFetus(fetus);
+      twin.embryoId = allocateEmbryoId(pregnant);
+      twin.identicalGroup = fetus.identicalGroup;
+      group.push(twin);
+      result.push(twin);
+    }
+    shareCompanionEggs(group);
   }
   pregnant.fetuses = result;
   pregnant.fetusesCount = result.length;
@@ -7412,6 +7423,9 @@ function applyDebugInjectPregnancy(chatState, args) {
   const genderInput = String(args?.genders || '').trim();
   // 胎内回归的正式机制没有同卵分裂；兼容旧 UI 残留值，但不执行。
   const forceIdentical = mode !== 'womb_return' && args?.forceIdentical === true;
+  // 强制同卵时每颗胚胎分成几胎，逗号逐颗填，例如「4,3」；一颗受精卵最多 4 胎
+  const identicalSizes = String(args?.identicalSizes ?? '').split(/[,，、s]+/)
+    .filter(Boolean).map((value) => Math.floor(clampNumber(value, 1, 4, 2)));
   const forceChimera = args?.forceChimera === true;
   const character = chatState.characters?.[female];
   if (!female || !character) return { applied: false, message: `bsDebugInjectPregnancy skipped: unknown character ${female || '(empty)'}.` };
@@ -7616,7 +7630,7 @@ function applyDebugInjectPregnancy(chatState, args) {
   pregnant.fetuses = isAdditionalConception ? [...existingFetuses, ...fetuses] : fetuses;
   ensureEmbryoMetadata(pregnant);
   const injectedBatch = forceChimera ? forceChimeraFusion(profile, female, fetuses) : fetuses;
-  if (forceIdentical) forceIdenticalTwinSplit(profile, injectedBatch);
+  if (forceIdentical) forceIdenticalTwinSplit(profile, injectedBatch, identicalSizes);
   pregnant.fetusesCount = pregnant.fetuses.length;
   // 异期、孕中孕与孕期追加的代孕都是隐藏胎，不发事件
   if (!isAdditionalConception) {

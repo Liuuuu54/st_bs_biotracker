@@ -1012,7 +1012,8 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- companionEggCount: 这一胎伴随的背景卵数量（伴生卵），它们不会发育，也不建立胎儿卡或孩子；不是 fetusesCount。一整群十枚卵、只有一名能长大时，就是一张胎儿卡加 9 枚伴生卵。不确定时省略，由系统依种族抽取。胎生与胎转卵生恒为 0。',
     '- 胎儿可带 tags 标注特殊来历，只接受这几个：identical（同卵）、superfetation（异期复孕）、nested（孕中孕）、rebirth（胎内回归）。代孕不必标——给了 provider 就会自动识别。写不出对应支撑栏位的标签会被撤销，宁可不标也不要留一个指向虚空的关系。',
     '- 嵌合体不必标 tags——给了 chimera 就会自动识别。chimera = { sourceCount: 融合前的受精卵数, fatherSources: [父方名字…], maternalSources: [遗传母方名字…], genderSources: [各来源的性别…] }；父方与母方名字加起来不足两个会被撤销，因为那不成其为嵌合。',
-    '- identical：同卵的几胎都标上即可，系统会自动把它们归为同一组；只标一胎会被撤销。',
+    '- identical：同卵的几胎都标上；只标一胎会被撤销。同卵＝同一颗受精卵分裂，组内 fathers、provider、race、gender、embryoType 必须相同（不同时以组内第一胎为准）。一颗受精卵最多分成 4 胎，超过会被自动拆成几组。',
+    '- identicalGroup: 同时有两组以上同卵时才需要，用同一个整数标出同一颗受精卵的几胎，不同受精卵用不同数字。例如七胞胎是两颗受精卵分别分成男四胞胎与女三胞胎：前四胎 tags: ["identical"]、identicalGroup: 1、gender: "男"，后三胎 tags: ["identical"]、identicalGroup: 2、gender: "女"。只有一组同卵时可省略。',
     '- superfetation：必须一并给 conceivedAtDays（这一胎受精时，母体已经怀了多少有效孕日），会被夹进这次妊娠的范围内。它比同腹其他胎儿晚受精、发育落后。',
     '- nested：这一胎长在另一颗胎儿体内。除了 conceivedAtDays，还要给 nestedInIndex＝宿主在 fetuses 阵列里的下标（从 0 起算，不能指自己）。它的母亲是那颗胎儿，出生后承载者会同时生下孩子与孙辈。宿主只能是胎生、胎转卵生或不定型的胎儿（卵生在壳里、卵胎生在卵膜里，进不去）。',
     '- rebirth：一名已出生的角色回到子宫里成为这一胎，fathers 写那个人的名字（可以是 user）。适合「开场就已经在角色子宫里」的设定。产出后是全新个体，与原来那个人不是同一笔资料。',
@@ -1310,7 +1311,7 @@ function sanitizePregnant(value) {
           tendencyAngle: Number.isFinite(Number(item.tendencyAngle)) ? clampNumber(item.tendencyAngle, 0, 360, 0) : undefined,
           backSide: BACK_SIDES.includes(item.backSide) ? item.backSide : undefined,
           affinity: Number.isFinite(Number(item.affinity)) ? clampNumber(item.affinity, -50, 50, 0) : undefined,
-          // 特殊来历：让角色卡开场就能是同卵双胞胎、异期复孕、孕中孕或胎内回归。
+          // 特殊来历：让角色卡开场就能是同卵多胎、异期复孕、孕中孕或胎内回归。
           // 只放行目录内的标签，支撑栏位在 normalizeRegisteredFetusTags 里对齐。
           tags: sanitizeFetusTagList(item.tags),
           conceivedAtDays: Number.isFinite(Number(item.conceivedAtDays)) ? Number(item.conceivedAtDays) : undefined,
@@ -1381,7 +1382,7 @@ function deriveRegisteredFetusRace(motherRace, fatherRace) {
  */
 export const SPECIAL_FETUS_HINTS = {
   chimera: '这次妊娠里要有一颗嵌合体胎儿：两颗以上的受精卵在著床前融合成一个个体。请给它 chimera = { sourceCount, fatherSources, maternalSources, genderSources }，来源名字要取自角色卡里真实存在的人，父方与母方名字合计至少两个。',
-  identical: '这次妊娠里要有一对同卵双胞胎：至少两颗胎儿都标上 tags: ["identical"]，两者的 fathers 与 race 必须一致。',
+  identical: '这次妊娠里至少要有一组同卵：同一颗受精卵分裂成 2–4 胎，组内每胎都标上 tags: ["identical"]，fathers、race 与 gender 必须一致。角色补充设定写了几组、每组几胎就照写；有两组以上时用 identicalGroup 的不同数字区分各颗受精卵。',
   superfetation: '这次妊娠里要有一颗异期复孕的胎儿：它在母体已经怀孕之后才受精或植入。给它 tags: ["superfetation"] 与 conceivedAtDays（受精或植入当下母体已怀的有效孕日，必须小于目前孕龄），它比同腹其他胎儿发育落后。',
   nested: '这次妊娠里要有一颗孕中孕的胎儿：它长在另一颗胎儿体内。给它 tags: ["nested"]、conceivedAtDays，以及 nestedInIndex＝宿主在 fetuses 阵列里的下标。宿主本身必须是一颗正常胎儿。',
 };
@@ -1438,6 +1439,84 @@ export function applyRequestedSpecialFetus(result, request) {
  * 指不到宿主的孕中孕会被撤掉标签、异期复孕的受精点会被夹进合法范围。
  * 宁可少一个标签，也不要留一个指向虚空的关系。
  */
+// 一颗受精卵自然分裂最多 4 胎（见 tools.js 的著床分裂）
+const MAX_IDENTICAL_GROUP_SIZE = 4;
+// 同卵是同一颗受精卵：这些遗传栏位整组必须一致
+const IDENTICAL_SHARED_KEYS = ['fathers', 'provider', 'race', 'bloodline', 'bloodlineSource', 'fatherRace', 'fatherBloodline', 'fatherBloodlineSource', 'fatherDerivedType', 'gender', 'embryoType'];
+
+/** 平均切成每组不超过上限的几组：7 → 4+3、5 → 3+2、9 → 3+3+3 */
+function chunkIdenticalMembers(members) {
+  const groupCount = Math.ceil(members.length / MAX_IDENTICAL_GROUP_SIZE);
+  const chunks = [];
+  let start = 0;
+  for (let index = 0; index < groupCount; index += 1) {
+    const size = Math.floor(members.length / groupCount) + (index < members.length % groupCount ? 1 : 0);
+    chunks.push(members.slice(start, start + size));
+    start += size;
+  }
+  return chunks;
+}
+
+/** 超过上限的组拆成几组：先按性别分开（XY 四胞胎＋XX 三胞胎这类写法），再平均切 */
+function splitOversizedIdenticalGroup(members) {
+  if (members.length <= MAX_IDENTICAL_GROUP_SIZE) return [members];
+  const byGender = new Map();
+  for (const fetus of members) {
+    const key = String(fetus.gender ?? '');
+    if (!byGender.has(key)) byGender.set(key, []);
+    byGender.get(key).push(fetus);
+  }
+  const chunks = [];
+  const leftovers = [];
+  for (const bucket of byGender.values()) {
+    if (bucket.length >= 2) chunks.push(...chunkIdenticalMembers(bucket));
+    else leftovers.push(...bucket);
+  }
+  if (leftovers.length >= 2) chunks.push(...chunkIdenticalMembers(leftovers));
+  else if (leftovers.length === 1) {
+    // 落单的那胎并进还有空位的最小一组，跟着该组统一；都满了才独立成单胎
+    const roomy = chunks.filter((chunk) => chunk.length < MAX_IDENTICAL_GROUP_SIZE).sort((a, b) => a.length - b.length)[0];
+    if (roomy) roomy.push(leftovers[0]);
+    else chunks.push(leftovers);
+  }
+  return chunks;
+}
+
+/**
+ * 同卵分组：模型可用 identicalGroup 区分不同受精卵；只标 identical 没给组别的，
+ * 按父方、种族、性别自动成组。每组超过 4 胎时自动拆组，组内遗传栏位以第一胎为准，
+ * 组号统一换成组内第一胎的 embryoId，免得模型给的数字撞号。落单的撤掉标签。
+ */
+function normalizeRegisteredIdenticalGroups(fetuses) {
+  const groups = new Map();
+  for (const fetus of fetuses) {
+    const group = Number(fetus.identicalGroup);
+    let key = null;
+    if (Number.isInteger(group) && group > 0) key = `group:${group}`;
+    else if (fetus.tags.includes('identical')) key = `auto:${JSON.stringify([fetus.fathers, fetus.provider, fetus.race, fetus.gender])}`;
+    delete fetus.identicalGroup;
+    fetus.tags = fetus.tags.filter((tag) => tag !== 'identical');
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(fetus);
+  }
+  for (const members of groups.values()) {
+    for (const chunk of splitOversizedIdenticalGroup(members)) {
+      if (chunk.length < 2) continue;
+      const [leader] = chunk;
+      for (const fetus of chunk) {
+        for (const key of IDENTICAL_SHARED_KEYS) {
+          if (fetus === leader) continue;
+          if (leader[key] === undefined) delete fetus[key];
+          else fetus[key] = leader[key] && typeof leader[key] === 'object' ? structuredClone(leader[key]) : leader[key];
+        }
+        fetus.identicalGroup = leader.embryoId;
+        fetus.tags = sanitizeFetusTagList([...fetus.tags, 'identical']);
+      }
+    }
+  }
+}
+
 function normalizeRegisteredFetusTags(pregnant) {
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   if (fetuses.length === 0) return;
@@ -1468,19 +1547,7 @@ function normalizeRegisteredFetusTags(pregnant) {
     }
   }
 
-  // 同卵：标了却没给组别时自动分同一组；组内只有自己的撤掉标签
-  const lonely = fetuses.filter((fetus) => fetus.tags.includes('identical') && !fetus.identicalGroup);
-  if (lonely.length >= 2) for (const fetus of lonely) fetus.identicalGroup = lonely[0].embryoId;
-  for (const fetus of fetuses) {
-    const group = Number(fetus.identicalGroup);
-    const mates = group ? fetuses.filter((item) => Number(item.identicalGroup) === group) : [];
-    if (mates.length >= 2) {
-      if (!fetus.tags.includes('identical')) fetus.tags = sanitizeFetusTagList([...fetus.tags, 'identical']);
-    } else {
-      delete fetus.identicalGroup;
-      fetus.tags = fetus.tags.filter((tag) => tag !== 'identical');
-    }
-  }
+  normalizeRegisteredIdenticalGroups(fetuses);
 
   // 异期复孕：受精点必须落在这次妊娠之内，且与标签互相对齐
   const effectiveDays = Math.max(0, Number(pregnant.effectivePregnantDays) || 0);

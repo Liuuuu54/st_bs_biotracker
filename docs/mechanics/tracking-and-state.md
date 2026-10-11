@@ -4,7 +4,7 @@
 
 ## 角色從哪裡來
 
-角色需先初始化／註冊；沒有已註冊角色時追蹤直接跳過。[runRegistry](../../scripts/registry.js#L2426)讀取指定目標、角色卡、世界書與既有資料，呼叫 API，再由 [applyRegistryResult](../../scripts/registry.js#L1788)寫入角色。目標名稱由呼叫端決定，不能靠模型輸出重新命名。技能初始化、心理推論、衣櫃準備、日記補建是註冊流程中各自的子流程；不是每次追蹤都重新初始化。相關入口見 [registry.js](../../scripts/registry.js#L765)。
+角色需先初始化／註冊；沒有已註冊角色時追蹤直接跳過。[runRegistry](../../scripts/registry.js#L2493)讀取指定目標、角色卡、世界書與既有資料，呼叫 API，再由 [applyRegistryResult](../../scripts/registry.js#L1855)寫入角色。目標名稱由呼叫端決定，不能靠模型輸出重新命名。技能初始化、心理推論、衣櫃準備、日記補建是註冊流程中各自的子流程；不是每次追蹤都重新初始化。相關入口見 [registry.js](../../scripts/registry.js#L765)。
 
 每個聊天有獨立的 `chatState`，包含角色字典、累積時間、技能目錄、場景摘要、最後結果與快照。角色的 `profile` 再分成 `base`、`pregnant`、`experience`、`psychology`、`bio`、`metabolism`、`wardrobe` 等區塊；另有 `runtime` 儲存時間零頭與生理原值。[預設結構](../../scripts/state.js#L671)中的角色字典使用無原型物件，避免特殊角色名碰到 JavaScript 內建屬性。
 
@@ -17,7 +17,7 @@
 3. 對帳快照後逐樓處理。手動分析使用自己的尾樓重放路徑；自動分析從尚未處理的樓層繼續。[主迴圈](../../scripts/tracker.js#L1863)。
 4. [buildTrackerPayload](../../scripts/tracker.js#L1338)組出角色卡、世界書或主流程上下文、近期訊息、已註冊角色、優先角色、精簡既有狀態、可用工具和功能開關。這是給模型看的投影，不是整份持久化資料。近期訊息裡，上一次實際送去分析的樓層以前的訊息會標上 `already_settled`：它們只供理解前情，提示詞要求模型只為新訊息結算時間、技能、衣著等，避免同一件事被算兩次（只記 skip 的使用者訊息不算已分析）。
 5. [callOpenAICompatible](../../scripts/api.js#L1577)送往所選 OpenAI 相容端點，按設定套用 API 格式、超時、預設提示與 JSON 回覆模式。若 JSON 解析失敗，API 層有修正請求／重試路徑。
-6. 回覆正規化後，[applyToolCallsResult](../../scripts/tools.js#L8075)按順序執行每個工具；呼叫順序會影響結果。它保存場景摘要、原始結果摘要和每步操作紀錄。
+6. 回覆正規化後，[applyToolCallsResult](../../scripts/tools.js#L8089)按順序執行每個工具；呼叫順序會影響結果。它保存場景摘要、原始結果摘要和每步操作紀錄。
 7. 處理完成後記錄對應訊息簽名與快照。若請求期間聊天被編輯或刪除，當次結果可被丟棄，交由下一輪重新對帳。[單樓處理](../../scripts/tracker.js#L1615)。
 
 ### 為甚麼有時候沒有追蹤
@@ -28,7 +28,7 @@
 
 ## 工具呼叫是狀態邊界
 
-模型只能選擇[公開工具定義](../../scripts/tools.js#L104)中的名稱與參數。分派器再次處理角色名和參數；未知工具或未知角色會回報未套用。[applyToolCall](../../scripts/tools.js#L7950)在前後整理胚胎 ID、羊膜、胎位與供養扣分。多個工具不是交易：前一步已成功套用時，後一步跳過不會自動撤回前一步。工具結果及 `applied` 旗標會進操作紀錄。
+模型只能選擇[公開工具定義](../../scripts/tools.js#L104)中的名稱與參數。分派器再次處理角色名和參數；未知工具或未知角色會回報未套用。[applyToolCall](../../scripts/tools.js#L7964)在前後整理胚胎 ID、羊膜、胎位與供養扣分。多個工具不是交易：前一步已成功套用時，後一步跳過不會自動撤回前一步。工具結果及 `applied` 旗標會進操作紀錄。
 
 主要工具分組：
 
@@ -40,7 +40,7 @@
 | 技能與衣物 | `bsRegisterSkillDefinition`、`bsTrainSkill`、`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` |
 | 測試／診斷 | `bsDebugInjectPregnancy`、`bsDebugClearContainers`、`bsDebugSetGestationModifier`、`bsDebugFetalActivity`、`bsDebugSetProdromal`、`bsDebugSetFetalPosition` |
 
-實際支援的名稱以[分派器](../../scripts/tools.js#L7940)為準；可送給追蹤模型的清單還會依設定及角色狀態過濾，見 [getTrackerToolDefinitions](../../scripts/tracker.js#L710)。
+實際支援的名稱以[分派器](../../scripts/tools.js#L7954)為準；可送給追蹤模型的清單還會依設定及角色狀態過濾，見 [getTrackerToolDefinitions](../../scripts/tracker.js#L710)。
 
 這個投影有兩個容易踩到的邊界。世界書排除／白名單處理後，會重新建立只含書名與通過篩選條目的物件；宿主原物件的 `originalData` 可能仍有被排除的完整條目，不能整包傳給模型。[世界書投影](../../scripts/state.js#L1466)。角色狀態則遞迴省略 `null`、空字串、空陣列與空物件，但保留 `outfit.mainItemId=null`，因為它表示「衣著未記錄」。只有妊娠相關階段才傳 `pregnantDescription`。[狀態投影](../../scripts/tracker.js#L1072)、[妊娠欄位條件](../../scripts/tracker.js#L735)。
 
@@ -53,7 +53,7 @@
 SillyTavern 的聊天狀態在擴充設定內；TauriTavern／Luker 使用每聊天的宿主 sidecar。載入前避免把空狀態覆寫尚未水合的資料，保存會合併／延遲，必要時立即 flush。[宿主載入](../../scripts/host.js#L484)、[延遲保存](../../scripts/host.js#L605)、[立即保存](../../scripts/host.js#L630)。
 
 **存檔時機與多分頁（1.1.5）**：宿主把插件資料整份寫回，舊做法有兩個丟資料的情況，三個宿主都重現過：
-- **存完很快就重新整理**：SillyTavern 的設定存檔有約 1 秒延遲，送出前還要先壓縮整份設定；頁面在這之前刷新，資料就沒寫進去。離開確認框跳出時頁面腳本是暫停的，補存也送不出去。現在插件只合併 0.05 秒內的連續存檔，隨即呼叫宿主的立即存檔並依序送出；TauriTavern／Luker 的聊天旁檔案延遲同樣是 0.05 秒。仍有存檔沒寫完時關閉或刷新，會跳確認框，讓正在傳的請求傳完。[設定存檔排程](../../scripts/state.js#L1221)、[離開前防護](../../index.js#L9920)。
+- **存完很快就重新整理**：SillyTavern 的設定存檔有約 1 秒延遲，送出前還要先壓縮整份設定；頁面在這之前刷新，資料就沒寫進去。離開確認框跳出時頁面腳本是暫停的，補存也送不出去。現在插件只合併 0.05 秒內的連續存檔，隨即呼叫宿主的立即存檔並依序送出；TauriTavern／Luker 的聊天旁檔案延遲同樣是 0.05 秒。仍有存檔沒寫完時關閉或刷新，會跳確認框，讓正在傳的請求傳完。[設定存檔排程](../../scripts/state.js#L1221)、[離開前防護](../../index.js#L9929)。
 - **舊分頁蓋掉新資料**：每個聊天狀態帶存檔版本號 `saveRevision`，最新版本記在同源分頁共享的 `localStorage`；內容真的變了才領新號，載入時的例行存檔不搶號。存檔前，記憶體裡比別的分頁舊、而且自己沒改過的聊天先從宿主讀回，不拿舊副本覆蓋；這個分頁剛有改動的則以它為準。存檔寫完後用 `BroadcastChannel` 通知其他分頁讀回並重繪。只涵蓋同一個瀏覽器的分頁，跨裝置（手機與電腦）不共享 `localStorage`，管不到。[版本號](../../scripts/save_sync.js#L48)、[領號](../../scripts/state.js#L1194)、[讀回](../../scripts/state.js#L1124)。
 
 刪除聊天時，宿主的刪除事件帶著被刪聊天的名稱（SillyTavern 傳檔名字串，其他宿主可能包成物件），插件只清掉那一個聊天的狀態；認不出是哪個聊天就什麼都不清，不會牽連目前開著的聊天。[刪除事件解析](../../scripts/host.js#L175)。

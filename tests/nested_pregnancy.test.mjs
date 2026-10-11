@@ -269,6 +269,41 @@ test('注册：同卵只标 tags 也会被自动归组', () => {
   assert.ok(a.identicalGroup > 0);
 });
 
+test('注册：两组同卵用 identicalGroup 区分，组号换成组内第一胎的编号', () => {
+  const fetuses = register([
+    ...Array.from({ length: 4 }, () => F({ gender: '男', tags: ['identical'], identicalGroup: 1 })),
+    ...Array.from({ length: 3 }, () => F({ gender: '女', tags: ['identical'], identicalGroup: 2 })),
+  ]);
+  assert.equal(fetuses.length, 7);
+  const groups = fetuses.map((fetus) => fetus.identicalGroup);
+  assert.deepEqual(groups, [...Array(4).fill(fetuses[0].embryoId), ...Array(3).fill(fetuses[4].embryoId)]);
+  assert.notEqual(fetuses[0].embryoId, fetuses[4].embryoId);
+});
+
+test('注册：没给组别时按性别等遗传栏位自动分成两组', () => {
+  const fetuses = register([
+    ...Array.from({ length: 4 }, () => F({ gender: '男', tags: ['identical'] })),
+    ...Array.from({ length: 3 }, () => F({ gender: '女', tags: ['identical'] })),
+  ]);
+  const sizes = Object.values(Object.groupBy(fetuses, (fetus) => fetus.identicalGroup)).map((group) => group.length).sort();
+  assert.deepEqual(sizes, [3, 4]);
+});
+
+test('注册：一组超过 4 胎会自动拆组，组内性别与父方以第一胎为准', () => {
+  const fetuses = register([
+    F({ gender: '男', tags: ['identical'], identicalGroup: 9 }),
+    F({ gender: '女', fathers: '乙', tags: ['identical'], identicalGroup: 9 }),
+    ...Array.from({ length: 5 }, () => F({ gender: '男', tags: ['identical'], identicalGroup: 9 })),
+  ]);
+  const groups = Object.values(Object.groupBy(fetuses, (fetus) => fetus.identicalGroup));
+  assert.ok(groups.every((group) => group.length >= 2 && group.length <= 4), groups.map((g) => g.length).join('+'));
+  assert.equal(groups.reduce((sum, group) => sum + group.length, 0), 7);
+  for (const group of groups) {
+    assert.equal(new Set(group.map((fetus) => fetus.gender)).size, 1);
+    assert.equal(new Set(group.map((fetus) => fetus.fathers)).size, 1);
+  }
+});
+
 test('注册：落单的同卵会被撤销，不留自相矛盾的标签', () => {
   const [only] = register([F({ tags: ['identical'] })]);
   assert.equal(only.tags, undefined);

@@ -279,6 +279,7 @@ let debugInjectDraft = {
   returnerRace: '',
   hostFetusIndex: '',
   forceIdentical: false,
+  identicalSizes: '',
   forceChimera: false,
 };
 let debugGestationModifierDraft = {
@@ -1293,7 +1294,7 @@ function describeMissingSpecialFetus(request, character) {
     superfetation: (item) => Array.isArray(item?.tags) && item.tags.includes('superfetation'),
     nested: (item) => Array.isArray(item?.tags) && item.tags.includes('nested'),
   };
-  const hintLabels = { chimera: '嵌合体', identical: '同卵双胞胎', superfetation: '异期复孕', nested: '孕中孕' };
+  const hintLabels = { chimera: '嵌合体', identical: '同卵多胎', superfetation: '异期复孕', nested: '孕中孕' };
   for (const key of Array.isArray(request.hints) ? request.hints : []) {
     if (hintChecks[key] && !has(hintChecks[key])) missing.push(hintLabels[key]);
   }
@@ -5345,8 +5346,13 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
         </label>` : ''}
         <label class="bs-bt-debug-identical-option">
           <input id="bs-bt-debug-force-identical" type="checkbox"${conceptionMode !== 'womb_return' && debugInjectDraft.forceIdentical ? ' checked' : ''}${conceptionMode === 'womb_return' ? ' disabled' : ''} />
-          <span><strong>强制同卵分裂</strong><small>${conceptionMode === 'womb_return' ? '胎内回归的正式机制没有同卵分裂，此项不可用。' : '每颗融合处理后的胚胎固定分裂为一组同卵双胎；若同时强制嵌合，会先嵌合再分裂。'}</small></span>
+          <span><strong>强制同卵分裂</strong><small>${conceptionMode === 'womb_return' ? '胎内回归的正式机制没有同卵分裂，此项不可用。' : '每颗融合处理后的胚胎依下方胎数分裂为一组同卵胎；若同时强制嵌合，会先嵌合再分裂。'}</small></span>
         </label>
+        ${conceptionMode === 'womb_return' ? '' : `
+        <label class="bs-bt-track-debug-field">
+          <span class="bs-bt-track-debug-label">同卵每组胎数（2–4，逗号逐颗；留空为双胎，1 为该颗不分裂）</span>
+          <input id="bs-bt-debug-identical-sizes" class="text_pole" type="text" value="${escapeHtml(debugInjectDraft.identicalSizes || '')}" placeholder="例如 4,3：第一颗分 4 胎、第二颗分 3 胎" />
+        </label>`}
         <button type="button" class="menu_button" data-debug-action="inject-pregnancy">执行${escapeHtml(selectedMode.label)}注入</button>
       </fieldset>
       <div class="bs-bt-track-debug-hint">${selectedMode.available ? (conceptionMode === 'womb_return' ? '此调试模式不计算回归期，执行后立即是孕早期第 1 天。' : conceptionMode === 'nested' ? '宿主只能是已着床的胎生、胎转卵生或不定型胎儿。' : conceptionMode === 'superfetation' ? '新胎使用当前妊娠时钟记录受孕时间，并先进入等待着床状态。' : isAdditionalSurrogacy ? '新胎沿用当前妊娠时钟并等待著床，同时带有代孕与异期复孕标记。' : '父亲名字、父亲种族、性别可用逗号逐胎填写。') : '当前阶段没有可执行的受孕注入模式。'}</div>
@@ -5516,6 +5522,7 @@ function injectSelectedTrackPregnancy(ctx) {
     returnerRace: String(document.getElementById('bs-bt-debug-returner-race')?.value ?? debugInjectDraft.returnerRace ?? '').trim(),
     hostFetusIndex: String(document.getElementById('bs-bt-debug-host-fetus')?.value ?? debugInjectDraft.hostFetusIndex ?? ''),
     forceIdentical: Boolean(document.getElementById('bs-bt-debug-force-identical')?.checked),
+    identicalSizes: String(document.getElementById('bs-bt-debug-identical-sizes')?.value ?? debugInjectDraft.identicalSizes ?? '').trim(),
     forceChimera: Boolean(document.getElementById('bs-bt-debug-force-chimera')?.checked),
   };
   if (debugInjectDraft.mode === 'womb_return') debugInjectDraft.forceIdentical = false;
@@ -5537,6 +5544,7 @@ function injectSelectedTrackPregnancy(ctx) {
       returnerRace: debugInjectDraft.returnerRace,
       hostFetusIndex: Number(debugInjectDraft.hostFetusIndex),
       forceIdentical: debugInjectDraft.forceIdentical,
+      identicalSizes: debugInjectDraft.identicalSizes,
       forceChimera: debugInjectDraft.forceChimera,
     },
   });
@@ -5573,6 +5581,7 @@ function bindDebugPregnancyDraftControls(root, refresh) {
   bindText('#bs-bt-debug-secondary-provider-race', 'secondaryProviderRace');
   bindText('#bs-bt-debug-returner', 'returner');
   bindText('#bs-bt-debug-returner-race', 'returnerRace');
+  bindText('#bs-bt-debug-identical-sizes', 'identicalSizes');
   root.querySelector('#bs-bt-debug-host-fetus')?.addEventListener('change', (event) => {
     debugInjectDraft.hostFetusIndex = String(event.target?.value || '');
   });
