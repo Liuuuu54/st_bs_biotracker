@@ -5526,13 +5526,16 @@
   }
 }
 
-/* 注册页的特殊胎儿来历：默认收合，因为注册不一定产生怀孕，多数时候用不到 */
-.bs-bt-special-fetus > summary {
+/* 注册页的特殊胎儿来历：默认收合，因为注册不一定产生怀孕，多数时候用不到。
+   两段描述规则同理：预设值通常不用改，收起来免得占满注册页 */
+.bs-bt-special-fetus > summary,
+.bs-bt-register-fold > summary {
   cursor: pointer;
   font-weight: 600;
   padding: 4px 0;
 }
-.bs-bt-special-fetus[open] > summary {
+.bs-bt-special-fetus[open] > summary,
+.bs-bt-register-fold[open] > summary {
   margin-bottom: 6px;
 }
 

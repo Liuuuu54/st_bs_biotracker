@@ -2114,12 +2114,22 @@ function renderRacePhysiologyEditor(race) {
   introductionInput.placeholder = '可留空；填入后会作为该物种的提示词短句。';
   introductionLabel.appendChild(introductionInput);
 
-  // 注册名录只截取开头当辨识提示，写的人要知道哪几个字会被送出去
+  // 注册名录只截取开头当辨识提示，写的人要知道哪几个字会被送出去；规则说明放在问号文件里
   const introductionHint = document.createElement('span');
   introductionHint.className = 'bs-bt-race-editor-hint';
+  const introductionPreview = document.createElement('span');
+  const introductionDoc = document.createElement('a');
+  introductionDoc.className = 'bs-bt-doc-link';
+  introductionDoc.href = 'https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#物種與衍生類型的參數覆寫';
+  introductionDoc.target = '_blank';
+  introductionDoc.rel = 'noopener noreferrer';
+  introductionDoc.title = '物种短叙述说明';
+  introductionDoc.setAttribute('aria-label', '物种短叙述说明');
+  introductionDoc.textContent = '?';
+  introductionHint.append(introductionPreview, ' ', introductionDoc);
   const updateIntroductionHint = () => {
     const preview = buildRaceCatalogHint(introductionInput.value);
-    introductionHint.textContent = `注册时的物种名录只截取开头一两个分句（到第一个句号或分号为止，约 10–28 字）当辨识提示，最能辨认形象的描述请写在最前面；完整内容在该物种有角色在场时随生理说明送出。名录提示预览：${preview || '（空白，名录只列名称）'}`;
+    introductionPreview.textContent = `名录提示预览：${preview || '（空白，名录只列名称）'}`;
   };
   updateIntroductionHint();
   introductionInput.addEventListener('input', updateIntroductionHint);
