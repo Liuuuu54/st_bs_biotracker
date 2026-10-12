@@ -1,4 +1,5 @@
 import { normalizeExperience, initializeCognitionRecords, normalizeReproductiveSettings, psychologySide } from './reproductive.js';
+import { getWorldbookEntryActivationMode, worldbookEntryKeywordsMatch } from './worldbook_match.js';
 import { callOpenAICompatible } from './api.js';
 import { getEffectiveSettings } from './card_settings.js';
 import { isRealisticWorld } from './world_mode.js';
@@ -58,6 +59,7 @@ import {
   getVitalityInitByLevel,
   saveSettings,
   worldbookSelectionMatches,
+  normalizeWorldbookMode,
 } from './state.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { canLoadHostWorldInfo, getHostChat, getHostWorldBook, loadHostWorldInfo } from './host.js';
@@ -101,12 +103,6 @@ export function resolveRegistryTargetName(ctx, value) {
     return userName || resolved;
   }
   return resolved;
-}
-
-function normalizeWorldbookMode(value) {
-  const mode = String(value || 'exclude').trim();
-  if (mode === 'mainflow' || mode === 'allowlist_all' || mode === 'exclude') return mode;
-  return 'exclude';
 }
 
 async function getCharacterWorldBook(ctx) {
@@ -168,49 +164,6 @@ function formatGlobalWorldbookSelectionName(bookName, entryName) {
   return `${String(bookName || '').trim()} :: ${String(entryName || '').trim()}`;
 }
 
-function normalizeWorldbookKeywords(value) {
-  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean);
-  if (typeof value === 'string') return value.split(/[\r\n,]+/).map((item) => item.trim()).filter(Boolean);
-  return [];
-}
-
-function buildWorldbookActivationText(recentMessages = []) {
-  return (Array.isArray(recentMessages) ? recentMessages : [])
-    .map((message) => `${message?.name || ''}\n${message?.text || ''}`)
-    .join('\n')
-    .toLowerCase();
-}
-
-function getWorldbookEntryActivationMode(entry) {
-  const mode = String(entry?.activationMode || '').trim().toLowerCase();
-  if (mode) return mode;
-  if (entry?.constant === true || entry?.always === true) return 'always';
-  if (entry?.selective === true || normalizeWorldbookKeywords(entry?.key).length > 0 || normalizeWorldbookKeywords(entry?.keys).length > 0) return 'keyword';
-  return '';
-}
-
-function worldbookKeywordMatches(entry, activationText) {
-  if (!activationText) return false;
-  const primaryKeys = [
-    ...normalizeWorldbookKeywords(entry?.key),
-    ...normalizeWorldbookKeywords(entry?.keys),
-  ];
-  if (primaryKeys.length === 0) return false;
-  const primaryMatched = primaryKeys.some((keyword) => activationText.includes(keyword.toLowerCase()));
-  if (!primaryMatched) return false;
-
-  const secondaryKeys = [
-    ...normalizeWorldbookKeywords(entry?.keysecondary),
-    ...normalizeWorldbookKeywords(entry?.keySecondary),
-    ...normalizeWorldbookKeywords(entry?.secondary_keys),
-    ...normalizeWorldbookKeywords(entry?.secondaryKeys),
-  ];
-  if (entry?.selective === true && secondaryKeys.length > 0) {
-    return secondaryKeys.some((keyword) => activationText.includes(keyword.toLowerCase()));
-  }
-  return true;
-}
-
 function filterRegistryWorldbookEntries(value, excludedNames, settings = null, recentMessages = [], options = {}) {
   if (!value || typeof value !== 'object') return null;
   const mode = normalizeWorldbookMode(settings?.trackerWorldbookMode);
@@ -219,8 +172,6 @@ function filterRegistryWorldbookEntries(value, excludedNames, settings = null, r
   const includedNames = globalBookName && options.characterScopeLists !== true
     ? parseRegistryGlobalWorldbookIncludeNames(settings)
     : parseRegistryWorldbookIncludeNames(settings);
-  const activationText = mode === 'mainflow' ? buildWorldbookActivationText(recentMessages) : '';
-
   const normalizeEntryName = (entry) => getWorldbookEntryDisplayName(entry);
 
   const keepEntry = (entry) => {
@@ -229,14 +180,10 @@ function filterRegistryWorldbookEntries(value, excludedNames, settings = null, r
     if (mode === 'allowlist_all') return Boolean(name) && worldbookSelectionMatches(includedNames, selectionName, name);
     if (entry?.enabled === false || entry?.disable === true) return false;
     if (name && worldbookSelectionMatches(excludedNames, selectionName, name)) return false;
-    if (mode === 'mainflow') {
-      const activationMode = getWorldbookEntryActivationMode(entry);
-      if (activationMode === 'always' || activationMode === 'constant') return true;
-      if (activationMode === 'keyword' || activationMode === 'selective') return worldbookKeywordMatches(entry, activationText);
-      return false;
-    }
-    if (!excludedNames || excludedNames.size === 0) return true;
-    return true;
+    const activationMode = getWorldbookEntryActivationMode(entry);
+    if (activationMode === 'always' || activationMode === 'constant') return true;
+    if (activationMode === 'keyword' || activationMode === 'selective') return worldbookEntryKeywordsMatch(entry, recentMessages);
+    return false;
   };
 
   return projectWorldbook(value, keepEntry);

@@ -31,6 +31,7 @@ const HOST_EVENT_TYPE_KEYS = Object.freeze({
   groupChatCreated: 'GROUP_CHAT_CREATED',
   groupChatDeleted: 'GROUP_CHAT_DELETED',
   settingsUpdated: 'SETTINGS_UPDATED',
+  worldInfoEntriesLoaded: 'WORLDINFO_ENTRIES_LOADED',
 });
 
 export function getHostKind() {
@@ -89,7 +90,9 @@ export function subscribeHostEvent(ctx, eventName, handler) {
   return () => {
     if (!active) return;
     active = false;
+    // SillyTavern 的 EventEmitter 只有 removeListener，没有 off
     if (typeof eventSource.off === 'function') eventSource.off(eventType, safeHandler);
+    else if (typeof eventSource.removeListener === 'function') eventSource.removeListener(eventType, safeHandler);
   };
 }
 
@@ -326,9 +329,10 @@ export async function getHostWorldBook(name, scope = 'global') {
   return result?.worldBook || null;
 }
 
-export async function getHostWorldInfoPrompt(ctx, chat, maxContext, includeNames = true) {
+/** chat 要是宿主扫描用的字串阵列（见 api.js 的 buildWorldInfoScanChat）；第三个参数是 isDryRun */
+export async function getHostWorldInfoPrompt(ctx, chat, maxContext, isDryRun = true) {
   if (typeof ctx?.getWorldInfoPrompt !== 'function') return null;
-  return ctx.getWorldInfoPrompt(chat, maxContext, includeNames);
+  return ctx.getWorldInfoPrompt(chat, maxContext, isDryRun);
 }
 
 export function getHostPresetManager(ctx = null, apiId = 'openai') {

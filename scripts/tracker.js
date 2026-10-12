@@ -1,4 +1,7 @@
 import { inferPendingPsychology } from './registry.js';
+import { findWorldInfoMissingFromSnapshot, resolveHostWorldInfo, stripExcludedFromSnapshot } from './worldinfo_resolve.js';
+import { isOwnRequest } from './own_requests.js';
+import { getWorldbookEntryActivationMode, worldbookEntryKeywordsMatch } from './worldbook_match.js';
 import { getDisabledSpecialToolNames, isRealisticWorld } from './world_mode.js';
 import { syncCardSettings } from './card_settings.js';
 import { naturalNoticeDays, psychologySide } from './reproductive.js';
@@ -35,6 +38,7 @@ import {
   saveSettings,
   shouldTriggerForMessage,
   worldbookSelectionMatches,
+  normalizeWorldbookMode,
 } from './state.js';
 import { getDerivedTypeMetabolismExemptions } from './race_config.js';
 import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js';
@@ -259,7 +263,7 @@ export function isMvuExtraAnalysisRequest(input, init) {
  * 观测非本插件发出的生成请求（MVU 额外模型解析/其他扩展的二次调用）。
  * 不依赖 MVU 的设置或全局对象——TT 下这些常常读不到，
  * 但 MVU 的请求必然走页面里的 fetch，这是最可靠的运行时信号。
- * 本插件自己的请求带 __bs_biotracker_async_request__ 标记，不计数。
+ * 本插件自己的请求由 own_requests.js 记下，不计数。
  */
 export function installMvuFetchHook() {
   if (mvuGateState.fetchHooked || typeof globalThis.fetch !== 'function') return;
@@ -267,7 +271,7 @@ export function installMvuFetchHook() {
   globalThis.fetch = async (...args) => {
     // 只观测「确实带 MVU 特征」的额外解析请求——普通 ST 主线生成请求
     // 也走同一 generate 端点，若不加特征过滤会把无 MVU 卡误判为 MVU 环境
-    if (!globalThis.__bs_biotracker_async_request__ && isMvuExtraAnalysisRequest(args[0], args[1])) {
+    if (!isOwnRequest(args[1]) && isMvuExtraAnalysisRequest(args[0], args[1])) {
       mvuGateState.generateInFlight += 1;
       mvuGateState.lastGenerateStartedAt = Date.now();
       mvuGateState.sawGenerateThisRound = true;
@@ -638,12 +642,6 @@ export function tryAdoptSilentTailReplacement(ctx, settings, chatState) {
   saveSettings(ctx);
   console.debug('[BS BioTracker] 偵測到正文替換回寫（替换戳前进且无编辑事件），已重新锚定，未重發請求');
   return true;
-}
-
-function normalizeWorldbookMode(value) {
-  const mode = String(value || 'exclude').trim();
-  if (mode === 'mainflow' || mode === 'allowlist_all' || mode === 'exclude') return mode;
-  return 'exclude';
 }
 
 function getVitalityLevelText(level) {
@@ -1186,49 +1184,6 @@ function formatGlobalWorldbookSelectionName(bookName, entryName) {
   return `${String(bookName || '').trim()} :: ${String(entryName || '').trim()}`;
 }
 
-function normalizeWorldbookKeywords(value) {
-  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean);
-  if (typeof value === 'string') return value.split(/[\r\n,]+/).map((item) => item.trim()).filter(Boolean);
-  return [];
-}
-
-function buildWorldbookActivationText(recentMessages = []) {
-  return (Array.isArray(recentMessages) ? recentMessages : [])
-    .map((message) => `${message?.name || ''}\n${message?.text || ''}`)
-    .join('\n')
-    .toLowerCase();
-}
-
-function getWorldbookEntryActivationMode(entry) {
-  const mode = String(entry?.activationMode || '').trim().toLowerCase();
-  if (mode) return mode;
-  if (entry?.constant === true || entry?.always === true) return 'always';
-  if (entry?.selective === true || normalizeWorldbookKeywords(entry?.key).length > 0 || normalizeWorldbookKeywords(entry?.keys).length > 0) return 'keyword';
-  return '';
-}
-
-function worldbookKeywordMatches(entry, activationText) {
-  if (!activationText) return false;
-  const primaryKeys = [
-    ...normalizeWorldbookKeywords(entry?.key),
-    ...normalizeWorldbookKeywords(entry?.keys),
-  ];
-  if (primaryKeys.length === 0) return false;
-  const primaryMatched = primaryKeys.some((keyword) => activationText.includes(keyword.toLowerCase()));
-  if (!primaryMatched) return false;
-
-  const secondaryKeys = [
-    ...normalizeWorldbookKeywords(entry?.keysecondary),
-    ...normalizeWorldbookKeywords(entry?.keySecondary),
-    ...normalizeWorldbookKeywords(entry?.secondary_keys),
-    ...normalizeWorldbookKeywords(entry?.secondaryKeys),
-  ];
-  if (entry?.selective === true && secondaryKeys.length > 0) {
-    return secondaryKeys.some((keyword) => activationText.includes(keyword.toLowerCase()));
-  }
-  return true;
-}
-
 function filterTrackerWorldbookEntries(value, excludedNames, settings = null, recentMessages = [], options = {}) {
   if (!value || typeof value !== 'object') return null;
   const mode = normalizeWorldbookMode(settings?.trackerWorldbookMode);
@@ -1237,8 +1192,6 @@ function filterTrackerWorldbookEntries(value, excludedNames, settings = null, re
   const includedNames = globalBookName && options.characterScopeLists !== true
     ? parseTrackerGlobalWorldbookIncludeNames(settings)
     : parseTrackerWorldbookIncludeNames(settings);
-  const activationText = mode === 'mainflow' ? buildWorldbookActivationText(recentMessages) : '';
-
   const normalizeEntryName = (entry) => getWorldbookEntryDisplayName(entry);
 
   const keepEntry = (entry) => {
@@ -1247,14 +1200,10 @@ function filterTrackerWorldbookEntries(value, excludedNames, settings = null, re
     if (mode === 'allowlist_all') return Boolean(name) && worldbookSelectionMatches(includedNames, selectionName, name);
     if (entry?.enabled === false || entry?.disable === true) return false;
     if (name && worldbookSelectionMatches(excludedNames, selectionName, name)) return false;
-    if (mode === 'mainflow') {
-      const activationMode = getWorldbookEntryActivationMode(entry);
-      if (activationMode === 'always' || activationMode === 'constant') return true;
-      if (activationMode === 'keyword' || activationMode === 'selective') return worldbookKeywordMatches(entry, activationText);
-      return false;
-    }
-    if (!excludedNames || excludedNames.size === 0) return true;
-    return true;
+    const activationMode = getWorldbookEntryActivationMode(entry);
+    if (activationMode === 'always' || activationMode === 'constant') return true;
+    if (activationMode === 'keyword' || activationMode === 'selective') return worldbookEntryKeywordsMatch(entry, recentMessages);
+    return false;
   };
 
   return projectWorldbook(value, keepEntry);
@@ -1333,6 +1282,26 @@ export function getMainflowContextSnapshot(ctx) {
     model: snapshot.model ? String(snapshot.model) : '',
     messages,
   };
+}
+
+/**
+ * 快照是「产生这则回复的那次请求」，保留了主流各扩充处理后的样子，但有两个缺口：
+ * 回复里才触发的条目不在里面、排除名单管不到。用宿主试算这一刻的世界书补上：
+ * 被排除条目的原文从快照删掉，快照里没有的纯文字新触发条目另外附上。
+ */
+async function repairMainflowSnapshotWorldInfo(ctx, settings, payload) {
+  const resolved = await resolveHostWorldInfo(ctx, settings, { collectEntries: true });
+  if (!resolved) return;
+  const { snapshot, stripped, unmatched } = stripExcludedFromSnapshot(ctx, payload.mainflow_context_snapshot, resolved.removedEntries);
+  if (snapshot.messages.length > 0) payload.mainflow_context_snapshot = snapshot;
+  if (unmatched.length > 0) {
+    console.warn(`[BS BioTracker] 这些被排除的条目含模板语法，主流渲染后无法从快照中辨认删除：${unmatched.join('、')}`);
+  }
+  const missing = findWorldInfoMissingFromSnapshot(ctx, payload.mainflow_context_snapshot, resolved);
+  if (missing.length > 0) payload.mainflow_new_worldinfo = missing.map(({ name, content }) => ({ name, content }));
+  if (stripped.length > 0 || missing.length > 0) {
+    console.debug('[BS BioTracker] mainflow snapshot world info repaired', { stripped, added: missing.map((item) => item.name) });
+  }
 }
 
 export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexExclusive = null, settledBefore = null) {
@@ -1673,6 +1642,7 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   if (payload.mainflow_context_snapshot) {
     payload.character_additional_worldbook_names = [];
     payload.global_worldbooks = [];
+    await repairMainflowSnapshotWorldInfo(ctx, settings, payload);
   } else {
     const additionalBooks = await getCharacterAdditionalWorldbooksForTracker(ctx, settings, payload.recent_messages);
     const globalBooks = await getFilteredGlobalWorldbooks(ctx, settings, payload.recent_messages);

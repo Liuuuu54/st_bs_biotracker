@@ -228,7 +228,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   diaryWritingPrompt: DEFAULT_DIARY_WRITING_PROMPT,
   wardrobePrepPrompt: '',
   targetNames: '',
-  trackerWorldbookMode: 'exclude',
+  trackerWorldbookMode: 'mainflow',
   trackerWorldbookExcludeNames: '',
   trackerWorldbookIncludeNames: '',
   trackerGlobalWorldbookExcludeNames: '',
@@ -917,6 +917,14 @@ export function isSkillSystemEnabled(settings) {
   return settings?.skillSystemEnabled !== false;
 }
 
+/**
+ * 世界书模式只有主流（宿主触发的条目，可排除）与参考（只送手动勾选的条目）。
+ * 1.1.6 起拿掉的「正常模式」（送全部启用条目再排除）并入主流模式，排除名单照旧沿用。
+ */
+export function normalizeWorldbookMode(value) {
+  return String(value || '').trim() === 'allowlist_all' ? 'allowlist_all' : 'mainflow';
+}
+
 export function getSettings(ctx) {
   const root = getHostExtensionSettings(ctx);
   if (!root) throw new Error('[BS BioTracker] host extension settings are unavailable');
@@ -953,6 +961,10 @@ export function getSettings(ctx) {
   }
   if (!settings.chatStates || typeof settings.chatStates !== 'object') {
     settings.chatStates = {};
+    shouldSave = true;
+  }
+  if (settings.trackerWorldbookMode !== normalizeWorldbookMode(settings.trackerWorldbookMode)) {
+    settings.trackerWorldbookMode = normalizeWorldbookMode(settings.trackerWorldbookMode);
     shouldSave = true;
   }
   // 触发时机已固定为 AI 回复后（见 shouldTriggerForMessage），旧设定里的选项不再有作用

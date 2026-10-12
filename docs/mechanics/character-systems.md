@@ -40,12 +40,12 @@
 
 ## 技能與天賦
 
-技能目錄是聊天共用的定義，角色各自保存技能、天賦與歷史。技能最高 10 級、天賦最高 5 級，歷史最多保留 100 筆；技能經驗門檻及升級由 [skill_config.js](../../scripts/skill_config.js#L1)計算。`bsRegisterSkillDefinition` 建立／重用定義；`bsTrainSkill` 須有原因和整數技能經驗，尚未覺醒的技能還須 `awaken=true`。LLM 工具不能直接修改角色天賦。孕中期至部分產程階段，訓練可依隨機選中的已著床胎兒親近度，將正或負的經驗傳至其天賦。[定義工具](../../scripts/tools.js#L6926)、[訓練工具](../../scripts/tools.js#L6941)。初始化時也可由角色卡推論初始技能與天賦，[註冊子流程](../../scripts/registry.js#L2047)。
+技能目錄是聊天共用的定義，角色各自保存技能、天賦與歷史。技能最高 10 級、天賦最高 5 級，歷史最多保留 100 筆；技能經驗門檻及升級由 [skill_config.js](../../scripts/skill_config.js#L1)計算。`bsRegisterSkillDefinition` 建立／重用定義；`bsTrainSkill` 須有原因和整數技能經驗，尚未覺醒的技能還須 `awaken=true`。LLM 工具不能直接修改角色天賦。孕中期至部分產程階段，訓練可依隨機選中的已著床胎兒親近度，將正或負的經驗傳至其天賦。[定義工具](../../scripts/tools.js#L6926)、[訓練工具](../../scripts/tools.js#L6941)。初始化時也可由角色卡推論初始技能與天賦，[註冊子流程](../../scripts/registry.js#L1994)。
 
 ## 衣櫃、服裝和描述
 
 衣櫃保存長期物件；`outfit` 保存目前主服、配件、臨時衣物及穿著狀態。衣物有遮蔽、支撐、容納、方便四維度，主服與配件另有各自的欄位規則。[欄位及正規化](../../scripts/wardrobe_config.js#L1)。`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` 改變資料；懷孕和產後穿著壓力依身體狀態與衣物尺寸計算，供 PDA 顯示。[衣物工具](../../scripts/tools.js#L6694)、[穿著壓力](../../scripts/tools.js#L750)。
 
-`descriptions.normalDescription` 與 `pregnantDescription` 是角色狀態文字，各自存成有序陣列 `[{ name, value, updatedAt }]`：陣列順序即欄位順序，`updatedAt` 是該欄最後更新或確認時的系統時鐘（`minutesPassed`）。送給模型時轉成以欄位名為鍵的物件 `{ "欄位名": "內容" }`，不帶時間戳；超過一天（遊戲時間）沒更新的欄位另列在 `staleDescriptionFields`，追蹤提示的「descriptions 待確認」段逐人點名，主線看不到這份點名。追蹤頁滑鼠停在描述欄位上會顯示該欄多久前（遊戲時間）更新，超過一天的另註明會被點名。描述本身不是生理數值的計算來源。[合併與過期](../../scripts/descriptions.js#L84)、[追蹤狀態投影](../../scripts/tracker.js#L1315)。1.1.4 以前的「欄名|內容;;」字串在載入時遷移成陣列，切不出欄位名的段落整段收進「未分類」，時間戳記為遷移當下，不會一升級就全部被點名。[存檔遷移](../../scripts/state_migration.js#L213)。
+`descriptions.normalDescription` 與 `pregnantDescription` 是角色狀態文字，各自存成有序陣列 `[{ name, value, updatedAt }]`：陣列順序即欄位順序，`updatedAt` 是該欄最後更新或確認時的系統時鐘（`minutesPassed`）。送給模型時轉成以欄位名為鍵的物件 `{ "欄位名": "內容" }`，不帶時間戳；超過一天（遊戲時間）沒更新的欄位另列在 `staleDescriptionFields`，追蹤提示的「descriptions 待確認」段逐人點名，主線看不到這份點名。追蹤頁滑鼠停在描述欄位上會顯示該欄多久前（遊戲時間）更新，超過一天的另註明會被點名。描述本身不是生理數值的計算來源。[合併與過期](../../scripts/descriptions.js#L84)、[追蹤狀態投影](../../scripts/tracker.js#L1264)。1.1.4 以前的「欄名|內容;;」字串在載入時遷移成陣列，切不出欄位名的段落整段收進「未分類」，時間戳記為遷移當下，不會一升級就全部被點名。[存檔遷移](../../scripts/state_migration.js#L213)。
 
 認知時間軸每筆標題預設折疊，點擊展開內容；刷新與切頁保留手動開合狀態，新追加紀錄預設折疊。

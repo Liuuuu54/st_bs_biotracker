@@ -387,6 +387,9 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
       '- 它仅用于补足本轮剧情、角色设定、已触发 worldinfo、模板注入、getwi/activewi 等主流背景。',
       '- 不要模仿主流输出风格，不要续写剧情；你的任务仍是根据 recent_messages 与 existing_state 返回 JSON tool_calls 来更新变量。',
       '- 若主流上下文快照与 tracker 工具调用规则、变量语义说明、existing_state 或 available_tools 冲突，必须以后者为准。',
+      ...(Array.isArray(payload?.mainflow_new_worldinfo) && payload.mainflow_new_worldinfo.length > 0
+        ? ['- payload.mainflow_new_worldinfo 是快照之后、由 recent_messages 最新回复才触发的世界书条目（快照里没有），与快照里的 worldinfo 同等看待，例如新登场人物的种族与身份。']
+        : []),
     ].join('\n'));
   }
   const priorityNames = Array.isArray(payload?.priority_character_names)

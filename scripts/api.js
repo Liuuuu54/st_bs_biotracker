@@ -1,12 +1,12 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeReasoningEffort, normalizeTemperatureMode, resolveUserTemperature } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, resolveUserTemperature } from './state.js';
+import { resolveHostWorldInfo } from './worldinfo_resolve.js';
+import { markOwnRequest } from './own_requests.js';
 import {
-  getHostChat,
   getHostChatCompletionSettings,
   getHostContext,
   getHostKind,
   getHostPreset,
   getHostPresetManager,
-  getHostWorldInfoPrompt,
 } from './host.js';
 
 const DEBUG_LAST_EFFECTIVE_REQUEST_KEY = '__bs_biotracker_debug_last_effective_request__';
@@ -536,7 +536,7 @@ async function fetchText(url, options = {}) {
     }
   }
   try {
-    const response = await fetch(url, fetchOptions);
+    const response = await fetch(url, markOwnRequest(fetchOptions));
     const responseText = await response.text().catch((error) => (
       `[failed to read response text: ${String(error?.message || error)}]`
     ));
@@ -937,21 +937,14 @@ function resolvePayloadValueWithStMacros(value, stCtx) {
   return value;
 }
 
-async function buildResolvedWorldInfo(stCtx) {
-  const chat = getHostChat(stCtx);
-  const maxContext = Number(stCtx?.maxContext || getHostChatCompletionSettings(stCtx)?.openai_max_context || 0);
-  try {
-    const result = await getHostWorldInfoPrompt(stCtx, chat, maxContext > 0 ? maxContext : undefined, true);
-    if (!result) return null;
-    const before = sanitizeTransportString(result?.worldInfoBefore || '').trim();
-    const after = sanitizeTransportString(result?.worldInfoAfter || '').trim();
-    const combined = [before, after].filter(Boolean).join('\n').trim();
-    if (!before && !after && !combined) return null;
-    return { before, after, combined };
-  } catch (error) {
-    console.warn('[BS BioTracker] failed to resolve world info prompt', error);
-    return null;
-  }
+async function buildResolvedWorldInfo(stCtx, settings = null) {
+  const resolved = await resolveHostWorldInfo(stCtx, settings);
+  if (!resolved) return null;
+  const before = sanitizeTransportString(resolved.before).trim();
+  const after = sanitizeTransportString(resolved.after).trim();
+  const combined = [before, after].filter(Boolean).join('\n').trim();
+  if (!combined) return null;
+  return { before, after, combined };
 }
 
 async function buildResolvedAsyncPayload(payload, stCtx, settings = null) {
@@ -960,9 +953,8 @@ async function buildResolvedAsyncPayload(payload, stCtx, settings = null) {
   // A captured mainflow request contains opaque preset and chat instructions.
   // It is only a runtime signal and must never be forwarded to async analysis.
   const { mainflow_context_snapshot: _discarded, ...resolvedPayload } = resolvedWithMacros;
-  if (!settings?.trackerWorldbookMode) return resolvedPayload;
-  if (settings?.trackerWorldbookMode !== 'mainflow') return resolvedPayload;
-  const resolvedWorldInfo = await buildResolvedWorldInfo(stCtx);
+  if (!settings || normalizeWorldbookMode(settings.trackerWorldbookMode) !== 'mainflow') return resolvedPayload;
+  const resolvedWorldInfo = await buildResolvedWorldInfo(stCtx, settings);
   if (!resolvedWorldInfo) return resolvedPayload;
   return {
     ...resolvedPayload,
@@ -1269,8 +1261,6 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   };
 
   const postBody = async (requestBody, attempt = 'primary') => {
-    const previousAsyncFlag = globalThis.__bs_biotracker_async_request__;
-    globalThis.__bs_biotracker_async_request__ = true;
     const fmt = normalizeApiFormat(settings?.apiFormat);
     // 会话头只认 opencode endpoint，其他渠道为空、直连与代理路径都不会多带
     const sessionId = runContext.sessionId || '';
@@ -1399,8 +1389,6 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
       });
       if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
       throw new Error(`无法连接到 API。请检查 Base URL、API Key、服务是否启动；浏览器环境会优先通过酒馆后端代理。若使用原版 SillyTavern 且渠道不允许浏览器直连（CORS 拦截），可在 config.yaml 设置 corsProxy.enabled: true 后重启，让酒馆服务器代为转发。原始错误: ${String(error?.message || error)}`);
-    } finally {
-      globalThis.__bs_biotracker_async_request__ = previousAsyncFlag;
     }
   };
 

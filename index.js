@@ -1,6 +1,7 @@
 import { getStageProgress, formatProgressNumber } from './scripts/stage_progress.js';
 import { normalizeReproductiveSettings, COGNITION_METHODS, psychologySide } from './scripts/reproductive.js';
 import { abortActiveApiRequests, fetchModelList, isApiUserAbortError } from './scripts/api.js';
+import { isOwnRequest } from './scripts/own_requests.js';
 import {
   applyInitialSkillTalentConfig,
   applyRegistryBreedingInference,
@@ -168,6 +169,7 @@ import {
   markChatStatesSynced,
   THEME_CONFIG,
   worldbookSelectionMatches,
+  normalizeWorldbookMode,
 } from './scripts/state.js';
 
 const PANEL_ID = 'bs-biotracker-settings';
@@ -258,11 +260,6 @@ let racePaletteState = {
   bloodline: {},
 };
 
-function normalizeWorldbookMode(value) {
-  const mode = String(value || 'exclude').trim();
-  if (mode === 'mainflow' || mode === 'allowlist_all' || mode === 'exclude') return mode;
-  return 'exclude';
-}
 let debugInjectDraft = {
   owner: '',
   mode: 'normal',
@@ -1453,15 +1450,13 @@ function syncWorldbookFilterInput(ctx) {
     input.value = names.join('\n');
     input.placeholder = mode === 'allowlist_all'
       ? '每行一个条目名。参考模式下，仅这些条目会传给 tracker；即使它们目前是 disabled 也会保留。'
-      : mode === 'mainflow'
-        ? '每行一个条目名。主流模式下，tracker 优先引用上次 ST 主流 request 上下文；没有快照时会按常驻/关键字触发，并套用这些排除条目。'
-        : '每行一个条目名。正常模式下，这些条目会从 worldbook 传输中排除。';
+      : '每行一个条目名。主流模式下只送酒馆这一刻触发的条目，这些条目会被排除（主流快照里含模板语法的条目除外）。';
   }
   if (globalInput) {
     globalInput.value = globalNames.join('\n');
     globalInput.placeholder = mode === 'allowlist_all'
       ? '每行一个“书名 :: 条目名”。参考模式下，仅这些全域条目会传给 tracker。'
-      : '每行一个“书名 :: 条目名”。正常模式下，这些全域条目会从 worldbook 传输中排除。';
+      : '每行一个“书名 :: 条目名”。主流模式下，这些全域条目会被排除。';
   }
 }
 
@@ -1531,7 +1526,7 @@ function installMainflowRequestCapture() {
   const originalFetch = globalThis.fetch.bind(globalThis);
   globalThis[ORIGINAL_FETCH_KEY] = originalFetch;
   globalThis.fetch = async (...args) => {
-    if (!globalThis.__bs_biotracker_async_request__ && !isMvuExtraAnalysisInFlight()) {
+    if (!isOwnRequest(args[1]) && !isMvuExtraAnalysisInFlight()) {
       try {
         const body = parseFetchBodyFromInit(args[1]) || await parseFetchBodyFromRequest(args[0]);
         captureMainflowRequestBody(body, 'fetch');
