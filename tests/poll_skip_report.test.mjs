@@ -161,8 +161,28 @@ test('poll 未启用时面板留下原因，不动真实结果', async () => {
 
   const outcome = await poll(ctx, deps);
   assert.deepEqual(outcome, { skipped: true, reason: 'disabled' });
-  assert.equal(getPollWaitStatus(ctx)?.message, '自动追踪未启用（在设置中开启后生效）。');
+  assert.equal(getPollWaitStatus(ctx)?.message, 'BioTracker 已停用（系统页总开关）。');
   assert.equal(chatState.lastRawResult.message, '真实追踪结果');
+});
+
+test('总开关开着、自动追踪关掉时 poll 不跑，留下手动分析的提示', async () => {
+  const { ctx, settings } = makeCtx();
+  settings.enabled = true;
+  settings.autoTrackEnabled = false;
+  const { deps } = makeDeps();
+  const outcome = await poll(ctx, deps);
+  assert.deepEqual(outcome, { skipped: true, reason: 'auto_off' });
+  assert.match(getPollWaitStatus(ctx)?.message || '', /手动分析/);
+});
+
+test('1.1.6 前关掉的 enabled 只代表自动追踪关：换成总开关开、自动追踪关', () => {
+  const ctx = { extensionSettings: { bs_biotracker: { enabled: false } }, saveSettingsDebounced() {} };
+  const settings = state.getSettings(ctx);
+  assert.equal(settings.enabled, true);
+  assert.equal(settings.autoTrackEnabled, false);
+  const fresh = state.getSettings({ extensionSettings: {}, saveSettingsDebounced() {} });
+  assert.equal(fresh.enabled, false, '新安装的总开关预设关');
+  assert.equal(fresh.autoTrackEnabled, true);
 });
 
 test('clearPollWaitStatus 清掉暂态提示（真实开跑后调用）', () => {

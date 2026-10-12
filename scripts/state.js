@@ -196,6 +196,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   iphoneCase: '#c8c2b8',
   iphoneFont: 'system',
   enabled: false,
+  // AI 回复后自动追踪；关掉只停自动分析，注入与手动分析照常（enabled 才是总开关）
+  autoTrackEnabled: true,
   useStPresetForAsync: false,
   trackerPresetName: '',
   trackerPromptToggles: {},
@@ -951,6 +953,13 @@ export function getSettings(ctx) {
     } catch (error) {
       console.warn('[BS BioTracker] unable to normalize chatStates for host store, continuing', error);
     }
+  }
+  // 1.1.6 前 enabled 只管自动追踪，关掉时注入照常；拆成总开关与自动追踪后，
+  // 旧的「关」换成「总开关开、自动追踪关」，行为与更新前一样
+  if (settings.autoTrackEnabled === undefined && settings.enabled === false) {
+    settings.enabled = true;
+    settings.autoTrackEnabled = false;
+    shouldSave = true;
   }
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     if (useHostChatStore && key === 'chatStates') continue;

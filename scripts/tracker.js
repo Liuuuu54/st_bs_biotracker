@@ -1952,12 +1952,10 @@ export async function runTracker(ctx, deps, reason = 'manual') {
 export async function poll(ctx, deps) {
   const settings = getSettings(ctx);
   if (!settings.enabled) {
-    return recordPollSkip(
-      ctx,
-      deps,
-      'disabled',
-      '自动追踪未启用（在设置中开启后生效）。',
-    );
+    return recordPollSkip(ctx, deps, 'disabled', 'BioTracker 已停用（系统页总开关）。');
+  }
+  if (settings.autoTrackEnabled === false) {
+    return recordPollSkip(ctx, deps, 'auto_off', '自动追踪已关闭，按「立即分析当前对话」手动分析。');
   }
   await runTracker(ctx, deps, 'poll');
 }

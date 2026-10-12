@@ -7530,6 +7530,7 @@ function applySettingsToForm(ctx) {
     else node.value = value ?? '';
   };
   setValue('bs-bt-enabled', settings.enabled);
+  setValue('bs-bt-auto-track', settings.autoTrackEnabled !== false);
   setValue('bs-bt-tracker-preset-list', settings.useStPresetForAsync ? CURRENT_PRESET_OPTION_VALUE : (settings.trackerPresetName || NO_PRESET_OPTION_VALUE));
   setValue('bs-bt-api-url', settings.apiUrl);
   setValue('bs-bt-api-format', normalizeApiFormat(settings.apiFormat));
@@ -8086,7 +8087,8 @@ async function clearCurrentGlobalWorldbookSelections(ctx) {
 function updateMainFlowPrompt(ctx) {
   const settings = getSettings(ctx);
   syncRacePhysiologyOverrides(settings);
-  const prompt = buildMainFlowPrompt(ctx, settings);
+  // 总开关关掉时连状态都不注入；写空字串把先前注入的清掉
+  const prompt = settings.enabled ? buildMainFlowPrompt(ctx, settings) : '';
   globalThis[MAINFLOW_PROMPT_TOKEN_INPUT_KEY] = { capturedAt: Date.now(), prompt };
   try {
     ctx.setExtensionPrompt?.(MAINFLOW_PROMPT_KEY, prompt, 1, Math.max(2, Number(settings.contextSize) || 12), false);
@@ -8100,6 +8102,7 @@ function readSettingsFromForm(ctx) {
   const settings = getSettings(ctx);
   const getValue = (id) => document.getElementById(id)?.value ?? '';
   settings.enabled = !!document.getElementById('bs-bt-enabled')?.checked;
+  settings.autoTrackEnabled = !!document.getElementById('bs-bt-auto-track')?.checked;
   const trackerPresetSelectionValue = String(getValue('bs-bt-tracker-preset-list')).trim();
   if (trackerPresetSelectionValue) {
     settings.useStPresetForAsync = trackerPresetSelectionValue === CURRENT_PRESET_OPTION_VALUE;
@@ -9099,6 +9102,24 @@ async function ensureModal(ctx) {
     readSettingsFromForm(ctx);
     await connectAndLoadModels(ctx);
   });
+  // 总开关与自动追踪切了立即生效，不必再按「保存设置」：总开关同时决定要不要注入状态
+  document.getElementById('bs-bt-enabled')?.addEventListener('change', (event) => {
+    const settings = getSettings(ctx);
+    settings.enabled = Boolean(event.currentTarget?.checked);
+    saveSettings(ctx);
+    updateMainFlowPrompt(ctx);
+    globalThis.toastr?.info?.(settings.enabled
+      ? '[BS BioTracker] 已启用：注入状态并追踪'
+      : '[BS BioTracker] 已停用：不注入状态、不追踪，资料保留');
+  });
+  document.getElementById('bs-bt-auto-track')?.addEventListener('change', (event) => {
+    const settings = getSettings(ctx);
+    settings.autoTrackEnabled = Boolean(event.currentTarget?.checked);
+    saveSettings(ctx);
+    globalThis.toastr?.info?.(settings.autoTrackEnabled
+      ? '[BS BioTracker] 已开启自动追踪：AI 回复后自动分析'
+      : '[BS BioTracker] 已关闭自动追踪：只在手动分析时追踪，状态注入照常');
+  });
   document.getElementById('bs-bt-save')?.addEventListener('click', () => {
     readSettingsFromForm(ctx);
     globalThis.toastr?.success?.('[BS BioTracker] 设置已保存');
@@ -9528,6 +9549,10 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-run')?.addEventListener('click', async (event) => {
     const button = event.currentTarget;
     if (button.disabled) return;
+    if (!getSettings(ctx).enabled) {
+      globalThis.toastr?.warning?.('[BS BioTracker] 已停用（系统页总开关），不会分析');
+      return;
+    }
     try {
       setButtonBusy(button, true, '分析请求发送中...');
       globalThis.toastr?.info?.('[BS BioTracker] 开始手动发送分析请求...');

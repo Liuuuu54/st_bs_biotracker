@@ -269,9 +269,12 @@
 
         <section id="bs-bt-view-system" class="bs-bt-view" data-view="system">
           <div class="bs-bt-panel">
-            <div class="settings_section flex-container alignitemscenter">
-              <input type="checkbox" id="bs-bt-enabled" />
-              <label for="bs-bt-enabled">启用异步生理状态追踪</label>
+            <div class="settings_section">
+              <div class="bs-bt-setting-toggle-row">
+                <input type="checkbox" id="bs-bt-enabled" />
+                <label for="bs-bt-enabled">启用 BioTracker</label>
+              </div>
+              <small>总开关。关闭后不注入状态、不追踪（手动分析也不跑），已有资料保留。只想停掉自动分析时，用追踪页的「AI 回复后自动追踪」。</small>
             </div>
 
             <hr class="sysHR" />
@@ -716,6 +719,11 @@
 
             <div class="settings_section bs-bt-action-row">
               <button id="bs-bt-run" class="menu_button" type="button">立即分析当前对话</button>
+              <div class="bs-bt-setting-toggle-row">
+                <input type="checkbox" id="bs-bt-auto-track" />
+                <label for="bs-bt-auto-track">AI 回复后自动追踪</label>
+              </div>
+              <small>关闭后重 roll 正文不会再自动分析，要分析时按上面的按钮；状态注入照常。</small>
             </div>
 
             <div class="bs-bt-track-list-note">说明：离场角色会以精简状态发送给追踪器；点击仍可查看资料，并可在调试面板手动切回在场。</div>
