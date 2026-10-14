@@ -47,6 +47,7 @@ function resetAllGates(ctx) {
   run.generationBusySince = 0;
   run.mutSeq = 0;
   run.ctxRef = null;
+  run.absorbedReplacementStamps.clear();
   const gate = __mvuGateStateForTest;
   gate.lastEndedKey = '';
   gate.lastEndedContentKey = '';
@@ -476,3 +477,59 @@ test('编辑事件先于任何轮询评估到达：hydrate 先行，持久化计
     '持久计数只前进不后退');
 });
 
+
+// 数据库在宿主没有 setChatMessages 时（TT 与 ST 本体都没有）走降级写回：
+// 改 mes、盖戳、存档后发 message_updated(楼层号)。这一发是替换自己的写回通知，不是编辑。
+function simulateFallbackReplacement(ctx, index, newText) {
+  simulateReplacement(ctx.chat[index], newText);
+  ctx.eventSource.emit('message_updated', index);
+}
+
+test('数据库降级写回（盖戳后发 message_updated(楼层号)）同样静默吸收，不重发追踪', async () => {
+  const { ctx, counter } = makeCtx();
+  await runTracker(ctx, deps, 'manual');
+  counter.requests = 0;
+  await trackOneReply(ctx);
+  assert.equal(counter.requests, 1);
+
+  await sleep(20);
+  simulateFallbackReplacement(ctx, 2, '完整正文（正文优化后）');
+  await runTracker(ctx, deps, 'poll');
+  await sleepPastSettle();
+  await runTracker(ctx, deps, 'poll');
+  assert.equal(counter.requests, 1, '正文优化的写回通知不得被当成编辑');
+  assert.equal(chatStateOf(ctx).snapshots.at(-1).reason, 'silent_replace');
+});
+
+test('一个替换戳只抵消一次写回通知：之后脚本再改正文照常追踪', async () => {
+  const { ctx, counter } = makeCtx();
+  await runTracker(ctx, deps, 'manual');
+  counter.requests = 0;
+  await trackOneReply(ctx);
+
+  await sleep(20);
+  simulateFallbackReplacement(ctx, 2, '完整正文（正文优化后）');
+  // 替换之后脚本改正文：同样只发 message_updated(楼层号)，戳没有前进
+  ctx.chat[2].mes = '完整正文（正文优化后）+ 脚本改写';
+  ctx.eventSource.emit('message_updated', 2);
+  await runTracker(ctx, deps, 'poll');
+  await sleepPastSettle();
+  await runTracker(ctx, deps, 'poll');
+  assert.equal(counter.requests, 2, '同一个戳的第二次通知必须照常计为编辑');
+});
+
+test('写回通知只认刚盖上的戳：楼层带着旧戳时的 message_updated 照常计为编辑', () => {
+  const { ctx } = makeCtx();
+  ctx.chat.push({ is_user: false, name: 'Alice', mes: '旧回复', swipe_id: 0, extra: { _acu_last_optimized_at: Date.now() - 10 * 60 * 1000 } });
+  const before = __hostRunStateForTest.mutSeq;
+  ctx.eventSource.emit('message_updated', 1);
+  assert.equal(__hostRunStateForTest.mutSeq, before + 1);
+
+  ctx.chat[1].extra._acu_last_optimized_at = Date.now();
+  ctx.eventSource.emit('message_updated', 1);
+  assert.equal(__hostRunStateForTest.mutSeq, before + 1, '刚盖戳的那一发不计');
+  ctx.eventSource.emit('message_updated', 1);
+  assert.equal(__hostRunStateForTest.mutSeq, before + 2, '同一戳的下一发照常计');
+  ctx.eventSource.emit('message_updated');
+  assert.equal(__hostRunStateForTest.mutSeq, before + 3, '不带楼层号的通知照常计');
+});

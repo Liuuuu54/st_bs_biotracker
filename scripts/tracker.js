@@ -417,7 +417,12 @@ const hostRunState = {
   // 计数重载归零会把「重载后的手动编辑」误判成无痕而吞掉追踪。
   mutSeq: 0,
   ctxRef: null,
+  // 已抵消过一次写回通知的替换戳：每个戳只认一次，之后同楼层的 MESSAGE_UPDATED 照常计为编辑
+  absorbedReplacementStamps: new Set(),
 };
+
+/** 替换戳盖上后多久内到达的 MESSAGE_UPDATED 才算替换自己的写回通知（降级写回要先存档再通知） */
+const REPLACEMENT_WRITEBACK_NOTICE_WINDOW_MS = 30000;
 export const __hostRunStateForTest = hostRunState;
 // 与 MVU 门控同法：挂到全局方便在真实宿主的 console 里排查触发问题
 globalThis.__bs_biotracker_debug_host_run__ = hostRunState;
@@ -445,6 +450,31 @@ function markHostGenerationEnd() {
   // 不会假清空），否则计数只增不减会把追踪卡死到看门狗上限。
   hostRunState.generationDepth = 0;
   hostRunState.generationBusySince = 0;
+}
+
+/**
+ * 数据库正文替换在宿主没有 setChatMessages 时（TT 与 ST 本体都没有）走降级写回：
+ * 改 mes、盖戳、存档后发 MESSAGE_UPDATED(楼层号)。这一发是替换自己的写回通知，
+ * 不是编辑——计入编辑会让紧接着的静默吸收被否决，正文优化后再追一轮。
+ * 只认「带楼层号、该楼刚盖上新戳、该戳没抵消过」的那一发；其余照常计为编辑。
+ */
+function isReplacementWritebackNotice(messageIndex) {
+  const index = Number(messageIndex);
+  if (!Number.isInteger(index) || index < 0) return false;
+  const ctx = hostRunState.ctxRef;
+  if (!ctx) return false;
+  const stamp = readReplacementMarkMs(getHostChat(ctx)[index]);
+  if (!stamp || Date.now() - stamp > REPLACEMENT_WRITEBACK_NOTICE_WINDOW_MS) return false;
+  const absorbed = hostRunState.absorbedReplacementStamps;
+  if (absorbed.has(stamp)) return false;
+  absorbed.add(stamp);
+  if (absorbed.size > 32) absorbed.delete(absorbed.values().next().value);
+  return true;
+}
+
+function bumpHostMutSeqUnlessReplacementNotice(messageIndex) {
+  if (isReplacementWritebackNotice(messageIndex)) return;
+  bumpHostMutSeq();
 }
 
 function bumpHostMutSeq() {
@@ -495,9 +525,9 @@ export function installHostRunWatchers(ctx) {
     // 酒馆助手 ts_edit / JS-Runner 等程序化编辑只发 MESSAGE_UPDATED（不发 EDITED），
     // /role /name 与编辑取消也走这里：漏订会让「替换后脚本改正文」被当成替换吞掉。
     // 取消编辑会误前进计数 → 该轮替换不被吸收、多追一次，方向安全。
-    // 宿主 setChatMessages(refresh:'affected') 只发 *_MESSAGE_RENDERED，替换写回
-    // 本身不会误触发本计数。
-    source.on(resolveHostEventName(ctx, 'MESSAGE_UPDATED', 'message_updated'), bumpHostMutSeq);
+    // 宿主 setChatMessages(refresh:'affected') 只发 *_MESSAGE_RENDERED；数据库降级写回
+    // 自己发的那一发 MESSAGE_UPDATED 由 isReplacementWritebackNotice 识别后不计。
+    source.on(resolveHostEventName(ctx, 'MESSAGE_UPDATED', 'message_updated'), bumpHostMutSeqUnlessReplacementNotice);
   } catch (error) {
     console.warn('[BS BioTracker] 無法訂閱宿主生成/編輯事件', error);
   }
