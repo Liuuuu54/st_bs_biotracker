@@ -1,4 +1,5 @@
 import { normalizeExperience, normalizeCognitionRecords, normalizeReproductiveSettings } from './reproductive.js';
+import { stripVariableUpdateBlocks } from './variable_isolation.js';
 import { syncCardSettings, importCardSkillSeed } from './card_settings.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import {
@@ -1864,7 +1865,8 @@ export function buildRecentMessages(ctx, settings, endIndexExclusive = null, set
   return chat.slice(start, end).map((message, offset) => ({
     name: message.name || (message.is_user ? ctx.name1 : ctx.name2) || '',
     role: message.is_user ? 'user' : 'assistant',
-    text: String(message.mes || ''),
+    // 变量系统写在讯息里的更新区块（MVU、小白 X）不是剧情，留着会干扰判断
+    text: stripVariableUpdateBlocks(message.mes || ''),
     ...(Number.isInteger(settledBefore) && start + offset < settledBefore ? { already_settled: true } : {}),
   }));
 }

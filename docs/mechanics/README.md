@@ -45,7 +45,7 @@ flowchart LR
 | `runtime.*CarryMinutes` | 每角色的時、日、週零頭；避免多次短時間推進漏掉整點。 |
 | `profile.notify` | 最新一次運算產生的三層提示，會隨後續操作更新。 |
 
-資料結構見 [state.js](../../scripts/state.js#L675)，時間運算見 [tools.js](../../scripts/tools.js#L6283)。
+資料結構見 [state.js](../../scripts/state.js#L676)，時間運算見 [tools.js](../../scripts/tools.js#L6283)。
 
 ## 說明邊界
 

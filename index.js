@@ -2,6 +2,7 @@ import { getStageProgress, formatProgressNumber } from './scripts/stage_progress
 import { normalizeReproductiveSettings, COGNITION_METHODS, psychologySide } from './scripts/reproductive.js';
 import { abortActiveApiRequests, fetchModelList, isApiUserAbortError } from './scripts/api.js';
 import { isOwnRequest } from './scripts/own_requests.js';
+import { stripBioTrackerInjection } from './scripts/variable_isolation.js';
 import {
   applyInitialSkillTalentConfig,
   applyRegistryBreedingInference,
@@ -9993,6 +9994,32 @@ async function ensureChatStateHydrated(ctx) {
  * - 别的分页存过更新的版本时，从宿主读回那些聊天并重绘
  * - 还有存档没写完时关闭或刷新页面：立即补存，并请浏览器挡一下离开
  */
+const VARIABLE_ISOLATION_INSTALLED_KEY = '__bs_biotracker_variable_isolation_installed__';
+
+/**
+ * MVU 额外模型解析的请求送出前，把插件注入的 <bs_biotracker> 状态段拿掉：
+ * 它会把这段 JSON 当成自己的变量写 JSONPatch（见 variable_isolation.js）。
+ * 提示词就绪与设定就绪两处都处理，酒馆助手的生成函式至少会经过其中一处。
+ */
+function installVariableIsolation(ctx) {
+  if (globalThis[VARIABLE_ISOLATION_INSTALLED_KEY]) return;
+  const source = ctx?.eventSource;
+  const types = ctx?.eventTypes || ctx?.event_types || {};
+  if (!source || typeof source.on !== 'function') return;
+  globalThis[VARIABLE_ISOLATION_INSTALLED_KEY] = true;
+  const strip = (messages) => {
+    if (!isMvuExtraAnalysisInFlight()) return;
+    const removed = stripBioTrackerInjection(messages);
+    if (removed > 0) console.debug('[BS BioTracker] removed the tracker state from an MVU extra-analysis request');
+  };
+  if (types.CHAT_COMPLETION_PROMPT_READY) {
+    source.on(types.CHAT_COMPLETION_PROMPT_READY, (data) => { if (!data?.dryRun) strip(data?.chat); });
+  }
+  if (types.CHAT_COMPLETION_SETTINGS_READY) {
+    source.on(types.CHAT_COMPLETION_SETTINGS_READY, (data) => strip(data?.messages));
+  }
+}
+
 function installSaveGuards(ctx) {
   globalThis[SETTINGS_UPDATED_HANDLER_KEY] = replaceHostEventSubscription(
     ctx,
@@ -10035,6 +10062,7 @@ async function bootstrap() {
     markChatStatesSynced(ctx);
     await ensureChatStateHydrated(ctx);
     installMainflowRequestCapture();
+    installVariableIsolation(ctx);
     await ensureModal(ctx);
     await registerMenuItem(ctx);
     trackerDeps.updateMainFlowPrompt = updateMainFlowPrompt;
