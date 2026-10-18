@@ -357,12 +357,18 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
       '[只结算新讯息]',
       '- recent_messages 里带 already_settled=true 的讯息，已在先前的追踪中结算过（时间、技能经验、生殖操作、衣着、关系、认知、日记等），只用来理解前情，不得再依据它们调用任何工具。',
       '- 只为没有 already_settled 标记的新讯息结算；新讯息没有写到的事，即使旧讯息里有，也不要再处理一次。',
+      '- 回忆、倒叙、梦境、假设或想象的段落没有发生在现在：不推进时间，段落里的事件也不结算（不记性行为、受孕、经验、衣着等）。',
     ].join('\n'),
-    [
+    payload?.time_frozen === true ? [
+      '[时间已冻结]',
+      '- 使用者已冻结时间推进：本轮不得推进时间，available_tools 里也没有 bsPassedTime。',
+      '- 剧情里写到过了多久都不处理；其余工具（性行为、衣着、技能、日记、认知等）照常依新讯息结算。',
+    ].join('\n') : [
       '[bsPassedTime 强制规则]',
       '- bsPassedTime 是每一轮 tracker 分析都必须优先考虑的第一工具。',
       '- 你应先根据 recent_messages 中的新讯息（未标 already_settled）判断本轮累计了多少分钟/小时/天，再调用 bsPassedTime 推进时间。',
       '- 只有在确认本轮完全没有任何可推进的时间量时，才允许不调用 bsPassedTime。',
+      '- 时间线穿越（回到过去、跳到未来、时间回溯、时空旅行、魂穿等）：不得调用 bsPassedTime，日历的跳动不是身体实际经过的时间；穿越后当场发生的事照常结算。',
       '- 其他状态工具默认建立在时间推进之后，不要跳过 bsPassedTime 直接更新长程状态。\n- 例外：剧情里的操作（转胎、托高、破水、助产、手术产等）发生在这段时间中途、而推进时间可能先改变条件（例如胎儿入盆后只能小幅转动）时，把 bsPassedTime 拆成操作前、操作后两次调用，中间放该操作。',
     ].join('\n'),
     String(basePrompt || '').trim(),

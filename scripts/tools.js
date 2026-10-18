@@ -8058,6 +8058,7 @@ const SKILL_SYSTEM_TOOLS = new Set(['bsRegisterSkillDefinition', 'bsTrainSkill']
 function getDisabledSystemToolMessage(settings, name) {
   if (WARDROBE_SYSTEM_TOOLS.has(name) && !isWardrobeSystemEnabled(settings)) return `${name} skipped: 着衣系统已在系统页关闭。`;
   if (SKILL_SYSTEM_TOOLS.has(name) && !isSkillSystemEnabled(settings)) return `${name} skipped: 技能系统已在系统页关闭。`;
+  if (name === 'bsPassedTime' && settings?.timeFlowEnabled === false) return 'bsPassedTime skipped: 时间推进已在追踪页冻结。';
   return '';
 }
 

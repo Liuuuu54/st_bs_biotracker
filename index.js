@@ -7531,6 +7531,7 @@ function applySettingsToForm(ctx) {
   };
   setValue('bs-bt-enabled', settings.enabled);
   setValue('bs-bt-auto-track', settings.autoTrackEnabled !== false);
+  setValue('bs-bt-time-flow', settings.timeFlowEnabled !== false);
   setValue('bs-bt-tracker-preset-list', settings.useStPresetForAsync ? CURRENT_PRESET_OPTION_VALUE : (settings.trackerPresetName || NO_PRESET_OPTION_VALUE));
   setValue('bs-bt-api-url', settings.apiUrl);
   setValue('bs-bt-api-format', normalizeApiFormat(settings.apiFormat));
@@ -8103,6 +8104,7 @@ function readSettingsFromForm(ctx) {
   const getValue = (id) => document.getElementById(id)?.value ?? '';
   settings.enabled = !!document.getElementById('bs-bt-enabled')?.checked;
   settings.autoTrackEnabled = !!document.getElementById('bs-bt-auto-track')?.checked;
+  settings.timeFlowEnabled = !!document.getElementById('bs-bt-time-flow')?.checked;
   const trackerPresetSelectionValue = String(getValue('bs-bt-tracker-preset-list')).trim();
   if (trackerPresetSelectionValue) {
     settings.useStPresetForAsync = trackerPresetSelectionValue === CURRENT_PRESET_OPTION_VALUE;
@@ -9111,6 +9113,14 @@ async function ensureModal(ctx) {
     globalThis.toastr?.info?.(settings.enabled
       ? '[BS BioTracker] 已启用：注入状态并追踪'
       : '[BS BioTracker] 已停用：不注入状态、不追踪，资料保留');
+  });
+  document.getElementById('bs-bt-time-flow')?.addEventListener('change', (event) => {
+    const settings = getSettings(ctx);
+    settings.timeFlowEnabled = Boolean(event.currentTarget?.checked);
+    saveSettings(ctx);
+    globalThis.toastr?.info?.(settings.timeFlowEnabled
+      ? '[BS BioTracker] 时间恢复推进'
+      : '[BS BioTracker] 时间已冻结：追踪不再推进时间，其余照常结算');
   });
   document.getElementById('bs-bt-auto-track')?.addEventListener('change', (event) => {
     const settings = getSettings(ctx);

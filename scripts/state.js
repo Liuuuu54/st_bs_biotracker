@@ -198,6 +198,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
   // AI 回复后自动追踪；关掉只停自动分析，注入与手动分析照常（enabled 才是总开关）
   autoTrackEnabled: true,
+  // 时间推进：关掉就冻结整条时间轴，追踪模型不得调用 bsPassedTime（使用者手动推进不受影响）
+  timeFlowEnabled: true,
   useStPresetForAsync: false,
   trackerPresetName: '',
   trackerPromptToggles: {},

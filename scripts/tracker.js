@@ -755,6 +755,7 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
     hiddenTools.add('bsTrainSkill');
   }
   for (const name of getDisabledSpecialToolNames(settings)) hiddenTools.add(name);
+  if (settings?.timeFlowEnabled === false) hiddenTools.add('bsPassedTime');
   return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name));
 }
 
@@ -1382,6 +1383,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     race_catalog_selection: settings?.raceCatalogSelection || null,
     realistic_world: isRealisticWorld(settings),
     disabled_special_tools: getDisabledSpecialToolNames(settings),
+    ...(settings?.timeFlowEnabled === false ? { time_frozen: true } : {}),
     recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => ['bsAddSperm', 'bsAbortion'].includes(log.name) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),
     world_baseline_prompt: String(settings?.worldBaselinePrompt || '').trim(),
     ...(psychologyEnabled ? { breeding_psychology_enabled: true } : {}),

@@ -46,6 +46,6 @@
 
 衣櫃保存長期物件；`outfit` 保存目前主服、配件、臨時衣物及穿著狀態。衣物有遮蔽、支撐、容納、方便四維度，主服與配件另有各自的欄位規則。[欄位及正規化](../../scripts/wardrobe_config.js#L1)。`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` 改變資料；懷孕和產後穿著壓力依身體狀態與衣物尺寸計算，供 PDA 顯示。[衣物工具](../../scripts/tools.js#L6694)、[穿著壓力](../../scripts/tools.js#L750)。
 
-`descriptions.normalDescription` 與 `pregnantDescription` 是角色狀態文字，各自存成有序陣列 `[{ name, value, updatedAt }]`：陣列順序即欄位順序，`updatedAt` 是該欄最後更新或確認時的系統時鐘（`minutesPassed`）。送給模型時轉成以欄位名為鍵的物件 `{ "欄位名": "內容" }`，不帶時間戳；超過一天（遊戲時間）沒更新的欄位另列在 `staleDescriptionFields`，追蹤提示的「descriptions 待確認」段逐人點名，主線看不到這份點名。追蹤頁滑鼠停在描述欄位上會顯示該欄多久前（遊戲時間）更新，超過一天的另註明會被點名。描述本身不是生理數值的計算來源。[合併與過期](../../scripts/descriptions.js#L84)、[追蹤狀態投影](../../scripts/tracker.js#L1264)。1.1.4 以前的「欄名|內容;;」字串在載入時遷移成陣列，切不出欄位名的段落整段收進「未分類」，時間戳記為遷移當下，不會一升級就全部被點名。[存檔遷移](../../scripts/state_migration.js#L213)。
+`descriptions.normalDescription` 與 `pregnantDescription` 是角色狀態文字，各自存成有序陣列 `[{ name, value, updatedAt }]`：陣列順序即欄位順序，`updatedAt` 是該欄最後更新或確認時的系統時鐘（`minutesPassed`）。送給模型時轉成以欄位名為鍵的物件 `{ "欄位名": "內容" }`，不帶時間戳；超過一天（遊戲時間）沒更新的欄位另列在 `staleDescriptionFields`，追蹤提示的「descriptions 待確認」段逐人點名，主線看不到這份點名。追蹤頁滑鼠停在描述欄位上會顯示該欄多久前（遊戲時間）更新，超過一天的另註明會被點名。描述本身不是生理數值的計算來源。[合併與過期](../../scripts/descriptions.js#L84)、[追蹤狀態投影](../../scripts/tracker.js#L1265)。1.1.4 以前的「欄名|內容;;」字串在載入時遷移成陣列，切不出欄位名的段落整段收進「未分類」，時間戳記為遷移當下，不會一升級就全部被點名。[存檔遷移](../../scripts/state_migration.js#L213)。
 
 認知時間軸每筆標題預設折疊，點擊展開內容；刷新與切頁保留手動開合狀態，新追加紀錄預設折疊。
