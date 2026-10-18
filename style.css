@@ -758,28 +758,9 @@
   border-radius: 0 0 10px 0;
 }
 
+/* 蒸汽只用四颗螺丝：金属角饰与上方两颗螺丝同位置，叠成两颗球 */
 #bs-biotracker-settings.theme-steampunk .bs-bt-metal-corner {
-  opacity: 1;
-  width: 18px;
-  height: 18px;
-  border: 2px solid #6f3c22;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 35% 30%, #f4e4c2 0 14%, #d1a85a 15% 48%, #8a4b2d 49% 100%);
-  box-shadow:
-    0 0 0 1px rgba(42, 27, 18, 0.78),
-    inset 2px 2px 4px rgba(244, 228, 194, 0.26),
-    inset -2px -2px 4px rgba(42, 27, 18, 0.46);
-}
-
-#bs-biotracker-settings.theme-steampunk .bs-bt-corner-tl {
-  top: 10px;
-  left: 10px;
-}
-
-#bs-biotracker-settings.theme-steampunk .bs-bt-corner-tr {
-  top: 10px;
-  right: 10px;
+  display: none;
 }
 
 #bs-biotracker-settings.theme-steampunk .bs-bt-screw {
