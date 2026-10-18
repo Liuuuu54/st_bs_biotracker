@@ -153,6 +153,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
             uterinePressure: { type: 'integer' },
             psyStress: { type: 'integer' },
             orgasm: { type: 'boolean' },
+            laborEffort: { type: 'string', enum: ['push', 'rest'], description: '只在第二产程有效：push＝用力推（预设），rest＝停下来喘口气。用力疲劳越高越推不动，休息才会消退；胎越大越累得快。系统不替角色扣活力，用力时照剧情自己扣 vitality。' },
           },
           additionalProperties: false,
         },
@@ -4467,6 +4468,11 @@ function beginLaborPhase(pregnant, phase, birthNumber = 0) {
   // 每一胎开始下降时锁定先露胎；之后换位、分裂、插入都不能让它漂移。
   // 对应的下降位置由 reconcileFetalDescent 依阶段推导（受阻时不前进）
   if (phase === '胎体下降') selectPresentingFetus(pregnant);
+  // 推／休：每一胎从头开始，间歇期也算歇过一口气
+  if (phase === '胎体下降' || phase === '间歇期') {
+    pregnant.pushFatigue = 0;
+    pregnant.laborEffort = 'push';
+  }
 }
 
 /**
@@ -4935,6 +4941,14 @@ function updateLaborPain(profile, stage, phase, progress = 0, obstruction = fals
   pain += ((clampNumber(base.psyStressLevel, 1, 7, 4) - 4) * 0.5) * toleranceWeight;
   if (obstruction) pain += 1.5;
   if (isPosteriorPresentingLabor(profile, stage)) pain += POSTERIOR_PAIN_BONUS;
+  if (isPushingPhase(stage, phase)) {
+    // 大胎下降与娩出更痛：2 倍胎重 +1、3 倍 +2，小胎稍微轻松
+    const weight = clampNumber(getPresentingFetus(pregnant)?.weight, 0.33, 3.0, 1.0);
+    pain += clampNumber(weight - 1, -0.5, 2, 0);
+    // 硬撑着推到力竭更痛；停下来不用力稍微缓和，宫缩照样痛
+    if (getLaborEffort(pregnant) === 'rest') pain -= 1;
+    else pain += clampNumber((getPushFatigue(pregnant) - PUSH_FATIGUE_EFFICIENT_LIMIT) / (PUSH_FATIGUE_MAX - PUSH_FATIGUE_EFFICIENT_LIMIT), 0, 1, 0);
+  }
   // 助产操作留下的瞬时痛感，每小时减半（见 decayAssistPainBoost）
   pain += clampNumber(pregnant.assistPainBoost, 0, ASSIST_PAIN_BOOST_CAP, 0);
   pregnant.laborPain = Math.round(clampNumber(pain, 0, 10, 0) * 10) / 10;
@@ -5002,7 +5016,7 @@ function processLabor(profile, tick, female) {
     if (!LABOR_STAGES.includes(String(base.stage || ''))) break;
     const segmentHours = Math.min(remainingHours, getLaborSegmentHours(profile, libidoMultiplier));
     const result = processLaborSegment(profile, female, segmentHours, { firstSegment: segment === 0, libidoMultiplier });
-    remainingHours -= segmentHours;
+    remainingHours -= Number.isFinite(result.consumedHours) ? result.consumedHours : segmentHours;
     stageChanged = stageChanged || result.stageChanged;
     if (carried) {
       const merged = { ...(profile.notify || {}) };
@@ -5021,24 +5035,92 @@ function processLabor(profile, tick, female) {
 }
 
 /**
- * 大胎的活力修正：只作用于第二产程的胎体下降与娩出。胎重 1.5 以下不受影响，
- * 1.5–2.0 平滑增加对活力的需求，2.0 以上达到完整修正；活力 200 可完全支撑，
- * 活力不足只会减速、最低保留 0.25 倍进度，不另立硬停滞（胎重本身的时间倍率另计）。
+ * 推／休：第二产程的胎体下降与娩出要产妇自己用力。由追踪模型以 bsUpdateCharacterStatus 的
+ * options.laborEffort 切换，预设为推；系统不替角色扣活力，活力照剧情由模型自己增减。
+ * - 推：用力疲劳每小时 +40 × 胎重^1.5；疲劳 60 以下全速，60→100 效率由 1 线性降到 0.2。
+ * - 休：只靠宫缩带动，0.1 倍速；疲劳每小时 −180 ×（1.5 − 情压比例），越冷静恢复越快。
+ * 胎越大越累得快，就越要频繁换气；每一胎开始下降时疲劳归零。
  */
-function getOversizeVitalityMultiplier(profile, stage, phase) {
-  if (stage !== '第二产程' || (phase !== '胎体下降' && phase !== '胎体娩出')) return 1;
-  const fetus = getPresentingFetus(profile?.pregnant);
-  const oversizeRatio = clampNumber((clampNumber(fetus?.weight, 0.33, 3.0, 1.0) - 1.5) / 0.5, 0, 1, 0);
-  if (oversizeRatio <= 0) return 1;
-  const vitalityRatio = clampNumber(clampNumber(profile?.base?.vitality, 0, 9999, 100) / 200, 0, 1, 0.5);
-  return Math.max(0.25, 1 - (oversizeRatio * (1 - vitalityRatio)));
+const PUSH_PHASES = new Set(['胎体下降', '胎体娩出']);
+const PUSH_FATIGUE_STEP_HOURS = 5 / 60;
+const PUSH_FATIGUE_PER_HOUR = 40;
+const PUSH_FATIGUE_EFFICIENT_LIMIT = 60;
+const PUSH_FATIGUE_MAX = 100;
+const PUSH_MIN_EFFICIENCY = 0.2;
+const REST_RECOVERY_PER_HOUR = 180;
+const REST_PROGRESS_MULTIPLIER = 0.1;
+const REST_RECOVERED_NOTICE = 20;
+
+function isPushingPhase(stage, phase) {
+  return stage === '第二产程' && PUSH_PHASES.has(phase);
 }
 
-/** 每一原始小时换算成多少有效产程小时：宫缩倍率 × 大胎活力修正（不含性欲倍率） */
+export function getLaborEffort(pregnant) {
+  return pregnant?.laborEffort === 'rest' ? 'rest' : 'push';
+}
+
+function getPushFatigue(pregnant) {
+  return clampNumber(pregnant?.pushFatigue, 0, PUSH_FATIGUE_MAX, 0);
+}
+
+function getPushEfficiency(fatigue) {
+  if (fatigue <= PUSH_FATIGUE_EFFICIENT_LIMIT) return 1;
+  const over = (fatigue - PUSH_FATIGUE_EFFICIENT_LIMIT) / (PUSH_FATIGUE_MAX - PUSH_FATIGUE_EFFICIENT_LIMIT);
+  return Math.max(PUSH_MIN_EFFICIENCY, 1 - over * (1 - PUSH_MIN_EFFICIENCY));
+}
+
+function getPushFatigueRate(profile) {
+  const weight = clampNumber(getPresentingFetus(profile?.pregnant)?.weight, 0.33, 3.0, 1.0);
+  return PUSH_FATIGUE_PER_HOUR * (weight ** 1.5);
+}
+
+function getRestRecoveryRate(profile) {
+  const base = profile?.base || {};
+  const stressCap = Math.max(1, getPsyStressInitByLevel(base.psyStressLevel) * 2);
+  const stressRatio = clampNumber(base.psyStress, 0, stressCap, 0) / stressCap;
+  return REST_RECOVERY_PER_HOUR * (1.5 - stressRatio);
+}
+
+/**
+ * 推／休的一段时间：每 5 分钟累积或消退疲劳，算出这段的有效产程时数。
+ * 走到门槛（neededEffective）就停，回传实际用掉的原始时数，剩下的交给下一阶段。
+ */
+function simulateLaborEffort(profile, rawHours, rate, neededEffective) {
+  const pregnant = profile.pregnant || {};
+  const effort = getLaborEffort(pregnant);
+  const fatigueRate = effort === 'push' ? getPushFatigueRate(profile) : -getRestRecoveryRate(profile);
+  const before = getPushFatigue(pregnant);
+  let fatigue = before;
+  let usedHours = 0;
+  let gain = 0;
+  const target = Math.max(0, neededEffective) + 1e-6;
+  while (usedHours < rawHours - 1e-9) {
+    const step = Math.min(PUSH_FATIGUE_STEP_HOURS, rawHours - usedHours);
+    const stepRate = rate * (effort === 'push' ? getPushEfficiency(fatigue) : REST_PROGRESS_MULTIPLIER);
+    const stepGain = step * stepRate;
+    if (stepRate > 0 && gain + stepGain >= target) {
+      const part = (target - gain) / stepRate;
+      usedHours += part;
+      gain = target;
+      fatigue = clampNumber(fatigue + fatigueRate * part, 0, PUSH_FATIGUE_MAX, 0);
+      break;
+    }
+    gain += stepGain;
+    usedHours += step;
+    fatigue = clampNumber(fatigue + fatigueRate * step, 0, PUSH_FATIGUE_MAX, 0);
+  }
+  pregnant.pushFatigue = Math.round(fatigue * 10) / 10;
+  let note = '';
+  if (effort === 'push' && before < PUSH_FATIGUE_EFFICIENT_LIMIT && fatigue >= PUSH_FATIGUE_EFFICIENT_LIMIT) note = '用力到力竭，推不动了，需要喘口气';
+  else if (effort === 'rest' && before > REST_RECOVERED_NOTICE && fatigue <= REST_RECOVERED_NOTICE) note = '缓过来了，可以再用力';
+  return { gain, usedHours, note };
+}
+
+/** 每一原始小时换算成多少有效产程小时：宫缩倍率（不含性欲倍率与推／休） */
 function getLaborProgressMultiplier(profile, stage, phase) {
   const currentPressure = clampNumber(profile?.base?.uterinePressure, 0, getUterinePressureCap(profile), 0);
   const pressureMultiplier = stage === '第三产程' ? 1 : Math.max(0.5, Math.min(1.5, 0.5 + (currentPressure / 150)));
-  return pressureMultiplier * getOversizeVitalityMultiplier(profile, stage, phase) * getPosteriorMultiplier(profile, stage) * getAtonyLaborMultiplier(profile, stage);
+  return pressureMultiplier * getPosteriorMultiplier(profile, stage) * getAtonyLaborMultiplier(profile, stage);
 }
 
 /** 子宫乏力让宫缩无力：第一、第二产程每级慢 10%，最低一半 */
@@ -5067,6 +5149,8 @@ function getLaborSegmentHours(profile, libidoMultiplier) {
   const stage = String(base.stage || '');
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const phase = getLaborPhaseForStage(stage, String(pregnant.laborPhase || ''));
+  // 推／休的速度在一段里会随疲劳变化，估不准：整段交给 processLaborSegment 逐步模拟，它会回报实际用掉多少
+  if (isPushingPhase(stage, phase)) return Number.POSITIVE_INFINITY;
   const threshold = resolveLaborPhaseHours(profile, stage, phase, fetuses);
   const rate = Math.max(1e-6, libidoMultiplier * getLaborProgressMultiplier(profile, stage, phase));
   const needed = Math.max(0, threshold - clampNumber(pregnant.effectiveLaborHours, 0, 9999, 0));
@@ -5088,8 +5172,10 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
   const baseEffectiveHours = rawHours * libidoMultiplier;
   let currentStageHours = clampNumber(pregnant.laborHours, 0, 9999, 0);
   let currentEffectiveHours = clampNumber(pregnant.effectiveLaborHours, 0, 9999, 0);
-  const done = (stageChanged) => ({ stageChanged: Boolean(stageChanged), halt: true });
-  const next = (stageChanged) => ({ stageChanged: Boolean(stageChanged), halt: false });
+  // 推／休阶段可能不到整段就走到门槛，回报实际用掉的时数
+  let consumedHours = rawHours;
+  const done = (stageChanged) => ({ stageChanged: Boolean(stageChanged), halt: true, consumedHours });
+  const next = (stageChanged) => ({ stageChanged: Boolean(stageChanged), halt: false, consumedHours });
 
 
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
@@ -5195,7 +5281,16 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
     }
   }
 
-  const effectiveHoursGain = baseEffectiveHours * getLaborProgressMultiplier(profile, stage, phase);
+  let effectiveHoursGain = baseEffectiveHours * getLaborProgressMultiplier(profile, stage, phase);
+  let effortNote = '';
+  if (isPushingPhase(stage, phase)) {
+    const effort = simulateLaborEffort(profile, rawHours, libidoMultiplier * getLaborProgressMultiplier(profile, stage, phase), threshold - currentEffectiveHours);
+    effectiveHoursGain = effort.gain;
+    effortNote = effort.note;
+    consumedHours = effort.usedHours;
+    currentStageHours += consumedHours - rawHours;
+    pregnant.laborHours = currentStageHours;
+  }
   currentEffectiveHours += effectiveHoursGain;
   pregnant.effectiveLaborHours = currentEffectiveHours;
   updateLaborPain(profile, stage, phase, currentEffectiveHours / threshold, Boolean(obstruction));
@@ -5203,7 +5298,7 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
   if (stage === '第一产程') {
     applyLaborAmnionWear(profile, female, { multiplier: rawHours * 0.35 });
   } else if (stage === '第二产程') {
-    applyLaborAmnionWear(profile, female, { multiplier: rawHours * 0.75 });
+    applyLaborAmnionWear(profile, female, { multiplier: consumedHours * 0.75 });
   } else if (stage === '第三产程') {
     applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true, scope: 'all' });
   }
@@ -5215,7 +5310,7 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
       const fetalWeight = clampNumber(firstFetus?.weight, 0.33, 3.0, 1.0);
       notify.secondly = phase === '间歇期'
         ? `${female}正在第${pregnant.laborBirthNumber}胎娩出后的间歇期`
-        : `${female}正处于第${pregnant.laborBirthNumber}胎的${phase}，胚位${fetalAngle.toFixed(1)}°，难度${positionDifficulty.toFixed(2)}，胎重${fetalWeight.toFixed(2)}，进度${pregnant.effectiveLaborHours.toFixed(2)}/${threshold.toFixed(2)}小时`;
+        : `${female}正处于第${pregnant.laborBirthNumber}胎的${phase}，胚位${fetalAngle.toFixed(1)}°，难度${positionDifficulty.toFixed(2)}，胎重${fetalWeight.toFixed(2)}，进度${pregnant.effectiveLaborHours.toFixed(2)}/${threshold.toFixed(2)}小时，${getLaborEffort(pregnant) === 'rest' ? '休息中' : '用力中'}，用力疲劳${Math.round(getPushFatigue(pregnant))}${effortNote ? `（${effortNote}）` : ''}`;
     } else {
       if (stage === '第一产程') {
         notify.secondly = `${female}正处于第一产程的${phase}`;
@@ -6722,6 +6817,14 @@ function applyCharacterStatus(chatState, args) {
       enterProdromalStage(profile, female, stage, `${female}出现分娩前兆，进入产兆前驱`);
     }
   }
+  let effortMessage = '';
+  if (options.laborEffort !== undefined) {
+    const effort = options.laborEffort === 'rest' ? 'rest' : 'push';
+    if (String(base.stage || '') === '第二产程') {
+      next.profile.pregnant = { ...(next.profile.pregnant || {}), laborEffort: effort };
+      effortMessage = ` laborEffort=${effort}`;
+    } else effortMessage = ' laborEffort ignored: 只在第二产程有效';
+  }
   // 高潮＝性欲顶到上限：模型不必知道上限是多少，由这里推满再走同一条高潮排卵结算
   const orgasm = options.orgasm === true;
   if (orgasm) {
@@ -6739,7 +6842,7 @@ function applyCharacterStatus(chatState, args) {
     next.profile.notify = { ...(next.profile.notify || {}), secondly: `${female}达到高潮，性欲归零` };
   }
   chatState.characters[female] = next;
-  return { applied: true, message: `bsUpdateCharacterStatus applied to ${female}.` };
+  return { applied: true, message: `bsUpdateCharacterStatus applied to ${female}.${effortMessage}` };
 }
 
 function applyAddWardrobeItem(chatState, args) {

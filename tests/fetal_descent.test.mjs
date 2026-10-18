@@ -314,23 +314,80 @@ test('非真实模式：宫缩再弱也不会出现零进度回合；真实模�
   assert.match(String(P(realistic).notify.secondly), /产程进展停滞/);
 });
 
-test('大胎活力修正：1.5 以下不受影响；活力为 0 时 1.75 减半、2.0 以上只剩 0.25；活力 200 完全支撑', () => {
+// ── 推／休：第二产程的胎体下降与娩出要产妇自己用力 ──────────────────
+const pushing = (weight, pregnant = {}) => laboringAt('胎体下降', [fetus(1, { descentStage: 1, weight })], { presentingEmbryoId: 1, ...pregnant });
+const effort = (chatState, laborEffort) => applyToolCall(chatState, { name: 'bsUpdateCharacterStatus', arguments: { female: 'A', options: { laborEffort } } });
+
+test('推：胎越大疲劳累积越快（40 × 胎重^1.5 每小时）；活力不再自动影响下降', () => {
   Math.random = () => 0.99;
-  const gainOf = (weight, vitality) => {
-    const chatState = laboringAt('胎体下降', [fetus(1, { descentStage: 1, weight })], { presentingEmbryoId: 1 });
-    P(chatState).base.vitality = vitality;
-    passHours(chatState, 0.05);
-    return P(chatState).pregnant.effectiveLaborHours;
-  };
-  const baseline = gainOf(1, 0);
-  const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: ${actual} ≠ ${expected}`);
-  near(gainOf(1.5, 0), baseline, '1.5');
-  near(gainOf(1.75, 0), baseline * 0.5, '1.75');
-  near(gainOf(2.5, 0), baseline * 0.25, '2.5');
-  near(gainOf(2.5, 200), baseline, '活力 200');
+  const fatigueAfter = (weight) => { const chatState = pushing(weight); passHours(chatState, 0.25); return P(chatState).pregnant.pushFatigue; };
+  assert.equal(fatigueAfter(1), 10);
+  assert.ok(Math.abs(fatigueAfter(2) - 28.3) < 0.2, String(fatigueAfter(2)));
+  const gainAt = (vitality) => { const chatState = pushing(2.5); P(chatState).base.vitality = vitality; passHours(chatState, 0.05); return P(chatState).pregnant.effectiveLaborHours; };
+  assert.equal(gainAt(0), gainAt(200), '活力只由模型照剧情增减，不再拖慢下降');
 });
 
-test('大胎修正不作用于间歇期与第一产程', () => {
+test('疲劳 60 以上越推越没效果，100 时只剩 0.2；休息几乎不前进、疲劳消退', () => {
+  Math.random = () => 0.99;
+  const gainWith = (pregnant) => { const chatState = pushing(1, pregnant); passHours(chatState, 0.05); return P(chatState).pregnant.effectiveLaborHours; };
+  const fresh = gainWith({ pushFatigue: 0 });
+  const spent = gainWith({ pushFatigue: 100 });
+  assert.ok(Math.abs(spent / fresh - 0.2) < 0.02, String(spent / fresh));
+  const chatState = pushing(1, { pushFatigue: 80 });
+  effort(chatState, 'rest');
+  passHours(chatState, 0.1);
+  assert.ok(P(chatState).pregnant.effectiveLaborHours < fresh * 2 * 0.15, '休息只靠宫缩，0.1 倍速');
+  assert.ok(P(chatState).pregnant.pushFatigue < 80 - 15, '疲劳消退');
+});
+
+test('情压越低恢复越快；laborEffort 只在第二产程有效', () => {
+  Math.random = () => 0.99;
+  const recovered = (psyStress) => {
+    const chatState = pushing(1, { pushFatigue: 60 });
+    P(chatState).base.psyStress = psyStress;
+    effort(chatState, 'rest');
+    passHours(chatState, 1 / 6);
+    return 60 - P(chatState).pregnant.pushFatigue;
+  };
+  assert.ok(recovered(0) > recovered(100), `平静 ${recovered(0)} 应快于紧张 ${recovered(100)}`);
+  const early = setup('第一产程', [fetus(1)], { laborPhase: '活跃期' });
+  const result = effort(early, 'rest');
+  assert.match(result.message, /只在第二产程有效/);
+  assert.equal(P(early).pregnant.laborEffort, undefined);
+});
+
+test('推到力竭与缓过来各通知一次；一胎开始下降时疲劳归零、回到用力', () => {
+  Math.random = () => 0.99;
+  const chatState = pushing(2, { pushFatigue: 55 });
+  passHours(chatState, 0.1);
+  assert.match(P(chatState).notify.secondly, /推不动了/);
+  effort(chatState, 'rest');
+  passHours(chatState, 0.5);
+  assert.match(P(chatState).notify.secondly, /缓过来了/);
+  assert.equal(P(chatState).pregnant.laborEffort, 'rest');
+});
+
+test('一次推进很长时，推／休阶段走到门槛就换下一阶段，不丢掉剩下的时间', () => {
+  Math.random = () => 0.99;
+  const chatState = pushing(1);
+  passHours(chatState, 6);
+  assert.notEqual(P(chatState).pregnant.laborPhase, '胎体下降', '6 小时足够走完一般胎的下降');
+});
+
+test('疼痛：大胎更痛，推到力竭再加、休息减一', () => {
+  Math.random = () => 0.99;
+  const painOf = (weight, pregnant = {}, rest = false) => {
+    const chatState = pushing(weight, pregnant);
+    if (rest) effort(chatState, 'rest');
+    passHours(chatState, 0.01);
+    return P(chatState).pregnant.laborPain;
+  };
+  assert.ok(painOf(2) - painOf(1) > 0.9, '2 倍胎重约 +1');
+  assert.ok(painOf(1, { pushFatigue: 100 }) > painOf(1), '力竭更痛');
+  assert.ok(painOf(1, {}, true) < painOf(1), '休息缓和');
+});
+
+test('间歇期不受推／休与胎重影响', () => {
   Math.random = () => 0.99;
   const interval = (weight) => {
     const chatState = laboringAt('间歇期', [fetus(1, { descentStage: -1, weight })]);

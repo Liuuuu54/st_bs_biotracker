@@ -2488,6 +2488,43 @@
   }
 }
 
+/* 推／休：发光强弱表示用力疲劳，颜色跟主题文字色走。
+   用 filter 而不用 text-shadow：酒馆的「关闭文字阴影」会以 !important 清掉所有 text-shadow */
+#bs-biotracker-settings .bs-bt-labor-effort {
+  margin-top: 6px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  transition: filter 240ms ease;
+}
+
+#bs-biotracker-settings .bs-bt-labor-effort.is-resting {
+  opacity: 0.85;
+}
+
+#bs-biotracker-settings .bs-bt-labor-effort.is-glow-1 { filter: drop-shadow(0 0 2px currentColor); }
+#bs-biotracker-settings .bs-bt-labor-effort.is-glow-2 { filter: drop-shadow(0 0 2px currentColor) drop-shadow(0 0 4px currentColor); }
+#bs-biotracker-settings .bs-bt-labor-effort.is-glow-3 { filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor) drop-shadow(0 0 9px currentColor); }
+#bs-biotracker-settings .bs-bt-labor-effort.is-glow-4 { filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 7px currentColor) drop-shadow(0 0 12px currentColor); }
+
+#bs-biotracker-settings .bs-bt-labor-effort.is-straining {
+  animation: bs-bt-labor-straining 1.8s ease-in-out infinite;
+}
+
+@keyframes bs-bt-labor-straining {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+#bs-biotracker-settings.bs-bt-static-motion .bs-bt-labor-effort.is-straining {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #bs-biotracker-settings .bs-bt-labor-effort.is-straining {
+    animation: none;
+  }
+}
+
 #bs-biotracker-settings .bs-bt-track-section--amnion {
   position: relative;
   border-color: rgba(0, 0, 0, calc(0.18 + (var(--bsbt-amnion-ratio, 0.5) * 0.34)));

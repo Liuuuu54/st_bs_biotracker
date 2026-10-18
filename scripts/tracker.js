@@ -837,6 +837,10 @@ function getPromptFacingLaborState(base = {}, pregnant = {}) {
     laborPhase: pregnant.laborPhase ?? null,
     laborBirthNumber: Number.isFinite(Number(pregnant.laborBirthNumber)) ? Number(pregnant.laborBirthNumber) : 0,
     laborPain: Number.isFinite(Number(pregnant.laborPain)) ? Number(pregnant.laborPain) : 0,
+    ...(stage === '第二产程' ? {
+      laborEffort: pregnant.laborEffort === 'rest' ? 'rest' : 'push',
+      pushFatigue: Number.isFinite(Number(pregnant.pushFatigue)) ? Math.round(Number(pregnant.pushFatigue)) : 0,
+    } : {}),
   };
 }
 

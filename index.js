@@ -3883,6 +3883,10 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       laborPhase: pregnant.laborPhase ?? null,
       laborBirthNumber: Number(pregnant.laborBirthNumber) || 0,
       laborPain: Number(pregnant.laborPain) || 0,
+      // 推／休只在第二产程的胎体下降与娩出出现
+      showLaborEffort: stage === '第二产程' && ['胎体下降', '胎体娩出'].includes(String(pregnant.laborPhase || '')),
+      laborEffort: pregnant.laborEffort === 'rest' ? 'rest' : 'push',
+      pushFatigue: Math.max(0, Math.min(100, Number(pregnant.pushFatigue) || 0)),
       prodromalOriginStage: pregnant.prodromalOriginStage ?? null,
       extensionCount: Number(pregnant.extensionCount) || 0,
       extensionUntilDays: Number.isFinite(Number(pregnant.extensionUntilDays)) && pregnant.extensionUntilDays !== null ? Number(pregnant.extensionUntilDays) : null,
@@ -4090,6 +4094,20 @@ function renderCardCarouselSection(title, items, renderCard, emptyText, kind, op
   `;
 }
 
+/**
+ * 推／休：字样标出目前在用力还是在歇，发光强弱表示用力疲劳（五段，肉眼才分得出），
+ * 推到 80 以上慢速闪烁；确切数字放在提示与读屏文字里。
+ */
+function renderLaborEffort(pregnancy) {
+  const fatigue = Math.round(Math.max(0, Math.min(100, Number(pregnancy?.pushFatigue) || 0)));
+  const resting = pregnancy?.laborEffort === 'rest';
+  const level = fatigue >= 80 ? 4 : fatigue >= 60 ? 3 : fatigue >= 40 ? 2 : fatigue >= 20 ? 1 : 0;
+  const label = resting ? '休息中' : '用力中';
+  const detail = `用力疲劳 ${fatigue}／100`;
+  const classes = ['bs-bt-labor-effort', `is-glow-${level}`, resting ? 'is-resting' : 'is-pushing', !resting && level >= 4 ? 'is-straining' : ''].filter(Boolean).join(' ');
+  return `<div class="${classes}" title="${escapeHtml(detail)}" aria-label="${escapeHtml(`${label}，${detail}`)}" role="status">${label}</div>`;
+}
+
 function renderTrackOverview(viewModel) {
   const progress = viewModel.overview.stageProgress;
   const currentStage = viewModel.overview.stage;
@@ -4111,6 +4129,7 @@ function renderTrackOverview(viewModel) {
       ? `<div class="bs-bt-track-description-empty">${escapeHtml(progress.emptyLabel || '阶段已完成')}</div>`
       : renderProgressList([{ label: progressLabel, value: progress.value, cap: progress.max, unbounded: progress.unbounded, unit: progress.unit }])
     : '<div class="bs-bt-track-description-empty">本阶段无计时进度</div>';
+  const effortHtml = viewModel.pregnancy?.showLaborEffort ? renderLaborEffort(viewModel.pregnancy) : '';
   return `
     <div class="bs-bt-track-section">
       <div class="bs-bt-track-section-title">角色概览</div>
@@ -4125,6 +4144,7 @@ function renderTrackOverview(viewModel) {
     <div class="bs-bt-track-section bs-bt-track-stage-progress${stageSectionClass}"${stageSectionStyle}>
       <div class="bs-bt-track-section-title">${renderTrackTitle('阶段', stageBadge)}</div>
       ${progressHtml}
+      ${effortHtml}
     </div>
     <div class="bs-bt-track-section">
       <div class="bs-bt-track-section-title">状态值</div>
@@ -4464,6 +4484,7 @@ function mountWombView(ctx, content, viewModel) {
   const themeColors = readWombThemeColors(settings.theme);
   const theme = JSON.stringify(themeColors);
   const animated = settings.wombAnimation !== false;
+  document.getElementById('bs-biotracker-settings')?.classList.toggle('bs-bt-static-motion', !animated);
   if (!wombCanvas) {
     wombCanvas = document.createElement('canvas');
     wombCanvas.className = 'bs-bt-womb-canvas';

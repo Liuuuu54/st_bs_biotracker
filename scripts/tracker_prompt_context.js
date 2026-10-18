@@ -95,6 +95,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- laborPhase: 当前产程内部阶段。第一产程为潜伏期/活跃期/过渡期；第二产程为胎体下降/胎体娩出/间歇期；第三产程为供养器官娩出/产后观察。',
   '- laborBirthNumber: 第二产程正在生第几胎，从 1 起算；其他阶段通常为 0。它是出生计数，不是 fetuses 的下标。正在下降或娩出的那一胎在 fetuses 里带 presenting=true；fetuses 的排列顺序不代表出生顺序。',
   '- laborPain: 当前分娩疼痛程度，范围 0-10。描写疼痛反应不得明显超过此等级；刚进入第一产程时不应写成已达到极限痛苦。',
+  '- laborEffort / pushFatigue（仅第二产程）：推或休，以及用力疲劳 0-100。胎体下降与娩出要产妇自己用力：推的时候疲劳累积（胎越大越快），60 以上越推越没效果；休的时候产程几乎不前进、疲劳消退，越冷静消退越快。剧情写到产妇停下来喘气、歇一下时用 bsUpdateCharacterStatus 给 options.laborEffort=rest，再次用力时给 push；用力消耗的体力照剧情自己扣 vitality，系统不代扣。切换要先于这段时间的 bsPassedTime。',
   '- amnionDurability: 羊膜耐性（0-100）；过低代表接近或已经破水。每一胎有各自的羊膜（同卵共用一个胎囊）：全部胎囊相同时只给这一个数值；不同时不给这个数值，改在对应胎儿上标 fetuses[*].amnion＝膜薄／膜危／已破，没标的就是完整。',
   '- nutrition: 妊娠供养力盈余/赤字，由需求照料累积：任一需求在「高」时用 bsExcreteMetabolism 彻底处理到「无」约 +1，只处理一半不算；拖到「爆」约 -1，停在爆每满 24 小时再扣一次；「满」不增不减。点数会按种族与妊娠负担折算，所以常见小数。正值代表供养充足，负值代表供养亏空。这是全部胎儿的合计：系统每次计分当下就按各胎孕龄与位置拆给每一胎，每周各自换算成胎重后归零。',
   '- 胎位操作、胎儿自主活动、母胎互动与插入推顶的规则写在各工具说明里（bsAssistFetalPosition、bsMaternalFetalInteraction、bsAddSperm），依工具回传描写。',
@@ -477,6 +478,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
   if (profiles.some((profile) => profile.pregnant)) {
     lines.push(
       '- pregnant：pregnantDays 孕龄天数；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；nutrition 供养盈亏，正为充足、负为亏空；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
+      '- pregnant.laborEffort / pushFatigue（只在第二产程）：push 表示产妇正在用力、rest 表示停下来喘口气；pushFatigue 用力疲劳 0-100，60 以上已经力竭、越推越没效果，描写可体现喘息与脱力。',
       '- fetuses 按子宫里由左到右排列，不代表出生顺序；presenting=true 是正在下降或娩出的那一胎。weight 胎重系数，1.0 为标准；affinity 母胎亲密度 -50～50，负值为排斥；positionText、backSideText、tendencyAngleText 是胎位现况，描写须一致。',
     );
   }
