@@ -305,11 +305,13 @@ test('the tracker marks floors it already analyzed so they are not settled twice
     else if (payloadText[end] === ']' && --depth === 0) break;
   }
   const recent = JSON.parse(payloadText.slice(start, end + 1));
-  const marks = recent.map((m) => [m.text, Boolean(m.already_settled)]);
+  const marks = recent.map((m) => [m.text, Boolean(m.already_settled), Boolean(m.new_message)]);
+  // 新讯息要明确标出来：只靠「没有 already_settled」时，模型曾把最后一则也当成已结算
   assert.deepEqual(marks, [
-    ['opening', true], ['train sword', true], ['she trains for three hours', true],
-    ['learn to ride', false], ['she rides a horse', false],
+    ['opening', true, false], ['train sword', true, false], ['she trains for three hours', true, false],
+    ['learn to ride', false, true], ['she rides a horse', false, true],
   ]);
   const system = body.messages.find((m) => m.role === 'system')?.content || '';
   assert.match(system, /只结算新讯息/);
+  assert.match(system, /new_message=true/);
 });

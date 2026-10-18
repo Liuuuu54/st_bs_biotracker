@@ -6,6 +6,7 @@ import test, { afterEach } from 'node:test';
 import * as state from '../scripts/state.js';
 import { applyToolCall, getUterinePressureCap } from '../scripts/tools.js';
 import { buildTrackerPayload, getTrackerToolDefinitions } from '../scripts/tracker.js';
+import { buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
 
 const REAL_RANDOM = Math.random;
 afterEach(() => { Math.random = REAL_RANDOM; });
@@ -483,6 +484,12 @@ test('降宫压有实际好处：痛感少约 2、休息消退快一倍，代价
   assert.ok(Math.abs((half.laborPain - full.laborPain) + 2) < 0.3, `${half.laborPain} vs ${full.laborPain}`);
   assert.ok(Math.abs((70 - half.pushFatigue) / (70 - full.pushFatigue) - 2) < 0.05, `${half.pushFatigue} vs ${full.pushFatigue}`);
   assert.ok(half.effectiveLaborHours < full.effectiveLaborHours, '宫缩弱，产程慢');
+});
+
+test('追踪提示：产程中鼓励照剧情降宫压，宫压变化要排在这段时间的推进之前', () => {
+  const prompt = buildTrackerSystemPrompt('', null, {});
+  assert.match(prompt, /不要一律维持在上限/);
+  assert.match(prompt, /要排在这段时间的 bsPassedTime 之前，否则这段时间仍按原本的宫压结算/);
 });
 
 test('快速通道：宫压满时跳一个阶段、疲劳 +30；力竭时不再突然加速', () => {

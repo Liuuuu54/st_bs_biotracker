@@ -1856,7 +1856,11 @@ export function resolveRegisteredCharacterName(chatState, targetName, options = 
   return '';
 }
 
-/** settledBefore：这个绝对楼层之前的讯息已经被追踪结算过，标上 already_settled，供上下文理解、不得重复结算 */
+/**
+ * settledBefore：这个绝对楼层之前的讯息已经被追踪结算过，标上 already_settled，供上下文理解、不得重复结算；
+ * 其余是这一轮要结算的新讯息，明确标上 new_message。只靠「没有 already_settled」表示新讯息时，
+ * 模型有时会把最后一则也当成已结算，整轮回报无变化。
+ */
 export function buildRecentMessages(ctx, settings, endIndexExclusive = null, settledBefore = null) {
   const count = Math.max(2, Number(settings.contextSize) || 12);
   const chat = getHostChat(ctx);
@@ -1867,7 +1871,7 @@ export function buildRecentMessages(ctx, settings, endIndexExclusive = null, set
     role: message.is_user ? 'user' : 'assistant',
     // 变量系统写在讯息里的更新区块（MVU、小白 X）不是剧情，留着会干扰判断
     text: stripVariableUpdateBlocks(message.mes || ''),
-    ...(Number.isInteger(settledBefore) && start + offset < settledBefore ? { already_settled: true } : {}),
+    ...(Number.isInteger(settledBefore) && start + offset < settledBefore ? { already_settled: true } : { new_message: true }),
   }));
 }
 

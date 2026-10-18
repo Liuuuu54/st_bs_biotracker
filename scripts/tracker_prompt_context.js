@@ -77,7 +77,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- sperms[*].value: 当前残留量，用于多父竞争与受精判定；每天自动衰减 10，无需手动清除。',
   '- eggs: 当前可受精卵子数。',
   '- libido: 性欲。角色在剧情中达到高潮时，用 bsUpdateCharacterStatus 传 options.orgasm=true（同一段性事只传一次），由系统结算高潮排卵并让性欲归零；事后的满足不要用减少 libido 代替。',
-  '- uterinePressure: 宫压，越高越接近妊娠风险或分娩。临产期或逾期时，剧情出现规律宫缩、见红等分娩发动的迹象，用 bsUpdateCharacterStatus 把 uterinePressure 加到接近上限（可直接给 +150，系统会夹在上限内），系统当下进入产兆前驱（约 48 小时后进入第一产程）；剧情明确写到已经规律宫缩、产程走得比这快时，用 bsAssistFetalPosition（action=descend）推送领头胎儿，每次缩短约 24 小时；孕早期、孕中期不要这样做，宫压过高在那时是流产风险。「直接给 +150」只用在触发临产。进入产程后宫压代表宫缩强弱，是一个取舍：越高产程越快，但越痛、休息也越难缓过来（满宫压时疲劳消退只剩一半）；剧情写到放松呼吸、宫缩间隙、镇痛、宫缩减弱时，用 bsUpdateCharacterStatus 给负值降宫压，换来疼痛减轻、休息更有效，代价是产程变慢，不要一律维持在上限。非真实分娩模式下宫压达到上限会让产程突然加速、直接跳过一个阶段，每跳一次用力疲劳 +30；产妇力竭（用力疲劳 60 以上）时不会再突然加速。',
+  '- uterinePressure: 宫压，越高越接近妊娠风险或分娩。临产期或逾期时，剧情出现规律宫缩、见红等分娩发动的迹象，用 bsUpdateCharacterStatus 把 uterinePressure 加到接近上限（可直接给 +150，系统会夹在上限内），系统当下进入产兆前驱（约 48 小时后进入第一产程）；剧情明确写到已经规律宫缩、产程走得比这快时，用 bsAssistFetalPosition（action=descend）推送领头胎儿，每次缩短约 24 小时；孕早期、孕中期不要这样做，宫压过高在那时是流产风险。「直接给 +150」只用在触发临产。进入产程后宫压代表宫缩强弱，是一个取舍：越高产程越快，但越痛、休息也越难缓过来（满宫压时疲劳消退只剩一半）；剧情写到放松呼吸、宫缩间隙、镇痛、宫缩减弱时，用 bsUpdateCharacterStatus 给负值降宫压，换来疼痛减轻、休息更有效，代价是产程变慢，不要一律维持在上限。宫压在这段时间里就变了（例如宫缩缓下来后才歇着），这次 bsUpdateCharacterStatus 要排在这段时间的 bsPassedTime 之前，否则这段时间仍按原本的宫压结算。非真实分娩模式下宫压达到上限会让产程突然加速、直接跳过一个阶段，每跳一次用力疲劳 +30；产妇力竭（用力疲劳 60 以上）时不会再突然加速。',
   '- vitality: 活力。',
   '- psyStress: 情压/精神压力。',
   '- vitalityLevel / psyStressLevel: 个体等级，决定对应数值上限与体质倾向。',
@@ -357,7 +357,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     [
       '[只结算新讯息]',
       '- recent_messages 里带 already_settled=true 的讯息，已在先前的追踪中结算过（时间、技能经验、生殖操作、衣着、关系、认知、日记等），只用来理解前情，不得再依据它们调用任何工具。',
-      '- 只为没有 already_settled 标记的新讯息结算；新讯息没有写到的事，即使旧讯息里有，也不要再处理一次。',
+      '- 带 new_message=true 的是这一轮要结算的新讯息，只为它们结算；新讯息没有写到的事，即使旧讯息里有，也不要再处理一次。',
       '- 回忆、倒叙、梦境、假设或想象的段落没有发生在现在：不推进时间，段落里的事件也不结算（不记性行为、受孕、经验、衣着等）。',
     ].join('\n'),
     payload?.time_frozen === true ? [
@@ -367,7 +367,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     ].join('\n') : [
       '[bsPassedTime 强制规则]',
       '- bsPassedTime 是每一轮 tracker 分析都必须优先考虑的第一工具。',
-      '- 你应先根据 recent_messages 中的新讯息（未标 already_settled）判断本轮累计了多少分钟/小时/天，再调用 bsPassedTime 推进时间。',
+      '- 你应先根据 recent_messages 中的新讯息（new_message=true）判断本轮累计了多少分钟/小时/天，再调用 bsPassedTime 推进时间。',
       '- 只有在确认本轮完全没有任何可推进的时间量时，才允许不调用 bsPassedTime。',
       '- 时间线穿越（回到过去、跳到未来、时间回溯、时空旅行、魂穿等）：日历的跳动本身不推进时间（跳回十年前不是过了十年）；穿越前后身体实际度过的时间照常用 bsPassedTime 推进（例如在过去躲了半小时就推进 30 分钟），当场发生的事照常结算。回到原本时间线也只推进实际度过的时间。',
       '- 其他状态工具默认建立在时间推进之后，不要跳过 bsPassedTime 直接更新长程状态。\n- 例外：剧情里的操作（转胎、托高、破水、助产、手术产等）发生在这段时间中途、而推进时间可能先改变条件（例如胎儿入盆后只能小幅转动）时，把 bsPassedTime 拆成操作前、操作后两次调用，中间放该操作。',
