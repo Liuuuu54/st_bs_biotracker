@@ -25,6 +25,7 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 | [tracker.js](../../scripts/tracker.js) | 輪詢門控、逐樓分析、上下文投影和快照對帳。 |
 | [api.js](../../scripts/api.js) | OpenAI 相容 API、端點、安全檢查、超時和回覆解析。 |
 | [own_requests.js](../../scripts/own_requests.js) | 記下插件自己發出的請求，讓 fetch 攔截只略過它們。 |
+| [mainflow_capture_gate.js](../../scripts/mainflow_capture_gate.js) | 主流快照只在酒館正式生成期間收第一份請求，其他插件的請求不收。 |
 | [variable_isolation.js](../../scripts/variable_isolation.js) | 與卡片的變數系統隔離：MVU 額外解析時拿掉插件狀態段、追蹤前去掉變數更新區塊。 |
 | [worldinfo_resolve.js](../../scripts/worldinfo_resolve.js) | 主流模式的世界書：宿主試算、排除名單、快照補漏與刪除排除條目。 |
 | [worldbook_match.js](../../scripts/worldbook_match.js) | 宿主無法試算時的關鍵字後備比對。 |

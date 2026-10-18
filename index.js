@@ -172,6 +172,7 @@ import {
   worldbookSelectionMatches,
   normalizeWorldbookMode,
 } from './scripts/state.js';
+import { createMainflowCaptureGate } from './scripts/mainflow_capture_gate.js';
 
 const PANEL_ID = 'bs-biotracker-settings';
 const MODAL_ID = 'bs-biotracker-modal';
@@ -1478,9 +1479,9 @@ function normalizeMainflowSnapshotMessages(messages) {
 }
 
 function captureMainflowRequestBody(body, source = 'fetch') {
-  if (!body || typeof body !== 'object') return;
+  if (!body || typeof body !== 'object') return false;
   const messages = normalizeMainflowSnapshotMessages(body.messages);
-  if (messages.length === 0) return;
+  if (messages.length === 0) return false;
   // 记录快照所属聊天，读取侧按当前聊天校验，防止跨聊天复用旧上下文；
   // 拿不到聊天绑定的快照不可信，直接不写
   let chatKey = '';
@@ -1488,7 +1489,7 @@ function captureMainflowRequestBody(body, source = 'fetch') {
     const stCtx = getHostContext();
     if (stCtx) chatKey = getChatKey(stCtx);
   } catch {}
-  if (!chatKey) return;
+  if (!chatKey) return false;
   globalThis[MAINFLOW_CONTEXT_SNAPSHOT_KEY] = {
     source,
     capturedAt: Date.now(),
@@ -1497,6 +1498,7 @@ function captureMainflowRequestBody(body, source = 'fetch') {
     messages,
   };
   globalThis[DEBUG_LAST_MAINFLOW_SNAPSHOT_KEY] = globalThis[MAINFLOW_CONTEXT_SNAPSHOT_KEY];
+  return true;
 }
 
 function parseJsonText(value) {
@@ -1522,15 +1524,24 @@ async function parseFetchBodyFromRequest(input) {
   }
 }
 
-function installMainflowRequestCapture() {
+// 只在宿主正式生成期间收快照，见 mainflow_capture_gate.js
+const mainflowCaptureGate = createMainflowCaptureGate();
+
+function installMainflowRequestCapture(ctx) {
   if (globalThis[FETCH_CAPTURE_READY_KEY] || typeof globalThis.fetch !== 'function') return;
+  const source = ctx?.eventSource;
+  const types = ctx?.eventTypes || ctx?.event_types || {};
+  if (!source || typeof source.on !== 'function') return;
+  source.on(types.GENERATION_STARTED || 'generation_started', mainflowCaptureGate.onGenerationStarted);
+  source.on(types.GENERATION_STOPPED || 'generation_stopped', mainflowCaptureGate.onGenerationEnded);
+  source.on(types.GENERATION_ENDED || 'generation_ended', mainflowCaptureGate.onGenerationEnded);
   const originalFetch = globalThis.fetch.bind(globalThis);
   globalThis[ORIGINAL_FETCH_KEY] = originalFetch;
   globalThis.fetch = async (...args) => {
     if (!isOwnRequest(args[1]) && !isMvuExtraAnalysisInFlight()) {
       try {
         const body = parseFetchBodyFromInit(args[1]) || await parseFetchBodyFromRequest(args[0]);
-        captureMainflowRequestBody(body, 'fetch');
+        if (mainflowCaptureGate.accepts(body) && captureMainflowRequestBody(body, 'fetch')) mainflowCaptureGate.close();
       } catch (error) {
         console.warn('[BS BioTracker] mainflow request capture failed', error);
       }
@@ -10061,7 +10072,7 @@ async function bootstrap() {
     // 载入当下记忆体里的各聊天都视为与宿主同步，之后的改动才算这个分页的新改动
     markChatStatesSynced(ctx);
     await ensureChatStateHydrated(ctx);
-    installMainflowRequestCapture();
+    installMainflowRequestCapture(ctx);
     installVariableIsolation(ctx);
     await ensureModal(ctx);
     await registerMenuItem(ctx);
