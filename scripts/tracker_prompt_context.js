@@ -77,7 +77,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- sperms[*].value: 当前残留量，用于多父竞争与受精判定；每天自动衰减 10，无需手动清除。',
   '- eggs: 当前可受精卵子数。',
   '- libido: 性欲。角色在剧情中达到高潮时，用 bsUpdateCharacterStatus 传 options.orgasm=true（同一段性事只传一次），由系统结算高潮排卵并让性欲归零；事后的满足不要用减少 libido 代替。',
-  '- uterinePressure: 宫压，越高越接近妊娠风险或分娩。临产期或逾期时，剧情出现规律宫缩、见红等分娩发动的迹象，用 bsUpdateCharacterStatus 把 uterinePressure 加到接近上限（可直接给 +150，系统会夹在上限内），系统当下进入产兆前驱（约 48 小时后进入第一产程）；剧情明确写到已经规律宫缩、产程走得比这快时，用 bsAssistFetalPosition（action=descend）推送领头胎儿，每次缩短约 24 小时；孕早期、孕中期不要这样做，宫压过高在那时是流产风险。',
+  '- uterinePressure: 宫压，越高越接近妊娠风险或分娩。临产期或逾期时，剧情出现规律宫缩、见红等分娩发动的迹象，用 bsUpdateCharacterStatus 把 uterinePressure 加到接近上限（可直接给 +150，系统会夹在上限内），系统当下进入产兆前驱（约 48 小时后进入第一产程）；剧情明确写到已经规律宫缩、产程走得比这快时，用 bsAssistFetalPosition（action=descend）推送领头胎儿，每次缩短约 24 小时；孕早期、孕中期不要这样做，宫压过高在那时是流产风险。「直接给 +150」只用在触发临产。进入产程后宫压代表宫缩强弱，是一个取舍：越高产程越快，但越痛、休息也越难缓过来（满宫压时疲劳消退只剩一半）；剧情写到放松呼吸、宫缩间隙、镇痛、宫缩减弱时，用 bsUpdateCharacterStatus 给负值降宫压，换来疼痛减轻、休息更有效，代价是产程变慢，不要一律维持在上限。非真实分娩模式下宫压达到上限会让产程突然加速、直接跳过一个阶段，每跳一次用力疲劳 +30；产妇力竭（用力疲劳 60 以上）时不会再突然加速。',
   '- vitality: 活力。',
   '- psyStress: 情压/精神压力。',
   '- vitalityLevel / psyStressLevel: 个体等级，决定对应数值上限与体质倾向。',
@@ -95,7 +95,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- laborPhase: 当前产程内部阶段。第一产程为潜伏期/活跃期/过渡期；第二产程为胎体下降/胎体娩出/间歇期；第三产程为供养器官娩出/产后观察。',
   '- laborBirthNumber: 第二产程正在生第几胎，从 1 起算；其他阶段通常为 0。它是出生计数，不是 fetuses 的下标。正在下降或娩出的那一胎在 fetuses 里带 presenting=true；fetuses 的排列顺序不代表出生顺序。',
   '- laborPain: 当前分娩疼痛程度，范围 0-10。描写疼痛反应不得明显超过此等级；刚进入第一产程时不应写成已达到极限痛苦。',
-  '- laborEffort / pushFatigue（仅第二产程）：推或休，以及用力疲劳 0-100。胎体下降与娩出要产妇自己用力：推的时候疲劳累积（胎越大越快），60 以上越推越没效果；休的时候产程几乎不前进、疲劳消退，越冷静消退越快。剧情写到产妇停下来喘气、歇一下时用 bsUpdateCharacterStatus 给 options.laborEffort=rest，再次用力时给 push；用力消耗的体力照剧情自己扣 vitality，系统不代扣。切换要先于这段时间的 bsPassedTime。',
+  '- laborEffort / pushFatigue（产程中）：推或休，以及用力疲劳 0-100。推的时候疲劳累积（胎越大越快），60 以上越推越没效果；休的时候疲劳消退，越冷静消退越快。疲劳不随换阶段归零。各阶段效果不同：第二产程的胎体下降与娩出要产妇自己用力，休的时候产程几乎不前进；第三产程娩出胎盘时用力快一倍，不用力也会照常娩出；第一产程宫口还没开全、间歇期下一胎还没开始下降，用力是白费力气，只会累积疲劳，只有剧情写到她提早用力（例如不懂怎么生）才给 push，不要为了加快产程而 push。进入第一产程、间歇期与第三产程时预设休，胎体下降开始时预设推。剧情写到产妇停下来喘气、歇一下时用 bsAssistFetalPosition 给 action=rest，用力时给 action=push；用力消耗的体力照剧情自己扣 vitality，系统不代扣。切换要先于这段时间的 bsPassedTime。',
   '- amnionDurability: 羊膜耐性（0-100）；过低代表接近或已经破水。每一胎有各自的羊膜（同卵共用一个胎囊）：全部胎囊相同时只给这一个数值；不同时不给这个数值，改在对应胎儿上标 fetuses[*].amnion＝膜薄／膜危／已破，没标的就是完整。',
   '- nutrition: 妊娠供养力盈余/赤字，由需求照料累积：任一需求在「高」时用 bsExcreteMetabolism 彻底处理到「无」约 +1，只处理一半不算；拖到「爆」约 -1，停在爆每满 24 小时再扣一次；「满」不增不减。点数会按种族与妊娠负担折算，所以常见小数。正值代表供养充足，负值代表供养亏空。这是全部胎儿的合计：系统每次计分当下就按各胎孕龄与位置拆给每一胎，每周各自换算成胎重后归零。',
   '- 胎位操作、胎儿自主活动、母胎互动与插入推顶的规则写在各工具说明里（bsAssistFetalPosition、bsMaternalFetalInteraction、bsAddSperm），依工具回传描写。',
@@ -478,7 +478,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
   if (profiles.some((profile) => profile.pregnant)) {
     lines.push(
       '- pregnant：pregnantDays 孕龄天数；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；nutrition 供养盈亏，正为充足、负为亏空；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
-      '- pregnant.laborEffort / pushFatigue（只在第二产程）：push 表示产妇正在用力、rest 表示停下来喘口气；pushFatigue 用力疲劳 0-100，60 以上已经力竭、越推越没效果，描写可体现喘息与脱力。',
+      '- pregnant.laborEffort / pushFatigue（产程中）：push 表示产妇正在用力、rest 表示停下来喘口气；第一产程用力是白费力气；pushFatigue 用力疲劳 0-100，60 以上已经力竭、越推越没效果，描写可体现喘息与脱力。',
       '- fetuses 按子宫里由左到右排列，不代表出生顺序；presenting=true 是正在下降或娩出的那一胎。weight 胎重系数，1.0 为标准；affinity 母胎亲密度 -50～50，负值为排斥；positionText、backSideText、tendencyAngleText 是胎位现况，描写须一致。',
     );
   }

@@ -153,7 +153,6 @@ export const TOOL_DEFINITIONS = Object.freeze([
             uterinePressure: { type: 'integer' },
             psyStress: { type: 'integer' },
             orgasm: { type: 'boolean' },
-            laborEffort: { type: 'string', enum: ['push', 'rest'], description: '只在第二产程有效：push＝用力推（预设），rest＝停下来喘口气。用力疲劳越高越推不动，休息才会消退；胎越大越累得快。系统不替角色扣活力，用力时照剧情自己扣 vitality。' },
           },
           additionalProperties: false,
         },
@@ -585,12 +584,13 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + 'descend：把胎儿往下推送一格；产兆前驱推送领头胎儿会缩短前驱，时间归零即进入第一产程；正式产程中不能用。'
       + 'rupture：破水（每一胎有各自的羊膜，同卵共囊一起破）。只有在产兆前驱且宫压已达上限的 66%，或已在第一／第二产程时才会生效；产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用，系统未确认前不要擅自描写破水。孕中孕内胎的胎膜破了代表它被宿主在宫内生出来，不算母亲破水。'
       + 'extract：第二产程中把正在产道里下降或娩出的那一胎直接助产拉出（胎膜未破会先破）；肩难产时也可以用。只生这一胎，不会结束其余胎儿的分娩；要一次结束全部请用 bsChildbirth。剧情已写出这一胎自己生下来、系统却还在下降或娩出中时，也直接用 extract 同步，记为自然产，不要让剧情等系统；不要为此改用 bsChildbirth（那会记成手术产）。'
+      + 'push／rest：产妇自己用力推或停下来喘口气，产程中（第一产程、第二产程、第三产程娩出胎盘时）有效，不必给 fetusIndex，也不能由胎儿代劳。切换后一直维持到下次切换，剧情写到她停下来歇一下时给 rest，用力时给 push，切换要排在这段时间的 bsPassedTime 之前；胎体下降开始时预设推，其余阶段预设休。推的时候累积用力疲劳，胎越大越累得快，疲劳越高越推不动，休息时才会消退，换阶段不归零。第二产程下降与娩出时休息几乎不前进；第三产程用力让胎盘快一倍娩出；第一产程与间歇期用力是白费力气，只累积疲劳，只在剧情写到她提早用力时才给。系统不替她扣活力，用力时照剧情用 bsUpdateCharacterStatus 自己扣 vitality。'
       + '所有操作都会带来瞬时的疼痛（产程中）或心理压力（孕期），描写不得超过系统给出的疼痛等级。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
-        action: { type: 'string', enum: ['rotate', 'lift', 'descend', 'rupture', 'extract'] },
+        action: { type: 'string', enum: ['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest'] },
         fetusIndex: { type: 'integer' },
         targetAngle: { type: 'number' },
         backSide: { type: 'string', enum: ['左前', '右前', '左后', '右后'] },
@@ -3786,6 +3786,8 @@ function clearPregnancyState(profile) {
   pregnant.extensionUntilDays = null;
   pregnant.presentingEmbryoId = null;
   pregnant.laborPain = 0;
+  delete pregnant.pushFatigue;
+  delete pregnant.laborEffort;
   pregnant.prodromalOriginStage = null;
   pregnant.prodromalRemainingHours = 0;
   pregnant.prodromalDelayProgressHours = 0;
@@ -4468,11 +4470,11 @@ function beginLaborPhase(pregnant, phase, birthNumber = 0) {
   // 每一胎开始下降时锁定先露胎；之后换位、分裂、插入都不能让它漂移。
   // 对应的下降位置由 reconcileFetalDescent 依阶段推导（受阻时不前进）
   if (phase === '胎体下降') selectPresentingFetus(pregnant);
-  // 推／休：每一胎从头开始，间歇期也算歇过一口气
-  if (phase === '胎体下降' || phase === '间歇期') {
-    pregnant.pushFatigue = 0;
-    pregnant.laborEffort = 'push';
-  }
+  // 推／休：进入这几个阶段时换成该阶段的预设（下降开始用力，其余先歇着）；疲劳一路带着，只靠休息消退。
+  // 一次分娩从潜伏期开始，疲劳从零算（也盖掉旧版分娩结束时没清掉的值）
+  const effortDefault = LABOR_EFFORT_PHASE_DEFAULTS[phase];
+  if (effortDefault) pregnant.laborEffort = effortDefault;
+  if (phase === '潜伏期') pregnant.pushFatigue = 0;
 }
 
 /**
@@ -4941,14 +4943,19 @@ function updateLaborPain(profile, stage, phase, progress = 0, obstruction = fals
   pain += ((clampNumber(base.psyStressLevel, 1, 7, 4) - 4) * 0.5) * toleranceWeight;
   if (obstruction) pain += 1.5;
   if (isPosteriorPresentingLabor(profile, stage)) pain += POSTERIOR_PAIN_BONUS;
+  const effortMode = getLaborEffortMode(stage, phase);
+  const pushingNow = effortMode && getLaborEffort(pregnant, stage, phase) === 'push';
   if (isPushingPhase(stage, phase)) {
     // 大胎下降与娩出更痛：2 倍胎重 +1、3 倍 +2，小胎稍微轻松
     const weight = clampNumber(getPresentingFetus(pregnant)?.weight, 0.33, 3.0, 1.0);
     pain += clampNumber(weight - 1, -0.5, 2, 0);
-    // 硬撑着推到力竭更痛；停下来不用力稍微缓和，宫缩照样痛
-    if (getLaborEffort(pregnant) === 'rest') pain -= 1;
-    else pain += clampNumber((getPushFatigue(pregnant) - PUSH_FATIGUE_EFFICIENT_LIMIT) / (PUSH_FATIGUE_MAX - PUSH_FATIGUE_EFFICIENT_LIMIT), 0, 1, 0);
+    // 下降与娩出时停下来不用力稍微缓和，宫缩照样痛；其他阶段本来就是歇着，不减
+    if (!pushingNow) pain -= 1;
   }
+  // 产程中宫压是取舍：宫缩越强产程越快，也越痛；满宫压 +1、半宫压 −1
+  if (effortMode) pain += (getLaborPressureRatio(profile) - 0.75) * LABOR_PRESSURE_PAIN_SCALE;
+  // 硬撑着推到力竭更痛，哪个阶段都一样
+  if (pushingNow) pain += clampNumber((getPushFatigue(pregnant) - PUSH_FATIGUE_EFFICIENT_LIMIT) / (PUSH_FATIGUE_MAX - PUSH_FATIGUE_EFFICIENT_LIMIT), 0, 1, 0);
   // 助产操作留下的瞬时痛感，每小时减半（见 decayAssistPainBoost）
   pain += clampNumber(pregnant.assistPainBoost, 0, ASSIST_PAIN_BOOST_CAP, 0);
   pregnant.laborPain = Math.round(clampNumber(pain, 0, 10, 0) * 10) / 10;
@@ -5035,13 +5042,22 @@ function processLabor(profile, tick, female) {
 }
 
 /**
- * 推／休：第二产程的胎体下降与娩出要产妇自己用力。由追踪模型以 bsUpdateCharacterStatus 的
- * options.laborEffort 切换，预设为推；系统不替角色扣活力，活力照剧情由模型自己增减。
- * - 推：用力疲劳每小时 +40 × 胎重^1.5；疲劳 60 以下全速，60→100 效率由 1 线性降到 0.2。
- * - 休：只靠宫缩带动，0.1 倍速；疲劳每小时 −180 ×（1.5 − 情压比例），越冷静恢复越快。
- * 胎越大越累得快，就越要频繁换气；每一胎开始下降时疲劳归零。
+ * 推／休：产妇自己用力或停下来喘口气，由追踪模型以 bsAssistFetalPosition 的 action=push／rest 切换，
+ * 切换后维持到下次切换；系统不替角色扣活力，活力照剧情由模型自己增减。各阶段效果不同：
+ * - 第二产程胎体下降与娩出（descent）：推时疲劳 60 以下全速，60→100 效率由 1 线性降到 0.2；休只靠宫缩，0.1 倍速。
+ * - 第三产程娩出供养器官（placenta）：推 2 倍速（同样受疲劳效率影响）；休照常速度。
+ * - 第一产程与间歇期（wasted）：宫口没开全、或下一胎还没开始下降，推是白费力气，只累积疲劳，进度照常。
+ * 推每小时疲劳 +40 × 胎重^1.5（胎盘按胎重 1）；休每小时 −180 ×（1.5 − 情压比例），越冷静恢复越快。
+ * 疲劳不随换阶段归零，第一产程白推的疲劳会带进第二产程；分娩结束才清掉。
  */
 const PUSH_PHASES = new Set(['胎体下降', '胎体娩出']);
+const FIRST_STAGE_PHASES = new Set(['潜伏期', '活跃期', '过渡期']);
+// 进入这些阶段时换成的预设：下降开始时用力，其余阶段先歇着
+const LABOR_EFFORT_PHASE_DEFAULTS = Object.freeze({ 潜伏期: 'rest', 胎体下降: 'push', 间歇期: 'rest', 供养器官娩出: 'rest', 产后观察: 'rest' });
+const PLACENTA_PUSH_MULTIPLIER = 2;
+const LABOR_PRESSURE_PAIN_SCALE = 4;
+// 宫压达上限的快速通道（产程突然加速）：力竭时不触发；每跳一次急产耗力，疲劳 +30，从零疲劳最多连跳两次
+const PRECIPITOUS_FATIGUE_COST = 30;
 const PUSH_FATIGUE_STEP_HOURS = 5 / 60;
 const PUSH_FATIGUE_PER_HOUR = 40;
 const PUSH_FATIGUE_EFFICIENT_LIMIT = 60;
@@ -5055,8 +5071,29 @@ function isPushingPhase(stage, phase) {
   return stage === '第二产程' && PUSH_PHASES.has(phase);
 }
 
-export function getLaborEffort(pregnant) {
-  return pregnant?.laborEffort === 'rest' ? 'rest' : 'push';
+/** 这个阶段推／休的效果：descent、placenta、wasted；产后观察与产程以外回传 null（不接受推／休） */
+export function getLaborEffortMode(stage, phase) {
+  if (stage === '第一产程') return FIRST_STAGE_PHASES.has(phase) || !phase ? 'wasted' : null;
+  if (stage === '第二产程') return PUSH_PHASES.has(phase) ? 'descent' : phase === '间歇期' ? 'wasted' : null;
+  if (stage === '第三产程') return phase === '供养器官娩出' ? 'placenta' : null;
+  return null;
+}
+
+/** 目前推还是休；没切换过时，下降与娩出预设推、其余阶段预设休 */
+export function getLaborEffort(pregnant, stage = '', phase = '') {
+  if (pregnant?.laborEffort === 'rest' || pregnant?.laborEffort === 'push') return pregnant.laborEffort;
+  return getLaborEffortMode(stage, phase || pregnant?.laborPhase) === 'descent' ? 'push' : 'rest';
+}
+
+/** 产妇自己推或休（bsAssistFetalPosition action=push／rest）：只切换模式，疲劳与进度在时间推进时结算 */
+function applyLaborEffortSwitch(character, female, effort, bySelf, skip) {
+  if (bySelf) return skip('a fetus cannot push or rest for its mother; this is the mother’s own effort.');
+  const profile = character.profile || {};
+  const stage = String(profile.base?.stage || '');
+  const phase = String(profile.pregnant?.laborPhase || '');
+  if (!getLaborEffortMode(stage, phase)) return skip(`${effort} only works during labor (第一产程、第二产程、第三产程的供养器官娩出; now ${stage || '(none)'}${phase ? ` ${phase}` : ''}).`);
+  profile.pregnant.laborEffort = effort;
+  return { applied: true, message: `bsAssistFetalPosition ${effort} applied to ${female}: fatigue ${Math.round(getPushFatigue(profile.pregnant))}.` };
 }
 
 function getPushFatigue(pregnant) {
@@ -5070,7 +5107,7 @@ function getPushEfficiency(fatigue) {
 }
 
 function getPushFatigueRate(profile) {
-  const weight = clampNumber(getPresentingFetus(profile?.pregnant)?.weight, 0.33, 3.0, 1.0);
+  const weight = clampNumber(getPresentingFetus(profile?.pregnant)?.weight ?? 1, 0.33, 3.0, 1.0);
   return PUSH_FATIGUE_PER_HOUR * (weight ** 1.5);
 }
 
@@ -5078,16 +5115,26 @@ function getRestRecoveryRate(profile) {
   const base = profile?.base || {};
   const stressCap = Math.max(1, getPsyStressInitByLevel(base.psyStressLevel) * 2);
   const stressRatio = clampNumber(base.psyStress, 0, stressCap, 0) / stressCap;
-  return REST_RECOVERY_PER_HOUR * (1.5 - stressRatio);
+  // 宫缩一阵接一阵、没有间隙时喘不过气：满宫压只剩一半，半宫压以下不打折
+  const pressureFactor = Math.min(1, 1.5 - getLaborPressureRatio(profile));
+  return REST_RECOVERY_PER_HOUR * (1.5 - stressRatio) * pressureFactor;
+}
+
+/** 宫压占上限的比例（0–1） */
+function getLaborPressureRatio(profile) {
+  const cap = Math.max(1, getUterinePressureCap(profile));
+  return clampNumber(profile?.base?.uterinePressure, 0, cap, 0) / cap;
 }
 
 /**
  * 推／休的一段时间：每 5 分钟累积或消退疲劳，算出这段的有效产程时数。
  * 走到门槛（neededEffective）就停，回传实际用掉的原始时数，剩下的交给下一阶段。
  */
-function simulateLaborEffort(profile, rawHours, rate, neededEffective) {
+function simulateLaborEffort(profile, rawHours, rate, neededEffective, mode = 'descent') {
   const pregnant = profile.pregnant || {};
-  const effort = getLaborEffort(pregnant);
+  const effort = getLaborEffort(pregnant, profile.base?.stage, pregnant.laborPhase);
+  const pushGain = mode === 'placenta' ? PLACENTA_PUSH_MULTIPLIER : 1;
+  const restGain = mode === 'descent' ? REST_PROGRESS_MULTIPLIER : 1;
   const fatigueRate = effort === 'push' ? getPushFatigueRate(profile) : -getRestRecoveryRate(profile);
   const before = getPushFatigue(pregnant);
   let fatigue = before;
@@ -5096,7 +5143,7 @@ function simulateLaborEffort(profile, rawHours, rate, neededEffective) {
   const target = Math.max(0, neededEffective) + 1e-6;
   while (usedHours < rawHours - 1e-9) {
     const step = Math.min(PUSH_FATIGUE_STEP_HOURS, rawHours - usedHours);
-    const stepRate = rate * (effort === 'push' ? getPushEfficiency(fatigue) : REST_PROGRESS_MULTIPLIER);
+    const stepRate = rate * (effort === 'push' ? pushGain * getPushEfficiency(fatigue) : restGain);
     const stepGain = step * stepRate;
     if (stepRate > 0 && gain + stepGain >= target) {
       const part = (target - gain) / stepRate;
@@ -5114,6 +5161,30 @@ function simulateLaborEffort(profile, rawHours, rate, neededEffective) {
   if (effort === 'push' && before < PUSH_FATIGUE_EFFICIENT_LIMIT && fatigue >= PUSH_FATIGUE_EFFICIENT_LIMIT) note = '用力到力竭，推不动了，需要喘口气';
   else if (effort === 'rest' && before > REST_RECOVERED_NOTICE && fatigue <= REST_RECOVERED_NOTICE) note = '缓过来了，可以再用力';
   return { gain, usedHours, note };
+}
+
+/** 第一产程与间歇期推是白费力气：只累积或消退疲劳，不改进度 */
+function settleWastedLaborEffort(profile, rawHours) {
+  const pregnant = profile.pregnant || {};
+  const effort = getLaborEffort(pregnant, profile.base?.stage, pregnant.laborPhase);
+  const before = getPushFatigue(pregnant);
+  const rate = effort === 'push' ? getPushFatigueRate(profile) : -getRestRecoveryRate(profile);
+  const fatigue = clampNumber(before + rate * rawHours, 0, PUSH_FATIGUE_MAX, 0);
+  pregnant.pushFatigue = Math.round(fatigue * 10) / 10;
+  if (effort === 'push' && before < PUSH_FATIGUE_EFFICIENT_LIMIT && fatigue >= PUSH_FATIGUE_EFFICIENT_LIMIT) return '白白用力到力竭，需要喘口气';
+  if (effort === 'rest' && before > REST_RECOVERED_NOTICE && fatigue <= REST_RECOVERED_NOTICE) return '缓过来了';
+  return '';
+}
+
+/** 通知里的推／休状态；第一产程与间歇期只在用力或还累着时才提 */
+function describeLaborEffort(pregnant, stage, phase, note) {
+  const mode = getLaborEffortMode(stage, phase);
+  if (!mode) return '';
+  const effort = getLaborEffort(pregnant, stage, phase);
+  const fatigue = Math.round(getPushFatigue(pregnant));
+  if (mode === 'wasted' && effort === 'rest' && fatigue <= 0 && !note) return '';
+  const label = effort === 'rest' ? '休息中' : mode === 'wasted' ? '用力中（还不到用力的时候，白费力气）' : '用力中';
+  return `，${label}，用力疲劳${fatigue}${note ? `（${note}）` : ''}`;
 }
 
 /** 每一原始小时换算成多少有效产程小时：宫缩倍率（不含性欲倍率与推／休） */
@@ -5201,10 +5272,12 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
     && (obstruction.type === 'shoulder_dystocia' || phase === '胎体下降');
   if (blocksDescent) {
     pregnant.effectiveLaborHours = obstruction.type === 'shoulder_dystocia' ? threshold : currentEffectiveHours;
+    // 卡住时进度不动，但时间照样过：还在推就是对着卡住的胎儿白用力，歇着就消退
+    const stuckNote = settleWastedLaborEffort(profile, rawHours);
     updateLaborPain(profile, stage, phase, pregnant.effectiveLaborHours / threshold, true);
     profile.notify = {
       ...notify,
-      secondly: `${female}因${obstruction.message}，产程持续受阻`,
+      secondly: `${female}因${obstruction.message}，产程持续受阻${describeLaborEffort(pregnant, stage, phase, stuckNote)}`,
     };
     return done(false);
   }
@@ -5214,15 +5287,19 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
     const currentRatio = pressureCap > 0 ? (currentPressure / pressureCap) : 0;
     const chanceToStall = Math.max(0, Math.min(1, 1 - currentRatio));
     if (Math.random() < chanceToStall) {
+      // 宫缩微弱、进度不动，推或休的疲劳照样结算
+      const stallNote = getLaborEffortMode(stage, phase) ? settleWastedLaborEffort(profile, rawHours) : '';
       profile.notify = {
         ...notify,
-        secondly: `${female}的子宫收缩微弱，产程进展停滞`,
+        secondly: `${female}的子宫收缩微弱，产程进展停滞${describeLaborEffort(pregnant, stage, phase, stallNote)}`,
       };
       pregnant.effectiveLaborHours = currentEffectiveHours;
       updateLaborPain(profile, stage, phase, currentEffectiveHours / threshold, Boolean(obstruction));
       return done(false);
     }
-  } else if (firstSegment && currentPressure >= pressureCap && !realisticLabor) {
+  } else if (firstSegment && currentPressure >= pressureCap && !realisticLabor
+    && getPushFatigue(pregnant) < PUSH_FATIGUE_EFFICIENT_LIMIT) {
+    pregnant.pushFatigue = Math.round(clampNumber(getPushFatigue(pregnant) + PRECIPITOUS_FATIGUE_COST, 0, PUSH_FATIGUE_MAX, 0) * 10) / 10;
     if (stage === '第一产程') {
       base.uterinePressure = pressureCap * 0.5;
       base.stage = '第二产程';
@@ -5283,8 +5360,10 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
 
   let effectiveHoursGain = baseEffectiveHours * getLaborProgressMultiplier(profile, stage, phase);
   let effortNote = '';
-  if (isPushingPhase(stage, phase)) {
-    const effort = simulateLaborEffort(profile, rawHours, libidoMultiplier * getLaborProgressMultiplier(profile, stage, phase), threshold - currentEffectiveHours);
+  const effortMode = getLaborEffortMode(stage, phase);
+  if (effortMode === 'wasted') effortNote = settleWastedLaborEffort(profile, rawHours);
+  else if (effortMode) {
+    const effort = simulateLaborEffort(profile, rawHours, libidoMultiplier * getLaborProgressMultiplier(profile, stage, phase), threshold - currentEffectiveHours, effortMode);
     effectiveHoursGain = effort.gain;
     effortNote = effort.note;
     consumedHours = effort.usedHours;
@@ -5309,15 +5388,15 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
       const positionDifficulty = calculatePositionDifficulty(fetalAngle, firstFetus);
       const fetalWeight = clampNumber(firstFetus?.weight, 0.33, 3.0, 1.0);
       notify.secondly = phase === '间歇期'
-        ? `${female}正在第${pregnant.laborBirthNumber}胎娩出后的间歇期`
-        : `${female}正处于第${pregnant.laborBirthNumber}胎的${phase}，胚位${fetalAngle.toFixed(1)}°，难度${positionDifficulty.toFixed(2)}，胎重${fetalWeight.toFixed(2)}，进度${pregnant.effectiveLaborHours.toFixed(2)}/${threshold.toFixed(2)}小时，${getLaborEffort(pregnant) === 'rest' ? '休息中' : '用力中'}，用力疲劳${Math.round(getPushFatigue(pregnant))}${effortNote ? `（${effortNote}）` : ''}`;
+        ? `${female}正在第${pregnant.laborBirthNumber}胎娩出后的间歇期${describeLaborEffort(pregnant, stage, phase, effortNote)}`
+        : `${female}正处于第${pregnant.laborBirthNumber}胎的${phase}，胚位${fetalAngle.toFixed(1)}°，难度${positionDifficulty.toFixed(2)}，胎重${fetalWeight.toFixed(2)}，进度${pregnant.effectiveLaborHours.toFixed(2)}/${threshold.toFixed(2)}小时${describeLaborEffort(pregnant, stage, phase, effortNote)}`;
     } else {
       if (stage === '第一产程') {
-        notify.secondly = `${female}正处于第一产程的${phase}`;
+        notify.secondly = `${female}正处于第一产程的${phase}${describeLaborEffort(pregnant, stage, phase, effortNote)}`;
       } else {
         notify.secondly = phase === '产后观察'
           ? `${female}已进入产后观察，疼痛与出血状况正在监测`
-          : `${female}正在娩出供养器官，进度${pregnant.effectiveLaborHours.toFixed(2)}/${threshold.toFixed(2)}小时`;
+          : `${female}正在娩出供养器官，进度${pregnant.effectiveLaborHours.toFixed(2)}/${threshold.toFixed(2)}小时${describeLaborEffort(pregnant, stage, phase, effortNote)}`;
       }
     }
     profile.notify = notify;
@@ -5833,7 +5912,7 @@ function shiftProdromalTime(profile, female, deltaHours) {
 // 通过检查就必定成功；难度完全由检查条件与活力门槛表现。
 // 托高是跟宫缩对抗，要母体撑得住：活力不足就拒绝，状态完全不变。
 const ASSIST_PAIN_BOOST_CAP = 5;
-const ASSIST_ACTIONS = Object.freeze(['rotate', 'lift', 'descend', 'rupture', 'extract']);
+const ASSIST_ACTIONS = Object.freeze(['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest']);
 /** 各动作的瞬时痛感（产程相关阶段）；孕期改为心理压力 × 2 */
 const ASSIST_PAIN = Object.freeze({ lift: 2, descend: 1.5, rotate: 2, extract: 3, rupture: 0.5 });
 /** 活力消耗倍率：托高吃满，顺着宫缩促降与转位减半，外力完成的拉出与破水不扣 */
@@ -6014,6 +6093,7 @@ function applyAssistFetalPosition(chatState, args) {
   // 胎儿自己动：力气是它的，不向母体收活力；但母体一样会痛
   const bySelf = actor === 'fetus';
   if (bySelf && action === 'extract') return skip('a fetus cannot pull itself out; extract needs an assistant.');
+  if (action === 'push' || action === 'rest') return applyLaborEffortSwitch(character, female, action, bySelf, skip);
 
   const next = cloneValue(character);
   const profile = next.profile || {};
@@ -6817,14 +6897,6 @@ function applyCharacterStatus(chatState, args) {
       enterProdromalStage(profile, female, stage, `${female}出现分娩前兆，进入产兆前驱`);
     }
   }
-  let effortMessage = '';
-  if (options.laborEffort !== undefined) {
-    const effort = options.laborEffort === 'rest' ? 'rest' : 'push';
-    if (String(base.stage || '') === '第二产程') {
-      next.profile.pregnant = { ...(next.profile.pregnant || {}), laborEffort: effort };
-      effortMessage = ` laborEffort=${effort}`;
-    } else effortMessage = ' laborEffort ignored: 只在第二产程有效';
-  }
   // 高潮＝性欲顶到上限：模型不必知道上限是多少，由这里推满再走同一条高潮排卵结算
   const orgasm = options.orgasm === true;
   if (orgasm) {
@@ -6842,7 +6914,7 @@ function applyCharacterStatus(chatState, args) {
     next.profile.notify = { ...(next.profile.notify || {}), secondly: `${female}达到高潮，性欲归零` };
   }
   chatState.characters[female] = next;
-  return { applied: true, message: `bsUpdateCharacterStatus applied to ${female}.${effortMessage}` };
+  return { applied: true, message: `bsUpdateCharacterStatus applied to ${female}.` };
 }
 
 function applyAddWardrobeItem(chatState, args) {

@@ -8,7 +8,7 @@ import { naturalNoticeDays, psychologySide } from './reproductive.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCallsResult, describeBackSide, describeFetalPosition, getFetusAmnionDurability, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
+import { applyToolCallsResult, describeBackSide, describeFetalPosition, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import {
   buildRecentMessages,
   buildSignature,
@@ -743,8 +743,8 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
   const hiddenTools = new Set();
   if (!diaryEnabled) hiddenTools.add('bsWriteDiary');
   if (!psychologyEnabled) hiddenTools.add('bsUpdatePsychology');
-  // 胎位操作只对体内有胎儿的角色有意义
-  if (!hasAnyFetus(existingState)) hiddenTools.add('bsAssistFetalPosition');
+  // 胎位操作只对体内有胎儿的角色有意义；第三产程胎儿都生完了，仍要靠它推／休
+  if (!hasAnyFetus(existingState) && !hasLaborEffortCharacter(existingState)) hiddenTools.add('bsAssistFetalPosition');
   if (!wardrobeEnabled) {
     hiddenTools.add('bsAddWardrobeItem');
     hiddenTools.add('bsRemoveWardrobeItem');
@@ -828,6 +828,13 @@ function getPromptFacingExtensionState(pregnant = {}) {
   };
 }
 
+function hasLaborEffortCharacter(existingState) {
+  return Object.values(existingState || {}).some((character) => {
+    const profile = character?.profile || {};
+    return Boolean(getLaborEffortMode(String(profile.base?.stage || ''), String(profile.pregnant?.laborPhase || '')));
+  });
+}
+
 function getPromptFacingLaborState(base = {}, pregnant = {}) {
   const stage = String(base.stage || '');
   if (stage !== '产兆前驱' && !LABOR_STAGES.includes(stage)) return {};
@@ -837,8 +844,8 @@ function getPromptFacingLaborState(base = {}, pregnant = {}) {
     laborPhase: pregnant.laborPhase ?? null,
     laborBirthNumber: Number.isFinite(Number(pregnant.laborBirthNumber)) ? Number(pregnant.laborBirthNumber) : 0,
     laborPain: Number.isFinite(Number(pregnant.laborPain)) ? Number(pregnant.laborPain) : 0,
-    ...(stage === '第二产程' ? {
-      laborEffort: pregnant.laborEffort === 'rest' ? 'rest' : 'push',
+    ...(getLaborEffortMode(stage, String(pregnant.laborPhase || '')) ? {
+      laborEffort: getLaborEffort(pregnant, stage),
       pushFatigue: Number.isFinite(Number(pregnant.pushFatigue)) ? Math.round(Number(pregnant.pushFatigue)) : 0,
     } : {}),
   };

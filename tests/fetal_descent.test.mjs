@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
 import * as state from '../scripts/state.js';
-import { applyToolCall } from '../scripts/tools.js';
+import { applyToolCall, getUterinePressureCap } from '../scripts/tools.js';
 import { buildTrackerPayload, getTrackerToolDefinitions } from '../scripts/tracker.js';
 
 const REAL_RANDOM = Math.random;
@@ -316,7 +316,7 @@ test('非真实模式：宫缩再弱也不会出现零进度回合；真实模�
 
 // ── 推／休：第二产程的胎体下降与娩出要产妇自己用力 ──────────────────
 const pushing = (weight, pregnant = {}) => laboringAt('胎体下降', [fetus(1, { descentStage: 1, weight })], { presentingEmbryoId: 1, ...pregnant });
-const effort = (chatState, laborEffort) => applyToolCall(chatState, { name: 'bsUpdateCharacterStatus', arguments: { female: 'A', options: { laborEffort } } });
+const effort = (chatState, action, extra = {}) => applyToolCall(chatState, { name: 'bsAssistFetalPosition', arguments: { female: 'A', action, ...extra } });
 
 test('推：胎越大疲劳累积越快（40 × 胎重^1.5 每小时）；活力不再自动影响下降', () => {
   Math.random = () => 0.99;
@@ -340,7 +340,7 @@ test('疲劳 60 以上越推越没效果，100 时只剩 0.2；休息几乎不�
   assert.ok(P(chatState).pregnant.pushFatigue < 80 - 15, '疲劳消退');
 });
 
-test('情压越低恢复越快；laborEffort 只在第二产程有效', () => {
+test('情压越低恢复越快；推／休只在产程中有效，胎儿不能代劳', () => {
   Math.random = () => 0.99;
   const recovered = (psyStress) => {
     const chatState = pushing(1, { pushFatigue: 60 });
@@ -350,10 +350,16 @@ test('情压越低恢复越快；laborEffort 只在第二产程有效', () => {
     return 60 - P(chatState).pregnant.pushFatigue;
   };
   assert.ok(recovered(0) > recovered(100), `平静 ${recovered(0)} 应快于紧张 ${recovered(100)}`);
-  const early = setup('第一产程', [fetus(1)], { laborPhase: '活跃期' });
-  const result = effort(early, 'rest');
-  assert.match(result.message, /只在第二产程有效/);
-  assert.equal(P(early).pregnant.laborEffort, undefined);
+  const midterm = setup('孕中期', [fetus(1)]);
+  const result = effort(midterm, 'push');
+  assert.equal(result.applied, false);
+  assert.match(result.message, /push only works during labor/);
+  assert.equal(P(midterm).pregnant.laborEffort, undefined);
+  const observing = setup('第三产程', [], { laborPhase: '产后观察' });
+  assert.equal(effort(observing, 'push').applied, false, '产后观察不再用力');
+  const byFetus = pushing(1);
+  assert.equal(effort(byFetus, 'rest', { actor: 'fetus' }).applied, false);
+  assert.equal(P(byFetus).pregnant.laborEffort, undefined, '被拒绝时状态不变');
 });
 
 test('推到力竭与缓过来各通知一次；一胎开始下降时疲劳归零、回到用力', () => {
@@ -385,6 +391,126 @@ test('疼痛：大胎更痛，推到力竭再加、休息减一', () => {
   assert.ok(painOf(2) - painOf(1) > 0.9, '2 倍胎重约 +1');
   assert.ok(painOf(1, { pushFatigue: 100 }) > painOf(1), '力竭更痛');
   assert.ok(painOf(1, {}, true) < painOf(1), '休息缓和');
+});
+
+test('推／休由 bsAssistFetalPosition 切换，bsUpdateCharacterStatus 只管数值；切换后一直维持', () => {
+  Math.random = () => 0.99;
+  const definitions = getTrackerToolDefinitions({}, {});
+  const status = definitions.find((tool) => tool.name === 'bsUpdateCharacterStatus');
+  assert.equal(JSON.stringify(status || {}).includes('laborEffort'), false);
+  const chatState = pushing(1);
+  assert.equal(effort(chatState, 'rest').applied, true);
+  passHours(chatState, 0.1);
+  passHours(chatState, 0.1);
+  assert.equal(P(chatState).pregnant.laborEffort, 'rest', '没再切换就一直休');
+  assert.equal(effort(chatState, 'push').applied, true);
+  assert.equal(P(chatState).pregnant.laborEffort, 'push');
+});
+
+// ── 推／休延伸到第一、第三产程：疲劳一路带着走 ─────────────────
+const firstStage = (phase = '活跃期', pregnant = {}) => {
+  const chatState = setup('第一产程', [fetus(1, { descentStage: 0 })], { laborPhase: phase, pregnantDays: 280, effectivePregnantDays: 280, ...pregnant });
+  P(chatState).base.uterinePressure = 60;
+  return chatState;
+};
+
+test('第一产程用力是白费力气：只累积疲劳、进度照常，力竭更痛；没切换过时预设休', () => {
+  Math.random = () => 0.99;
+  const resting = firstStage();
+  passHours(resting, 1);
+  assert.equal(P(resting).pregnant.pushFatigue ?? 0, 0, '预设休，不累积疲劳');
+  const pushingEarly = firstStage();
+  effort(pushingEarly, 'push');
+  passHours(pushingEarly, 1);
+  assert.equal(P(pushingEarly).pregnant.pushFatigue, 40, '胎重 1 每小时 +40');
+  assert.equal(P(pushingEarly).pregnant.effectiveLaborHours, P(resting).pregnant.effectiveLaborHours, '进度不受影响');
+  assert.match(P(pushingEarly).notify.secondly, /白费力气/);
+  const exhausted = firstStage('活跃期', { pushFatigue: 100 });
+  effort(exhausted, 'push');
+  passHours(exhausted, 0.01);
+  const calm = firstStage('活跃期', { pushFatigue: 100 });
+  passHours(calm, 0.01);
+  assert.ok(P(exhausted).pregnant.laborPain > P(calm).pregnant.laborPain, '硬推到力竭更痛');
+});
+
+test('新的一次分娩从潜伏期开始：疲劳归零、预设休，盖掉上次分娩留下的值', () => {
+  Math.random = () => 0.99;
+  const chatState = setup('产兆前驱', [fetus(1, { descentStage: 0 })], { prodromalRemainingHours: 0.01, pregnantDays: 280, effectivePregnantDays: 280, laborEffort: 'push', pushFatigue: 80 });
+  passHours(chatState, 0.05);
+  assert.equal(P(chatState).base.stage, '第一产程');
+  assert.equal(P(chatState).pregnant.laborEffort, 'rest');
+  assert.equal(P(chatState).pregnant.pushFatigue, 0);
+});
+
+test('疲劳不随换阶段归零：第一产程白推的疲劳带进第二产程，下降开始时自动换成推', () => {
+  Math.random = () => 0.99;
+  const chatState = firstStage('过渡期', { pushFatigue: 50, laborEffort: 'rest', effectiveLaborHours: 999 });
+  passHours(chatState, 0.01);
+  assert.equal(P(chatState).base.stage, '第二产程');
+  assert.equal(P(chatState).pregnant.laborEffort, 'push');
+  assert.ok(P(chatState).pregnant.pushFatigue > 45, String(P(chatState).pregnant.pushFatigue));
+});
+
+test('间歇期预设休、用力白费；第三产程用力让胎盘快一倍，休照常', () => {
+  Math.random = () => 0.99;
+  const interval = laboringAt('间歇期', [fetus(1, { descentStage: -1 })], { laborEffort: 'rest', pushFatigue: 30 });
+  passHours(interval, 0.05);
+  assert.ok(P(interval).pregnant.pushFatigue < 30, '间歇期歇着，疲劳消退');
+  const placenta = (action) => {
+    const chatState = setup('第三产程', [], { laborPhase: '供养器官娩出', pregnantDays: 280, effectivePregnantDays: 280 });
+    if (action) assert.equal(effort(chatState, action).applied, true);
+    passHours(chatState, 0.1);
+    return P(chatState).pregnant.effectiveLaborHours;
+  };
+  assert.ok(Math.abs(placenta('push') / placenta() - 2) < 0.01, `${placenta('push')} vs ${placenta()}`);
+  assert.equal(placenta('rest'), placenta());
+});
+
+// ── 产程中的宫压是取舍：越高越快，也越痛、越难缓过来；快速通道由疲劳挡 ─────
+const capOf = (chatState) => getUterinePressureCap(P(chatState));
+
+test('降宫压有实际好处：痛感少约 2、休息消退快一倍，代价是产程变慢', () => {
+  Math.random = () => 0.99;
+  const run = (ratio) => {
+    const chatState = pushing(1, { pushFatigue: 70 });
+    effort(chatState, 'rest');
+    P(chatState).base.uterinePressure = capOf(chatState) * ratio;
+    passHours(chatState, 0.1);
+    return P(chatState).pregnant;
+  };
+  const full = run(1);
+  const half = run(0.5);
+  assert.ok(Math.abs((half.laborPain - full.laborPain) + 2) < 0.3, `${half.laborPain} vs ${full.laborPain}`);
+  assert.ok(Math.abs((70 - half.pushFatigue) / (70 - full.pushFatigue) - 2) < 0.05, `${half.pushFatigue} vs ${full.pushFatigue}`);
+  assert.ok(half.effectiveLaborHours < full.effectiveLaborHours, '宫缩弱，产程慢');
+});
+
+test('快速通道：宫压满时跳一个阶段、疲劳 +30；力竭时不再突然加速', () => {
+  Math.random = () => 0.99;
+  const jump = (pushFatigue) => {
+    const chatState = firstStage('活跃期', { pushFatigue });
+    P(chatState).base.uterinePressure = capOf(chatState);
+    passHours(chatState, 0.01);
+    return P(chatState);
+  };
+  const fresh = jump(0);
+  assert.equal(fresh.base.stage, '第二产程');
+  assert.equal(fresh.pregnant.pushFatigue, 30);
+  const second = jump(30);
+  assert.equal(second.base.stage, '第二产程', '30 还能再跳一次');
+  const exhausted = jump(60);
+  assert.equal(exhausted.base.stage, '第一产程', '力竭时照一般速度走');
+  assert.equal(exhausted.pregnant.laborPhase, '活跃期');
+});
+
+test('第三产程胎儿都生完了，推／休的工具仍送给模型；分娩结束清掉疲劳', () => {
+  const chatState = setup('第三产程', [], { laborPhase: '供养器官娩出', pushFatigue: 70, laborEffort: 'push', pregnantDays: 280, effectivePregnantDays: 280 });
+  const names = getTrackerToolDefinitions({}, chatState.characters).map((tool) => tool.name);
+  assert.equal(names.includes('bsAssistFetalPosition'), true);
+  passHours(chatState, 6);
+  assert.equal(P(chatState).base.stage, '产后恢复');
+  assert.equal(P(chatState).pregnant.pushFatigue, undefined);
+  assert.equal(P(chatState).pregnant.laborEffort, undefined);
 });
 
 test('间歇期不受推／休与胎重影响', () => {
@@ -655,4 +781,37 @@ test('孕早期的胚胎不浮动，也不会发出「降到子宫低位」之�
     assert.equal(JSON.stringify(P(chatState).pregnant.fetuses.map((f) => [f.embryoId, f.descentStage, f.tendencyAngle, f.backSide])), before);
     assert.doesNotMatch(JSON.stringify(P(chatState).notify || {}), /子宫低位|宫顶/);
   }
+});
+
+// ── 真实分娩模式：停滞与硬阻塞期间时间照样过，疲劳照样结算 ─────────
+test('宫缩微弱停滞时进度不动，但休息照样消退、推照样累积', () => {
+  const stalled = (action) => {
+    const chatState = realisticAt('第二产程', [fetus(1, { descentStage: 1 })], { laborPhase: '胎体下降', laborBirthNumber: 1, presentingEmbryoId: 1, pushFatigue: 50 });
+    P(chatState).base.uterinePressure = 10;
+    effort(chatState, action);
+    Math.random = () => 0;
+    passHours(chatState, 0.5);
+    Math.random = () => 0.99;
+    return P(chatState);
+  };
+  const resting = stalled('rest');
+  assert.match(resting.notify.secondly, /产程进展停滞/);
+  assert.equal(resting.pregnant.effectiveLaborHours, 0);
+  assert.ok(resting.pregnant.pushFatigue < 50, String(resting.pregnant.pushFatigue));
+  assert.ok(stalled('push').pregnant.pushFatigue > 50);
+});
+
+test('肩难产卡住时还在推就是白用力：疲劳累积，歇着则消退', () => {
+  Math.random = () => 0.99;
+  const stuck = (action) => {
+    const chatState = shoulderSetup();
+    passHours(chatState, 2);
+    assert.deepEqual(depths(chatState), [3]);
+    P(chatState).pregnant.pushFatigue = 50;
+    effort(chatState, action);
+    passHours(chatState, 0.5);
+    return P(chatState).pregnant.pushFatigue;
+  };
+  assert.ok(stuck('push') > 50);
+  assert.ok(stuck('rest') < 50);
 });

@@ -86,6 +86,8 @@ import {
   describeFetalPosition,
   getLibidoCap as getProfileLibidoCap,
   getPresentingAmnionDurability,
+  getLaborEffort,
+  getLaborEffortMode,
   getPresentingFetus,
   getUterinePressureCap as getProfileUterinePressureCap,
   isFetusKnownToCharacter,
@@ -3895,9 +3897,9 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       laborPhase: pregnant.laborPhase ?? null,
       laborBirthNumber: Number(pregnant.laborBirthNumber) || 0,
       laborPain: Number(pregnant.laborPain) || 0,
-      // 推／休只在第二产程的胎体下降与娩出出现
-      showLaborEffort: stage === '第二产程' && ['胎体下降', '胎体娩出'].includes(String(pregnant.laborPhase || '')),
-      laborEffort: pregnant.laborEffort === 'rest' ? 'rest' : 'push',
+      // 推／休：下降、娩出与胎盘娩出一直显示；第一产程与间歇期只在用力或还累着时显示
+      showLaborEffort: shouldShowLaborEffort(stage, pregnant),
+      laborEffort: getLaborEffort(pregnant, stage),
       pushFatigue: Math.max(0, Math.min(100, Number(pregnant.pushFatigue) || 0)),
       prodromalOriginStage: pregnant.prodromalOriginStage ?? null,
       extensionCount: Number(pregnant.extensionCount) || 0,
@@ -4110,6 +4112,13 @@ function renderCardCarouselSection(title, items, renderCard, emptyText, kind, op
  * 推／休：字样标出目前在用力还是在歇，发光强弱表示用力疲劳（五段，肉眼才分得出），
  * 推到 80 以上慢速闪烁；确切数字放在提示与读屏文字里。
  */
+function shouldShowLaborEffort(stage, pregnant) {
+  const mode = getLaborEffortMode(stage, String(pregnant?.laborPhase || ''));
+  if (!mode) return false;
+  if (mode !== 'wasted') return true;
+  return getLaborEffort(pregnant, stage) === 'push' || (Number(pregnant?.pushFatigue) || 0) > 0;
+}
+
 function renderLaborEffort(pregnancy) {
   const fatigue = Math.round(Math.max(0, Math.min(100, Number(pregnancy?.pushFatigue) || 0)));
   const resting = pregnancy?.laborEffort === 'rest';
