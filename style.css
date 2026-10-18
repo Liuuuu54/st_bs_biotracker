@@ -5021,6 +5021,12 @@
   fill: currentColor;
 }
 
+#bs-biotracker-settings .bs-bt-sperm-share__capacity {
+  font-size: 9px;
+  fill: currentColor;
+  opacity: 0.75;
+}
+
 #bs-biotracker-settings .bs-bt-sperm-share__unit {
   font-size: 8px;
   fill: currentColor;

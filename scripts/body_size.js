@@ -10,7 +10,7 @@ import {
 /**
  * 个体体型：角色身上的 base.bodySize（1–7 级的小数，记常态）。
  * 种族层级的平均、标准差与变化态见 race_config.js 的 getMergedRaceBodySize。
- * 体型差只影响叙述，不限制插入、射精与受孕。
+ * 体型差不限制插入、射精与受孕；女方体型决定子宫容积（见 getUterusVolumeFactor）。
  */
 
 export function clampIndividualBodySize(value) {
@@ -68,6 +68,25 @@ export function resolveBodySize({ race, bloodline = null, bodySize = null } = {}
   // 全部成分都未收录时没有资料可依，视为未知而不是可变
   if (getRaceComponents(race || '').every((part) => !getRacePhysiologyProfile(part))) return { kind: 'unknown', size: null, merged };
   return { kind: 'variable', size: null, merged };
+}
+
+/**
+ * 体型的容积倍率：人类 4 级为 1，每差一级翻倍（1 级 0.125 … 7 级 8）。
+ * 子宫装得下多少精液、每天排掉多少，以及一次射精的建议量都按它缩放。
+ */
+export function getBodySizeVolumeFactor(size) {
+  const value = Number(size);
+  if (!Number.isFinite(value)) return 1;
+  return 2 ** (Math.min(BODY_SIZE_MAX, Math.max(BODY_SIZE_MIN, value)) - 4);
+}
+
+/**
+ * 子宫容积倍率，看女方常态体型：同体型的一对，精液留存天数与受孕难易都与人类一样。
+ * 可变或未知体型视为 1。
+ */
+export function getUterusVolumeFactor(base) {
+  const resolved = resolveBodySize({ race: base?.race, bloodline: base?.bloodline, bodySize: base?.bodySize });
+  return resolved.kind === 'fixed' ? getBodySizeVolumeFactor(resolved.size) : 1;
 }
 
 /**

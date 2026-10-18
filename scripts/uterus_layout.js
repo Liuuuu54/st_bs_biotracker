@@ -4,17 +4,27 @@
 // 按下降位置分高度，再做有轮数上限的推挤。
 import { LABOR_STAGES, PREGNANCY_STAGE_DAYS } from './stage_config.js';
 import { describeFetalPosition, getLaborObstruction, getPregnancyPressureRisk, isFetusKnownToCharacter } from './tools.js';
+import {
+  EMPTY_STAGES,
+  FULL_TERM_DAYS,
+  GESTATION_STAGES,
+  getEmptyLining,
+  getPressureLevel,
+  getProfileSemenCapacity,
+  getSemenCapacity,
+  getUterusOccupyingFetuses,
+} from './semen_capacity.js';
+
+// 精液容量搬到 semen_capacity.js，与引擎的溢出共用；这里转出给既有的呼叫端
+export { getSemenCapacity };
 
 export const UTERUS_CANVAS = Object.freeze({ width: 96, height: 120 });
 export const MAX_DRAWN_FETUSES = 5;
 
-const FULL_TERM_DAYS = 280;
 // 胚胎／中期／后期外形与羊膜囊可见，跟孕期曆的孕中期（14 周）、孕晚期（28 周）起点对齐
 const MID_TRIMESTER_DAYS = PREGNANCY_STAGE_DAYS.孕早期;
 const LATE_TRIMESTER_DAYS = PREGNANCY_STAGE_DAYS.孕早期 + PREGNANCY_STAGE_DAYS.孕中期;
 const SAC_VISIBLE_DAYS = MID_TRIMESTER_DAYS;
-const EMPTY_STAGES = Object.freeze(['月经期', '卵泡期', '排卵期', '黄体期', '产后恢复', '假孕期']);
-const GESTATION_STAGES = Object.freeze(['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '延产期', '产兆前驱', '回归期', ...LABOR_STAGES]);
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
@@ -32,40 +42,6 @@ const POSTPARTUM_START_SIZE_DAYS = 140;
 /** 精液灌满时子宫微胀的像素 */
 const SEMEN_SWELL_PX = 1;
 
-const SEMEN_CAPACITY_FLOOR = 25;
-const COMPANION_EGG_SIZE = 0.15;
-
-/**
- * 当下能装多少精液，以未孕、内膜一般（排卵期）为 100；受孕加成在总量 80 封顶，满了之后只剩画面。
- * - 未孕：内膜越厚越小，约 75～125。
- * - 假孕：荷尔蒙让内膜偏厚，85 → 75。
- * - 产后恢复：子宫虽大但满是恶露，可用空间只略多，120 → 100。
- * - 怀孕（浸满）：子宫容积 ×（1 − 佔满率）。子宫随孕程与胎重、胎数撑大；
- *   胎儿与羊膜囊佔去的比例随孕周上升，足月单胎约八成，多胎再多佔一些。足月单胎 1.0 刚好 100。
- * 宫压越高越小，最多七折。
- */
-export function getSemenCapacity({ gestating, emptyStage, emptyLining, emptyProgress, days, fetuses, pressureLevel }) {
-  const pressureFactor = 1 - 0.1 * clamp(finite(pressureLevel), 0, 3);
-  let capacity;
-  if (gestating && fetuses.length > 0) {
-    const n = fetuses.length;
-    const t = clamp(days / FULL_TERM_DAYS, 0, 1.25);
-    const averageSize = fetuses.reduce((sum, fetus) => (
-      sum + clamp(finite(fetus?.weight, 1), 0.33, 3) + Math.max(0, Math.floor(finite(fetus?.companionEggCount))) * COMPANION_EGG_SIZE
-    ), 0) / n;
-    const stretch = Math.min(1.6, t * averageSize) ** 1.7 * (1 + 0.45 * (n - 1));
-    const volume = 100 * (1 + 4 * stretch);
-    const occupied = Math.min(0.95, 0.8 * Math.min(1, t) ** 1.5 + 0.05 * (n - 1) * t);
-    capacity = volume * (1 - occupied);
-  } else if (emptyStage === '假孕期') {
-    capacity = 85 - 10 * clamp(emptyProgress, 0, 1);
-  } else if (emptyStage === '产后恢复') {
-    capacity = 120 - 20 * clamp(emptyProgress, 0, 1);
-  } else {
-    capacity = 100 - (finite(emptyLining, 7) - 7) * 12.5;
-  }
-  return Math.max(SEMEN_CAPACITY_FLOOR, Math.round(capacity * pressureFactor));
-}
 
 /** 孕程长大曲线：孕早期几乎不变，之后加速 */
 function getGrowth(days) {
@@ -76,28 +52,6 @@ function getGrowth(days) {
 function getCervicalLength(days) {
   const t = clamp((days - 168) / 112, 0, 1);
   return 9 - Math.round(5 * t * t * (3 - 2 * t));
-}
-
-/** 宫压分四级：平稳、上升、紧绷、颤动 */
-function getPressureLevel(ratio) {
-  if (ratio >= 0.85) return 3;
-  if (ratio >= 0.7) return 2;
-  if (ratio >= 0.4) return 1;
-  return 0;
-}
-
-/** 未孕时的内膜厚度随阶段与阶段内进度变化 */
-function getEmptyLining(stage, progress) {
-  const p = clamp(progress, 0, 1);
-  const table = {
-    月经期: Math.round(7 - 2 * p),
-    卵泡期: 5 + Math.round(2 * p),
-    排卵期: 7,
-    黄体期: 7 + Math.round(p),
-    产后恢复: 6 + Math.round(1 - p),
-    假孕期: 6 + Math.round(2 * p),
-  };
-  return table[stage] ?? 6;
 }
 
 /**
@@ -190,18 +144,8 @@ export function computeUterusLayout(profile, options = {}) {
   // 未孕到容量是「灌满」：子宫微胀 1 像素、宫口滴漏；怀孕到容量是「浸满」：精液填在羊膜囊之间，
   // 膜线沾上精液色，子宫不再胀（已撑大，绷紧的是胎儿），宫颈有黏液栓所以滴得更慢更少。只是画面，精液量不减
   const totalSperm = (Array.isArray(base.sperms) ? base.sperms : []).reduce((sum, item) => sum + Math.max(0, finite(item?.value)), 0);
-  const bodyFetuses = gestating
-    ? allFetuses.filter((fetus) => fetus && !fetus.pendingImplantation && !(fetus.nestedInEmbryoId && !fetus.nestedReleased))
-    : [];
-  const semenCapacity = getSemenCapacity({
-    gestating,
-    emptyStage,
-    emptyLining: emptyStage ? getEmptyLining(emptyStage, emptyProgress) : 7,
-    emptyProgress,
-    days,
-    fetuses: bodyFetuses,
-    pressureLevel,
-  });
+  const bodyFetuses = getUterusOccupyingFetuses(profile);
+  const semenCapacity = getProfileSemenCapacity(profile, { pressureCap, stageProgress: emptyProgress });
   const semenFull = totalSperm > 0 && totalSperm >= semenCapacity;
   const semenSoaked = semenFull && bodyFetuses.length > 0;
   const semenOverflow = semenFull ? clamp((totalSperm - semenCapacity) / semenCapacity, 0, 1) : 0;

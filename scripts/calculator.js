@@ -54,6 +54,8 @@ export function calculateSpermExposure(value, elapsedDays, decayPerDay = SPERM_D
 /**
  * 只计算一次自然受精判定的概率，不抽随机数、不写角色状态。
  * 多精源先计算整体受精率，再按各精源的 chance 权重分配胜出率，避免阵列顺序偏差。
+ * uterusVolumeFactor 是女方子宫容积倍率（见 body_size.js）：每天排掉的量与剂量加成都按容积换算，
+ * 同体型的一对与人类一样难易。
  */
 export function calculateFertilizationPreview({
   eggRace = '人类',
@@ -61,7 +63,9 @@ export function calculateFertilizationPreview({
   elapsedDays = 1,
   chanceFactor = 1,
   spermSources = [],
+  uterusVolumeFactor = 1,
 } = {}) {
+  const volumeFactor = clampNumber(uterusVolumeFactor, 0.01, 100, 1);
   const eggProfile = getMergedRacePhysiologyProfile(eggRace) || {};
   const femaleDifficulty = impregnationDifficulty === null || impregnationDifficulty === undefined || impregnationDifficulty === ''
     ? clampNumber(eggProfile.impregnationDifficulty, 0.1, 100, 1)
@@ -76,7 +80,7 @@ export function calculateFertilizationPreview({
     .filter((source) => source.value > 0)
     .map((source) => ({
       ...source,
-      ...calculateSpermExposure(source.value, elapsedDays),
+      ...calculateSpermExposure(source.value, elapsedDays, SPERM_DECAY_PER_DAY * volumeFactor),
     }))
     .filter((source) => source.exposureDays > 0);
   const totalSperm = validSources.reduce((sum, source) => sum + source.value, 0);
@@ -85,7 +89,7 @@ export function calculateFertilizationPreview({
   const effectiveTotalSperm = effectiveExposureDays > 0
     ? totalExposureAmountDays / effectiveExposureDays
     : 0;
-  const spermDoseBonus = getSpermDoseDifficultyBonus(effectiveTotalSperm);
+  const spermDoseBonus = getSpermDoseDifficultyBonus(effectiveTotalSperm / volumeFactor);
   const sources = validSources.map((source) => {
     const share = totalExposureAmountDays > 0 ? source.exposureAmountDays / totalExposureAmountDays : 0;
     const maleProfile = getMergedRacePhysiologyProfile(source.race, source.bloodline) || {};
@@ -137,6 +141,7 @@ export function calculateFertilizationPreview({
     effectiveExposureDays,
     totalExposureAmountDays,
     spermDoseBonus,
+    uterusVolumeFactor: volumeFactor,
     sources: weightedSources,
     totalChanceWeight,
     successChance,

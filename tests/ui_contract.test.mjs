@@ -114,7 +114,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /function updateWardrobeAddTypeFields\(\)/);
   assert.match(controller, /function renderFetalTalentDebugEditor\(/);
   assert.match(controller, /function renderTrackDebug\(viewModel, fetalTalentHtml = ''\)/);
-  assert.match(controller, /function renderSpermShareSection\(sperms, \{ badge = '', badgeClass = '', conceptionChance = null \} = \{\}\)/);
+  assert.match(controller, /function renderSpermShareSection\(sperms, \{ badge = '', badgeClass = '', conceptionChance = null, capacity = null \} = \{\}\)/);
   assert.match(controller, /renderSpermShareSection\(data\.sperms, \{/);
   assert.doesNotMatch(controller, /renderCardCarouselSection\(\s*'精液来源'/, '精液来源不应再走卡片轮播');
   assert.match(controller, /if \(items\.length === 0\) return '';/, '单一精液来源也必须显示占比环');

@@ -6,7 +6,7 @@
 
 PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化。追蹤器另產生 `existing_state` 的精簡投影給非同步模型，[buildTrackerPayload](../../scripts/tracker.js#L1338)；主流程提示使用[buildMainFlowStatePrompt](../../scripts/tracker_prompt_context.js#L499)將狀態轉成給聊天模型看的文字。兩者並非完整存檔，也不保證顯示每個內部欄位。種族與胚胎的背景提示分別由 [race_prompt_context.js](../../scripts/race_prompt_context.js#L612)及 [embryo_prompt_context.js](../../scripts/embryo_prompt_context.js#L80)組成。
 
-像素子宮畫板先由 [computeUterusLayout](../../scripts/uterus_layout.js#L140)根據已知且可顯示的胎兒、胎位、宮壓等計算位置；同屏最多繪製五胎。接著 [fetus_sprite.js](../../scripts/fetus_sprite.js#L308)產生胎兒格點，[uterus_render.js](../../scripts/uterus_render.js#L520)負責色盤、像素、動態及親近表情。畫板是狀態的視圖，繪圖本身不會推進妊娠。
+像素子宮畫板先由 [computeUterusLayout](../../scripts/uterus_layout.js#L94)根據已知且可顯示的胎兒、胎位、宮壓等計算位置；同屏最多繪製五胎。接著 [fetus_sprite.js](../../scripts/fetus_sprite.js#L308)產生胎兒格點，[uterus_render.js](../../scripts/uterus_render.js#L520)負責色盤、像素、動態及親近表情。畫板是狀態的視圖，繪圖本身不會推進妊娠。宮腔裡的精液液面按「目前量 ÷ 容量」畫，容量以人類未孕排卵期為 100，再乘女方子宮容積倍率（每級體型翻倍），所以同樣的量在小體型身上更滿。追蹤頁精液來源圖環的中央顯示「目前量／容量」；引擎也用同一個容量讓超出的精液流出。[精液容量](../../scripts/semen_capacity.js#L47)。
 
 家系圖由 [lineage.js](../../scripts/lineage.js#L31)把子女和父母來源組成圖，再由 [lineage_view.js](../../scripts/lineage_view.js#L96)建立聚焦視圖。若來源欄位不完整，圖上自然只能呈現已記錄的關係。
 
@@ -42,6 +42,7 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 | [fetus_tags.js](../../scripts/fetus_tags.js) | 胎兒特殊標記與標籤。 |
 | [fetus_sprite.js](../../scripts/fetus_sprite.js) | 胎兒像素格點。 |
 | [uterus_layout.js](../../scripts/uterus_layout.js) | 子宮畫板的位置與比例。 |
+| [semen_capacity.js](../../scripts/semen_capacity.js) | 子宮當下的精液容量；子宮圖、精液圖環與引擎的溢出共用。 |
 | [uterus_render.js](../../scripts/uterus_render.js) | 子宮畫板繪製。 |
 | [lineage.js](../../scripts/lineage.js) | 家系資料圖。 |
 | [lineage_view.js](../../scripts/lineage_view.js) | 家系聚焦視圖與寫實世界的人生階段判定。 |
@@ -51,4 +52,4 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 
 ## 查一個數值時的路線
 
-先從 [state.js](../../scripts/state.js#L698)確認欄位預設值，再到 [tools.js](../../scripts/tools.js#L7954)找哪個工具會改它；若涉及時間，從 [applyTimeToCharacter](../../scripts/tools.js#L6306)追到該階段分支。機率與預覽看 [calculator.js](../../scripts/calculator.js)，種族係數看 [race_config.js](../../scripts/race_config.js)，畫面解釋則看 `index.js` 及對應的 render 模組。最後檢查 [tracker.js](../../scripts/tracker.js#L1265)是否把該欄位提供給模型；有些內部數值只參與程式計算。
+先從 [state.js](../../scripts/state.js#L698)確認欄位預設值，再到 [tools.js](../../scripts/tools.js#L7992)找哪個工具會改它；若涉及時間，從 [applyTimeToCharacter](../../scripts/tools.js#L6340)追到該階段分支。機率與預覽看 [calculator.js](../../scripts/calculator.js)，種族係數看 [race_config.js](../../scripts/race_config.js)，畫面解釋則看 `index.js` 及對應的 render 模組。最後檢查 [tracker.js](../../scripts/tracker.js#L1265)是否把該欄位提供給模型；有些內部數值只參與程式計算。

@@ -61,7 +61,7 @@ import {
   OVOVIVIPAROUS_RACES,
   VIVIPAROUS_RACES,
 } from './scripts/race_config.js';
-import { clampIndividualBodySize, getAltFormBodySize, resolveBodySize } from './scripts/body_size.js';
+import { clampIndividualBodySize, getAltFormBodySize, getUterusVolumeFactor, resolveBodySize } from './scripts/body_size.js';
 import { normalizeDescriptionList } from './scripts/descriptions.js';
 import { hasPendingHostSave, installSaveSync, settleHostSettingsSave } from './scripts/save_sync.js';
 import { initializeCalculatorUi } from './scripts/calculator_ui.js'; import { lifeStageIconSvg, raceIconSvg } from './scripts/race_icons.js';
@@ -3829,6 +3829,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       elapsedDays: 1,
       chanceFactor: 1,
       spermSources: base.sperms,
+      uterusVolumeFactor: getUterusVolumeFactor(base),
     })
     : null;
   const rawFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
@@ -4177,7 +4178,7 @@ function renderTrackPsychology(viewModel) {
  */
 const SPERM_SHARE_STEPS = [1, 0.68, 0.46, 0.32, 0.22, 0.16];
 
-function renderSpermShareChart(sperms, conceptionChance = null) {
+function renderSpermShareChart(sperms, conceptionChance = null, capacity = null) {
   const items = (Array.isArray(sperms) ? sperms : [])
     .map((item) => ({
       male: String(item?.male || '未知'),
@@ -4227,8 +4228,11 @@ function renderSpermShareChart(sperms, conceptionChance = null) {
       <div class="bs-bt-sperm-share__visual">
         <svg class="bs-bt-sperm-share__ring" viewBox="0 0 80 80" role="img" aria-label="精液来源占比">
           <g transform="rotate(-90 40 40)">${segments}</g>
-          <text x="40" y="38" text-anchor="middle" class="bs-bt-sperm-share__total">${Math.round(total)}</text>
-          <text x="40" y="50" text-anchor="middle" class="bs-bt-sperm-share__unit">总残留</text>
+          ${Number(capacity) > 0
+    ? `<text x="40" y="39" text-anchor="middle"><tspan class="bs-bt-sperm-share__total">${Math.round(total)}</tspan><tspan class="bs-bt-sperm-share__capacity">/${Math.round(Number(capacity))}</tspan></text>
+          <text x="40" y="51" text-anchor="middle" class="bs-bt-sperm-share__unit">总残留</text>`
+    : `<text x="40" y="38" text-anchor="middle" class="bs-bt-sperm-share__total">${Math.round(total)}</text>
+          <text x="40" y="50" text-anchor="middle" class="bs-bt-sperm-share__unit">总残留</text>`}
         </svg>
         ${chanceHtml}
       </div>
@@ -4237,8 +4241,9 @@ function renderSpermShareChart(sperms, conceptionChance = null) {
   `;
 }
 
-function renderSpermShareSection(sperms, { badge = '', badgeClass = '', conceptionChance = null } = {}) {
-  const chart = renderSpermShareChart(sperms, conceptionChance);
+function renderSpermShareSection(sperms, { badge = '', badgeClass = '', conceptionChance = null, capacity = null } = {}) {
+  const chart = renderSpermShareChart(sperms, conceptionChance, capacity);
+  const emptyText = Number(capacity) > 0 ? `当前无精液残留（最大 ${Math.round(Number(capacity))}）` : '当前无精液残留';
   const statusBadge = String(badge || '').trim()
     ? `<span class="bs-bt-track-title-badge bs-bt-sperm-share__status${badgeClass ? ` ${escapeHtml(badgeClass)}` : ''}">${escapeHtml(badge)}</span>`
     : '';
@@ -4248,7 +4253,7 @@ function renderSpermShareSection(sperms, { badge = '', badgeClass = '', concepti
         <span class="bs-bt-track-title-left">${renderTrackTitle('精液来源')}</span>
         ${statusBadge}
       </div>
-      ${chart || '<div class="bs-bt-track-card-empty">当前无精液残留</div>'}
+      ${chart || `<div class="bs-bt-track-card-empty">${emptyText}</div>`}
     </div>
   `;
 }
@@ -4574,6 +4579,7 @@ function renderTrackPregnancy(viewModel) {
       badge: fertilityBadge,
       badgeClass: hasPendingImplantation ? 'is-conceived' : '',
       conceptionChance: data.conceptionChance,
+      capacity: data.womb?.semenCapacity,
     })}
     ${data.showPregnantFields
       ? `          ${renderDescriptionGroup('孕态描述', data.pregnantBlocks, pregnantDescriptionOptions)}`

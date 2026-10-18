@@ -32,7 +32,7 @@
 | 6 | 經過鍛鍊 | 175 | 強烈波動焦躁 | 85／170 |
 | 7 | 無堅不摧 | 200 | 極端情緒 | 100／200 |
 
-缺省等級都是 4，因此預設初始活力為 125、情壓為 55。[上限表與初始公式](../../scripts/state.js#L250)。這裡的「情壓等級」不是當下情壓值越高越糟的直接設定；它決定可波動的上限和初始中點。後續 `bsUpdateCharacterStatus` 改的是當前值，不改等級。等級還參與月經時長浮動與產程疼痛計算。[狀態工具](../../scripts/tools.js#L6583)、[週期浮動](../../scripts/tools.js#L6174)、[產痛](../../scripts/tools.js#L4877)。
+缺省等級都是 4，因此預設初始活力為 125、情壓為 55。[上限表與初始公式](../../scripts/state.js#L250)。這裡的「情壓等級」不是當下情壓值越高越糟的直接設定；它決定可波動的上限和初始中點。後續 `bsUpdateCharacterStatus` 改的是當前值，不改等級。等級還參與月經時長浮動與產程疼痛計算。[狀態工具](../../scripts/tools.js#L6617)、[週期浮動](../../scripts/tools.js#L6208)、[產痛](../../scripts/tools.js#L4911)。
 
 **重新註冊同名角色也會按這兩個等級重設當前活力與情壓。** 若只是想修正當前數值，應從狀態工具或完整變數編輯處理。[applyRegistryResult](../../scripts/registry.js#L1802)。
 
@@ -41,13 +41,13 @@
 | 欄位 | 初始化規則及後續作用 |
 | --- | --- |
 | `base.race`、`base.derivedType` | 種族描述可帶混血、子類與 `[衍生類型]`；寫實世界開啟時，註冊提示要求一律填人類，不送名錄與種族說明，也拿掉血脈比例、衍生、伴生卵與非人示例；清理時分解後存種族與衍生類型。種族生理會填週期倍率、妊娠速度、承載力、受孕難度等 `bio` 欄位。[種族解析](../../scripts/registry.js#L1701)、[生理合成](../../scripts/race_config.js#L1642) |
-| `base.age` | 角色年齡，註冊提示要求必填：依角色卡、世界書與對話推斷，長生種只寫外表年齡時按設定推估實際歲數；有有限數值就採用，故事時間會按年累加。[註冊清理](../../scripts/registry.js#L1701)、[時間推進](../../scripts/tools.js#L6434) |
+| `base.age` | 角色年齡，註冊提示要求必填：依角色卡、世界書與對話推斷，長生種只寫外表年齡時按設定推估實際歲數；有有限數值就採用，故事時間會按年累加。[註冊清理](../../scripts/registry.js#L1701)、[時間推進](../../scripts/tools.js#L6468) |
 | `base.bodySize` | 常態的個體體型，1–7 級一位小數。註冊提示附身高換算表，卡上沒寫就省略；系統按種族分布抽一次，孩子註冊時代入已知父母的體型，可變種族留空。見[物種體型](settings-and-encyclopedia.md#物種體型)。 |
-| `base.libido` | 開局性欲，註冊清理限制 0–150；後續使用角色當下上限，孕期上限可變。性欲變動可連動乳意與高潮排卵。[註冊清理](../../scripts/registry.js#L1701)、[狀態工具](../../scripts/tools.js#L6583) |
-| `base.uterinePressure` | 開局宮壓，註冊清理限制 0–150；正常開局宜低，因孕早期相對個人上限達 50% 就可能先觸發警告。[註冊清理](../../scripts/registry.js#L1701)、[宮壓危機](../../scripts/tools.js#L4733) |
+| `base.libido` | 開局性欲，註冊清理限制 0–150；後續使用角色當下上限，孕期上限可變。性欲變動可連動乳意與高潮排卵。[註冊清理](../../scripts/registry.js#L1701)、[狀態工具](../../scripts/tools.js#L6617) |
+| `base.uterinePressure` | 開局宮壓，註冊清理限制 0–150；正常開局宜低，因孕早期相對個人上限達 50% 就可能先觸發警告。[註冊清理](../../scripts/registry.js#L1701)、[宮壓危機](../../scripts/tools.js#L4767) |
 | `base.latestSexDays` | 距最近性行為的故事天數；超過按種族倍率換算的週期長度時，套用註冊結果會標為 `-1`。後續時間推進也會讓它失效，並清理近期性伴。[套用](../../scripts/registry.js#L1802) |
 | `base.penetrationState`、`penetrationSource` | `idle/inserted/spent` 與來源。來源缺失時強制回 `idle`；插入與沉積的後續有效順序見 [`bsAddSperm`](tool-reference.md#精源受孕與分娩)。[清理](../../scripts/registry.js#L1765) |
-| `base.sperms` | 每項保留 `male/race/derivedType/value`；沒有姓名／種族或量不大於 0 的項目被丟棄，量夾在 0–9999。故事時間會使精源衰減。[清理](../../scripts/registry.js#L1220)、[精源生命週期](../../scripts/tools.js#L2401) |
+| `base.sperms` | 每項保留 `male/race/derivedType/value`；沒有姓名／種族或量不大於 0 的項目被丟棄，量夾在 0–9999。故事時間會使精源衰減。[清理](../../scripts/registry.js#L1220)、[精源生命週期](../../scripts/tools.js#L2431) |
 | `metabolism` | 可設排泄、飢餓、睡眠、泌乳、氣味、陪伴（0–150），衍生類型可設 `flux`（−150 至 150）；省略時用預設零值。[清理](../../scripts/registry.js#L1765)、[預設值](../../scripts/state.js#L790) |
 
 模型的 `base.vitality`、`base.psyStress` 不在允許清理清單內；`base.stage` 也不是註冊模型直接指定的入口。沒有有效孕胎且無保留階段時，程式會隨機選一個月經階段與該階段已經過的天數。[階段同步](../../scripts/state.js#L538)、[隨機階段](../../scripts/state.js#L477)。

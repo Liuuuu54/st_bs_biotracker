@@ -1,8 +1,10 @@
 import { recordExperience, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
+import { getProfileSemenCapacity } from './semen_capacity.js';
+import { getStageProgress } from './stage_progress.js';
 import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
-import { CONCEPTION_WEIGHT_RATIO_MAX, CONCEPTION_WEIGHT_RATIO_MIN, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeWeightRatio, resolveBodySize } from './body_size.js';
+import { CONCEPTION_WEIGHT_RATIO_MAX, CONCEPTION_WEIGHT_RATIO_MIN, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getBodySizeWeightRatio, getUterusVolumeFactor, resolveBodySize } from './body_size.js';
 import {
   cloneValue,
   createChildId,
@@ -383,7 +385,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     name: 'bsAddSperm',
     description: '记录可受孕生殖道内的插入、精液沉积与拔出；口交、肛交、体外射精、手淫或单纯体表接触一律不要调用。戴套生殖道行为仍用本工具，hasCondom 决定本次 deposit 是否阻隔；省略沿用本次 insert 的设置，旧调用默认未戴套。'
       + 'action=insert／withdraw 时 amount=0；只有 insert 后才能以 action=deposit 沉积正数精液，沉积后若要再次射精须重新 insert。不同来源 insert 会直接交棒。'
-      + 'amount 建议 10-30（残留每天自动衰减 10，即 1-3 天内自然消失）；当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
+      + 'amount 以人类精方 10-30 为准，按精方体型每级翻倍（体型 5 约 20-60、6 约 40-120、7 约 80-240、3 约 5-15、2 约 2.5-7.5）；残留每天自动衰减，人类女方每天 10、同样按女方体型每级翻倍，所以同体型的一次射精约 1-3 天内自然消失；剧情写得特别多或特别少时可以偏离。当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
       + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。'
       + 'insert 会按双方体型结算体型契合（只影响叙述，不限制交合与受孕），结果写在回传讯息与次级提示；体型参数见 maleBodySize、femaleAltForm、maleAltForm、sizeBridge。'
       + '产兆前驱与产程中插入会顶到最前面的胎儿：前驱时把领头胎儿往上顶、延后前驱；第二产程把产道里的先露胎往回顶、产程进度倒退，着冠时倒退更多且可能顶破胎膜；第一产程只会痛。被顶的胎儿亲和下降。产兆前驱中射精则会缩短前驱。结果写在回传讯息里，供下一次回复承接，不要求重写当轮正文。',
@@ -1222,8 +1224,8 @@ const SUPERFETATION_REVEAL_DAYS = SUPERFETATION_RAW_WINDOW_DAYS;
  *  - 视窗 8-12 周（有效孕日 56-84），比异期本身更窄
  *  - 宿主胎儿的胎重 >= 1.5。典型胎重 0.95，孕期受精上限 1.83，
  *    要父系种族支配度接近满才碰得到
- *  - 子宫内精液总量 > 100。bsAddSperm 建议单次 10-30、每天衰减 10，
- *    要短时间内多次性交才堆得起来
+ *  - 子宫内精液总量 > 100（人类尺度，按女方子宫容积倍率换算）。bsAddSperm 建议单次 10-30、
+ *    每天衰减 10，要短时间内多次性交才堆得起来
  */
 const NESTED_WINDOW_MIN_DAYS = 56;
 const NESTED_HOST_MIN_WEIGHT = 1.5;
@@ -1837,7 +1839,8 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     gender,
     embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline, motherBloodline),
     // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
-    companionEggCount: rollCompanionEggCount(fetusRace, Math.random, sperm?.value, ancestry.bloodline, motherBloodline),
+    // 精液量按承载者的子宫容积换算成人类尺度，同体型的一对与人类一样
+    companionEggCount: rollCompanionEggCount(fetusRace, Math.random, Number.isFinite(Number(sperm?.value)) ? Number(sperm.value) / getUterusVolumeFactor(profile?.base) : undefined, ancestry.bloodline, motherBloodline),
     weight: getConceptionWeight(cycleStage, gender, weightRatio),
     tendencyAngle: randomInt(0, 360),
     backSide: randomBackSide(),
@@ -2394,6 +2397,33 @@ function rescaleSpermContacts(base) {
   }
 }
 
+/** 角色当下的精液容量，与子宫图同一套算法（见 semen_capacity.js） */
+export function getCharacterSemenCapacity(profile) {
+  const progress = getStageProgress(profile);
+  const max = Number(progress?.max) || 0;
+  const stageProgress = max > 0 ? Math.max(0, Math.min(1, (Number(progress.value) || 0) / max)) : 0;
+  return getProfileSemenCapacity(profile, { pressureCap: getUterinePressureCap(profile), stageProgress });
+}
+
+/**
+ * 超过子宫容量的精液当下就流出：各来源按比例缩到刚好装满，接触纪录跟着缩。
+ * 大体型射进小体型时不会留上好几周；回传流出的量。
+ */
+function spillSpermOverflow(profile) {
+  const base = profile?.base;
+  const sperms = Array.isArray(base?.sperms) ? base.sperms : [];
+  const total = sperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
+  if (total <= 0) return 0;
+  const capacity = getCharacterSemenCapacity(profile);
+  if (!(total > capacity)) return 0;
+  const ratio = capacity / total;
+  base.sperms = sperms
+    .map((item) => ({ ...item, value: clampNumber(item?.value, 0, 999999, 0) * ratio }))
+    .filter((item) => item.value > 0);
+  rescaleSpermContacts(base);
+  return total - capacity;
+}
+
 function stageAllowsSpermRetention(stage) {
   return MENSTRUAL_STAGES.includes(stage) || PREGNANCY_STAGES.includes(stage) || stage === '产后恢复' || stage === '假孕期';
 }
@@ -2422,10 +2452,13 @@ function processSpermLifecycle(profile, stage, tick) {
   base.sperms = sperms
     .map((item) => ({
       ...item,
-      value: Math.max(0, clampNumber(item?.value, 0, 999999, 0) - (tick.deltaDays * SPERM_DECAY_PER_DAY)),
+      // 每天排掉的量随子宫容积：同体型的一次射精都约 1-3 天消失
+      value: Math.max(0, clampNumber(item?.value, 0, 999999, 0) - (tick.deltaDays * SPERM_DECAY_PER_DAY * getUterusVolumeFactor(base))),
     }))
     .filter((item) => item.value > 0);
   rescaleSpermContacts(base);
+  // 子宫可能因宫压、阶段改变而变小，衰减之后再看一次有没有装不下的
+  spillSpermOverflow(profile);
 }
 
 /**
@@ -2453,6 +2486,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
     elapsedDays: deltaDays,
     chanceFactor,
     spermSources: availableSperms,
+    uterusVolumeFactor: getUterusVolumeFactor(profile?.base),
   });
   const totalSperm = preview.totalSperm;
   let remaining = eggs;
@@ -2480,7 +2514,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
       const conceivedAt = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
       const nestedHost = superfetation
         && conceivedAt >= NESTED_WINDOW_MIN_DAYS
-        && totalSperm > NESTED_MIN_SPERM
+        && totalSperm > NESTED_MIN_SPERM * getUterusVolumeFactor(profile?.base)
         ? pickNestedHostFetus(profile)
         : null;
       if (nestedHost) markNestedFetus(profile, fetus, nestedHost);
@@ -7252,18 +7286,21 @@ function applyAddSperm(chatState, args) {
     return { applied: false, message: `bsAddSperm skipped for ${female}: 当前插入来源是 ${currentSource}，不是 ${male}。` };
   }
 
+  // 只记个体已知的体型（已注册角色或本次插入给过）；种族平均不必存，受孕时再查
+  const maleBodySize = clampIndividualBodySize(fatherBase?.bodySize)
+    ?? (base.penetrationFit?.male === male ? clampIndividualBodySize(base.penetrationFit.maleBodySize) : null)
+    ?? clampIndividualBodySize(args?.maleBodySize);
   const config = normalizeReproductiveSettings(chatState.reproductiveSettings);
   const hasCondom = args.hasCondom ?? base.penetrationCondom ?? false;
-  const condomOverflow = hasCondom && amount > config.condomCapacity; const condomFailed = condomOverflow || (hasCondom && Math.random() >= config.condomReliability); const condomFailReason = condomFailed ? (condomOverflow ? 'overflow' : 'tear') : null;
+  // 套子照精方的尺寸做：容量以人类为准，按精方体型每级翻倍
+  const maleSize = resolveBodySize({ race, bloodline: ancestry?.bloodline ?? null, bodySize: maleBodySize });
+  const condomCapacity = config.condomCapacity * (maleSize.kind === 'fixed' ? getBodySizeVolumeFactor(maleSize.size) : 1);
+  const condomOverflow = hasCondom && amount > condomCapacity; const condomFailed = condomOverflow || (hasCondom && Math.random() >= config.condomReliability); const condomFailReason = condomFailed ? (condomOverflow ? 'overflow' : 'tear') : null;
   const enteredAmount = hasCondom && !condomFailed ? 0 : amount;
   base.penetrationCondom = hasCondom;
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   const maleDerivedType = parsedRace.derivedType || null;
   const existing = sperms.find((item) => String(item?.male || '') === male);
-  // 只记个体已知的体型（已注册角色或本次插入给过）；种族平均不必存，受孕时再查
-  const maleBodySize = clampIndividualBodySize(fatherBase?.bodySize)
-    ?? (base.penetrationFit?.male === male ? clampIndividualBodySize(base.penetrationFit.maleBodySize) : null)
-    ?? clampIndividualBodySize(args?.maleBodySize);
   if (enteredAmount > 0) {
     if (existing) {
       existing.value = Math.max(0, clampNumber(existing.value, 0, 999999, 0) + enteredAmount);
@@ -7284,6 +7321,7 @@ function applyAddSperm(chatState, args) {
   base.penetrationSource = male;
   base.latestSexDays = 0;
   next.profile.base = base;
+  const spilled = enteredAmount > 0 ? spillSpermOverflow(next.profile) : 0;
   const experience = {
     ...(next.profile?.experience || {}),
     latestSexPartner: male,
@@ -7299,7 +7337,7 @@ function applyAddSperm(chatState, args) {
   const ripening = enteredAmount > 0 ? applyProdromalSemenRipening(next.profile, female) : null;
   if (ripening) next.profile.notify = { ...(next.profile.notify || {}), secondly: ripening };
   chatState.characters[female] = ripening ? syncCharacterStageFromProfile(next) : next;
-  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}${condomFailReason ? ` (${condomFailReason === 'overflow' ? '超过容量撑破' : '套子破裂'})` : ''}, enteredAmount=${enteredAmount}（系统结算，不代表角色知情；下轮承接）.${ripening ? ` ${ripening}。` : ''}` };
+  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}${condomFailReason ? ` (${condomFailReason === 'overflow' ? '超过容量撑破' : '套子破裂'})` : ''}, enteredAmount=${enteredAmount}${spilled > 0 ? `，超过子宫容量当场流出 ${Math.round(spilled)}` : ''}（系统结算，不代表角色知情；下轮承接）.${ripening ? ` ${ripening}。` : ''}` };
 }
 
 function applyDrainSperm(chatState, args) {

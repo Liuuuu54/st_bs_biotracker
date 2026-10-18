@@ -10,6 +10,7 @@ import {
   formatBloodline,
   getMergedRacePhysiologyProfile,
 } from './race_config.js';
+import { getUterusVolumeFactor } from './body_size.js';
 
 let nextSpermRowId = 1;
 
@@ -156,6 +157,7 @@ function calculateFertilization() {
     elapsedDays: numberValue('bs-bt-calc-fert-days', 1),
     chanceFactor: 1,
     spermSources,
+    uterusVolumeFactor: getUterusVolumeFactor({ race: eggRace }),
   });
   const lines = [
     `当前精液量：${formatNumber(result.totalSperm)}　有效暴露：${formatNumber(result.effectiveExposureDays, 3)} 天`,
