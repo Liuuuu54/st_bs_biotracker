@@ -5012,6 +5012,11 @@ function processLabor(profile, tick, female) {
 
   if (!LABOR_STAGES.includes(stage)) return false;
 
+  // 真实分娩模式的停滞：跨过的每个整点判定一次，停滞的那几小时没有进度，其余时间照常推进
+  const stall = settleHourlyLaborStall(profile, female, tick, rawHours);
+  if (stall.hours >= rawHours - 1e-9) return enteredFirstStage;
+  rawHours -= stall.hours;
+
   // 一次推进跨过多个产程阶段时，以剩余原始小时逐段消耗：每一段只给到当前阶段门槛所需的时间，
   // 完成该阶段的转移、磨损与阻塞检查后，把剩下的时间带进下一阶段。
   // 宫缩微弱停滞与高宫压快速路径每次推进只在第一段判定一次。
@@ -5022,7 +5027,7 @@ function processLabor(profile, tick, female) {
   for (let segment = 0; segment < 64 && remainingHours > 1e-9; segment += 1) {
     if (!LABOR_STAGES.includes(String(base.stage || ''))) break;
     const segmentHours = Math.min(remainingHours, getLaborSegmentHours(profile, libidoMultiplier));
-    const result = processLaborSegment(profile, female, segmentHours, { firstSegment: segment === 0, libidoMultiplier });
+    const result = processLaborSegment(profile, female, segmentHours, { firstSegment: segment === 0, libidoMultiplier, crossedHour: tick.passedHours >= 1 });
     remainingHours -= Number.isFinite(result.consumedHours) ? result.consumedHours : segmentHours;
     stageChanged = stageChanged || result.stageChanged;
     if (carried) {
@@ -5038,7 +5043,47 @@ function processLabor(profile, tick, female) {
     carried = { firstly: profile.notify?.firstly, secondly: profile.notify?.secondly };
     if (result.halt) break;
   }
+  if (stall.notice) {
+    const text = String(profile.notify?.secondly || '').trim();
+    profile.notify = { ...(profile.notify || {}), secondly: text ? `${stall.notice}；${text}` : stall.notice };
+  }
   return stageChanged;
+}
+
+/**
+ * 真实分娩模式下宫压低于上限 66% 时宫缩微弱：每跨过一个整点（每小时事件）判定一次，机率 1 − 宫压比例，
+ * 停滞的那一小时产程不前进。原本整次推进只判一次、全有或全无，推进得越久结果越极端。
+ * 停滞期间推／休的疲劳照样结算；第三产程胎儿都生完后不判定。回传停滞时数与要放进通知的话。
+ */
+function settleHourlyLaborStall(profile, female, tick, rawHours) {
+  const none = { hours: 0, notice: '' };
+  if (!profile?.immune?.realisticLabor) return none;
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const stage = String(base.stage || '');
+  if (!LABOR_STAGES.includes(stage)) return none;
+  if (stage === '第三产程' && !(Array.isArray(pregnant.fetuses) && pregnant.fetuses.length > 0)) return none;
+  const cap = getUterinePressureCap(profile);
+  const pressure = clampNumber(base.uterinePressure, 0, cap, 0);
+  if (pressure >= cap * 0.66) return none;
+  const chance = clampNumber(1 - (cap > 0 ? pressure / cap : 0), 0, 1, 0);
+  const hourChecks = Math.min(Math.max(0, Math.floor(Number(tick?.passedHours) || 0)), 24 * 30);
+  let stalled = 0;
+  for (let hour = 0; hour < hourChecks; hour += 1) if (Math.random() < chance) stalled += 1;
+  const hours = Math.min(stalled, rawHours);
+  if (hours <= 0) return none;
+  const phase = getLaborPhaseForStage(stage, String(pregnant.laborPhase || ''));
+  pregnant.laborPhase = phase;
+  pregnant.laborHours = clampNumber(pregnant.laborHours, 0, 9999, 0) + hours;
+  const note = getLaborEffortMode(stage, phase) ? settleWastedLaborEffort(profile, hours) : '';
+  const threshold = Math.max(1e-6, resolveLaborPhaseHours(profile, stage, phase, pregnant.fetuses || []));
+  updateLaborPain(profile, stage, phase, clampNumber(pregnant.effectiveLaborHours, 0, 9999, 0) / threshold, Boolean(getLaborObstruction(profile)));
+  const all = hours >= rawHours - 1e-9;
+  const notice = all
+    ? `${female}的子宫收缩微弱，产程进展停滞${describeLaborEffort(pregnant, stage, phase, note)}`
+    : `${female}的子宫收缩微弱，其中${Math.round(hours * 10) / 10}小时产程停滞`;
+  if (all) profile.notify = { ...(profile.notify || {}), secondly: notice };
+  return { hours, notice: all ? '' : notice };
 }
 
 /**
@@ -5056,7 +5101,8 @@ const FIRST_STAGE_PHASES = new Set(['潜伏期', '活跃期', '过渡期']);
 const LABOR_EFFORT_PHASE_DEFAULTS = Object.freeze({ 潜伏期: 'rest', 胎体下降: 'push', 间歇期: 'rest', 供养器官娩出: 'rest', 产后观察: 'rest' });
 const PLACENTA_PUSH_MULTIPLIER = 2;
 const LABOR_PRESSURE_PAIN_SCALE = 4;
-// 宫压达上限的快速通道（产程突然加速）：力竭时不触发；每跳一次急产耗力，疲劳 +30，从零疲劳最多连跳两次
+// 宫压达上限的快速通道（产程突然加速）：要先缓过来（疲劳 20 以下）才会触发；每跳一次急产耗力，疲劳 +30，
+// 所以不能连跳，中间一定要休息
 const PRECIPITOUS_FATIGUE_COST = 30;
 const PUSH_FATIGUE_STEP_HOURS = 5 / 60;
 const PUSH_FATIGUE_PER_HOUR = 40;
@@ -5232,7 +5278,7 @@ function getLaborSegmentHours(profile, libidoMultiplier) {
  * 产程中的一段时间。回传 { stageChanged, halt }：halt 表示这段之后不该再继续消耗时间
  * （宫缩停滞、受阻、阶段内尚未走完、快速路径或产程结束）。
  */
-function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMultiplier }) {
+function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMultiplier, crossedHour = true }) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const notify = profile.notify || {};
@@ -5260,8 +5306,6 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
     notify.firstly = `${female}发生难产警示：${obstruction.message}，${OBSTRUCTION_ADVICE[obstruction.type] || ''}或使用 bsChildbirth 进行手术产`;
   }
   const threshold = resolveLaborPhaseHours(profile, stage, phase, fetuses);
-  const stallThreshold = pressureCap * 0.66;
-  const isThirdStageWithNoFetuses = stage === '第三产程' && fetuses.length === 0;
 
   currentStageHours += rawHours;
   pregnant.laborHours = currentStageHours;
@@ -5282,23 +5326,10 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
     return done(false);
   }
 
-  // 宫缩微弱的零进度回合只在真实分娩模式出现；非真实模式每次有效推进都至少取得进度
-  if (firstSegment && realisticLabor && currentPressure < stallThreshold && !isThirdStageWithNoFetuses) {
-    const currentRatio = pressureCap > 0 ? (currentPressure / pressureCap) : 0;
-    const chanceToStall = Math.max(0, Math.min(1, 1 - currentRatio));
-    if (Math.random() < chanceToStall) {
-      // 宫缩微弱、进度不动，推或休的疲劳照样结算
-      const stallNote = getLaborEffortMode(stage, phase) ? settleWastedLaborEffort(profile, rawHours) : '';
-      profile.notify = {
-        ...notify,
-        secondly: `${female}的子宫收缩微弱，产程进展停滞${describeLaborEffort(pregnant, stage, phase, stallNote)}`,
-      };
-      pregnant.effectiveLaborHours = currentEffectiveHours;
-      updateLaborPain(profile, stage, phase, currentEffectiveHours / threshold, Boolean(obstruction));
-      return done(false);
-    }
-  } else if (firstSegment && currentPressure >= pressureCap && !realisticLabor
-    && getPushFatigue(pregnant) < PUSH_FATIGUE_EFFICIENT_LIMIT) {
+  // 宫缩微弱的停滞只在真实分娩模式出现，改在每小时事件判定（见 settleHourlyLaborStall）。
+  // 非真实模式宫压满的快速通道也跟着每小时事件：这次推进跨过整点才会突然加速，几分钟的推进不会一轮跳一个阶段
+  if (firstSegment && crossedHour && currentPressure >= pressureCap && !realisticLabor
+    && getPushFatigue(pregnant) <= REST_RECOVERED_NOTICE) {
     pregnant.pushFatigue = Math.round(clampNumber(getPushFatigue(pregnant) + PRECIPITOUS_FATIGUE_COST, 0, PUSH_FATIGUE_MAX, 0) * 10) / 10;
     if (stage === '第一产程') {
       base.uterinePressure = pressureCap * 0.5;

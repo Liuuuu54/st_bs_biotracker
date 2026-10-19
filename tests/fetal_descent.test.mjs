@@ -310,9 +310,29 @@ test('非真实模式：宫缩再弱也不会出现零进度回合；真实模�
   const realistic = laboringAt('胎体下降', [fetus(1, { descentStage: 1 })], { presentingEmbryoId: 1 });
   P(realistic).immune.realisticLabor = true;
   P(realistic).base.uterinePressure = 1;
-  passHours(realistic, 0.1);
+  passHours(realistic, 1);
   assert.equal(P(realistic).pregnant.effectiveLaborHours, 0);
   assert.match(String(P(realistic).notify.secondly), /产程进展停滞/);
+});
+
+test('真实模式的停滞跟着每小时事件判定：不到一个整点不判定；跨过几个整点就判几次，停滞的那几小时才没进度', () => {
+  Math.random = () => 0;
+  const realistic = (hours) => {
+    const chatState = laboringAt('胎体下降', [fetus(1, { descentStage: 1 })], { presentingEmbryoId: 1 });
+    P(chatState).immune.realisticLabor = true;
+    P(chatState).base.uterinePressure = 1;
+    passHours(chatState, hours);
+    return P(chatState);
+  };
+  assert.ok(realistic(0.5).pregnant.effectiveLaborHours > 0, '没跨过整点，照常前进');
+  const long = realistic(3.5);
+  assert.ok(long.pregnant.effectiveLaborHours > 0, '跨过 3 个整点都停滞，剩下半小时照常前进');
+  assert.ok(Math.abs(long.pregnant.laborHours - 3.5) < 1e-6, '停滞的时间照样算在产程时数里');
+  assert.match(String(long.notify.secondly), /其中3小时产程停滞/);
+  Math.random = () => 0.999; // 宫压 1 时停滞机率约 0.993
+  const lucky = realistic(3.5);
+  assert.doesNotMatch(String(lucky.notify.secondly), /停滞/);
+  assert.ok(lucky.pregnant.effectiveLaborHours > long.pregnant.effectiveLaborHours);
 });
 
 // ── 推／休：第二产程的胎体下降与娩出要产妇自己用力 ──────────────────
@@ -492,22 +512,24 @@ test('追踪提示：产程中鼓励照剧情降宫压，宫压变化要排在�
   assert.match(prompt, /要排在这段时间的 bsPassedTime 之前，否则这段时间仍按原本的宫压结算/);
 });
 
-test('快速通道：宫压满时跳一个阶段、疲劳 +30；力竭时不再突然加速', () => {
+test('快速通道：宫压满时跳一个阶段、疲劳 +30；疲劳 20 以下才会突然加速，不能连跳；跟着每小时事件，不到整点不触发', () => {
   Math.random = () => 0.99;
-  const jump = (pushFatigue) => {
+  const jump = (pushFatigue, hours = 1) => {
     const chatState = firstStage('活跃期', { pushFatigue });
     P(chatState).base.uterinePressure = capOf(chatState);
-    passHours(chatState, 0.01);
+    passHours(chatState, hours);
     return P(chatState);
   };
+  const brief = jump(0, 0.1);
+  assert.equal(brief.base.stage, '第一产程', '几分钟的推进不会一轮跳一个阶段');
+  assert.equal(brief.pregnant.laborPhase, '活跃期');
   const fresh = jump(0);
   assert.equal(fresh.base.stage, '第二产程');
   assert.equal(fresh.pregnant.pushFatigue, 30);
-  const second = jump(30);
-  assert.equal(second.base.stage, '第二产程', '30 还能再跳一次');
-  const exhausted = jump(60);
-  assert.equal(exhausted.base.stage, '第一产程', '力竭时照一般速度走');
-  assert.equal(exhausted.pregnant.laborPhase, '活跃期');
+  assert.equal(jump(20).base.stage, '第二产程', '缓过来了（20）就能再跳');
+  const tired = jump(30);
+  assert.equal(tired.base.stage, '第一产程', '刚跳过一次（30）要先休息，照一般速度走');
+  assert.equal(tired.pregnant.laborPhase, '活跃期');
 });
 
 test('第三产程胎儿都生完了，推／休的工具仍送给模型；分娩结束清掉疲劳', () => {
@@ -797,7 +819,7 @@ test('宫缩微弱停滞时进度不动，但休息照样消退、推照样累�
     P(chatState).base.uterinePressure = 10;
     effort(chatState, action);
     Math.random = () => 0;
-    passHours(chatState, 0.5);
+    passHours(chatState, 1);
     Math.random = () => 0.99;
     return P(chatState);
   };
