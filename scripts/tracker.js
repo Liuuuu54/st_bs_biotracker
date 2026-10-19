@@ -4,7 +4,7 @@ import { isOwnRequest } from './own_requests.js';
 import { getWorldbookEntryActivationMode, worldbookEntryKeywordsMatch } from './worldbook_match.js';
 import { getDisabledSpecialToolNames, isRealisticWorld } from './world_mode.js';
 import { syncCardSettings } from './card_settings.js';
-import { naturalNoticeDays, psychologySide } from './reproductive.js';
+import { contraceptionLevels, naturalNoticeDays, psychologySide } from './reproductive.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
@@ -1397,6 +1397,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     ...(settings?.timeFlowEnabled === false ? { time_frozen: true } : {}),
     recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => ['bsAddSperm', 'bsAbortion'].includes(log.name) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),
     world_baseline_prompt: String(settings?.worldBaselinePrompt || '').trim(),
+    contraception_levels: contraceptionLevels(settings?.reproductiveSettings),
     ...(psychologyEnabled ? { breeding_psychology_enabled: true } : {}),
     wardrobe_enabled: isWardrobeSystemEnabled(settings),
     recent_messages: recentMessages,

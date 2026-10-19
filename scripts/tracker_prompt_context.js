@@ -5,6 +5,31 @@ import { getDerivedTypeFluxProfile } from './race_config.js';
 import { deriveFetusTags, describeFetusTags } from './fetus_tags.js';
 import { LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGES } from './stage_config.js';
 
+const CONDOM_LEVEL_TEXT = {
+  poor: '很不牢靠，经常破裂或失效',
+  unreliable: '不太牢靠，时有破裂',
+  reliable: '大致可靠，偶有意外',
+  certain: '不会破裂，只有超过容量才会撑破',
+};
+const EMERGENCY_LEVEL_TEXT = {
+  poor: '效果很差，多半无效',
+  unreliable: '时灵时不灵',
+  reliable: '多数有效，但不保证',
+  certain: '及时使用必定有效',
+};
+
+/** 百科的套子可靠度与事后避孕成功率换成分级描述；0 是本世界没有这种手段，主流与追踪都要知道 */
+function buildContraceptionBlock(levels, forTracker) {
+  if (!levels || typeof levels !== 'object') return '';
+  const condom = levels.condom === 'none'
+    ? `- 屏障式避孕（套子，或羊肠套、魔法屏障等等效手段）：本世界不存在，剧情不得出现${forTracker ? '；bsAddSperm 不得传 hasCondom=true' : ''}。`
+    : CONDOM_LEVEL_TEXT[levels.condom] ? `- 屏障式避孕（套子或世界观中的等效手段）：${CONDOM_LEVEL_TEXT[levels.condom]}。` : '';
+  const emergency = levels.emergency === 'none'
+    ? `- 事后避孕（避孕药，或药草、魔法等等效手段）：本世界不存在，剧情不得出现${forTracker ? '；不得调用 bsAbortion purpose=emergency' : ''}。`
+    : EMERGENCY_LEVEL_TEXT[levels.emergency] ? `- 事后避孕（避孕药或世界观中的等效手段）：${EMERGENCY_LEVEL_TEXT[levels.emergency]}；越晚使用效果越差，着床后无效。` : '';
+  return condom || emergency ? ['[本世界的避孕手段]', condom, emergency].filter(Boolean).join('\n') : '';
+}
+
 /** 本轮 payload 里真的出现过的胎儿标签；没出现的标签不必浪费 token 去解释 */
 function collectRelevantFetusTags(payload = {}) {
   const found = new Set();
@@ -374,6 +399,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     ].join('\n'),
     String(basePrompt || '').trim(),
     buildWorldBaselineBlock(payload?.world_baseline_prompt),
+    buildContraceptionBlock(payload?.contraception_levels, true),
     metabolismGuide,
     // 名录只给名字：模型写 bsAddSperm.race 时需要词汇表，但每轮都发，不附辨识提示
     // 写实世界只有人类，不需要名录
@@ -511,6 +537,7 @@ export function buildMainFlowStatePrompt(payload = {}) {
     : '';
   return [
     buildWorldBaselineBlock(payload?.world_baseline_prompt),
+    buildContraceptionBlock(payload?.contraception_levels, false),
     racePhysiologyPrompt,
     '<bs_biotracker>',
     '[并行生理追踪上下文]',

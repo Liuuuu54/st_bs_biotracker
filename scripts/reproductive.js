@@ -31,6 +31,16 @@ export function normalizeReproductiveSettings(value = {}) {
   return result;
 }
 
+// 可靠度只给模型分级、不给数字：它要知道这个世界的套子牢不牢、有没有事后药，但不该自己去算成败。0 即本世界没有这种手段
+export function contraceptionLevels(value = {}) {
+  const config = normalizeReproductiveSettings(value);
+  const grade = (rate, [poor, unreliable]) => (rate <= 0 ? 'none' : rate >= 1 ? 'certain' : rate < poor ? 'poor' : rate < unreliable ? 'unreliable' : 'reliable');
+  return {
+    condom: grade(config.condomReliability, [0.5, 0.9]),
+    emergency: grade(config.emergencyEffectiveness, [0.4, 0.7]),
+  };
+}
+
 export function normalizeMateList(value) {
   return [...new Set((Array.isArray(value) ? value : []).filter((x) => typeof x === 'string').map((x) => x.trim()).filter(Boolean))];
 }
