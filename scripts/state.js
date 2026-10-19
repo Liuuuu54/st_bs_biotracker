@@ -2092,6 +2092,8 @@ function compactSnapshotArrayEntries(list) {
     .map((item) => compactSnapshotRecord(item));
 }
 
+const SNAPSHOT_RUNTIME_CARRY_KEYS = Object.freeze(['hourCarryMinutes', 'dayCarryMinutes', 'lifestyleWeekCarryMinutes']);
+
 function normalizeCharacterForSnapshot(character, name = '') {
   const next = cloneValue(character || {});
   next.name = String(next.name || name || '').trim();
@@ -2107,13 +2109,19 @@ function normalizeCharacterForSnapshot(character, name = '') {
   next.profile.descriptions = compactSnapshotRecord(next.profile.descriptions || {});
   next.profile.notify = compactSnapshotRecord(next.profile.notify || {});
   delete next.updatedAt;
-  // runtime 其余是时间进位之类的暂态，不进快照；孕前原值例外：
-  // 回溯楼层后少了它，分娩时会把孕期调整过的耐受当成原值还原回去，永久偏掉
-  const originalPregnancyBio = next.runtime?.originalPregnancyBio;
+  // runtime 只留两类：
+  // - 孕前原值：回溯楼层后少了它，分娩时会把孕期调整过的耐受当成原值还原回去，永久偏掉
+  // - 时间零头（不满一小时、一天、一周的分钟）：追踪每一轮开始都从快照还原，零头不进快照就每轮归零，
+  //   每轮只推进几十分钟时永远凑不满一小时，产程胎动、停滞、快速通道等每小时事件与跨日提醒都不会发生
+  const runtime = next.runtime || {};
   delete next.runtime;
-  if (originalPregnancyBio && typeof originalPregnancyBio === 'object') {
-    next.runtime = { originalPregnancyBio };
+  const kept = {};
+  if (runtime.originalPregnancyBio && typeof runtime.originalPregnancyBio === 'object') kept.originalPregnancyBio = runtime.originalPregnancyBio;
+  for (const key of SNAPSHOT_RUNTIME_CARRY_KEYS) {
+    const value = Number(runtime[key]);
+    if (Number.isFinite(value) && value > 0) kept[key] = value;
   }
+  if (Object.keys(kept).length > 0) next.runtime = kept;
   return next;
 }
 

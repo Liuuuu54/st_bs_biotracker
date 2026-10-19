@@ -844,3 +844,30 @@ test('肩难产卡住时还在推就是白用力：疲劳累积，歇着则消�
   assert.ok(stuck('push') > 50);
   assert.ok(stuck('rest') < 50);
 });
+
+// ── 时间零头跟着快照走：追踪每一轮开始都从快照还原，零头不能每轮归零 ─────────
+test('快照保存时间零头：还原后零头还在，孕前原值照旧保留', () => {
+  const ctx = { chatId: 'carry', chat: [], extensionSettings: {}, saveSettingsDebounced() {} };
+  const chatState = state.createEmptyChatState();
+  chatState.characters.A = { name: 'A', initialized: true, profile: { base: { stage: '卵泡期' } }, runtime: { hourCarryMinutes: 40, dayCarryMinutes: 700, lifestyleWeekCarryMinutes: 5000, originalPregnancyBio: { birthDifficulty: 1 } } };
+  state.recordChatStateSnapshot(ctx, chatState, { reason: 'carry' });
+  chatState.characters.A.runtime = {};
+  state.restoreChatStateFromSnapshot(chatState, chatState.snapshots.at(-1));
+  assert.deepEqual(chatState.characters.A.runtime, { originalPregnancyBio: { birthDifficulty: 1 }, hourCarryMinutes: 40, dayCarryMinutes: 700, lifestyleWeekCarryMinutes: 5000 });
+});
+
+test('两轮各推进 40 分钟、中间照追踪流程从快照还原：第二轮跨过整点，每小时事件照常判定', () => {
+  const ctx = { chatId: 'carry-labor', chat: [], extensionSettings: {}, saveSettingsDebounced() {} };
+  const chatState = realisticAt('第一产程', [fetus(1, { descentStage: 0 })], { laborPhase: '活跃期' });
+  P(chatState).base.uterinePressure = 1;
+  Math.random = () => 0;
+  passHours(chatState, 40 / 60);
+  assert.equal(P(chatState).pregnant.effectiveLaborHours > 0, true, '第一轮没跨整点，照常前进');
+  const progressed = P(chatState).pregnant.effectiveLaborHours;
+  state.recordChatStateSnapshot(ctx, chatState, { reason: 'tracker' });
+  state.restoreChatStateFromSnapshot(chatState, chatState.snapshots.at(-1));
+  passHours(chatState, 40 / 60);
+  Math.random = () => 0.99;
+  assert.equal(P(chatState).pregnant.effectiveLaborHours, progressed, '第二轮跨过整点，停滞判定生效');
+  assert.match(String(P(chatState).notify.secondly), /产程进展停滞/);
+});
