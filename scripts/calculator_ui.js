@@ -199,7 +199,8 @@ function calculateOffspring() {
     `着床周期：成功受精后约 ${formatNumber(result.implantationDays, 3)} 天判定`,
     `种族基准孕期：约 ${formatNumber(result.gestationDays, 2)} 天　性别率：${genderText}`,
     `同卵分裂率：${formatNumber(result.identicalProbability, 2)}%`,
-    `初始胎重：${formatNumber(result.fetalWeightRange.min, 3)}～${formatNumber(result.fetalWeightRange.max, 3)}（中心 ${formatNumber(result.fetalWeightRange.typical, 3)}；${result.conceptionStage}）`,
+    `初始胎重：${formatNumber(result.fetalWeightRange.min, 3)}～${formatNumber(result.fetalWeightRange.max, 3)}（中心 ${formatNumber(result.fetalWeightRange.typical, 3)}；${result.conceptionStage}；约 95% 落在此范围）`,
+    `胎重系数：×${formatNumber(result.breedWeightRatio, 3)}（${result.weightRatioBasis === 'bodySize' ? '按双方种族平均体型差' : '有一方体型可变或依个体，改看承载耐受'}）`,
   ];
   if (result.companionEggsMean > 0) {
     lines.push(

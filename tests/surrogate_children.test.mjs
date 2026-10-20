@@ -308,10 +308,18 @@ test('implanting during early pregnancy adds a surrogate superfetation fetus', (
   profile.pregnant.pregnantDays = 25;
   profile.pregnant.effectivePregnantDays = 25;
 
-  const first = applyToolCall(chatState, {
-    name: 'bsImplantEmbryo',
-    arguments: { female: '艾拉', provider: '委托母亲', fathers: '委托父亲' },
-  });
+  // 胎重的天生变异是常态分布，抽到偏重时会盖过异期折扣；固定在平均附近再看折扣
+  const realRandom = Math.random;
+  Math.random = () => 0.5;
+  let first;
+  try {
+    first = applyToolCall(chatState, {
+      name: 'bsImplantEmbryo',
+      arguments: { female: '艾拉', provider: '委托母亲', fathers: '委托父亲' },
+    });
+  } finally {
+    Math.random = realRandom;
+  }
   assert.equal(first.applied, true, first.message);
 
   const updated = chatState.characters['艾拉'].profile;

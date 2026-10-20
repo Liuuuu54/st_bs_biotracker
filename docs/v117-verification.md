@@ -6,7 +6,7 @@
 
 環境：Windows、Node v22.16.0。指令為 `node --test tests/*.test.mjs`。
 
-最終完整回歸 **1035 項通過，0 失敗**。本版新增或改寫的測試：
+最終完整回歸 **1044 項通過，0 失敗**。本版新增或改寫的測試：
 
 | 項目 | 測試 | 涵蓋 |
 |---|---|---|
@@ -15,6 +15,7 @@
 | 體型與子宮容積、溢出 | [`uterus_volume.test.mjs`](../tests/uterus_volume.test.mjs) | 容積倍率每級翻倍；子宮圖容量乘倍率；同比例下受孕難易不變；殘留衰減跟女方體型；射精建議量寫在工具說明；套子容量跟精方體型；射精當下與時間推進後的溢出，引擎與子宮圖算出同一個容量 |
 | 推／休 | [`fetal_descent.test.mjs`](../tests/fetal_descent.test.mjs) | 胎越大疲勞累積越快、活力不再拖慢下降；力竭剩 0.2 倍、休息幾乎不前進且疲勞消退；情壓越低恢復越快、產程以外與產後觀察不接受切換、胎兒不能代勞；兩種通知；長時間推進不丟時間；疼痛的胎重、力竭、休息三項；切換由 `bsAssistFetalPosition` 負責且一直維持；第一產程白推只累積疲勞、進度照常；疲勞帶進第二產程、下降開始時換成推；新的一次分娩從零算；間歇期休息消退；第三產程推 2 倍速、沒有胎兒時工具照樣送出、分娩結束清掉疲勞；降宮壓痛感少約 2、休息消退快一倍、產程變慢；宮壓滿時跳一階段且疲勞 +30，疲勞 20 以下才跳、不能連跳；真實分娩模式停滯時與肩難產卡住時疲勞照樣結算；停滯與快速通道跟著每小時事件判定，不到整點不判、跨幾個整點判幾次；追蹤提示要求宮壓變化排在時間推進之前 |
 | 時間零頭跟著快照 | [`fetal_descent.test.mjs`](../tests/fetal_descent.test.mjs) | 快照還原後零頭還在、孕前原值照舊；兩輪各 40 分鐘、中間照追蹤流程從快照還原，第二輪跨過整點、停滯判定生效。換回修正前的 `state.js` 重跑，這兩項都失敗 |
+| 胎重天生變異 | [`conception_weight.test.mjs`](../tests/conception_weight.test.mjs) | 6000 次抽樣的對數標準差約 0.13、平均約 0、重 20% 以上約 8%；截在 ±3 個標準差且體型係數照常相乘；計算機範圍為 ±2 個標準差；受精階段以排卵期為基準 1.0、排卵期受孕的幾何平均約 1.0、表外階段按 1.0，引擎與計算機共用同一張表；計算機的胎重係數與引擎同一個函式，人類配巨人看體型差、人類配史萊姆退回承載耐受 |
 | 新訊息標記 | [`tracker_reconcile.test.mjs`](../tests/tracker_reconcile.test.mjs) | 已結算的樓層標 `already_settled`、新訊息標 `new_message`；提示要求只為帶 `new_message` 的訊息結算 |
 | 與變數系統隔離 | [`variable_isolation.test.mjs`](../tests/variable_isolation.test.mjs) | MVU 額外解析的請求拿掉插件狀態段；送給追蹤的訊息去掉 `<UpdateVariable>`，小白 X 載入時去掉 `<state>`；注入說明與穿越規則的措辭 |
 | 主流快照只收正式生成 | [`mainflow_capture_gate.test.mjs`](../tests/mainflow_capture_gate.test.mjs) | 沒有生成時不收；生成期間 quiet 與沒有 `type` 的請求不收、之後的主流照收；插進來的 quiet 生成不關門；quiet 與 dryRun 不開門；收一份或生成結束就關門 |

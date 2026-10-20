@@ -4,7 +4,7 @@ import { getStageProgress } from './stage_progress.js';
 import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
-import { CONCEPTION_WEIGHT_RATIO_MAX, CONCEPTION_WEIGHT_RATIO_MIN, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getBodySizeWeightRatio, getUterusVolumeFactor, resolveBodySize } from './body_size.js';
+import { CONCEPTION_WEIGHT_LOG_SD, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getConceptionStageWeight, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
   cloneValue,
   createChildId,
@@ -1175,16 +1175,13 @@ function deriveFetusGender(race, bloodline = null) {
   return Math.random() < (ratio / 100) ? '男' : '女';
 }
 
-function getConceptionWeight(stage, gender, weightRatio = 1.0) {
-  const stageWeights = {
-    黄体期: 1.2,
-    排卵期: 1.1,
-    卵泡期: 1.0,
-    产后恢复: 1 / 1.1,
-    月经期: 1 / 1.2,
-  };
-  const baseWeight = stageWeights[String(stage || '')] || 1.0;
-  const fluctuation = Math.exp(randomNumber(-0.083, 0.083));
+// 胎重天生的变异（标准差见 body_size.js 的 CONCEPTION_WEIGHT_LOG_SD），截在 ±3 个标准差，免得抽出极端值
+const CONCEPTION_WEIGHT_SD_LIMIT = 3;
+
+export function getConceptionWeight(stage, gender, weightRatio = 1.0) {
+  const baseWeight = getConceptionStageWeight(stage);
+  const z = Math.max(-CONCEPTION_WEIGHT_SD_LIMIT, Math.min(CONCEPTION_WEIGHT_SD_LIMIT, randomStandardNormal()));
+  const fluctuation = Math.exp(CONCEPTION_WEIGHT_LOG_SD * z);
   const sexMultiplier = gender === '男' ? 1.05 : gender === '女' ? 1 / 1.05 : 1.0;
   return Math.max(0.33, Math.min(3.0, Number(baseWeight * fluctuation * sexMultiplier * weightRatio)));
 }
@@ -1329,23 +1326,15 @@ function pickImplantedFetusIndex(fetuses) {
 }
 
 /**
- * 受精胎重系数，两套算法同在 0.5–2：
- * - 双方体型都有数值时看体型差（getBodySizeWeightRatio）
- * - 任一方可变或依个体又没记体型时，退回承载耐受的强弱：2^强弱，强弱介于 −1 与 1
- * 两套不叠加，免得巨人既高耐受又大被重复放大。
+ * 受精胎重系数：体型差或承载耐受，算法见 body_size.js 的 resolveConceptionWeightRatio（异种百科计算机也用它）。
+ * 母方承载耐受看这个人（孕期调整过的值），父方看种族。
  */
 function getConceptionWeightRatio(profile, sperm) {
   const base = profile?.base || {};
-  const sizeRatio = getBodySizeWeightRatio(
-    { race: base.race, bloodline: base.bloodline, bodySize: base.bodySize },
+  return resolveConceptionWeightRatio(
+    { race: base.race, bloodline: base.bloodline, bodySize: base.bodySize, breedTolerance: clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0) },
     { race: sperm?.race, bloodline: sperm?.bloodline, bodySize: sperm?.bodySize },
-  );
-  if (sizeRatio !== null) return sizeRatio;
-  const motherBreedTolerance = clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0);
-  const fatherProfile = getMergedRacePhysiologyProfile(sperm?.race, sperm?.bloodline);
-  const fatherBreedTolerance = clampNumber(fatherProfile?.breedTolerance, 0.1, 100, 1.0);
-  const dominance = (fatherBreedTolerance - motherBreedTolerance) / Math.max(motherBreedTolerance + fatherBreedTolerance, 0.1);
-  return clampNumber(2 ** dominance, CONCEPTION_WEIGHT_RATIO_MIN, CONCEPTION_WEIGHT_RATIO_MAX, 1.0);
+  ).ratio;
 }
 
 function updateDerivedTypeProgress(profile, tick) {

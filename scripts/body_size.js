@@ -3,6 +3,7 @@ import {
   BODY_SIZE_MAX,
   BODY_SIZE_MIN,
   getMergedRaceBodySize,
+  getMergedRacePhysiologyProfile,
   getRaceComponents,
   getRacePhysiologyProfile,
 } from './race_config.js';
@@ -101,6 +102,28 @@ export function getAltFormBodySize(resolved) {
   return clampIndividualBodySize(alt + (resolved.size - mean));
 }
 
+/**
+ * 胎重天生的变异：对数常态分布的标准差。0.13 约是人类新生儿体重的实际变异（约 68% 落在 ±14% 内，
+ * 重 20% 以上的巨大儿约 8%）；所有种族共用。
+ */
+export const CONCEPTION_WEIGHT_LOG_SD = 0.13;
+
+/**
+ * 受精当下的周期阶段对胎重的影响。胎重 1.0 是「这位母体正常妊娠的胎重」（巨人纯血正常妊娠也是 1.0），
+ * 自然受孕几乎都在排卵期，所以以排卵期为基准，相邻阶段差一成上下。产后恢复期认知系统清空、不会受孕，不列。
+ * 不在表里的阶段（例如异期复孕时的孕期阶段）按 1.0。
+ */
+export const CONCEPTION_STAGE_WEIGHTS = Object.freeze({
+  月经期: 0.75,
+  卵泡期: 0.9,
+  排卵期: 1.0,
+  黄体期: 1.1,
+});
+
+export function getConceptionStageWeight(stage) {
+  return CONCEPTION_STAGE_WEIGHTS[String(stage || '')] ?? 1.0;
+}
+
 /** 受精胎重系数的范围；体型与承载耐受两套算法共用 */
 export const CONCEPTION_WEIGHT_RATIO_MIN = 0.5;
 export const CONCEPTION_WEIGHT_RATIO_MAX = 2;
@@ -117,6 +140,29 @@ export function getBodySizeWeightRatio(mother, father) {
   if (motherSize.kind !== 'fixed' || fatherSize.kind !== 'fixed') return null;
   const ratio = 2 ** ((fatherSize.size - motherSize.size) * CONCEPTION_WEIGHT_PER_LEVEL);
   return Math.max(CONCEPTION_WEIGHT_RATIO_MIN, Math.min(CONCEPTION_WEIGHT_RATIO_MAX, ratio));
+}
+
+function clampBreedTolerance(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0.1, Math.min(100, number)) : 1;
+}
+
+/**
+ * 受精胎重系数，引擎与异种百科计算机共用，两套算法同在 0.5–2、不叠加（免得巨人既高耐受又大被重复放大）：
+ * - 双方体型都有数值时看体型差（getBodySizeWeightRatio）
+ * - 任一方可变、或依个体又没记体型时，退回承载耐受的强弱：2^强弱，强弱 =（父 − 母）／（父 + 母），介于 −1 与 1
+ * mother／father：{ race, bloodline, bodySize, breedTolerance }；breedTolerance 省略时用种族值。
+ * 回传 { ratio, basis }，basis 是 bodySize 或 breedTolerance。
+ */
+export function resolveConceptionWeightRatio(mother = {}, father = {}) {
+  const sizeRatio = getBodySizeWeightRatio(mother, father);
+  if (sizeRatio !== null) return { ratio: sizeRatio, basis: 'bodySize' };
+  const toleranceOf = (party) => clampBreedTolerance(party?.breedTolerance ?? getMergedRacePhysiologyProfile(party?.race || '', party?.bloodline ?? null)?.breedTolerance);
+  const motherTolerance = toleranceOf(mother);
+  const fatherTolerance = toleranceOf(father);
+  const dominance = (fatherTolerance - motherTolerance) / Math.max(motherTolerance + fatherTolerance, 0.1);
+  const ratio = Math.max(CONCEPTION_WEIGHT_RATIO_MIN, Math.min(CONCEPTION_WEIGHT_RATIO_MAX, 2 ** dominance));
+  return { ratio, basis: 'breedTolerance' };
 }
 
 // 体型差分段：精方较大写「容纳」，卵方较大写「充实」

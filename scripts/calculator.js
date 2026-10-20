@@ -13,6 +13,7 @@ import {
   getSpermDoseDifficultyBonus,
 } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, MENSTRUAL_STAGE_DAYS, MENSTRUAL_STAGES } from './stage_config.js';
+import { CONCEPTION_WEIGHT_LOG_SD, getConceptionStageWeight, resolveConceptionWeightRatio } from './body_size.js';
 
 export const SPERM_DECAY_PER_DAY = 10;
 export const CROSS_RACE_DIFFICULTY_MULTIPLIER = 1.5;
@@ -200,8 +201,6 @@ export function calculateOffspringPreview({
       max: toEggs(Math.ceil((adjustedClutch * 1.1) + 0.5) - 1),
     };
   const profile = getMergedRacePhysiologyProfile(fetusRace, ancestry.bloodline) || {};
-  const eggProfile = getMergedRacePhysiologyProfile(eggRace) || {};
-  const spermProfile = getMergedRacePhysiologyProfile(spermRace) || {};
   const gestationSpeciesSpeed = clampNumber(profile.gestationSpeciesSpeed, GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1);
   const components = getRaceComponents(fetusRace);
   const embryoTypeSource = components.reduce((slowest, race) => {
@@ -209,18 +208,9 @@ export function calculateOffspringPreview({
     if (!slowest || speed < slowest.speed) return { race, speed };
     return slowest;
   }, null);
-  const eggBreedTolerance = clampNumber(eggProfile.breedTolerance, 0.1, 100, 1);
-  const spermBreedTolerance = clampNumber(spermProfile.breedTolerance, 0.1, 100, 1);
-  const dominance = (spermBreedTolerance - eggBreedTolerance)
-    / Math.max(eggBreedTolerance + spermBreedTolerance, 0.1);
-  const breedWeightRatio = clampNumber(1 + (dominance * 0.65), 0.625, 1.6, 1);
-  const stageWeight = {
-    黄体期: 1.2,
-    排卵期: 1.1,
-    卵泡期: 1,
-    产后恢复: 1 / 1.1,
-    月经期: 1 / 1.2,
-  }[String(conceptionStage || '')] || 1;
+  // 与引擎同一套：双方种族都有数值体型时看体型差，否则退回承载耐受（见 body_size.js）；计算机只有种族，用种族平均体型
+  const { ratio: breedWeightRatio, basis: weightRatioBasis } = resolveConceptionWeightRatio({ race: eggRace }, { race: spermRace });
+  const stageWeight = getConceptionStageWeight(conceptionStage);
   const genderRatio = Object.prototype.hasOwnProperty.call(profile, 'genderRatio') ? profile.genderRatio : undefined;
   const sexMultipliers = genderRatio === null || Number(genderRatio) === -1
     ? [1]
@@ -230,8 +220,9 @@ export function calculateOffspringPreview({
         ? [1.05]
         : [1 / 1.05, 1.05];
   const weightCandidates = sexMultipliers.flatMap((sexMultiplier) => [
-    stageWeight * Math.exp(-0.083) * sexMultiplier * breedWeightRatio,
-    stageWeight * Math.exp(0.083) * sexMultiplier * breedWeightRatio,
+    // 胎重波动是对数常态分布（见 body_size.js 的 CONCEPTION_WEIGHT_LOG_SD），这里给约 95% 会落在的范围（±2 个标准差）
+    stageWeight * Math.exp(-2 * CONCEPTION_WEIGHT_LOG_SD) * sexMultiplier * breedWeightRatio,
+    stageWeight * Math.exp(2 * CONCEPTION_WEIGHT_LOG_SD) * sexMultiplier * breedWeightRatio,
   ]).map((value) => clampNumber(value, 0.33, 3, 1));
   const fetalWeightRange = {
     min: Math.min(...weightCandidates),
@@ -256,6 +247,7 @@ export function calculateOffspringPreview({
     identicalProbability: clampNumber(profile.identicalProbability, 0, 100, 5),
     conceptionStage,
     breedWeightRatio,
+    weightRatioBasis,
     fetalWeightRange,
     companionEggsMean,
     companionMultiplier,

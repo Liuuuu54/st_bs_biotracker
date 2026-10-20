@@ -75,13 +75,13 @@ test('胎重按落后进度打折，且乘在既有的种族混血偏移之上',
   armSperm(chatState);
   step(chatState);
   const late = lateOf(chatState);
-  // Math.random=0 时 getConceptionWeight 的波动固定为 e^-0.083，性别为男 ×1.05，
-  // 同族的 weightRatio 为 1.0；再乘上异期折扣 (1 − 落后/280)²
+  // Math.random=0 时 getConceptionWeight 的常态抽样撞到截断上限 +3 个标准差，波动为 e^(0.13×3)；
+  // 性别为男 ×1.05，同族的 weightRatio 为 1.0；再乘上异期折扣 (1 − 落后/280)²
   const penalty = (1 - (late.conceivedAtDays / 280)) ** 2;
-  const expected = Math.exp(-0.083) * 1.05 * penalty;
+  const expected = Math.exp(0.13 * 3) * 1.05 * penalty;
   assert.ok(Math.abs(late.weight - expected) < 0.01,
     `应为 ${expected.toFixed(3)}，实际 ${late.weight.toFixed(3)}`);
-  assert.ok(late.weight < 1, '落后的胎应比标准轻');
+  assert.ok(late.weight < Math.exp(0.13 * 3) * 1.05, '落后的胎应比同样波动、没打折的胎轻');
 });
 
 test('孕中期以后不再受精，即使机率全中', () => {
