@@ -5144,16 +5144,15 @@
    避免手机浏览器把 dialog 提升为合成层后反过来盖住族谱。
    版面走「分代横排 + 手足成丛」：同一对亲代的孩子聚成一丛，
    丛上方挂亲代标注，再用一条横杆与各自的竖线连到每张卡。 */
+/* 族谱开在装置萤幕里，和机制说明阅读器一样盖满萤幕；版面随萤幕宽度（容器查询）而不是整个视窗调整 */
 .bs-bt-lineage {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 10050;
+  z-index: 40;
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  height: 100dvh;
-  max-width: 100vw;
-  max-height: 100dvh;
+  container: bs-bt-lineage / inline-size;
   display: none;
   flex-direction: column;
   overflow: hidden;
@@ -5163,8 +5162,15 @@
   background: var(--bsbt-pager-bg);
   color: var(--bsbt-off-text);
   font-family: var(--bsbt-font-main);
-  --bsbt-lin-card: 116px;
-  --bsbt-lin-gap: 12px;
+  --bsbt-lin-card: 96px;
+  --bsbt-lin-gap: 10px;
+}
+
+/* 萤幕还没挂载时退回整页 */
+.bs-bt-lineage.is-fullscreen {
+  position: fixed;
+  z-index: 10050;
+  height: 100dvh;
 }
 
 .bs-bt-lineage.is-open {
@@ -5174,8 +5180,8 @@
 .bs-bt-lineage__head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 8px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--bsbt-border-color);
   background: var(--bsbt-lcd-bg);
   color: var(--bsbt-lcd-text);
@@ -5184,7 +5190,7 @@
 
 .bs-bt-lineage__title {
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.9rem;
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5199,8 +5205,8 @@
 
 .bs-bt-lineage__close {
   flex: 0 0 auto;
-  min-width: 40px;
-  height: 32px;
+  min-width: 34px;
+  height: 28px;
   border-radius: 8px;
   border: 1px solid var(--bsbt-border-color);
   background: var(--bsbt-off-bg);
@@ -5225,11 +5231,11 @@
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 14px 12px 20px;
+  padding: 10px 8px 14px;
 }
 
 .bs-bt-lineage__row {
-  margin-bottom: 22px;
+  margin-bottom: 18px;
 }
 
 /* 世代分隔线：标签居中，两侧拉细线，让每一代自成一层 */
@@ -5264,7 +5270,7 @@
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  gap: 26px;
+  gap: 18px;
   width: max-content;
   min-width: 100%;
 }
@@ -5472,9 +5478,9 @@
 
 .bs-bt-lineage__detail {
   flex: 0 0 auto;
-  max-height: 42%;
+  max-height: 34%;
   overflow: auto;
-  padding: 10px 14px 14px;
+  padding: 8px 10px 10px;
   border-top: 1px solid var(--bsbt-border-color);
   background: var(--bsbt-lcd-bg);
   color: var(--bsbt-lcd-text);
@@ -5509,26 +5515,37 @@
   opacity: 0.7;
 }
 
-/* 平板以上：图与详情并排，详情固定在右侧 */
-@media (min-width: 768px) {
+/* 手机模式的萤幕很窄：标题列只留标题与返回 */
+@container bs-bt-lineage (max-width: 359px) {
+  .bs-bt-lineage__hint {
+    display: none;
+  }
+}
+
+/* 萤幕够宽（平板模式、大尺寸）：图与详情并排，详情固定在右侧 */
+@container bs-bt-lineage (min-width: 520px) {
   .bs-bt-lineage__body {
     flex-direction: row;
   }
+  .bs-bt-lineage__body {
+    --bsbt-lin-card: 116px;
+    --bsbt-lin-gap: 12px;
+  }
   .bs-bt-lineage__chart {
     flex: 1 1 auto;
-    padding: 18px 20px 24px;
+    padding: 14px 14px 20px;
   }
   .bs-bt-lineage__detail {
-    flex: 0 0 300px;
+    flex: 0 0 220px;
     max-height: none;
     border-top: 0;
     border-left: 1px solid var(--bsbt-border-color);
   }
 }
 
-/* 桌机：给节点更多呼吸空间 */
-@media (min-width: 1200px) {
-  .bs-bt-lineage {
+/* 很宽的萤幕（整页退回或大尺寸平板）：给节点更多呼吸空间。容器查询改不到容器自己，变数设在内层 */
+@container bs-bt-lineage (min-width: 900px) {
+  .bs-bt-lineage__body {
     --bsbt-lin-card: 138px;
     --bsbt-lin-gap: 16px;
   }

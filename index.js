@@ -4975,22 +4975,24 @@ function selectLineageNode(nodeId) {
 
 function ensureLineageWindow(ctx) {
   let root = document.getElementById(LINEAGE_ID);
-  // 与主面板放进同一个 stacking context，才能稳定盖过手机浏览器里被合成层提升的装置面板。
-  // 族谱仍是 dialog 的同级元素，不会被可拖曳 dialog 的定位或 transform 限制。
-  const host = document.getElementById(MODAL_ID) || document.body;
+  // 族谱开在装置萤幕里，和机制说明阅读器一样盖满萤幕、跟着装置移动与缩放；
+  // 萤幕不存在时（面板尚未挂载）才退回整页
+  const host = document.getElementById('bs-bt-doc-viewer')?.parentElement || document.getElementById(MODAL_ID) || document.body;
   if (root) {
     if (host && root.parentElement !== host) host.appendChild(root);
     return root;
   }
   root = document.createElement('div');
   root.id = LINEAGE_ID;
-  // 与浮球同样自带主题 class：视窗不在设备面板内，拿不到面板作用域的主题变数
+  root.setAttribute('role', 'dialog');
+  root.setAttribute('aria-label', '族谱');
+  // 退回整页时拿不到面板作用域的主题变数，所以仍自带主题 class
   root.className = `bs-bt-lineage theme-${getSettings(ctx).theme || 'retro'}`;
   root.innerHTML = `
     <div class="bs-bt-lineage__head">
       <div class="bs-bt-lineage__title"></div>
       <div class="bs-bt-lineage__hint">点选查看关系</div>
-      <button type="button" class="bs-bt-lineage__close" aria-label="关闭">×</button>
+      <button type="button" class="bs-bt-lineage__close" aria-label="返回">×</button>
     </div>
     <div class="bs-bt-lineage__body">
       <div class="bs-bt-lineage__chart"></div>
@@ -5038,6 +5040,7 @@ function openLineageWindow(ctx, centerName) {
   lineageViewCache = view;
   const root = ensureLineageWindow(ctx);
   root.className = `bs-bt-lineage theme-${settings.theme || 'retro'}`;
+  if (!document.getElementById('bs-bt-doc-viewer')?.parentElement?.contains(root)) root.classList.add('is-fullscreen');
   root.querySelector('.bs-bt-lineage__title').textContent = `${centerName} 的血缘`;
   root.querySelector('.bs-bt-lineage__chart').innerHTML = renderLineageChart(view);
   root.classList.add('is-open');
@@ -7525,6 +7528,8 @@ function setView(view) {
     closeRacePalettePopover();
     refreshRegisterRacePalette();
   }
+  // 族谱盖在萤幕上：换页（含实体按键回首页）时收起，免得盖住新页面
+  if (root.dataset.view !== next) closeLineageWindow();
   root.dataset.view = next;
   try {
     globalThis.localStorage?.setItem(LAST_VIEW_STORAGE_KEY, next);

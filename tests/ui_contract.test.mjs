@@ -150,10 +150,14 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(controller, /manual_fetal_talent_delete/);
   assert.match(controller, /function renderRegisterChildSourceOptions\(/);
   assert.match(controller, /function syncRegisterChildSourceFields\(/);
-  assert.match(controller, /const host = document\.getElementById\(MODAL_ID\) \|\| document\.body/);
+  // 族谱开在装置萤幕里（与机制说明阅读器同层），萤幕不存在时才退回整页
+  assert.match(controller, /const host = document\.getElementById\('bs-bt-doc-viewer'\)\?\.parentElement \|\| document\.getElementById\(MODAL_ID\) \|\| document\.body/);
   assert.match(controller, /function centerLineageCard\(root\)/);
   assert.doesNotMatch(controller, /querySelector\('\.bs-bt-lineage__card\.is-center'\)\?\.scrollIntoView/);
-  assert.match(css, /\.bs-bt-lineage \{[\s\S]*?height:\s*100dvh/);
+  assert.match(css, /\.bs-bt-lineage \{\s*position:\s*absolute;\s*inset:\s*0;/);
+  assert.match(css, /\.bs-bt-lineage \{[^}]*container:\s*bs-bt-lineage \/ inline-size/);
+  assert.match(css, /\.bs-bt-lineage\.is-fullscreen \{[^}]*position:\s*fixed;[^}]*height:\s*100dvh/);
+  assert.doesNotMatch(css, /@media[^{]*\{\s*\.bs-bt-lineage/, '族谱版面跟着萤幕宽度（容器查询），不看整个视窗');
   assert.match(css, /\.bs-bt-lineage \{[\s\S]*?pointer-events:\s*auto/);
   assert.match(controller, /sourceChild/);
   assert.doesNotMatch(controller, /data-wardrobe-item-new/);
