@@ -4381,6 +4381,16 @@ function getPresentationWord(angle) {
   return '斜位';
 }
 
+/** 胎父认定：与实际父方不同时反白标出；滑鼠停留显示最近一笔认定纪录 */
+function renderPaternityClaimLine(item) {
+  const claimed = String(item?.selectedFather || '').trim();
+  if (!claimed) return '';
+  const latest = Array.isArray(item?.paternityClaims) ? item.paternityClaims.at(-1) : null;
+  const mismatch = claimed !== String(item?.fathers || '').trim();
+  const title = latest?.content ? ` title="${escapeHtml(`${latest.time ? `${latest.time}：` : ''}${latest.content}`)}"` : '';
+  return `<span class="bs-bt-womb-card-line"${title}>认定父亲：<span class="bs-bt-claim${mismatch ? ' is-mismatch' : ''}">${escapeHtml(claimed)}</span></span>`;
+}
+
 /** 每胎一个可折叠的段落：标题列（缩图、胎重、编号、性别、胎位）常驻，其余展开才看；胎教再折一层。先露胎的缩图换上醒目外框 */
 function renderWombFetusCard(item, index, data) {
   const layout = data.womb;
@@ -4402,6 +4412,7 @@ function renderWombFetusCard(item, index, data) {
       </summary>
       <div class="bs-bt-womb-card-body">
         <span class="bs-bt-womb-card-line">${escapeHtml(summary)}</span>
+        ${renderPaternityClaimLine(item)}
         <span class="bs-bt-womb-card-line">血脉：${escapeHtml(formatBloodline(item?.race, item?.bloodline, item?.bloodlineSource))}</span>
         ${describeBackSide(item) ? `<span class="bs-bt-womb-card-line">${escapeHtml(describeBackSide(item))}</span>` : ''}
         ${item?.provider ? `<span class="bs-bt-womb-card-line">${escapeHtml(`遗传母方 ${item.provider}`)}</span>` : ''}
@@ -4809,7 +4820,7 @@ function renderTrackLineageEntry(viewModel) {
           <span class="bs-bt-track-meta-label">${escapeHtml(summary)}</span>
           <button type="button" class="menu_button bs-bt-lineage-open" data-lineage-center="${escapeHtml(name)}">族谱</button>
         </div>
-        ${children.map((child, index) => `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">${escapeHtml(child.name || `子女 ${index + 1}`)}</span><span class="bs-bt-track-meta-value">选定父亲：${escapeHtml(child.selectedFather || '未指定')}</span></div>`).join('')}
+        ${children.map((child, index) => `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">${escapeHtml(child.name || `子女 ${index + 1}`)}</span><span class="bs-bt-track-meta-value"${child.paternityClaims?.length ? ` title="${escapeHtml(child.paternityClaims.at(-1).content)}"` : ''}>选定父亲：${escapeHtml(child.selectedFather || '未指定')}</span></div>`).join('')}
       </div>
     </div>
   `;

@@ -1171,6 +1171,22 @@ function stripSkillFields(view) {
   return view;
 }
 
+/** 胎父声称纪录只增不改，模型只需要最近几笔的时间与白描，来源与系统分钟数不外露 */
+const PROMPT_PATERNITY_CLAIM_LIMIT = 3;
+function trimPaternityClaims(view) {
+  const profile = view?.profile;
+  if (!profile || typeof profile !== 'object') return view;
+  const holders = [
+    ...(Array.isArray(profile.pregnant?.fetuses) ? profile.pregnant.fetuses : []),
+    ...(Array.isArray(profile.children) ? profile.children : []),
+  ];
+  for (const holder of holders) {
+    if (!holder || typeof holder !== 'object' || !Array.isArray(holder.paternityClaims)) continue;
+    holder.paternityClaims = holder.paternityClaims.slice(-PROMPT_PATERNITY_CLAIM_LIMIT).map(({ time, content }) => ({ time, content }));
+  }
+  return view;
+}
+
 function buildTrackerStateView(existingState, settings = null, minutesPassed = 0) {
   const characterCount = Object.keys(existingState || {}).length;
   const diaryLimit = getDiaryRecentLimit(settings, characterCount);
@@ -1181,7 +1197,7 @@ function buildTrackerStateView(existingState, settings = null, minutesPassed = 0
       const view = item?.profile?.base?.isHere === false
         ? buildOffscreenCharacterState(item, diaryLimit, wardrobeOn)
         : buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn, minutesPassed);
-      return [name, pruneEmptyFields(skillOn ? view : stripSkillFields(view))];
+      return [name, pruneEmptyFields(trimPaternityClaims(skillOn ? view : stripSkillFields(view)))];
     }),
   );
 }

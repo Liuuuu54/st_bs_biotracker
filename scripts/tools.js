@@ -1,4 +1,4 @@
-import { recordExperience, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
+import { recordExperience, normalizePaternityClaims, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
 import { getProfileSemenCapacity } from './semen_capacity.js';
 import { getStageProgress } from './stage_progress.js';
 import { syncCardSettings } from './card_settings.js';
@@ -301,16 +301,16 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsRecordExperience',
-    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。cognition 需 method、content：只记角色感知、猜测、被告知或检查解读，允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 需已存在的 childIndex（从0起）及 name 或 selectedFather；null 取消选爹，省略保留，不改遗传父方。各 action 参数互斥。认知实际进月经刷新，关系和孩子长期保留。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
+    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。cognition 需 method、content：只记角色感知、猜测、被告知或检查解读，允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她认定或对外采用的父亲身份，可以是未注册人物，null 取消，省略保留。认定可以与真相不符，对外说法也可以是谎言（例如明知是甲的却对乙说是乙的，写进 content）；不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知实际进月经刷新，关系、孩子与声称长期保留。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string', minLength: 1 },
-        action: { type: 'string', enum: ['cognition', 'date', 'breakup', 'marry', 'divorce', 'child'] },
+        action: { type: 'string', enum: ['cognition', 'date', 'breakup', 'marry', 'divorce', 'child', 'claim'] },
         time: { type: 'string', minLength: 1 },
         method: { type: 'string', enum: ['perception', 'guess', 'informed', 'test', 'prenatal'], description: 'perception 亲历或身体自觉；guess 猜测或自行推算；informed 被他人告知；test 借助检测手段（验孕棒、药草、占卜、魔法等，只用世界观里已有的手段）；prenatal 由专业者诊察（医师、产婆、祭司、治疗师等）。不得引入世界观没有的器具。' },
         content: { type: 'string', minLength: 1 }, partner: { type: 'string', minLength: 1 },
-        childIndex: { type: 'integer', minimum: 0 }, name: { type: 'string', minLength: 1 },
+        childIndex: { type: 'integer', minimum: 0 }, fetusIndex: { type: 'integer', minimum: 0 }, name: { type: 'string', minLength: 1 },
         selectedFather: { type: ['string', 'null'], minLength: 1 },
       },
       required: ['female', 'action', 'time'], additionalProperties: false,
@@ -1599,6 +1599,7 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
     // 嵌合本身由 chimera 栏位推导，这里只承接两边已落盘的标签
     tags: sanitizeFetusTagList([...(fetusA?.tags || []), ...(fetusB?.tags || [])]),
     fathers: fathers.join(' × ') || '未知',
+    ...mergePaternityClaims(fetusA, fetusB),
     provider: providerSources.length === 0 ? null : providerSources.join(' × '),
     providerSources,
     race,
@@ -1624,6 +1625,21 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
       maternalSources,
       genderSources,
     },
+  };
+}
+
+/**
+ * 嵌合胎的胎父声称：声称的父亲只能一位。纪录依时间串接；两边声称相同就保留，
+ * 不同就取最后一笔纪录所属那一胎的值。融合发生在着床前，实际很少已有声称。
+ */
+export function mergePaternityClaims(fetusA, fetusB) {
+  const tagged = [fetusA, fetusB].flatMap((fetus) => normalizePaternityClaims(fetus?.paternityClaims).map((claim) => ({ claim, fetus })));
+  tagged.sort((left, right) => left.claim.minutesPassed - right.claim.minutesPassed);
+  const claimed = [fetusA, fetusB].map((fetus) => (fetus?.selectedFather ? String(fetus.selectedFather) : null));
+  const selectedFather = claimed[0] === claimed[1] ? claimed[0] : (tagged.at(-1)?.fetus?.selectedFather || claimed[0] || claimed[1]);
+  return {
+    ...(selectedFather ? { selectedFather: String(selectedFather) } : {}),
+    ...(tagged.length ? { paternityClaims: tagged.map(({ claim }) => claim) } : {}),
   };
 }
 
@@ -3818,6 +3834,9 @@ function appendChildrenFromFetuses(profile, fetuses) {
       id: createChildId(),
       name: null,
       fathers: String(fetus?.fathers || '未知'),
+      // 胎儿阶段的声称原样带到孩子；没声称过就是 null，与孩子既有的预设一致
+      selectedFather: fetus?.selectedFather ? String(fetus.selectedFather) : null,
+      ...(normalizePaternityClaims(fetus?.paternityClaims).length ? { paternityClaims: normalizePaternityClaims(fetus.paternityClaims) } : {}),
       provider,
       providerSources: Array.isArray(fetus?.providerSources) ? [...fetus.providerSources] : [],
       chimera: fetus?.chimera ? cloneValue(fetus.chimera) : null,
@@ -8260,7 +8279,7 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsChangeOutfit') return applyChangeOutfit(chatState, args);
   if (name === 'bsSetDescription') return applyDescription(chatState, args);
   if (name === 'bsSetCharacterPresence') return applySetCharacterPresence(chatState, args);
-  if (name === 'bsRecordExperience') return recordExperience(chatState, args, call.sourceId || '');
+  if (name === 'bsRecordExperience') return recordExperience(chatState, args, call.sourceId || '', { resolveFetus: resolveVisibleFetus });
   if (name === 'bsRegisterSkillDefinition') return applyRegisterSkillDefinition(chatState, args);
   if (name === 'bsTrainSkill') return applyTrainSkill(chatState, args);
   if (name === 'bsUpdatePsychology') return applyUpdatePsychology(chatState, args);

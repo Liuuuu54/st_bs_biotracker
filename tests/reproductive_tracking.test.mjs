@@ -60,10 +60,13 @@ test('child identity differs from genetic fathers; omitted and null fields stay 
   const s = setup('产后恢复');
   s.characters.A.profile.children = [{ name: '原名', fathers: 'B', race: '人类' }];
   const args = { female: 'A', action: 'child', time: '今日', childIndex: 0 };
-  call(s, 'bsRecordExperience', { ...args, selectedFather: '未注册的丙' });
+  const claim = { female: 'A', action: 'claim', time: '今日', childIndex: 0, content: 'A 对外说孩子是丙的。' };
+  call(s, 'bsRecordExperience', { ...claim, selectedFather: '未注册的丙' });
   call(s, 'bsRecordExperience', { ...args, name: '新名' });
   assert.equal(s.characters.A.profile.children[0].selectedFather, '未注册的丙');
-  call(s, 'bsRecordExperience', { ...args, selectedFather: null });
+  assert.equal(s.characters.A.profile.children[0].name, '新名');
+  assert.equal(call(s, 'bsRecordExperience', { ...args, selectedFather: '丁' }).applied, false, 'child 只改名');
+  call(s, 'bsRecordExperience', { ...claim, content: 'A 改口说不知道是谁的。', selectedFather: null });
   assert.equal(s.characters.A.profile.children[0].fathers, 'B');
   assert.equal(s.characters.A.profile.children[0].selectedFather, null);
   assert.equal(call(s, 'bsRecordExperience', { ...args, childIndex: '0', name: '坏' }).applied, false);
@@ -466,7 +469,7 @@ test('user aliases resolve for relationships and selected identity without chang
     assert.equal(call(s, 'bsRecordExperience', args, 'alias-date').applied, true);
     assert.equal(call(s, 'bsRecordExperience', args, 'alias-date').unchanged, true);
     assert.deepEqual(s.characters.A.profile.experience.emotionalMates, ['A']);
-    call(s, 'bsRecordExperience', { female: 'A', action: 'child', time: '今日', childIndex: 0, selectedFather: '{{user}}' });
+    call(s, 'bsRecordExperience', { female: 'A', action: 'claim', time: '今日', childIndex: 0, content: 'A 说孩子是使用者的。', selectedFather: '{{user}}' });
     assert.equal(s.characters.A.profile.children[0].selectedFather, 'A');
     assert.equal(s.characters.A.profile.children[0].fathers, 'B');
   } finally { globalThis.SillyTavern = original; }

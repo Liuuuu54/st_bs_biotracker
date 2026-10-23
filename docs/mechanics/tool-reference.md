@@ -39,7 +39,7 @@
 | [`bsUpdatePsychology`](../../scripts/tools.js) | 必填 `female/options`，數值為變化量；mens 可改 `mastery/desire/autonomy`，preg 可改 `confidence/bonding/stance`。 | 只改当前侧已初始化的值，未知 null 不累加；恢復期、轉側待推演、未啟用或本故事小時已成功更新时拒絕。數值夾在 0–100，無心理 bool。 |
 | [`bsWriteDiary`](../../scripts/tools.js#L6804) | 必填 `female`、日期標題 `time`、正文 `content`。 | 追加一則主觀日記並記錄故事日；同角色同故事日（`floor(minutesPassed/1440)`）已有日記時拒絕。`time` 是文字標題，不決定故事日索引；角色離場仍可寫。 |
 | [`bsSetDescription`](../../scripts/tools.js#L7109) | 必填 `female`、`options.normalDescription` 或 `pregnantDescription`，值為以欄位名為鍵的物件。 | 只傳有變化或被點名待確認的欄位，未傳的保留。逐欄處理：不存在的欄位名只略過那一欄並回報，其餘照常更新；內容與原文相同算「確認未變」，刷新時間戳；空字串不改。原本空白的描述可首次建立欄位。過渡期仍接受舊的「欄名|內容;;」字串。[合併實作](../../scripts/descriptions.js#L84)。 |
-| [`bsRecordExperience`](../../scripts/tools.js) | 必填 `female/action/time`；`cognition` 另需 `method/content`，方法為 `perception/guess/informed/test/prenatal`；四種關係 action 需 `partner`；`child` 需從 0 起的 `childIndex` 及 `name` 或 `selectedFather`。 | action 參數互斥，認知只追加角色主觀紀錄；關係每次改一人且婚姻與交往互不連動。`selectedFather=null` 取消、省略保留，不改實際血緣與後臺經驗次數。 |
+| [`bsRecordExperience`](../../scripts/tools.js) | 必填 `female/action/time`；`cognition` 另需 `method/content`，方法為 `perception/guess/informed/test/prenatal`；四種關係 action 需 `partner`；`child` 需從 0 起的 `childIndex` 及 `name`；`claim` 需 `fetusIndex` 或 `childIndex` 擇一及 `content`，選填 `selectedFather`。 | action 參數互斥，認知只追加角色主觀紀錄；關係每次改一人且婚姻與交往互不連動。`claim` 追加胎父認定紀錄，`selectedFather=null` 取消、省略保留，不改實際血緣與後臺經驗次數。 |
 
 ## 服裝與技能
 

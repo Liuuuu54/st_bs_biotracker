@@ -5852,6 +5852,14 @@
   opacity: 0.85;
 }
 
+/* 认定的父亲与实际父方不同：反白标出，配色跟着主题走 */
+#bs-biotracker-settings .bs-bt-claim.is-mismatch {
+  padding: 0 3px;
+  border-radius: 2px;
+  background: var(--bsbt-lcd-text);
+  color: var(--bsbt-lcd-bg);
+}
+
 /* 阻塞与宫压警告写在子宫图底下，反白配色跟着主题走；一律单行，万一过长就截断 */
 #bs-biotracker-settings .bs-bt-womb-alert {
   margin: 8px auto 0;

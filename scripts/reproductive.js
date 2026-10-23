@@ -1,6 +1,6 @@
 // Shared reproductive data contracts. Beliefs never overwrite physiological facts.
 export const COGNITION_METHODS = Object.freeze(['perception', 'guess', 'informed', 'test', 'prenatal']);
-export const EXPERIENCE_ACTIONS = Object.freeze(['cognition', 'date', 'breakup', 'marry', 'divorce', 'child']);
+export const EXPERIENCE_ACTIONS = Object.freeze(['cognition', 'date', 'breakup', 'marry', 'divorce', 'child', 'claim']);
 export const REPRODUCTIVE_DEFAULTS = Object.freeze({
   condomCapacity: 50, condomReliability: 0.95,
   emergencyEffectiveness: 0.8,
@@ -84,7 +84,33 @@ export function refreshCognition(profile) {
   profile.reproductiveOperations = (profile.reproductiveOperations || []).filter((x) => x.action !== 'cognition');
 }
 
-export function recordExperience(chatState, args, source = '') {
+/** 胎父声称纪录：只增不改的白描，跟着胎儿与孩子长期保留；不合格的项目丢掉 */
+export function normalizePaternityClaims(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((x) => x && typeof x === 'object' && typeof x.content === 'string' && x.content.trim())
+    .map((x) => ({
+      time: String(x.time || '').trim(),
+      content: x.content.trim(),
+      minutesPassed: Math.max(0, Number(x.minutesPassed) || 0),
+      ...(x.source ? { source: String(x.source) } : {}),
+    }));
+}
+
+/**
+ * 胎儿或孩子的声称父亲与纪录。声称不改遗传真相（fathers），也不代表任何人知道真相。
+ * 同一来源（同一则讯息重新追踪）只记一次，比照认知纪录。
+ */
+function recordPaternityClaim(target, args, time, source, minutesPassed) {
+  const claims = normalizePaternityClaims(target.paternityClaims);
+  if (source && claims.some((x) => x.source === source)) return false;
+  claims.push({ time, content: args.content.trim(), minutesPassed, ...(source ? { source } : {}) });
+  target.paternityClaims = claims;
+  if (Object.hasOwn(args, 'selectedFather')) target.selectedFather = args.selectedFather === null ? null : args.selectedFather.trim();
+  return true;
+}
+
+export function recordExperience(chatState, args, source = '', { resolveFetus = (fetuses, index) => fetuses[index] } = {}) {
   const fail = (message) => ({ applied: false, message: `bsRecordExperience skipped: ${message}` });
   if (typeof args?.female !== 'string' || !args.female.trim()) return fail('female 必填。');
   const female = args.female.trim();
@@ -92,17 +118,27 @@ export function recordExperience(chatState, args, source = '') {
   if (!character) return fail('未知角色。');
   const { action, time } = args;
   if (!EXPERIENCE_ACTIONS.includes(action) || typeof time !== 'string' || !time.trim()) return fail('action 或 time 无效。');
-  const fields = action === 'cognition' ? ['method', 'content'] : action === 'child' ? ['childIndex', 'name', 'selectedFather'] : ['partner'];
+  const fields = action === 'cognition' ? ['method', 'content']
+    : action === 'child' ? ['childIndex', 'name']
+      : action === 'claim' ? ['fetusIndex', 'childIndex', 'content', 'selectedFather'] : ['partner'];
   const allowed = new Set(['female', 'action', 'time', ...fields]);
   if (Object.keys(args).some((x) => !allowed.has(x))) return fail('含不属于该 action 的参数。');
   const nonempty = (x) => typeof x === 'string' && x.trim().length > 0;
   if (action === 'cognition' && (!COGNITION_METHODS.includes(args.method) || !nonempty(args.content))) return fail('method 或 content 无效。');
-  if (!['cognition', 'child'].includes(action) && !nonempty(args.partner)) return fail('partner 必填。');
+  if (!['cognition', 'child', 'claim'].includes(action) && !nonempty(args.partner)) return fail('partner 必填。');
   if (action === 'child') {
     if (!Number.isInteger(args.childIndex) || !character.profile?.children?.[args.childIndex] || args.childIndex < 0) return fail('childIndex 无效。');
-    if (!Object.hasOwn(args, 'name') && !Object.hasOwn(args, 'selectedFather')) return fail('需 name 或 selectedFather。');
-    if (Object.hasOwn(args, 'name') && !nonempty(args.name)) return fail('name 无效。');
+    if (!nonempty(args.name)) return fail('name 无效。');
+  }
+  if (action === 'claim') {
+    const hasFetus = Object.hasOwn(args, 'fetusIndex');
+    if (hasFetus === Object.hasOwn(args, 'childIndex')) return fail('fetusIndex 与 childIndex 须二择一。');
+    if (!nonempty(args.content)) return fail('content 必填。');
     if (Object.hasOwn(args, 'selectedFather') && args.selectedFather !== null && !nonempty(args.selectedFather)) return fail('selectedFather 无效。');
+    if (hasFetus) {
+      const fetuses = Array.isArray(character.profile?.pregnant?.fetuses) ? character.profile.pregnant.fetuses : [];
+      if (!Number.isInteger(args.fetusIndex) || args.fetusIndex < 0 || !resolveFetus(fetuses, args.fetusIndex)) return fail('fetusIndex 无效。');
+    } else if (!Number.isInteger(args.childIndex) || args.childIndex < 0 || !character.profile?.children?.[args.childIndex]) return fail('childIndex 无效。');
   }
   const next = JSON.parse(JSON.stringify(character));
   const profile = next.profile;
@@ -121,9 +157,13 @@ export function recordExperience(chatState, args, source = '') {
       psy.generation = (Number(psy.generation) || 0) + 1;
     }
   } else if (action === 'child') {
-    const child = profile.children[args.childIndex];
-    if (Object.hasOwn(args, 'name')) child.name = args.name.trim();
-    if (Object.hasOwn(args, 'selectedFather')) child.selectedFather = args.selectedFather === null ? null : args.selectedFather.trim();
+    profile.children[args.childIndex].name = args.name.trim();
+  } else if (action === 'claim') {
+    // next 是深拷贝：在拷贝里重新解析同一胎，才不会写到原物件上
+    const target = Object.hasOwn(args, 'fetusIndex')
+      ? resolveFetus(profile.pregnant.fetuses, args.fetusIndex)
+      : profile.children[args.childIndex];
+    if (!recordPaternityClaim(target, args, time.trim(), source, minutesPassed)) return { applied: false, unchanged: true, message: '声称来源已记录。' };
   } else {
     profile.experience = normalizeExperience(profile.experience);
     const field = ['date', 'breakup'].includes(action) ? 'emotionalMates' : 'marriageMates';
@@ -134,7 +174,8 @@ export function recordExperience(chatState, args, source = '') {
     profile.experience[field] = add ? [...profile.experience[field], partner] : profile.experience[field].filter((x) => x !== partner);
   }
   chatState.characters[female] = next;
-  return { applied: true, message: action === 'cognition' ? '认知已记录；不代表内容客观正确。' : action === 'child' ? '孩子资料已更新。' : '关系已更新。' };
+  return { applied: true, message: action === 'cognition' ? '认知已记录；不代表内容客观正确。' : action === 'child' ? '孩子资料已更新。'
+    : action === 'claim' ? '胎父声称已记录；不改遗传父方，也不代表任何人知道真相。' : '关系已更新。' };
 }
 
 export function syncPsychologyLifecycle(profile, previousStage, menstrualEntry = false) {

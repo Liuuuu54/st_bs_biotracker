@@ -13,7 +13,7 @@
 <body>
 <div id="harness-info">
   <b>BioTracker UI Harness</b>（mock 宿主，非真实 SillyTavern）<br>
-  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件，精液灌满）、贝拉（产后恢复，六种 bsRecordExperience action＋五种认知方式，pregFit 生效，精液灌满）、琪拉（孕 30 周六胎：五种胚型＋孕中孕，各种胎儿标签，精液浸满）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、芙拉（延产期，乏力 2 级）、茉拉（刚受精）。
+  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件，精液灌满）、贝拉（产后恢复，七种 bsRecordExperience action＋五种认知方式，pregFit 生效，精液灌满）、琪拉（孕 30 周六胎：五种胚型＋孕中孕，各种胎儿标签，精液浸满）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、芙拉（延产期，乏力 2 级）、茉拉（刚受精）。
 </div>
 <script type="module">
   const CHAT_KEY = 'ui-harness-chat';
@@ -148,12 +148,12 @@
               // 由左至右、上下错开：卵生（宫顶）→ 胎生（子宫低位，内含孕中孕）→ 胎转卵生（宫顶）→ 卵胎生（子宫低位）→ 不定型（宫内自由）
               // 卵生・胎内回归（回到子宫里的鸟人）
               { embryoId: 2, descentStage: -3, fathers: '翼', fatherRace: '鸟人', race: '人类x鸟人', embryoType: '卵生', gender: '男', weight: 0.9, tendencyAngle: 45, affinity: 20, amnionDurability: 85, tags: ['rebirth'], talents: [] },
-              // 胎生・代孕（卵来自艾拉），也是孕中孕的宿主；正亲和验证胎儿天赋
-              { embryoId: 1, descentStage: -1, fathers: '莱昂', fatherRace: '人类', provider: '艾拉', providerSources: ['艾拉'], race: '精灵x人类', embryoType: '胎生', gender: '女', weight: 1.1, tendencyAngle: 0, affinity: 60, amnionDurability: 90, talents: [{ skillId: 1, level: 2, exp: 40 }] },
+              // 胎生・代孕（卵来自艾拉），也是孕中孕的宿主；正亲和验证胎儿天赋；声称父亲与实际不同
+              { embryoId: 1, descentStage: -1, fathers: '莱昂', selectedFather: '卡尔', paternityClaims: [{ time: '第三日', content: '琪拉对卡尔说孩子是他的，卡尔半信半疑。', minutesPassed: 0 }], fatherRace: '人类', provider: '艾拉', providerSources: ['艾拉'], race: '精灵x人类', embryoType: '胎生', gender: '女', weight: 1.1, tendencyAngle: 0, affinity: 60, amnionDurability: 90, talents: [{ skillId: 1, level: 2, exp: 40 }] },
               // 胎转卵生・嵌合（两位父源融合）；负亲和验证苦手方向
               { embryoId: 4, descentStage: -3, fathers: '莱昂 × 无名旅人', fatherRace: '人类x西方龙', chimera: { sourceCount: 2, fatherSources: ['莱昂', '无名旅人'], maternalSources: ['琪拉'], genderSources: ['男', '女'] }, race: '人类x西方龙', embryoType: '胎转卵生', gender: '双', weight: 1.0, tendencyAngle: 180, affinity: -35, amnionDurability: 45, talents: [{ skillId: 2, level: -1, exp: -30 }] },
               // 卵胎生・异期复孕，带三颗伴生卵；孕龄落后一截
-              { embryoId: 3, descentStage: -1, fathers: '海德', fatherRace: '人鱼', race: '人类x人鱼', embryoType: '卵胎生', gender: '女', weight: 0.85, tendencyAngle: 90, affinity: 10, amnionDurability: 70, conceivedAtDays: 30, companionEggCount: 3, tags: ['superfetation'], revealed: true, talents: [] },
+              { embryoId: 3, descentStage: -1, fathers: '海德', selectedFather: '海德', paternityClaims: [{ time: '第五日', content: '琪拉告诉海德孩子是他的，海德欣然认领。', minutesPassed: 0 }], fatherRace: '人鱼', race: '人类x人鱼', embryoType: '卵胎生', gender: '女', weight: 0.85, tendencyAngle: 90, affinity: 10, amnionDurability: 70, conceivedAtDays: 30, companionEggCount: 3, tags: ['superfetation'], revealed: true, talents: [] },
               // 不定型・自交＋雌核发生（琪拉自己当父方）
               { embryoId: 5, descentStage: -2, fathers: '琪拉', fatherRace: '人类x史萊姆', race: '人类x史萊姆', embryoType: '不定型', gender: '女', weight: 0.8, tendencyAngle: 270, affinity: 5, amnionDurability: 100, tags: ['gynogenesis'], talents: [] },
               // 孕中孕：长在 1 号体内，母亲是 1 号、父亲是精液来源
@@ -309,12 +309,13 @@
     { action: 'cognition', time: '旅途第35日', method: 'informed', content: '助产士告诉她可能怀孕；她听进了建议，但仍有疑虑。' },
     { action: 'cognition', time: '旅途第42日', method: 'test', content: '验孕结果呈阳性，她据此相信自己已经怀孕。' },
     { action: 'cognition', time: '旅途第100日', method: 'prenatal', content: '产检时被告知是一名单胎；这是她记住的报告内容，不代表工具替她确认了客观胎数。' },
-    { action: 'child', time: '产后第10日', childIndex: 0, name: '星禾', selectedFather: '莱昂' },
+    { action: 'child', time: '产后第10日', childIndex: 0, name: '星禾' },
+    { action: 'claim', time: '产后第10日', childIndex: 0, content: '贝拉对莱昂说星禾是他的孩子，莱昂当场认领。', selectedFather: '莱昂' },
   ];
   const sampleDetails = document.createElement('details');
   sampleDetails.id = 'harness-bella-experience';
   const sampleSummary = document.createElement('summary');
-  sampleSummary.textContent = '贝拉：六种 bsRecordExperience action 的工具样本（展开查看）';
+  sampleSummary.textContent = '贝拉：七种 bsRecordExperience action 的工具样本（展开查看）';
   const sampleList = document.createElement('ol');
   bellaExperienceSamples.forEach((args, index) => {
     const result = applyToolCall(chatState, {

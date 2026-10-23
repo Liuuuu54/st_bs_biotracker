@@ -1,4 +1,4 @@
-import { normalizeExperience, normalizeCognitionRecords, normalizeReproductiveSettings } from './reproductive.js';
+import { normalizeExperience, normalizeCognitionRecords, normalizePaternityClaims, normalizeReproductiveSettings } from './reproductive.js';
 import { stripVariableUpdateBlocks } from './variable_isolation.js';
 import { syncCardSettings, importCardSkillSeed } from './card_settings.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
@@ -390,6 +390,7 @@ export function normalizeCharacterPsychologyState(characterState) {
   characterState.profile.cognitionRecords = normalizeCognitionRecords(characterState.profile.cognitionRecords);
   for (const child of (characterState.profile.children || [])) {
     if (child.selectedFather === undefined) child.selectedFather = null;
+    if (child.paternityClaims !== undefined) child.paternityClaims = normalizePaternityClaims(child.paternityClaims);
   }
   characterState.profile.skills = normalizeSkillList(characterState.profile.skills);
   characterState.profile.talents = normalizeTalentList(characterState.profile.talents);

@@ -1,4 +1,4 @@
-import { normalizeExperience, initializeCognitionRecords, normalizeReproductiveSettings, psychologySide } from './reproductive.js';
+import { normalizeExperience, initializeCognitionRecords, normalizePaternityClaims, normalizeReproductiveSettings, psychologySide } from './reproductive.js';
 import { getWorldbookEntryActivationMode, worldbookEntryKeywordsMatch } from './worldbook_match.js';
 import { callOpenAICompatible } from './api.js';
 import { getEffectiveSettings } from './card_settings.js';
@@ -1193,6 +1193,8 @@ function sanitizeChildren(value) {
         fatherBloodline: item.fatherBloodline ?? null,
         fatherBloodlineSource: item.fatherBloodlineSource ?? null,
         fatherDerivedType: item.fatherDerivedType ?? null,
+        fatherBodySize: clampIndividualBodySize(item.fatherBodySize),
+        ...(normalizePaternityClaims(item.paternityClaims).length ? { paternityClaims: normalizePaternityClaims(item.paternityClaims) } : {}),
         age: item.age ?? null,
         birthWeightRatio: Number.isFinite(Number(item.birthWeightRatio)) ? clampNumber(item.birthWeightRatio, 0.33, 3.0, 1.0) : null,
         birthCompanionEggCount: Number.isFinite(Number(item.birthCompanionEggCount))
