@@ -18,15 +18,19 @@ const EMERGENCY_LEVEL_TEXT = {
   certain: '及时使用必定有效',
 };
 
-/** 百科的套子可靠度与事后避孕成功率换成分级描述；0 是本世界没有这种手段，主流与追踪都要知道 */
+/**
+ * 百科的套子可靠度与事后避孕成功率换成分级描述；0 是本世界没有这种手段，主流与追踪都要知道。
+ * 成败一律由系统结算：主流知道「很不牢靠」后曾在同一轮自己写出滑脱、漏出，追踪再照正文改记没戴套，
+ * 可靠度抽签根本没发生；所以主流要等下一轮的结果，追踪照实记戴套。
+ */
 function buildContraceptionBlock(levels, forTracker) {
   if (!levels || typeof levels !== 'object') return '';
   const condom = levels.condom === 'none'
     ? `- 屏障式避孕（套子，或羊肠套、魔法屏障等等效手段）：本世界不存在，剧情不得出现${forTracker ? '；bsAddSperm 不得传 hasCondom=true' : ''}。`
-    : CONDOM_LEVEL_TEXT[levels.condom] ? `- 屏障式避孕（套子或世界观中的等效手段）：${CONDOM_LEVEL_TEXT[levels.condom]}。` : '';
+    : CONDOM_LEVEL_TEXT[levels.condom] ? `- 屏障式避孕（套子或世界观中的等效手段）：${CONDOM_LEVEL_TEXT[levels.condom]}。${forTracker ? '正文写到戴着套就传 hasCondom=true，即使正文写了破裂、滑脱或漏出也照传，成败由系统结算，不要改记成没戴套。' : '这一次破没破由系统结算，下一轮才会告诉你；这一轮正文不要自己写破裂、滑脱或漏出，可以写担心。'}` : '';
   const emergency = levels.emergency === 'none'
     ? `- 事后避孕（避孕药，或药草、魔法等等效手段）：本世界不存在，剧情不得出现${forTracker ? '；不得调用 bsAbortion purpose=emergency' : ''}。`
-    : EMERGENCY_LEVEL_TEXT[levels.emergency] ? `- 事后避孕（避孕药或世界观中的等效手段）：${EMERGENCY_LEVEL_TEXT[levels.emergency]}；越晚使用效果越差，着床后无效。` : '';
+    : EMERGENCY_LEVEL_TEXT[levels.emergency] ? `- 事后避孕（避孕药或世界观中的等效手段）：${EMERGENCY_LEVEL_TEXT[levels.emergency]}；越晚使用效果越差，着床后无效。${forTracker ? '' : '有没有效由系统结算，角色当下不会知道，正文不要写成已经确定。'}` : '';
   return condom || emergency ? ['[本世界的避孕手段]', condom, emergency].filter(Boolean).join('\n') : '';
 }
 

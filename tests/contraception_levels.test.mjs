@@ -41,6 +41,16 @@ test('设 0 时注明本世界不存在；工具名只出现在追踪提示词',
   assert.ok(!/hasCondom|bsAbortion/.test(mainflow), '主流模型不能调用工具');
 });
 
+test('成败由系统结算：主流这一轮不自己写破裂或漏出、不把事后避孕写成确定；追踪照实记戴套', () => {
+  const payload = payloadWith({ condomReliability: 0.2, emergencyEffectiveness: 0.5 });
+  const mainflow = buildMainFlowStatePrompt(payload);
+  assert.match(mainflow, /屏障式避孕.*很不牢靠.*由系统结算，下一轮才会告诉你；这一轮正文不要自己写破裂、滑脱或漏出/);
+  assert.match(mainflow, /事后避孕.*有没有效由系统结算，角色当下不会知道/);
+  assert.ok(!/hasCondom/.test(mainflow));
+  const tracker = buildTrackerSystemPrompt('', null, payload);
+  assert.match(tracker, /屏障式避孕.*即使正文写了破裂、滑脱或漏出也照传，成败由系统结算，不要改记成没戴套/);
+});
+
 test('payload 没带分级时不加这一段', () => {
   assert.ok(!buildTrackerSystemPrompt('', null, {}).includes('本世界的避孕手段'));
 });
