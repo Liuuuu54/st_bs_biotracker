@@ -86,11 +86,11 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "精灵": {
     embryoType: "胎生",
-    introductionLine: "Elf，长寿的尖耳亚人，面容姣好、擅长魔法；肤色深青的暗精灵另列为卓尔。",
+    introductionLine: "Elf，长寿的尖耳亚人，面容姣好、擅长魔法。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.5, birthDifficulty: 0.8, breedTolerance: 0.33,
     impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 2, genderRatio: 45,
-    companionEggsMean: 0, recoveryCoefficient: 4.86,
+    companionEggsMean: 0, recoveryCoefficient: 4.9,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "卓尔": {
@@ -99,12 +99,12 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.5, birthDifficulty: 1.5, breedTolerance: 0.33,
     impregnationDifficulty: 1.5, orgasmOvulationAmount: 0, identicalProbability: 2, genderRatio: 45,
-    companionEggsMean: 0, recoveryCoefficient: 4.86,
+    companionEggsMean: 0, recoveryCoefficient: 4.9,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "兽耳族": {
     embryoType: "胎生",
-    introductionLine: "Kemonomimi／Beastfolk，保有人形、带兽耳兽尾的亚人；日系兽娘与西方 furry 皆归此类；牛系另列为米诺陶族。",
+    introductionLine: "Kemonomimi／Beastfolk，保有人形、带兽耳兽尾的亚人；日系兽娘与西方 furry 皆归此类。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.6, birthDifficulty: 0.8, breedTolerance: 3,
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 10, genderRatio: 50,
@@ -153,7 +153,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 1, breedTolerance: 2,
     impregnationDifficulty: 0.8, orgasmOvulationAmount: 1, identicalProbability: 50, genderRatio: 75,
-    companionEggsMean: 0, recoveryCoefficient: 0.39,
+    companionEggsMean: 0, recoveryCoefficient: 0.4,
     bodySize: 5, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "矮人": {
@@ -171,7 +171,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 1.5, breedTolerance: 2,
     impregnationDifficulty: 0.8, orgasmOvulationAmount: 3, identicalProbability: 10, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 0.61,
+    companionEggsMean: 0, recoveryCoefficient: 0.6,
     bodySize: 2, bodySizeSd: 0.3, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "半人马": {
@@ -180,7 +180,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 0.5,
     impregnationDifficulty: 2, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 66,
-    companionEggsMean: 0, recoveryCoefficient: 3.75,
+    companionEggsMean: 0, recoveryCoefficient: 3.8,
     bodySize: 5, bodySizeSd: 0.4, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "巨人": {
@@ -207,7 +207,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1.25, gestationSpeciesSpeed: 1, birthDifficulty: 1, breedTolerance: 0.8,
     impregnationDifficulty: 0.75, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 40,
-    companionEggsMean: 0, recoveryCoefficient: 1.25,
+    companionEggsMean: 0, recoveryCoefficient: 1.3,
     bodySize: 4, bodySizeSd: 0.6, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "夜叉": {
@@ -225,7 +225,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 0.5,
     impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 3.75,
+    companionEggsMean: 0, recoveryCoefficient: 3.8,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "貓又": {
@@ -234,7 +234,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1, birthDifficulty: 1, breedTolerance: 1.5,
     impregnationDifficulty: 2.5, orgasmOvulationAmount: 2, identicalProbability: 20, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 0.66,
+    companionEggsMean: 0, recoveryCoefficient: 0.7,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "月兔": {
@@ -248,11 +248,11 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "杜拉罕": {
     embryoType: "胎生",
-    introductionLine: "Dullahan，可将头颅离体持握的亚人，青春期后头颅方与躯干分离，颈上或燃着无实体的火焰；躯体不依赖头颅运作。爱尔兰原典近于妖精，奇幻创作多作不死——取后者写作 [不死]杜拉罕。",
+    introductionLine: "Dullahan，可将头颅离体持握的亚人，青春期后头颅方与躯干分离，颈上或燃着无实体的火焰；躯体不依赖头颅运作。爱尔兰原典近于精怪，奇幻创作多作不死——取后者写作 [不死]杜拉罕。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.8, birthDifficulty: 1, breedTolerance: 1.2,
     impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 0.41,
+    companionEggsMean: 0, recoveryCoefficient: 0.4,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "魔族": {
@@ -306,7 +306,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.8, breedTolerance: 1,
     impregnationDifficulty: 1.5, orgasmOvulationAmount: 3, identicalProbability: 20, genderRatio: null,
-    companionEggsMean: 4, recoveryCoefficient: 0.77,
+    companionEggsMean: 4, recoveryCoefficient: 0.8,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "触手怪": {
@@ -324,7 +324,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.8, birthDifficulty: 1, breedTolerance: 1,
     impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 2, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 3.75,
+    companionEggsMean: 0, recoveryCoefficient: 3.8,
     bodySize: 1, bodySizeSd: 0.4, altFormBodySize: 4, bodyPlan: "humanoid",
   },
   "真菌族": {
@@ -342,7 +342,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 3.3, birthDifficulty: 0.25, breedTolerance: 0.25,
     impregnationDifficulty: 0.25, orgasmOvulationAmount: 5, identicalProbability: 10, genderRatio: null,
-    companionEggsMean: 9, recoveryCoefficient: 0.91,
+    companionEggsMean: 9, recoveryCoefficient: 0.9,
     bodySize: 3, bodySizeSd: 0.4, altFormBodySize: 2, bodyPlan: "hybrid",
   },
   "龟族": {
@@ -360,7 +360,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 3, gestationSpeciesSpeed: 1.6, birthDifficulty: 0.4, breedTolerance: 1,
     impregnationDifficulty: 2.5, orgasmOvulationAmount: 4, identicalProbability: 20, genderRatio: 50,
-    companionEggsMean: 20, recoveryCoefficient: 0.46,
+    companionEggsMean: 20, recoveryCoefficient: 0.5,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "宝箱怪": {
@@ -378,7 +378,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 2, birthDifficulty: 1.5, breedTolerance: 1.33,
     impregnationDifficulty: 2, orgasmOvulationAmount: 6, identicalProbability: 0, genderRatio: 25,
-    companionEggsMean: 12, recoveryCoefficient: 0.57,
+    companionEggsMean: 12, recoveryCoefficient: 0.6,
     bodySize: 5, bodySizeSd: 0.5, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "百足氏": {
@@ -387,7 +387,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 2, birthDifficulty: 3.5, breedTolerance: 1.33,
     impregnationDifficulty: 1.5, orgasmOvulationAmount: 6, identicalProbability: 0, genderRatio: 40,
-    companionEggsMean: 10, recoveryCoefficient: 1.32,
+    companionEggsMean: 10, recoveryCoefficient: 1.3,
     bodySize: 5, bodySizeSd: 0.6, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "天狗": {
@@ -423,7 +423,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2.5, birthDifficulty: 0.4, breedTolerance: 1,
     impregnationDifficulty: 0.3, orgasmOvulationAmount: 3, identicalProbability: 20, genderRatio: 50,
-    companionEggsMean: 1, recoveryCoefficient: 0.39,
+    companionEggsMean: 1, recoveryCoefficient: 0.4,
     bodySize: 2, bodySizeSd: 0.3, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "人鱼": {
@@ -495,7 +495,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 2, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.5, breedTolerance: 0.75,
     impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 2, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 1.07,
+    companionEggsMean: 0, recoveryCoefficient: 1.1,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "水母族": {
@@ -504,7 +504,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.2, breedTolerance: 0.5,
     impregnationDifficulty: 0.33, orgasmOvulationAmount: 5, identicalProbability: 50, genderRatio: null,
-    companionEggsMean: 14, recoveryCoefficient: 0.64,
+    companionEggsMean: 14, recoveryCoefficient: 0.6,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "海马族": {
@@ -531,7 +531,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.7, birthDifficulty: 1.5, breedTolerance: 1,
     impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 4.29,
+    companionEggsMean: 0, recoveryCoefficient: 4.3,
     bodySize: 5, bodySizeSd: 0.5, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "蝎罗氏": {
@@ -585,7 +585,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 3.5, gestationSpeciesSpeed: 0.33, birthDifficulty: 3, breedTolerance: 1.8,
     impregnationDifficulty: 4, orgasmOvulationAmount: 2, identicalProbability: 25, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 5.05,
+    companionEggsMean: 0, recoveryCoefficient: 5.1,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: 6, bodyPlan: "humanoid",
   },
   "天使": {
@@ -594,16 +594,16 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 13, gestationSpeciesSpeed: 0.8, birthDifficulty: 2.5, breedTolerance: 1.4,
     impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 10, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 2.23,
+    companionEggsMean: 0, recoveryCoefficient: 2.2,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "恶魔": {
     embryoType: "胎转卵生",
-    introductionLine: "Demon，魔界种族，以「恶魔之卵」孕育；与已分家的媚魔及夢魔不同，也不是凡世的魔族。",
+    introductionLine: "Demon，魔界种族，以「恶魔之卵」孕育。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 13, gestationSpeciesSpeed: 0.8, birthDifficulty: 2.5, breedTolerance: 1.4,
     impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 10, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 2.23,
+    companionEggsMean: 0, recoveryCoefficient: 2.2,
     bodySize: 4, bodySizeSd: 0.6, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "奇美拉": {
@@ -612,7 +612,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.4, birthDifficulty: 4, breedTolerance: 2.4,
     impregnationDifficulty: 4, orgasmOvulationAmount: 1, identicalProbability: 20, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 4.16,
+    companionEggsMean: 0, recoveryCoefficient: 4.2,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 5, bodyPlan: "humanoid",
   },
   "麒麟": {
@@ -648,7 +648,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.5, birthDifficulty: 3.5, breedTolerance: 1.6,
     impregnationDifficulty: 5, orgasmOvulationAmount: 1, identicalProbability: 25, genderRatio: 66,
-    companionEggsMean: 0, recoveryCoefficient: 4.38,
+    companionEggsMean: 0, recoveryCoefficient: 4.4,
     bodySize: 3, bodySizeSd: 0.4, altFormBodySize: 5, bodyPlan: "humanoid",
   },
   "空鲸": {
@@ -675,7 +675,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.3, birthDifficulty: 2, breedTolerance: 2.4,
     impregnationDifficulty: 5, orgasmOvulationAmount: 2, identicalProbability: 50, genderRatio: null,
-    companionEggsMean: 0, recoveryCoefficient: 2.79,
+    companionEggsMean: 0, recoveryCoefficient: 2.8,
     bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
   },
   "史萊姆": {
@@ -702,7 +702,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.6, birthDifficulty: 0.5, breedTolerance: 1,
     impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 40, genderRatio: -1,
-    companionEggsMean: 0, recoveryCoefficient: 0.63,
+    companionEggsMean: 0, recoveryCoefficient: 0.6,
     bodySize: 1, bodySizeSd: 0.4, altFormBodySize: 3, bodyPlan: "any",
   },
   "人偶": {
@@ -711,7 +711,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 1,
     impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 10, genderRatio: -1,
-    companionEggsMean: 0, recoveryCoefficient: 3.75,
+    companionEggsMean: 0, recoveryCoefficient: 3.8,
     bodySize: 3, bodySizeSd: 0.7, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "心魇": {
@@ -729,7 +729,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 1,
     impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 95,
-    companionEggsMean: 0, recoveryCoefficient: 0.66,
+    companionEggsMean: 0, recoveryCoefficient: 0.7,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "宝石人": {
@@ -747,7 +747,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 2, birthDifficulty: 1, breedTolerance: 1.5,
     impregnationDifficulty: 7, orgasmOvulationAmount: 0, identicalProbability: 1, genderRatio: null,
-    companionEggsMean: 0, recoveryCoefficient: 0.34,
+    companionEggsMean: 0, recoveryCoefficient: 0.3,
     bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
   },
   "元素灵": {
@@ -756,16 +756,16 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 1.25,
     impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: -1,
-    companionEggsMean: 0, recoveryCoefficient: 0.39,
+    companionEggsMean: 0, recoveryCoefficient: 0.4,
     bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
   },
   "灯神": {
     embryoType: "不定型",
-    introductionLine: "Djinn，阿拉丁神灯一类的愿望精灵。",
+    introductionLine: "Djinn，阿拉丁神灯一类的愿望之灵。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.66, birthDifficulty: 2, breedTolerance: 1.5,
     impregnationDifficulty: 5, orgasmOvulationAmount: 1, identicalProbability: 0, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 2.02,
+    companionEggsMean: 0, recoveryCoefficient: 2,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 6, bodyPlan: "humanoid",
   },
   "影魔": {
@@ -774,7 +774,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.75, birthDifficulty: 0.6, breedTolerance: 1.25,
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 0, identicalProbability: 33, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 0.64,
+    companionEggsMean: 0, recoveryCoefficient: 0.6,
     bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
   },
   "活体铠甲": {
