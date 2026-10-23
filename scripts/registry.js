@@ -295,6 +295,12 @@ function sanitizePromptText(value) {
     .trim();
 }
 
+/**
+ * 注册与心情推演是一次写完整份档案：描述范本要求写「胎动的状态」，模型在孕 12 周也照写胎动。
+ * 追踪期的系统胎动在孕早期本来就不发生，这里补上同样的界线。孕周一律按人类产科孕周换算。
+ */
+export const QUICKENING_RULE = '胎动感知（硬性）：按人类产科孕周换算，母体通常要到孕 18–20 周（经产妇约 16–18 周，多胎大致相同）才感觉得到胎动。在此之前胎儿虽会动，母体察觉不到，只有产检、超声或世界观里的诊察手段（魔法、占卜等）看得到；描述、心情与认知都不得写母体感到胎动、踢动或腹中有东西在动。过了这个时间点，感觉得到不等于认得出：角色还不知道自己怀孕（cognitionRecords 没有知孕纪录）或拒绝承认时，只会以为是胀气、肠胃蠕动、抽筋之类。描述可以写客观的胎儿活动，但写到母体的感受，以及心情与认知，都照她的理解写，不得写成她认出那是胎动。';
+
 export function buildBreedingInferenceSystemPrompt(settings, options = {}) {
   const side = options.psychologySide || null;
   return [
@@ -305,6 +311,7 @@ export function buildBreedingInferenceSystemPrompt(settings, options = {}) {
     '依据角色资料、关系、处境、近期剧情、当前 cognitionRecords、日记、孩子和长期经验建立新侧，不能复用上一胎心理。',
     '知道怀孕、接受本次怀孕、母职信心与展现倾向分开。不把模型看到的实际父源/胎数/孕程当成角色已知。',
     '尚未感知妊娠时，不凭空生成孕妇心态，无依据的轴保持 null；null 不等于 0。知情后才补推缺项。',
+    QUICKENING_RULE,
     '想受孕不等于接纳每次妊娠；生过孩子不等于想再生。已知或相信敌对父源可影响态度，秘密真相不可影响。',
     'confidence 是母职信心，不是产科知识或认知准确度；bonding 是接纳与联结，不强制恋孕、自我牺牲或决定留下孩子；stance 是展现倾向，不等于已告知谁。',
     '本次初始化不受日常 ±1～3 的 delta 限制。数值为 0～100 或 null，不写心理 bool，不改 cognitionRecords。',
@@ -755,7 +762,10 @@ export async function runRegistryBreedingInference(ctx, options = {}) {
   payload.breeding_inference_prompt = breedingInferencePrompt;
   const subject = chatState.characters[targetName]?.profile;
   if (subject) payload.existing_state = { name: targetName, profile: {
-    base: { stage: subject.base?.stage }, cognitionRecords: subject.cognitionRecords || [],
+    base: { stage: subject.base?.stage },
+    // 胎动感知看孕周：只给阶段的话，孕中期 14–20 周分不出来
+    ...(Number(subject.pregnant?.effectivePregnantDays) > 0 ? { pregnant: { gestationalWeeks: Math.floor(Number(subject.pregnant.effectivePregnantDays) / 7) } } : {}),
+    cognitionRecords: subject.cognitionRecords || [],
     diary: subject.diary || [], experience: subject.experience || {},
     children: (subject.children || []).map(({ name, selectedFather, age }) => ({ name, selectedFather, age })),
     psychology: initialSide ? { [initialSide]: subject.psychology?.[initialSide] || {} } : undefined,
@@ -1015,6 +1025,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
       '若角色补充设定明确描述的是一种未来也会持续生效、且倍率不为 1 的妊娠体质、祝福、诅咒、冻结或延长效果，即使角色当前未怀孕，也必须写入 bio.gestationModifierMultiplier、bio.gestationModifierName、bio.gestationModifierDescription；普通妊娠不得补写 bio。',
     ] : []),
     '注意：未怀孕角色不要硬填 pregnantDescription；描述内容不要换行。',
+    QUICKENING_RULE,
     '只输出 JSON，不要输出额外解释。',
     '【name】必须原样填写 payload.target_character，一字不差。那是用户指定要注册的角色名；即使它与角色卡名不同，也不得改用角色卡名、别名或称谓。',
     'JSON 结构必须是：',

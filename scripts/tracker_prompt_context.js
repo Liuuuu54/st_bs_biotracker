@@ -215,7 +215,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '[metabolism]',
   '- 普通种族使用 excretion / hunger / sleep / milk / odor / companionship，分别对应泄意、饿意、困意、乳意、臭意、伴意；excretion（泄意）同时包含排尿与排便需求。',
   '- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值；被 pregnant.expansion 命中的方向可扩至 -200 或 200。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsExcreteMetabolism 进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。',
-  '- excretion 会在活力增加时累积；以 bsExcreteMetabolism 处理 hunger（进食）会增加部分泄意与少量困意，处理 sleep（睡眠）会增加少量饿意。milk 代表乳意：普通周期中为乳房胀敏或周期不适，黄体期/月经期会随时间累积，排卵期可因性欲波动少量累积；妊娠、假孕或产后恢复时则也涵盖乳胀与泌乳需求。odor 代表需要清理的臭意，companionship 代表渴望陪伴或社交的伴意。',
+  '- excretion 会在活力增加时累积；以 bsExcreteMetabolism 处理 hunger（进食）会增加部分泄意与少量困意，处理 sleep（睡眠）会增加少量饿意。milk 代表乳意：普通周期中为乳房胀敏或周期不适，黄体期/月经期会随时间累积，排卵期可因性欲波动少量累积；妊娠时孕早期与孕中期前段是乳房胀痛、敏感（早孕常见），孕中后期起才可能溢出少量初乳，多数到孕晚期或产后才明显；假孕以胀痛为主；产后恢复为泌乳需求。odor 代表需要清理的臭意，companionship 代表渴望陪伴或社交的伴意。',
   '- 时间累积满一周时会进行日常生活结算：基本清洁会清除臭意，日常往来会缓解部分伴意；普通周期进入新一轮卵泡期时，周期型乳意会清零。妊娠、假孕或产后恢复的泌乳型乳意不会因跨周自动清除。',
   '- 只有剧情确实发生陪伴或社交时，才用 options.companionship 缓解伴意；臭意达到高等级时会降低陪伴缓解效果。伴意解除不额外转化为乳意；乳意仍由周期、妊娠/假孕/产后恢复与性欲波动等既有来源产生。',
   '- pregnant.blockage／acceleration／expansion 是当日妊娠症状，格式为 {key, severity}，key 可为上述需求或 fluxPositive/fluxNegative；三者不会同时落在同一项需求上。',
@@ -229,7 +229,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- pregnant.acceleration 表示快积症状，会加快对应需求累积，也会让刚被缓解的需求较快回升：',
   '  - excretion: 频尿。',
   '  - hunger: 容易饿、奇特饮食偏好。',
-  '  - milk: 乳意快升、溢乳。',
+  '  - milk: 乳意快升；孕晚期以前是乳房胀痛、敏感加剧，孕晚期起才可能溢出初乳。',
   '  - sleep: 晕眩、嗜睡。',
   '  - odor: 体温升高、容易排汗。',
   '  - companionship: 黏人。',
@@ -504,7 +504,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
     '- base：vitality 活力、psyStress 情压，体质与精神倾向看 *LevelText；libido 性欲；uterinePressure 宫压（上限随孕程提高，越高越接近流产或分娩）；eggs 可受精卵数；sperms 为体内残留精液，value 每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。',
   ];
   if (profiles.some((profile) => profile.metabolism)) {
-    lines.push('- metabolism：excretion 泄意、hunger 饿意、sleep 困意、milk 乳意、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；数值越高越急迫（一般上限 150）。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');
+    lines.push('- metabolism：excretion 泄意、hunger 饿意、sleep 困意、milk 乳意（孕晚期以前是乳房胀痛敏感，孕晚期起才可能溢乳）、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；数值越高越急迫（一般上限 150）。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');
   }
   if (profiles.some((profile) => profile.pregnant)) {
     lines.push(
