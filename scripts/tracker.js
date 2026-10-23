@@ -1171,7 +1171,7 @@ function stripSkillFields(view) {
   return view;
 }
 
-/** 胎父声称纪录只增不改，模型只需要最近几笔的时间与白描，来源与系统分钟数不外露 */
+/** 胎父认定纪录只增不改，模型只需要最近几笔的时间与白描，来源与系统分钟数不外露 */
 const PROMPT_PATERNITY_CLAIM_LIMIT = 3;
 function trimPaternityClaims(view) {
   const profile = view?.profile;

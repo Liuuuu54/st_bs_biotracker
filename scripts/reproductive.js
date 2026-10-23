@@ -84,7 +84,7 @@ export function refreshCognition(profile) {
   profile.reproductiveOperations = (profile.reproductiveOperations || []).filter((x) => x.action !== 'cognition');
 }
 
-/** 胎父声称纪录：只增不改的白描，跟着胎儿与孩子长期保留；不合格的项目丢掉 */
+/** 胎父认定纪录：只增不改的白描，跟着胎儿与孩子长期保留；不合格的项目丢掉 */
 export function normalizePaternityClaims(value) {
   if (!Array.isArray(value)) return [];
   return value
@@ -98,7 +98,7 @@ export function normalizePaternityClaims(value) {
 }
 
 /**
- * 胎儿或孩子的声称父亲与纪录。声称不改遗传真相（fathers），也不代表任何人知道真相。
+ * 胎儿或孩子心里认定的父亲与纪录；对外说法写在纪录里。认定不改遗传真相（fathers），也不代表任何人知道真相。
  * 同一来源（同一则讯息重新追踪）只记一次，比照认知纪录。
  */
 function recordPaternityClaim(target, args, time, source, minutesPassed) {
@@ -163,7 +163,7 @@ export function recordExperience(chatState, args, source = '', { resolveFetus = 
     const target = Object.hasOwn(args, 'fetusIndex')
       ? resolveFetus(profile.pregnant.fetuses, args.fetusIndex)
       : profile.children[args.childIndex];
-    if (!recordPaternityClaim(target, args, time.trim(), source, minutesPassed)) return { applied: false, unchanged: true, message: '声称来源已记录。' };
+    if (!recordPaternityClaim(target, args, time.trim(), source, minutesPassed)) return { applied: false, unchanged: true, message: '认定来源已记录。' };
   } else {
     profile.experience = normalizeExperience(profile.experience);
     const field = ['date', 'breakup'].includes(action) ? 'emotionalMates' : 'marriageMates';
@@ -175,7 +175,7 @@ export function recordExperience(chatState, args, source = '', { resolveFetus = 
   }
   chatState.characters[female] = next;
   return { applied: true, message: action === 'cognition' ? '认知已记录；不代表内容客观正确。' : action === 'child' ? '孩子资料已更新。'
-    : action === 'claim' ? '胎父声称已记录；不改遗传父方，也不代表任何人知道真相。' : '关系已更新。' };
+    : action === 'claim' ? '胎父认定已记录；不改遗传父方，也不代表任何人知道真相。' : '关系已更新。' };
 }
 
 export function syncPsychologyLifecycle(profile, previousStage, menstrualEntry = false) {

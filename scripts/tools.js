@@ -301,7 +301,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsRecordExperience',
-    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。cognition 需 method、content：只记角色感知、猜测、被告知或检查解读，允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她认定或对外采用的父亲身份，可以是未注册人物，null 取消，省略保留。认定可以与真相不符，对外说法也可以是谎言（例如明知是甲的却对乙说是乙的，写进 content）；不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知实际进月经刷新，关系、孩子与声称长期保留。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
+    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。cognition 需 method、content：只记角色感知、猜测、被告知或检查解读，允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她自己心里认定的父亲，可以是未注册人物，null 取消，省略保留；认定可以与真相不符。对外说法与心里认定不同时（谎称、隐瞒），selectedFather 仍记心里的认定，对外怎么说写进 content，例如「她心里认定是乙的，却对甲谎称是甲的」；心里认定改变（独自想通、起疑、改认）也用 claim 记，不改用 cognition。不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知实际进月经刷新，关系、孩子与胎父认定长期保留。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
     input_schema: {
       type: 'object',
       properties: {
@@ -1629,8 +1629,8 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId) {
 }
 
 /**
- * 嵌合胎的胎父声称：声称的父亲只能一位。纪录依时间串接；两边声称相同就保留，
- * 不同就取最后一笔纪录所属那一胎的值。融合发生在着床前，实际很少已有声称。
+ * 嵌合胎的胎父认定：认定的父亲只能一位。纪录依时间串接；两边认定相同就保留，
+ * 不同就取最后一笔纪录所属那一胎的值。融合发生在着床前，实际很少已有认定。
  */
 export function mergePaternityClaims(fetusA, fetusB) {
   const tagged = [fetusA, fetusB].flatMap((fetus) => normalizePaternityClaims(fetus?.paternityClaims).map((claim) => ({ claim, fetus })));
@@ -3834,7 +3834,7 @@ function appendChildrenFromFetuses(profile, fetuses) {
       id: createChildId(),
       name: null,
       fathers: String(fetus?.fathers || '未知'),
-      // 胎儿阶段的声称原样带到孩子；没声称过就是 null，与孩子既有的预设一致
+      // 胎儿阶段的认定原样带到孩子；没认定过就是 null，与孩子既有的预设一致
       selectedFather: fetus?.selectedFather ? String(fetus.selectedFather) : null,
       ...(normalizePaternityClaims(fetus?.paternityClaims).length ? { paternityClaims: normalizePaternityClaims(fetus.paternityClaims) } : {}),
       provider,

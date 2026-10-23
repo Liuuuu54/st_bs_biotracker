@@ -34,7 +34,7 @@
 
 `bsMaternalFetalInteraction` 處理母胎互動與多胎之間的互踢、推擠、依偎（`direction=sibling`，只改角度或左右位置），三者共用每故事小時一次的限制；胎兒的親近度限制在 -50 至 50，母方結果受情壓影響。[互動實作](../../scripts/tools.js#L6206)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L505)。
 
-`experience` 保存初次／近期性伴、獨立的交往与婚姻名單及後臺懷孕／生產／損失次數。`bsRecordExperience` 以必填 `female/action/time` 定位角色与分支；認知追加至 `profile.cognitionRecords`，關係與子女更新长期資料。胎兒與子女的 `selectedFather` 是角色認定或對外採用的父親身份（`action=claim` 記錄並追加白描紀錄），`fathers` 仍是實際遺傳来源。[工具參考](tool-reference.md)、[詳細機制](reproductive-tracking.md)。
+`experience` 保存初次／近期性伴、獨立的交往与婚姻名單及後臺懷孕／生產／損失次數。`bsRecordExperience` 以必填 `female/action/time` 定位角色与分支；認知追加至 `profile.cognitionRecords`，關係與子女更新长期資料。胎兒與子女的 `selectedFather` 是角色自己心裡認定的父親，對外說法寫在白描紀錄裡（`action=claim` 記錄並追加），`fathers` 仍是實際遺傳来源。[工具參考](tool-reference.md)、[詳細機制](reproductive-tracking.md)。
 
 `bsWriteDiary` 追加角色主觀日記；工具定義要求同一角色每故事日最多一篇，日期標題需是故事日期而非時刻。日記是模型產生的敘述記錄，不參與時間或生理公式。[定義](../../scripts/tools.js#L124)、[實作](../../scripts/tools.js#L6735)。
 

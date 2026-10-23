@@ -1,10 +1,10 @@
-// 胎父声称：bsRecordExperience(action=claim) 记胎儿或孩子对外说的父亲与白描纪录；
-// 声称可以是谎言，不改遗传父方 fathers，出生时原样带到孩子。
+// 胎父认定：bsRecordExperience(action=claim) 记胎儿或孩子心里认定的父亲与白描纪录；
+// 认定可以与真相不符，对外谎称写在纪录里；不改遗传父方 fathers，出生时原样带到孩子。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as state from '../scripts/state.js';
-import { applyToolCall, applyToolCallsResult, mergePaternityClaims } from '../scripts/tools.js';
+import { applyToolCall, applyToolCallsResult, mergePaternityClaims, TOOL_DEFINITIONS } from '../scripts/tools.js';
 import { buildTrackerPayload } from '../scripts/tracker.js';
 
 function makePregnant(fetuses) {
@@ -76,7 +76,7 @@ test('同一则讯息重新追踪只记一次', () => {
   assert.equal(chatState.characters['艾拉'].profile.pregnant.fetuses[0].paternityClaims.length, 1);
 });
 
-test('孩子也能声称；出生时胎儿的声称原样带到孩子', () => {
+test('孩子也能认定；出生时胎儿的认定原样带到孩子', () => {
   const chatState = makePregnant([fetus(1)]);
   claim(chatState, { fetusIndex: 0, selectedFather: '丈夫' });
   assert.equal(applyToolCall(chatState, { name: 'bsChildbirth', arguments: { female: '艾拉' } }).applied, true);
@@ -90,7 +90,7 @@ test('孩子也能声称；出生时胎儿的声称原样带到孩子', () => {
   assert.equal(born().paternityClaims.length, 2);
 });
 
-test('没声称过的胎儿出生后 selectedFather 为 null、没有纪录栏位', () => {
+test('没认定过的胎儿出生后 selectedFather 为 null、没有纪录栏位', () => {
   const chatState = makePregnant([fetus(1)]);
   applyToolCall(chatState, { name: 'bsChildbirth', arguments: { female: '艾拉' } });
   const born = chatState.characters['艾拉'].profile.children[0];
@@ -98,7 +98,7 @@ test('没声称过的胎儿出生后 selectedFather 为 null、没有纪录栏�
   assert.equal(born.paternityClaims, undefined);
 });
 
-test('提示词只送最近三笔声称的时间与白描', () => {
+test('提示词只送最近三笔认定的时间与白描', () => {
   const ctx = { chatId: 'claim-prompt', chat: [{ name: '艾拉', is_user: false, mes: '……' }], extensionSettings: {}, saveSettingsDebounced() {} };
   globalThis.SillyTavern = { getContext: () => ctx };
   const settings = state.getSettings(ctx);
@@ -127,17 +127,17 @@ test('同批工具调用里换位后，fetusIndex 仍指向批次开始时那一
   assert.equal(remaining[0].selectedFather, '丈夫');
 });
 
-test('嵌合胎：声称的父亲只留一位，纪录依时间串接', () => {
+test('嵌合胎：认定的父亲只留一位，纪录依时间串接', () => {
   const a = { selectedFather: '甲', paternityClaims: [{ time: '一', content: 'A1', minutesPassed: 10 }] };
   const b = { selectedFather: '乙', paternityClaims: [{ time: '二', content: 'B1', minutesPassed: 30 }, { time: '零', content: 'B0', minutesPassed: 5 }] };
   const merged = mergePaternityClaims(a, b);
   assert.equal(merged.selectedFather, '乙', '取最后一笔纪录所属那一胎');
   assert.deepEqual(merged.paternityClaims.map((x) => x.content), ['B0', 'A1', 'B1']);
   assert.deepEqual(mergePaternityClaims({ selectedFather: '甲' }, { selectedFather: '甲' }), { selectedFather: '甲' });
-  assert.deepEqual(mergePaternityClaims({}, {}), {}, '都没声称就不加栏位');
+  assert.deepEqual(mergePaternityClaims({}, {}), {}, '都没认定就不加栏位');
 });
 
-test('楼层快照回溯后声称照样还原', () => {
+test('楼层快照回溯后认定照样还原', () => {
   const ctx = { chatId: 'claim-snapshot', chat: [{ name: '艾拉', is_user: false, mes: '……' }], characters: [], name1: '用户', name2: '艾拉' };
   const chatState = makePregnant([fetus(1)]);
   claim(chatState, { fetusIndex: 0, selectedFather: '丈夫' });
@@ -147,4 +147,14 @@ test('楼层快照回溯后声称照样还原', () => {
   const restored = chatState.characters['艾拉'].profile.pregnant.fetuses[0];
   assert.equal(restored.selectedFather, '丈夫');
   assert.equal(restored.paternityClaims.length, 1);
+});
+
+// 实机：她对外说是艾德的、心里认定是罗恩的，模型把心里的认定记成 cognition，月经后就会消失
+test('工具说明：selectedFather 记心里的认定，对外谎称写进 content；回覆用认定', () => {
+  const description = TOOL_DEFINITIONS.find((tool) => tool.name === 'bsRecordExperience').description;
+  assert.match(description, /selectedFather 为她自己心里认定的父亲/);
+  assert.match(description, /对外说法与心里认定不同时[^。]*selectedFather 仍记心里的认定，对外怎么说写进 content/);
+  assert.match(description, /心里认定改变[^。]*也用 claim 记，不改用 cognition/);
+  const chatState = makePregnant([fetus(1)]);
+  assert.match(claim(chatState, { fetusIndex: 0 }).message, /胎父认定已记录/);
 });
