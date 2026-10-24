@@ -42,8 +42,8 @@ test('人类为 4 级、标准差 0.4、没有变化态；变形种族的常态�
 
 test('混血按血统加权；可变与依个体不参与平均', () => {
   assert.deepEqual(getMergedRaceBodySize('人类'), { bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null });
-  // 巨人(6, 0.7) × 半身人(2, 0.3)：σ² = ½(0.49 + 4) + ½(0.09 + 4) = 4.29
-  assert.deepEqual(getMergedRaceBodySize('巨人x半身人'), { bodySize: 4, bodySizeSd: 2.07, altFormBodySize: null });
+  // 巨人(7, 0.7) × 半身人(2, 0.3)：平均 4.5，σ² = ½(0.49 + 6.25) + ½(0.09 + 6.25) = 6.54
+  assert.deepEqual(getMergedRaceBodySize('巨人x半身人'), { bodySize: 4.5, bodySizeSd: 2.56, altFormBodySize: null });
   assert.deepEqual(getMergedRaceBodySize('史萊姆x人类'), { bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null });
   assert.deepEqual(getMergedRaceBodySize('怪兽类x人类'), { bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null });
   assert.deepEqual(getMergedRaceBodySize('史萊姆x影魔'), { bodySize: null, bodySizeSd: null, altFormBodySize: null });
@@ -57,8 +57,8 @@ test('混血变化态：没有变化态的成分以常态参与加权', () => {
 
 test('混血生理档带上体型栏位，其他栏位不受影响', () => {
   const merged = getMergedRacePhysiologyProfile('巨人x半身人');
-  assert.equal(merged.bodySize, 4);
-  assert.equal(merged.bodySizeSd, 2.07);
+  assert.equal(merged.bodySize, 4.5);
+  assert.equal(merged.bodySizeSd, 2.56);
   assert.equal(merged.genderRatio, getMergedRacePhysiologyProfile('巨人x半身人').genderRatio);
 });
 

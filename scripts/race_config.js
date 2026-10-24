@@ -190,7 +190,7 @@ const RACE_DEFINITIONS = Object.freeze({
     menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.4, birthDifficulty: 3, breedTolerance: 2.5,
     impregnationDifficulty: 4, orgasmOvulationAmount: 0, identicalProbability: 2, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 8,
-    bodySize: 6, bodySizeSd: 0.7, altFormBodySize: null, bodyPlan: "humanoid",
+    bodySize: 7, bodySizeSd: 0.7, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "媚魔": {
     embryoType: "胎生",
@@ -662,10 +662,10 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "星繭族": {
     embryoType: "胎转卵生",
-    introductionLine: "Astral Cocoon-folk，特化的寰宇虫娘，单胎于子宫中度过幼虫期，分娩时产下虫繭而非虫卵；会让异族女性以假孕分摊孕育能量。",
+    introductionLine: "Astral Cocoon-folk，能撕开虫洞在星际间穿行的蛾娘；单胎于子宫中度过幼虫期，分娩时产下虫繭而非虫卵；会让异族女性以假孕分摊孕育能量。",
     inheritanceMode: "maternal",
-    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.6666666666666666, birthDifficulty: 3, breedTolerance: 1,
-    impregnationDifficulty: 0.1, orgasmOvulationAmount: 0, identicalProbability: 0, genderRatio: 0,
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.667, birthDifficulty: 3, breedTolerance: 0.25,
+    impregnationDifficulty: 2, orgasmOvulationAmount: 0, identicalProbability: 0, genderRatio: 0,
     companionEggsMean: 0, recoveryCoefficient: 5,
     bodySize: 3, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },

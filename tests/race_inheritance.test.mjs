@@ -69,11 +69,11 @@ test('内建名录共 81 个物种，新增种族进入正确胚胎分组', () =
     [4, 8, 0],
     '怪鱼类应多产而非沿用鱼人的长孕少产',
   );
-  assert.ok(Math.abs(cocoon.gestationSpeciesSpeed - (2 / 3)) < 1e-9, '星繭族孕期应为人类的 1.5 倍');
+  assert.equal(cocoon.gestationSpeciesSpeed, 0.667, '星繭族孕期约为人类的 1.5 倍（60 周）');
   assert.deepEqual(
     [cocoon.birthDifficulty, cocoon.breedTolerance, cocoon.impregnationDifficulty, cocoon.orgasmOvulationAmount, cocoon.identicalProbability, cocoon.genderRatio],
-    [3, 1, 0.1, 0, 0, 0],
-    '星繭族应难产、低承载、异常易孕、单胎且纯雌',
+    [3, 0.25, 2, 0, 0, 0],
+    '星繭族是虫族里的精灵：难产、承载极低、难受孕、单胎且纯雌',
   );
   const westernDragon = getRacePhysiologyProfile('西方龙');
   const easternDragon = getRacePhysiologyProfile('东方龙');

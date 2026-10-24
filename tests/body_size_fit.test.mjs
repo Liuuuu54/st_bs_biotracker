@@ -75,9 +75,10 @@ test('bsAddSperm 有体型参数，插入时结算契合并进次级提示', () 
   const chatState = chatWith();
   const result = insert(chatState, { male: '巨魔', race: '巨人' });
   assert.equal(result.applied, true);
-  assert.match(result.message, /明显不合，精方较大/);
-  assert.equal(P(chatState).base.penetrationFit.label, '明显不合');
-  assert.match(P(chatState).notify.secondly, /体型契合：明显不合/);
+  // 巨人 7 级对人类 4 级，差 3 级
+  assert.match(result.message, /极不相称，精方较大/);
+  assert.equal(P(chatState).base.penetrationFit.label, '极不相称');
+  assert.match(P(chatState).notify.secondly, /体型契合：极不相称/);
 });
 
 test('依个体又没给体型：不结算契合，只在回传讯息说明', () => {
@@ -164,8 +165,8 @@ test('受精胎重：有体型看体型差，没有就退回承载耐受，两�
     Math.random = REAL_RANDOM;
     return P(chatState).pregnant.fetuses[0].weight;
   };
-  // 巨人父亲（+2 级）系数 √2、哥布林父亲（−2 级）1/√2：同样乱数下胎重差 2 倍
-  assert.ok(Math.abs(conceive('巨人') / conceive('哥布林') - 2) < 1e-9);
+  // 巨人父亲（+3 级）系数 2^0.75、哥布林父亲（−2 级）2^-0.5：同样乱数下胎重差 2^1.25 倍
+  assert.ok(Math.abs(conceive('巨人') / conceive('哥布林') - 2 ** 1.25) < 1e-9);
   // 依个体又没记体型：走承载耐受；补上体型后改走体型差
   assert.ok(Math.abs(conceive('独居虫族', 6) / conceive('人类') - Math.SQRT2) < 1e-9);
   // 史莱姆体型可变：走承载耐受 2^强弱，仍在 0.5–2 之内

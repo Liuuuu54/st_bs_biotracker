@@ -33,7 +33,7 @@ test('fertilization calculator removes source-order bias while preserving source
 test('fertilization chance saturates toward certainty without capping at it', () => {
   const day = calculateFertilizationPreview({ eggRace: '人类', elapsedDays: 1, spermSources: [{ race: '人类', value: 20 }] });
   assert.ok(day.successChance > 0.2 && day.successChance < 0.4, '人类同房后一天的单卵受精率应在合理区间');
-  const easy = calculateFertilizationPreview({ eggRace: '星繭族', elapsedDays: 1, spermSources: [{ race: '星繭族', value: 40 }] });
+  const easy = calculateFertilizationPreview({ eggRace: '社会虫族', elapsedDays: 1, spermSources: [{ race: '社会虫族', value: 40 }] });
   assert.ok(easy.successChance > day.successChance, '易孕物种更高');
   assert.ok(easy.successChance < 1, '再有利也不会封顶到必中');
   const longer = calculateFertilizationPreview({ eggRace: '人类', elapsedDays: 2, spermSources: [{ race: '人类', value: 20 }] });
