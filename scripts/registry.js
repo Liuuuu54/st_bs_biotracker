@@ -8,7 +8,7 @@ import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt, buildWorldBas
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import { clampIndividualBodySize, getExpectedBodySize, sampleBodySize } from './body_size.js';
 import { descriptionListToObject, normalizeDescriptionList, stripDescriptionGuideStars } from './descriptions.js';
-import { getSireRecord, normalizeSpermQuality } from './sires.js';
+import { getSireRecord, normalizeSpermQuality, pruneFutaSireRecord } from './sires.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -703,13 +703,14 @@ export function buildSireExtractionSystemPrompt(settings, options = {}) {
     '- age: 实际年龄（岁）。长生种只写外表年龄时按设定推估；完全没有线索填 null。',
     '- bodySize: 常态（人态）的个体体型，1–7 级，人类为 4，可带一位小数。依写明的身高或身材换算：约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7，锚点之间按比例内插。能变形的种族只填常态。卡上没写身材填 null，系统用种族平均。',
     '- isHere: 最近对话里此人是否在场；看不出来填 true。',
+    ...(options.withTalents ? ['- talents: 此人的天赋（资质），阵列 [{"skill":"技能名","level":整数}]，level 为 -5～5，正为擅长、负为苦手；技能名只能用 payload.skill_catalog 里的。天赋是与生俱来的资质，会有一部分遗传给孩子；只写设定里明确的长处或短处，没有就给空阵列。'] : []),
     '- payload.father_snapshot 若有，是这人当年在子女或胎儿记录里留下的父方资料（种族、血脉、体型），可作体型参考，以角色卡与设定为准。',
     '- spermQuality: 精子品质倍率 0.25–4，一般人为 1。依设定里对精力、精液浓度、雄风、繁殖力的描写推估：精力衰退、不易使人受孕约 0.25–0.5；一般 1；精力旺盛、阳物粗壮约 2；精力极旺、传说级的雄风或种马设定约 3–4。只看体能与繁殖力，不看身分、性格或受欢迎程度；设定没有着墨填 null。',
     '- descriptions: 以字段名为键的物件，字段名照下方规则每行「字段名|写作指引」的字段名；没有资料的字段省略。每栏一到三句白描，写当下状态，不写剧情摘要。',
     '[描述规则]',
     guide,
     ...(instruction ? ['[使用者补充]', sanitizePromptText(instruction)] : []),
-    '只输出 JSON：{"age":数字或null,"bodySize":数字或null,"spermQuality":数字或null,"isHere":true,"descriptions":{"字段名":"内容"}}',
+    `只输出 JSON：{"age":数字或null,"bodySize":数字或null,"spermQuality":数字或null,"isHere":true,${options.withTalents ? '"talents":[],' : ''}"descriptions":{"字段名":"内容"}}`,
   ].join('\n');
 }
 
@@ -756,9 +757,16 @@ export async function runRegistrySireExtraction(ctx, options = {}) {
     derivedType: options.prefill.derivedType ?? null,
     bodySize: options.prefill.bodySize ?? null,
   } : null;
-  const systemPrompt = buildSireExtractionSystemPrompt(settings, { declaredRace, userInstruction });
+  // 天赋只能用这个聊天的技能图鉴；技能系统关着就不问
+  const withTalents = isSkillSystemEnabled(settings) && Array.isArray(chatState.skillCatalog) && chatState.skillCatalog.length > 0;
+  if (withTalents) payload.skill_catalog = chatState.skillCatalog.map((skill) => ({ name: skill.name, description: skill.description }));
+  const systemPrompt = buildSireExtractionSystemPrompt(settings, { declaredRace, userInstruction, withTalents });
   const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'sire' });
-  return sanitizeSireExtractionResult(result);
+  const sanitized = sanitizeSireExtractionResult(result);
+  // 天赋按名字对到图鉴，对不上的略过；没问天赋时回 null，注册时保留原本的
+  if (!withTalents) return { ...sanitized, talents: null, skippedTalents: [] };
+  const resolved = normalizeInitialSkillTalentConfig({ talents: Array.isArray(result?.talents) ? result.talents : [] }, chatState.skillCatalog);
+  return { ...sanitized, talents: resolved.talents, skippedTalents: resolved.skipped };
 }
 
 export async function runRegistryDiaryInference(ctx, options = {}) {
@@ -2040,6 +2048,8 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
   }
   chatState.characters[name] = normalizeCharacterPsychologyState(synchronized);
   ensureNaturalNoticeSample(chatState.characters[name].profile, chatState.reproductiveSettings);
+  // 同名精方档案（扶她）此后一律以卵方为准，只留精子品质
+  pruneFutaSireRecord(chatState, name);
   return chatState.characters[name];
 }
 

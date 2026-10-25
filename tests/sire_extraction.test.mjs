@@ -57,7 +57,32 @@ test('抽取只回传表单值，不建档；请求带上目标名字与旧档�
     };
   };
   const result = await runRegistrySireExtraction(ctx, { targetName: '凯', declaredRace: '人类' });
-  assert.deepEqual(result, { age: 28, bodySize: 4.7, spermQuality: null, isHere: true, descriptions: [{ name: '外貌', value: '银发骑士' }] });
+  assert.deepEqual(result, { age: 28, bodySize: 4.7, spermQuality: null, isHere: true, descriptions: [{ name: '外貌', value: '银发骑士' }], talents: null, skippedTalents: [] }, '图鉴是空的就不问天赋');
   assert.ok(JSON.stringify(sent).includes('target_character'), '请求要带目标名字');
   assert.deepEqual(Object.keys(state.getChatState(ctx, settings).sires), [], '抽取不建档');
+});
+
+test('有技能图鉴时一并推论天赋，按名字对到图鉴，对不上的略过', async () => {
+  const ctx = {
+    chatId: 'sire-talent-chat', name1: 'User', name2: '凯', characterId: 0,
+    characters: [{ name: '凯', description: '天生神力的剑士。', avatar: 'kai.png' }],
+    chat: [{ is_user: false, name: '凯', mes: '……' }],
+    extensionSettings: {}, saveSettingsDebounced() {},
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  settings.apiUrl = 'https://example.test/v1';
+  settings.model = 'test-model';
+  Object.assign(state.getChatState(ctx, settings), { skillCatalog: [{ id: 1, name: '剑术', description: '用剑的技巧' }], nextSkillId: 2 });
+  let sentPrompt = '';
+  globalThis.fetch = async (_url, init) => {
+    sentPrompt = JSON.stringify(JSON.parse(init.body));
+    return { ok: true, status: 200, async text() {
+      return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ age: 30, talents: [{ skill: '剑术', level: 2 }, { skill: '不存在', level: 1 }] }) } }] });
+    } };
+  };
+  const result = await runRegistrySireExtraction(ctx, { targetName: '凯' });
+  assert.ok(sentPrompt.includes('skill_catalog'));
+  assert.deepEqual(result.talents.map((talent) => [talent.skillId, talent.level]), [[1, 2]]);
+  assert.deepEqual(result.skippedTalents, ['不存在']);
 });

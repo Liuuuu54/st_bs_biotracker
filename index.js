@@ -634,6 +634,13 @@ function getSkillDefinitionDisplay(catalog, skillId) {
 
 function collectSkillDefinitionHolders(chatState, skillId) {
   const holders = [];
+  // 精方只有天赋；扶她的天赋在卵方那份，精方档案不算
+  for (const [sireName, sire] of Object.entries(chatState.sires || {})) {
+    if (Object.prototype.hasOwnProperty.call(chatState.characters || {}, sireName)) continue;
+    for (const talent of (Array.isArray(sire?.talents) ? sire.talents : [])) {
+      if (Number(talent?.skillId) === skillId) holders.push(`${sireName}（精方）：${getTalentLabel(talent)}`);
+    }
+  }
   for (const [characterName, character] of Object.entries(chatState.characters || {})) {
     const profile = character?.profile || {};
     for (const skill of (Array.isArray(profile.skills) ? profile.skills : [])) {
@@ -1405,6 +1412,8 @@ async function registerSireFromForm(ctx) {
       bodySize: extracted.bodySize ?? current?.bodySize ?? prefill?.bodySize ?? null,
       spermQuality: typedQuality ?? extracted.spermQuality ?? current?.spermQuality ?? 1,
       isHere: extracted.isHere,
+      // 天赋：技能系统关着时模型不判断（null），保留原本的
+      ...(extracted.talents !== null ? { talents: extracted.talents } : {}),
       // 模型没写出描述时保留原本的，不清空
       descriptions: extracted.descriptions.length > 0
         ? extracted.descriptions
@@ -1415,6 +1424,7 @@ async function registerSireFromForm(ctx) {
       return;
     }
     pendingSirePrefill = null;
+    if (extracted.skippedTalents?.length > 0) result.message += `（跳过对不上图鉴的天赋：${extracted.skippedTalents.join('、')}）`;
     finishSireRegistration(ctx, latest, name, result);
   } catch (error) {
     setSireStatus(String(error?.message || error), true);
@@ -6970,6 +6980,11 @@ function renderTrackSirePage(chatState) {
       metaRow('体型', formatCharacterBodySizeLabel(base || {})),
       ...(formatAltFormBodySizeLabel(base || {}) ? [metaRow('变化态体型', formatAltFormBodySizeLabel(base || {}))] : []),
       metaRow('精子品质', `${record.spermQuality}${describeSpermQuality(record.spermQuality) ? `（${describeSpermQuality(record.spermQuality)}）` : '（一般）'}`),
+      // 天赋：会有 25% 先天遗传给孩子；扶她读卵方
+      metaRow('天赋', (isFuta ? normalizeTalentList(chatState.characters[name]?.profile?.talents) : (record.talents || []))
+        .filter((talent) => talent.level !== 0)
+        .map((talent) => `${getSkillDefinitionDisplay(chatState.skillCatalog, talent.skillId).name}（${getTalentLabel(talent)}）`)
+        .join('、') || '无'),
       ...(isFuta ? [metaRow('卵方', '同名卵方已注册（扶她），资料与描述读卵方')] : []),
     ].join('')),
     isFuta

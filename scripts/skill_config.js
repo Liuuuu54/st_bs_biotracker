@@ -312,6 +312,22 @@ export function addTalentExperience(value, amount) {
   return talentPointsToState(talent.skillId, talentStateToPoints(talent) + delta);
 }
 
+// 先天天赋：受孕时胎儿从父母双方各承接 25% 的天赋经验（正负都算），之后再由胎教加减
+export const INNATE_TALENT_SHARE = 0.25;
+
+/** 父母两份天赋 → 胎儿的先天天赋；同一技能两边相加，四舍五入后为 0 的不留 */
+export function seedInnateTalents(motherTalents, fatherTalents, share = INNATE_TALENT_SHARE) {
+  const points = new Map();
+  for (const list of [motherTalents, fatherTalents]) {
+    for (const talent of normalizeTalentList(list)) {
+      points.set(talent.skillId, (points.get(talent.skillId) || 0) + talentStateToPoints(talent) * share);
+    }
+  }
+  return [...points]
+    .map(([skillId, value]) => talentPointsToState(skillId, Math.round(value)))
+    .filter((talent) => talent && talentStateToPoints(talent) !== 0);
+}
+
 export function getTalentLabel(value) {
   const talent = normalizeTalentEntry(value);
   if (!talent || talent.level === 0) return '尚未形成';

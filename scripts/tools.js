@@ -4,7 +4,7 @@ import { getStageProgress } from './stage_progress.js';
 import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
-import { getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
+import { getParentTalents, getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
 import { CONCEPTION_WEIGHT_LOG_SD, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getConceptionStageWeight, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
@@ -94,16 +94,7 @@ export {
   DERIVED_INHERITANCE_BASELINE_DAYS,
   DERIVED_INHERITANCE_THRESHOLD,
 } from './calculator.js';
-import {
-  addSkillExperience,
-  addTalentExperience,
-  appendSkillHistory,
-  normalizeSkillList,
-  normalizeTalentList,
-  registerSkillDefinition,
-  requiredExp,
-  resolveSkillDefinition,
-} from './skill_config.js';
+import { addSkillExperience, addTalentExperience, appendSkillHistory, normalizeSkillList, normalizeTalentList, registerSkillDefinition, requiredExp, resolveSkillDefinition, seedInnateTalents } from './skill_config.js';
 
 export const TOOL_DEFINITIONS = Object.freeze([
   {
@@ -1859,6 +1850,8 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     backSide: randomBackSide(),
     affinity: derivedSeed.affinity,
     maternalDerivedTypeProgress: derivedSeed.progress,
+    // 先天天赋：遗传母方与父方各 25%；之后的胎教在这上面加减
+    talents: seedInnateTalents(geneticProfile?.talents, options.fatherTalents),
   };
 }
 
@@ -2478,7 +2471,7 @@ function processSpermLifecycle(profile, stage, tick) {
  * 一次受精判定。回传剩余卵数。
  * chanceFactor 供异期复孕压低机率；superfetation 时另外标记新胚胎。
  */
-function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceFactor = 1, superfetation = false }) {
+function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceFactor = 1, superfetation = false, parentTalentsOf = null }) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
@@ -2521,7 +2514,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
     }
     if (winner) {
       pregnant.fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-      const fetus = createSimpleFetus(profile, winner, stage);
+      const fetus = createSimpleFetus(profile, winner, stage, { fatherTalents: parentTalentsOf ? parentTalentsOf(winner.male) : [] });
       if (winner.id !== undefined) { fetus.contactIds = [winner.id]; fetus.contactMinutes = winner.minutesPassed; }
       // 孕中孕：异期受精成立之后，再看三个额外条件同时成不成立
       const conceivedAt = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
@@ -2670,7 +2663,7 @@ function processSimpleConception(profile, tick, notify, name) {
     } else {
       // 先让这段时间里还活着的卵受精，再扣掉过期的：先扣的话，黄体期里的卵在整天推进时
       // 一颗都轮不到受精（黄体期高潮排卵、排卵期残留的卵都会白白消失）
-      base.eggs = attemptFertilization(profile, { deltaDays, stage, name, notify });
+      base.eggs = attemptFertilization(profile, { deltaDays, stage, name, notify, parentTalentsOf: tick.parentTalentsOf });
       if (base.eggs > 0 && fullDays > 0 && stage !== '排卵期') {
         base.eggs = Math.max(0, clampNumber(base.eggs, 0, 99, 0) - fullDays);
       }
@@ -2687,6 +2680,7 @@ function processSimpleConception(profile, tick, notify, name) {
         deltaDays, stage, name, notify,
         chanceFactor: SUPERFETATION_CHANCE_FACTOR * decay,
         superfetation: true,
+        parentTalentsOf: tick.parentTalentsOf,
       });
     }
   }
@@ -5780,7 +5774,7 @@ function applyImplantEmbryo(chatState, args) {
   const hadPendingImplantation = existingFetuses.some((fetus) => !isImplantedFetus(fetus));
   ensureEmbryoMetadata(pregnant);
   for (let index = 0; index < count; index += 1) {
-    const fetus = createSimpleFetus(profile, spermSeed, currentStage, { geneticProfile, provider });
+    const fetus = createSimpleFetus(profile, spermSeed, currentStage, { geneticProfile, provider, fatherTalents: getParentTalents(chatState, fathers) });
     if (isAdditionalSurrogacy) markSuperfetationFetus(profile, fetus);
     existingFetuses.push(fetus);
   }
@@ -6916,6 +6910,8 @@ function applyPassedTime(chatState, args) {
     // 契合度要衰减到这段时间的终点；衍生遗传拉锯用得到
     tick.nowMinutes = Math.max(0, Number(chatState.minutesPassed) || 0) + totalMinutes;
     tick.reproductiveSettings = chatState.reproductiveSettings;
+    // 受孕时种先天天赋要查父方（精方档案或同名卵方）
+    tick.parentTalentsOf = (male) => getParentTalents(chatState, male);
     const result = applyTimeToCharacter(subject, tick);
     chatState.characters[name] = result.character;
   }

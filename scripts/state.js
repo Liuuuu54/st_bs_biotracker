@@ -14,7 +14,7 @@ import {
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
 import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines } from './state_migration.js';
-import { createEmptySires, normalizeSires } from './sires.js';
+import { createEmptySires, normalizeSires, pruneFutaSireRecord } from './sires.js';
 import { announceSavedRevisions, claimChatRevision, clearHostSettingsPendingUpTo, markHostSettingsPending, queueRevisionAnnouncement, readLatestChatRevision } from './save_sync.js';
 import {
   createDefaultWardrobeItem,
@@ -1359,6 +1359,13 @@ export function getChatState(ctx, settings) {
   if (!chatState.sires || typeof chatState.sires !== 'object' || Object.getPrototypeOf(chatState.sires) !== null) {
     chatState.sires = normalizeSires(chatState.sires, Number(chatState.minutesPassed) || 0);
     shouldSave = true;
+  }
+  // 扶她的精方档案只留精子品质（先建精方、后注册卵方的旧资料在这里清一次）
+  for (const name of Object.keys(chatState.sires)) {
+    if (!Object.prototype.hasOwnProperty.call(chatState.characters || {}, name)) continue;
+    const before = JSON.stringify(chatState.sires[name]);
+    pruneFutaSireRecord(chatState, name);
+    if (JSON.stringify(chatState.sires[name]) !== before) shouldSave = true;
   }
   const normalizedSkillCatalog = normalizeSkillCatalog(chatState.skillCatalog);
   if (JSON.stringify(chatState.skillCatalog || []) !== JSON.stringify(normalizedSkillCatalog)) shouldSave = true;

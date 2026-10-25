@@ -302,3 +302,50 @@ test('没改过的旧孕态预设换成新的五栏', async () => {
   const ctx = { chatId: 'guide-preg', chat: [], characters: [], extensionSettings: { bs_biotracker: { registryDescriptionGuides: { pregnantDescription: LEGACY_PREGNANT_DESCRIPTION_GUIDE } } }, saveSettingsDebounced() {} };
   assert.equal(state.getSettings(ctx).registryDescriptionGuides.pregnantDescription, DEFAULT_REGISTRY_DESCRIPTION_GUIDES.pregnantDescription);
 });
+
+// ── 先天天赋：受孕时父母各承接 25% ──────────────────────
+test('先天天赋：父母同一技能各 25% 相加，正负都算，归零的不留', async () => {
+  const { seedInnateTalents, talentStateToPoints } = await import('../scripts/skill_config.js');
+  const mother = [{ skillId: 1, level: 1, exp: 0 }];                // +100 点
+  const father = [{ skillId: 1, level: 1, exp: 0 }, { skillId: 2, level: -1, exp: 0 }];
+  const seeded = seedInnateTalents(mother, father);
+  const points = Object.fromEntries(seeded.map((talent) => [talent.skillId, talentStateToPoints(talent)]));
+  assert.equal(points[1], 50);
+  assert.equal(points[2], -25);
+  assert.deepEqual(seedInnateTalents([], []), []);
+});
+
+test('自然受孕时胎儿带父母的先天天赋；精方档案的天赋、扶她读卵方', async () => {
+  const { talentStateToPoints } = await import('../scripts/skill_config.js');
+  const chat = chatWithSire({ talents: [{ skillId: 7, level: 2, exp: 0 }] });
+  const mother = chat.characters['艾拉'].profile;
+  mother.talents = [{ skillId: 7, level: 1, exp: 0 }];
+  Object.assign(mother.base, { stage: '排卵期', days: 0, eggs: 1 });
+  const original = Math.random;
+  Math.random = () => 0;
+  try {
+    call(chat, 'bsAddSperm', { female: '艾拉', male: '凯', race: '精灵', action: 'insert', amount: 0 });
+    call(chat, 'bsAddSperm', { female: '艾拉', male: '凯', race: '精灵', action: 'deposit', amount: 30 });
+    call(chat, 'bsPassedTime', { hour: 12 });
+  } finally {
+    Math.random = original;
+  }
+  const fetus = chat.characters['艾拉'].profile.pregnant.fetuses[0];
+  assert.ok(fetus, '应该受孕');
+  // 母 Lv1 = 100 点，父 Lv2 = 200 点（talentLevelThreshold），各 25%：25 + 50 = 75
+  assert.equal(talentStateToPoints(fetus.talents.find((talent) => talent.skillId === 7)), 75);
+});
+
+test('先建精方、后注册同名卵方（扶她）：精方档案清成只剩精子品质', async () => {
+  const { applyRegistryResult } = await import('../scripts/registry.js');
+  const chat = state.createEmptyChatState();
+  chat.sires['莉娅'] = normalizeSireRecord({ race: '欧克', age: 40, bodySize: 6, spermQuality: 3, talents: [{ skillId: 1, level: 2, exp: 0 }], descriptions: { normalDescription: { 外貌: '旧的' } } });
+  applyRegistryResult(chat, { name: '莉娅', profile: { base: { age: 22, race: '媚魔' } } });
+  const sire = chat.sires['莉娅'];
+  assert.equal(sire.spermQuality, 3);
+  assert.equal(sire.race, '人类', '种族回到预设，实际读卵方');
+  assert.equal(sire.age, null);
+  assert.deepEqual(sire.talents, []);
+  assert.deepEqual(sire.descriptions.normalDescription, []);
+  assert.equal(resolveSireBase(chat, '莉娅').base.race, '媚魔');
+});

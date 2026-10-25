@@ -6,6 +6,7 @@
 import { descriptionListToObject, getStaleDescriptionFields, normalizeDescriptionList, parseDescriptionGuideFields } from './descriptions.js';
 import { clampIndividualBodySize } from './body_size.js';
 import { getBloodlineInfo, parseRaceDescriptor } from './race_config.js';
+import { getTalentLabel, normalizeTalentList, resolveSkillDefinition } from './skill_config.js';
 
 export const SIRE_SOURCES = Object.freeze(['manual', 'card', 'father']);
 export const SPERM_QUALITY_MIN = 0.25;
@@ -61,6 +62,8 @@ export function normalizeSireRecord(raw, minutesPassed = 0) {
     },
     source: SIRE_SOURCES.includes(value.source) ? value.source : 'manual',
     spermQuality: normalizeSpermQuality(value.spermQuality),
+    // 精方只有天赋（资质），没有技能：技能要靠追踪锻炼，精方不追踪
+    talents: normalizeTalentList(value.talents),
     createdAt: Math.max(0, Number(value.createdAt) || 0),
   };
 }
@@ -129,6 +132,29 @@ export function resolveSireBase(chatState, name) {
   return null;
 }
 
+/**
+ * 扶她：同名卵方注册后，精方档案只留精方专属栏位（精子品质）。
+ * 先建精方、后注册卵方时，档案里的种族、体型、描述、天赋都清掉，一律以卵方为准，免得留着旧资料。
+ */
+export function pruneFutaSireRecord(chatState, name) {
+  const key = String(name || '').trim();
+  const sire = getSireRecord(chatState, key);
+  if (!sire || !chatState?.characters || !Object.prototype.hasOwnProperty.call(chatState.characters, key)) return false;
+  chatState.sires[key] = normalizeSireRecord({ spermQuality: sire.spermQuality, source: sire.source, createdAt: sire.createdAt });
+  return true;
+}
+
+/** 先天天赋的来源：同名卵方（含扶她）读卵方，其次精方档案；一次性对象没有 */
+export function getParentTalents(chatState, name) {
+  const key = String(name || '').trim();
+  if (!key) return [];
+  const character = chatState?.characters && Object.prototype.hasOwnProperty.call(chatState.characters, key)
+    ? chatState.characters[key]
+    : null;
+  if (character) return normalizeTalentList(character.profile?.talents);
+  return normalizeTalentList(getSireRecord(chatState, key)?.talents);
+}
+
 function formatSireRace(record) {
   const race = String(record?.race || '人类');
   return record?.derivedType ? `[${record.derivedType}]${race}` : race;
@@ -172,11 +198,16 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
     };
     if (record.isHere !== false) {
       const list = record.descriptions?.normalDescription || [];
+      // 天赋给模型看名字与方向，不给经验数字
+      const talents = (record.talents || [])
+        .filter((talent) => talent.level !== 0)
+        .map((talent) => `${resolveSkillDefinition(chatState?.skillCatalog, talent.skillId)?.name || `技能 #${talent.skillId}`}（${getTalentLabel(talent)}）`);
       const stale = getStaleDescriptionFields(list, now).filter((field) => starred.has(field));
       entries.push({
         ...summary,
         isHere: true,
         descriptions: descriptionListToObject(list),
+        ...(talents.length > 0 ? { talents } : {}),
         ...(stale.length > 0 ? { staleFields: stale } : {}),
       });
     } else if (fathers.has(name) || (name && text.includes(name))) {
@@ -213,6 +244,7 @@ export function upsertSireRecord(chatState, name, fields = {}, { source = 'manua
       age: fields.age,
       bodySize: fields.bodySize,
       isHere: fields.isHere,
+      ...(fields.talents !== undefined ? { talents: fields.talents } : {}),
     }),
     descriptions: { normalDescription: nextList },
     source: previous?.source || source,
