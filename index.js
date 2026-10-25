@@ -70,7 +70,7 @@ import { initializeCalculatorUi } from './scripts/calculator_ui.js'; import { li
 import { createRacePaletteSelection, appendRacePaletteTag, removeRacePaletteTag, equalizeRacePalette,
   setRacePalettePercent, palettePercentText, buildRacePaletteValue } from './scripts/race_palette.js';
 import { createDocViewer, parseDocHref } from './scripts/doc_viewer.js';
-import { calculateFertilizationPreview } from './scripts/calculator.js';
+import { calculateDerivedInheritancePreview, calculateFertilizationPreview, DERIVED_INHERITANCE_THRESHOLD } from './scripts/calculator.js';
 import {
   LABOR_STAGES,
   MENSTRUAL_STAGES,
@@ -164,6 +164,7 @@ import {
   listChatStateSnapshots,
   getSnapshotCharacter,
   getSnapshotSire,
+  getGestationModifierMultiplier,
   diffStateValues,
   resolveRegisteredCharacterName,
   sanitizeWorldbookEntryDisplayName,
@@ -4005,6 +4006,30 @@ function showWardrobeItemBubble(ctx, characterName, itemId, anchor) {
   (document.getElementById(PANEL_ID) || document.body).appendChild(bubble);
   positionWardrobeItemBubble(bubble, anchor);
 }
+/**
+ * 胎儿卡的衍生遗传：与时间推进同一套拉锯算法（母胎亲密度往母方、与胎父的契合度往父方）。
+ * 父母都没有衍生类型时回传 null，卡上不显示。
+ */
+function buildFetusDerivedInheritanceView(profile, fetus, intimacyRanking = []) {
+  const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
+  const fatherDerivedType = fetus?.fatherDerivedType ? String(fetus.fatherDerivedType) : null;
+  if (!motherDerivedType && !fatherDerivedType) return null;
+  const father = (Array.isArray(fetus?.chimera?.fatherSources) && fetus.chimera.fatherSources[0]) || String(fetus?.fathers || '').split('×')[0].trim();
+  const paternalFit = intimacyRanking.find((item) => item.name === father)?.fit ?? 0;
+  const preview = calculateDerivedInheritancePreview({
+    currentProgress: Number(fetus?.maternalDerivedTypeProgress) || 0,
+    affinity: Number(fetus?.affinity) || 0,
+    paternalFit,
+    motherDerivedType,
+    fatherDerivedType,
+    fetusRace: fetus?.race,
+    fetusBloodline: fetus?.bloodline,
+    gestationModifierMultiplier: getGestationModifierMultiplier(profile),
+    passedDays: 0,
+  });
+  return { ...preview, motherDerivedType, fatherDerivedType, father, paternalFit, affinity: Number(fetus?.affinity) || 0 };
+}
+
 function buildTrackCharacterViewModel(character, minutesPassed = null) {
   const runtimeCtx = getContextSafe();
   const runtimeSettings = runtimeCtx ? getSettings(runtimeCtx) : null;
@@ -4031,6 +4056,11 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
   };
   const diaryEnabled = Math.max(0, Math.min(20, Math.floor(Number(runtimeSettings?.diaryRecentLimit) || 0))) > 0;
   const profile = character?.profile || {};
+  // 契合度排行：经历页的契合区块与胎儿卡的衍生遗传共用
+  const intimacyRanking = getIntimacyRanking(profile, {
+    minutesPassed: minutesPassed ?? runtimeChatState?.minutesPassed ?? 0,
+    reproductiveSettings: runtimeChatState?.reproductiveSettings,
+  });
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const experience = profile.experience || {};
@@ -4122,6 +4152,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       // 未揭晓的异期胎在追踪页也藏起来，与提示词一致；完整变量页仍看得到
       fetuses: Array.isArray(pregnant.fetuses) ? pregnant.fetuses.filter(isFetusKnownToCharacter).map((fetus) => ({
         ...fetus,
+        derivedInheritance: buildFetusDerivedInheritanceView(profile, fetus, intimacyRanking),
         // 标签在这里解析：推导需要承载者名字，渲染层拿不到
         tagLabels: getFetusTagLabels(deriveFetusTags(fetus, { carrierName: character?.name || '' })),
         positionText: describeFetalPosition(pregnant, fetus),
@@ -4147,10 +4178,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       },
     },
     // 契合度前三名：与提示词同一套算法，衰减到现在
-    intimacy: getIntimacyRanking(profile, {
-      minutesPassed: minutesPassed ?? runtimeChatState?.minutesPassed ?? 0,
-      reproductiveSettings: runtimeChatState?.reproductiveSettings,
-    }).filter((item) => item.fit >= 0.005).slice(0, 3),
+    intimacy: intimacyRanking.filter((item) => item.fit >= 0.005).slice(0, 3),
     sheathStretch: getSheathStretch(experience),
     experience: {
       items: [
@@ -4627,6 +4655,44 @@ function renderFetusSireAction(item) {
   return ` <button type="button" class="bs-bt-womb-sire" data-fetus-sire="${escapeHtml(name)}" data-fetus-embryo="${escapeHtml(String(item.embryoId))}">${registered ? '精方' : '建档'}</button>`;
 }
 
+/**
+ * 衍生遗传一行：以中间为 0 的双向小条，左父右母；正被拉向另一边时标箭头。
+ * 停留看两边拉力与照目前速度几天越线。
+ */
+function renderFetusDerivedInheritanceLine(view) {
+  if (!view) return '';
+  const threshold = DERIVED_INHERITANCE_THRESHOLD;
+  const progress = Math.max(-100, Math.min(100, Number(view.currentProgress) || 0));
+  const sideType = (sign) => (sign > 0 ? view.motherDerivedType : view.fatherDerivedType);
+  const typeLabel = (sign) => (sideType(sign) ? `「${sideType(sign)}」` : '（不遗传衍生）');
+  const amount = Math.round(Math.abs(progress) * 10) / 10;
+  let label;
+  if (progress > threshold) label = `已越线，偏母方${typeLabel(1)}`;
+  else if (progress < -threshold) label = `已越线，偏父方${typeLabel(-1)}`;
+  else if (progress === 0) label = '未定';
+  else label = `${progress > 0 ? '偏母方' : '偏父方'}${typeLabel(Math.sign(progress))} ${amount}／${threshold}`;
+  const flipping = view.direction !== 0 && progress !== 0 && Math.sign(progress) !== view.direction;
+  const toward = view.direction > 0 ? '母方' : view.direction < 0 ? '父方' : '';
+  const crossed = Math.abs(progress) > threshold && Math.sign(progress) === view.direction;
+  const daysText = view.wholeDaysToInherit === null
+    ? '两边拉平，停在原地'
+    : crossed
+      ? `已越过${toward}判定线，照目前方向出生时会遗传${typeLabel(view.direction)}`
+      : `照目前速度约 ${view.wholeDaysToInherit} 天越过${toward}判定线`;
+  const title = [
+    `母方拉力 ${formatFixedDisplay(view.maternalPull, 2)}（亲密度 ${view.affinity}）`,
+    `父方拉力 ${formatFixedDisplay(view.paternalPull, 2)}（${view.father || '胎父'}契合度 ${Math.round((view.paternalFit || 0) * 100)}%）`,
+    ...(view.uncontestedPull > 0 ? [`含无竞争底力 ${formatFixedDisplay(view.uncontestedPull, 2)}`] : []),
+    daysText,
+  ].join('\n');
+  // 条以中间为 0：左边父方、右边母方，判定线 ±75 画成刻度
+  const fillLeft = progress < 0 ? 50 + (progress / 2) : 50;
+  const fillWidth = Math.abs(progress) / 2;
+  return `<span class="bs-bt-womb-card-line bs-bt-derived-line" title="${escapeHtml(title)}">衍生遗传：${escapeHtml(label)}${flipping ? `<span class="bs-bt-derived-flip">↺ 正被拉向${toward}</span>` : ''}
+      <span class="bs-bt-derived-bar" aria-hidden="true"><span class="bs-bt-derived-fill" style="left:${fillLeft}%;width:${fillWidth}%"></span><span class="bs-bt-derived-mark" style="left:${50 - threshold / 2}%"></span><span class="bs-bt-derived-mark is-center" style="left:50%"></span><span class="bs-bt-derived-mark" style="left:${50 + threshold / 2}%"></span></span>
+    </span>`;
+}
+
 /** 每胎一个可折叠的段落：标题列（缩图、胎重、编号、性别、胎位）常驻，其余展开才看；胎教再折一层。先露胎的缩图换上醒目外框 */
 function renderWombFetusCard(item, index, data) {
   const layout = data.womb;
@@ -4651,6 +4717,7 @@ function renderWombFetusCard(item, index, data) {
         <span class="bs-bt-womb-card-line">${escapeHtml(summary)}${sireAction}</span>
         ${renderPaternityClaimLine(item)}
         <span class="bs-bt-womb-card-line">血脉：${escapeHtml(formatBloodline(item?.race, item?.bloodline, item?.bloodlineSource))}</span>
+        ${renderFetusDerivedInheritanceLine(item?.derivedInheritance)}
         ${describeBackSide(item) ? `<span class="bs-bt-womb-card-line">${escapeHtml(describeBackSide(item))}</span>` : ''}
         ${item?.provider ? `<span class="bs-bt-womb-card-line">${escapeHtml(`遗传母方 ${item.provider}`)}</span>` : ''}
         ${renderFetusTagRow(item)}

@@ -140,6 +140,7 @@
         },
         descriptions: { pregnantDescription: [{ name: '孕态', value: '六胎撑得腹部巨大，几乎站不稳', updatedAt: 0 }] },
         profile: {
+          intimacy: { 莱昂: { count: 12, effective: 10, lastMinutes: 0, compatLabel: '恰好契合' }, 海德: { count: 7, effective: 6, lastMinutes: 0, compatLabel: '略有落差' } },
           pregnant: {
             pregnantDays: 210,
             effectivePregnantDays: 210,
@@ -149,11 +150,13 @@
               // 卵生・胎内回归（回到子宫里的鸟人）
               { embryoId: 2, descentStage: -3, fathers: '翼', fatherRace: '鸟人', race: '人类x鸟人', embryoType: '卵生', gender: '男', weight: 0.9, tendencyAngle: 45, affinity: 20, amnionDurability: 85, tags: ['rebirth'], talents: [] },
               // 胎生・代孕（卵来自艾拉），也是孕中孕的宿主；正亲和验证胎儿天赋；声称父亲与实际不同
-              { embryoId: 1, descentStage: -1, fathers: '莱昂', selectedFather: '卡尔', paternityClaims: [{ time: '第三日', content: '琪拉对卡尔说孩子是他的，卡尔半信半疑。', minutesPassed: 0 }], fatherRace: '人类', provider: '艾拉', providerSources: ['艾拉'], race: '精灵x人类', embryoType: '胎生', gender: '女', weight: 1.1, tendencyAngle: 0, affinity: 60, amnionDurability: 90, talents: [{ skillId: 1, level: 2, exp: 40 }] },
+              // 衍生遗传取样：胎父莱昂设为血族，遗传轴 −20 已偏父方（琪拉与莱昂契合度高）
+              { embryoId: 1, descentStage: -1, fathers: '莱昂', fatherDerivedType: '血族', maternalDerivedTypeProgress: -20, selectedFather: '卡尔', paternityClaims: [{ time: '第三日', content: '琪拉对卡尔说孩子是他的，卡尔半信半疑。', minutesPassed: 0 }], fatherRace: '人类', provider: '艾拉', providerSources: ['艾拉'], race: '精灵x人类', embryoType: '胎生', gender: '女', weight: 1.1, tendencyAngle: 0, affinity: 60, amnionDurability: 90, talents: [{ skillId: 1, level: 2, exp: 40 }] },
               // 胎转卵生・嵌合（两位父源融合）；负亲和验证苦手方向
               { embryoId: 4, descentStage: -3, fathers: '莱昂 × 无名旅人', fatherRace: '人类x西方龙', chimera: { sourceCount: 2, fatherSources: ['莱昂', '无名旅人'], maternalSources: ['琪拉'], genderSources: ['男', '女'] }, race: '人类x西方龙', embryoType: '胎转卵生', gender: '双', weight: 1.0, tendencyAngle: 180, affinity: -35, amnionDurability: 45, talents: [{ skillId: 2, level: -1, exp: -30 }] },
               // 卵胎生・异期复孕，带三颗伴生卵；孕龄落后一截
-              { embryoId: 3, descentStage: -1, fathers: '海德', selectedFather: '海德', paternityClaims: [{ time: '第五日', content: '琪拉告诉海德孩子是他的，海德欣然认领。', minutesPassed: 0 }], fatherRace: '人鱼', race: '人类x人鱼', embryoType: '卵胎生', gender: '女', weight: 0.85, tendencyAngle: 90, affinity: 10, amnionDurability: 70, conceivedAtDays: 30, companionEggCount: 3, tags: ['superfetation'], revealed: true, talents: [] },
+              // 衍生遗传取样：胎父海德是不死，轴 +10 仍偏母方，但父方拉力较大，正被拉回父方
+              { embryoId: 3, descentStage: -1, fathers: '海德', fatherDerivedType: '不死', maternalDerivedTypeProgress: 10, selectedFather: '海德', paternityClaims: [{ time: '第五日', content: '琪拉告诉海德孩子是他的，海德欣然认领。', minutesPassed: 0 }], fatherRace: '人鱼', race: '人类x人鱼', embryoType: '卵胎生', gender: '女', weight: 0.85, tendencyAngle: 90, affinity: 10, amnionDurability: 70, conceivedAtDays: 30, companionEggCount: 3, tags: ['superfetation'], revealed: true, talents: [] },
               // 不定型・自交＋雌核发生（琪拉自己当父方）
               { embryoId: 5, descentStage: -2, fathers: '琪拉', fatherRace: '人类x史萊姆', race: '人类x史萊姆', embryoType: '不定型', gender: '女', weight: 0.8, tendencyAngle: 270, affinity: 5, amnionDurability: 100, tags: ['gynogenesis'], talents: [] },
               // 孕中孕：长在 1 号体内，母亲是 1 号、父亲是精液来源
@@ -199,14 +202,15 @@
       }),
       // 子宫图测试：双胎互锁（臀位的先露胎与头位的第二胎在入口下巴互勾；第一产程，真实分娩模式）
       妮拉: makeCharacter('妮拉', {
-        base: { stage: '第一产程', days: 0, age: 23, eggs: 0, uterinePressure: 120 },
+        // 衍生遗传取样：妮拉本人是魔导；胎儿 1 的胎父没有衍生（偏母方），胎儿 2 的胎父同为魔导（同型）
+        base: { stage: '第一产程', days: 0, age: 23, eggs: 0, uterinePressure: 120, derivedType: '魔导' },
         profile: {
           immune: { realisticLabor: true },
           pregnant: {
             pregnantDays: 275, effectivePregnantDays: 275, laborPhase: '活跃期', presentingEmbryoId: 1,
             fetuses: [
-              { embryoId: 1, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 0.95, tendencyAngle: 180, affinity: 5, amnionDurability: 40, descentStage: 0, talents: [] },
-              { embryoId: 2, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 0.95, tendencyAngle: 0, affinity: -30, amnionDurability: 60, descentStage: 0, inletIntruder: true, talents: [] },
+              { embryoId: 1, fathers: '凯', fatherRace: '人类', embryoType: '胎生', gender: '女', weight: 0.95, tendencyAngle: 180, affinity: 5, amnionDurability: 40, descentStage: 0, maternalDerivedTypeProgress: 40, talents: [] },
+              { embryoId: 2, fathers: '凯', fatherRace: '人类', fatherDerivedType: '魔导', embryoType: '胎生', gender: '女', weight: 0.95, tendencyAngle: 0, affinity: -30, maternalDerivedTypeProgress: 80, amnionDurability: 60, descentStage: 0, inletIntruder: true, talents: [] },
             ],
           },
         },

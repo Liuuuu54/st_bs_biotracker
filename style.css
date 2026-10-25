@@ -5939,6 +5939,43 @@
   opacity: 0.85;
 }
 
+/* 胎儿卡的衍生遗传：以中间为 0 的双向小条，左父右母，±75 画成刻度 */
+#bs-biotracker-settings .bs-bt-derived-bar {
+  position: relative;
+  display: block;
+  height: 5px;
+  margin: 3px 0 2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+#bs-biotracker-settings .bs-bt-derived-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+#bs-biotracker-settings .bs-bt-derived-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+#bs-biotracker-settings .bs-bt-derived-mark.is-center {
+  opacity: 0.3;
+}
+
+#bs-biotracker-settings .bs-bt-derived-flip {
+  margin-left: 4px;
+  font-size: 0.9em;
+  font-weight: 700;
+}
+
 /* 认定的父亲与实际父方不同：反白标出，配色跟着主题走 */
 #bs-biotracker-settings .bs-bt-claim.is-mismatch {
   padding: 0 3px;
