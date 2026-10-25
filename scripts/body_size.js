@@ -182,18 +182,20 @@ function formatLevel(value) {
  * 插入时的体型契合。female／male 是 resolveBodySize 的结果加上本次是否变化态。
  * 回传 null 表示资料不足（依个体又没给体型），不写体型差。
  */
-export function describeBodySizeFit({ female, male, sizeBridge = false } = {}) {
+export function describeBodySizeFit({ female, male, sizeBridge = false, femaleStretch = 0 } = {}) {
   if (sizeBridge) return { label: '恰好契合', gap: 0, bridged: true, text: '体型契合：本次以魔法、变形等手段消弭体型差，恰好契合。' };
   if (female?.kind === 'variable' || male?.kind === 'variable') {
     return { label: '恰好契合', gap: 0, variable: true, text: '体型契合：可变体型配合对象，恰好契合。' };
   }
   if (female?.kind !== 'fixed' || male?.kind !== 'fixed') return null;
-  const femaleSize = female.formSize ?? female.size;
+  // 经产扩张只加在鞘那一侧（见 intimacy.js 的 getSheathStretch）
+  const stretch = Math.max(0, Number(femaleStretch) || 0);
+  const femaleSize = (female.formSize ?? female.size) + stretch;
   const maleSize = male.formSize ?? male.size;
   const diff = maleSize - femaleSize;
   const gap = Math.round(Math.abs(diff) * 10) / 10;
   const band = BODY_SIZE_FIT_BANDS.find((item) => gap < item.max);
-  const sizes = `卵方 ${formatLevel(femaleSize)}${female.altForm ? '（变化态）' : ''}，精方 ${formatLevel(maleSize)}${male.altForm ? '（变化态）' : ''}`;
+  const sizes = `卵方 ${formatLevel(femaleSize)}${female.altForm ? '（变化态）' : ''}${stretch > 0 ? `，含经产扩张 +${Math.round(stretch * 1000) / 1000}` : ''}，精方 ${formatLevel(maleSize)}${male.altForm ? '（变化态）' : ''}`;
   if (!band.maleLarger) return { label: band.label, gap, text: `体型契合：${band.label}（${sizes}）。` };
   const detail = diff > 0 ? `精方较大，${band.maleLarger}` : `卵方较大，${band.femaleLarger}`;
   return { label: band.label, gap, text: `体型契合：${band.label}，${detail}（${sizes}）。只影响叙述，不限制交合与受孕。` };

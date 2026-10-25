@@ -16,6 +16,26 @@ export function createEmptySires() {
   return Object.create(null);
 }
 
+/**
+ * 精子品质的三个作用，指数见精方计划 §5：同量的有效量 ×q^0.5、每天流失 ×q^-0.5（留存久）、
+ * 排出 ×q^-0.25（难洗）。品质 1 时都是 1，与没有品质的旧纪录完全相同。
+ */
+export function getSpermQualityFactors(value) {
+  const quality = normalizeSpermQuality(value);
+  return { quality, amount: quality ** 0.5, decay: quality ** -0.5, drain: quality ** -0.25 };
+}
+
+/**
+ * 精子品质给模型看的分级描述，顺带影射雄风；只影射，体型契合仍看体型。一般（0.5–1.5）不写。
+ */
+export function describeSpermQuality(value) {
+  const quality = normalizeSpermQuality(value);
+  if (quality < 0.5) return '精水稀薄，阳物平平';
+  if (quality < 1.5) return '';
+  if (quality < 3) return '精力旺盛，阳物粗壮';
+  return '精力极旺，阳物雄伟，一次就能灌满';
+}
+
 export function normalizeSpermQuality(value) {
   const quality = Number(value);
   if (!Number.isFinite(quality) || quality <= 0) return 1;
@@ -142,11 +162,13 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
   const entries = [];
   for (const [name, record] of Object.entries(sires)) {
     if (chatState?.characters && Object.prototype.hasOwnProperty.call(chatState.characters, name)) continue;
+    const virility = describeSpermQuality(record.spermQuality);
     const summary = {
       name,
       race: formatSireRace(record),
       ...(record.age ? { age: record.age } : {}),
       ...(record.bodySize ? { bodySize: record.bodySize } : {}),
+      ...(virility ? { virility } : {}),
     };
     if (record.isHere !== false) {
       const list = record.descriptions?.normalDescription || [];
@@ -203,6 +225,7 @@ export function upsertSireRecord(chatState, name, fields = {}, { source = 'manua
   });
   chatState.sires[key] = normalizeSireRecord({
     ...(previous || {}),
+    ...(fields.spermQuality !== undefined && fields.spermQuality !== null ? { spermQuality: fields.spermQuality } : {}),
     ...(isFuta ? {} : {
       race: fields.race || previous?.race || '人类',
       bloodline: fields.race ? null : previous?.bloodline,

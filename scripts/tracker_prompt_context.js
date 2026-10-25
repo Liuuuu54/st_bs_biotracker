@@ -168,6 +168,9 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- 记录第一次对象、最近对象、情感/婚姻对象，以及怀孕、分娩、流产等经历次数。',
   '- emotionalMates/marriageMates 为多人名单，由 date/breakup/marry/divorce 更新一人；婚姻和交往不连带增删。经验计数由后台结果更新，不能任意覆写。miscarriageExperience、abortionExperience 分别是流产与堕胎；旧版妊娠损失归入流产。',
   '',
+  '[bodyFamiliarity]',
+  '- 身体对各性伴的熟悉度，前三名与「身体最熟悉谁」；由系统依 bsAddSperm 的插入次数、体型相容（含经产扩张）、精子品质与时间衰减算出。只读，没有工具能改；只描述身体记忆，不代表感情。',
+  '',
   '[cognitionRecords]',
   '- 每名角色独立的当前周期认知纪录；只有 bsRecordExperience(action=cognition) 追加，缺少纪录不等于相信未孕。允许猜错孕程、胎数与胎父；不改客观事实。实际进入月经才刷新，长期 experience 与 children 保留。',
   '- 最新改口不删除旧笔；按先后与来源解读。系统受孕、胎父或工具成功不代表角色知情。未知身份不能用系统姓名补真相。',
@@ -394,7 +397,8 @@ function buildSireTrackerBlock(payload, descriptionGuides) {
   return [
     '[已注册精方]',
     '- payload.registered_sires 是已建档的精方（精液提供者）。isHere=true 为在场，附描述；isHere=false 只是本轮相关者的摘要（当前胎儿的父亲或认定父亲，或最近讯息提到），不送描述。',
-    '- bsAddSperm 的 male 写精方名字时，种族、衍生类型与体型由档案带入，race 可以省略；传了不同的 race 也以档案为准。',
+    '- bsAddSperm 的 male 写精方名字时，种族、衍生类型、体型与精子品质由档案带入：race 照填档案种族，maleBodySize 省略；传了不同的 race 也以档案为准。',
+    '- virility 是精方精子品质的分级描述（精力、精液浓度，顺带影射阳物），只供叙事参考，不改体型契合；没有这栏代表一般。',
     `- 在场精方的描述用 bsSetDescription（female 填精方名字，只有 normalDescription），只传剧情影响到的字段${fieldNames.length > 0 ? `；描述还空着时按这些字段名建立：${fieldNames.join('、')}` : ''}。`,
     '- 精方进出场景照样用 bsSetCharacterPresence（female 填精方名字）。精方不追踪生理需求、经期或妊娠，不要为精方调用其他工具。',
   ].join('\n');
@@ -523,6 +527,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
     '[状态字段速读]',
     '- 值为空的字段一律省略；认知与心理的省略/null 表示未知，不等于未孕或0。',
     '- cognitionRecords 保存角色信念，可以与事实不同；系统结果、真实胎父与胎数不自动成为角色知识。自然线索到点也不强制知孕。',
+    ...(profiles.some((profile) => profile.bodyFamiliarity) ? ['- bodyFamiliarity 是身体对各性伴的熟悉度（系统按次数、体型相容与时间算出，前三名）：只描述身体的记忆与反应，例如对谁的触碰更快有反应，不代表感情或爱意。'] : []),
     ...(profiles.some((profile) => profile.lastCondomResult || profile.lastEmergencyResult) ? ['- lastCondomResult/lastEmergencyResult 只在结算后的下一次叙事出现：是系统结果，不等于角色察觉；可据此描写合理可见的后果，不要求本轮处理。'] : []),
     '- base：vitality 活力、psyStress 情压，体质与精神倾向看 *LevelText；libido 性欲；uterinePressure 宫压（上限随孕程提高，越高越接近流产或分娩）；eggs 可受精卵数；sperms 为体内残留精液，value 每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。',
   ];
@@ -581,7 +586,7 @@ export function buildMainFlowStatePrompt(payload = {}) {
     '',
     '[当前已注册角色状态]',
     serializeStateForPrompt(existingState),
-    ...(presentSires.length > 0 ? ['[在场精方]', '已建档的精方（精液提供者）；只读，描写须与描述一致。', serializeStateForPrompt(presentSires)] : []),
+    ...(presentSires.length > 0 ? ['[在场精方]', '已建档的精方（精液提供者）；只读，描写须与描述一致。virility 是精力与雄风的分级描述，没有这栏代表一般。', serializeStateForPrompt(presentSires)] : []),
     ...(payload.recent_operation_results?.length ? ['[上轮已结算的生殖操作结果]', '可据此描写合理可见的后果（例如破套可能当场被发现），不要求本轮处理；这不是角色已知的事实，不得让角色无依据得知受孕、胎数或胎父，也不能自动写入认知。', serializeStateForPrompt(payload.recent_operation_results.map(({ name, applied, message }) => ({ name, applied, message })))] : []),
     fetusTagBlock,
     '</bs_biotracker>',

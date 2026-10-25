@@ -10,6 +10,8 @@ export const REPRODUCTIVE_DEFAULTS = Object.freeze({
   laborExperienceM: 0, laborExperienceA: 0,
   noticeExperienceMin: 0.75, noticeExperienceMax: 1.25,
   laborExperienceMin: 0.9, laborExperienceMax: 1.1,
+  // 契合度（精方计划 §6.5）：有效次数的半衰期、「还不熟悉」的基准值 c、同一场插入的去重间隔
+  intimacyHalfLifeDays: 90, intimacyBaseline: 3, intimacyDedupeHours: 6,
 });
 
 export function normalizeReproductiveSettings(value = {}) {
@@ -21,6 +23,9 @@ export function normalizeReproductiveSettings(value = {}) {
   for (const key of ['condomReliability', 'emergencyEffectiveness']) result[key] = Math.max(0, Math.min(1, result[key]));
   for (const key of ['condomCapacity', 'noticeFetalWeight']) result[key] = Math.max(0, result[key]);
   for (const key of ['noticeSpread', 'experienceCap']) result[key] = Math.max(0.001, result[key]);
+  result.intimacyHalfLifeDays = Math.max(1, result.intimacyHalfLifeDays);
+  result.intimacyBaseline = Math.max(0, result.intimacyBaseline);
+  result.intimacyDedupeHours = Math.max(0, result.intimacyDedupeHours);
   result.noticeMinDays = Math.max(0, result.noticeMinDays);
   result.noticeMaxDays = Math.max(result.noticeMinDays, result.noticeMaxDays);
   result.noticeBaseDays = Math.max(result.noticeMinDays, Math.min(result.noticeMaxDays, result.noticeBaseDays));

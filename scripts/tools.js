@@ -4,7 +4,8 @@ import { getStageProgress } from './stage_progress.js';
 import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
-import { getSireRecord, resolveSireBase } from './sires.js';
+import { getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
+import { getCompatMultiplier, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
 import { CONCEPTION_WEIGHT_LOG_SD, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getConceptionStageWeight, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
   cloneValue,
@@ -388,7 +389,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + 'action=insert／withdraw 时 amount=0；只有 insert 后才能以 action=deposit 沉积正数精液，沉积后若要再次射精须重新 insert。不同来源 insert 会直接交棒。'
       + 'amount 以人类精方 10-30 为准，按精方体型每级翻倍（体型 5 约 20-60、6 约 40-120、7 约 80-240、3 约 5-15、2 约 2.5-7.5）；残留每天自动衰减，人类女方每天 10、同样按女方体型每级翻倍，所以同体型的一次射精约 1-3 天内自然消失；剧情写得特别多或特别少时可以偏离。当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
       + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。'
-      + 'male 是已注册精方或同名卵方（扶她）时，种族、血脉、衍生类型与体型一律以档案为准，race 照填档案种族、maleBodySize 省略。'
+      + 'male 是已注册精方或同名卵方（扶她）时，种族、血脉、衍生类型、体型与精子品质一律以档案为准，race 照填档案种族、maleBodySize 省略。'
       + 'insert 会按双方体型结算体型契合（只影响叙述，不限制交合与受孕），结果写在回传讯息与次级提示；体型参数见 maleBodySize、femaleAltForm、maleAltForm、sizeBridge。'
       + '产兆前驱与产程中插入会顶到最前面的胎儿：前驱时把领头胎儿往上顶、延后前驱；第二产程把产道里的先露胎往回顶、产程进度倒退，着冠时倒退更多且可能顶破胎膜；第一产程只会痛。被顶的胎儿亲和下降。产兆前驱中射精则会缩短前驱。结果写在回传讯息里，供下一次回复承接，不要求重写当轮正文。',
     input_schema: {
@@ -412,7 +413,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsDrainSperm',
-    description: '让角色主动排出体内部分或全部精液残留，按当前各来源比例一并减少。用于角色主动清洗、灌洗或使用道具排出。注意：受精是在每次时间推进时用当下仍存在的精液判定，清空后这次性交不再有受孕机会；清洗/沐浴若剧情支持体内冲洗可选用，不要求避孕意图，不自动联动臭意解除。排出不撤销已受精结果。',
+    description: '让角色主动排出体内部分或全部精液残留，按当前各来源比例一并减少。用于角色主动清洗、灌洗或使用道具排出。注意：受精是在每次时间推进时用当下仍存在的精液判定，清空后这次性交不再有受孕机会；清洗/沐浴若剧情支持体内冲洗可选用，不要求避孕意图，不自动联动臭意解除。排出不撤销已受精结果。精子品质高的精源浓稠难洗，实际排得比 amount 少，回覆会写体内还留多少。',
     input_schema: {
       type: 'object',
       properties: {
@@ -2460,8 +2461,8 @@ function processSpermLifecycle(profile, stage, tick) {
   base.sperms = sperms
     .map((item) => ({
       ...item,
-      // 每天排掉的量随子宫容积：同体型的一次射精都约 1-3 天消失
-      value: Math.max(0, clampNumber(item?.value, 0, 999999, 0) - (tick.deltaDays * SPERM_DECAY_PER_DAY * getUterusVolumeFactor(base))),
+      // 每天排掉的量随子宫容积：同体型的一次射精都约 1-3 天消失；精子品质高的活得久（×q^-0.5）
+      value: Math.max(0, clampNumber(item?.value, 0, 999999, 0) - (tick.deltaDays * SPERM_DECAY_PER_DAY * getUterusVolumeFactor(base) * getSpermQualityFactors(item?.quality).decay)),
     }))
     .filter((item) => item.value > 0);
   rescaleSpermContacts(base);
@@ -7417,7 +7418,7 @@ function applyUpdatePsychology(chatState, args) {
  * 插入时的体型契合：卵方看自己的个体体型，精方依序看已注册角色、本次 maleBodySize、种族平均。
  * 回传 record 存在 base.penetrationFit（拔出时清除），notice 进次级提示，message 进回传讯息。
  */
-function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args }) {
+function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args, femaleStretch = 0 }) {
   const maleBodySize = clampIndividualBodySize(fatherBase ? fatherBase.bodySize : args?.maleBodySize);
   const female = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
   const maleResolved = fatherBase
@@ -7438,6 +7439,7 @@ function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args }) 
     female: applyAltForm(female, args?.femaleAltForm, '卵方'),
     male: applyAltForm(maleResolved, args?.maleAltForm, '精方'),
     sizeBridge,
+    femaleStretch,
   });
   const record = fit || maleBodySize !== null
     ? {
@@ -7455,7 +7457,7 @@ function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args }) 
   const message = [fit?.text || unknownNote, ...notes.map((note) => `${note}。`)].filter(Boolean).join(' ');
   // 恰好契合又没变身就不打扰叙述
   const noteworthy = fit && (fit.gap >= 0.5 || fit.bridged || args?.femaleAltForm === true || args?.maleAltForm === true);
-  return { record, notice: noteworthy ? fit.text.replace(/。$/, '') : '', message };
+  return { fit, record, notice: noteworthy ? fit.text.replace(/。$/, '') : '', message };
 }
 
 function applyAddSperm(chatState, args) {
@@ -7506,8 +7508,15 @@ function applyAddSperm(chatState, args) {
     const experience = { ...(next.profile?.experience || {}), latestSexPartner: male };
     if (experience.virginity === null || experience.virginity === undefined) experience.virginity = male;
     next.profile.experience = experience;
-    const fit = buildPenetrationFit(base, { male, race, bloodline: ancestry.bloodline, fatherBase, args });
+    const fit = buildPenetrationFit(base, { male, race, bloodline: ancestry.bloodline, fatherBase, args, femaleStretch: getSheathStretch(next.profile?.experience) });
     base.penetrationFit = fit.record;
+    // 性爱纪录：相容倍率照体型契合（含经产扩张）；同一场重复 insert 不重算
+    recordIntimacyInsert(next.profile, male, {
+      minutesPassed: Number(chatState.minutesPassed) || 0,
+      compat: getCompatMultiplier(fit.fit),
+      compatLabel: fit.fit?.label ?? null,
+      reproductiveSettings: chatState.reproductiveSettings,
+    });
     const pushback = applyInsertionPushback(next.profile, female);
     const secondly = [pushback, fit.notice].filter(Boolean).join('；');
     if (secondly) next.profile.notify = { ...(next.profile.notify || {}), secondly };
@@ -7556,18 +7565,21 @@ function applyAddSperm(chatState, args) {
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   // 父方衍生类型有档案就由档案带入，不再依赖模型每次在 race 写前缀
   const maleDerivedType = fatherBase ? (fatherBase.derivedType || null) : (parsedRace.derivedType || null);
+  // 精子品质在射精当下记快照，比照体型；未注册的一次性对象为 1。之后改档案不影响已射进去的
+  const quality = sireInfo ? sireInfo.spermQuality : 1;
   const existing = sperms.find((item) => String(item?.male || '') === male);
   if (enteredAmount > 0) {
     if (existing) {
       existing.value = Math.max(0, clampNumber(existing.value, 0, 999999, 0) + enteredAmount);
       existing.race = race;
       existing.derivedType = maleDerivedType;
+      existing.quality = quality;
       Object.assign(existing, ancestry);
       if (maleBodySize !== null) existing.bodySize = maleBodySize;
-    } else sperms.push({ male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, value: enteredAmount });
+    } else sperms.push({ male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality, value: enteredAmount });
     base.nextSpermContactId = (Number(base.nextSpermContactId) || 0) + 1;
     base.spermContacts = [...(base.spermContacts || []), {
-      id: base.nextSpermContactId, male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize,
+      id: base.nextSpermContactId, male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality,
       minutesPassed: Number(chatState.minutesPassed) || 0, value: enteredAmount, blocked: false,
     }];
   }
@@ -7587,6 +7599,8 @@ function applyAddSperm(chatState, args) {
   }
   next.profile.experience = experience;
   if (enteredAmount > 0) {
+    // 精液加成：内射才算，品质高的加、低的扣（不低于这一场插入加上去的量）
+    recordIntimacySemen(next.profile, male, { minutesPassed: Number(chatState.minutesPassed) || 0, quality, reproductiveSettings: chatState.reproductiveSettings });
     applyOdorGain(next.profile, Math.min(18, 4 + Math.log10(Math.max(1, enteredAmount)) * 4));
     setVisualCue(next.profile, condomFailed ? (condomOverflow ? 'condomOverflow' : 'condomBreak') : 'ejaculate');
   } else if (hasCondom) setVisualCue(next.profile, 'ejaculateCondom');
@@ -7608,27 +7622,27 @@ function applyDrainSperm(chatState, args) {
   let sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   const total = sperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
 
-  if (total <= amount) {
-    base.sperms = [];
-    rescaleSpermContacts(base);
-    next.profile.base = base;
-    chatState.characters[female] = next;
-    return { applied: true, message: `bsDrainSperm cleared all sperm for ${female}.` };
-  }
-
-  const factor = amount / total;
+  // 各来源按比例排；精子品质高的黏稠难洗，实际排掉 ×q^-0.25（品质 4 约七成），不超过剩下的量
+  const factor = total > 0 ? Math.min(1, amount / total) : 0;
   sperms = sperms
-    .map((item) => ({
-      ...item,
-      value: Math.max(Math.floor(clampNumber(item?.value, 0, 999999, 0) - (clampNumber(item?.value, 0, 999999, 0) * factor)), 0),
-    }))
+    .map((item) => {
+      const value = clampNumber(item?.value, 0, 999999, 0);
+      const removed = Math.min(value, value * factor * getSpermQualityFactors(item?.quality).drain);
+      return { ...item, value: factor >= 1 && removed >= value ? 0 : Math.max(Math.floor(value - removed), 0) };
+    })
     .filter((item) => item.value > 0);
 
   base.sperms = sperms;
   rescaleSpermContacts(base);
   next.profile.base = base;
   chatState.characters[female] = next;
-  return { applied: true, message: `bsDrainSperm applied to ${female}.` };
+  const remaining = sperms.reduce((sum, item) => sum + item.value, 0);
+  if (remaining <= 0) return { applied: true, message: `bsDrainSperm cleared all sperm for ${female}.` };
+  const stubborn = sperms.filter((item) => getSpermQualityFactors(item?.quality).drain < 1).map((item) => item.male);
+  return {
+    applied: true,
+    message: `bsDrainSperm applied to ${female}: 体内还留着 ${Math.round(remaining)}${stubborn.length > 0 ? `（${stubborn.join('、')} 的精液浓稠难洗，比预期排得少）` : ''}.`,
+  };
 }
 
 function applySetMenstrualPhases(chatState, args) {

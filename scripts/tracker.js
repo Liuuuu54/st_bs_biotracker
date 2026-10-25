@@ -6,6 +6,7 @@ import { getDisabledSpecialToolNames, isRealisticWorld } from './world_mode.js';
 import { syncCardSettings } from './card_settings.js';
 import { contraceptionLevels, naturalNoticeDays, psychologySide } from './reproductive.js';
 import { buildSirePromptEntries } from './sires.js';
+import { formatIntimacyPromptLine, getIntimacyRanking } from './intimacy.js';
 import { DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
@@ -919,7 +920,7 @@ function buildNarrativeWardrobeItem(entry) {
   };
 }
 
-function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true, minutesPassed = 0) {
+function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true, minutesPassed = 0, reproductiveSettings = null) {
   const next = cloneValue(item);
   const profile = next?.profile || {};
   const base = profile.base || {};
@@ -1070,6 +1071,10 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
       [side]: psychology[side] || {} } : undefined;
   }
   profile.diary = getRecentDiaryEntries(item?.profile || {}, diaryLimit);
+  // 性爱纪录只送契合度前三名的一行，原始汇总值是系统内部的
+  delete profile.intimacy;
+  const familiarity = formatIntimacyPromptLine(getIntimacyRanking(item?.profile, { minutesPassed, reproductiveSettings }));
+  if (familiarity) profile.bodyFamiliarity = familiarity;
 
   delete next.updatedAt;
   delete next.runtime;
@@ -1189,7 +1194,7 @@ function trimPaternityClaims(view) {
   return view;
 }
 
-function buildTrackerStateView(existingState, settings = null, minutesPassed = 0) {
+function buildTrackerStateView(existingState, settings = null, minutesPassed = 0, reproductiveSettings = null) {
   const characterCount = Object.keys(existingState || {}).length;
   const diaryLimit = getDiaryRecentLimit(settings, characterCount);
   const wardrobeOn = isWardrobeSystemEnabled(settings);
@@ -1198,7 +1203,7 @@ function buildTrackerStateView(existingState, settings = null, minutesPassed = 0
     Object.entries(existingState).map(([name, item]) => {
       const view = item?.profile?.base?.isHere === false
         ? buildOffscreenCharacterState(item, diaryLimit, wardrobeOn)
-        : buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn, minutesPassed);
+        : buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn, minutesPassed, reproductiveSettings);
       return [name, pruneEmptyFields(trimPaternityClaims(skillOn ? view : stripSkillFields(view)))];
     }),
   );
@@ -1410,7 +1415,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
       skill_baseline_prompt: String(chatState.skillBaselinePrompt || '').trim(),
       skill_catalog: Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [],
     } : {}),
-    existing_state: buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0),
+    existing_state: buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings),
     available_tools: getTrackerToolDefinitions(settings, existingState),
     diary_enabled: diaryEnabled,
     race_catalog_selection: settings?.raceCatalogSelection || null,

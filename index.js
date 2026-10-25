@@ -94,7 +94,8 @@ import {
   isFetusKnownToCharacter,
 } from './scripts/tools.js';
 import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
-import { deleteSireRecord, formatSireDescriptionText, formatSireRaceDescriptor, getSireRecord, normalizeSireRecord, parseSireDescriptionText, upsertSireRecord } from './scripts/sires.js';
+import { getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
+import { deleteSireRecord, describeSpermQuality, formatSireDescriptionText, formatSireRaceDescriptor, getSireRecord, normalizeSireRecord, parseSireDescriptionText, upsertSireRecord } from './scripts/sires.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
@@ -1314,6 +1315,7 @@ function loadSireIntoForm(ctx, name, prefill = null) {
   setInputValue('bs-bt-register-race', source ? formatSireRaceDescriptor(source) : '人类');
   setInputValue('bs-bt-sire-age', source?.age ? String(source.age) : '');
   setInputValue('bs-bt-sire-body-size', source?.bodySize ? String(source.bodySize) : '');
+  setInputValue('bs-bt-sire-quality', record && record.spermQuality !== 1 ? String(record.spermQuality) : '');
   const here = document.getElementById('bs-bt-sire-here');
   if (here instanceof HTMLInputElement) here.checked = source ? source.isHere !== false : true;
   setInputValue('bs-bt-sire-descriptions', record ? formatSireDescriptionText(record.descriptions?.normalDescription) : '');
@@ -1362,6 +1364,7 @@ function saveSireFromForm(ctx) {
     race: String(document.getElementById('bs-bt-register-race')?.value || '').trim() || '人类',
     age: readOptionalNumber('bs-bt-sire-age'),
     bodySize: readOptionalNumber('bs-bt-sire-body-size'),
+    spermQuality: readOptionalNumber('bs-bt-sire-quality') ?? 1,
     isHere: document.getElementById('bs-bt-sire-here')?.checked !== false,
     descriptions: parseSireDescriptionText(document.getElementById('bs-bt-sire-descriptions')?.value),
   });
@@ -1512,7 +1515,7 @@ function addInitialCognitionRow() {
 
 function readReproductiveControls(settings) {
   const next = { ...normalizeReproductiveSettings(settings.reproductiveSettings) };
-  for (const key of ['condomCapacity', 'condomReliability', 'emergencyEffectiveness']) {
+  for (const key of REPRODUCTIVE_EDITOR_FIELDS.map(([fieldKey]) => fieldKey)) {
     const node = document.getElementById(`bs-bt-reproductive-${key}`);
     if (!node) continue;
     const value = Number(node.value);
@@ -1522,16 +1525,21 @@ function readReproductiveControls(settings) {
   return normalizeReproductiveSettings(next);
 }
 
+// 生殖世界基准的栏位；第三栏为 true 的是 0～1 的比率
+const REPRODUCTIVE_EDITOR_FIELDS = Object.freeze([
+  ['condomCapacity', '套子容量（与精液量同单位）', false],
+  ['condomReliability', '套子可靠度（0～1）', true],
+  ['emergencyEffectiveness', '即时事后避孕成功率（0～1）', true],
+  ['intimacyHalfLifeDays', '契合度半衰期（天）', false],
+  ['intimacyBaseline', '契合度基准值（还不熟悉的身体，越大越难熟）', false],
+  ['intimacyDedupeHours', '同一场插入的去重间隔（小时）', false],
+]);
+
 function renderReproductiveControls(settings) {
   const node = document.getElementById('bs-bt-reproductive-controls');
   if (!node) return;
   const c = normalizeReproductiveSettings(settings.reproductiveSettings);
-  const fields = [
-    ['condomCapacity', '套子容量（与精液量同单位）'],
-    ['condomReliability', '套子可靠度（0～1）'],
-    ['emergencyEffectiveness', '即时事后避孕成功率（0～1）'],
-  ];
-  node.innerHTML = fields.map(([key,label]) => `<label>${label}<span class="bs-bt-race-editor-badge">${escapeHtml(getEditorFieldSource('reproductiveSettings', undefined, key))}</span><input id="bs-bt-reproductive-${key}" class="text_pole" type="number" step="any" min="0"${key === 'condomCapacity' ? '' : ' max="1"'} value="${c[key]}" /></label>`).join('');
+  node.innerHTML = REPRODUCTIVE_EDITOR_FIELDS.map(([key, label, isRate]) => `<label>${label}<span class="bs-bt-race-editor-badge">${escapeHtml(getEditorFieldSource('reproductiveSettings', undefined, key))}</span><input id="bs-bt-reproductive-${key}" class="text_pole" type="number" step="any" min="0"${isRate ? ' max="1"' : ''} value="${c[key]}" /></label>`).join('');
   node.dataset.initialized = 'true';
 }
 
@@ -4138,6 +4146,12 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
         speciesSpeed: gestationSpeciesSpeed,
       },
     },
+    // 契合度前三名：与提示词同一套算法，衰减到现在
+    intimacy: getIntimacyRanking(profile, {
+      minutesPassed: minutesPassed ?? runtimeChatState?.minutesPassed ?? 0,
+      reproductiveSettings: runtimeChatState?.reproductiveSettings,
+    }).filter((item) => item.fit >= 0.005).slice(0, 3),
+    sheathStretch: getSheathStretch(experience),
     experience: {
       items: [
         ['初次对象', experience.virginity ?? '无'],
@@ -5007,6 +5021,26 @@ function renderTrackSkillSection(viewModel) {
   `;
 }
 
+/** 经历页的「契合」：身体对各性伴的熟悉度前三名，附最近一场的体型相容；只是身体记忆，不代表感情 */
+function renderTrackIntimacySection(viewModel) {
+  const items = Array.isArray(viewModel.intimacy) ? viewModel.intimacy : [];
+  const stretch = Number(viewModel.sheathStretch) || 0;
+  const rows = items.map((item) => {
+    const percent = Math.round(item.fit * 100);
+    const detail = [item.compatLabel, `${item.count} 次`].filter(Boolean).join('，');
+    return `<div class="bs-bt-track-progress">
+      <div class="bs-bt-track-progress-head"><span>${escapeHtml(item.name)}<small>（${escapeHtml(detail)}）</small></span><span>${percent}%</span></div>
+      <div class="bs-bt-track-progress-bar" style="width:100%;"><div class="bs-bt-track-progress-fill" style="width:${percent}%;"></div></div>
+    </div>`;
+  }).join('');
+  return `
+    <div class="bs-bt-track-section">
+      <div class="bs-bt-track-section-title" title="身体对各性伴的熟悉度：次数越多、体型越合越高，久了会淡；不代表感情">契合</div>
+      ${items.length > 0 ? `<div class="bs-bt-track-progress-list">${rows}</div>` : '<div class="bs-bt-track-description-empty">尚无性爱纪录</div>'}
+      ${stretch > 0 ? `<div class="bs-bt-track-meta"><div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">经产扩张</span><span class="bs-bt-track-meta-value">+${stretch} 级</span></div></div>` : ''}
+    </div>`;
+}
+
 function renderTrackExperience(viewModel) {
   return `
     <div class="bs-bt-track-section">
@@ -5020,6 +5054,7 @@ function renderTrackExperience(viewModel) {
       .join('')}
       </div>
     </div>
+    ${renderTrackIntimacySection(viewModel)}
     ${renderTrackSkillSection(viewModel)}
     ${renderTrackLineageEntry(viewModel)}
   `;
@@ -6860,6 +6895,7 @@ function renderTrackSirePage(chatState) {
       metaRow('年龄', base?.age ? `${Math.round(Number(base.age))} 岁` : '未记录'),
       metaRow('体型', formatCharacterBodySizeLabel(base || {})),
       ...(formatAltFormBodySizeLabel(base || {}) ? [metaRow('变化态体型', formatAltFormBodySizeLabel(base || {}))] : []),
+      metaRow('精子品质', `${record.spermQuality}${describeSpermQuality(record.spermQuality) ? `（${describeSpermQuality(record.spermQuality)}）` : '（一般）'}`),
       ...(isFuta ? [metaRow('卵方', '同名卵方已注册（扶她），资料与描述读卵方')] : []),
     ].join('')),
     isFuta

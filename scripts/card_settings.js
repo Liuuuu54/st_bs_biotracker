@@ -10,7 +10,7 @@ import { SPECIAL_TOOLS, normalizeSpecialTools } from './world_mode.js';
 
 export const CARD_SETTINGS_KEY = 'bs_biotracker';
 export const CARD_SETTINGS_VERSION = 1;
-export const CARD_REPRODUCTIVE_FIELDS = Object.freeze(['condomCapacity', 'condomReliability', 'emergencyEffectiveness']);
+export const CARD_REPRODUCTIVE_FIELDS = Object.freeze(['condomCapacity', 'condomReliability', 'emergencyEffectiveness', 'intimacyHalfLifeDays', 'intimacyBaseline', 'intimacyDedupeHours']);
 const UNSET_VALUE = '__@@UNSET@@__'; // Installed ST 1.19.0 / Luker 2.7.0 extensions.js.
 const writes = new Map();
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);

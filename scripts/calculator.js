@@ -1,3 +1,4 @@
+import { getSpermQualityFactors } from './sires.js';
 import {
   deriveFetusRace,
   deriveFetusAncestry,
@@ -79,10 +80,12 @@ export function calculateFertilizationPreview({
       value: clampNumber(source?.value, 0, 999999, 0),
     }))
     .filter((source) => source.value > 0)
-    .map((source) => ({
-      ...source,
-      ...calculateSpermExposure(source.value, elapsedDays, SPERM_DECAY_PER_DAY * volumeFactor),
-    }))
+    .map((source) => {
+      // 精子品质：留存时间按每天流失 ×q^-0.5 算真实的暴露天数，再把有效量 ×q^0.5；量与时间各分一半效果
+      const factors = getSpermQualityFactors(source.quality);
+      const exposure = calculateSpermExposure(source.value, elapsedDays, SPERM_DECAY_PER_DAY * volumeFactor * factors.decay);
+      return { ...source, quality: factors.quality, ...exposure, exposureAmountDays: exposure.exposureAmountDays * factors.amount };
+    })
     .filter((source) => source.exposureDays > 0);
   const totalSperm = validSources.reduce((sum, source) => sum + source.value, 0);
   const effectiveExposureDays = validSources.reduce((max, source) => Math.max(max, source.exposureDays), 0);
