@@ -1322,6 +1322,31 @@ function loadSireIntoForm(ctx, name, prefill = null) {
   closeRacePalettePopover();
   refreshRegisterRacePalette();
   syncSireButtons();
+  syncSireFutaLock(ctx);
+}
+
+/**
+ * 名字是已注册卵方（扶她）时，精方表单的种族以外栏位都读卵方：显示卵方的值并锁住，描述清空，抽取也停用。
+ * 种族栏与卵方注册共用，不锁；存档时一样以卵方为准。
+ */
+function syncSireFutaLock(ctx) {
+  const rawName = String(document.getElementById('bs-bt-register-name')?.value || '').trim();
+  const name = String(resolvePersonNameField(rawName) || '').trim();
+  const chatState = getChatState(ctx, getSettings(ctx));
+  const isFuta = Boolean(name) && Object.prototype.hasOwnProperty.call(chatState.characters || {}, name);
+  const note = document.getElementById('bs-bt-sire-futa-note');
+  if (note) note.hidden = !isFuta;
+  for (const id of ['bs-bt-sire-age', 'bs-bt-sire-body-size', 'bs-bt-sire-here', 'bs-bt-sire-descriptions', 'bs-bt-sire-extract-prompt', 'bs-bt-sire-extract']) {
+    const node = document.getElementById(id);
+    if (node) node.disabled = isFuta || (id === 'bs-bt-sire-extract' && isRegistryOperationPending('sire'));
+  }
+  if (!isFuta) return;
+  const base = chatState.characters[name]?.profile?.base || {};
+  setInputValue('bs-bt-sire-age', base.age ? String(Math.round(Number(base.age))) : '');
+  setInputValue('bs-bt-sire-body-size', clampIndividualBodySize(base.bodySize) !== null ? String(base.bodySize) : '');
+  const here = document.getElementById('bs-bt-sire-here');
+  if (here instanceof HTMLInputElement) here.checked = base.isHere !== false;
+  setInputValue('bs-bt-sire-descriptions', '');
 }
 
 function readOptionalNumber(id) {
@@ -4572,6 +4597,22 @@ function renderPaternityClaimLine(item) {
   return `<span class="bs-bt-womb-card-line"${title}>认定父亲：<span class="bs-bt-claim${mismatch ? ' is-mismatch' : ''}">${escapeHtml(claimed)}</span></span>`;
 }
 
+/**
+ * 胎儿卡的父方：单一父方才有按钮（嵌合胎的合并种族对不回单一个人）。
+ * 已建档的精方开他的单页；路人开精方表单，带入这胎保存的父方快照；已注册卵方（扶她、百合）不放按钮。
+ */
+function renderFetusSireAction(item) {
+  const fathers = listGeneticFathers(item);
+  const name = fathers.length === 1 ? fathers[0] : '';
+  // 胎内回归的「父方」是回到子宫里的那个人，不是精液提供者
+  if (!name || name === '未知' || !item?.embryoId || (Array.isArray(item?.tags) && item.tags.includes('rebirth'))) return '';
+  const ctx = getContextSafe();
+  const chatState = ctx ? getChatState(ctx, getSettings(ctx)) : null;
+  if (!chatState || Object.prototype.hasOwnProperty.call(chatState.characters || {}, name)) return '';
+  const registered = Boolean(getSireRecord(chatState, name));
+  return ` <button type="button" class="bs-bt-womb-sire" data-fetus-sire="${escapeHtml(name)}" data-fetus-embryo="${escapeHtml(String(item.embryoId))}">${registered ? '精方' : '建档'}</button>`;
+}
+
 /** 每胎一个可折叠的段落：标题列（缩图、胎重、编号、性别、胎位）常驻，其余展开才看；胎教再折一层。先露胎的缩图换上醒目外框 */
 function renderWombFetusCard(item, index, data) {
   const layout = data.womb;
@@ -4583,6 +4624,7 @@ function renderWombFetusCard(item, index, data) {
   const talents = Array.isArray(item?.talents) ? item.talents : [];
   const id = String(item.embryoId);
   const summary = [item?.fathers || '未知', formatRaceLabel(item?.fatherRace, item?.fatherDerivedType)].join(' · ');
+  const sireAction = renderFetusSireAction(item);
   return `<details class="bs-bt-womb-card" data-womb-fetus="${escapeHtml(id)}"${wombOpenFetuses.has(id) ? ' open' : ''}>
       <summary>
         <span class="bs-bt-womb-thumb-col">
@@ -4592,7 +4634,7 @@ function renderWombFetusCard(item, index, data) {
         <strong class="bs-bt-womb-card-title">胎儿${index + 1}<canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas>${escapeHtml(getPresentationWord(item?.tendencyAngle))}</strong>
       </summary>
       <div class="bs-bt-womb-card-body">
-        <span class="bs-bt-womb-card-line">${escapeHtml(summary)}</span>
+        <span class="bs-bt-womb-card-line">${escapeHtml(summary)}${sireAction}</span>
         ${renderPaternityClaimLine(item)}
         <span class="bs-bt-womb-card-line">血脉：${escapeHtml(formatBloodline(item?.race, item?.bloodline, item?.bloodlineSource))}</span>
         ${describeBackSide(item) ? `<span class="bs-bt-womb-card-line">${escapeHtml(describeBackSide(item))}</span>` : ''}
@@ -5162,6 +5204,16 @@ function selectLineageNode(nodeId) {
 }
 
 /** 族谱上的父方 → 注册页精方分页，名字、种族、体型带进表单，由使用者确认后建档 */
+/** 族谱或胎儿卡的父方 → 注册页精方分页，名字、种族、体型带进表单，由使用者确认后建档 */
+function openSireFormWithPrefill(ctx, name, prefill, sourceLabel) {
+  closeLineageWindow();
+  setView('register');
+  renderRegisterChildSourceOptions(ctx);
+  setRegisterTab('sire');
+  loadSireIntoForm(ctx, name, prefill);
+  setSireStatus(`已带入 ${name} 在${sourceLabel}里的父方资料；确认后按「建立精方」。`);
+}
+
 function openSireFormFromLineage(ctx, nodeId) {
   const node = lineageViewCache?.nodes.find((item) => item.id === nodeId);
   if (!node?.name) return;
@@ -5170,19 +5222,36 @@ function openSireFormFromLineage(ctx, nodeId) {
     showFullStateSire(ctx, node.name);
     return;
   }
-  closeLineageWindow();
-  setView('register');
-  renderRegisterChildSourceOptions(ctx);
-  setRegisterTab('sire');
-  loadSireIntoForm(ctx, node.name, {
+  openSireFormWithPrefill(ctx, node.name, {
     race: node.race,
     bloodline: node.bloodline,
     bloodlineSource: node.bloodlineSource,
     derivedType: node.derivedType,
     bodySize: node.bodySize,
     age: node.age,
-  });
-  setSireStatus(node.kind === 'sire' ? `编辑精方 ${node.name}。` : `已带入 ${node.name} 在子女记录里的父方资料；确认后按「建立精方」。`);
+  }, '子女记录');
+}
+
+/** 胎儿卡的父方按钮：已建档开精方单页，否则带这胎的父方快照开表单 */
+function openSireFromFetusCard(ctx, name, embryoId) {
+  const chatState = getChatState(ctx, getSettings(ctx));
+  if (getSireRecord(chatState, name)) {
+    selectedTrackSireName = name;
+    selectedTrackKind = 'sire';
+    document.querySelectorAll('#bs-bt-track-kind-tabs [data-track-kind]').forEach((tab) => tab.classList.toggle('is-active', tab.dataset.trackKind === 'sire'));
+    renderStatusPanel(ctx);
+    setView('track-sire');
+    return;
+  }
+  const fetuses = chatState.characters?.[selectedTrackName]?.profile?.pregnant?.fetuses || [];
+  const fetus = fetuses.find((item) => String(item?.embryoId) === String(embryoId));
+  openSireFormWithPrefill(ctx, name, {
+    race: fetus?.fatherRace,
+    bloodline: fetus?.fatherBloodline,
+    bloodlineSource: fetus?.fatherBloodlineSource,
+    derivedType: fetus?.fatherDerivedType,
+    bodySize: fetus?.fatherBodySize,
+  }, '胎儿记录');
 }
 
 function ensureLineageWindow(ctx) {
@@ -9356,6 +9425,11 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-track-content')?.addEventListener('click', (event) => {
     const button = event.target?.closest?.('[data-character-full-state]');
     if (button) showFullState(ctx, button.dataset.characterFullState);
+    const sireButton = event.target?.closest?.('[data-fetus-sire]');
+    if (sireButton) {
+      event.preventDefault();
+      openSireFromFetusCard(ctx, sireButton.dataset.fetusSire, sireButton.dataset.fetusEmbryo);
+    }
   });
   document.querySelectorAll('#bs-bt-track-kind-tabs [data-track-kind]').forEach((node) => {
     node.addEventListener('click', () => {
@@ -10027,6 +10101,11 @@ async function ensureModal(ctx) {
   });
   document.getElementById('bs-bt-sire-save')?.addEventListener('click', () => saveSireFromForm(ctx));
   document.getElementById('bs-bt-sire-extract')?.addEventListener('click', () => extractSireFromCard(ctx));
+  // 名字改成已注册卵方时马上锁住精方栏位；只在精方分页作用，卵方注册不受影响
+  document.getElementById('bs-bt-register-name')?.addEventListener('input', () => {
+    if (!document.querySelector('[data-register-page="sire"]')?.hidden) syncSireFutaLock(ctx);
+  });
+  document.querySelector('#bs-bt-register-tabs [data-register-tab="sire"]')?.addEventListener('click', () => syncSireFutaLock(ctx));
   document.getElementById('bs-bt-sire-delete')?.addEventListener('click', () => deleteSelectedSire(ctx));
   document.querySelector('#bs-bt-view-register .bs-bt-race-picker-wrap')?.addEventListener('click', (event) => {
     const target = event.target;

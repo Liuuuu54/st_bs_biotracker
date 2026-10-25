@@ -1980,6 +1980,22 @@
   margin: 0;
 }
 
+/* 胎儿卡父方那行的小按钮 */
+#bs-biotracker-settings .bs-bt-womb-sire {
+  display: inline-block;
+  margin: 0 0 0 6px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8em;
+  line-height: 1.5;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+
 #bs-biotracker-settings .bs-bt-track-sire-fetuses > summary {
   cursor: pointer;
   padding: 4px 0;
