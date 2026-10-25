@@ -16,6 +16,7 @@ import {
   runRegistryBreedingInference,
   runRegistryDiaryInference,
   runRegistryOutfitInference,
+  runRegistrySireExtraction,
   runRegistrySkillInference,
   runRegistryWardrobeInference,
 } from './scripts/registry.js';
@@ -414,6 +415,7 @@ const REGISTRY_OP_UI = {
   outfit: { buttonId: 'bs-bt-register-outfit-generate', busyText: '生成中...', idleText: '生成着衣', setStatus: (message, isError) => setRegisterOutfitStatus(message, isError) },
   diary: { buttonId: 'bs-bt-diary-generate', busyText: '生成中...', idleText: '生成日记', setStatus: (message, isError) => setDiaryStatus(message, isError) },
   skill: { buttonId: 'bs-bt-register-skill-generate', busyText: '生成中...', idleText: '生成技能／天赋', setStatus: (message, isError) => setRegisterSkillStatus(message, isError) },
+  sire: { buttonId: 'bs-bt-sire-extract', busyText: '抽取中...', idleText: '从角色卡抽取', setStatus: (message, isError) => setSireStatus(message, isError) },
 };
 
 /**
@@ -445,6 +447,7 @@ const REGISTRY_OP_FLOWS = Object.freeze({
   inference: ['breeding'],
   register: ['registry', 'breeding'],
   registerBundle: ['registry', 'breeding'],
+  sire: ['sire'],
 });
 const registryBusyToasts = new Map();
 
@@ -1350,6 +1353,41 @@ function saveSireFromForm(ctx) {
   loadSireIntoForm(ctx, name);
   setSireStatus(result.message);
   globalThis.toastr?.success?.(`[BS BioTracker] ${result.message}`);
+}
+
+/** 从角色卡抽取：结果只填表单，不建档；描述框整份换成抽取结果 */
+async function extractSireFromCard(ctx) {
+  if (isRegistryOperationPending('sire')) {
+    globalThis.toastr?.info?.('[BS BioTracker] 精方抽取正在进行中，请等待完成');
+    return;
+  }
+  const rawName = String(document.getElementById('bs-bt-register-name')?.value || '').trim();
+  const targetName = resolveRegistryTargetName(ctx, rawName);
+  if (!targetName) {
+    setSireStatus('请先在上方填写精方名字。', true);
+    return;
+  }
+  readSettingsFromForm(ctx);
+  beginRegistryOperation('sire', `正在从角色卡抽取 ${targetName} 的精方档案...`);
+  try {
+    const result = await runRegistrySireExtraction(ctx, {
+      targetName,
+      declaredRace: String(document.getElementById('bs-bt-register-race')?.value || '').trim(),
+      userInstruction: String(document.getElementById('bs-bt-sire-extract-prompt')?.value || '').trim(),
+    });
+    setInputValue('bs-bt-register-name', targetName);
+    setInputValue('bs-bt-sire-age', result.age ? String(result.age) : '');
+    setInputValue('bs-bt-sire-body-size', result.bodySize ? String(result.bodySize) : '');
+    const here = document.getElementById('bs-bt-sire-here');
+    if (here instanceof HTMLInputElement) here.checked = result.isHere;
+    setInputValue('bs-bt-sire-descriptions', formatSireDescriptionText(result.descriptions));
+    setSireStatus(`已抽取 ${targetName} 的档案，确认或修改后按「${selectedSireName === targetName ? '更新精方' : '建立精方'}」。`);
+  } catch (error) {
+    setSireStatus(String(error?.message || error), true);
+    toastOperationFailure(error);
+  } finally {
+    endRegistryOperation('sire');
+  }
 }
 
 function deleteSelectedSire(ctx) {
@@ -9988,6 +10026,7 @@ async function ensureModal(ctx) {
     setSireStatus('');
   });
   document.getElementById('bs-bt-sire-save')?.addEventListener('click', () => saveSireFromForm(ctx));
+  document.getElementById('bs-bt-sire-extract')?.addEventListener('click', () => extractSireFromCard(ctx));
   document.getElementById('bs-bt-sire-delete')?.addEventListener('click', () => deleteSelectedSire(ctx));
   document.querySelector('#bs-bt-view-register .bs-bt-race-picker-wrap')?.addEventListener('click', (event) => {
     const target = event.target;

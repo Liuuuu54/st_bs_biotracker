@@ -107,7 +107,7 @@ export function getAuthHeaders(settings, sessionId = '') {
  * 只有 hostname 归属 opencode.ai 的 endpoint 才带，其他渠道一律不带。
  */
 const OPENCODE_SESSION_HEADER = 'x-opencode-session';
-const OPENCODE_FLOW_NAMES = ['tracker', 'registry', 'wardrobe', 'outfit', 'diary', 'skill', 'breeding'];
+const OPENCODE_FLOW_NAMES = ['tracker', 'registry', 'wardrobe', 'outfit', 'diary', 'skill', 'breeding', 'sire'];
 
 /** 汇点最后校验：非法值直接丢弃，防换行/伪造头注入。 */
 function isValidOpenCodeSessionId(sessionId) {
@@ -459,6 +459,7 @@ export const API_FLOW_LABELS = Object.freeze({
   outfit: '起始着衣',
   diary: '日记',
   skill: '技能推演',
+  sire: '精方抽取',
 });
 
 /** 目前进行中的请求（不含控制器本身） */

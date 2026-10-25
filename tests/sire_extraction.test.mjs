@@ -1,0 +1,57 @@
+// 精方抽取（1.2.0）：依角色卡整理精方档案，结果只填表单，不建档。
+import assert from 'node:assert/strict';
+import test, { afterEach } from 'node:test';
+
+import * as state from '../scripts/state.js';
+import { buildSireExtractionSystemPrompt, runRegistrySireExtraction, sanitizeSireExtractionResult } from '../scripts/registry.js';
+
+const ORIGINAL_FETCH = globalThis.fetch;
+afterEach(() => {
+  if (ORIGINAL_FETCH === undefined) delete globalThis.fetch;
+  else globalThis.fetch = ORIGINAL_FETCH;
+});
+
+test('提示词：种族照使用者指定、字段照精方描述规则且不带 *、附上使用者补充', () => {
+  const prompt = buildSireExtractionSystemPrompt({}, { declaredRace: '[血族]精灵', userInstruction: '他是卡里的男主' });
+  assert.match(prompt, /种族已由使用者指定为 \[血族\]精灵/);
+  assert.match(prompt, /外貌\|/);
+  assert.match(prompt, /行动\|/);
+  assert.ok(!prompt.includes('*行动'));
+  assert.match(prompt, /他是卡里的男主/);
+});
+
+test('结果正规化：年龄取整、体型夹在 1–7、在场预设 true、描述去掉 * 与空白栏', () => {
+  assert.deepEqual(sanitizeSireExtractionResult({ age: 31.6, bodySize: 9, descriptions: { 外貌: ' 银发 ', '*行动': '靠在门边', 性器: '' } }), {
+    age: 32, bodySize: 7, isHere: true,
+    descriptions: [{ name: '外貌', value: '银发' }, { name: '行动', value: '靠在门边' }],
+  });
+  assert.deepEqual(sanitizeSireExtractionResult('坏掉的'), { age: null, bodySize: null, isHere: true, descriptions: [] });
+  assert.equal(sanitizeSireExtractionResult({ isHere: false }).isHere, false);
+});
+
+test('抽取只回传表单值，不建档；请求带上目标名字与旧档案', async () => {
+  const ctx = {
+    chatId: 'sire-extract-chat', name1: 'User', name2: '凯', characterId: 0,
+    characters: [{ name: '凯', description: '195 cm 的骑士，银发。', avatar: 'kai.png' }],
+    chat: [{ is_user: false, name: '凯', mes: '凯靠在门边。' }],
+    extensionSettings: {}, saveSettingsDebounced() {},
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  settings.apiUrl = 'https://example.test/v1';
+  settings.model = 'test-model';
+  let sent = null;
+  globalThis.fetch = async (_url, init) => {
+    sent = JSON.parse(init.body);
+    return {
+      ok: true, status: 200,
+      async text() {
+        return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ age: 28, bodySize: 4.7, isHere: true, descriptions: { 外貌: '银发骑士' } }) } }] });
+      },
+    };
+  };
+  const result = await runRegistrySireExtraction(ctx, { targetName: '凯', declaredRace: '人类' });
+  assert.deepEqual(result, { age: 28, bodySize: 4.7, isHere: true, descriptions: [{ name: '外貌', value: '银发骑士' }] });
+  assert.ok(JSON.stringify(sent).includes('target_character'), '请求要带目标名字');
+  assert.deepEqual(Object.keys(state.getChatState(ctx, settings).sires), [], '抽取不建档');
+});

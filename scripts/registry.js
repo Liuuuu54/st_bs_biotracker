@@ -7,7 +7,8 @@ import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
 import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt, buildWorldBaselineBlock } from './race_prompt_context.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import { clampIndividualBodySize, getExpectedBodySize, sampleBodySize } from './body_size.js';
-import { descriptionListToObject, normalizeDescriptionList } from './descriptions.js';
+import { descriptionListToObject, normalizeDescriptionList, stripDescriptionGuideStars } from './descriptions.js';
+import { getSireRecord } from './sires.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -683,6 +684,70 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
   const systemPrompt = options.wardrobePrepSystemPrompt || buildWardrobePrepSystemPrompt(settings, { ...options, wardrobePrepPrompt });
   const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'wardrobe' });
   return sanitizeWardrobePrepResult(result);
+}
+
+/**
+ * 精方抽取：依角色卡、世界书与对话整理一位精方的档案，结果只填进注册页的精方表单，
+ * 使用者确认后才建档。种族与卵方注册一样以注册页种族栏为准，不让模型改。
+ */
+export function buildSireExtractionSystemPrompt(settings, options = {}) {
+  const guide = stripDescriptionGuideStars(
+    options.guide ?? settings?.registryDescriptionGuides?.sireDescription ?? DEFAULT_REGISTRY_DESCRIPTION_GUIDES.sireDescription,
+  ).trim();
+  const declaredRace = String(options.declaredRace || '').trim() || '人类';
+  const instruction = String(options.userInstruction || '').trim();
+  return [
+    '你是 AIRP 精方（精液提供者）档案整理器。依角色卡、世界书与最近对话，为 target_character 整理一份精方档案。',
+    '只写资料与对话里看得出来的；没提到的数值栏位填 null，不要编造。target_character 可能是角色卡本身，也可能只是卡里或对话里的人物。',
+    `- 种族已由使用者指定为 ${sanitizePromptText(declaredRace)}，只用来判断体型与人外特征，不要输出种族。`,
+    '- age: 实际年龄（岁）。长生种只写外表年龄时按设定推估；完全没有线索填 null。',
+    '- bodySize: 常态（人态）的个体体型，1–7 级，人类为 4，可带一位小数。依写明的身高或身材换算：约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7，锚点之间按比例内插。能变形的种族只填常态。卡上没写身材填 null，系统用种族平均。',
+    '- isHere: 最近对话里此人是否在场；看不出来填 true。',
+    '- descriptions: 以字段名为键的物件，字段名照下方规则每行「字段名|写作指引」的字段名；没有资料的字段省略。每栏一到三句白描，写当下状态，不写剧情摘要。',
+    '[描述规则]',
+    guide,
+    ...(instruction ? ['[使用者补充]', sanitizePromptText(instruction)] : []),
+    '只输出 JSON：{"age":数字或null,"bodySize":数字或null,"isHere":true,"descriptions":{"字段名":"内容"}}',
+  ].join('\n');
+}
+
+/** 模型回传的精方档案 → 精方表单的值；数值不合理就当没给 */
+export function sanitizeSireExtractionResult(result) {
+  const value = result && typeof result === 'object' && !Array.isArray(result) ? result : {};
+  const age = Number(value.age);
+  const descriptions = value.descriptions && typeof value.descriptions === 'object' && !Array.isArray(value.descriptions)
+    ? Object.entries(value.descriptions)
+      .map(([name, text]) => ({ name: String(name || '').replace(/^\*/, '').trim(), value: String(text ?? '').trim() }))
+      .filter((entry) => entry.name && entry.value)
+    : [];
+  return {
+    age: Number.isFinite(age) && age > 0 ? Math.round(age) : null,
+    bodySize: clampIndividualBodySize(value.bodySize),
+    isHere: value.isHere !== false,
+    descriptions,
+  };
+}
+
+export async function runRegistrySireExtraction(ctx, options = {}) {
+  const settings = getEffectiveSettings(ctx, getSettings(ctx));
+  const chatState = getChatState(ctx, settings);
+  const targetName = String(options.targetName || '').trim();
+  if (!targetName) throw new Error('精方抽取需要 targetName');
+  const declaredRace = String(options.declaredRace || '').trim() || '人类';
+  const userInstruction = String(options.userInstruction || '').trim();
+  const payload = await buildRegistryPayload(ctx, settings, chatState, {
+    targetName,
+    reason: 'sire_extraction',
+    customNotes: '',
+    declaredRace,
+    userInstruction,
+  });
+  // 卵方状态与精方无关；有旧档案时附上，让模型在原有描述上补
+  payload.existing_state = null;
+  payload.existing_sire = getSireRecord(chatState, targetName);
+  const systemPrompt = buildSireExtractionSystemPrompt(settings, { declaredRace, userInstruction });
+  const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'sire' });
+  return sanitizeSireExtractionResult(result);
 }
 
 export async function runRegistryDiaryInference(ctx, options = {}) {
