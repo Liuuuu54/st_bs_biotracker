@@ -18,14 +18,20 @@ test('提示词：种族照使用者指定、字段照精方描述规则且不�
   assert.match(prompt, /行动\|/);
   assert.ok(!prompt.includes('*行动'));
   assert.match(prompt, /他是卡里的男主/);
+  assert.match(prompt, /spermQuality: 精子品质倍率 0\.25–4/);
 });
 
 test('结果正规化：年龄取整、体型夹在 1–7、在场预设 true、描述去掉 * 与空白栏', () => {
   assert.deepEqual(sanitizeSireExtractionResult({ age: 31.6, bodySize: 9, descriptions: { 外貌: ' 银发 ', '*行动': '靠在门边', 性器: '' } }), {
-    age: 32, bodySize: 7, isHere: true,
+    age: 32, bodySize: 7, spermQuality: null, isHere: true,
     descriptions: [{ name: '外貌', value: '银发' }, { name: '行动', value: '靠在门边' }],
   });
-  assert.deepEqual(sanitizeSireExtractionResult('坏掉的'), { age: null, bodySize: null, isHere: true, descriptions: [] });
+  assert.deepEqual(sanitizeSireExtractionResult('坏掉的'), { age: null, bodySize: null, spermQuality: null, isHere: true, descriptions: [] });
+  // 精子品质：设定没写就是 null（表单保留原值）；给了就夹在 0.25–4
+  assert.equal(sanitizeSireExtractionResult({ spermQuality: 3 }).spermQuality, 3);
+  assert.equal(sanitizeSireExtractionResult({ spermQuality: 9 }).spermQuality, 4);
+  assert.equal(sanitizeSireExtractionResult({ spermQuality: 0.1 }).spermQuality, 0.25);
+  assert.equal(sanitizeSireExtractionResult({ spermQuality: null }).spermQuality, null);
   assert.equal(sanitizeSireExtractionResult({ isHere: false }).isHere, false);
 });
 
@@ -51,7 +57,7 @@ test('抽取只回传表单值，不建档；请求带上目标名字与旧档�
     };
   };
   const result = await runRegistrySireExtraction(ctx, { targetName: '凯', declaredRace: '人类' });
-  assert.deepEqual(result, { age: 28, bodySize: 4.7, isHere: true, descriptions: [{ name: '外貌', value: '银发骑士' }] });
+  assert.deepEqual(result, { age: 28, bodySize: 4.7, spermQuality: null, isHere: true, descriptions: [{ name: '外貌', value: '银发骑士' }] });
   assert.ok(JSON.stringify(sent).includes('target_character'), '请求要带目标名字');
   assert.deepEqual(Object.keys(state.getChatState(ctx, settings).sires), [], '抽取不建档');
 });

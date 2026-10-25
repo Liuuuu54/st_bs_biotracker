@@ -95,7 +95,7 @@ import {
 } from './scripts/tools.js';
 import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
 import { getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
-import { deleteSireRecord, describeSpermQuality, formatSireDescriptionText, formatSireRaceDescriptor, getSireRecord, normalizeSireRecord, parseSireDescriptionText, upsertSireRecord } from './scripts/sires.js';
+import { deleteSireRecord, describeSpermQuality, formatSireRaceDescriptor, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
@@ -417,7 +417,7 @@ const REGISTRY_OP_UI = {
   outfit: { buttonId: 'bs-bt-register-outfit-generate', busyText: '生成中...', idleText: '生成着衣', setStatus: (message, isError) => setRegisterOutfitStatus(message, isError) },
   diary: { buttonId: 'bs-bt-diary-generate', busyText: '生成中...', idleText: '生成日记', setStatus: (message, isError) => setDiaryStatus(message, isError) },
   skill: { buttonId: 'bs-bt-register-skill-generate', busyText: '生成中...', idleText: '生成技能／天赋', setStatus: (message, isError) => setRegisterSkillStatus(message, isError) },
-  sire: { buttonId: 'bs-bt-sire-extract', busyText: '抽取中...', idleText: '从角色卡抽取', setStatus: (message, isError) => setSireStatus(message, isError) },
+  sire: { buttonId: 'bs-bt-sire-register', busyText: '注册中...', idleText: '注册精方', setStatus: (message, isError) => setSireStatus(message, isError) },
 };
 
 /**
@@ -1282,8 +1282,6 @@ function setSireStatus(message, isError = false) {
 }
 
 function syncSireButtons() {
-  const save = document.getElementById('bs-bt-sire-save');
-  if (save) save.textContent = selectedSireName ? '更新精方' : '建立精方';
   const remove = document.getElementById('bs-bt-sire-delete');
   if (remove instanceof HTMLButtonElement) remove.disabled = !selectedSireName;
 }
@@ -1298,28 +1296,31 @@ function renderSireOptions(ctx) {
   syncSireButtons();
 }
 
+function formatGuideForEditor(guide) {
+  return String(guide || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join('\n');
+}
+
 function setInputValue(id, value) {
   const node = document.getElementById(id);
   if (node) node.value = value;
 }
 
+// 从族谱或胎儿卡带进来的父方快照，注册时交给模型参考、模型没给的体型照用；换人就清掉
+let pendingSirePrefill = null;
+
 /**
- * 精方表单：名字与种族沿用注册页上方两栏。
- * prefill 是从胎父建档时带进来的父方快照；档案已存在时以档案为准。
+ * 精方表单：名字与种族沿用注册页上方两栏，其余交给模型读角色卡与「角色补充设定」判断，
+ * 和卵方注册一样；只有精子品质由使用者精确指定。已有档案时带出它的种族与品质。
  */
 function loadSireIntoForm(ctx, name, prefill = null) {
   const chatState = getChatState(ctx, getSettings(ctx));
   const record = getSireRecord(chatState, name);
   selectedSireName = record ? String(name) : '';
+  pendingSirePrefill = prefill && name ? { name: String(name), ...prefill } : null;
   const source = record || prefill;
   setInputValue('bs-bt-register-name', String(name || ''));
   setInputValue('bs-bt-register-race', source ? formatSireRaceDescriptor(source) : '人类');
-  setInputValue('bs-bt-sire-age', source?.age ? String(source.age) : '');
-  setInputValue('bs-bt-sire-body-size', source?.bodySize ? String(source.bodySize) : '');
   setInputValue('bs-bt-sire-quality', record && record.spermQuality !== 1 ? String(record.spermQuality) : '');
-  const here = document.getElementById('bs-bt-sire-here');
-  if (here instanceof HTMLInputElement) here.checked = source ? source.isHere !== false : true;
-  setInputValue('bs-bt-sire-descriptions', record ? formatSireDescriptionText(record.descriptions?.normalDescription) : '');
   const select = document.getElementById('bs-bt-sire-select');
   if (select) select.value = selectedSireName;
   closeRacePalettePopover();
@@ -1328,28 +1329,19 @@ function loadSireIntoForm(ctx, name, prefill = null) {
   syncSireFutaLock(ctx);
 }
 
-/**
- * 名字是已注册卵方（扶她）时，精方表单的种族以外栏位都读卵方：显示卵方的值并锁住，描述清空，抽取也停用。
- * 种族栏与卵方注册共用，不锁；存档时一样以卵方为准。
- */
+function getSireFormName() {
+  return String(resolvePersonNameField(String(document.getElementById('bs-bt-register-name')?.value || '').trim()) || '').trim();
+}
+
+/** 名字是已注册卵方（扶她）时只存精子品质：不必请模型，补充设定也用不到 */
 function syncSireFutaLock(ctx) {
-  const rawName = String(document.getElementById('bs-bt-register-name')?.value || '').trim();
-  const name = String(resolvePersonNameField(rawName) || '').trim();
+  const name = getSireFormName();
   const chatState = getChatState(ctx, getSettings(ctx));
   const isFuta = Boolean(name) && Object.prototype.hasOwnProperty.call(chatState.characters || {}, name);
   const note = document.getElementById('bs-bt-sire-futa-note');
   if (note) note.hidden = !isFuta;
-  for (const id of ['bs-bt-sire-age', 'bs-bt-sire-body-size', 'bs-bt-sire-here', 'bs-bt-sire-descriptions', 'bs-bt-sire-extract-prompt', 'bs-bt-sire-extract']) {
-    const node = document.getElementById(id);
-    if (node) node.disabled = isFuta || (id === 'bs-bt-sire-extract' && isRegistryOperationPending('sire'));
-  }
-  if (!isFuta) return;
-  const base = chatState.characters[name]?.profile?.base || {};
-  setInputValue('bs-bt-sire-age', base.age ? String(Math.round(Number(base.age))) : '');
-  setInputValue('bs-bt-sire-body-size', clampIndividualBodySize(base.bodySize) !== null ? String(base.bodySize) : '');
-  const here = document.getElementById('bs-bt-sire-here');
-  if (here instanceof HTMLInputElement) here.checked = base.isHere !== false;
-  setInputValue('bs-bt-sire-descriptions', '');
+  const notes = document.getElementById('bs-bt-sire-custom-notes');
+  if (notes) notes.disabled = isFuta;
 }
 
 function readOptionalNumber(id) {
@@ -1357,22 +1349,7 @@ function readOptionalNumber(id) {
   return raw === '' ? null : Number(raw);
 }
 
-function saveSireFromForm(ctx) {
-  const settings = getSettings(ctx);
-  const chatState = getChatState(ctx, settings);
-  const name = String(resolvePersonNameField(String(document.getElementById('bs-bt-register-name')?.value || '').trim()) || '').trim();
-  const result = upsertSireRecord(chatState, name, {
-    race: String(document.getElementById('bs-bt-register-race')?.value || '').trim() || '人类',
-    age: readOptionalNumber('bs-bt-sire-age'),
-    bodySize: readOptionalNumber('bs-bt-sire-body-size'),
-    spermQuality: readOptionalNumber('bs-bt-sire-quality') ?? 1,
-    isHere: document.getElementById('bs-bt-sire-here')?.checked !== false,
-    descriptions: parseSireDescriptionText(document.getElementById('bs-bt-sire-descriptions')?.value),
-  });
-  if (!result.applied) {
-    setSireStatus(result.message, true);
-    return;
-  }
+function finishSireRegistration(ctx, chatState, name, result) {
   recordChatStateSnapshot(ctx, chatState, { reason: 'registry_sire' });
   saveSettings(ctx);
   resetPoller(ctx, trackerDeps);
@@ -1380,37 +1357,65 @@ function saveSireFromForm(ctx) {
   selectedSireName = name;
   renderSireOptions(ctx);
   loadSireIntoForm(ctx, name);
-  setSireStatus(result.message);
+  setSireStatus(`${result.message}之后要改，到完整变量页。`);
   globalThis.toastr?.success?.(`[BS BioTracker] ${result.message}`);
 }
 
-/** 从角色卡抽取：结果只填表单，不建档；描述框整份换成抽取结果 */
-async function extractSireFromCard(ctx) {
+/**
+ * 注册精方：和卵方注册一样请模型读角色卡、世界书、最近对话与「角色补充设定」，
+ * 判断年龄、体型、在场与描述后直接建档；之后的修改到完整变量页。
+ * 精子品质填了就以使用者为准，留空才用模型的推估（没推估就是 1，已有档案就保留）。
+ */
+async function registerSireFromForm(ctx) {
   if (isRegistryOperationPending('sire')) {
-    globalThis.toastr?.info?.('[BS BioTracker] 精方抽取正在进行中，请等待完成');
+    globalThis.toastr?.info?.('[BS BioTracker] 精方注册正在进行中，请等待完成');
     return;
   }
-  const rawName = String(document.getElementById('bs-bt-register-name')?.value || '').trim();
-  const targetName = resolveRegistryTargetName(ctx, rawName);
-  if (!targetName) {
+  const name = getSireFormName();
+  if (!name) {
     setSireStatus('请先在上方填写精方名字。', true);
     return;
   }
   readSettingsFromForm(ctx);
-  beginRegistryOperation('sire', `正在从角色卡抽取 ${targetName} 的精方档案...`);
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const race = String(document.getElementById('bs-bt-register-race')?.value || '').trim() || '人类';
+  const typedQuality = readOptionalNumber('bs-bt-sire-quality');
+  const previous = getSireRecord(chatState, name);
+  if (Object.prototype.hasOwnProperty.call(chatState.characters || {}, name)) {
+    const result = upsertSireRecord(chatState, name, { spermQuality: typedQuality ?? previous?.spermQuality ?? 1 });
+    if (!result.applied) return setSireStatus(result.message, true);
+    finishSireRegistration(ctx, chatState, name, result);
+    return;
+  }
+  const prefill = pendingSirePrefill?.name === name ? pendingSirePrefill : null;
+  beginRegistryOperation('sire', `正在注册精方 ${name}...`);
   try {
-    const result = await runRegistrySireExtraction(ctx, {
-      targetName,
-      declaredRace: String(document.getElementById('bs-bt-register-race')?.value || '').trim(),
-      userInstruction: String(document.getElementById('bs-bt-sire-extract-prompt')?.value || '').trim(),
+    const extracted = await runRegistrySireExtraction(ctx, {
+      targetName: name,
+      declaredRace: race,
+      userInstruction: String(document.getElementById('bs-bt-sire-custom-notes')?.value || '').trim(),
+      prefill,
     });
-    setInputValue('bs-bt-register-name', targetName);
-    setInputValue('bs-bt-sire-age', result.age ? String(result.age) : '');
-    setInputValue('bs-bt-sire-body-size', result.bodySize ? String(result.bodySize) : '');
-    const here = document.getElementById('bs-bt-sire-here');
-    if (here instanceof HTMLInputElement) here.checked = result.isHere;
-    setInputValue('bs-bt-sire-descriptions', formatSireDescriptionText(result.descriptions));
-    setSireStatus(`已抽取 ${targetName} 的档案，确认或修改后按「${selectedSireName === targetName ? '更新精方' : '建立精方'}」。`);
+    const latest = getChatState(ctx, getSettings(ctx));
+    const current = getSireRecord(latest, name);
+    const result = upsertSireRecord(latest, name, {
+      race,
+      age: extracted.age ?? current?.age ?? prefill?.age ?? null,
+      bodySize: extracted.bodySize ?? current?.bodySize ?? prefill?.bodySize ?? null,
+      spermQuality: typedQuality ?? extracted.spermQuality ?? current?.spermQuality ?? 1,
+      isHere: extracted.isHere,
+      // 模型没写出描述时保留原本的，不清空
+      descriptions: extracted.descriptions.length > 0
+        ? extracted.descriptions
+        : (current?.descriptions?.normalDescription || []).map((entry) => ({ name: entry.name, value: entry.value })),
+    });
+    if (!result.applied) {
+      setSireStatus(result.message, true);
+      return;
+    }
+    pendingSirePrefill = null;
+    finishSireRegistration(ctx, latest, name, result);
   } catch (error) {
     setSireStatus(String(error?.message || error), true);
     toastOperationFailure(error);
@@ -5315,7 +5320,7 @@ function openSireFormWithPrefill(ctx, name, prefill, sourceLabel) {
   renderRegisterChildSourceOptions(ctx);
   setRegisterTab('sire');
   loadSireIntoForm(ctx, name, prefill);
-  setSireStatus(`已带入 ${name} 在${sourceLabel}里的父方资料；确认后按「建立精方」。`);
+  setSireStatus(`已带入 ${name} 在${sourceLabel}里的父方资料，注册时一并交给模型参考；按「注册精方」。`);
 }
 
 function openSireFormFromLineage(ctx, nodeId) {
@@ -8247,9 +8252,11 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-register-custom-notes', settings.registryCustomNotes);
   setValue('bs-bt-register-skill-prompt', settings.registrySkillPrompt);
   setValue('bs-bt-register-outfit-prompt', settings.registryOutfitPrompt);
-  setValue('bs-bt-registry-normal-description', settings.registryDescriptionGuides?.normalDescription);
-  setValue('bs-bt-registry-pregnant-description', settings.registryDescriptionGuides?.pregnantDescription);
-  setValue('bs-bt-registry-sire-description', settings.registryDescriptionGuides?.sireDescription);
+  // 预设规则是程式里的模板字串，开头有空行、每行有缩排；编辑框里拿掉
+  setValue('bs-bt-registry-normal-description', formatGuideForEditor(settings.registryDescriptionGuides?.normalDescription));
+  setValue('bs-bt-registry-pregnant-description', formatGuideForEditor(settings.registryDescriptionGuides?.pregnantDescription));
+  setValue('bs-bt-registry-sire-description', formatGuideForEditor(settings.registryDescriptionGuides?.sireDescription));
+  setValue('bs-bt-sire-custom-notes', settings.registrySireCustomNotes);
   setValue('bs-bt-diary-writing-prompt', settings.diaryWritingPrompt);
   setValue('bs-bt-wardrobe-prep-prompt', settings.wardrobePrepPrompt);
   populateModelList(settings);
@@ -8833,6 +8840,7 @@ function readSettingsFromForm(ctx) {
   else settings.trackerGlobalWorldbookExcludeNames = globalFilterNames;
   settings.systemPrompt = String(getValue('bs-bt-system-prompt')).trim() || DEFAULT_SYSTEM_PROMPT;
   settings.registryCustomNotes = String(getValue('bs-bt-register-custom-notes')).trim();
+  settings.registrySireCustomNotes = String(getValue('bs-bt-sire-custom-notes')).trim();
   settings.registrySkillPrompt = String(getValue('bs-bt-register-skill-prompt')).trim();
   settings.registryOutfitPrompt = String(getValue('bs-bt-register-outfit-prompt')).trim();
   settings.registryDescriptionGuides = {
@@ -10204,8 +10212,7 @@ async function ensureModal(ctx) {
     loadSireIntoForm(ctx, String(event.target?.value || ''));
     setSireStatus('');
   });
-  document.getElementById('bs-bt-sire-save')?.addEventListener('click', () => saveSireFromForm(ctx));
-  document.getElementById('bs-bt-sire-extract')?.addEventListener('click', () => extractSireFromCard(ctx));
+  document.getElementById('bs-bt-sire-register')?.addEventListener('click', () => registerSireFromForm(ctx));
   // 名字改成已注册卵方时马上锁住精方栏位；只在精方分页作用，卵方注册不受影响
   document.getElementById('bs-bt-register-name')?.addEventListener('input', () => {
     if (!document.querySelector('[data-register-page="sire"]')?.hidden) syncSireFutaLock(ctx);

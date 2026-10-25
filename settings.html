@@ -541,9 +541,8 @@
               </div>
 
               <details class="settings_section bs-bt-register-fold">
-                <summary title="注册时 normalDescription 的默认写法规则">基本描述规则</summary>
+                <summary title="注册时 normalDescription 的默认写法规则">基本描述规则 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/character-systems.md" target="_blank" rel="noopener noreferrer" title="描述规则说明（字段名前加 * 是即时状态）" aria-label="描述规则说明">?</a></summary>
                 <textarea id="bs-bt-registry-normal-description" class="text_pole bs-bt-textarea" rows="7" aria-label="注册默认 normalDescription 规则"></textarea>
-                <small>字段名前加 * 代表即时状态（动作、表情这类），每轮追踪都提醒模型变了就改；所有字段仍是一天没更新就点名确认。</small>
               </details>
 
               <details class="settings_section bs-bt-register-fold">
@@ -642,49 +641,35 @@
             </div>
             <div class="bs-bt-register-page" data-register-page="sire" hidden>
               <div class="settings_section">
-                <label for="bs-bt-sire-select">精方档案</label>
+                <label for="bs-bt-sire-select">精方档案 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/registration.md#精方檔案" target="_blank" rel="noopener noreferrer" title="精方说明" aria-label="精方说明">?</a></label>
                 <select id="bs-bt-sire-select" class="text_pole">
                   <option value="">新精方</option>
                 </select>
-                <small>需要长期追踪的精液提供者（男主、用户角色、转正的路人）才建档；名字与种族沿用上方两栏。建档后 bsAddSperm 以名字命中时，种族、衍生类型与体型以档案为准。同名卵方已注册（扶她）时，种族、体型、在场与描述读卵方。</small>
               </div>
 
-              <div id="bs-bt-sire-futa-note" class="bs-bt-inline-status" hidden>同名卵方已注册（扶她）：种族、年龄、体型、在场与描述读卵方，到卵方那边改；这里只存精方专属栏位。</div>
-
-              <div class="settings_section">
-                <label for="bs-bt-sire-extract-prompt">抽取提示</label>
-                <textarea id="bs-bt-sire-extract-prompt" class="text_pole bs-bt-textarea" rows="2" placeholder="可留空。例如：他是卡里的男主；体型照设定集的 195 cm"></textarea>
-                <div class="bs-bt-action-row">
-                  <button id="bs-bt-sire-extract" class="menu_button" type="button">从角色卡抽取</button>
-                </div>
-                <small>依角色卡、世界书与最近对话整理年龄、体型、在场与描述，结果填进下面的表单，确认后再按「建立精方」。种族以上方种族栏为准。</small>
-              </div>
-
-              <div class="settings_section bs-bt-sire-grid">
-                <label for="bs-bt-sire-age">年龄<input id="bs-bt-sire-age" class="text_pole" type="number" min="0" step="1" placeholder="不填" /></label>
-                <label for="bs-bt-sire-body-size">体型<input id="bs-bt-sire-body-size" class="text_pole" type="number" min="1" max="7" step="0.5" placeholder="种族预设" /></label>
-                <label for="bs-bt-sire-quality">精子品质<input id="bs-bt-sire-quality" class="text_pole" type="number" min="0.25" max="4" step="0.25" placeholder="1" /></label>
-                <label class="checkbox_label" for="bs-bt-sire-here"><input id="bs-bt-sire-here" type="checkbox" checked /><span>在场</span></label>
-              </div>
-              <small>精子品质 0.25–4，预设 1：同量受孕机会约 ×品质^0.5，体内留存约 ×品质^0.5 久，越高越难洗净；提示词按品质写精力与雄风。扶她也在这里设。</small>
+              <div id="bs-bt-sire-futa-note" class="bs-bt-inline-status" hidden>同名卵方已注册（扶她）：只存精子品质，其余读卵方。</div>
 
               <div class="settings_section">
-                <label for="bs-bt-sire-descriptions">描述</label>
-                <textarea id="bs-bt-sire-descriptions" class="text_pole bs-bt-textarea" rows="5" placeholder="外貌|高个子，银发，左脸一道旧疤&#10;性器|……&#10;行动|靠在门边看着她"></textarea>
-                <small>一行一个字段：字段名|内容。字段名依下方「精方描述规则」；追踪时模型也会依剧情改写。</small>
+                <label for="bs-bt-sire-custom-notes">角色补充设定</label>
+                <textarea id="bs-bt-sire-custom-notes" class="text_pole bs-bt-textarea" rows="3"
+                  placeholder="可留空。例如：他是卡里的男主，三十出头，身高 195 cm"></textarea>
               </div>
+
+              <div class="settings_section">
+                <label for="bs-bt-sire-quality">精子品质 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/registration.md#精方檔案" target="_blank" rel="noopener noreferrer" title="精子品质说明" aria-label="精子品质说明">?</a></label>
+                <input id="bs-bt-sire-quality" class="text_pole" type="number" min="0.25" max="4" step="0.25" placeholder="留空交给模型判断（一般为 1）" />
+              </div>
+
+              <details class="settings_section bs-bt-register-fold">
+                <summary title="注册精方时 normalDescription 的默认写法规则">精方描述规则</summary>
+                <textarea id="bs-bt-registry-sire-description" class="text_pole bs-bt-textarea" rows="5" aria-label="精方描述规则"></textarea>
+              </details>
 
               <div class="settings_section bs-bt-action-row">
-                <button id="bs-bt-sire-save" class="menu_button" type="button">建立精方</button>
+                <button id="bs-bt-sire-register" class="menu_button" type="button">注册精方</button>
                 <button id="bs-bt-sire-delete" class="menu_button" type="button" disabled>删除精方</button>
               </div>
               <div id="bs-bt-sire-status" class="bs-bt-inline-status"></div>
-
-              <details class="settings_section bs-bt-register-fold">
-                <summary title="精方 normalDescription 的字段与写法；字段名前加 * 代表要即时追踪">精方描述规则</summary>
-                <textarea id="bs-bt-registry-sire-description" class="text_pole bs-bt-textarea" rows="5" aria-label="精方描述规则"></textarea>
-                <small>字段名前加 * 的字段超过一天（游戏时间）没更新，追踪时会提醒确认；不加的只在剧情写到变化时更新。</small>
-              </details>
             </div>
 
             <div class="bs-bt-register-page" data-register-page="outfit" hidden>

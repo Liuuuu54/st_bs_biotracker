@@ -186,13 +186,7 @@ test('没有精方时两边都不多一段', () => {
 });
 
 // ── 注册页：建立、更新、删除 ──────────────────────────
-import { deleteSireRecord, formatSireDescriptionText, formatSireRaceDescriptor, parseSireDescriptionText, upsertSireRecord } from '../scripts/sires.js';
-
-test('描述框一行一个「字段名|内容」，内容可以含 |，空行与没名字的略过', () => {
-  const entries = parseSireDescriptionText('外貌|银发|左脸有疤\n\n|没名字\n行动|靠在门边');
-  assert.deepEqual(entries, [{ name: '外貌', value: '银发|左脸有疤' }, { name: '行动', value: '靠在门边' }]);
-  assert.equal(formatSireDescriptionText(entries), '外貌|银发|左脸有疤\n行动|靠在门边');
-});
+import { deleteSireRecord, formatSireRaceDescriptor, upsertSireRecord } from '../scripts/sires.js';
 
 test('种族栏来回：明确比例的混血与衍生前缀存回去不变', () => {
   for (const race of ['[血族]精灵25%x人类75%', '人类', '[不死-僵尸]人类']) {

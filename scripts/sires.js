@@ -186,27 +186,6 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
   return entries;
 }
 
-/** 注册页的描述框：一行一个「字段名|内容」，与卵方旧格式同样只认第一个 | */
-export function parseSireDescriptionText(text) {
-  const entries = [];
-  for (const raw of String(text || '').split(/\r?\n/)) {
-    const line = raw.trim();
-    const index = line.indexOf('|');
-    if (index <= 0) continue;
-    const name = line.slice(0, index).trim();
-    const value = line.slice(index + 1).trim();
-    if (name && value) entries.push({ name, value });
-  }
-  return entries;
-}
-
-export function formatSireDescriptionText(list) {
-  return normalizeDescriptionList(list)
-    .filter((entry) => entry.value)
-    .map((entry) => `${entry.name}|${entry.value}`)
-    .join('\n');
-}
-
 /**
  * 注册页建立或更新精方。内容没变的描述字段保留原本的 updatedAt，免得一存档就把「行动」刷成刚更新。
  * 同名卵方（扶她）只存精方专属栏位，种族、体型、描述一律以卵方为准。

@@ -8,7 +8,7 @@ import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt, buildWorldBas
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import { clampIndividualBodySize, getExpectedBodySize, sampleBodySize } from './body_size.js';
 import { descriptionListToObject, normalizeDescriptionList, stripDescriptionGuideStars } from './descriptions.js';
-import { getSireRecord } from './sires.js';
+import { getSireRecord, normalizeSpermQuality } from './sires.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -703,11 +703,13 @@ export function buildSireExtractionSystemPrompt(settings, options = {}) {
     '- age: 实际年龄（岁）。长生种只写外表年龄时按设定推估；完全没有线索填 null。',
     '- bodySize: 常态（人态）的个体体型，1–7 级，人类为 4，可带一位小数。依写明的身高或身材换算：约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7，锚点之间按比例内插。能变形的种族只填常态。卡上没写身材填 null，系统用种族平均。',
     '- isHere: 最近对话里此人是否在场；看不出来填 true。',
+    '- payload.father_snapshot 若有，是这人当年在子女或胎儿记录里留下的父方资料（种族、血脉、体型），可作体型参考，以角色卡与设定为准。',
+    '- spermQuality: 精子品质倍率 0.25–4，一般人为 1。依设定里对精力、精液浓度、雄风、繁殖力的描写推估：精力衰退、不易使人受孕约 0.25–0.5；一般 1；精力旺盛、阳物粗壮约 2；精力极旺、传说级的雄风或种马设定约 3–4。只看体能与繁殖力，不看身分、性格或受欢迎程度；设定没有着墨填 null。',
     '- descriptions: 以字段名为键的物件，字段名照下方规则每行「字段名|写作指引」的字段名；没有资料的字段省略。每栏一到三句白描，写当下状态，不写剧情摘要。',
     '[描述规则]',
     guide,
     ...(instruction ? ['[使用者补充]', sanitizePromptText(instruction)] : []),
-    '只输出 JSON：{"age":数字或null,"bodySize":数字或null,"isHere":true,"descriptions":{"字段名":"内容"}}',
+    '只输出 JSON：{"age":数字或null,"bodySize":数字或null,"spermQuality":数字或null,"isHere":true,"descriptions":{"字段名":"内容"}}',
   ].join('\n');
 }
 
@@ -715,6 +717,8 @@ export function buildSireExtractionSystemPrompt(settings, options = {}) {
 export function sanitizeSireExtractionResult(result) {
   const value = result && typeof result === 'object' && !Array.isArray(result) ? result : {};
   const age = Number(value.age);
+  // 品质没给（null）就不填表单，保留使用者原本的值；给了就夹在 0.25–4
+  const quality = value.spermQuality === null || value.spermQuality === undefined || value.spermQuality === '' ? NaN : Number(value.spermQuality);
   const descriptions = value.descriptions && typeof value.descriptions === 'object' && !Array.isArray(value.descriptions)
     ? Object.entries(value.descriptions)
       .map(([name, text]) => ({ name: String(name || '').replace(/^\*/, '').trim(), value: String(text ?? '').trim() }))
@@ -723,6 +727,7 @@ export function sanitizeSireExtractionResult(result) {
   return {
     age: Number.isFinite(age) && age > 0 ? Math.round(age) : null,
     bodySize: clampIndividualBodySize(value.bodySize),
+    spermQuality: Number.isFinite(quality) && quality > 0 ? normalizeSpermQuality(quality) : null,
     isHere: value.isHere !== false,
     descriptions,
   };
@@ -745,6 +750,12 @@ export async function runRegistrySireExtraction(ctx, options = {}) {
   // 卵方状态与精方无关；有旧档案时附上，让模型在原有描述上补
   payload.existing_state = null;
   payload.existing_sire = getSireRecord(chatState, targetName);
+  payload.father_snapshot = options.prefill ? {
+    race: options.prefill.race ?? null,
+    bloodline: options.prefill.bloodline ?? null,
+    derivedType: options.prefill.derivedType ?? null,
+    bodySize: options.prefill.bodySize ?? null,
+  } : null;
   const systemPrompt = buildSireExtractionSystemPrompt(settings, { declaredRace, userInstruction });
   const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'sire' });
   return sanitizeSireExtractionResult(result);
