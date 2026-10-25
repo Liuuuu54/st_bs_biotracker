@@ -400,7 +400,7 @@ function buildSireTrackerBlock(payload, descriptionGuides) {
     '- bsAddSperm 的 male 写精方名字时，种族、衍生类型、体型与精子品质由档案带入：race 照填档案种族，maleBodySize 省略；传了不同的 race 也以档案为准。',
     '- virility 是精方精子品质的分级描述（精力、精液浓度，顺带影射阳物），只供叙事参考，不改体型契合；没有这栏代表一般。',
     `- 在场精方的描述用 bsSetDescription（female 填精方名字，只有 normalDescription），只传剧情影响到的字段${fieldNames.length > 0 ? `；描述还空着时按这些字段名建立：${fieldNames.join('、')}` : ''}。`,
-    '- 精方进出场景照样用 bsSetCharacterPresence（female 填精方名字）。精方不追踪生理需求、经期或妊娠，不要为精方调用其他工具。',
+    '- 精方进出场景照样用 bsSetCharacterPresence（female 填精方名字）：isHere=true 的精方在新讯息里出门、告别或已不在这一幕，就传 {"female":"精方名字","isPresent":false}；在场精方的完整档案每轮都会送，离场不切会一直占用提示词。精方不追踪生理需求、经期或妊娠，不要为精方调用其他工具。',
   ].join('\n');
 }
 
@@ -489,6 +489,10 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     ].join('\n'));
   }
 
+  const presentSireNames = (Array.isArray(payload?.registered_sires) ? payload.registered_sires : [])
+    .filter((sire) => sire?.isHere)
+    .map((sire) => String(sire.name || '').trim())
+    .filter(Boolean);
   const trackedNames = Array.isArray(payload?.tracked_females)
     ? payload.tracked_females.map((name) => String(name || '').trim()).filter(Boolean)
     : [];
@@ -497,6 +501,8 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
       '[逐角色检查清单]',
       `- 本轮必须在 character_checks 中逐一列出：${trackedNames.join('、')}。每名恰好一笔。`,
       '- status 只能是 no_change、updated、present 或 offscreen；清单只用于核对，任何实际状态变更仍必须同时用 tool_calls 调用对应工具。',
+      // 精方没有生理状态要核对，只核对在场：不列进来模型就不会想到要切离场
+      ...(presentSireNames.length > 0 ? [`- 在场精方也各列一笔：${presentSireNames.join('、')}。还在这一幕填 present；新讯息里已出门、告别或不在这一幕就填 offscreen，并同时调用 bsSetCharacterPresence(isPresent=false)。`] : []),
     ].join('\n'));
   }
 

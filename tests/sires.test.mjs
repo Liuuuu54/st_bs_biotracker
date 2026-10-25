@@ -237,3 +237,14 @@ test('变量页的快照历史：读得到当时的精方档案，旧快照没�
   assert.equal(state.getSnapshotSire(chat, 0, '凯'), null);
   assert.equal(state.getSnapshotSire(chat, 1, '凯').age, 120);
 });
+
+test('逐角色检查清单也列在场精方，提醒离场要切', () => {
+  const payload = {
+    existing_state: { 艾拉: { name: '艾拉', profile: {} } },
+    tracked_females: ['艾拉'],
+    registered_sires: [{ name: '凯', race: '人类', isHere: true }, { name: '远方客', race: '欧克', isHere: false }],
+  };
+  const tracker = buildTrackerSystemPrompt('', DEFAULT_REGISTRY_DESCRIPTION_GUIDES, payload);
+  assert.match(tracker, /在场精方也各列一笔：凯。/);
+  assert.match(tracker, /bsSetCharacterPresence\(isPresent=false\)/);
+});

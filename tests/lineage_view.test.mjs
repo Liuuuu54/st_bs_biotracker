@@ -266,3 +266,9 @@ test('精方没有角色节点：族谱以名字节点为中心', () => {
   assert.equal(view.empty, false);
   assert.ok(view.nodes.find((node) => node.isCenter)?.kind === 'sire');
 });
+
+test('还没有子女的精方：族谱仍以他为中心，不显示找不到', () => {
+  const view = buildLineageView({ characters: {}, sires: { 艾德: { race: '人类', bloodline: { 人类: 1 }, bloodlineSource: 'pure', age: 29 } } }, '艾德');
+  assert.equal(view.empty, false);
+  assert.equal(view.nodes.find((node) => node.isCenter)?.kind, 'sire');
+});

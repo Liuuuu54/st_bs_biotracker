@@ -90,6 +90,12 @@ export function buildLineageGraph(chatState) {
     });
   }
 
+  // 已建档的精方也一样：还没有子女记录时族谱照样找得到他（同名卵方已有角色节点，不重复）
+  for (const [name, sire] of Object.entries(sires)) {
+    if (isRegistered(name) || !sire || typeof sire !== 'object') continue;
+    resolveParent(name);
+  }
+
   for (const ownerName of characterNames) {
     const owner = characters[ownerName];
     const children = Array.isArray(owner?.profile?.children) ? owner.profile.children : [];
