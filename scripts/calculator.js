@@ -260,29 +260,38 @@ export function calculateOffspringPreview({
 
 export const DERIVED_INHERITANCE_THRESHOLD = 75;
 export const DERIVED_INHERITANCE_BASELINE_DAYS = 140;
+// 无竞争底力：只有一方有衍生、或双方同型时，那条血脉另得 0.5 × 遗传速度的拉力
+export const DERIVED_UNCONTESTED_PULL = 0.5;
 
+/**
+ * 受孕初值：亲密度一律从 0 起（只代表母子感情，不再随衍生组合变号）；
+ * 遗传轴只有双方衍生相同时先给 +30 的起跑，其余从 0 开始由孕期拉锯决定方向。
+ */
 export function getDerivedInheritanceSeed(motherDerivedType, fatherDerivedType) {
   const mother = motherDerivedType ? String(motherDerivedType) : null;
   const father = fatherDerivedType ? String(fatherDerivedType) : null;
-  if (!mother && !father) return { affinity: 0, progress: 0 };
-  if (mother && father && mother === father) return { affinity: 30, progress: 30 };
-  if (mother && father && mother !== father) return { affinity: -30, progress: -30 };
-  return { affinity: 15, progress: 0 };
+  return { affinity: 0, progress: mother && father && mother === father ? 30 : 0 };
 }
 
-function getDerivedInheritanceDirection(currentProgress, motherDerivedType, fatherDerivedType) {
-  if (currentProgress !== 0) return Math.sign(currentProgress);
-  const mother = motherDerivedType ? String(motherDerivedType) : null;
-  const father = fatherDerivedType ? String(fatherDerivedType) : null;
-  if (mother && !father) return 1;
-  if (!mother && father) return -1;
-  if (mother && father) return mother === father ? 1 : -1;
-  return 0;
+function getDerivedTypeSpeed(derivedType) {
+  if (!derivedType) return 1;
+  return clampNumber(getDerivedTypeInheritanceProfile(derivedType)?.inheritanceSpeed, 0.2, 3, 1);
 }
 
+/**
+ * 孕期拉锯（精方计划 §6.9）：母胎亲密度往母方拉、与胎父的契合度往父方拉，方向可以中途翻转。
+ * - 母方拉力 M = clamp(1 + 亲密度/30, 0, 3) × 母方衍生的遗传速度
+ * - 父方拉力 P = 2 × 契合度 × 父方衍生的遗传速度
+ * - 无竞争底力 B = 0.5 × 该衍生的遗传速度：只有一方有衍生时加给那一方；双方同型时也加（两条血脉一致）
+ * - 双方衍生相同：两边都往同一个衍生拉，每天 +基准 ×(M + P + B)
+ * - 其余：每天 基准 ×(M − P)（加上有衍生那一方的 B），正值偏母方、负值偏父方；没有衍生的那一方越线就是不遗传衍生
+ * - 双方异型不加底力，两边硬拼
+ * 基准 = 75/140 天 × 胎儿种族妊娠速度 × 妊娠变速：拉力 1 时 140 天走到判定线，与旧版相同。
+ */
 function getDerivedInheritanceRate({
   currentProgress = 0,
   affinity = 0,
+  paternalFit = 0,
   motherDerivedType = null,
   fatherDerivedType = null,
   fetusRace = '人类',
@@ -290,19 +299,13 @@ function getDerivedInheritanceRate({
   gestationModifierMultiplier = 1,
 } = {}) {
   const progress = clampNumber(currentProgress, -100, 100, 0);
-  const direction = getDerivedInheritanceDirection(progress, motherDerivedType, fatherDerivedType);
-  const activeDerivedType = direction > 0 ? motherDerivedType : fatherDerivedType;
-  if (direction === 0 || !activeDerivedType) {
-    return { progress, direction, activeDerivedType: null, dailyDelta: 0 };
+  const mother = motherDerivedType ? String(motherDerivedType) : null;
+  const father = fatherDerivedType ? String(fatherDerivedType) : null;
+  const maternalPull = clampNumber(1 + (clampNumber(affinity, -50, 50, 0) / 30), 0, 3, 1) * getDerivedTypeSpeed(mother);
+  const paternalPull = 2 * clampNumber(paternalFit, 0, 1, 0) * getDerivedTypeSpeed(father);
+  if (!mother && !father) {
+    return { progress, direction: 0, activeDerivedType: null, dailyDelta: 0, maternalPull, paternalPull };
   }
-  const alignedAffinity = direction * clampNumber(affinity, -50, 50, 0);
-  const affinityFactor = clampNumber(1 + (alignedAffinity / 30), 0, 3, 1);
-  const inheritanceSpeed = clampNumber(
-    getDerivedTypeInheritanceProfile(activeDerivedType)?.inheritanceSpeed,
-    0.2,
-    3,
-    1,
-  );
   const speciesSpeed = clampNumber(
     getMergedRacePhysiologyProfile(fetusRace, fetusBloodline)?.gestationSpeciesSpeed,
     GESTATION_SPEED_MIN,
@@ -310,9 +313,18 @@ function getDerivedInheritanceRate({
     1,
   );
   const modifier = clampNumber(gestationModifierMultiplier, 0, GESTATION_SPEED_MAX, 1);
-  const dailyDelta = direction * (DERIVED_INHERITANCE_THRESHOLD / DERIVED_INHERITANCE_BASELINE_DAYS)
-    * speciesSpeed * modifier * affinityFactor * inheritanceSpeed;
-  return { progress, direction, activeDerivedType, dailyDelta };
+  const baseRate = (DERIVED_INHERITANCE_THRESHOLD / DERIVED_INHERITANCE_BASELINE_DAYS) * speciesSpeed * modifier;
+  const sameType = Boolean(mother && father && mother === father);
+  // 没有对手衍生竞争的那一方另得一份不看感情、契合的底力
+  const baseShare = DERIVED_UNCONTESTED_PULL;
+  const maternalBase = mother && (!father || sameType) ? baseShare * getDerivedTypeSpeed(mother) : 0;
+  const paternalBase = father && !mother ? baseShare * getDerivedTypeSpeed(father) : 0;
+  const totalMaternal = maternalPull + maternalBase;
+  const totalPaternal = paternalPull + paternalBase;
+  const dailyDelta = baseRate * (sameType ? totalMaternal + totalPaternal : totalMaternal - totalPaternal);
+  const direction = Math.sign(dailyDelta);
+  const activeDerivedType = direction > 0 ? mother : direction < 0 ? father : null;
+  return { progress, direction, activeDerivedType, dailyDelta, maternalPull: totalMaternal, paternalPull: totalPaternal, uncontestedPull: maternalBase + paternalBase, sameType };
 }
 
 /**
@@ -322,18 +334,22 @@ function getDerivedInheritanceRate({
 export function calculateDerivedInheritanceProgress({
   currentProgress = 0,
   affinity = 0,
+  paternalFit = 0,
   motherDerivedType = null,
   fatherDerivedType = null,
   fetusRace = '人类',
+  fetusBloodline = null,
   passedDays = 0,
   gestationModifierMultiplier = 1,
 } = {}) {
   const { progress, dailyDelta } = getDerivedInheritanceRate({
     currentProgress,
     affinity,
+    paternalFit,
     motherDerivedType,
     fatherDerivedType,
     fetusRace,
+    fetusBloodline,
     gestationModifierMultiplier,
   });
   const elapsedDays = Math.max(0, Number(passedDays) || 0);
@@ -342,7 +358,7 @@ export function calculateDerivedInheritanceProgress({
 }
 
 export function calculateDerivedInheritancePreview(options = {}) {
-  const { progress, direction, activeDerivedType, dailyDelta } = getDerivedInheritanceRate(options);
+  const { progress, direction, activeDerivedType, dailyDelta, maternalPull, paternalPull, uncontestedPull } = getDerivedInheritanceRate(options);
   const nextProgress = calculateDerivedInheritanceProgress(options);
   const distance = direction > 0
     ? DERIVED_INHERITANCE_THRESHOLD - progress
@@ -352,6 +368,9 @@ export function calculateDerivedInheritancePreview(options = {}) {
     : null;
   return {
     direction,
+    maternalPull,
+    paternalPull,
+    uncontestedPull,
     activeDerivedType: activeDerivedType || null,
     currentProgress: progress,
     nextProgress,

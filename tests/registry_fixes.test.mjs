@@ -462,7 +462,8 @@ test('an already-pregnant registration reconstructs omitted derived inheritance 
       pregnant: {
         pregnantDays: 140,
         fetusesCount: 1,
-        fetuses: [{ fathers: '凡人父亲', provider: null, race: '人类', gender: '女', embryoType: '胎生', affinity: 0 }],
+        // 亲密度 −15 加上母方的无竞争底力，净拉力 1：140 天刚好 75
+        fetuses: [{ fathers: '凡人父亲', provider: null, race: '人类', gender: '女', embryoType: '胎生', affinity: -15 }],
       },
       bio: {},
       immune: {},

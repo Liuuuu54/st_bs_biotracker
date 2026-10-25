@@ -129,3 +129,30 @@ test('楼层快照回溯后 intimacy 还原', () => {
   state.restoreChatStateFromSnapshot(chat, chat.snapshots.at(-1));
   assert.equal(chat.characters['艾拉'].profile.intimacy['凯'].count, 3);
 });
+
+// ── 高潮额外排卵（§6.6）：正在插入的是契合度最高者时，每颗卵的排出机率 ×(1 + 0.5 × 契合度)
+function orgasmChat(source) {
+  const chat = chatWithMother({ stage: '排卵期', days: 0, vitality: 50, vitalityLevel: 4, libido: 20, eggs: 0, penetrationState: 'inserted', penetrationSource: source });
+  chat.characters['艾拉'].profile.bio = { ...(chat.characters['艾拉'].profile.bio || {}), orgasmOvulationAmount: 4 };
+  chat.characters['艾拉'].profile.cooldown = {};
+  chat.characters['艾拉'].profile.intimacy = { 凯: { count: 30, effective: 30, lastMinutes: 0 }, 路人: { count: 1, effective: 1, lastMinutes: 0 } };
+  return chat;
+}
+
+test('高潮排卵：与身体最熟悉的对象交合时更容易排卵，其他对象照旧', () => {
+  const original = Math.random;
+  // 活力 50／上限 125＝每颗 40%；凯的契合度 30/34≈0.88，倍率约 1.44，每颗约 58%。固定擲出 0.5 看差别
+  Math.random = () => 0.5;
+  try {
+    const familiar = orgasmChat('凯');
+    call(familiar, 'bsUpdateCharacterStatus', { female: '艾拉', options: { orgasm: true } });
+    assert.ok(familiar.characters['艾拉'].profile.base.eggs >= 4);
+    assert.match(familiar.characters['艾拉'].profile.notify.secondly, /身体最熟悉的 凯/);
+    const stranger = orgasmChat('路人');
+    call(stranger, 'bsUpdateCharacterStatus', { female: '艾拉', options: { orgasm: true } });
+    assert.ok(stranger.characters['艾拉'].profile.base.eggs < 4, '路人不是契合度最高的，没有加成');
+    assert.doesNotMatch(stranger.characters['艾拉'].profile.notify.secondly, /身体最熟悉/);
+  } finally {
+    Math.random = original;
+  }
+});

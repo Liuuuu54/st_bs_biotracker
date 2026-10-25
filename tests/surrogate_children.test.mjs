@@ -197,8 +197,8 @@ test('surrogate derived types use the carrier as mother and external descriptors
   const preferredFetus = preferred.characters['孕母'].profile.pregnant.fetuses[0];
   assert.equal(preferredFetus.race, '虫族');
   assert.equal(preferredFetus.fatherDerivedType, '魔女', 'fatherRace 的 derivedType 应优先');
-  assert.equal(preferredFetus.affinity, 30, '孕母与父系同类时应使用同源种子');
-  assert.equal(preferredFetus.maternalDerivedTypeProgress, 30);
+  assert.equal(preferredFetus.affinity, 0, '亲密度只代表感情，一律从 0 起');
+  assert.equal(preferredFetus.maternalDerivedTypeProgress, 30, '同型先起跑 +30');
 
   const fallback = state.createEmptyChatState();
   fallback.characters['孕母'] = makeHost('孕母', '人类');
@@ -216,8 +216,8 @@ test('surrogate derived types use the carrier as mother and external descriptors
 
   const fallbackFetus = fallback.characters['孕母'].profile.pregnant.fetuses[0];
   assert.equal(fallbackFetus.fatherDerivedType, '不死-僵尸', 'fatherRace 未带 derivedType 时应退回卵源 race');
-  assert.equal(fallbackFetus.affinity, -30, '孕母与外部父系异类时应使用对立种子');
-  assert.equal(fallbackFetus.maternalDerivedTypeProgress, -30);
+  assert.equal(fallbackFetus.affinity, 0, '异型也不再预设母子感情差');
+  assert.equal(fallbackFetus.maternalDerivedTypeProgress, 0, '方向留给孕期拉锯');
 });
 
 // 1.2.0 起有档案就以档案为准（扶她读卵方）：同一人不会因模型每次写法不同而换种族，

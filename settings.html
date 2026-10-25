@@ -1248,6 +1248,7 @@
                     <label><span>父方衍生</span><select id="bs-bt-calc-derived-father" class="text_pole"></select></label>
                     <label><span>胎儿种族</span><div class="bs-bt-race-picker-wrap"><div class="bs-bt-race-input-row"><input id="bs-bt-calc-derived-race" class="text_pole" type="text" value="人类" /><button type="button" class="bs-bt-race-picker-button" data-race-picker-target="bs-bt-calc-derived-race" title="种族调色盘" aria-label="胎儿种族调色盘">☥</button></div><div id="bs-bt-calc-derived-race-palette-anchor" data-race-palette-anchor></div></div></label>
                     <label><span>当前亲合度</span><input id="bs-bt-calc-derived-affinity" class="text_pole" type="number" min="-50" max="50" step="1" value="0" /></label>
+                    <label><span>与胎父的契合度（%）</span><input id="bs-bt-calc-derived-fit" class="text_pole" type="number" min="0" max="100" step="1" value="0" /></label>
                     <label><span>当前遗传轴</span><input id="bs-bt-calc-derived-progress" class="text_pole" type="number" min="-100" max="100" step="1" value="0" /></label>
                     <label><span>经过天数</span><input id="bs-bt-calc-derived-days" class="text_pole" type="number" min="0" step="0.01" value="140" /></label>
                   </div>
@@ -1255,7 +1256,7 @@
                     <button id="bs-bt-calc-derived-seed" class="menu_button" type="button">套用受精初值</button>
                     <button id="bs-bt-calc-derived-run" class="menu_button" type="button">计算遗传</button>
                   </div>
-                  <pre id="bs-bt-calc-derived-output" class="bs-bt-status-box">正值偏母方，负值偏父方；必须严格越过 ±75 才会遗传。</pre>
+                  <pre id="bs-bt-calc-derived-output" class="bs-bt-status-box">正值偏母方，负值偏父方；必须严格越过 ±75 才会遗传。母胎亲密度往母方拉、与胎父的契合度往父方拉，方向可以中途翻转。</pre>
                 </div>
               </div>
             </div>

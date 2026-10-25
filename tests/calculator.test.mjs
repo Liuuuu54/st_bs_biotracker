@@ -122,10 +122,14 @@ test('offspring calculator keeps companion-free species at 0 and previews prolif
 });
 
 test('derived calculator exposes conception seed and strict threshold day', () => {
-  assert.deepEqual(getDerivedInheritanceSeed('魔导', '魔导'), { affinity: 30, progress: 30 });
+  // 1.2.0 起亲密度只代表感情，一律从 0 起；遗传轴只有双方同型才先起跑 +30
+  assert.deepEqual(getDerivedInheritanceSeed('魔导', '魔导'), { affinity: 0, progress: 30 });
+  assert.deepEqual(getDerivedInheritanceSeed('魔导', '血族'), { affinity: 0, progress: 0 });
+  assert.deepEqual(getDerivedInheritanceSeed(null, '血族'), { affinity: 0, progress: 0 });
+  // 亲密度 −15（拉力 0.5）加上只有母方有衍生的底力 0.5，净拉力 1
   const result = calculateDerivedInheritancePreview({
     currentProgress: 0,
-    affinity: 0,
+    affinity: -15,
     motherDerivedType: '魔导',
     fetusRace: '人类',
     passedDays: 140,

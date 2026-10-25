@@ -230,18 +230,21 @@ function calculateDerived() {
     fatherDerivedType: selectedValue('bs-bt-calc-derived-father') || null,
     fetusRace: selectedValue('bs-bt-calc-derived-race', '人类'),
     affinity: numberValue('bs-bt-calc-derived-affinity', 0),
+    paternalFit: Math.max(0, Math.min(100, numberValue('bs-bt-calc-derived-fit', 0))) / 100,
     currentProgress: numberValue('bs-bt-calc-derived-progress', 0),
     passedDays: numberValue('bs-bt-calc-derived-days', 0),
     gestationModifierMultiplier: 1,
   };
   const result = calculateDerivedInheritancePreview(options);
-  const direction = result.direction > 0 ? '母方（正轴）' : result.direction < 0 ? '父方（负轴）' : '无可推进来源';
+  const direction = result.direction > 0 ? '母方（正轴）' : result.direction < 0 ? '父方（负轴）' : '拉平，停在原地';
   const threshold = result.wholeDaysToInherit === null
     ? '无法抵达（缺少对应衍生来源或当前速度为 0）'
     : `约第 ${result.wholeDaysToInherit} 个完整日严格越线（数学判定点 ${formatNumber(result.exactDaysToThreshold, 3)} 天）`;
   const speciesSpeed = getMergedRacePhysiologyProfile(options.fetusRace)?.gestationSpeciesSpeed ?? 1;
   setOutput('bs-bt-calc-derived-output', [
-    `推进方向：${direction}${result.activeDerivedType ? `「${result.activeDerivedType}」` : ''}`,
+    `母方拉力 ${formatNumber(result.maternalPull, 3)}（亲密度）　父方拉力 ${formatNumber(result.paternalPull, 3)}（契合度）${result.uncontestedPull > 0 ? `　含无竞争底力 ${formatNumber(result.uncontestedPull, 3)}` : ''}`,
+    '契合度在这里固定不变；实际孕期中会按半衰期衰减，孕期再交合才会回升。',
+    `推进方向：${direction}${result.activeDerivedType ? `「${result.activeDerivedType}」` : result.direction !== 0 ? '（这一方没有衍生，越线就是不遗传）' : ''}`,
     `胎儿种族妊娠速度：×${formatNumber(speciesSpeed, 3)}　每日遗传轴变化：${result.dailyDelta >= 0 ? '+' : ''}${formatNumber(result.dailyDelta, 4)}`,
     `经过 ${formatNumber(options.passedDays)} 天：${formatNumber(result.currentProgress, 3)} → ${formatNumber(result.nextProgress, 3)}`,
     `越过 ±75：${threshold}`,

@@ -5,7 +5,7 @@ import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
 import { getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
-import { getCompatMultiplier, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
+import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
 import { CONCEPTION_WEIGHT_LOG_SD, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getConceptionStageWeight, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
   cloneValue,
@@ -1349,13 +1349,17 @@ function updateDerivedTypeProgress(profile, tick) {
   const gestationModifierMultiplier = getGestationModifierMultiplier(profile);
   if (fetuses.length === 0 || passedDays <= 0) return;
 
+  // 父方拉力看母亲与胎父（嵌合胎取首位）的契合度；孕期中再交合会让它往上走
+  const ranking = getIntimacyRanking(profile, { minutesPassed: tick.nowMinutes ?? 0, reproductiveSettings: tick.reproductiveSettings });
   for (const fetus of fetuses) {
     const fatherDerivedType = fetus?.fatherDerivedType ? String(fetus.fatherDerivedType) : null;
     if (!motherDerivedType && !fatherDerivedType) continue;
     const currentProgress = clampNumber(fetus?.maternalDerivedTypeProgress, -100, 100, 0);
+    const father = (Array.isArray(fetus?.chimera?.fatherSources) && fetus.chimera.fatherSources[0]) || String(fetus?.fathers || '').split('×')[0].trim();
     fetus.maternalDerivedTypeProgress = calculateDerivedInheritanceProgress({
       currentProgress,
       affinity: fetus?.affinity,
+      paternalFit: ranking.find((item) => item.name === father)?.fit ?? 0,
       motherDerivedType,
       fatherDerivedType,
       fetusRace: fetus?.race,
@@ -6402,16 +6406,29 @@ function applyEggGain(profile, amount) {
 }
 
 /** 额外排卵倾向的每一颗，以「当前活力 ÷ 活力上限」的机率排出：累垮时高潮也排不太出卵 */
-function rollOrgasmOvulationEggs(profile, random = Math.random) {
+/**
+ * 高潮时正在插入的对象若是契合度最高的那位，每颗卵的排出机率（活力比例）再 ×(1 + 0.5 × 契合度)，上限 1。
+ * 回传那位对象与契合度；不是最熟悉的身体就是 null。
+ */
+function getOrgasmFamiliarPartner(profile, { minutesPassed = 0, reproductiveSettings = null } = {}) {
+  const base = profile?.base || {};
+  const source = String(base.penetrationSource || '').trim();
+  if (!source || !['inserted', 'spent'].includes(base.penetrationState)) return null;
+  const top = getIntimacyRanking(profile, { minutesPassed, reproductiveSettings })[0];
+  return top && top.name === source && top.fit > 0 ? { name: source, fit: top.fit } : null;
+}
+
+function rollOrgasmOvulationEggs(profile, random = Math.random, familiar = null) {
   const tendency = Math.max(0, Math.round(clampNumber(profile?.bio?.orgasmOvulationAmount, 0, 100, 1)));
   const vitalityCap = Math.max(1, getVitalityInitByLevel(profile?.base?.vitalityLevel));
-  const ratio = clampNumber(clampNumber(profile?.base?.vitality, 0, 9999, vitalityCap) / vitalityCap, 0, 1, 1);
+  const vitalityRatio = clampNumber(clampNumber(profile?.base?.vitality, 0, 9999, vitalityCap) / vitalityCap, 0, 1, 1);
+  const ratio = Math.min(1, vitalityRatio * (1 + 0.5 * (familiar?.fit || 0)));
   let eggs = 0;
   for (let index = 0; index < tendency; index += 1) if (random() < ratio) eggs += 1;
   return eggs;
 }
 
-function maybeTriggerOrgasmOvulation(character) {
+function maybeTriggerOrgasmOvulation(character, intimacyOptions = {}) {
   const next = character;
   const profile = next.profile || {};
   const cooldown = profile.cooldown || {};
@@ -6425,7 +6442,9 @@ function maybeTriggerOrgasmOvulation(character) {
   // 没有额外排卵倾向的物种（如精灵）不会因高潮排卵
   if (Math.round(clampNumber(bio.orgasmOvulationAmount, 0, 100, 1)) <= 0) return false;
 
-  const amount = rollOrgasmOvulationEggs(profile);
+  const familiar = getOrgasmFamiliarPartner(profile, intimacyOptions);
+  const amount = rollOrgasmOvulationEggs(profile, Math.random, familiar);
+  const familiarNote = familiar ? `（与身体最熟悉的 ${familiar.name} 交合，更容易排卵）` : '';
   if (!applyEggGain(profile, amount).applied) return false;
   if (amount > 0) setVisualCue(profile, 'ovulation');
   base.libido = 0;
@@ -6433,7 +6452,7 @@ function maybeTriggerOrgasmOvulation(character) {
   profile.notify = {
     ...notify,
     secondly: amount > 0
-      ? `${next.name}因高潮而额外排卵${amount > 1 ? ` ${amount} 颗` : ''}，性欲归零`
+      ? `${next.name}因高潮而额外排卵${amount > 1 ? ` ${amount} 颗` : ''}${familiarNote}，性欲归零`
       : `${next.name}达到高潮，但体力不济，这次没有额外排卵，性欲归零`,
   };
   return true;
@@ -6894,6 +6913,9 @@ function applyPassedTime(chatState, args) {
       subject.profile.base = thawedBase;
     }
     const tick = buildTimeTick(subject, totalMinutes);
+    // 契合度要衰减到这段时间的终点；衍生遗传拉锯用得到
+    tick.nowMinutes = Math.max(0, Number(chatState.minutesPassed) || 0) + totalMinutes;
+    tick.reproductiveSettings = chatState.reproductiveSettings;
     const result = applyTimeToCharacter(subject, tick);
     chatState.characters[name] = result.character;
   }
@@ -6949,7 +6971,7 @@ function applyCharacterStatus(chatState, args) {
   applyDerivedMetabolismExemptions(profile);
 
   next.profile.base = base;
-  const ovulationSettled = maybeTriggerOrgasmOvulation(next);
+  const ovulationSettled = maybeTriggerOrgasmOvulation(next, { minutesPassed: Number(chatState.minutesPassed) || 0, reproductiveSettings: chatState.reproductiveSettings });
   // 冷却中、不排卵的物种或假孕：没有排卵结算，高潮本身仍让性欲归零，不能停在上限像持续发情
   if (orgasm && !ovulationSettled) {
     next.profile.base.libido = 0;
