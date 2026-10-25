@@ -441,6 +441,14 @@ function buildSireTrackerBlock(payload, descriptionGuides) {
   const sires = Array.isArray(payload?.registered_sires) ? payload.registered_sires : [];
   if (sires.length === 0) return '';
   const fieldNames = parseDescriptionGuideFields(descriptionGuides?.sireDescription).map((field) => field.name);
+  // 没有在场精方时（最常见：孕期中胎父不在）只送精简版：描述、virility 那些说明是给在场精方用的
+  if (!sires.some((sire) => sire?.isHere)) {
+    return [
+      '[已注册精方]',
+      '- payload.registered_sires 是已建档的精方，都不在场，只是本轮相关者的摘要（当前胎儿的父亲或认定父亲，或最近讯息提到）。',
+      '- 他们在新讯息里登场时用 bsSetCharacterPresence {"female":"精方名字","isPresent":true}；bsAddSperm 的 male 写精方名字即可，种族与体型由档案带入。不要为精方调用其他工具。',
+    ].join('\n');
+  }
   return [
     '[已注册精方]',
     '- payload.registered_sires 是已建档的精方（精液提供者）。isHere=true 为在场，附描述；isHere=false 只是本轮相关者的摘要（当前胎儿的父亲或认定父亲，或最近讯息提到），不送描述。',

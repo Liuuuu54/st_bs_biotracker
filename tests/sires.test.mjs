@@ -349,3 +349,13 @@ test('先建精方、后注册同名卵方（扶她）：精方档案清成只�
   assert.deepEqual(sire.descriptions.normalDescription, []);
   assert.equal(resolveSireBase(chat, '莉娅').base.race, '媚魔');
 });
+
+test('没有在场精方时只送精简版说明；有在场的才送完整说明', () => {
+  const base = { existing_state: { 艾拉: { name: '艾拉', profile: {} } } };
+  const away = buildTrackerSystemPrompt('', DEFAULT_REGISTRY_DESCRIPTION_GUIDES, { ...base, registered_sires: [{ name: '胎父', race: '人类', isHere: false }] });
+  assert.match(away, /都不在场，只是本轮相关者的摘要/);
+  assert.match(away, /"isPresent":true/);
+  assert.ok(!away.includes('virility 是精方精子品质'));
+  const here = buildTrackerSystemPrompt('', DEFAULT_REGISTRY_DESCRIPTION_GUIDES, { ...base, registered_sires: [{ name: '凯', race: '人类', isHere: true }] });
+  assert.ok(here.includes('virility 是精方精子品质'));
+});
