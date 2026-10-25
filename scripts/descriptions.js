@@ -119,3 +119,27 @@ export function getStaleDescriptionFields(list, minutesPassed, threshold = DESCR
     .filter((entry) => now - entry.updatedAt >= threshold)
     .map((entry) => entry.name);
 }
+
+/**
+ * 描述范本的字段：每行「字段名|说明」，字段名前加 * 代表要即时追踪（超过一天没更新会点名）。
+ * 大括号的提示行与空行略过。回传 [{ name, starred }]，name 不含 *。
+ */
+export function parseDescriptionGuideFields(guide) {
+  const fields = [];
+  for (const raw of String(guide || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('{')) continue;
+    const separator = line.indexOf('|');
+    if (separator <= 0) continue;
+    const head = line.slice(0, separator).trim();
+    const starred = head.startsWith('*');
+    const name = head.replace(/^\*+/, '').trim();
+    if (name) fields.push({ name, starred });
+  }
+  return fields;
+}
+
+/** 给模型看的范本：拿掉 * 标记，免得模型把 * 写进字段名 */
+export function stripDescriptionGuideStars(guide) {
+  return String(guide || '').replace(/^(\s*)\*+/gm, '$1');
+}

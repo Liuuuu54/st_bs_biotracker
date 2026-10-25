@@ -488,6 +488,7 @@
               <div class="bs-bt-track-tabs" id="bs-bt-register-tabs">
                 <button type="button" class="bs-bt-track-tab is-active" data-register-tab="inference">推演</button>
                 <button type="button" class="bs-bt-track-tab" data-register-tab="registry">注册</button>
+                <button type="button" class="bs-bt-track-tab" data-register-tab="sire">精方</button>
                 <button type="button" class="bs-bt-track-tab" data-register-tab="outfit">着衣</button>
                 <button type="button" class="bs-bt-track-tab" data-register-tab="diary">日记</button>
                 <button type="button" class="bs-bt-track-tab" data-register-tab="skills">技能</button>
@@ -638,6 +639,40 @@
                   class="bs-bt-status-box">输入名字与 Description 规则后发送注册请求，完成后可在“完整变量”查看该角色状态变量。</pre>
               </div>
             </div>
+            <div class="bs-bt-register-page" data-register-page="sire" hidden>
+              <div class="settings_section">
+                <label for="bs-bt-sire-select">精方档案</label>
+                <select id="bs-bt-sire-select" class="text_pole">
+                  <option value="">新精方</option>
+                </select>
+                <small>需要长期追踪的精液提供者（男主、用户角色、转正的路人）才建档；名字与种族沿用上方两栏。建档后 bsAddSperm 以名字命中时，种族、衍生类型与体型以档案为准。同名卵方已注册（扶她）时，种族、体型、在场与描述读卵方。</small>
+              </div>
+
+              <div class="settings_section bs-bt-sire-grid">
+                <label for="bs-bt-sire-age">年龄<input id="bs-bt-sire-age" class="text_pole" type="number" min="0" step="1" placeholder="不填" /></label>
+                <label for="bs-bt-sire-body-size">体型<input id="bs-bt-sire-body-size" class="text_pole" type="number" min="1" max="7" step="0.5" placeholder="种族预设" /></label>
+                <label class="checkbox_label" for="bs-bt-sire-here"><input id="bs-bt-sire-here" type="checkbox" checked /><span>在场</span></label>
+              </div>
+
+              <div class="settings_section">
+                <label for="bs-bt-sire-descriptions">描述</label>
+                <textarea id="bs-bt-sire-descriptions" class="text_pole bs-bt-textarea" rows="5" placeholder="外貌|高个子，银发，左脸一道旧疤&#10;性器|……&#10;行动|靠在门边看着她"></textarea>
+                <small>一行一个字段：字段名|内容。字段名依下方「精方描述规则」；追踪时模型也会依剧情改写。</small>
+              </div>
+
+              <div class="settings_section bs-bt-action-row">
+                <button id="bs-bt-sire-save" class="menu_button" type="button">建立精方</button>
+                <button id="bs-bt-sire-delete" class="menu_button" type="button" disabled>删除精方</button>
+              </div>
+              <div id="bs-bt-sire-status" class="bs-bt-inline-status"></div>
+
+              <details class="settings_section bs-bt-register-fold">
+                <summary title="精方 normalDescription 的字段与写法；字段名前加 * 代表要即时追踪">精方描述规则</summary>
+                <textarea id="bs-bt-registry-sire-description" class="text_pole bs-bt-textarea" rows="5" aria-label="精方描述规则"></textarea>
+                <small>字段名前加 * 的字段超过一天（游戏时间）没更新，追踪时会提醒确认；不加的只在剧情写到变化时更新。</small>
+              </details>
+            </div>
+
             <div class="bs-bt-register-page" data-register-page="outfit" hidden>
               <div class="settings_section">
                 <label for="bs-bt-register-outfit-prompt">起始着衣细则</label>
@@ -708,6 +743,10 @@
         <section id="bs-bt-view-track-list" class="bs-bt-view" data-view="track-list">
           <div class="bs-bt-panel">
             <div class="settings_section">
+              <div class="bs-bt-track-tabs bs-bt-track-kind-tabs" id="bs-bt-track-kind-tabs">
+                <button type="button" class="bs-bt-track-tab is-active" data-track-kind="female">卵方</button>
+                <button type="button" class="bs-bt-track-tab" data-track-kind="sire">精方</button>
+              </div>
               <div id="bs-bt-track-character-list" class="bs-bt-track-character-list"></div>
             </div>
 
@@ -850,6 +889,15 @@
           </div>
         </section>
 
+        <section id="bs-bt-view-track-sire" class="bs-bt-view" data-view="track-sire">
+          <div class="bs-bt-panel">
+            <div class="settings_section bs-bt-action-row">
+              <button id="bs-bt-track-sire-back" class="menu_button" type="button">返回人物清单</button>
+            </div>
+            <div id="bs-bt-track-sire-content" class="settings_section bs-bt-track-content"></div>
+          </div>
+        </section>
+
         <section id="bs-bt-view-track-char" class="bs-bt-view" data-view="track-char">
           <div class="bs-bt-panel">
             <div class="settings_section bs-bt-action-row">
@@ -934,7 +982,7 @@
               <div class="bs-bt-track-tabs bs-bt-full-state-tabs" id="bs-bt-full-state-tabs">
                 <button type="button" class="bs-bt-track-tab" data-full-state-tab="variables">变量内容</button>
                 <button type="button" class="bs-bt-track-tab" data-full-state-tab="debug">调试工具</button>
-                <button type="button" class="bs-bt-track-tab" data-full-state-tab="history">历史</button>
+                <button type="button" class="bs-bt-track-tab" data-full-state-tab="history">快照历史</button>
               </div>
             </div>
 

@@ -256,3 +256,13 @@ test('带父方快照的路人父亲可展开详情（种族、体型来自子�
   assert.equal(roach.hasDetail, true);
   assert.equal(roach.bodySize, 4.5);
 });
+
+test('精方没有角色节点：族谱以名字节点为中心', () => {
+  const view = buildLineageView({
+    characters: { 艾拉: { name: '艾拉', profile: { base: { race: '人类' }, children: [{ id: 'c1', name: '小龙', fathers: '凯' }] } } },
+    sires: { 凯: { race: '精灵', bloodline: { 精灵: 1 }, bloodlineSource: 'pure', age: 120 } },
+  }, '凯');
+  assert.equal(view.centerId, 'name:凯');
+  assert.equal(view.empty, false);
+  assert.ok(view.nodes.find((node) => node.isCenter)?.kind === 'sire');
+});

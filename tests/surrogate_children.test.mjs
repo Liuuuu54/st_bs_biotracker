@@ -220,21 +220,38 @@ test('surrogate derived types use the carrier as mother and external descriptors
   assert.equal(fallbackFetus.maternalDerivedTypeProgress, -30);
 });
 
-test('bsAddSperm reads paternal derivedType from the race descriptor, not the male name', () => {
+// 1.2.0 起有档案就以档案为准（扶她读卵方）：同一人不会因模型每次写法不同而换种族，
+// 父方衍生类型也由档案带入，不再依赖模型在 race 写前缀
+test('bsAddSperm takes race and paternal derivedType from a registered character over the passed race', () => {
   const chatState = state.createEmptyChatState();
   chatState.characters['孕母'] = makeHost('孕母', '人类');
   chatState.characters['同名父亲'] = makeHost('同名父亲', '人类');
   chatState.characters['同名父亲'].profile.base.derivedType = '不死-僵尸';
 
-  applyToolCall(chatState, {
+  const inserted = applyToolCall(chatState, {
     name: 'bsAddSperm',
     arguments: { female: '孕母', male: '同名父亲', race: '[魔女]人类X精灵', action: 'insert', amount: 0 },
   });
+  assert.match(inserted.message, /种族以档案的 人类 为准（本次传入 人类X精灵）/);
   applyToolCall(chatState, {
     name: 'bsAddSperm',
     arguments: { female: '孕母', male: '同名父亲', race: '[魔女]人类X精灵', action: 'deposit', amount: 100 },
   });
 
+  const sperm = chatState.characters['孕母'].profile.base.sperms[0];
+  assert.equal(sperm.race, '人类');
+  assert.equal(sperm.derivedType, '不死-僵尸');
+});
+
+test('bsAddSperm without any record still reads paternal derivedType from the race descriptor', () => {
+  const chatState = state.createEmptyChatState();
+  chatState.characters['孕母'] = makeHost('孕母', '人类');
+  for (const action of ['insert', 'deposit']) {
+    applyToolCall(chatState, {
+      name: 'bsAddSperm',
+      arguments: { female: '孕母', male: '路人', race: '[魔女]人类X精灵', action, amount: action === 'insert' ? 0 : 100 },
+    });
+  }
   const sperm = chatState.characters['孕母'].profile.base.sperms[0];
   assert.equal(sperm.race, '人类X精灵');
   assert.equal(sperm.derivedType, '魔女');

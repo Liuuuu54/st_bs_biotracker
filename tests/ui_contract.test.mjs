@@ -30,7 +30,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
     assert.match(html, new RegExp(`id="${id}"`));
   }
   const registerTabs = [...html.matchAll(/data-register-tab="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(registerTabs, ['inference', 'registry', 'outfit', 'diary', 'skills']);
+  assert.deepEqual(registerTabs, ['inference', 'registry', 'sire', 'outfit', 'diary', 'skills']);
   const registryPage = html.match(/data-register-page="registry"[\s\S]*?data-register-page="outfit"/)?.[0] || '';
   assert.match(registryPage, /id="bs-bt-register-custom-notes"/);
   assert.equal((html.match(/id="bs-bt-register-custom-notes"/g) || []).length, 1);

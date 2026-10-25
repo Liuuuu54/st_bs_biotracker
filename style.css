@@ -1218,6 +1218,24 @@
   gap: 6px;
 }
 
+#bs-biotracker-settings .bs-bt-register-source-section[hidden] {
+  display: none;
+}
+
+/* 精方分页：年龄、体型、在场排成一列，窄屏自动换行 */
+#bs-biotracker-settings .bs-bt-sire-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+}
+
+#bs-biotracker-settings .bs-bt-sire-grid > label:not(.checkbox_label) {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 120px;
+}
+
 #bs-biotracker-settings #bs-bt-register-source-summary {
   min-height: 1.35em;
   line-height: 1.35;
@@ -1721,8 +1739,9 @@
   overflow: hidden;
 }
 
+/* 分页数随系统页开关在 4–6 之间；六个时排成两列各三个，由 JS 写入栏数 */
 #bs-biotracker-settings #bs-bt-register-tabs {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--bsbt-register-tab-columns, 5), minmax(0, 1fr));
 }
 
 #bs-biotracker-settings #bs-bt-register-tabs .bs-bt-track-tab {
@@ -1935,6 +1954,41 @@
 #bs-biotracker-settings .bs-bt-track-character-button[disabled] {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+/* 追踪列表的卵方／精方分页，精方单页的标题 */
+#bs-biotracker-settings .bs-bt-track-kind-tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 8px;
+  border-radius: 10px;
+}
+
+/* 血缘列：「共 N 名子女」不折行，族谱按钮让出宽度 */
+#bs-biotracker-settings .bs-bt-track-lineage-row {
+  align-items: center;
+}
+
+#bs-biotracker-settings .bs-bt-track-lineage-row > .bs-bt-track-meta-label {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+#bs-biotracker-settings .bs-bt-track-lineage-row > .bs-bt-lineage-open {
+  flex: 0 1 auto;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+}
+
+#bs-biotracker-settings .bs-bt-track-sire-fetuses > summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+#bs-biotracker-settings .bs-bt-full-state-group-title {
+  grid-column: 1 / -1;
+  font-weight: 700;
+  margin-top: 6px;
 }
 
 #bs-biotracker-settings .bs-bt-track-character-button.is-offscreen {

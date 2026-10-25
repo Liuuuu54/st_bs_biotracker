@@ -92,7 +92,8 @@ import {
   getUterinePressureCap as getProfileUterinePressureCap,
   isFetusKnownToCharacter,
 } from './scripts/tools.js';
-import { applyToolCall, writeDiaryEntry } from './scripts/tools.js';
+import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
+import { deleteSireRecord, formatSireDescriptionText, formatSireRaceDescriptor, getSireRecord, normalizeSireRecord, parseSireDescriptionText, upsertSireRecord } from './scripts/sires.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
@@ -160,6 +161,7 @@ import {
   recordChatStateSnapshot,
   listChatStateSnapshots,
   getSnapshotCharacter,
+  getSnapshotSire,
   diffStateValues,
   resolveRegisteredCharacterName,
   sanitizeWorldbookEntryDisplayName,
@@ -224,12 +226,15 @@ let registryInferenceResultName = '';
 let registerPageChatKey = null;
 let registerManualRaceDraft = '人类';
 let selectedRegisterChildSourceKey = '';
+let selectedSireName = '';
 const ORIGINAL_FETCH_KEY = '__bs_biotracker_original_fetch__';
 const MAX_MAINFLOW_SNAPSHOT_MESSAGES = 48;
 const VITALITY_CAPS = { 1: 50, 2: 75, 3: 100, 4: 125, 5: 150, 6: 175, 7: 200 };
 const PSY_STRESS_CAPS = { 1: 20, 2: 50, 3: 80, 4: 110, 5: 140, 6: 170, 7: 200 };
 
 let selectedFullStateName = '';
+// 扶她同名同时有卵方与精方，变量页要分得出选的是哪一份
+let selectedFullStateKind = 'character';
 let selectedFullStateSubpage = 'variables';
 let selectedTrackName = '';
 let selectedTrackSubpage = 'overview';
@@ -372,6 +377,11 @@ function applyExtensionSystemVisibility(settings) {
   toggle('#bs-bt-register-tabs [data-register-tab="outfit"]', extensionSystems.wardrobe);
   toggle('#bs-biotracker-settings .bs-bt-home-tile[data-nav-view="skill-catalog"]', extensionSystems.skill);
   toggle('#bs-bt-register-tabs [data-register-tab="skills"]', extensionSystems.skill);
+  const registerTabs = document.getElementById('bs-bt-register-tabs');
+  if (registerTabs) {
+    const visibleTabs = registerTabs.querySelectorAll('[data-register-tab]:not([hidden])').length;
+    registerTabs.style.setProperty('--bsbt-register-tab-columns', String(visibleTabs > 5 ? Math.ceil(visibleTabs / 2) : Math.max(1, visibleTabs)));
+  }
   const bundleButton = document.getElementById('bs-bt-register-run-bundle');
   if (bundleButton && !bundleButton.disabled) bundleButton.textContent = REGISTRY_OP_UI.registerBundle.idleText;
   const bundleNote = document.getElementById('bs-bt-register-bundle-note');
@@ -519,6 +529,8 @@ function resetRegisterPageState() {
   document.getElementById('bs-bt-initial-cognition-rows')?.replaceChildren();
   registryBreedingInferenceDraft = null;
   registryInferenceResultName = '';
+  selectedSireName = '';
+  setSireStatus('');
   setRegisterTab('inference');
   setBreedingInferenceEditor('尚未执行繁育推演。直接注册不会生成繁育心理人设。');
   setBreedingInferenceTarget('');
@@ -551,7 +563,7 @@ function syncRegisterPageOnOpen(ctx) {
 function setRegisterTab(tab) {
   const requested = String(tab || 'inference');
   const disabled = (requested === 'outfit' && !extensionSystems.wardrobe) || (requested === 'skills' && !extensionSystems.skill);
-  const next = disabled ? 'registry' : (['inference', 'registry', 'outfit', 'diary', 'skills'].includes(requested) ? requested : 'inference');
+  const next = disabled ? 'registry' : (['inference', 'registry', 'sire', 'outfit', 'diary', 'skills'].includes(requested) ? requested : 'inference');
   document.querySelectorAll('#bs-bt-register-tabs [data-register-tab]').forEach((node) => {
     node.classList.toggle('is-active', String(node.getAttribute('data-register-tab') || '') === next);
   });
@@ -560,6 +572,14 @@ function setRegisterTab(tab) {
     node.classList.toggle('is-active', active);
     node.hidden = !active;
   });
+  // 「注册来源」是把孩子注册成卵方用的，精方分页用不到；切过去时清掉来源，种族栏才能编辑
+  const sourceSection = document.querySelector('#bs-bt-view-register .bs-bt-register-source-section');
+  if (sourceSection) sourceSection.hidden = next === 'sire';
+  const sourceSelect = document.getElementById('bs-bt-register-source');
+  if (next === 'sire' && sourceSelect?.value) {
+    sourceSelect.value = '';
+    sourceSelect.dispatchEvent(new Event('change'));
+  }
 }
 
 function setSkillCatalogStatus(message, isError = false) {
@@ -1246,6 +1266,109 @@ function renderRegisterChildSourceOptions(ctx) {
   select.innerHTML = options.join('');
   select.value = Array.from(select.options).some((option) => option.value === selectedRegisterChildSourceKey) ? selectedRegisterChildSourceKey : '';
   syncRegisterChildSourceFields(ctx);
+  renderSireOptions(ctx);
+}
+
+function setSireStatus(message, isError = false) {
+  const node = document.getElementById('bs-bt-sire-status');
+  if (!node) return;
+  node.textContent = String(message || '');
+  node.dataset.state = isError ? 'error' : 'normal';
+}
+
+function syncSireButtons() {
+  const save = document.getElementById('bs-bt-sire-save');
+  if (save) save.textContent = selectedSireName ? '更新精方' : '建立精方';
+  const remove = document.getElementById('bs-bt-sire-delete');
+  if (remove instanceof HTMLButtonElement) remove.disabled = !selectedSireName;
+}
+
+function renderSireOptions(ctx) {
+  const select = document.getElementById('bs-bt-sire-select');
+  if (!select) return;
+  const names = Object.keys(getChatState(ctx, getSettings(ctx)).sires || {});
+  if (!names.includes(selectedSireName)) selectedSireName = '';
+  select.innerHTML = ['<option value="">新精方</option>', ...names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)].join('');
+  select.value = selectedSireName;
+  syncSireButtons();
+}
+
+function setInputValue(id, value) {
+  const node = document.getElementById(id);
+  if (node) node.value = value;
+}
+
+/**
+ * 精方表单：名字与种族沿用注册页上方两栏。
+ * prefill 是从胎父建档时带进来的父方快照；档案已存在时以档案为准。
+ */
+function loadSireIntoForm(ctx, name, prefill = null) {
+  const chatState = getChatState(ctx, getSettings(ctx));
+  const record = getSireRecord(chatState, name);
+  selectedSireName = record ? String(name) : '';
+  const source = record || prefill;
+  setInputValue('bs-bt-register-name', String(name || ''));
+  setInputValue('bs-bt-register-race', source ? formatSireRaceDescriptor(source) : '人类');
+  setInputValue('bs-bt-sire-age', source?.age ? String(source.age) : '');
+  setInputValue('bs-bt-sire-body-size', source?.bodySize ? String(source.bodySize) : '');
+  const here = document.getElementById('bs-bt-sire-here');
+  if (here instanceof HTMLInputElement) here.checked = source ? source.isHere !== false : true;
+  setInputValue('bs-bt-sire-descriptions', record ? formatSireDescriptionText(record.descriptions?.normalDescription) : '');
+  const select = document.getElementById('bs-bt-sire-select');
+  if (select) select.value = selectedSireName;
+  closeRacePalettePopover();
+  refreshRegisterRacePalette();
+  syncSireButtons();
+}
+
+function readOptionalNumber(id) {
+  const raw = String(document.getElementById(id)?.value ?? '').trim();
+  return raw === '' ? null : Number(raw);
+}
+
+function saveSireFromForm(ctx) {
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const name = String(resolvePersonNameField(String(document.getElementById('bs-bt-register-name')?.value || '').trim()) || '').trim();
+  const result = upsertSireRecord(chatState, name, {
+    race: String(document.getElementById('bs-bt-register-race')?.value || '').trim() || '人类',
+    age: readOptionalNumber('bs-bt-sire-age'),
+    bodySize: readOptionalNumber('bs-bt-sire-body-size'),
+    isHere: document.getElementById('bs-bt-sire-here')?.checked !== false,
+    descriptions: parseSireDescriptionText(document.getElementById('bs-bt-sire-descriptions')?.value),
+  });
+  if (!result.applied) {
+    setSireStatus(result.message, true);
+    return;
+  }
+  recordChatStateSnapshot(ctx, chatState, { reason: 'registry_sire' });
+  saveSettings(ctx);
+  resetPoller(ctx, trackerDeps);
+  renderStatusPanel(ctx);
+  selectedSireName = name;
+  renderSireOptions(ctx);
+  loadSireIntoForm(ctx, name);
+  setSireStatus(result.message);
+  globalThis.toastr?.success?.(`[BS BioTracker] ${result.message}`);
+}
+
+function deleteSelectedSire(ctx) {
+  if (!selectedSireName) return;
+  if (globalThis.confirm && !globalThis.confirm(`确定删除精方「${selectedSireName}」？既有胎儿与孩子保留当时的父方快照。`)) return;
+  const chatState = getChatState(ctx, getSettings(ctx));
+  const result = deleteSireRecord(chatState, selectedSireName);
+  if (!result.applied) {
+    setSireStatus(result.message, true);
+    return;
+  }
+  recordChatStateSnapshot(ctx, chatState, { reason: 'registry_sire_delete' });
+  saveSettings(ctx);
+  resetPoller(ctx, trackerDeps);
+  renderStatusPanel(ctx);
+  selectedSireName = '';
+  renderSireOptions(ctx);
+  loadSireIntoForm(ctx, '');
+  setSireStatus(result.message);
 }
 
 /** 「直接写入」那两项各自需要的名字，勾了就必须填 */
@@ -2249,14 +2372,29 @@ function getRaceBodySizeInputValue(race, field) {
 }
 
 // 追踪页的体型：个体值优先，没有就标示种族平均；变化态另附
+// 体型级别在画面上的名称：第 4 级在名录里叫「人类」，放在人类角色身上像种族名写了两次，画面改叫「常人」；提示词照旧
+const BODY_SIZE_DISPLAY_NAMES = Object.freeze(BODY_SIZE_LEVEL_NAMES.map((name) => (name === '人类' ? '常人' : name)));
+
+/** 级别名看四舍五入后的整数级：3.9 是「常人」，3.4 才是「偏小」；数字照实显示 */
+function formatBodySizeLevel(value) {
+  return `${Math.round(value * 10) / 10} 级（${BODY_SIZE_DISPLAY_NAMES[Math.max(0, Math.min(6, Math.round(value) - 1))]}）`;
+}
+
+/** 常态体型：有个体体型照写；只有种族平均时前面加「约」。标准差不显示 */
 function formatCharacterBodySizeLabel(base = {}) {
   const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
   if (resolved.kind === 'variable') return '可变';
   if (resolved.kind === 'unknown') return '未记录（依个体）';
-  const level = (value) => `${Math.round(value * 10) / 10} 级（${BODY_SIZE_LEVEL_NAMES[Math.max(0, Math.min(6, Math.round(value) - 1))]}）`;
   const own = clampIndividualBodySize(base.bodySize) !== null;
+  return `${own ? '' : '约 '}${formatBodySizeLevel(resolved.size)}`;
+}
+
+/** 变化态体型另起一行；个体体型偏离种族平均多少，变化态跟着偏移。没有变化态回空字串 */
+function formatAltFormBodySizeLabel(base = {}) {
+  const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
   const alt = getAltFormBodySize(resolved);
-  return `${level(resolved.size)}${own ? '' : '，种族平均'}${alt === null ? '' : `；变化态 ${level(alt)}`}`;
+  if (alt === null) return '';
+  return `${clampIndividualBodySize(base.bodySize) !== null ? '' : '约 '}${formatBodySizeLevel(alt)}`;
 }
 
 function encodeBodySizeOption(value) {
@@ -2274,7 +2412,7 @@ function appendBodySizeLevelOptions(select) {
   BODY_SIZE_LEVEL_NAMES.forEach((name, index) => {
     const option = document.createElement('option');
     option.value = String(index + 1);
-    option.textContent = `${index + 1} ${name}`;
+    option.textContent = `${index + 1} ${BODY_SIZE_DISPLAY_NAMES[index] || name}`;
     select.appendChild(option);
   });
 }
@@ -3860,6 +3998,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       bloodlineLabel: formatBloodline(base.race, base.bloodline, base.bloodlineSource),
       age: Number.isFinite(Number(base.age)) ? Math.round(Number(base.age)) : null,
       bodySizeLabel: formatCharacterBodySizeLabel(base),
+      altFormBodySizeLabel: formatAltFormBodySizeLabel(base),
       stage,
       stageProgress: getStageProgress(profile),
       stats: [
@@ -4160,6 +4299,7 @@ function renderTrackOverview(viewModel) {
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">血脉</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bloodlineLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">年龄</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.age ?? '未知')}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodySizeLabel)}</span></div>
+        ${viewModel.overview.altFormBodySizeLabel ? `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">变化态体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.altFormBodySizeLabel)}</span></div>` : ''}
       </div>
     </div>
     <div class="bs-bt-track-section bs-bt-track-stage-progress${stageSectionClass}"${stageSectionStyle}>
@@ -4174,6 +4314,9 @@ function renderTrackOverview(viewModel) {
     <div class="bs-bt-track-section">
       <div class="bs-bt-track-section-title">代谢需求</div>
       ${renderMetabolismSummary(viewModel.overview.metabolismSummary)}
+    </div>
+    <div class="bs-bt-action-row">
+      <button type="button" class="menu_button" data-character-full-state="${escapeHtml(viewModel.name)}">变量</button>
     </div>
   `;
 }
@@ -4816,11 +4959,10 @@ function renderTrackLineageEntry(viewModel) {
     <div class="bs-bt-track-section">
       <div class="bs-bt-track-section-title">血缘</div>
       <div class="bs-bt-track-meta">
-        <div class="bs-bt-track-meta-row">
+        <div class="bs-bt-track-meta-row bs-bt-track-lineage-row">
           <span class="bs-bt-track-meta-label">${escapeHtml(summary)}</span>
           <button type="button" class="menu_button bs-bt-lineage-open" data-lineage-center="${escapeHtml(name)}">族谱</button>
         </div>
-        ${children.map((child, index) => `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">${escapeHtml(child.name || `子女 ${index + 1}`)}</span><span class="bs-bt-track-meta-value"${child.paternityClaims?.length ? ` title="${escapeHtml(child.paternityClaims.at(-1).content)}"` : ''}>选定父亲：${escapeHtml(child.selectedFather || '未指定')}</span></div>`).join('')}
       </div>
     </div>
   `;
@@ -4830,8 +4972,10 @@ const LINEAGE_ID = 'bs-bt-lineage';
 
 // 族谱的体型：已注册角色照追踪页的写法；路人父亲只在子女记录里记过体型时才显示；未注册的孩子不显示
 function lineageBodySizeRow(node) {
-  if (node.kind === 'character') return [['体型', formatCharacterBodySizeLabel(node)]];
-  if (node.kind === 'unregistered' && typeof node.bodySize === 'number') return [['体型', `${formatCharacterBodySizeLabel(node)}（据子女记录）`]];
+  const alt = formatAltFormBodySizeLabel(node);
+  const altRow = alt ? [['变化态体型', alt]] : [];
+  if (node.kind === 'character' || (node.kind === 'sire' && typeof node.bodySize === 'number')) return [['体型', formatCharacterBodySizeLabel(node)], ...altRow];
+  if (node.kind === 'unregistered' && typeof node.bodySize === 'number') return [['体型', `${formatCharacterBodySizeLabel(node)}（据子女记录）`], ...altRow];
   return [];
 }
 
@@ -4853,6 +4997,7 @@ function lineageDetailRows(node) {
   if (node.carriers.length > 0) rows.push(['孕育者', `${node.carriers.map((item) => item.name).join('、')}（代孕承载）`]);
   if (node.carriedChildren.length > 0) rows.push(['代孕承载', node.carriedChildren.map((item) => item.name).join('、')]);
   if (node.kind === 'unregistered') rows.push(['状态', '未注册（仅作为亲代出现）']);
+  if (node.kind === 'sire') rows.push(['状态', '已建档的精方']);
   // 只在亲代那行空着时才补这句：有亲代时它是废话，没亲代时它是唯一线索，
   // 说明这人确实在故事里出生过，只是上一代被深度截断或没登记。
   if (node.kind === 'character' && node.childId && node.parents.length === 0) {
@@ -4968,9 +5113,38 @@ function selectLineageNode(nodeId) {
   });
   const detail = root.querySelector('.bs-bt-lineage__detail');
   if (!detail) return;
+  // 父方（精方或路人）可以直接开精方表单；路人以子女记录的父方快照预填
+  const isSireCandidate = node && (node.kind === 'sire' || (node.kind === 'unregistered' && node.lifeStage === '精方'));
+  const sireAction = isSireCandidate
+    ? `<button type="button" class="menu_button bs-bt-lineage__sire" data-lineage-sire="${escapeHtml(node.id)}">${node.kind === 'sire' ? '变量' : '建立精方档案'}</button>`
+    : '';
   detail.innerHTML = node
-    ? `<div class="bs-bt-lineage__detail-title">${escapeHtml(node.displayName)}</div>${lineageDetailRows(node)}`
+    ? `<div class="bs-bt-lineage__detail-title">${escapeHtml(node.displayName)}</div>${lineageDetailRows(node)}${sireAction}`
     : '<div class="bs-bt-lineage__detail-title">选择一个人查看详情</div>';
+}
+
+/** 族谱上的父方 → 注册页精方分页，名字、种族、体型带进表单，由使用者确认后建档 */
+function openSireFormFromLineage(ctx, nodeId) {
+  const node = lineageViewCache?.nodes.find((item) => item.id === nodeId);
+  if (!node?.name) return;
+  // 已建档的精方和卵方一样到变量页修改
+  if (node.kind === 'sire') {
+    showFullStateSire(ctx, node.name);
+    return;
+  }
+  closeLineageWindow();
+  setView('register');
+  renderRegisterChildSourceOptions(ctx);
+  setRegisterTab('sire');
+  loadSireIntoForm(ctx, node.name, {
+    race: node.race,
+    bloodline: node.bloodline,
+    bloodlineSource: node.bloodlineSource,
+    derivedType: node.derivedType,
+    bodySize: node.bodySize,
+    age: node.age,
+  });
+  setSireStatus(node.kind === 'sire' ? `编辑精方 ${node.name}。` : `已带入 ${node.name} 在子女记录里的父方资料；确认后按「建立精方」。`);
 }
 
 function ensureLineageWindow(ctx) {
@@ -5005,6 +5179,10 @@ function ensureLineageWindow(ctx) {
     const cell = event.target?.closest?.('[data-lineage-node]');
     if (!cell || cell.disabled) return;
     selectLineageNode(cell.dataset.lineageNode);
+  });
+  root.querySelector('.bs-bt-lineage__detail')?.addEventListener('click', (event) => {
+    const button = event.target?.closest?.('[data-lineage-sire]');
+    if (button) openSireFormFromLineage(ctx, button.dataset.lineageSire);
   });
   return root;
 }
@@ -6478,6 +6656,128 @@ async function connectAndLoadModels(ctx) {
   }
 }
 
+// 追踪列表的分页：卵方或精方；精方单页看哪一位
+let selectedTrackKind = 'female';
+let selectedTrackSireName = '';
+
+/** 实际父方名单：嵌合体读 fatherSources，否则拆「A × B」 */
+function listGeneticFathers(record) {
+  const sources = Array.isArray(record?.chimera?.fatherSources) && record.chimera.fatherSources.length > 0
+    ? record.chimera.fatherSources
+    : String(record?.fathers || '').split('×');
+  return sources.map((part) => String(part || '').trim()).filter(Boolean);
+}
+
+// 精方单页的「孕中胎儿」预设折叠，使用者展开后重绘仍保持
+let sireFetusesOpen = false;
+
+/**
+ * 精方的血缘：子女只计数，要看谁是谁点族谱；
+ * 还在肚子里的胎儿另列——他是亲生父亲，或母亲认定孩子是他的（可能不是亲生）。
+ */
+function collectSireLineage(chatState, sireName) {
+  let childCount = 0;
+  const fetuses = [];
+  for (const [ownerName, character] of Object.entries(chatState.characters || {})) {
+    for (const child of (Array.isArray(character?.profile?.children) ? character.profile.children : [])) {
+      if (listGeneticFathers(child).includes(sireName)) childCount += 1;
+    }
+    (Array.isArray(character?.profile?.pregnant?.fetuses) ? character.profile.pregnant.fetuses : []).forEach((fetus, index) => {
+      const isGenetic = listGeneticFathers(fetus).includes(sireName);
+      const isClaimed = String(fetus?.selectedFather || '').trim() === sireName;
+      if (!isGenetic && !isClaimed) return;
+      // 亲生：遗传上是他的；认定：母亲认定父亲是他（selectedFather），实际不是
+      const relation = isGenetic && isClaimed ? '亲生·认定' : isGenetic ? '亲生' : '认定';
+      fetuses.push({ name: `${ownerName} 胎儿${index + 1}`, relation });
+    });
+  }
+  return { childCount, fetuses };
+}
+
+/** 扶她的生理资料与描述读卵方，精方档案只留精方专属栏位 */
+function getSireTrackBase(chatState, name) {
+  const isFuta = Object.prototype.hasOwnProperty.call(chatState.characters || {}, name);
+  return { isFuta, base: isFuta ? (chatState.characters[name]?.profile?.base || {}) : getSireRecord(chatState, name) };
+}
+
+function appendSireTrackEntries(ctx, list, chatState) {
+  const sireNames = Object.keys(chatState.sires || {});
+  if (sireNames.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'bs-bt-connect-status';
+    empty.textContent = '还没有精方。到注册页的「精方」分页，或族谱点选父方建档。';
+    list.appendChild(empty);
+    return;
+  }
+  for (const name of sireNames) {
+    const { base } = getSireTrackBase(chatState, name);
+    const isOffscreen = base?.isHere === false;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `bs-bt-track-character-button${name === selectedTrackSireName ? ' is-active' : ''}${isOffscreen ? ' is-offscreen' : ''}`;
+    button.innerHTML = `<span class="bs-bt-track-character-name">${escapeHtml(name)}</span><span class="bs-bt-track-character-stage">${escapeHtml(formatRaceLabel(base?.race, base?.derivedType))}${isOffscreen ? ' · 离场' : ''}</span>`;
+    button.addEventListener('click', () => {
+      selectedTrackSireName = name;
+      renderStatusPanel(ctx);
+      setView('track-sire');
+    });
+    list.appendChild(button);
+  }
+}
+
+/**
+ * 精方单页：精方没有孕期、心情这些动态状态，不分分页，一页唯读资料；
+ * 修改与卵方一样到变量页。
+ */
+function renderTrackSirePage(chatState) {
+  const content = document.getElementById('bs-bt-track-sire-content');
+  if (!content) return;
+  const name = selectedTrackSireName;
+  if (!name || !getSireRecord(chatState, name)) {
+    content.innerHTML = '<div class="bs-bt-connect-status">请从人物清单的「精方」分页选择一位精方。</div>';
+    return;
+  }
+  const { isFuta, base } = getSireTrackBase(chatState, name);
+  const record = getSireRecord(chatState, name);
+  const minutesPassed = Number(chatState.minutesPassed) || 0;
+  const descriptions = isFuta ? [] : parseDescriptionBlocks(record.descriptions?.normalDescription, minutesPassed);
+  const lineage = collectSireLineage(chatState, name);
+  const metaRow = (label, value, title = '') => `<div class="bs-bt-track-meta-row"${title ? ` title="${escapeHtml(title)}"` : ''}><span class="bs-bt-track-meta-label">${escapeHtml(label)}</span><span class="bs-bt-track-meta-value">${escapeHtml(String(value))}</span></div>`;
+  const section = (title, rows) => `<div class="bs-bt-track-section"><div class="bs-bt-track-section-title">${escapeHtml(title)}</div><div class="bs-bt-track-meta">${rows}</div></div>`;
+  content.innerHTML = [
+    section('精方概览', [
+      metaRow('姓名', name),
+      metaRow('在场', base?.isHere === false ? '离场' : '在场'),
+      metaRow('种族', formatRaceLabel(base?.race, base?.derivedType)),
+      metaRow('血脉', formatBloodline(base?.race, base?.bloodline, base?.bloodlineSource) || '未知'),
+      metaRow('年龄', base?.age ? `${Math.round(Number(base.age))} 岁` : '未记录'),
+      metaRow('体型', formatCharacterBodySizeLabel(base || {})),
+      ...(formatAltFormBodySizeLabel(base || {}) ? [metaRow('变化态体型', formatAltFormBodySizeLabel(base || {}))] : []),
+      ...(isFuta ? [metaRow('卵方', '同名卵方已注册（扶她），资料与描述读卵方')] : []),
+    ].join('')),
+    isFuta
+      ? section('基本描述', metaRow('描述', '同名卵方已注册（扶她），见卵方的描述页'))
+      : renderDescriptionGroup('基本描述', descriptions),
+    // 与卵方经历页的「血缘」同一个样子：子女只计数，详情点族谱
+    `<div class="bs-bt-track-section">
+      <div class="bs-bt-track-section-title">血缘</div>
+      <div class="bs-bt-track-meta">
+        <div class="bs-bt-track-meta-row bs-bt-track-lineage-row">
+          <span class="bs-bt-track-meta-label">${escapeHtml(lineage.childCount > 0 ? `共 ${lineage.childCount} 名子女` : '暂无子女记录')}</span>
+          <button type="button" class="menu_button bs-bt-lineage-open" data-lineage-center="${escapeHtml(name)}">族谱</button>
+        </div>
+        ${lineage.fetuses.length > 0 ? `<details class="bs-bt-track-sire-fetuses"${sireFetusesOpen ? ' open' : ''}>
+          <summary title="亲生：他是遗传上的父亲；认定：母亲认定父亲是他，实际不是">孕中胎儿（${lineage.fetuses.length}）</summary>
+          ${lineage.fetuses.map((fetus) => metaRow(fetus.name, fetus.relation)).join('')}
+        </details>` : ''}
+      </div>
+    </div>`,
+    `<div class="bs-bt-action-row">
+      <button type="button" class="menu_button" data-sire-full-state="${escapeHtml(name)}">变量</button>
+    </div>`,
+  ].join('');
+}
+
 function renderStatusPanel(ctx) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
@@ -6522,6 +6822,9 @@ function renderStatusPanel(ctx) {
   if (characters.length === 0) {
     selectedTrackName = '';
     if (content) { content.innerHTML = ''; trackContentRenderCache.delete(content); }
+    if (selectedTrackKind === 'sire') appendSireTrackEntries(ctx, list, chatState);
+    else list.innerHTML = '<div class="bs-bt-connect-status">当前聊天没有已注册角色</div>';
+    renderTrackSirePage(chatState);
     return;
   }
 
@@ -6529,7 +6832,7 @@ function renderStatusPanel(ctx) {
   if (!characterNames.includes(selectedTrackName)) selectedTrackName = '';
   if (!TRACK_SUBPAGES.includes(selectedTrackSubpage)) selectedTrackSubpage = 'overview';
 
-  for (const item of characters) {
+  for (const item of (selectedTrackKind === 'sire' ? [] : characters)) {
     const name = item.name;
     const stage = String(item?.profile?.base?.stage || '未设定');
     const isOffscreen = item?.profile?.base?.isHere === false;
@@ -6544,6 +6847,8 @@ function renderStatusPanel(ctx) {
     });
     list.appendChild(button);
   }
+  if (selectedTrackKind === 'sire') appendSireTrackEntries(ctx, list, chatState);
+  renderTrackSirePage(chatState);
 
   if (!content) return;
   tabs.forEach((node) => {
@@ -6786,7 +7091,7 @@ function updateFullStateControls() {
   }
   if (button) {
     button.disabled = false;
-    button.textContent = `注销当前角色：${selectedFullStateName}`;
+    button.textContent = selectedFullStateKind === 'sire' ? `删除精方：${selectedFullStateName}` : `注销当前角色：${selectedFullStateName}`;
   }
   if (applyButton) applyButton.disabled = false;
   if (resetButton) resetButton.disabled = false;
@@ -6794,6 +7099,12 @@ function updateFullStateControls() {
 
 function updateFullStateSubpage() {
   if (!FULL_STATE_SUBPAGES.includes(selectedFullStateSubpage)) selectedFullStateSubpage = 'variables';
+  const isSire = selectedFullStateKind === 'sire';
+  if (isSire && selectedFullStateSubpage === 'debug') selectedFullStateSubpage = 'variables';
+  const debugTab = document.querySelector('#bs-bt-full-state-tabs [data-full-state-tab="debug"]');
+  if (debugTab) debugTab.hidden = isSire;
+  const tabRow = document.getElementById('bs-bt-full-state-tabs');
+  if (tabRow) tabRow.style.gridTemplateColumns = `repeat(${isSire ? 2 : 3}, minmax(0, 1fr))`;
   const hasSelectedCharacter = Boolean(selectedFullStateName);
   const tabs = document.getElementById('bs-bt-full-state-tabs');
   const varsPanel = document.getElementById('bs-bt-full-state-vars-panel');
@@ -6846,16 +7157,19 @@ function renderFullStateHistory(ctx) {
   select.innerHTML = entries.map((entry) => (
     `<option value="${entry.index}"${entry.index === selectedHistorySnapshotIndex ? ' selected' : ''}>${escapeHtml(formatHistorySnapshotLabel(entry))}</option>`
   )).join('');
-  const past = getSnapshotCharacter(chatState, selectedHistorySnapshotIndex, selectedFullStateName);
+  const isSire = selectedFullStateKind === 'sire';
+  const past = isSire
+    ? getSnapshotSire(chatState, selectedHistorySnapshotIndex, selectedFullStateName)
+    : getSnapshotCharacter(chatState, selectedHistorySnapshotIndex, selectedFullStateName);
   if (!past) {
-    output.textContent = `这份快照当时还没有 ${selectedFullStateName} 的资料。`;
+    output.textContent = `这份快照当时还没有 ${selectedFullStateName} 的${isSire ? '精方档案' : '资料'}。`;
     return;
   }
   if (!diffOnly) {
     output.textContent = JSON.stringify(cloneJsonValue(past), null, 2);
     return;
   }
-  const current = chatState.characters?.[selectedFullStateName] || null;
+  const current = (isSire ? getSireRecord(chatState, selectedFullStateName) : chatState.characters?.[selectedFullStateName]) || null;
   // updatedAt、runtime 只是内部记帐（快照也不保存），列出来只会是杂讯
   const changes = diffStateValues(cloneJsonValue(past), cloneJsonValue(current))
     .filter((change) => change.path !== 'updatedAt' && !/^runtime(\.|\[|$)/.test(change.path));
@@ -6869,6 +7183,13 @@ function renderFullStateHistory(ctx) {
     ].join('\n');
 }
 
+function getSelectedFullStateRecord(chatState) {
+  if (!selectedFullStateName) return null;
+  return selectedFullStateKind === 'sire'
+    ? getSireRecord(chatState, selectedFullStateName)
+    : (chatState.characters?.[selectedFullStateName] || null);
+}
+
 function getFullStateEditorText(character) {
   return JSON.stringify(cloneJsonValue(character), null, 2);
 }
@@ -6878,8 +7199,9 @@ function renderSelectedFullStateEditor(ctx) {
   const chatState = getChatState(ctx, settings);
   const output = document.getElementById('bs-bt-full-state-output');
   if (!output) return;
-  if (selectedFullStateName && chatState.characters?.[selectedFullStateName]) {
-    output.value = getFullStateEditorText(chatState.characters[selectedFullStateName]);
+  const selected = getSelectedFullStateRecord(chatState);
+  if (selected) {
+    output.value = getFullStateEditorText(selected);
     setFullStateEditStatus('可直接编辑 JSON，应用前会检查格式与基础结构。');
   } else {
     output.value = '请选择角色查看完整变量。';
@@ -6939,7 +7261,7 @@ function renderChildMoveControls(ctx) {
   if (!section || !sourceSelect || !targetSelect) return;
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
-  const current = selectedFullStateName ? chatState.characters?.[selectedFullStateName] : null;
+  const current = selectedFullStateName && selectedFullStateKind !== 'sire' ? chatState.characters?.[selectedFullStateName] : null;
   // 只能转交给 provider／providerSources 指定且已经注册的归属方。
   const movable = getMovableChildEntries(current)
     .map((entry) => ({
@@ -7099,6 +7421,10 @@ function applyFullStateManualEdit(ctx) {
     return;
   }
 
+  if (selectedFullStateKind === 'sire') {
+    applySireManualEdit(ctx, parsed);
+    return;
+  }
   const result = validateManualCharacterState(parsed, selectedFullStateName);
   if (!result.ok) {
     const message = `无法应用修改：\n${result.errors.map((item) => `- ${item}`).join('\n')}`;
@@ -7125,6 +7451,62 @@ function applyFullStateManualEdit(ctx) {
   globalThis.toastr?.success?.(`[BS BioTracker] 已应用 ${selectedFullStateName} 的变量修改`);
 }
 
+/** 精方的变量只有档案本身：正规化后整份取代，栏位格式不对的会被改回预设 */
+function applySireManualEdit(ctx, parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    setFullStateEditStatus('无法应用修改：精方档案必须是 JSON 物件。', 'error');
+    return;
+  }
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const name = selectedFullStateName;
+  if (!getSireRecord(chatState, name)) {
+    globalThis.toastr?.warning?.(`[BS BioTracker] 找不到精方 ${name}`);
+    renderFullStatePage(ctx);
+    return;
+  }
+  chatState.sires[name] = normalizeSireRecord(parsed, Number(chatState.minutesPassed) || 0);
+  recordChatStateSnapshot(ctx, chatState, { reason: 'manual_sire_edit' });
+  saveSettings(ctx);
+  renderStatusPanel(ctx);
+  renderFullStatePage(ctx);
+  updateMainFlowPrompt(ctx);
+  resetPoller(ctx, trackerDeps);
+  setFullStateEditStatus(`已应用精方 ${name} 的变量修改。`, 'success');
+  globalThis.toastr?.success?.(`[BS BioTracker] 已应用精方 ${name} 的变量修改`);
+}
+
+function showFullStateSire(ctx, name) {
+  if (!getSireRecord(getChatState(ctx, getSettings(ctx)), name)) {
+    globalThis.toastr?.warning?.(`[BS BioTracker] 找不到精方 ${name}`);
+    return;
+  }
+  selectedFullStateName = name;
+  selectedFullStateKind = 'sire';
+  if (selectedFullStateSubpage === 'debug') selectedFullStateSubpage = 'variables';
+  renderFullStatePage(ctx);
+  setView('full-state');
+}
+
+function deleteFullStateSire(ctx, name) {
+  const chatState = getChatState(ctx, getSettings(ctx));
+  const result = deleteSireRecord(chatState, name);
+  if (!result.applied) {
+    globalThis.toastr?.warning?.(`[BS BioTracker] ${result.message}`);
+    return;
+  }
+  recordChatStateSnapshot(ctx, chatState, { reason: 'registry_sire_delete' });
+  saveSettings(ctx);
+  selectedFullStateName = '';
+  selectedFullStateKind = 'character';
+  renderStatusPanel(ctx);
+  renderFullStatePage(ctx);
+  renderSireOptions(ctx);
+  updateMainFlowPrompt(ctx);
+  resetPoller(ctx, trackerDeps);
+  globalThis.toastr?.success?.(`[BS BioTracker] ${result.message}`);
+}
+
 function showFullState(ctx, name) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
@@ -7134,6 +7516,7 @@ function showFullState(ctx, name) {
     return;
   }
   selectedFullStateName = name;
+  selectedFullStateKind = 'character';
   selectedFullStateSubpage = ['variables', 'debug'].includes(selectedFullStateSubpage) ? selectedFullStateSubpage : 'variables';
   renderFullStatePage(ctx);
   setView('full-state');
@@ -7142,6 +7525,7 @@ function showFullState(ctx, name) {
 
 function openFullStateMenu(ctx) {
   selectedFullStateName = '';
+  selectedFullStateKind = 'character';
   selectedFullStateSubpage = 'variables';
   closeFullStateConfirm();
   renderFullStatePage(ctx);
@@ -7155,7 +7539,9 @@ function openFullStateConfirm() {
   }
   const box = document.getElementById('bs-bt-full-state-confirm');
   const textEl = document.getElementById('bs-bt-full-state-confirm-text');
-  if (textEl) textEl.textContent = `确定要注销角色 ${selectedFullStateName} 吗？`;
+  if (textEl) textEl.textContent = selectedFullStateKind === 'sire'
+    ? `确定要删除精方 ${selectedFullStateName} 吗？既有胎儿与孩子保留当时的父方快照。`
+    : `确定要注销角色 ${selectedFullStateName} 吗？`;
   if (box) {
     box.style.display = '';
     box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -7339,8 +7725,9 @@ function renderFullStatePage(ctx) {
   const debugPanel = document.getElementById('bs-bt-full-state-debug-panel');
   if (!list || !output) return;
   const names = Object.keys(chatState.characters || {});
+  const sireNames = Object.keys(chatState.sires || {});
   list.innerHTML = '';
-  if (names.length === 0) {
+  if (names.length === 0 && sireNames.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'bs-bt-connect-status';
     empty.textContent = '当前聊天没有已注册角色';
@@ -7355,18 +7742,39 @@ function renderFullStatePage(ctx) {
     return;
   }
 
-  if (selectedFullStateName && !chatState.characters[selectedFullStateName]) selectedFullStateName = '';
+  if (selectedFullStateName && !getSelectedFullStateRecord(chatState)) {
+    selectedFullStateName = '';
+    selectedFullStateKind = 'character';
+  }
 
   for (const name of names) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `bs-bt-theme-option${name === selectedFullStateName ? ' is-active' : ''}`;
+    button.className = `bs-bt-theme-option${name === selectedFullStateName && selectedFullStateKind === 'character' ? ' is-active' : ''}`;
     button.textContent = name;
     button.addEventListener('click', () => showFullState(ctx, name));
     list.appendChild(button);
   }
+  if (sireNames.length > 0) {
+    const title = document.createElement('div');
+    title.className = 'bs-bt-full-state-group-title';
+    title.textContent = '精方';
+    list.appendChild(title);
+  }
+  for (const name of sireNames) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `bs-bt-theme-option${name === selectedFullStateName && selectedFullStateKind === 'sire' ? ' is-active' : ''}`;
+    button.textContent = name;
+    button.addEventListener('click', () => showFullStateSire(ctx, name));
+    list.appendChild(button);
+  }
 
-  if (selectedFullStateName && chatState.characters[selectedFullStateName]) {
+  if (selectedFullStateKind === 'sire' && selectedFullStateName) {
+    output.value = getFullStateEditorText(getSireRecord(chatState, selectedFullStateName));
+    setFullStateEditStatus('精方档案：可直接编辑 JSON，应用时会正规化，格式不对的栏位改回预设。');
+    if (debugPanel) debugPanel.innerHTML = '';
+  } else if (selectedFullStateName && chatState.characters[selectedFullStateName]) {
     const current = chatState.characters[selectedFullStateName];
     selectedTrackName = selectedFullStateName;
     output.value = getFullStateEditorText(current);
@@ -7523,7 +7931,7 @@ function setView(view) {
   const normalizedView = (requestedView === 'wardrobe' && !extensionSystems.wardrobe) || (requestedView === 'skill-catalog' && !extensionSystems.skill)
     ? 'home'
     : requestedView;
-  const next = ['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog'].includes(normalizedView) ? normalizedView : 'home';
+  const next = ['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'track-sire', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog'].includes(normalizedView) ? normalizedView : 'home';
   if (root.dataset.view !== next && racePaletteState.isOpen) {
     closeRacePalettePopover();
     refreshRegisterRacePalette();
@@ -7545,14 +7953,14 @@ function setView(view) {
     if (viewport) viewport.scrollTop = 0;
   }
   const title = document.getElementById('bs-bt-title');
-  if (title) title.textContent = next === 'help' ? 'HELP' : next === 'theme' ? 'THEME' : next === 'system' ? 'SYSTEM' : next === 'register' ? 'REGISTRY' : next === 'worldbook-filter' ? 'WORLDBOOK' : next === 'track-list' ? 'TRACK LIST' : next === 'track-char' ? 'TRACK CHAR' : next === 'full-state' ? 'FULL STATE' : next === 'race-encyclopedia' ? 'RACE DATA' : next === 'tracker-preset' ? 'PRESET' : next === 'wardrobe' ? 'WARDROBE' : next === 'skill-catalog' ? 'SKILLS' : 'HOME';
+  if (title) title.textContent = next === 'help' ? 'HELP' : next === 'theme' ? 'THEME' : next === 'system' ? 'SYSTEM' : next === 'register' ? 'REGISTRY' : next === 'worldbook-filter' ? 'WORLDBOOK' : next === 'track-list' ? 'TRACK LIST' : next === 'track-char' ? 'TRACK CHAR' : next === 'track-sire' ? 'TRACK SIRE' : next === 'full-state' ? 'FULL STATE' : next === 'race-encyclopedia' ? 'RACE DATA' : next === 'tracker-preset' ? 'PRESET' : next === 'wardrobe' ? 'WARDROBE' : next === 'skill-catalog' ? 'SKILLS' : 'HOME';
 }
 
 function getLastPagerView() {
   try {
     const value = String(globalThis.localStorage?.getItem(LAST_VIEW_STORAGE_KEY) || '').trim();
     if (value === 'time-lapse') return 'full-state';
-    if (['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog'].includes(value)) {
+    if (['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'track-sire', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog'].includes(value)) {
       return value;
     }
   } catch {}
@@ -7629,6 +8037,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-register-outfit-prompt', settings.registryOutfitPrompt);
   setValue('bs-bt-registry-normal-description', settings.registryDescriptionGuides?.normalDescription);
   setValue('bs-bt-registry-pregnant-description', settings.registryDescriptionGuides?.pregnantDescription);
+  setValue('bs-bt-registry-sire-description', settings.registryDescriptionGuides?.sireDescription);
   setValue('bs-bt-diary-writing-prompt', settings.diaryWritingPrompt);
   setValue('bs-bt-wardrobe-prep-prompt', settings.wardrobePrepPrompt);
   populateModelList(settings);
@@ -8217,6 +8626,7 @@ function readSettingsFromForm(ctx) {
   settings.registryDescriptionGuides = {
     normalDescription: String(getValue('bs-bt-registry-normal-description')).trim(),
     pregnantDescription: String(getValue('bs-bt-registry-pregnant-description')).trim(),
+    sireDescription: String(getValue('bs-bt-registry-sire-description')).trim(),
   };
   syncRacePhysiologyOverrides(settings);
   saveSettings(ctx);
@@ -8903,6 +9313,26 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-system-button')?.addEventListener('click', () => setView('system'));
   document.getElementById('bs-bt-home-button')?.addEventListener('click', () => setView('home'));
   document.getElementById('bs-bt-track-back')?.addEventListener('click', () => setView('track-list'));
+  document.getElementById('bs-bt-track-sire-back')?.addEventListener('click', () => setView('track-list'));
+  // 卵方概览底部的「变量」：与精方单页一样跳到完整变量页（追踪页整段重绘，用委派）
+  document.getElementById('bs-bt-track-content')?.addEventListener('click', (event) => {
+    const button = event.target?.closest?.('[data-character-full-state]');
+    if (button) showFullState(ctx, button.dataset.characterFullState);
+  });
+  document.querySelectorAll('#bs-bt-track-kind-tabs [data-track-kind]').forEach((node) => {
+    node.addEventListener('click', () => {
+      selectedTrackKind = node.dataset.trackKind === 'sire' ? 'sire' : 'female';
+      document.querySelectorAll('#bs-bt-track-kind-tabs [data-track-kind]').forEach((tab) => tab.classList.toggle('is-active', tab === node));
+      renderStatusPanel(ctx);
+    });
+  });
+  document.getElementById('bs-bt-track-sire-content')?.addEventListener('toggle', (event) => {
+    if (event.target?.classList?.contains('bs-bt-track-sire-fetuses')) sireFetusesOpen = event.target.open;
+  }, true);
+  document.getElementById('bs-bt-track-sire-content')?.addEventListener('click', (event) => {
+    const button = event.target?.closest?.('[data-sire-full-state]');
+    if (button) showFullStateSire(ctx, button.dataset.sireFullState);
+  });
   document.getElementById('bs-bt-api-profile-select')?.addEventListener('change', (event) => {
     const name = String(event.target?.value || '');
     if (!name) return;
@@ -9553,6 +9983,12 @@ async function ensureModal(ctx) {
   };
   document.getElementById('bs-bt-register-run')?.addEventListener('click', () => registerFromForm());
   document.getElementById('bs-bt-register-run-bundle')?.addEventListener('click', () => registerFromForm({ bundle: true }));
+  document.getElementById('bs-bt-sire-select')?.addEventListener('change', (event) => {
+    loadSireIntoForm(ctx, String(event.target?.value || ''));
+    setSireStatus('');
+  });
+  document.getElementById('bs-bt-sire-save')?.addEventListener('click', () => saveSireFromForm(ctx));
+  document.getElementById('bs-bt-sire-delete')?.addEventListener('click', () => deleteSelectedSire(ctx));
   document.querySelector('#bs-bt-view-register .bs-bt-race-picker-wrap')?.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -9677,6 +10113,10 @@ async function ensureModal(ctx) {
   });
   document.getElementById('bs-bt-full-state-confirm-yes')?.addEventListener('click', async () => {
     if (!selectedFullStateName) return;
+    if (selectedFullStateKind === 'sire') {
+      deleteFullStateSire(ctx, selectedFullStateName);
+      return;
+    }
     await unregisterCharacter(ctx, selectedFullStateName);
   });
   document.getElementById('bs-bt-full-state-confirm-no')?.addEventListener('click', () => {

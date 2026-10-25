@@ -5,6 +5,8 @@ import { getWorldbookEntryActivationMode, worldbookEntryKeywordsMatch } from './
 import { getDisabledSpecialToolNames, isRealisticWorld } from './world_mode.js';
 import { syncCardSettings } from './card_settings.js';
 import { contraceptionLevels, naturalNoticeDays, psychologySide } from './reproductive.js';
+import { buildSirePromptEntries } from './sires.js';
+import { DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
@@ -1398,6 +1400,10 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     character_worldbook: payloadWorldBook,
     mainflow_context_snapshot: mainflowContextSnapshot,
     tracked_females: getRegisteredTargetNames(ctx, settings, chatState),
+    registered_sires: buildSirePromptEntries(chatState, {
+      recentText: recentMessages.map((message) => message.text).join('\n'),
+      guide: settings?.registryDescriptionGuides?.sireDescription ?? DEFAULT_REGISTRY_DESCRIPTION_GUIDES.sireDescription,
+    }),
     priority_character_names: getPriorityCharacterNames(ctx, settings, chatState),
     skill_enabled: isSkillSystemEnabled(settings),
     ...(isSkillSystemEnabled(settings) ? {

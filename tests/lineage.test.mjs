@@ -217,3 +217,16 @@ test('补共同亲代只补一层，不会把祖辈整串拉进来', () => {
   assert.equal(focused.nodes.some((node) => node.name === '配偶'), true);
   assert.equal(focused.nodes.some((node) => node.name === '配偶之母'), false, '不该继续往上递归');
 });
+
+test('已建档的精方：节点资料读档案，不读子女记录的父方快照', () => {
+  const graph = buildLineageGraph({
+    characters: { 艾拉: character('艾拉', [{ id: 'c1', name: '小龙', fathers: '凯', fatherRace: '人类', fatherBodySize: 3 }]) },
+    sires: { 凯: { race: '精灵', bloodline: { 精灵: 1 }, bloodlineSource: 'pure', derivedType: '血族', age: 120, bodySize: 5 } },
+  });
+  const kai = graph.nodes.find((node) => node.id === 'name:凯');
+  assert.equal(kai.kind, 'sire');
+  assert.equal(kai.race, '精灵');
+  assert.equal(kai.derivedType, '血族');
+  assert.equal(kai.bodySize, 5);
+  assert.equal(kai.age, 120);
+});

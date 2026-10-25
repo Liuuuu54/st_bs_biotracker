@@ -32,6 +32,7 @@ export function buildLineageGraph(chatState) {
   const characters = (chatState && typeof chatState.characters === 'object' && chatState.characters) || {};
   const characterNames = Object.keys(characters);
   const isRegistered = (name) => Object.prototype.hasOwnProperty.call(characters, name);
+  const sires = (chatState && typeof chatState.sires === 'object' && chatState.sires) || {};
 
   const nodes = new Map();
   const edges = [];
@@ -49,8 +50,23 @@ export function buildLineageGraph(chatState) {
     if (!value) return null;
     if (isRegistered(value)) return characterNodeId(value);
     const id = unregisteredNodeId(value);
+    // 已建档的精方：资料读档案，不读子女记录的父方快照
+    const sire = Object.prototype.hasOwnProperty.call(sires, value) ? sires[value] : null;
+    if (!nodes.has(id) && sire) {
+      nodes.set(id, {
+        id,
+        kind: 'sire',
+        name: value,
+        race: sire.race ?? null,
+        ...getBloodlineInfo(sire.race, sire.bloodline, sire.bloodlineSource),
+        derivedType: sire.derivedType ?? null,
+        age: sire.age ?? null,
+        bodySize: sire.bodySize ?? null,
+      });
+    }
     if (!nodes.has(id)) nodes.set(id, { id, kind: 'unregistered', name: value });
     const node = nodes.get(id);
+    if (node.kind === 'sire') return id;
     if (traits?.race && !node.race) node.race = traits.race;
     if (traits?.race && !node.bloodline) Object.assign(node, getBloodlineInfo(traits.race, traits.bloodline, traits.bloodlineSource));
     if (traits?.derivedType && !node.derivedType) node.derivedType = traits.derivedType;

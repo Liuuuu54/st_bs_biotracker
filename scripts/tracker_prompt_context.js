@@ -4,6 +4,7 @@ import { buildBodySizeToolNote, buildRaceCatalogBlock, buildRacePhysiologyPrompt
 import { getDerivedTypeFluxProfile } from './race_config.js';
 import { deriveFetusTags, describeFetusTags } from './fetus_tags.js';
 import { LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGES } from './stage_config.js';
+import { parseDescriptionGuideFields } from './descriptions.js';
 
 const CONDOM_LEVEL_TEXT = {
   poor: '很不牢靠，经常破裂或失效',
@@ -376,7 +377,27 @@ function collectStaleDescriptionLines(payload = {}) {
       .map(([field, names]) => `${field}：${names.join('、')}`);
     if (groups.length > 0) lines.push(`- ${String(item?.name || key)} ${groups.join('；')}`);
   }
+  // 精方只点名范本里带 * 的字段（见 registered_sires 的 staleFields）
+  for (const sire of (Array.isArray(payload?.registered_sires) ? payload.registered_sires : [])) {
+    if (sire?.isHere && Array.isArray(sire.staleFields) && sire.staleFields.length > 0) {
+      lines.push(`- ${sire.name}（精方） normalDescription：${sire.staleFields.join('、')}`);
+    }
+  }
   return lines;
+}
+
+/** 已注册精方：在场的附描述，不在场的只是本轮相关的一行摘要 */
+function buildSireTrackerBlock(payload, descriptionGuides) {
+  const sires = Array.isArray(payload?.registered_sires) ? payload.registered_sires : [];
+  if (sires.length === 0) return '';
+  const fieldNames = parseDescriptionGuideFields(descriptionGuides?.sireDescription).map((field) => field.name);
+  return [
+    '[已注册精方]',
+    '- payload.registered_sires 是已建档的精方（精液提供者）。isHere=true 为在场，附描述；isHere=false 只是本轮相关者的摘要（当前胎儿的父亲或认定父亲，或最近讯息提到），不送描述。',
+    '- bsAddSperm 的 male 写精方名字时，种族、衍生类型与体型由档案带入，race 可以省略；传了不同的 race 也以档案为准。',
+    `- 在场精方的描述用 bsSetDescription（female 填精方名字，只有 normalDescription），只传剧情影响到的字段${fieldNames.length > 0 ? `；描述还空着时按这些字段名建立：${fieldNames.join('、')}` : ''}。`,
+    '- 精方进出场景照样用 bsSetCharacterPresence（female 填精方名字）。精方不追踪生理需求、经期或妊娠，不要为精方调用其他工具。',
+  ].join('\n');
 }
 
 export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = null, payload = null) {
@@ -445,6 +466,8 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
   if (embryoTypeLorePrompt) parts.push(embryoTypeLorePrompt);
   // 写实世界全是人类，没有依个体的物种；对方特别高大或矮小时仍可依工具说明传 maleBodySize
   if (payload?.realistic_world !== true) parts.push(buildBodySizeToolNote({ selection: payload?.race_catalog_selection || null }));
+  const sireBlock = buildSireTrackerBlock(payload, descriptionGuides);
+  if (sireBlock) parts.push(sireBlock);
   if (!diaryEnabled) {
     parts.push('[diary]\n- diary 系统当前已关闭（settings.diaryRecentLimit = 0）。本轮不要参考 diary，也不要调用 bsWriteDiary。');
   }
@@ -531,6 +554,9 @@ function buildMainFlowFieldNotes(existingState = {}) {
 
 export function buildMainFlowStatePrompt(payload = {}) {
   const trackedState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {};
+  const presentSires = (Array.isArray(payload?.registered_sires) ? payload.registered_sires : [])
+    .filter((sire) => sire?.isHere)
+    .map(({ staleFields: _staleFields, isHere: _isHere, ...sire }) => sire);
   if (Object.keys(trackedState).length === 0) return '';
   const existingState = projectNarrativeState(trackedState, payload.recent_operation_results);
   const racePhysiologyPrompt = payload?.realistic_world === true ? '' : buildRacePhysiologyPrompt(payload || {});
@@ -555,6 +581,7 @@ export function buildMainFlowStatePrompt(payload = {}) {
     '',
     '[当前已注册角色状态]',
     serializeStateForPrompt(existingState),
+    ...(presentSires.length > 0 ? ['[在场精方]', '已建档的精方（精液提供者）；只读，描写须与描述一致。', serializeStateForPrompt(presentSires)] : []),
     ...(payload.recent_operation_results?.length ? ['[上轮已结算的生殖操作结果]', '可据此描写合理可见的后果（例如破套可能当场被发现），不要求本轮处理；这不是角色已知的事实，不得让角色无依据得知受孕、胎数或胎父，也不能自动写入认知。', serializeStateForPrompt(payload.recent_operation_results.map(({ name, applied, message }) => ({ name, applied, message })))] : []),
     fetusTagBlock,
     '</bs_biotracker>',

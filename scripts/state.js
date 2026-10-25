@@ -14,6 +14,7 @@ import {
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
 import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines } from './state_migration.js';
+import { createEmptySires, normalizeSires } from './sires.js';
 import { announceSavedRevisions, claimChatRevision, clearHostSettingsPendingUpTo, markHostSettingsPending, queueRevisionAnnouncement, readLatestChatRevision } from './save_sync.js';
 import {
   createDefaultWardrobeItem,
@@ -699,6 +700,8 @@ export function createEmptyChatState() {
     // null-proto：角色名直接作键，模型吐出 constructor/toString/__proto__ 之类的名字时
     // 不会取到继承来的内建属性（那会让本该 skip 的调用变成拿函数当角色对象崩掉）
     characters: Object.create(null),
+    // 精方档案（scripts/sires.js），同样 null-proto、名字作键
+    sires: createEmptySires(),
     lastRawResult: null,
     lastOperationLogs: [],
     snapshots: [],
@@ -1343,6 +1346,11 @@ export function getChatState(ctx, settings) {
     shouldSave = true;
   }
   if (migrateChatStateSchema(chatState)) shouldSave = true;
+  // 精方档案同 characters：读回来要重建成 null-proto
+  if (!chatState.sires || typeof chatState.sires !== 'object' || Object.getPrototypeOf(chatState.sires) !== null) {
+    chatState.sires = normalizeSires(chatState.sires, Number(chatState.minutesPassed) || 0);
+    shouldSave = true;
+  }
   const normalizedSkillCatalog = normalizeSkillCatalog(chatState.skillCatalog);
   if (JSON.stringify(chatState.skillCatalog || []) !== JSON.stringify(normalizedSkillCatalog)) shouldSave = true;
   chatState.skillCatalog = normalizedSkillCatalog;
@@ -1409,6 +1417,8 @@ function migrateChatStateSchema(chatState) {
   if (fromVersion >= CHAT_STATE_SCHEMA_VERSION) return false;
   // Existing chats (including empty ones) must not acquire author seeds on upgrade.
   if (fromVersion < 6) chatState.cardSkillSeedApplied = true;
+  // v8 → v9（1.2.0 精方注册）：新增顶层 sires；旧存档与旧快照没有精方，一律从空表开始
+  if (fromVersion < 9) chatState.sires = normalizeSires(chatState.sires, Number(chatState.minutesPassed) || 0);
   migrateCharacters(chatState.characters, fromVersion, { minutesPassed: Number(chatState.minutesPassed) || 0 });
   if (Array.isArray(chatState.snapshots) && chatState.snapshots.length > 0) {
     const source = chatState.snapshots;
@@ -1430,7 +1440,7 @@ function migrateChatStateSchema(chatState) {
 
 export function isChatStateEffectivelyEmpty(chatState) {
   if (!chatState || typeof chatState !== 'object') return true;
-  const hasCharacters = Object.keys(chatState.characters || {}).length > 0;
+  const hasCharacters = Object.keys(chatState.characters || {}).length > 0 || Object.keys(chatState.sires || {}).length > 0;
   const hasSkillCatalog = Array.isArray(chatState.skillCatalog) && chatState.skillCatalog.length > 0;
   const hasSkillBaseline = Boolean(String(chatState.skillBaselinePrompt || '').trim());
   const hasConsumedSkillIds = Number(chatState.nextSkillId) > 1;
@@ -2169,6 +2179,8 @@ function exportChatStateSnapshotPayload(chatState) {
     sceneSummary: chatState.sceneSummary || '',
     minutesPassed: chatState.minutesPassed || 0,
     characters: packSnapshotCharacters(chatState.characters),
+    // 精方档案进快照，删楼回溯与卵方一样还原；转成普通物件才能做差异比对
+    sires: cloneValue({ ...normalizeSires(chatState.sires, chatState.minutesPassed || 0) }),
     lastRawResult: summarizeRawResult(chatState.lastRawResult),
     lastOperationLogs: summarizeOperationLogs(chatState.lastOperationLogs),
   };
@@ -2471,6 +2483,15 @@ export function getSnapshotCharacter(chatState, index, name) {
   return character ? cloneValue(character) : null;
 }
 
+/** 某份快照当时的精方档案；旧快照没有精方表时回传 null */
+export function getSnapshotSire(chatState, index, name) {
+  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
+  if (!Number.isInteger(index) || index < 0 || index >= snapshots.length) return null;
+  const sires = materializeSnapshotPayloadAt(snapshots, index).sires;
+  const sire = sires && typeof sires === 'object' && Object.prototype.hasOwnProperty.call(sires, name) ? sires[name] : null;
+  return sire ? cloneValue(sire) : null;
+}
+
 /** 逐栏位比对两份状态，回传有变化的叶节点 { path, before, after }；阵列以索引为路径 */
 export function diffStateValues(before, after, prefix = '') {
   const isContainer = (value) => value !== null && typeof value === 'object';
@@ -2502,6 +2523,8 @@ export function restoreChatStateFromSnapshot(chatState, snapshot) {
   if (payload.nextSkillId !== undefined) chatState.nextSkillId = normalizeNextSkillId(chatState.skillCatalog, payload.nextSkillId);
   if (payload.cardSkillSeedApplied !== undefined) chatState.cardSkillSeedApplied = payload.cardSkillSeedApplied === true;
   chatState.characters = unpackSnapshotCharacters(payload.characters);
+  // 1.2.0 以前的快照没有精方，还原成空表
+  chatState.sires = normalizeSires(payload.sires, payload.minutesPassed || 0);
   chatState.lastRawResult = payload.lastRawResult || null;
   chatState.lastOperationLogs = Array.isArray(payload.lastOperationLogs) ? payload.lastOperationLogs : [];
 }

@@ -4,6 +4,7 @@ import { getStageProgress } from './stage_progress.js';
 import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
+import { getSireRecord, resolveSireBase } from './sires.js';
 import { CONCEPTION_WEIGHT_LOG_SD, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getConceptionStageWeight, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
   cloneValue,
@@ -387,6 +388,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + 'action=insert／withdraw 时 amount=0；只有 insert 后才能以 action=deposit 沉积正数精液，沉积后若要再次射精须重新 insert。不同来源 insert 会直接交棒。'
       + 'amount 以人类精方 10-30 为准，按精方体型每级翻倍（体型 5 约 20-60、6 约 40-120、7 约 80-240、3 约 5-15、2 约 2.5-7.5）；残留每天自动衰减，人类女方每天 10、同样按女方体型每级翻倍，所以同体型的一次射精约 1-3 天内自然消失；剧情写得特别多或特别少时可以偏离。当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
       + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。'
+      + 'male 是已注册精方或同名卵方（扶她）时，种族、血脉、衍生类型与体型一律以档案为准，race 照填档案种族、maleBodySize 省略。'
       + 'insert 会按双方体型结算体型契合（只影响叙述，不限制交合与受孕），结果写在回传讯息与次级提示；体型参数见 maleBodySize、femaleAltForm、maleAltForm、sizeBridge。'
       + '产兆前驱与产程中插入会顶到最前面的胎儿：前驱时把领头胎儿往上顶、延后前驱；第二产程把产道里的先露胎往回顶、产程进度倒退，着冠时倒退更多且可能顶破胎膜；第一产程只会痛。被顶的胎儿亲和下降。产兆前驱中射精则会缩短前驱。结果写在回传讯息里，供下一次回复承接，不要求重写当轮正文。',
     input_schema: {
@@ -766,7 +768,7 @@ function resolveUserAliasName(value) {
   return userName || null;
 }
 
-function resolvePersonNameField(value) {
+export function resolvePersonNameField(value) {
   if (typeof value !== 'string') return value;
   const whole = resolveUserAliasName(value);
   if (whole) return whole;
@@ -7125,10 +7127,33 @@ function applyChangeOutfit(chatState, args) {
   chatState.characters[female] = syncCharacterStageFromProfile(next);
   return { applied: true, message: `bsChangeOutfit applied to ${female}.` };
 }
+/** 精方只有 normalDescription；扶她两边都有时描述放卵方那份，不会走到这里 */
+function applySireDescription(chatState, name, sire, options) {
+  const minutesPassed = Number(chatState.minutesPassed) || 0;
+  if (options.normalDescription === undefined || options.normalDescription === null) {
+    return { applied: false, message: `bsSetDescription skipped for ${name}（精方）: 精方只有 normalDescription。` };
+  }
+  const merged = applyDescriptionPatch(sire.descriptions?.normalDescription, options.normalDescription, minutesPassed);
+  const skipped = merged.unknown.length > 0 ? ` normalDescription 没有字段 ${merged.unknown.join('、')}，已略过。` : '';
+  if (merged.updated.length === 0 && merged.refreshed.length === 0) {
+    return { applied: false, message: `bsSetDescription skipped for ${name}（精方）:${skipped || ' empty options.'}` };
+  }
+  chatState.sires[name] = { ...sire, descriptions: { ...(sire.descriptions || {}), normalDescription: merged.list } };
+  const parts = [
+    merged.established ? `建立 ${merged.updated.join('、')}` : (merged.updated.length > 0 ? `更新 ${merged.updated.join('、')}` : ''),
+    merged.refreshed.length > 0 ? `确认未变 ${merged.refreshed.join('、')}` : '',
+  ].filter(Boolean);
+  return { applied: true, message: `bsSetDescription applied to ${name}（精方）: normalDescription: ${parts.join('；')}.${skipped}` };
+}
+
 function applyDescription(chatState, args) {
   const female = String(args?.female || '').trim();
   const options = args?.options && typeof args.options === 'object' ? args.options : {};
   const character = chatState.characters?.[female];
+  if (female && !character) {
+    const sire = getSireRecord(chatState, female);
+    if (sire) return applySireDescription(chatState, female, sire, options);
+  }
   if (!female || !character) return { applied: false, message: `bsSetDescription skipped: unknown character ${female || '(empty)'}.` };
 
   const next = cloneValue(character);
@@ -7162,10 +7187,16 @@ function applyDescription(chatState, args) {
 function applySetCharacterPresence(chatState, args) {
   const female = String(args?.female || '').trim();
   const character = chatState.characters?.[female];
-  if (!female || !character) return { applied: false, message: `bsSetCharacterPresence skipped: unknown character ${female || '(empty)'}.` };
+  const sire = getSireRecord(chatState, female);
+  if (!female || (!character && !sire)) return { applied: false, message: `bsSetCharacterPresence skipped: unknown character ${female || '(empty)'}.` };
   // 缺省视为在场会让模型漏填时静默改状态：要求显式传入
   if (args?.isPresent === undefined) return { applied: false, message: `bsSetCharacterPresence skipped for ${female}: isPresent 必须显式传入 true/false。` };
   const isPresent = Boolean(args.isPresent);
+  // 只有精方档案：切精方的在场。扶她两边都有时卵方的在场就是她的在场，精方档案读卵方，不另存
+  if (!character) {
+    chatState.sires[female] = { ...sire, isHere: isPresent };
+    return { applied: true, message: `bsSetCharacterPresence applied to ${female}（精方）: isHere=${isPresent}.` };
+  }
 
   const next = cloneValue(character);
   const profile = next.profile || {};
@@ -7430,11 +7461,21 @@ function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args }) 
 function applyAddSperm(chatState, args) {
   const female = String(args?.female || '').trim();
   const male = String(args?.male || '').trim();
-  const fatherBase = chatState.characters?.[male]?.profile?.base;
-  const parsedRace = parseRaceDescriptor(args?.race || fatherBase?.race || '人类');
+  // 精方有档案（已注册卵方的扶她，或精方档案）就以档案为准，避免同一人每次种族不同；
+  // 档案没填体型时才接受本次的 maleBodySize
+  const sireInfo = resolveSireBase(chatState, male);
+  const fatherBase = sireInfo
+    ? { ...sireInfo.base, bodySize: clampIndividualBodySize(sireInfo.base.bodySize) ?? clampIndividualBodySize(args?.maleBodySize) }
+    : null;
+  const argRace = args?.race ? parseRaceDescriptor(args.race) : null;
+  const parsedRace = fatherBase ? parseRaceDescriptor(fatherBase.race || '人类') : (argRace || parseRaceDescriptor('人类'));
   const race = parsedRace.race || '人类';
-  const ancestry = getBloodlineInfo(race, args?.bloodline ?? parsedRace.bloodline ?? fatherBase?.bloodline,
-    args?.bloodline || parsedRace.bloodline ? 'explicit' : fatherBase?.bloodlineSource);
+  const raceNote = fatherBase && argRace?.race && argRace.race !== race
+    ? `${male} 有档案，种族以档案的 ${race} 为准（本次传入 ${argRace.race}）。`
+    : '';
+  const ancestry = fatherBase
+    ? getBloodlineInfo(race, fatherBase.bloodline ?? parsedRace.bloodline ?? null, fatherBase.bloodlineSource || null)
+    : getBloodlineInfo(race, args?.bloodline ?? parsedRace.bloodline, args?.bloodline || parsedRace.bloodline ? 'explicit' : null);
   const action = String(args?.action || '').trim();
   const amount = Number(args?.amount);
   const character = chatState.characters?.[female];
@@ -7474,7 +7515,7 @@ function applyAddSperm(chatState, args) {
     const handoff = currentState !== 'idle' && currentSource && currentSource !== male;
     return {
       applied: true,
-      message: `bsAddSperm insert applied to ${female}: ${handoff ? `${currentSource} → ${male} handoff, ` : ''}penetrationState=inserted.${pushback ? ` ${pushback}。` : ''}${fit.message ? ` ${fit.message}` : ''}`,
+      message: `bsAddSperm insert applied to ${female}: ${handoff ? `${currentSource} → ${male} handoff, ` : ''}penetrationState=inserted.${pushback ? ` ${pushback}。` : ''}${fit.message ? ` ${fit.message}` : ''}${raceNote ? ` ${raceNote}` : ''}`,
     };
   }
 
@@ -7513,7 +7554,8 @@ function applyAddSperm(chatState, args) {
   const enteredAmount = hasCondom && !condomFailed ? 0 : amount;
   base.penetrationCondom = hasCondom;
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
-  const maleDerivedType = parsedRace.derivedType || null;
+  // 父方衍生类型有档案就由档案带入，不再依赖模型每次在 race 写前缀
+  const maleDerivedType = fatherBase ? (fatherBase.derivedType || null) : (parsedRace.derivedType || null);
   const existing = sperms.find((item) => String(item?.male || '') === male);
   if (enteredAmount > 0) {
     if (existing) {
@@ -7551,7 +7593,7 @@ function applyAddSperm(chatState, args) {
   const ripening = enteredAmount > 0 ? applyProdromalSemenRipening(next.profile, female) : null;
   if (ripening) next.profile.notify = { ...(next.profile.notify || {}), secondly: ripening };
   chatState.characters[female] = ripening ? syncCharacterStageFromProfile(next) : next;
-  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}${condomFailReason ? ` (${condomFailReason === 'overflow' ? '超过容量撑破' : '套子破裂'})` : ''}, enteredAmount=${enteredAmount}${spilled > 0 ? `，超过子宫容量当场流出 ${Math.round(spilled)}` : ''}（系统结算，不代表角色知情；下轮承接）.${ripening ? ` ${ripening}。` : ''}` };
+  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}${condomFailReason ? ` (${condomFailReason === 'overflow' ? '超过容量撑破' : '套子破裂'})` : ''}, enteredAmount=${enteredAmount}${spilled > 0 ? `，超过子宫容量当场流出 ${Math.round(spilled)}` : ''}（系统结算，不代表角色知情；下轮承接）.${ripening ? ` ${ripening}。` : ''}${raceNote ? ` ${raceNote}` : ''}` };
 }
 
 function applyDrainSperm(chatState, args) {

@@ -95,7 +95,9 @@ function buildClusters(rowNodes) {
 
 export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {}) {
   const graph = buildLineageGraph(chatState);
-  const centerId = `char:${String(centerName || '').trim()}`;
+  // 已注册卵方以角色节点为中心；精方与路人没有角色节点，退到名字节点
+  const trimmedCenter = String(centerName || '').trim();
+  const centerId = graph.nodes.some((node) => node.id === `char:${trimmedCenter}`) ? `char:${trimmedCenter}` : `name:${trimmedCenter}`;
   const focused = focusLineage(graph, centerId, { up, down });
   if (focused.nodes.length === 0) {
     return { centerId, centerName: String(centerName || ''), generations: [], nodes: [], empty: true };
