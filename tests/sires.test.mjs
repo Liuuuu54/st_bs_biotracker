@@ -248,3 +248,43 @@ test('逐角色检查清单也列在场精方，提醒离场要切', () => {
   assert.match(tracker, /在场精方也各列一笔：凯。/);
   assert.match(tracker, /bsSetCharacterPresence\(isPresent=false\)/);
 });
+
+// ── 即时字段（带 * 的字段每轮提醒）──────────────────────
+test('卵方预设的表情、行动带 *；注册提示看不到 *', async () => {
+  const { buildRegistrySystemPrompt } = await import('../scripts/registry.js');
+  const fields = parseDescriptionGuideFields(DEFAULT_REGISTRY_DESCRIPTION_GUIDES.normalDescription);
+  assert.deepEqual(fields.filter((field) => field.starred).map((field) => field.name), ['表情', '行动']);
+  const prompt = buildRegistrySystemPrompt({}, { payload: { target_character: '艾拉' } });
+  assert.ok(prompt.includes('表情|'));
+  assert.ok(!prompt.includes('*表情'));
+});
+
+test('追踪提示每轮列在场角色的即时字段，只列她真的有的字段；离场的注明若本轮登场', () => {
+  const payload = {
+    existing_state: {
+      艾拉: { name: '艾拉', profile: { base: { isHere: true }, descriptions: { normalDescription: { 状态: 'x', 行动: 'y' } } } },
+      远行: { name: '远行', offscreen: true, profile: { descriptions: { normalDescription: { 行动: 'z' } } } },
+    },
+    registered_sires: [{ name: '凯', race: '人类', isHere: true, descriptions: { 外貌: 'a', 行动: 'b' } }],
+  };
+  const tracker = buildTrackerSystemPrompt('', DEFAULT_REGISTRY_DESCRIPTION_GUIDES, payload);
+  assert.match(tracker, /\[即时字段\]/);
+  assert.match(tracker, /- 艾拉：行动\n/);
+  assert.match(tracker, /- 凯（精方）：行动/);
+  assert.match(tracker, /- 远行（不在场，若本轮登场）：表情、行动/);
+});
+
+test('即时字段：描述还空着的在场角色不列，免得违反不新增字段的规则', () => {
+  const payload = { existing_state: { 空白: { name: '空白', profile: { base: { isHere: true }, descriptions: { normalDescription: {} } } } } };
+  assert.ok(!buildTrackerSystemPrompt('', DEFAULT_REGISTRY_DESCRIPTION_GUIDES, payload).includes('[即时字段]'));
+});
+
+test('设定里存的是没改过的旧卵方预设就换成新的；改过的不动', async () => {
+  const { LEGACY_NORMAL_DESCRIPTION_GUIDE } = await import('../scripts/registry_config.js');
+  const fresh = (guide) => {
+    const ctx = { chatId: `guide-${Math.random()}`, chat: [], characters: [], extensionSettings: { bs_biotracker: { registryDescriptionGuides: { normalDescription: guide } } }, saveSettingsDebounced() {} };
+    return state.getSettings(ctx).registryDescriptionGuides.normalDescription;
+  };
+  assert.equal(fresh(LEGACY_NORMAL_DESCRIPTION_GUIDE), DEFAULT_REGISTRY_DESCRIPTION_GUIDES.normalDescription);
+  assert.equal(fresh('我的字段|自己写的'), '我的字段|自己写的');
+});

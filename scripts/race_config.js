@@ -1477,6 +1477,11 @@ export function formatBloodline(race, bloodline = null, source = null) {
   return text + (text && info.bloodlineSource === 'estimated' ? '（比例推定）' : '');
 }
 
+/** 画面用：不加「比例推定」。提示词仍用 formatBloodline，让模型知道均分的比例不是定论 */
+export function formatBloodlineLabel(race, bloodline = null, source = null) {
+  return formatBloodline(race, bloodline, source).replace(/（比例推定）$/, '');
+}
+
 /** 普通遗传父母各半；核型沿用现有九格规则，只取被选中的遗传方。 */
 export function deriveFetusAncestry(egg, sperm) {
   const eggRecord = typeof egg === 'string' ? { race: egg } : egg || {};

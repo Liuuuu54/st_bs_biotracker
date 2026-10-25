@@ -389,6 +389,43 @@ function collectStaleDescriptionLines(payload = {}) {
   return lines;
 }
 
+/**
+ * 每轮的即时字段：描述规则里带 * 的字段是当下的动作、表情、姿势，一天才点名太慢。
+ * - 在场角色：只列她真的有的字段；描述还空着的不列（不新增字段的规则仍然有效）
+ * - 不在场的：追踪看不到她的描述，照范本列出并注明「若本轮登场」——刚进门那一轮最容易忘了改动作
+ * 没变不必照抄，不多花输出。
+ */
+function collectRealtimeDescriptionLines(payload = {}, descriptionGuides = null) {
+  const lines = [];
+  const starredOf = (guide) => parseDescriptionGuideFields(guide).filter((field) => field.starred).map((field) => field.name);
+  const ownFields = (own, starred) => starred.filter((name) => Object.prototype.hasOwnProperty.call(own, name));
+  const femaleStarred = starredOf(descriptionGuides?.normalDescription);
+  if (femaleStarred.length > 0) {
+    for (const [key, item] of Object.entries(payload?.existing_state || {})) {
+      const name = String(item?.name || key);
+      if (item?.offscreen === true || item?.profile?.base?.isHere === false) {
+        lines.push(`- ${name}（不在场，若本轮登场）：${femaleStarred.join('、')}`);
+        continue;
+      }
+      const own = item?.profile?.descriptions?.normalDescription;
+      const names = own && typeof own === 'object' ? ownFields(own, femaleStarred) : [];
+      if (names.length > 0) lines.push(`- ${name}：${names.join('、')}`);
+    }
+  }
+  const sireStarred = starredOf(descriptionGuides?.sireDescription);
+  if (sireStarred.length > 0) {
+    for (const sire of (Array.isArray(payload?.registered_sires) ? payload.registered_sires : [])) {
+      if (!sire?.isHere) {
+        lines.push(`- ${sire.name}（精方，不在场，若本轮登场）：${sireStarred.join('、')}`);
+        continue;
+      }
+      const names = sire.descriptions && typeof sire.descriptions === 'object' ? ownFields(sire.descriptions, sireStarred) : [];
+      if (names.length > 0) lines.push(`- ${sire.name}（精方）：${names.join('、')}`);
+    }
+  }
+  return lines;
+}
+
 /** 已注册精方：在场的附描述，不在场的只是本轮相关的一行摘要 */
 function buildSireTrackerBlock(payload, descriptionGuides) {
   const sires = Array.isArray(payload?.registered_sires) ? payload.registered_sires : [];
@@ -480,6 +517,14 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     '- 调用 bsSetDescription 时只传本轮受剧情、姿势、衣着、表情、身体状态或环境影响的字段，以及下方被点名待确认的字段；未传的字段保留原值。',
     '- 不要为了简短而漏掉确实受影响的字段；因上下文不足而没把握的字段不要编造，留给下次。',
   ].join('\n'));
+  const realtimeLines = collectRealtimeDescriptionLines(payload, descriptionGuides);
+  if (realtimeLines.length > 0) {
+    parts.push([
+      '[即时字段]',
+      '- 以下角色的这些字段是即时状态（当下的动作、姿势、表情、情绪）：新讯息里有变化就用 bsSetDescription 更新，只传变了的字段；没变化不必照抄。注明「若本轮登场」的角色，在同一轮调用 bsSetCharacterPresence(isPresent=true) 时一并更新。',
+      ...realtimeLines,
+    ].join('\n'));
+  }
   const staleDescriptionLines = collectStaleDescriptionLines(payload);
   if (staleDescriptionLines.length > 0) {
     parts.push([

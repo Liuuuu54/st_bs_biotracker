@@ -43,7 +43,7 @@ import {
   getBuiltinRacePhysiologyProfile,
   getBuiltinRaceIntroductionLine,
   getMergedRacePhysiologyProfile,
-  formatBloodline,
+  formatBloodlineLabel,
   getDerivedTypeFluxProfile,
   getDerivedTypeInheritanceProfile,
   getDerivedTypeIntroductionLine,
@@ -4096,7 +4096,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
     },
     overview: {
       raceLabel: formatRaceLabel(base.race, base.derivedType),
-      bloodlineLabel: formatBloodline(base.race, base.bloodline, base.bloodlineSource),
+      bloodlineLabel: formatBloodlineLabel(base.race, base.bloodline, base.bloodlineSource),
       age: Number.isFinite(Number(base.age)) ? Math.round(Number(base.age)) : null,
       bodySizeLabel: formatCharacterBodySizeLabel(base),
       altFormBodySizeLabel: formatAltFormBodySizeLabel(base),
@@ -4663,22 +4663,24 @@ function renderFetusDerivedInheritanceLine(view) {
   if (!view) return '';
   const threshold = DERIVED_INHERITANCE_THRESHOLD;
   const progress = Math.max(-100, Math.min(100, Number(view.currentProgress) || 0));
+  // 某一方没有衍生类型时，往那边越线就是孩子不遗传衍生：直接写结果，不写「偏母方／偏父方」
   const sideType = (sign) => (sign > 0 ? view.motherDerivedType : view.fatherDerivedType);
-  const typeLabel = (sign) => (sideType(sign) ? `「${sideType(sign)}」` : '（不遗传衍生）');
+  const sideLabel = (sign) => (sideType(sign) ? `偏${sign > 0 ? '母' : '父'}方「${sideType(sign)}」` : '偏向不遗传');
+  const outcomeLabel = (sign) => (sideType(sign) ? `出生遗传「${sideType(sign)}」` : '出生不遗传衍生');
+  const towardLabel = (sign) => (sideType(sign) ? `${sign > 0 ? '母' : '父'}方「${sideType(sign)}」` : '不遗传');
   const amount = Math.round(Math.abs(progress) * 10) / 10;
   let label;
-  if (progress > threshold) label = `已越线，偏母方${typeLabel(1)}`;
-  else if (progress < -threshold) label = `已越线，偏父方${typeLabel(-1)}`;
+  if (Math.abs(progress) > threshold) label = `已越线：${outcomeLabel(Math.sign(progress))}`;
   else if (progress === 0) label = '未定';
-  else label = `${progress > 0 ? '偏母方' : '偏父方'}${typeLabel(Math.sign(progress))} ${amount}／${threshold}`;
+  else label = `${sideLabel(Math.sign(progress))} ${amount}／${threshold}`;
   const flipping = view.direction !== 0 && progress !== 0 && Math.sign(progress) !== view.direction;
-  const toward = view.direction > 0 ? '母方' : view.direction < 0 ? '父方' : '';
+  const toward = view.direction !== 0 ? towardLabel(view.direction) : '';
   const crossed = Math.abs(progress) > threshold && Math.sign(progress) === view.direction;
   const daysText = view.wholeDaysToInherit === null
     ? '两边拉平，停在原地'
     : crossed
-      ? `已越过${toward}判定线，照目前方向出生时会遗传${typeLabel(view.direction)}`
-      : `照目前速度约 ${view.wholeDaysToInherit} 天越过${toward}判定线`;
+      ? `已越线，照目前方向${outcomeLabel(view.direction)}`
+      : `照目前速度约 ${view.wholeDaysToInherit} 天越线（${outcomeLabel(view.direction)}）`;
   const title = [
     `母方拉力 ${formatFixedDisplay(view.maternalPull, 2)}（亲密度 ${view.affinity}）`,
     `父方拉力 ${formatFixedDisplay(view.paternalPull, 2)}（${view.father || '胎父'}契合度 ${Math.round((view.paternalFit || 0) * 100)}%）`,
@@ -4716,7 +4718,7 @@ function renderWombFetusCard(item, index, data) {
       <div class="bs-bt-womb-card-body">
         <span class="bs-bt-womb-card-line">${escapeHtml(summary)}${sireAction}</span>
         ${renderPaternityClaimLine(item)}
-        <span class="bs-bt-womb-card-line">血脉：${escapeHtml(formatBloodline(item?.race, item?.bloodline, item?.bloodlineSource))}</span>
+        <span class="bs-bt-womb-card-line">血脉：${escapeHtml(formatBloodlineLabel(item?.race, item?.bloodline, item?.bloodlineSource) || '未知')}</span>
         ${renderFetusDerivedInheritanceLine(item?.derivedInheritance)}
         ${describeBackSide(item) ? `<span class="bs-bt-womb-card-line">${escapeHtml(describeBackSide(item))}</span>` : ''}
         ${item?.provider ? `<span class="bs-bt-womb-card-line">${escapeHtml(`遗传母方 ${item.provider}`)}</span>` : ''}
@@ -6958,7 +6960,7 @@ function renderTrackSirePage(chatState) {
       metaRow('姓名', name),
       metaRow('在场', base?.isHere === false ? '离场' : '在场'),
       metaRow('种族', formatRaceLabel(base?.race, base?.derivedType)),
-      metaRow('血脉', formatBloodline(base?.race, base?.bloodline, base?.bloodlineSource) || '未知'),
+      metaRow('血脉', formatBloodlineLabel(base?.race, base?.bloodline, base?.bloodlineSource) || '未知'),
       metaRow('年龄', base?.age ? `${Math.round(Number(base.age))} 岁` : '未记录'),
       metaRow('体型', formatCharacterBodySizeLabel(base || {})),
       ...(formatAltFormBodySizeLabel(base || {}) ? [metaRow('变化态体型', formatAltFormBodySizeLabel(base || {}))] : []),
