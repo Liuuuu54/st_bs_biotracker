@@ -253,7 +253,7 @@ test('逐角色检查清单也列在场精方，提醒离场要切', () => {
 test('卵方预设的表情、行动带 *；注册提示看不到 *', async () => {
   const { buildRegistrySystemPrompt } = await import('../scripts/registry.js');
   const fields = parseDescriptionGuideFields(DEFAULT_REGISTRY_DESCRIPTION_GUIDES.normalDescription);
-  assert.deepEqual(fields.filter((field) => field.starred).map((field) => field.name), ['表情', '行动']);
+  assert.deepEqual(fields.filter((field) => field.starred).map((field) => field.name), ['状态', '表情', '行动']);
   const prompt = buildRegistrySystemPrompt({}, { payload: { target_character: '艾拉' } });
   assert.ok(prompt.includes('表情|'));
   assert.ok(!prompt.includes('*表情'));
@@ -269,9 +269,9 @@ test('追踪提示每轮列在场角色的即时字段，只列她真的有的�
   };
   const tracker = buildTrackerSystemPrompt('', DEFAULT_REGISTRY_DESCRIPTION_GUIDES, payload);
   assert.match(tracker, /\[即时字段\]/);
-  assert.match(tracker, /- 艾拉：行动\n/);
+  assert.match(tracker, /- 艾拉：状态、行动\n/);
   assert.match(tracker, /- 凯（精方）：行动/);
-  assert.match(tracker, /- 远行（不在场，若本轮登场）：表情、行动/);
+  assert.match(tracker, /- 远行（不在场，若本轮登场）：状态、表情、行动/);
 });
 
 test('即时字段：描述还空着的在场角色不列，免得违反不新增字段的规则', () => {
@@ -287,4 +287,24 @@ test('设定里存的是没改过的旧卵方预设就换成新的；改过的�
   };
   assert.equal(fresh(LEGACY_NORMAL_DESCRIPTION_GUIDE), DEFAULT_REGISTRY_DESCRIPTION_GUIDES.normalDescription);
   assert.equal(fresh('我的字段|自己写的'), '我的字段|自己写的');
+});
+
+test('孕态预设改成五栏，动作、反应带 *；初始化规范与即时字段都不露 *，字段名带 * 也照常写入', async () => {
+  const { applyDescriptionPatch } = await import('../scripts/descriptions.js');
+  const fields = parseDescriptionGuideFields(DEFAULT_REGISTRY_DESCRIPTION_GUIDES.pregnantDescription);
+  assert.deepEqual(fields.map((field) => field.name), ['供养', '动作', '反应', '风险', '护理']);
+  assert.deepEqual(fields.filter((field) => field.starred).map((field) => field.name), ['动作', '反应']);
+  const payload = {
+    existing_state: { 艾拉: { name: '艾拉', profile: { base: { isHere: true, stage: '孕中期' }, descriptions: { normalDescription: { 行动: 'x' }, pregnantDescription: { 动作: 'y', 风险: 'z' } } } } },
+  };
+  const tracker = buildTrackerSystemPrompt('', DEFAULT_REGISTRY_DESCRIPTION_GUIDES, payload);
+  assert.match(tracker, /- 艾拉：行动；pregnantDescription 动作/);
+  const patched = applyDescriptionPatch([{ name: '动作', value: '旧', updatedAt: 0 }], { '*动作': '新' }, 10);
+  assert.equal(patched.list[0].value, '新');
+});
+
+test('没改过的旧孕态预设换成新的五栏', async () => {
+  const { LEGACY_PREGNANT_DESCRIPTION_GUIDE } = await import('../scripts/registry_config.js');
+  const ctx = { chatId: 'guide-preg', chat: [], characters: [], extensionSettings: { bs_biotracker: { registryDescriptionGuides: { pregnantDescription: LEGACY_PREGNANT_DESCRIPTION_GUIDE } } }, saveSettingsDebounced() {} };
+  assert.equal(state.getSettings(ctx).registryDescriptionGuides.pregnantDescription, DEFAULT_REGISTRY_DESCRIPTION_GUIDES.pregnantDescription);
 });

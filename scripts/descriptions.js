@@ -84,7 +84,10 @@ export function isDescriptionListEmpty(list) {
 export function applyDescriptionPatch(currentList, patch, minutesPassed = 0) {
   const now = toMinutes(minutesPassed, 0);
   const list = normalizeDescriptionList(currentList, now).map((entry) => ({ ...entry }));
-  const patchEntries = toEntries(patch).filter((entry) => entry.name);
+  // 模型偶尔把范本的 * 照抄进字段名；* 只是范本标记，不是名字的一部分
+  const patchEntries = toEntries(patch)
+    .map((entry) => ({ ...entry, name: String(entry.name || '').replace(/^\*+/, '').trim() }))
+    .filter((entry) => entry.name);
   const result = { list, updated: [], refreshed: [], unknown: [], established: false };
   if (list.length === 0) {
     const established = normalizeDescriptionList(patchEntries.filter((entry) => entry.value), now)

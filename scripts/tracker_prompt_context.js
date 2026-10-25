@@ -4,7 +4,7 @@ import { buildBodySizeToolNote, buildRaceCatalogBlock, buildRacePhysiologyPrompt
 import { getDerivedTypeFluxProfile } from './race_config.js';
 import { deriveFetusTags, describeFetusTags } from './fetus_tags.js';
 import { LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGES } from './stage_config.js';
-import { parseDescriptionGuideFields } from './descriptions.js';
+import { parseDescriptionGuideFields, stripDescriptionGuideStars } from './descriptions.js';
 
 const CONDOM_LEVEL_TEXT = {
   poor: '很不牢靠，经常破裂或失效',
@@ -400,16 +400,26 @@ function collectRealtimeDescriptionLines(payload = {}, descriptionGuides = null)
   const starredOf = (guide) => parseDescriptionGuideFields(guide).filter((field) => field.starred).map((field) => field.name);
   const ownFields = (own, starred) => starred.filter((name) => Object.prototype.hasOwnProperty.call(own, name));
   const femaleStarred = starredOf(descriptionGuides?.normalDescription);
-  if (femaleStarred.length > 0) {
+  // 孕态描述只在妊娠相关阶段才送，送了才列
+  const pregnantStarred = starredOf(descriptionGuides?.pregnantDescription);
+  if (femaleStarred.length > 0 || pregnantStarred.length > 0) {
     for (const [key, item] of Object.entries(payload?.existing_state || {})) {
       const name = String(item?.name || key);
       if (item?.offscreen === true || item?.profile?.base?.isHere === false) {
-        lines.push(`- ${name}（不在场，若本轮登场）：${femaleStarred.join('、')}`);
+        if (femaleStarred.length > 0) lines.push(`- ${name}（不在场，若本轮登场）：${femaleStarred.join('、')}`);
         continue;
       }
-      const own = item?.profile?.descriptions?.normalDescription;
-      const names = own && typeof own === 'object' ? ownFields(own, femaleStarred) : [];
-      if (names.length > 0) lines.push(`- ${name}：${names.join('、')}`);
+      const normal = item?.profile?.descriptions?.normalDescription;
+      const pregnant = item?.profile?.descriptions?.pregnantDescription;
+      const groups = [
+        normal && typeof normal === 'object' ? ownFields(normal, femaleStarred) : [],
+        pregnant && typeof pregnant === 'object' ? ownFields(pregnant, pregnantStarred) : [],
+      ];
+      const text = [
+        groups[0].length > 0 ? groups[0].join('、') : '',
+        groups[1].length > 0 ? `pregnantDescription ${groups[1].join('、')}` : '',
+      ].filter(Boolean).join('；');
+      if (text) lines.push(`- ${name}：${text}`);
     }
   }
   const sireStarred = starredOf(descriptionGuides?.sireDescription);
@@ -552,7 +562,8 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
   }
 
   const pregnantInitNames = collectPregnantDescriptionInitNames(payload);
-  const pregnantGuide = String(descriptionGuides?.pregnantDescription || '').trim();
+  // 给模型看的规范拿掉 *，免得把 * 当成字段名的一部分
+  const pregnantGuide = stripDescriptionGuideStars(String(descriptionGuides?.pregnantDescription || '')).trim();
   if (pregnantInitNames.length > 0 && pregnantGuide) {
     parts.push([
       '[pregnantDescription 初始化]',

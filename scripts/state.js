@@ -1,7 +1,7 @@
 import { normalizeExperience, normalizeCognitionRecords, normalizePaternityClaims, normalizeReproductiveSettings } from './reproductive.js';
 import { stripVariableUpdateBlocks } from './variable_isolation.js';
 import { syncCardSettings, importCardSkillSeed } from './card_settings.js';
-import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, LEGACY_NORMAL_DESCRIPTION_GUIDE } from './registry_config.js';
+import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, LEGACY_NORMAL_DESCRIPTION_GUIDE, LEGACY_PREGNANT_DESCRIPTION_GUIDE } from './registry_config.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -1061,6 +1061,9 @@ export function getSettings(ctx) {
     // 没改过的旧预设换成 1.2.0 的（表情、行动带 *）；使用者改过就不动
     if (String(mergedGuides.normalDescription || '').trim() === LEGACY_NORMAL_DESCRIPTION_GUIDE.trim()) {
       mergedGuides.normalDescription = DEFAULT_REGISTRY_DESCRIPTION_GUIDES.normalDescription;
+    }
+    if (String(mergedGuides.pregnantDescription || '').trim() === LEGACY_PREGNANT_DESCRIPTION_GUIDE.trim()) {
+      mergedGuides.pregnantDescription = DEFAULT_REGISTRY_DESCRIPTION_GUIDES.pregnantDescription;
     }
     if (JSON.stringify(mergedGuides) !== JSON.stringify(settings.registryDescriptionGuides)) shouldSave = true;
     settings.registryDescriptionGuides = mergedGuides;
