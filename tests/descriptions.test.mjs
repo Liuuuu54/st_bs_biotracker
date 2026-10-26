@@ -95,7 +95,7 @@ test('v7 存档迁移：描述字串转成阵列，时间戳记为当时的系�
   settings.chatStates['desc-v8'] = chatState;
 
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 9);
+  assert.equal(migrated.schemaVersion, 10);
   assert.deepEqual(migrated.characters.Alice.profile.descriptions, {
     normalDescription: [
       { name: '状态', value: '疲惫', updatedAt: 4320 },

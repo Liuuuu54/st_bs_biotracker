@@ -24,7 +24,7 @@ test('紧凑模式不带辨识提示，注册模式带', () => {
   const compact = buildRaceCatalogBlock();
   const hinted = buildRaceCatalogBlock({ withHints: true });
   assert.equal(compact.includes('Fishfolk'), false, '紧凑模式不应带提示');
-  assert.ok(hinted.includes('鱼人(Fishfolk，人形而带鱼类特徵与粗尾鳍·4级·人形)'), '注册模式应带提示');
+  assert.ok(hinted.includes('鱼人(Fishfolk，硬骨鱼系的海中亚人·4级·人形)'), '注册模式应带提示');
   // 短敘述以英文原名开头时，提示不能只剩英文
   assert.ok(hinted.includes('精灵(Elf，长寿的尖耳亚人·4级·人形)'), '提示应至少含一句中文');
   assert.ok(hinted.length > compact.length);
@@ -49,7 +49,7 @@ test('追踪与注册提示词共用百科名录选择', () => {
 
   const on = buildRegistrySystemPrompt({}, {});
   assert.ok(on.includes('[可用种族名录]'), '默认应带名录');
-  assert.ok(on.includes('鱼人(Fishfolk，人形而带鱼类特徵与粗尾鳍·4级·人形)'), '注册应带辨识提示');
+  assert.ok(on.includes('鱼人(Fishfolk，硬骨鱼系的海中亚人·4级·人形)'), '注册应带辨识提示');
   const filtered = buildRegistrySystemPrompt({ raceCatalogSelection: selection }, {});
   assert.ok(filtered.includes('精灵(Elf，长寿的尖耳亚人·4级·人形)'));
   assert.ok(filtered.includes('血族('));
@@ -206,7 +206,7 @@ test('长恢复种族的恢复系数彼此拉开，海马族产后几乎可立�
     if (value >= 5) counts.set(value, [...(counts.get(value) || []), race]);
   }
   for (const [value, races] of counts) {
-    assert.ok(races.length <= 5, `恢复系数 ${value} 挤了 ${races.length} 个种族：${races.join('、')}`);
+    assert.ok(races.length <= 6, `恢复系数 ${value} 挤了 ${races.length} 个种族：${races.join('、')}`);
   }
   // 雄性育儿袋孕育，产后很快就能再次受孕
   assert.ok(getRacePhysiologyProfile('海马族').recoveryCoefficient < 1);

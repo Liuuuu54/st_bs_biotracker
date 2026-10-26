@@ -1,4 +1,4 @@
-// 1.1.4 种族改名与繁简别名：旧名、繁体、简体与混写都对到同一个内置种族；旧存档一次改写成新名。
+// 1.1.4、1.2.1 种族改名与繁简别名：旧名、繁体、简体与混写都对到同一个内置种族；旧存档一次改写成新名。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -32,7 +32,7 @@ test('每个内置种族与衍生类型的繁体、简体写法都对到规范�
 });
 
 test('旧名对到新名，保留装饰子项、衍生前缀与比例写法', () => {
-  assert.equal(Object.keys(RACE_RENAMES).length, 10);
+  assert.equal(Object.keys(RACE_RENAMES).length, 13);
   for (const [from, to] of Object.entries(RACE_RENAMES)) {
     assert.equal(canonicalizeRaceName(from), to);
     assert.equal(canonicalizeRaceName(toTraditionalName(from)), to, `${from} 的繁体旧名`);
@@ -42,6 +42,9 @@ test('旧名对到新名，保留装饰子项、衍生前缀与比例写法', ()
   assert.equal(canonicalizeRaceDescriptor('[吸血鬼-真祖]百足姬-赤x1/4蠍羅'), '[吸血鬼-真祖]百足氏-赤x1/4蝎罗氏');
   assert.equal(canonicalizeRaceDescriptor('[魔導]月兔族25%x狮鹫族75%'), '[魔导]月兔25%x狮鹫75%');
   assert.equal(canonicalizeRaceDescriptor('自订族x鳥人'), '自订族x鸟族', '自订种族原样保留');
+  assert.equal(canonicalizeRaceDescriptor('獨居蟲族-蛾x社會蟲族'), '独居虫人-蛾x群居虫人');
+  assert.equal(canonicalizeRaceName('植物亞人'), '爱那温', '植物亚人改指花中少女');
+  assert.equal(canonicalizeRaceName('真菌亚人'), '真菌亚人', '真菌亚人没有亚人可接，当自订种族');
   assert.deepEqual(parseRaceDescriptor('精灵25%x月兔族75%'), { race: '精灵x月兔', derivedType: null, bloodline: { 精灵: 0.25, 月兔: 0.75 } });
 });
 
@@ -76,7 +79,7 @@ test('v6 存档迁移：角色、精液、胎儿、孩子与快照里的旧名�
   settings.chatStates['rename-v7'] = chatState;
 
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 9);
+  assert.equal(migrated.schemaVersion, 10);
   const profile = migrated.characters['兔娘'].profile;
   assert.equal(profile.base.race, '月兔x人类');
   assert.deepEqual(profile.base.bloodline, { 月兔: 0.5, 人类: 0.5 });
@@ -90,4 +93,35 @@ test('v6 存档迁移：角色、精液、胎儿、孩子与快照里的旧名�
 
   state.restoreChatStateFromSnapshot(migrated, migrated.snapshots[0]);
   assert.equal(migrated.characters['兔娘'].profile.base.race, '月兔x人类', '回溯快照也已改名');
+});
+
+test('v9 存档迁移：植物族、真菌族、虫族的旧名在角色、精方档案与快照里改写成新名', () => {
+  const ctx = { chatId: 'rename-v10', chat: [], extensionSettings: {}, saveSettingsDebounced() {} };
+  const settings = state.getSettings(ctx);
+  const chatState = state.createEmptyChatState();
+  const character = state.createDefaultFemaleState('希尔瓦');
+  character.initialized = true;
+  character.profile.base.race = '植物族x人类';
+  character.profile.base.bloodline = { 植物族: 0.5, 人类: 0.5 };
+  character.profile.base.sperms = [{ male: '工蜂', race: '社会虫族', bloodline: { 社会虫族: 1 }, value: 10 }];
+  character.profile.children = [{ name: '孢子', race: '真菌族', fathers: '菇菇', fatherRace: '独居虫族-蛾' }];
+  chatState.characters['希尔瓦'] = character;
+  chatState.sires['蛾先生'] = { race: '独居虫族-蛾', bloodline: { 独居虫族: 1 } };
+  chatState.schemaVersion = 9;
+  state.recordChatStateSnapshot(ctx, chatState, { reason: 'legacy' });
+  settings.chatStates['rename-v10'] = chatState;
+
+  const migrated = state.getChatState(ctx, settings);
+  assert.equal(migrated.schemaVersion, 10);
+  const profile = migrated.characters['希尔瓦'].profile;
+  assert.equal(profile.base.race, '怪植类x人类');
+  assert.deepEqual(profile.base.bloodline, { 怪植类: 0.5, 人类: 0.5 });
+  assert.equal(profile.base.sperms[0].race, '群居虫人');
+  assert.equal(profile.children[0].race, '怪菌类');
+  assert.equal(profile.children[0].fatherRace, '独居虫人-蛾');
+  assert.equal(migrated.sires['蛾先生'].race, '独居虫人-蛾');
+
+  state.restoreChatStateFromSnapshot(migrated, migrated.snapshots[0]);
+  assert.equal(migrated.characters['希尔瓦'].profile.base.race, '怪植类x人类', '回溯快照也已改名');
+  assert.equal(migrated.sires['蛾先生'].race, '独居虫人-蛾', '快照里的精方档案也已改名');
 });

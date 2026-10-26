@@ -14,7 +14,7 @@ import {
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 9;
+export const CHAT_STATE_SCHEMA_VERSION = 10;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -207,6 +207,14 @@ function migrateCharacterV6ToV7(character) {
 }
 
 /**
+ * v9 → v10（1.2.1 改名）：植物族→怪植类、真菌族→怪菌类、社会虫族→群居虫人、独居虫族→独居虫人，
+ * 做法与 v6 → v7 相同。精方档案不在角色里，由 state.js 另外对 sires 呼叫 renameStoredRaces。
+ */
+export function renameStoredRaces(node) {
+  renameRacesDeep(node);
+}
+
+/**
  * 1.1.5：描述从「字段名|内容;;」字串改成 [{ name, value, updatedAt }]。
  * 切不出字段名的段落整段收进「未分类」；updatedAt 记为迁移当下的系统时钟，免得一升级就全部被点名。
  */
@@ -226,6 +234,7 @@ const CHARACTER_MIGRATIONS = Object.freeze({
   4: normalizeCharacterBloodlines,
   6: migrateCharacterV6ToV7,
   7: migrateCharacterV7ToV8,
+  9: migrateCharacterV6ToV7,
 });
 
 export function getChatStateSchemaVersion(chatState) {

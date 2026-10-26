@@ -7,14 +7,14 @@ import { normalizeSireRecord, normalizeSires, resolveSireBase } from '../scripts
 
 const ctxOf = (chatId) => ({ chatId, chat: [{ name: 'A', is_user: false, mes: '……' }], characters: [], name1: '用户', name2: 'A', extensionSettings: {}, saveSettingsDebounced() {} });
 
-test('新聊天有空的精方表，存档版本 9', () => {
+test('新聊天有空的精方表，存档版本 10', () => {
   const chat = state.createEmptyChatState();
-  assert.equal(chat.schemaVersion, 9);
+  assert.equal(chat.schemaVersion, 10);
   assert.equal(Object.getPrototypeOf(chat.sires), null);
   assert.deepEqual(Object.keys(chat.sires), []);
 });
 
-test('v8 存档迁移成 v9：补上空精方表，旧快照还原成空表', () => {
+test('v8 存档迁移到最新版：补上空精方表，旧快照还原成空表', () => {
   const ctx = ctxOf('sire-migrate');
   globalThis.SillyTavern = { getContext: () => ctx };
   const settings = state.getSettings(ctx);
@@ -24,7 +24,7 @@ test('v8 存档迁移成 v9：补上空精方表，旧快照还原成空表', ()
   state.recordChatStateSnapshot(ctx, old, { messageCount: 1, reason: 'old' });
   settings.chatStates[ctx.chatId] = old;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 9);
+  assert.equal(migrated.schemaVersion, 10);
   assert.equal(Object.getPrototypeOf(migrated.sires), null);
   state.restoreChatStateFromSnapshot(migrated, migrated.snapshots[0]);
   assert.deepEqual(Object.keys(migrated.sires), []);

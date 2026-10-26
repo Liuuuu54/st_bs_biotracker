@@ -118,6 +118,8 @@ export function buildLineageGraph(chatState) {
           derivedType: child.derivedType ?? null,
           gender: child.gender ?? null,
           age: child.age ?? null,
+          // 母亲有核型免疫时，血脉平手改随父方（图示取父方占比较高的）
+          ...(child.paternalTie ? { paternalTie: true, fatherBloodline: child.fatherBloodline ?? null } : {}),
         });
       }
       // 合并到角色节点时不写 registeredAs——那会指向它自己。

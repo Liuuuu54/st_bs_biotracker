@@ -120,6 +120,15 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 0, recoveryCoefficient: 0.5,
     bodySize: 5, bodySizeSd: 0.6, altFormBodySize: null, bodyPlan: "humanoid",
   },
+  "萨堤尔族": {
+    embryoType: "胎生",
+    introductionLine: "Satyr／Faun，羊系亚人，从羊蹄羊腿、追随牧神潘的萨堤尔到卷角绵羊娘皆归此类，不写作兽耳族-羊；双胎常见。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.6, birthDifficulty: 1, breedTolerance: 1.5,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 15, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.4,
+    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },
   "怪兽类": {
     embryoType: "胎生",
     introductionLine: "Beast，异种交配情境中的完整兽形动物；具体物种写作怪兽类-狼、怪兽类-马等。",
@@ -185,12 +194,21 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "巨人": {
     embryoType: "胎生",
-    introductionLine: "Giant，体型远超人类的种族；巨魔、山怪、独眼巨人、泰坦皆归此类。难以受孕，但庞大的身躯承载妊娠游刃有余。",
+    introductionLine: "Giant，体型远超人类的种族；独眼巨人、泰坦皆归此类。难以受孕，但庞大的身躯承载妊娠游刃有余。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.4, birthDifficulty: 3, breedTolerance: 2.5,
     impregnationDifficulty: 4, orgasmOvulationAmount: 0, identicalProbability: 2, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 8,
     bodySize: 7, bodySizeSd: 0.7, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "巨魔": {
+    embryoType: "胎生",
+    introductionLine: "Troll，长鼻獠牙、皮糙肉厚的粗野亚人，食人妖、山怪皆归此类；伤口转眼愈合，传说遇日光会石化。族中多为雄性、雄核遗传：男巨魔让他族女子生下巨魔，女巨魔怀上外族则生下纯种外族。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 2, breedTolerance: 2,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 1, identicalProbability: 2, genderRatio: 75,
+    companionEggsMean: 0, recoveryCoefficient: 1.3,
+    bodySize: 5, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "媚魔": {
     embryoType: "胎生",
@@ -237,6 +255,24 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 0, recoveryCoefficient: 0.7,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
+  "镰鼬": {
+    embryoType: "胎生",
+    introductionLine: "Kamaitachi，祖先为兽耳族，沾妖后独立演化的鼬系妖族，乘旋风而行、前肢如镰；传说三兄妹同行，一推倒、一割伤、一敷药，族中多胞胎常见。未沾妖的兽耳鼬娘应写作兽耳族-鼬。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.8, breedTolerance: 1.5,
+    impregnationDifficulty: 0.8, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.4,
+    bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "化狸": {
+    embryoType: "胎生",
+    introductionLine: "Tanuki，祖先为兽耳族，沾妖后独立演化的狸系妖族，顶叶变身、拍肚为鼓，圆润好生养；未沾妖的兽耳狸娘应写作兽耳族-狸。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.8, breedTolerance: 2,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.3,
+    bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },
   "月兔": {
     embryoType: "胎生",
     introductionLine: "Moon Rabbit，居于月球的兔系亚人；繁殖力为胎生种族之最，族中多为雌性。雄核遗传：月兔女子所生皆随父族，因而成为各族争夺的孕母，能延续族裔的雄兔被视为至宝。",
@@ -282,23 +318,68 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 3, recoveryCoefficient: 0.25,
     bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "beast",
   },
-  "植物族": {
+  "鸡蛇族": {
     embryoType: "卵生",
-    introductionLine: "Dryad／Plant-folk，植物拟人，具自花授粉特性。",
+    introductionLine: "Cockatrice，鸡翼鸡爪、拖着蛇尾的魔物娘，传说由公鸡所下的蛋孵出，凝视能使人石化。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 2, birthDifficulty: 0.6, breedTolerance: 1.2,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 1, recoveryCoefficient: 0.25,
+    bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "赛壬": {
+    embryoType: "卵生",
+    introductionLine: "Siren，人身鸟翼、下半身为鱼尾的海妖，以歌声引诱水手；全为雌性，崖边产卵。可借魔法化出人腿。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.8, breedTolerance: 1,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 0,
+    companionEggsMean: 1, recoveryCoefficient: 0.6,
+    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: 4, bodyPlan: "hybrid",
+  },
+  "怪植类": {
+    embryoType: "卵生",
+    introductionLine: "Monstrous Plant，异种交配情境中的完整植物形魔物，具自花授粉特性；具体物种写作怪植类-食人花、怪植类-藤蔓、怪植类-树妖等。人形的花中少女归爱那温。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 2.5, birthDifficulty: 0.25, breedTolerance: 1,
     impregnationDifficulty: 1, orgasmOvulationAmount: 6, identicalProbability: 5, genderRatio: null,
     companionEggsMean: 4, recoveryCoefficient: 0.3,
-    bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
+    bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "beast",
   },
-  "社会虫族": {
+  "爱那温": {
     embryoType: "卵生",
-    introductionLine: "Eusocial Insectfolk，蜜蜂与蚂蚁一类的真社会性虫族，以雌性为绝对多数。",
+    introductionLine: "Alraune，花中少女，上身为人、下身为花冠与根系的植系亚人；外表是少女，生理上雌雄同体。雌核遗传：自己受孕才生出爱那温，以花粉让他族受孕则生出对方的纯种。子项可依花种写，例如爱那温-蔷薇。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 2, birthDifficulty: 0.4, breedTolerance: 1.5,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 3, identicalProbability: 5, genderRatio: null,
+    companionEggsMean: 2, recoveryCoefficient: 0.25,
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "hybrid",
+  },
+  "群居虫人": {
+    embryoType: "卵生",
+    introductionLine: "Eusocial Insectfolk，蜜蜂与蚂蚁一类的真社会性虫人，以雌性为绝对多数。",
     inheritanceMode: "maternal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 2.5, birthDifficulty: 0.2, breedTolerance: 1.33,
     impregnationDifficulty: 0.2, orgasmOvulationAmount: 8, identicalProbability: 0, genderRatio: 10,
     companionEggsMean: 16, recoveryCoefficient: 0.25,
     bodySize: 3, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "怪虫类": {
+    embryoType: "卵生",
+    introductionLine: "Monstrous Insect，异种交配情境中的完整虫形节肢动物与蠕虫；具体物种写作怪虫类-寄生蜂、怪虫类-蚁、怪虫类-蛛、怪虫类-蟹、怪虫类-沙虫等，寄生蜂类以产卵管把卵注入宿主体内。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 10, birthDifficulty: 0.2, breedTolerance: 2,
+    impregnationDifficulty: 0.3, orgasmOvulationAmount: 6, identicalProbability: 0, genderRatio: 50,
+    companionEggsMean: 20, recoveryCoefficient: 0.25,
+    bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "beast",
+  },
+  "沙虫族": {
+    embryoType: "卵生",
+    introductionLine: "Sandworm，潜行沙海的沙虫族，巨虫口中探出人形上身；鳞片分泌香料（即其乳意），幼体为沙鳟，对震动与水气敏感。雌雄同体、雄核遗传：播种给他族才生出沙虫族，自己受孕时孕育的是纯种外族。完整的巨虫写作怪虫类-沙虫。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 3, birthDifficulty: 0.3, breedTolerance: 2,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 5, identicalProbability: 5, genderRatio: null,
+    companionEggsMean: 8, recoveryCoefficient: 0.25,
+    bodySize: 6, bodySizeSd: 0.8, altFormBodySize: null, bodyPlan: "hybrid",
   },
   "蜥蜴人": {
     embryoType: "卵生",
@@ -308,6 +389,15 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 1.5, orgasmOvulationAmount: 3, identicalProbability: 20, genderRatio: null,
     companionEggsMean: 4, recoveryCoefficient: 0.8,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "怪爬虫类": {
+    embryoType: "卵生",
+    introductionLine: "Monstrous Reptile，异种交配情境中的完整爬虫形动物；具体物种写作怪爬虫类-蛇、怪爬虫类-蜥、怪爬虫类-鳄等。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2, birthDifficulty: 0.4, breedTolerance: 2,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 1, genderRatio: 50,
+    companionEggsMean: 6, recoveryCoefficient: 0.25,
+    bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "beast",
   },
   "触手怪": {
     embryoType: "卵生",
@@ -327,14 +417,23 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 0, recoveryCoefficient: 3.8,
     bodySize: 1, bodySizeSd: 0.4, altFormBodySize: 4, bodyPlan: "humanoid",
   },
-  "真菌族": {
+  "怪菌类": {
     embryoType: "卵生",
-    introductionLine: "Myconid，菌类拟人，具自体授粉特性。",
+    introductionLine: "Monstrous Fungus，异种交配情境中的完整菌类魔物，具自体授粉特性；具体物种写作怪菌类-寄生菇等。菌类的类人归米戈。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 3.3, birthDifficulty: 0.25, breedTolerance: 1,
     impregnationDifficulty: 0.8, orgasmOvulationAmount: 4, identicalProbability: 5, genderRatio: null,
     companionEggsMean: 6, recoveryCoefficient: 0.25,
-    bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
+    bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "beast",
+  },
+  "米戈": {
+    embryoType: "卵生",
+    introductionLine: "Mi-go，克苏鲁神话中来自犹格斯的真菌生物，形如长着膜翼与成对附肢的蘑菇虾子，头部是布满触须、会变色的菌褶；性别不定，以菌囊产卵，寻常相机拍不到其身影。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 1.5,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: null,
+    companionEggsMean: 4, recoveryCoefficient: 0.3,
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "any",
   },
   "海蛞蝓族": {
     embryoType: "卵生",
@@ -374,8 +473,8 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "阿拉克涅": {
     embryoType: "卵生",
-    introductionLine: "Arachne，上身为人、下身为蜘蛛的亚人，源自希腊神话。可借魔法化出人腿。",
-    inheritanceMode: "normal",
+    introductionLine: "Arachne，上身为人、下身为蜘蛛的亚人，源自希腊神话；络新妇、蜘蛛女同属母系传说，雌核遗传，孩子随母族。可借魔法化出人腿。",
+    inheritanceMode: "maternal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 2, birthDifficulty: 1.5, breedTolerance: 1.33,
     impregnationDifficulty: 2, orgasmOvulationAmount: 6, identicalProbability: 0, genderRatio: 25,
     companionEggsMean: 12, recoveryCoefficient: 0.6,
@@ -437,12 +536,21 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "鱼人": {
     embryoType: "卵胎生",
-    introductionLine: "Fishfolk，人形而带鱼类特徵与粗尾鳍，可视为海中的精灵——孕期长、产子少。萨尔达的佐拉族属此。",
+    introductionLine: "Fishfolk，硬骨鱼系的海中亚人，人形而带鱼鳍、鳞片与粗尾鳍，可视为海中的精灵——孕期长、产子少。萨尔达的佐拉族属此；鲨、鳐等软骨鱼归鲛人。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.5, birthDifficulty: 2, breedTolerance: 1,
     impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 2, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 5,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "鲛人": {
+    embryoType: "卵胎生",
+    introductionLine: "Shark-folk／Jiaoren，软骨鱼系的海中亚人，鲨与鳐皆归此类（子项写作鲛人-鲨、鲛人-魟）；上身为人、下身为鲨尾，泣泪成珠。子宫里常伴有不发育的营养卵供胎儿取食，可借魔法化出人腿。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.4, birthDifficulty: 1.5, breedTolerance: 1.5,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 2, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 2, recoveryCoefficient: 2.5,
+    bodySize: 5, bodySizeSd: 0.5, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "怪鱼类": {
     embryoType: "卵胎生",
@@ -455,21 +563,30 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "海妖": {
     embryoType: "卵胎生",
-    introductionLine: "Scylla，章鱼乌贼一类，以触腕替代双足；无须变形即可上陆，亦可借魔法化出人腿。",
-    inheritanceMode: "normal",
+    introductionLine: "Scylla，章鱼乌贼一类，以触腕替代双足；无须变形即可上陆，亦可借魔法化出人腿。雌核遗传，孩子随母族。",
+    inheritanceMode: "maternal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 1, birthDifficulty: 3, breedTolerance: 0.3,
     impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 5, genderRatio: 33,
     companionEggsMean: 10, recoveryCoefficient: 10,
     bodySize: 5, bodySizeSd: 0.6, altFormBodySize: 4, bodyPlan: "hybrid",
   },
-  "独居虫族": {
+  "独居虫人": {
     embryoType: "卵胎生",
-    introductionLine: "Solitary Insectfolk，与社会虫族相对的独居性虫族；蛾、螳螂等拟人归此，部分会将卵寄入异族代孕孵化。",
+    introductionLine: "Solitary Insectfolk，与群居虫人相对的独居性虫人；蛾、螳螂等虫娘归此，部分会将卵寄入异族代孕孵化。完整的巨虫写作怪虫类。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 4, birthDifficulty: 0.5, breedTolerance: 1,
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 4, identicalProbability: 0, genderRatio: 30,
     companionEggsMean: 6, recoveryCoefficient: 0.25,
-    bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "humanoid",
+    bodySize: 3, bodySizeSd: 0.6, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "炉蚜": {
+    embryoType: "卵胎生",
+    introductionLine: "Ovenaphis，娇小的四臂蚜虫娘，蜜色肌肤、琥珀小翅，腹部天生圆润；自己的胚胎无法单独存活，须先为他族代孕，再把自己的受精卵嵌进代孕胎儿体内，借它当外壳一同孕育。翅膀分泌的蜜露即其乳意。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 0.5,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 1, identicalProbability: 0, genderRatio: 0,
+    companionEggsMean: 0, recoveryCoefficient: 3.8,
+    bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "蛇人": {
     embryoType: "卵胎生",
@@ -488,6 +605,15 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 0.7, orgasmOvulationAmount: 4, identicalProbability: 10, genderRatio: null,
     companionEggsMean: 35, recoveryCoefficient: 0.25,
     bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "蝾螈族": {
+    embryoType: "卵胎生",
+    introductionLine: "Salamander-folk，蝾螈拟人的两栖亚人，皮肤湿润、拖着扁尾，再生力极强；子项可写作蝾螈族-沙罗曼达（火蝾螈，尾端燃焰，传说中的火之精灵）、蝾螈族-六角恐龙（美西螈，头生外鳃、终生保有幼态）。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.6, breedTolerance: 1.5,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 50,
+    companionEggsMean: 2, recoveryCoefficient: 0.3,
+    bodySize: 4, bodySizeSd: 0.6, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "眼魔": {
     embryoType: "卵胎生",
@@ -588,6 +714,15 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 0, recoveryCoefficient: 5.1,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: 6, bodyPlan: "humanoid",
   },
+  "斯芬克斯": {
+    embryoType: "胎转卵生",
+    introductionLine: "Sphinx，人首狮身、背生双翼的上位幻兽，以谜题闻名，可在人态与完全态之间转换。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.4, birthDifficulty: 3, breedTolerance: 1.5,
+    impregnationDifficulty: 4, orgasmOvulationAmount: 1, identicalProbability: 20, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 5,
+    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: 6, bodyPlan: "humanoid",
+  },
   "天使": {
     embryoType: "胎转卵生",
     introductionLine: "Angel，天界种族，以「天使之卵」孕育。",
@@ -613,6 +748,15 @@ const RACE_DEFINITIONS = Object.freeze({
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.4, birthDifficulty: 4, breedTolerance: 2.4,
     impregnationDifficulty: 4, orgasmOvulationAmount: 1, identicalProbability: 20, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 4.2,
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 5, bodyPlan: "humanoid",
+  },
+  "地狱犬": {
+    embryoType: "胎转卵生",
+    introductionLine: "Hellhound，冥界的黑犬，浑身燃着地狱之火，可在人态与完全犬形之间转换；三头犬刻耳柏洛斯亦归此类，族中多胞胎常见。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.5, birthDifficulty: 3, breedTolerance: 2,
+    impregnationDifficulty: 2, orgasmOvulationAmount: 2, identicalProbability: 30, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 3,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 5, bodyPlan: "humanoid",
   },
   "麒麟": {
@@ -651,9 +795,18 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 0, recoveryCoefficient: 4.4,
     bodySize: 3, bodySizeSd: 0.4, altFormBodySize: 5, bodyPlan: "humanoid",
   },
+  "天马": {
+    embryoType: "胎转卵生",
+    introductionLine: "Pegasus，背生双翼的白马，上位幻兽，可在人态与完全态之间转换。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.5, birthDifficulty: 3, breedTolerance: 1.6,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 25, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 3.8,
+    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: 5, bodyPlan: "humanoid",
+  },
   "空鲸": {
     embryoType: "胎转卵生",
-    introductionLine: "Sky Whale，翱翔天际的巨鲸，可在常态人形与巨态鱼形间切换（鲲鹏之属），孕期为全表最长。",
+    introductionLine: "Sky Whale，翱翔天际的巨鲸，属鲸类而非鱼，可在常态人形与巨态鲸形间切换；北冥之鲲化而为鹏的鲲鹏亦归此类，孕期为全表最长。鲸鲨是鲨，归鲛人。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.2, birthDifficulty: 5, breedTolerance: 2,
     impregnationDifficulty: 6, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 33,
@@ -713,6 +866,33 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 10, genderRatio: -1,
     companionEggsMean: 0, recoveryCoefficient: 3.8,
     bodySize: 3, bodySizeSd: 0.7, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "魔像": {
+    embryoType: "不定型",
+    introductionLine: "Golem，人类造物之一，以黏土或金属塑成、由核心驱动的无性种族；受精难度极高，繁殖基本限于同族。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.5, birthDifficulty: 2, breedTolerance: 3,
+    impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: -1,
+    companionEggsMean: 0, recoveryCoefficient: 1.3,
+    bodySize: 5, bodySizeSd: 0.6, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "烧瓶小人": {
+    embryoType: "不定型",
+    introductionLine: "Homunculus，人类造物之一，以炼金术在烧瓶中培育的血肉小人；无性，自然受孕极难，繁衍要把封着胚胎的特制烧瓶植入他族子宫代孕，分娩时产下烧瓶，小人随后破瓶而出。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 2, birthDifficulty: 1.5, breedTolerance: 1,
+    impregnationDifficulty: 8, orgasmOvulationAmount: 0, identicalProbability: 0, genderRatio: -1,
+    companionEggsMean: 0, recoveryCoefficient: 0.8,
+    bodySize: 1, bodySizeSd: 0.3, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "墨灵": {
+    embryoType: "不定型",
+    introductionLine: "Ink Spirit，从画中走出的墨灵，身躯由墨与纸构成，怕水；胎儿在孕早是一团晕开的墨，到孕晚才渐渐被「画」出五官与轮廓。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 0.8, breedTolerance: 0.8,
+    impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 10, genderRatio: 30,
+    companionEggsMean: 0, recoveryCoefficient: 1,
+    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "心魇": {
     embryoType: "不定型",
@@ -809,14 +989,19 @@ const RACE_DEFINITIONS = Object.freeze({
 export const ALL_BUILTIN_RACES = Object.freeze(Object.keys(RACE_DEFINITIONS));
 
 /**
- * 1.1.4 的改名：旧名在读取时一律换成新名（存档另由 state_migration 一次改写）。
+ * 改名：旧名在读取时一律换成新名（存档另由 state_migration 一次改写）。
  * 只列内置种族的基名，装饰子项（百足姬-赤）由 canonicalizeRaceName 保留。
+ * 1.1.4 一批；1.2.1 植物族、真菌族改成非人形的怪植类、怪菌类，虫族改称虫人（与完整虫形的怪虫类区隔），
+ * 植物亚人改指花中少女爱那温，真菌亚人没有亚人可接（菌类的类人是米戈），不再收。
  */
 export const RACE_RENAMES = Object.freeze({
   百足姬: '百足氏',
   蝎罗: '蝎罗氏',
-  植物亚人: '植物族',
-  真菌亚人: '真菌族',
+  植物亚人: '爱那温',
+  植物族: '怪植类',
+  真菌族: '怪菌类',
+  社会虫族: '群居虫人',
+  独居虫族: '独居虫人',
   月兔族: '月兔',
   狮鹫族: '狮鹫',
   蛙人: '蛙族',
@@ -1483,13 +1668,13 @@ export function formatBloodlineLabel(race, bloodline = null, source = null) {
 }
 
 /** 普通遗传父母各半；核型沿用现有九格规则，只取被选中的遗传方。 */
-export function deriveFetusAncestry(egg, sperm) {
+export function deriveFetusAncestry(egg, sperm, { karyotypeImmune = false } = {}) {
   const eggRecord = typeof egg === 'string' ? { race: egg } : egg || {};
   const spermRecord = typeof sperm === 'string' ? { race: sperm } : sperm || {};
   const eggRace = eggRecord.race || '人类', spermRace = spermRecord.race || eggRace;
   const eggMode = getRaceInheritanceMode(eggRace), spermMode = getRaceInheritanceMode(spermRace);
   let parents = [spermRecord, eggRecord];
-  if ((eggMode !== RACE_INHERITANCE_MODES.NORMAL) !== (spermMode !== RACE_INHERITANCE_MODES.NORMAL)) {
+  if (!karyotypeImmune && (eggMode !== RACE_INHERITANCE_MODES.NORMAL) !== (spermMode !== RACE_INHERITANCE_MODES.NORMAL)) {
     const activeMode = eggMode !== RACE_INHERITANCE_MODES.NORMAL ? eggMode : spermMode;
     parents = [activeMode === RACE_INHERITANCE_MODES.PATERNAL ? spermRecord : eggRecord];
   }
@@ -1585,7 +1770,7 @@ function mergeWeightedGenderRatio(genders) {
  * - 变化态：任一成分有变化态即有，没有的成分以常态体型参与加权（半龙半人 = 5.5）
  * - 没有任何数值成分时：含依个体即为依个体，否则为可变
  * 未收录的种族不参与；全部未收录时三栏皆为 null。
- * individualSizes：依个体成分的已知体型（如父方大蟑螂一人高 → { 独居虫族: 4 }），以该值与
+ * individualSizes：依个体成分的已知体型（如父方大蟑螂一人高 → { 怪虫类: 4 }），以该值与
  * BODY_SIZE_KNOWN_INDIVIDUAL_SD 参与加权；没给的依个体成分照旧排除。
  */
 export const BODY_SIZE_KNOWN_INDIVIDUAL_SD = 0.4;
@@ -1703,14 +1888,15 @@ function combineRaceDescriptors(spermRace, eggRace) {
 /**
  * 依精方与卵方的核型决定胎儿种族。只有一方具核型时，雄核保留精方、雌核保留卵方；
  * 双方皆一般或皆具核型时形成混血。混血亲本本身一律按一般处理。
+ * karyotypeImmune：卵方个体的核型免疫（immune.karyotype），不论核型一律混血。
  */
-export function deriveFetusRace(eggRace, spermRace) {
+export function deriveFetusRace(eggRace, spermRace, { karyotypeImmune = false } = {}) {
   const eggMode = getRaceInheritanceMode(eggRace);
   const spermMode = getRaceInheritanceMode(spermRace);
   const eggHasNucleus = eggMode !== RACE_INHERITANCE_MODES.NORMAL;
   const spermHasNucleus = spermMode !== RACE_INHERITANCE_MODES.NORMAL;
 
-  if (eggHasNucleus !== spermHasNucleus) {
+  if (!karyotypeImmune && eggHasNucleus !== spermHasNucleus) {
     const activeMode = eggHasNucleus ? eggMode : spermMode;
     const selectedRace = activeMode === RACE_INHERITANCE_MODES.PATERNAL ? spermRace : eggRace;
     const selectedParts = getRaceDescriptorComponents(selectedRace);
@@ -1723,12 +1909,12 @@ export function deriveFetusRace(eggRace, spermRace) {
  * 只有精卵双方恰有一方使用特殊核型时，胚胎才属于雄核或雌核发生。
  * 双方皆一般或双方皆有特殊核型时依九格规则形成混血，不附核型标签。
  */
-export function getFetusInheritanceTag(eggRace, spermRace) {
+export function getFetusInheritanceTag(eggRace, spermRace, { karyotypeImmune = false } = {}) {
   const eggMode = getRaceInheritanceMode(eggRace);
   const spermMode = getRaceInheritanceMode(spermRace);
   const eggHasNucleus = eggMode !== RACE_INHERITANCE_MODES.NORMAL;
   const spermHasNucleus = spermMode !== RACE_INHERITANCE_MODES.NORMAL;
-  if (eggHasNucleus === spermHasNucleus) return null;
+  if (karyotypeImmune || eggHasNucleus === spermHasNucleus) return null;
   const activeMode = eggHasNucleus ? eggMode : spermMode;
   return activeMode === RACE_INHERITANCE_MODES.PATERNAL ? 'androgenesis' : 'gynogenesis';
 }

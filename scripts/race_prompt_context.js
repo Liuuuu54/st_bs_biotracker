@@ -449,7 +449,8 @@ function buildSpermCalculationBlock(characterState) {
     const fatherInheritanceMode = getRaceInheritanceMode(fatherRace);
     let effectiveDifficulty = (Number.isFinite(motherDifficulty) ? motherDifficulty : 1.0) + (Number.isFinite(fatherDifficulty) ? fatherDifficulty : 1.0);
     if (motherEmbryoType !== fatherEmbryoType) effectiveDifficulty *= 1.5;
-    const ancestry = deriveFetusAncestry(base, sperm);
+    const karyotypeImmune = Boolean(profile.immune?.karyotype);
+    const ancestry = deriveFetusAncestry(base, sperm, { karyotypeImmune });
     const fetusRace = ancestry.race;
     const fetusProfile = getMergedRacePhysiologyProfile(fetusRace, ancestry.bloodline) || {};
     const fetusGenderRatio = fetusProfile?.genderRatio;
@@ -461,7 +462,9 @@ function buildSpermCalculationBlock(characterState) {
         `- 精方胚胎类型: ${fatherEmbryoType}`,
         `- 精方遗传核型: ${getInheritanceModeText(fatherRace)}`,
         `- 系统受精难度计算: 母体 ${formatNumber(motherDifficulty)} + 精方 ${formatNumber(fatherDifficulty)}${motherEmbryoType !== fatherEmbryoType ? `，且因胚胎类型不同（${motherEmbryoType} vs ${fatherEmbryoType}）再 ×1.5` : ''} = ${formatNumber(effectiveDifficulty)}`,
-        `- 核型判定: 精方 ${fatherInheritanceMode} / 卵方 ${motherInheritanceMode}；双方皆一般或皆具核型时混血，只有一方具核型时雄核保留精方、雌核保留卵方。`,
+        karyotypeImmune
+          ? '- 核型判定: 卵方有核型免疫，不论核型一律混血。'
+          : `- 核型判定: 精方 ${fatherInheritanceMode} / 卵方 ${motherInheritanceMode}；双方皆一般或皆具核型时混血，只有一方具核型时雄核保留精方、雌核保留卵方。`,
         `- 核型判定后胎儿种族: ${sanitizePromptText(fetusRace)}`,
         `- 后代血脉: ${sanitizePromptText(formatBloodline(fetusRace, ancestry.bloodline, ancestry.bloodlineSource))}`,
         `- 系统性别比计算: 以后代种族 ${sanitizePromptText(fetusRace)} 的 genderRatio 为准，当前结果为 ${getGenderRatioDisplay(fetusGenderRatio)} (${getGenderRatioText(fetusGenderRatio)})`,

@@ -1057,8 +1057,10 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   delete profile.base?.spermContacts;
   delete profile.base?.nextSpermContactId;
   delete profile.bio;
-  // immune 只留 metabolism 一项：prompt 据此不发本人的需求与衍生需求说明
-  if (immune.metabolism) profile.immune = { metabolism: true };
+  // immune 只留 metabolism 与 karyotype：前者让 prompt 不发本人的需求与衍生需求说明，
+  // 后者让异种精液的核型判定照免疫写
+  const promptImmune = { ...(immune.metabolism ? { metabolism: true } : {}), ...(immune.karyotype ? { karyotype: true } : {}) };
+  if (Object.keys(promptImmune).length > 0) profile.immune = promptImmune;
   else delete profile.immune;
   delete profile.cooldown;
   delete profile.visualCue;
@@ -1114,7 +1116,7 @@ function buildOffscreenCharacterState(item, diaryLimit = 0, wardrobeOn = true) {
           ...(metabolismImmune ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
         },
       } : {}),
-      ...(metabolismImmune ? { immune: { metabolism: true } } : {}),
+      ...(metabolismImmune || profile.immune?.karyotype ? { immune: { ...(metabolismImmune ? { metabolism: true } : {}), ...(profile.immune?.karyotype ? { karyotype: true } : {}) } } : {}),
       ...(wardrobeOn && profile.wardrobe?.enabled ? {
         wardrobe: {
           enabled: true,

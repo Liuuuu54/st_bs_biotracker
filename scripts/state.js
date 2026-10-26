@@ -13,7 +13,7 @@ import {
 } from './registry_psy_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
-import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines } from './state_migration.js';
+import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines, renameStoredRaces } from './state_migration.js';
 import { createEmptySires, normalizeSires, pruneFutaSireRecord } from './sires.js';
 import { announceSavedRevisions, claimChatRevision, clearHostSettingsPendingUpTo, markHostSettingsPending, queueRevisionAnnouncement, readLatestChatRevision } from './save_sync.js';
 import {
@@ -835,6 +835,7 @@ export function createDefaultFemaleState(name = '') {
         metabolism: false,
         miscarriage: false,
         realisticLabor: false,
+        karyotype: false,
       },
     },
   };
@@ -1435,6 +1436,8 @@ function migrateChatStateSchema(chatState) {
   if (fromVersion < 6) chatState.cardSkillSeedApplied = true;
   // v8 → v9（1.2.0 精方注册）：新增顶层 sires；旧存档与旧快照没有精方，一律从空表开始
   if (fromVersion < 9) chatState.sires = normalizeSires(chatState.sires, Number(chatState.minutesPassed) || 0);
+  // v9 → v10（1.2.1 改名）：精方档案的种族与血统比例跟角色一起换新名
+  if (fromVersion < 10) renameStoredRaces(chatState.sires);
   migrateCharacters(chatState.characters, fromVersion, { minutesPassed: Number(chatState.minutesPassed) || 0 });
   if (Array.isArray(chatState.snapshots) && chatState.snapshots.length > 0) {
     const source = chatState.snapshots;
@@ -1444,6 +1447,7 @@ function migrateChatStateSchema(chatState) {
     for (let index = 0; index < source.length; index += 1) {
       const payload = materializeSnapshotPayloadAt(source, index, cache);
       if (fromVersion < 6) payload.cardSkillSeedApplied = true;
+      if (fromVersion < 10 && payload.sires) renameStoredRaces(payload.sires);
       const characters = unpackSnapshotCharacters(payload.characters, false, true);
       migrateCharacters(characters, fromVersion, { minutesPassed: Number(payload.minutesPassed) || 0 });
       rebuilt.push(createStoredSnapshotState(rebuilt, { ...payload, characters: packSnapshotCharacters(characters) }, source[index], rebuiltCache));
@@ -2097,6 +2101,7 @@ function createSnapshotCharacterBaseline(name = '') {
         metabolism: false,
         miscarriage: false,
         realisticLabor: false,
+        karyotype: false,
       },
     },
   };

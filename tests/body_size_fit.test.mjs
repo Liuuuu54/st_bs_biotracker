@@ -43,8 +43,8 @@ test('抽样：按种族分布抽一位小数并截在 1–7；可变与依个�
 });
 
 test('依个体的父母以个体体型代入：一人高的大蟑螂与人类的孩子不会被算成纯人类体型', () => {
-  assert.deepEqual(getExpectedBodySize('独居虫族x人类'), { bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null });
-  const withFather = getExpectedBodySize('独居虫族x人类', null, [{ race: '独居虫族-蟑螂', bodySize: 5 }, { race: '人类', bodySize: 3.8 }]);
+  assert.deepEqual(getExpectedBodySize('怪虫类x人类'), { bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null });
+  const withFather = getExpectedBodySize('怪虫类x人类', null, [{ race: '怪虫类-蟑螂', bodySize: 5 }, { race: '人类', bodySize: 3.8 }]);
   assert.equal(withFather.bodySize, 4.5);
 });
 
@@ -83,7 +83,7 @@ test('bsAddSperm 有体型参数，插入时结算契合并进次级提示', () 
 
 test('依个体又没给体型：不结算契合，只在回传讯息说明', () => {
   const chatState = chatWith();
-  const result = insert(chatState, { male: '大蟑螂', race: '独居虫族-蟑螂' });
+  const result = insert(chatState, { male: '大蟑螂', race: '怪虫类-蟑螂' });
   assert.match(result.message, /精方体型未知/);
   assert.equal(P(chatState).base.penetrationFit, null);
   assert.ok(!String(P(chatState).notify.secondly || '').includes('体型契合'));
@@ -91,7 +91,7 @@ test('依个体又没给体型：不结算契合，只在回传讯息说明', ()
 
 test('恰好契合不打扰叙述；变身或消弭体型差才进次级提示', () => {
   const plain = chatWith();
-  insert(plain, { male: '大蟑螂', race: '独居虫族-蟑螂', maleBodySize: 4.2 });
+  insert(plain, { male: '大蟑螂', race: '怪虫类-蟑螂', maleBodySize: 4.2 });
   assert.equal(P(plain).base.penetrationFit.label, '恰好契合');
   assert.ok(!String(P(plain).notify.secondly || '').includes('体型契合'));
 
@@ -113,10 +113,10 @@ test('没有变化态的一方传了变化态：按常态计算并说明', () =>
 
 test('射精把个体体型记在精液纪录，受孕时存进胎儿的父方体型；拔出清除契合', () => {
   const chatState = chatWith({ stage: '排卵期', days: 0, eggs: 1 });
-  insert(chatState, { male: '大蟑螂', race: '独居虫族-蟑螂', maleBodySize: 4.5 });
-  deposit(chatState, { male: '大蟑螂', race: '独居虫族-蟑螂' });
+  insert(chatState, { male: '大蟑螂', race: '怪虫类-蟑螂', maleBodySize: 4.5 });
+  deposit(chatState, { male: '大蟑螂', race: '怪虫类-蟑螂' });
   assert.equal(P(chatState).base.sperms[0].bodySize, 4.5);
-  applyToolCall(chatState, { name: 'bsAddSperm', arguments: { female: '冒险者', male: '大蟑螂', race: '独居虫族-蟑螂', action: 'withdraw', amount: 0 } });
+  applyToolCall(chatState, { name: 'bsAddSperm', arguments: { female: '冒险者', male: '大蟑螂', race: '怪虫类-蟑螂', action: 'withdraw', amount: 0 } });
   assert.equal(P(chatState).base.penetrationFit, null);
 
   Math.random = () => 0;
@@ -140,9 +140,9 @@ test('注册：模型给的体型优先；没给按种族抽；孩子注册代�
   assert.equal(slime.characters['史莱姆娘'].profile.base.bodySize, null);
 
   const child = state.createEmptyChatState();
-  applyRegistryResult(child, { name: '虫娘', profile: { base: { race: '独居虫族x人类', age: 18 } } }, {
+  applyRegistryResult(child, { name: '虫娘', profile: { base: { race: '怪虫类x人类', age: 18 } } }, {
     random: () => 0.25,
-    bodySizeParents: [{ race: '独居虫族-蟑螂', bodySize: 5 }, { race: '人类', bodySize: 4 }],
+    bodySizeParents: [{ race: '怪虫类-蟑螂', bodySize: 5 }, { race: '人类', bodySize: 4 }],
   });
   assert.equal(child.characters['虫娘'].profile.base.bodySize, 4.5);
 });
@@ -153,7 +153,7 @@ test('受精胎重的体型系数：每差一级 2^0.25，截在 0.5–2；资�
   assert.equal(getBodySizeWeightRatio(human, { race: '巨人', bodySize: 6 }), Math.SQRT2);
   assert.equal(getBodySizeWeightRatio({ race: '半身人', bodySize: 2 }, { race: '巨人', bodySize: 7 }), 2);
   assert.equal(getBodySizeWeightRatio(human, { race: '史萊姆' }), null);
-  assert.equal(getBodySizeWeightRatio(human, { race: '独居虫族' }), null);
+  assert.equal(getBodySizeWeightRatio(human, { race: '怪虫类' }), null);
 });
 
 test('受精胎重：有体型看体型差，没有就退回承载耐受，两套都在 0.5–2', () => {
@@ -168,7 +168,7 @@ test('受精胎重：有体型看体型差，没有就退回承载耐受，两�
   // 巨人父亲（+3 级）系数 2^0.75、哥布林父亲（−2 级）2^-0.5：同样乱数下胎重差 2^1.25 倍
   assert.ok(Math.abs(conceive('巨人') / conceive('哥布林') - 2 ** 1.25) < 1e-9);
   // 依个体又没记体型：走承载耐受；补上体型后改走体型差
-  assert.ok(Math.abs(conceive('独居虫族', 6) / conceive('人类') - Math.SQRT2) < 1e-9);
+  assert.ok(Math.abs(conceive('怪虫类', 6) / conceive('人类') - Math.SQRT2) < 1e-9);
   // 史莱姆体型可变：走承载耐受 2^强弱，仍在 0.5–2 之内
   const slimeRatio = conceive('史萊姆') / conceive('人类');
   assert.ok(slimeRatio > 1 && slimeRatio <= 2);
@@ -176,7 +176,7 @@ test('受精胎重：有体型看体型差，没有就退回承载耐受，两�
 
 test('族谱：路人父亲带上子女记录的体型，已注册角色带个体体型', () => {
   const chatState = chatWith();
-  P(chatState).children = [{ id: 'c1', name: '虫仔', fathers: '大蟑螂', fatherRace: '独居虫族-蟑螂', fatherBodySize: 4.5, race: '独居虫族x人类', gender: '男', age: 0 }];
+  P(chatState).children = [{ id: 'c1', name: '虫仔', fathers: '大蟑螂', fatherRace: '怪虫类-蟑螂', fatherBodySize: 4.5, race: '怪虫类x人类', gender: '男', age: 0 }];
   const graph = buildLineageGraph(chatState);
   assert.equal(graph.nodes.find((node) => node.id === 'name:大蟑螂').bodySize, 4.5);
   assert.equal(graph.nodes.find((node) => node.id === 'char:冒险者').bodySize, 4);
@@ -186,7 +186,7 @@ test('追踪提示的依个体名单跟着百科覆写走，写实世界不送',
   const { buildTrackerSystemPrompt } = await import('../scripts/tracker_prompt_context.js');
   const { setRacePhysiologyOverrides } = await import('../scripts/race_config.js');
   const note = (payload = {}) => buildTrackerSystemPrompt('', null, payload).split('\n').find((line) => line.includes('必须按剧情传 maleBodySize')) || '';
-  assert.match(note(), /怪兽类.*独居虫族.*心魇/);
+  assert.match(note(), /怪兽类.*怪虫类.*怪爬虫类.*心魇/);
   try {
     setRacePhysiologyOverrides({ 怪兽类: { bodySize: 5, bodySizeSd: 1 }, 人类: { bodySize: 'individual' } });
     assert.ok(!note().includes('怪兽类'));

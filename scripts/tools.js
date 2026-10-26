@@ -502,7 +502,8 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + 'race 与 fatherRace 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔。母系 derivedType 永远来自承载者；父系优先取 fatherRace，未写时才取 race。'
       + 'provider 若尚未注册，用 race 指明遗传母方种族；父方种族预设与遗传母方同族，跨种族时用 fatherRace 指明。'
       + 'count 只表示要建立几张胎儿卡、也就是几名可能写入族谱的有效后代候选，绝不表示故事中植入了几枚卵。一个十枚卵但仅有一名有效后代的卵群必须传 count=1；其余九枚是该卡的伴生卵（companionEggCount），由系统依种族另行决定。'
-      + '工具加入的是尚未着床的受精卵，可在同一着床窗口重复调用；第一颗会启动共用 fertilizationDays，之后由 bsPassedTime 推进并统一着床。孕早期且仍在异期复孕窗口时也可追加，此时新胎同时标记代孕与异期复孕；其余妊娠阶段不可加入。自然受孕请勿使用本工具。',
+      + '工具加入的是尚未着床的受精卵，可在同一着床窗口重复调用；第一颗会启动共用 fertilizationDays，之后由 bsPassedTime 推进并统一着床。孕早期且仍在异期复孕窗口时也可追加，此时新胎同时标记代孕与异期复孕；其余妊娠阶段不可加入。自然受孕请勿使用本工具。'
+      + 'hostFetusIndex（从 0 起，按当前可见顺序）只在剧情明确写到把胚胎放进腹中某一胎体内时才给（例如炉蚜把自己的受精卵嵌进代孕胎儿）：胚胎成为那一胎的孕中孕，那一胎就是它的母亲；同样只限孕早期的异期复孕窗口，宿主须是胎生、胎转卵生或不定型。这时 provider 可以是承载者自己（她自己的胚胎，出生后留在她名下）。一般代孕不给这个参数。',
     input_schema: {
       type: 'object',
       properties: {
@@ -517,6 +518,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         },
         race: { type: 'string' },
         fatherRace: { type: 'string' },
+        hostFetusIndex: { type: 'integer', minimum: 0, description: '把胚胎植入腹中第几胎体内（从 0 起，按当前可见顺序）；只在剧情明确写到放进胎儿体内时给。' },
       },
       required: ['female', 'provider'],
       additionalProperties: false,
@@ -1815,10 +1817,14 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
   const geneticProfile = options.geneticProfile || profile;
   const motherRace = parseRaceDescriptor(geneticProfile?.base?.race || '人类').race || '人类';
   const fatherRace = parseRaceDescriptor(sperm?.race || motherRace || '人类').race || motherRace || '人类';
-  const ancestry = deriveFetusAncestry({ ...geneticProfile.base, race: motherRace }, { ...sperm, race: fatherRace });
+  // 卵方的核型免疫：不论核型一律混血，血脉比例平手时（胚型、伴生卵、图示）改随父方
+  const karyotypeImmune = Boolean(options.karyotypeImmune ?? geneticProfile?.immune?.karyotype);
+  const ancestry = deriveFetusAncestry({ ...geneticProfile.base, race: motherRace }, { ...sperm, race: fatherRace }, { karyotypeImmune });
+  const fatherBloodline = getBloodlineInfo(fatherRace, sperm?.bloodline, sperm?.bloodlineSource);
   const motherBloodline = getBloodlineInfo(motherRace, geneticProfile?.base?.bloodline, geneticProfile?.base?.bloodlineSource).bloodline;
+  const tieBloodline = karyotypeImmune ? fatherBloodline.bloodline : motherBloodline;
   const fetusRace = ancestry.race;
-  const inheritanceTag = getFetusInheritanceTag(motherRace, fatherRace);
+  const inheritanceTag = getFetusInheritanceTag(motherRace, fatherRace, { karyotypeImmune });
   const gender = deriveFetusGender(fetusRace, ancestry.bloodline);
   const weightRatio = getConceptionWeightRatio(profile, sperm);
   const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
@@ -1835,16 +1841,18 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     providerSources: options.provider ? [String(options.provider)] : [],
     ...ancestry,
     fatherRace,
-    fatherBloodline: getBloodlineInfo(fatherRace, sperm?.bloodline, sperm?.bloodlineSource).bloodline,
-    fatherBloodlineSource: getBloodlineInfo(fatherRace, sperm?.bloodline, sperm?.bloodlineSource).bloodlineSource,
+    fatherBloodline: fatherBloodline.bloodline,
+    fatherBloodlineSource: fatherBloodline.bloodlineSource,
     fatherDerivedType,
     // 精液纪录只在个体已知时带体型；精液清掉后仍查得到父方多大
     fatherBodySize: clampIndividualBodySize(sperm?.bodySize),
+    // 平手随父方：随胎儿卡带到孩子，族谱图示与日后的胎儿像素图照这个取
+    ...(karyotypeImmune ? { paternalTie: true } : {}),
     gender,
-    embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline, motherBloodline),
+    embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline, tieBloodline),
     // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
     // 精液量按承载者的子宫容积换算成人类尺度，同体型的一对与人类一样
-    companionEggCount: rollCompanionEggCount(fetusRace, Math.random, Number.isFinite(Number(sperm?.value)) ? Number(sperm.value) / getUterusVolumeFactor(profile?.base) : undefined, ancestry.bloodline, motherBloodline),
+    companionEggCount: rollCompanionEggCount(fetusRace, Math.random, Number.isFinite(Number(sperm?.value)) ? Number(sperm.value) / getUterusVolumeFactor(profile?.base) : undefined, ancestry.bloodline, tieBloodline),
     weight: getConceptionWeight(cycleStage, gender, weightRatio),
     tendencyAngle: randomInt(0, 360),
     backSide: randomBackSide(),
@@ -3847,6 +3855,7 @@ function appendChildrenFromFetuses(profile, fetuses) {
       // 产程是一胎一胎娩出的，宿主可能比被套的那胎晚出来，所以先记编号，
       // 等两边都进了 children 再解析（linkNestedChildren）。
       birthEmbryoId: Number.isFinite(Number(fetus?.embryoId)) ? Number(fetus.embryoId) : null,
+      ...(fetus?.paternalTie ? { paternalTie: true } : {}),
       nestedInEmbryoId: Number.isFinite(Number(fetus?.nestedInEmbryoId)) ? Number(fetus.nestedInEmbryoId) : null,
       nestedInChildId: null,
       gender: String(fetus?.gender || '未知'),
@@ -5717,7 +5726,9 @@ function applyImplantEmbryo(chatState, args) {
   if (!provider) {
     return { applied: false, message: `bsImplantEmbryo skipped for ${female}: provider is required.` };
   }
-  if (provider === female) {
+  // 植入胎儿体内时可以是承载者自己的胚胎（炉蚜把自己的受精卵嵌进代孕胎儿）
+  const nestsInFetus = args?.hostFetusIndex !== undefined && args?.hostFetusIndex !== null;
+  if (provider === female && !nestsInFetus) {
     return { applied: false, message: `bsImplantEmbryo skipped for ${female}: provider must differ from the carrier; use natural conception instead.` };
   }
 
@@ -5739,6 +5750,22 @@ function applyImplantEmbryo(chatState, args) {
       return { applied: false, message: `bsImplantEmbryo skipped for ${female}: the superfetation window has closed.` };
     }
   }
+  // 植入胎儿体内：走孕中孕的标记，但不受自然孕中孕的三道门槛（8–12 周、宿主胎重、精液量）限制
+  let nestedHost = null;
+  if (nestsInFetus) {
+    if (!isAdditionalSurrogacy) {
+      return { applied: false, message: `bsImplantEmbryo skipped for ${female}: hostFetusIndex needs an existing early pregnancy.` };
+    }
+    nestedHost = resolveVisibleFetus(existingFetuses, Number(args.hostFetusIndex));
+    if (!nestedHost || !isImplantedFetus(nestedHost)) {
+      return { applied: false, message: `bsImplantEmbryo skipped for ${female}: invalid hostFetusIndex.` };
+    }
+    if (!canHostNestedPregnancy(nestedHost)) {
+      return { applied: false, message: `bsImplantEmbryo skipped for ${female}: ${String(nestedHost.embryoType || '胎生')} 的胎儿包在壳或卵膜里，不能当孕中孕宿主（只有胎生、胎转卵生、不定型可以）。` };
+    }
+  }
+  // 承载者自己的胚胎没有要转交的归属方
+  const owner = provider === female ? null : provider;
 
   const count = Math.max(1, Math.min(50, Math.floor(Number(args?.count) || 1)));
   const fathers = String(args?.fathers || '').trim() || '未知';
@@ -5774,8 +5801,15 @@ function applyImplantEmbryo(chatState, args) {
   const hadPendingImplantation = existingFetuses.some((fetus) => !isImplantedFetus(fetus));
   ensureEmbryoMetadata(pregnant);
   for (let index = 0; index < count; index += 1) {
-    const fetus = createSimpleFetus(profile, spermSeed, currentStage, { geneticProfile, provider, fatherTalents: getParentTalents(chatState, fathers) });
-    if (isAdditionalSurrogacy) markSuperfetationFetus(profile, fetus);
+    const fetus = createSimpleFetus(profile, spermSeed, currentStage, {
+      geneticProfile,
+      provider: owner,
+      fatherTalents: getParentTalents(chatState, fathers),
+      // 核型免疫属于遗传母方：已注册的 provider 看她自己的，承载者自己的胚胎看承载者
+      karyotypeImmune: Boolean((owner ? providerCharacter : character)?.profile?.immune?.karyotype),
+    });
+    if (nestedHost) markNestedFetus(profile, fetus, nestedHost);
+    else if (isAdditionalSurrogacy) markSuperfetationFetus(profile, fetus);
     existingFetuses.push(fetus);
   }
   pregnant.fetuses = existingFetuses;
@@ -5790,7 +5824,9 @@ function applyImplantEmbryo(chatState, args) {
   updateFetalEnergyDrain(profile);
   profile.notify = {
     ...notify,
-    secondly: isAdditionalSurrogacy
+    secondly: nestedHost
+      ? `${female}腹中第${Number(args.hostFetusIndex) + 1}胎体内被植入了${count}个胚胎，正等待共同著床窗口`
+      : isAdditionalSurrogacy
       ? `${female}在孕早期追加了${count}个来自${provider}的代孕异期胚胎，正等待共同著床窗口`
       : `${female}加入了${count}个来自${provider}的受精卵，正等待共同著床窗口`,
   };
@@ -5798,7 +5834,9 @@ function applyImplantEmbryo(chatState, args) {
 
   next.profile = profile;
   chatState.characters[female] = syncCharacterStageFromProfile(next);
-  return { applied: true, message: `bsImplantEmbryo applied to ${female}: ${count} pre-implantation embryo(s) from ${provider}.` };
+  return { applied: true, message: nestedHost
+    ? `bsImplantEmbryo applied to ${female}: ${count} pre-implantation embryo(s) from ${provider} nested inside fetus ${Number(args.hostFetusIndex)}.`
+    : `bsImplantEmbryo applied to ${female}: ${count} pre-implantation embryo(s) from ${provider}.` };
 }
 /** 破水只允许在已进入产兆前驱后作为转入正式产程的受控事件。 */
 const RUPTURE_ALLOWED_PRELABOR_STAGES = Object.freeze(['产兆前驱']);

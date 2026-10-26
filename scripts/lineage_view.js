@@ -157,6 +157,8 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
       raceLabel: raceLabel(node.race, node.derivedType),
       bloodlineLabel: formatBloodlineLabel(node.race, node.bloodline, node.bloodlineSource),
       motherBloodline: motherBloodlineOf(node.id),
+      // 图示平手时偏向的那一方：平常是母系，母亲有核型免疫的孩子改看父系
+      tieBloodline: node.paternalTie ? (node.fatherBloodline || null) : motherBloodlineOf(node.id),
       ageLabel: ageLabel(node.age),
       lifeStage: getLifeStage(node.kind, node.age, childrenOf.flatMap((item) => item.relations)),
       parents,
