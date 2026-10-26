@@ -1132,6 +1132,25 @@ function getObstetricPregnancyOffsetDays(profile) {
   return Math.max(0, getMenstrualCycleLength(profile) / 2);
 }
 
+/** 人类著床当下的产科孕龄：受精后约 6 天著床，加上末次月经起算的 14 天 */
+const HUMAN_IMPLANTATION_GESTATION_DAYS = calculateImplantationDays(28) + 14;
+const IMPLANTATION_GESTATION_CAP_DAYS = Number(PREGNANCY_STAGE_DAYS['孕早期']) || 98;
+
+/**
+ * 著床当下的孕龄（有效孕日）。原始值是（著床前天数 + 半个周期）× 妊娠速度，也就是这段时间占物种孕期的比例换回人类刻度；
+ * 它是线性的，周期很长（天使、恶魔约一年）或孕速很快（怪鸟类 20 倍）的物种一著床就会冲过孕早期。
+ * 改用饱和曲线：孕龄 = 上限 × 原始 ÷（原始 + 上限 − 20），人类原始 20 仍是 20，排序不变，越接近孕早期结尾越平，永远到不了孕中期。
+ * scale 是压缩比例，产科偏移（妊娠察觉用来扣掉的那段）按同一比例缩。
+ */
+function getImplantationGestation(profile) {
+  const speed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
+  const raw = (getImplantationDays(profile) + getObstetricPregnancyOffsetDays(profile)) * speed;
+  const cap = IMPLANTATION_GESTATION_CAP_DAYS;
+  const days = raw > 0 ? (cap * raw) / (raw + cap - HUMAN_IMPLANTATION_GESTATION_DAYS) : 0;
+  const scale = raw > 0 ? days / raw : 1;
+  return { days, scale, speed, offsetDays: getObstetricPregnancyOffsetDays(profile) * speed * scale };
+}
+
 function randomNumber(min, max) {
   return Math.random() * (max - min) + min;
 }
@@ -2715,15 +2734,21 @@ function processSimpleConception(profile, tick, notify, name) {
         notify.secondly = `${name}因身体虚弱，胚胎著床失败`;
         setVisualCue(profile, 'implantationFailed');
       } else {
-        const obstetricPregnantDays = base.fertilizationDays + getObstetricPregnancyOffsetDays(profile);
-        const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
+        // 著床当下的孕龄压在孕早期内；同一次推进超过著床的天数再照孕速往上加
+        const implantation = getImplantationGestation(profile);
+        const overflowDays = Math.max(0, base.fertilizationDays - getImplantationDays(profile));
+        const effectivePregnantDays = implantation.days + overflowDays * implantation.speed;
+        // 实际天数按孕速倒推，与有效孕日维持同一比例（孕速 1 时两者相同）；冻结（孕速 0）时退回受精天数加偏移
+        const pregnantDays = implantation.speed > 0
+          ? effectivePregnantDays / implantation.speed
+          : base.fertilizationDays + getObstetricPregnancyOffsetDays(profile);
         applyIdenticalSplit(profile);
         resolvePendingChimeraGenders(pregnant.fetuses);
         base.stage = '孕早期';
         base.days = 0;
         base.fertilizationDays = 0;
-        pregnant.pregnantDays = obstetricPregnantDays;
-        pregnant.effectivePregnantDays = obstetricPregnantDays * gestationSpeed;
+        pregnant.pregnantDays = pregnantDays;
+        pregnant.effectivePregnantDays = effectivePregnantDays;
         for (const fetus of pregnant.fetuses) fetus.amnionDurability = AMNION_INTACT;
         profile.experience = {
           ...(profile.experience || {}),
@@ -3304,7 +3329,7 @@ export function ensureNaturalNoticeSample(profile, config = {}) {
     pregnant.experienceBeforePregnancy = prior;
     pregnant.noticeSample = { z: randomStandardNormal(), vitalityLevel: profile.base?.vitalityLevel,
       psyStressLevel: profile.base?.psyStressLevel, experience: prior, config: normalizeReproductiveSettings(config),
-      obstetricOffsetDays: getObstetricPregnancyOffsetDays(profile) * clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1) };
+      obstetricOffsetDays: getImplantationGestation(profile).offsetDays };
   }
   return pregnant.noticeSample;
 }
@@ -6635,6 +6660,8 @@ function applyTimeToCharacter(character, tick) {
 
   processSimpleConception(profile, tick, notify, next.name);
   stage = String(base.stage || stage);
+  // 这一步才著床：著床时已把整段推进记进孕龄（受精天数 + 产科偏移），下面的孕期推进不能再加一次
+  const implantedThisTick = !isPregnancyStage(oldStage) && isPregnancyStage(stage);
   if (Array.isArray(pregnant.fetuses) && pregnant.fetuses.length > 0 && isPregnancyStage(stage)) {
     applyPregnancyPhysiology(profile, next.runtime || {});
   }
@@ -6656,8 +6683,9 @@ function applyTimeToCharacter(character, tick) {
     }
   } else if (PREGNANCY_STAGES.includes(stage)) {
     const oldPregnantDays = clampNumber(pregnant.pregnantDays, 0, 9999, 0);
-    pregnant.pregnantDays = oldPregnantDays + deltaDays;
-    pregnant.effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) + (deltaDays * clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), 0, GESTATION_SPEED_MAX, 1));
+    const pregnancyDeltaDays = implantedThisTick ? 0 : deltaDays;
+    pregnant.pregnantDays = oldPregnantDays + pregnancyDeltaDays;
+    pregnant.effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) + (pregnancyDeltaDays * clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), 0, GESTATION_SPEED_MAX, 1));
     const oldWeek = Math.floor(oldPregnantDays / 7);
     const newWeek = Math.floor(pregnant.pregnantDays / 7);
     if (newWeek > oldWeek && isHere) {
