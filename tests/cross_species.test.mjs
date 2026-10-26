@@ -99,3 +99,24 @@ test('跨种受精障碍取消：异族、胚型不同都与同族一样只看�
   assert.equal(immune.effectiveDifficulty, same.effectiveDifficulty);
   assert.equal(immune.chance, same.chance);
 });
+
+test('异种精液提示的难度算式与实际受精计算一致', () => {
+  const chatState = setup();
+  chatState.characters.A.profile.base.sperms = [{ male: '深潜者甲', race: '深潜者', value: 20 }];
+  const ctx = {
+    chatId: 'diff-chat', characters: [], chat: [{ name: '用户', is_user: true, mes: '……' }], name1: '用户', name2: 'A',
+    extensionSettings: { bs_biotracker: { enabled: true, chatStates: { 'diff-chat': chatState } } },
+    saveSettingsDebounced() {},
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const block = buildRacePhysiologyPrompt(buildTrackerPayload(ctx, state.getSettings(ctx)));
+  const line = block.split('\n').find((text) => text.includes('系统受精难度计算'));
+  // 算式那一段不含精量加成，实际难度要乘回加成再比
+  const { effectiveDifficulty, spermDoseBonus } = (() => {
+    const result = calculateFertilizationPreview({ eggRace: '人类', elapsedDays: 1, spermSources: [{ race: '深潜者', value: 20 }] });
+    return { effectiveDifficulty: result.sources[0].effectiveDifficulty, spermDoseBonus: result.spermDoseBonus };
+  })();
+  const expected = Math.round(effectiveDifficulty * spermDoseBonus * 100) / 100;
+  assert.match(line, /√\(母体 .* × 精方 .*\) × 跨种 1\.5，且因胚胎类型不同（胎生 vs 卵生）再 ×1\.25/);
+  assert.ok(line.includes(`= ${expected}`), `${line} 应含 = ${expected}`);
+});

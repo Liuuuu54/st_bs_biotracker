@@ -1,5 +1,6 @@
 import { ALL_BUILTIN_RACES, BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, RACE_BODY_PLAN_LABELS, DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN } from './stage_config.js';
+import { CROSS_RACE_DIFFICULTY_MULTIPLIER, EMBRYO_TYPE_MISMATCH_MULTIPLIER } from './calculator.js';
 
 /**
  * 提示词插值防线：剥离换行、闭合标签与控制字符——race/derivedType 等用户可控字符串
@@ -448,8 +449,10 @@ function buildSpermCalculationBlock(characterState) {
     const fatherEmbryoType = getEmbryoTypeByRace(fatherRace);
     const fatherInheritanceMode = getRaceInheritanceMode(fatherRace);
     const crossSpecies = Boolean(profile.immune?.crossSpecies);
-    let effectiveDifficulty = (Number.isFinite(motherDifficulty) ? motherDifficulty : 1.0) + (Number.isFinite(fatherDifficulty) ? fatherDifficulty : 1.0);
-    if (motherEmbryoType !== fatherEmbryoType) effectiveDifficulty *= 1.5;
+    // 与 calculateFertilizationPreview 同一套：异族取双方难度的几何平均再乘跨种倍率，胚型不同再乘一次
+    const embryoTypeMismatch = motherEmbryoType !== fatherEmbryoType;
+    let effectiveDifficulty = Math.sqrt((Number.isFinite(motherDifficulty) ? motherDifficulty : 1.0) * (Number.isFinite(fatherDifficulty) ? fatherDifficulty : 1.0)) * CROSS_RACE_DIFFICULTY_MULTIPLIER;
+    if (embryoTypeMismatch) effectiveDifficulty *= EMBRYO_TYPE_MISMATCH_MULTIPLIER;
     const ancestry = deriveFetusAncestry(base, sperm, { crossSpecies });
     const fetusRace = ancestry.race;
     const fetusProfile = getMergedRacePhysiologyProfile(fetusRace, ancestry.bloodline) || {};
@@ -463,7 +466,7 @@ function buildSpermCalculationBlock(characterState) {
         `- 精方遗传核型: ${getInheritanceModeText(fatherRace)}`,
         crossSpecies
           ? `- 系统受精难度计算: 卵方万族相容，跨种与胚胎类型不同都不加难度，只看母体 ${formatNumber(motherDifficulty)}`
-          : `- 系统受精难度计算: 母体 ${formatNumber(motherDifficulty)} + 精方 ${formatNumber(fatherDifficulty)}${motherEmbryoType !== fatherEmbryoType ? `，且因胚胎类型不同（${motherEmbryoType} vs ${fatherEmbryoType}）再 ×1.5` : ''} = ${formatNumber(effectiveDifficulty)}`,
+          : `- 系统受精难度计算: √(母体 ${formatNumber(motherDifficulty)} × 精方 ${formatNumber(fatherDifficulty)}) × 跨种 ${formatNumber(CROSS_RACE_DIFFICULTY_MULTIPLIER)}${embryoTypeMismatch ? `，且因胚胎类型不同（${motherEmbryoType} vs ${fatherEmbryoType}）再 ×${formatNumber(EMBRYO_TYPE_MISMATCH_MULTIPLIER)}` : ''} = ${formatNumber(effectiveDifficulty)}（同族只看母体；精量越多难度越低）`,
         crossSpecies
           ? '- 核型判定: 卵方有万族相容，不论核型一律混血。'
           : `- 核型判定: 精方 ${fatherInheritanceMode} / 卵方 ${motherInheritanceMode}；双方皆一般或皆具核型时混血，只有一方具核型时雄核保留精方、雌核保留卵方。`,
