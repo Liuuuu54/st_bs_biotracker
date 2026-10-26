@@ -1,4 +1,4 @@
-// 核型免疫（卵方个体的 immune.karyotype）：受孕不受雄核、雌核约束，一律混血；血脉平手随父方
+// 万族相容（卵方个体的 immune.crossSpecies）：跨种受精不加难度；受孕不受雄核、雌核约束，一律混血；血脉平手随父方
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -9,6 +9,7 @@ import { buildLineageView } from '../scripts/lineage_view.js';
 import { buildRacePhysiologyPrompt } from '../scripts/race_prompt_context.js';
 import { buildTrackerPayload } from '../scripts/tracker.js';
 import { applyToolCall } from '../scripts/tools.js';
+import { calculateFertilizationPreview } from '../scripts/calculator.js';
 
 function setup(immune = {}) {
   const chatState = state.createEmptyChatState();
@@ -38,8 +39,8 @@ test('没有免疫时照核型：人类母亲怀深潜者（雄核）的孩子�
   assert.equal(fetus.paternalTie, undefined);
 });
 
-test('核型免疫的母亲一律混血，平手的胚型随父方，并把平手随父带到孩子', () => {
-  const chatState = setup({ karyotype: true });
+test('万族相容的母亲一律混血，平手的胚型随父方，并把平手随父带到孩子', () => {
+  const chatState = setup({ crossSpecies: true });
   assert.equal(inject(chatState).applied, true);
   const [fetus] = chatState.characters.A.profile.pregnant.fetuses;
   assert.deepEqual(fetus.bloodline, { 深潜者: 0.5, 人类: 0.5 });
@@ -51,13 +52,13 @@ test('核型免疫的母亲一律混血，平手的胚型随父方，并把平�
 
 test('纯函数：免疫只拿掉核型约束，双方都没核型时结果一样', () => {
   assert.equal(deriveFetusAncestry('人类', '哥布林').race, '哥布林');
-  assert.deepEqual(deriveFetusAncestry('人类', '哥布林', { karyotypeImmune: true }).bloodline, { 哥布林: 0.5, 人类: 0.5 });
-  assert.deepEqual(deriveFetusAncestry('媚魔', '人类', { karyotypeImmune: true }).bloodline, { 人类: 0.5, 媚魔: 0.5 }, '雌核同样被拿掉');
-  assert.equal(getFetusInheritanceTag('人类', '哥布林', { karyotypeImmune: true }), null);
-  assert.deepEqual(deriveFetusAncestry('人类', '精灵', { karyotypeImmune: true }), deriveFetusAncestry('人类', '精灵'));
+  assert.deepEqual(deriveFetusAncestry('人类', '哥布林', { crossSpecies: true }).bloodline, { 哥布林: 0.5, 人类: 0.5 });
+  assert.deepEqual(deriveFetusAncestry('媚魔', '人类', { crossSpecies: true }).bloodline, { 人类: 0.5, 媚魔: 0.5 }, '雌核同样被拿掉');
+  assert.equal(getFetusInheritanceTag('人类', '哥布林', { crossSpecies: true }), null);
+  assert.deepEqual(deriveFetusAncestry('人类', '精灵', { crossSpecies: true }), deriveFetusAncestry('人类', '精灵'));
 });
 
-test('族谱图示：平手的孩子平常取母系，母亲有核型免疫的取父系', () => {
+test('族谱图示：平手的孩子平常取母系，母亲有万族相容的取父系', () => {
   const child = (id, extra = {}) => ({ id, name: id, fathers: '甲', race: '精灵x人类', bloodline: { 精灵: 0.5, 人类: 0.5 }, fatherRace: '精灵', fatherBloodline: { 精灵: 1 }, gender: '女', age: 3, ...extra });
   const chatState = setup();
   chatState.characters.A.profile.children = [child('平常'), child('免疫', { paternalTie: true })];
@@ -68,18 +69,33 @@ test('族谱图示：平手的孩子平常取母系，母亲有核型免疫的�
 });
 
 test('异种精液提示照免疫写核型判定', () => {
-  const chatState = setup({ karyotype: true });
+  const chatState = setup({ crossSpecies: true });
   chatState.characters.A.profile.base.sperms = [{ male: '哥布林甲', race: '哥布林', value: 20 }];
-  // 走追踪投影：immune.karyotype 要留在投影里，提示才看得到
+  // 走追踪投影：immune.crossSpecies 要留在投影里，提示才看得到
   const ctx = {
-    chatId: 'karyo-chat', characters: [], chat: [{ name: '用户', is_user: true, mes: '……' }], name1: '用户', name2: 'A',
-    extensionSettings: { bs_biotracker: { enabled: true, chatStates: { 'karyo-chat': chatState } } },
+    chatId: 'cross-chat', characters: [], chat: [{ name: '用户', is_user: true, mes: '……' }], name1: '用户', name2: 'A',
+    extensionSettings: { bs_biotracker: { enabled: true, chatStates: { 'cross-chat': chatState } } },
     saveSettingsDebounced() {},
   };
   globalThis.SillyTavern = { getContext: () => ctx };
   const payload = buildTrackerPayload(ctx, state.getSettings(ctx));
-  assert.deepEqual(payload.existing_state.A.profile.immune, { karyotype: true });
+  assert.deepEqual(payload.existing_state.A.profile.immune, { crossSpecies: true });
   const block = buildRacePhysiologyPrompt(payload);
-  assert.match(block, /卵方有核型免疫，不论核型一律混血/);
+  assert.match(block, /卵方有万族相容，不论核型一律混血/);
   assert.match(block, /核型判定后胎儿种族: 哥布林x人类/);
+  assert.match(block, /卵方万族相容，跨种与胚胎类型不同都不加难度/);
+});
+
+test('跨种受精障碍取消：异族、胚型不同都与同族一样只看卵方难度', () => {
+  const preview = (crossSpecies, race) => calculateFertilizationPreview({ eggRace: '人类', elapsedDays: 1, spermSources: [{ race, value: 20 }], crossSpecies }).sources[0];
+  const same = preview(false, '人类');
+  const egg = preview(false, '深潜者');
+  const immune = preview(true, '深潜者');
+  assert.equal(egg.sameRace, false);
+  assert.equal(egg.embryoTypeMismatch, true, '人类胎生对深潜者卵生');
+  assert.ok(egg.effectiveDifficulty > same.effectiveDifficulty);
+  assert.equal(immune.sameRace, true);
+  assert.equal(immune.embryoTypeMismatch, false);
+  assert.equal(immune.effectiveDifficulty, same.effectiveDifficulty);
+  assert.equal(immune.chance, same.chance);
 });

@@ -1057,9 +1057,9 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   delete profile.base?.spermContacts;
   delete profile.base?.nextSpermContactId;
   delete profile.bio;
-  // immune 只留 metabolism 与 karyotype：前者让 prompt 不发本人的需求与衍生需求说明，
+  // immune 只留 metabolism 与 crossSpecies：前者让 prompt 不发本人的需求与衍生需求说明，
   // 后者让异种精液的核型判定照免疫写
-  const promptImmune = { ...(immune.metabolism ? { metabolism: true } : {}), ...(immune.karyotype ? { karyotype: true } : {}) };
+  const promptImmune = { ...(immune.metabolism ? { metabolism: true } : {}), ...(immune.crossSpecies ? { crossSpecies: true } : {}) };
   if (Object.keys(promptImmune).length > 0) profile.immune = promptImmune;
   else delete profile.immune;
   delete profile.cooldown;
@@ -1116,7 +1116,7 @@ function buildOffscreenCharacterState(item, diaryLimit = 0, wardrobeOn = true) {
           ...(metabolismImmune ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
         },
       } : {}),
-      ...(metabolismImmune || profile.immune?.karyotype ? { immune: { ...(metabolismImmune ? { metabolism: true } : {}), ...(profile.immune?.karyotype ? { karyotype: true } : {}) } } : {}),
+      ...(metabolismImmune || profile.immune?.crossSpecies ? { immune: { ...(metabolismImmune ? { metabolism: true } : {}), ...(profile.immune?.crossSpecies ? { crossSpecies: true } : {}) } } : {}),
       ...(wardrobeOn && profile.wardrobe?.enabled ? {
         wardrobe: {
           enabled: true,

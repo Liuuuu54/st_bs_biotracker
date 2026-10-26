@@ -66,6 +66,8 @@ export function calculateFertilizationPreview({
   chanceFactor = 1,
   spermSources = [],
   uterusVolumeFactor = 1,
+  // 卵方万族相容（immune.crossSpecies）：异族与胚型不同都不加难度，与同族一样只看卵方
+  crossSpecies = false,
 } = {}) {
   const volumeFactor = clampNumber(uterusVolumeFactor, 0.01, 100, 1);
   const eggProfile = getMergedRacePhysiologyProfile(eggRace) || {};
@@ -98,13 +100,13 @@ export function calculateFertilizationPreview({
     const share = totalExposureAmountDays > 0 ? source.exposureAmountDays / totalExposureAmountDays : 0;
     const maleProfile = getMergedRacePhysiologyProfile(source.race, source.bloodline) || {};
     const maleDifficulty = clampNumber(maleProfile.impregnationDifficulty, 0.1, 100, 1);
-    const sameRace = isSameRaceGroup(eggRace, source.race);
+    const sameRace = crossSpecies || isSameRaceGroup(eggRace, source.race);
     let effectiveDifficulty = sameRace
       ? femaleDifficulty
       : Math.sqrt(femaleDifficulty * maleDifficulty) * CROSS_RACE_DIFFICULTY_MULTIPLIER;
     const eggEmbryoType = getEmbryoTypeByRace(eggRace);
     const spermEmbryoType = getEmbryoTypeByRace(source.race);
-    const embryoTypeMismatch = eggEmbryoType !== spermEmbryoType;
+    const embryoTypeMismatch = !crossSpecies && eggEmbryoType !== spermEmbryoType;
     if (embryoTypeMismatch) effectiveDifficulty *= EMBRYO_TYPE_MISMATCH_MULTIPLIER;
     effectiveDifficulty /= spermDoseBonus;
 

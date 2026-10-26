@@ -1,6 +1,6 @@
 # v1.2.1 驗證紀錄
 
-日期：2026-10-26。範圍是 cac1357：新增 20 個物種到 101 族、植物族／真菌族／蟲族改名與存檔 v10 遷移、`bsImplantEmbryo` 的 `hostFetusIndex`、卵方核型免疫。這份紀錄分開記錄自動回歸、實機確認（不呼叫模型）、付費實機與沒驗到的部分。
+日期：2026-10-26。範圍是 cac1357：新增 20 個物種到 101 族、植物族／真菌族／蟲族改名與存檔 v10 遷移、`bsImplantEmbryo` 的 `hostFetusIndex`、卵方核型免疫（驗證後改名「萬族相容」，欄位 `immune.crossSpecies`，並加上取消跨種受精障礙）。這份紀錄分開記錄自動回歸、實機確認（不呼叫模型）、付費實機與沒驗到的部分。
 
 ## 自動回歸
 
@@ -13,7 +13,7 @@
 | 物種名單 | [`race_inheritance.test.mjs`](../tests/race_inheritance.test.mjs)、[`body_size.test.mjs`](../tests/body_size.test.mjs)、[`race_catalog.test.mjs`](../tests/race_catalog.test.mjs) | 101 族與五個胚型分組；雄核、雌核各 13；體態計數；名錄辨識提示 |
 | 改名 | [`race_names.test.mjs`](../tests/race_names.test.mjs) | 13 個舊名對到新名（含繁體）；植物亞人指向愛那溫；v9 → v10 改寫角色、精液、孩子、精方檔案與快照 |
 | 胎兒植入 | [`nested_implant.test.mjs`](../tests/nested_implant.test.mjs) | 承載者自己的胚胎嵌進代孕胎兒成為孕中孕、沒有歸屬方、不受自然孕中孕門檻；卵胎生宿主、無效序號、孕中期、未懷孕都拒絕 |
-| 核型免疫 | [`karyotype_immunity.test.mjs`](../tests/karyotype_immunity.test.mjs) | 一律混血、不標雄核；平手胚型隨父方；族譜圖示取父系；追蹤投影保留 `immune.karyotype`，異種精液提示照免疫寫 |
+| 核型免疫 | [`cross_species.test.mjs`](../tests/cross_species.test.mjs) | 一律混血、不標雄核；平手胚型隨父方；族譜圖示取父系；追蹤投影保留 `immune.karyotype`，異種精液提示照免疫寫 |
 | 族譜圖示 | [`race_icons.test.mjs`](../tests/race_icons.test.mjs) | 圖示名單與 101 族一致；預覽工具另驗 101 族 × 13 外框、兩種畫風不碰撞 |
 
 ## 實機確認（不呼叫模型）

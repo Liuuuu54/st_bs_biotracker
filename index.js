@@ -4228,7 +4228,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
         metabolism: Boolean(immune.metabolism),
         miscarriage: Boolean(immune.miscarriage),
         realisticLabor: Boolean(immune.realisticLabor),
-        karyotype: Boolean(immune.karyotype),
+        crossSpecies: Boolean(immune.crossSpecies),
       },
       isHere: base.isHere !== false,
       gestationModifier: {
@@ -5660,9 +5660,9 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
           <span class="bs-bt-track-debug-title">真实产程</span>
           <span class="bs-bt-track-debug-state">${immune.realisticLabor ? 'ON' : 'OFF'}</span>
         </button>
-        <button type="button" class="bs-bt-track-debug-button${immune.karyotype ? ' is-active' : ''}" data-debug-immune="karyotype" title="她受孕时不受雄核、雌核约束，一律混血；血脉比例相同时（胚型、伴生卵、族谱图示）随父方">
-          <span class="bs-bt-track-debug-title">核型免疫</span>
-          <span class="bs-bt-track-debug-state">${immune.karyotype ? 'ON' : 'OFF'}</span>
+        <button type="button" class="bs-bt-track-debug-button${immune.crossSpecies ? ' is-active' : ''}" data-debug-immune="crossSpecies" title="任何物种的种都怀得上：跨种与胚型不同都不加受精难度；不受雄核、雌核约束，孩子一律混血；血脉比例相同时（胚型、伴生卵、族谱图示）随父方">
+          <span class="bs-bt-track-debug-title">万族相容</span>
+          <span class="bs-bt-track-debug-state">${immune.crossSpecies ? 'ON' : 'OFF'}</span>
         </button>
         <button type="button" class="bs-bt-track-debug-button${isHere ? ' is-active' : ''}" data-debug-action="toggle-presence">
           <span class="bs-bt-track-debug-title">在场</span>
@@ -5929,7 +5929,7 @@ function renderTrackCharacterContent(viewModel) {
 
 function toggleSelectedTrackImmune(ctx, immuneKey) {
   if (!selectedTrackName) return;
-  if (!['metabolism', 'miscarriage', 'realisticLabor', 'karyotype'].includes(immuneKey)) return;
+  if (!['metabolism', 'miscarriage', 'realisticLabor', 'crossSpecies'].includes(immuneKey)) return;
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const character = chatState.characters?.[selectedTrackName];
@@ -5945,7 +5945,7 @@ function toggleSelectedTrackImmune(ctx, immuneKey) {
   renderStatusPanel(ctx);
   renderFullStatePage(ctx);
   globalThis.toastr?.success?.(
-    `[BS BioTracker] ${selectedTrackName} 的 ${{ metabolism: '代谢免疫', miscarriage: '流产免疫', realisticLabor: '真实产程', karyotype: '核型免疫' }[immuneKey]}已${nextValue ? '开启' : '关闭'}`,
+    `[BS BioTracker] ${selectedTrackName} 的 ${{ metabolism: '代谢免疫', miscarriage: '流产免疫', realisticLabor: '真实产程', crossSpecies: '万族相容' }[immuneKey]}已${nextValue ? '开启' : '关闭'}`,
   );
 }
 

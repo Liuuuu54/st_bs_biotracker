@@ -1836,14 +1836,14 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
   const geneticProfile = options.geneticProfile || profile;
   const motherRace = parseRaceDescriptor(geneticProfile?.base?.race || '人类').race || '人类';
   const fatherRace = parseRaceDescriptor(sperm?.race || motherRace || '人类').race || motherRace || '人类';
-  // 卵方的核型免疫：不论核型一律混血，血脉比例平手时（胚型、伴生卵、图示）改随父方
-  const karyotypeImmune = Boolean(options.karyotypeImmune ?? geneticProfile?.immune?.karyotype);
-  const ancestry = deriveFetusAncestry({ ...geneticProfile.base, race: motherRace }, { ...sperm, race: fatherRace }, { karyotypeImmune });
+  // 卵方的万族相容：不论核型一律混血，血脉比例平手时（胚型、伴生卵、图示）改随父方；跨种受精障碍另在 calculateFertilizationPreview 取消
+  const crossSpecies = Boolean(options.crossSpecies ?? geneticProfile?.immune?.crossSpecies);
+  const ancestry = deriveFetusAncestry({ ...geneticProfile.base, race: motherRace }, { ...sperm, race: fatherRace }, { crossSpecies });
   const fatherBloodline = getBloodlineInfo(fatherRace, sperm?.bloodline, sperm?.bloodlineSource);
   const motherBloodline = getBloodlineInfo(motherRace, geneticProfile?.base?.bloodline, geneticProfile?.base?.bloodlineSource).bloodline;
-  const tieBloodline = karyotypeImmune ? fatherBloodline.bloodline : motherBloodline;
+  const tieBloodline = crossSpecies ? fatherBloodline.bloodline : motherBloodline;
   const fetusRace = ancestry.race;
-  const inheritanceTag = getFetusInheritanceTag(motherRace, fatherRace, { karyotypeImmune });
+  const inheritanceTag = getFetusInheritanceTag(motherRace, fatherRace, { crossSpecies });
   const gender = deriveFetusGender(fetusRace, ancestry.bloodline);
   const weightRatio = getConceptionWeightRatio(profile, sperm);
   const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
@@ -1866,7 +1866,7 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     // 精液纪录只在个体已知时带体型；精液清掉后仍查得到父方多大
     fatherBodySize: clampIndividualBodySize(sperm?.bodySize),
     // 平手随父方：随胎儿卡带到孩子，族谱图示与日后的胎儿像素图照这个取
-    ...(karyotypeImmune ? { paternalTie: true } : {}),
+    ...(crossSpecies ? { paternalTie: true } : {}),
     gender,
     embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline, tieBloodline),
     // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
@@ -2520,6 +2520,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
     chanceFactor,
     spermSources: availableSperms,
     uterusVolumeFactor: getUterusVolumeFactor(profile?.base),
+    crossSpecies: Boolean(profile?.immune?.crossSpecies),
   });
   const totalSperm = preview.totalSperm;
   let remaining = eggs;
@@ -5830,8 +5831,8 @@ function applyImplantEmbryo(chatState, args) {
       geneticProfile,
       provider: owner,
       fatherTalents: getParentTalents(chatState, fathers),
-      // 核型免疫属于遗传母方：已注册的 provider 看她自己的，承载者自己的胚胎看承载者
-      karyotypeImmune: Boolean((owner ? providerCharacter : character)?.profile?.immune?.karyotype),
+      // 万族相容属于遗传母方：已注册的 provider 看她自己的，承载者自己的胚胎看承载者
+      crossSpecies: Boolean((owner ? providerCharacter : character)?.profile?.immune?.crossSpecies),
     });
     if (nestedHost) markNestedFetus(profile, fetus, nestedHost);
     else if (isAdditionalSurrogacy) markSuperfetationFetus(profile, fetus);

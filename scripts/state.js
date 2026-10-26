@@ -835,7 +835,7 @@ export function createDefaultFemaleState(name = '') {
         metabolism: false,
         miscarriage: false,
         realisticLabor: false,
-        karyotype: false,
+        crossSpecies: false,
       },
     },
   };
@@ -2101,7 +2101,7 @@ function createSnapshotCharacterBaseline(name = '') {
         metabolism: false,
         miscarriage: false,
         realisticLabor: false,
-        karyotype: false,
+        crossSpecies: false,
       },
     },
   };

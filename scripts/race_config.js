@@ -1668,13 +1668,13 @@ export function formatBloodlineLabel(race, bloodline = null, source = null) {
 }
 
 /** 普通遗传父母各半；核型沿用现有九格规则，只取被选中的遗传方。 */
-export function deriveFetusAncestry(egg, sperm, { karyotypeImmune = false } = {}) {
+export function deriveFetusAncestry(egg, sperm, { crossSpecies = false } = {}) {
   const eggRecord = typeof egg === 'string' ? { race: egg } : egg || {};
   const spermRecord = typeof sperm === 'string' ? { race: sperm } : sperm || {};
   const eggRace = eggRecord.race || '人类', spermRace = spermRecord.race || eggRace;
   const eggMode = getRaceInheritanceMode(eggRace), spermMode = getRaceInheritanceMode(spermRace);
   let parents = [spermRecord, eggRecord];
-  if (!karyotypeImmune && (eggMode !== RACE_INHERITANCE_MODES.NORMAL) !== (spermMode !== RACE_INHERITANCE_MODES.NORMAL)) {
+  if (!crossSpecies && (eggMode !== RACE_INHERITANCE_MODES.NORMAL) !== (spermMode !== RACE_INHERITANCE_MODES.NORMAL)) {
     const activeMode = eggMode !== RACE_INHERITANCE_MODES.NORMAL ? eggMode : spermMode;
     parents = [activeMode === RACE_INHERITANCE_MODES.PATERNAL ? spermRecord : eggRecord];
   }
@@ -1888,15 +1888,15 @@ function combineRaceDescriptors(spermRace, eggRace) {
 /**
  * 依精方与卵方的核型决定胎儿种族。只有一方具核型时，雄核保留精方、雌核保留卵方；
  * 双方皆一般或皆具核型时形成混血。混血亲本本身一律按一般处理。
- * karyotypeImmune：卵方个体的核型免疫（immune.karyotype），不论核型一律混血。
+ * crossSpecies：卵方个体的万族相容（immune.crossSpecies），不论核型一律混血。
  */
-export function deriveFetusRace(eggRace, spermRace, { karyotypeImmune = false } = {}) {
+export function deriveFetusRace(eggRace, spermRace, { crossSpecies = false } = {}) {
   const eggMode = getRaceInheritanceMode(eggRace);
   const spermMode = getRaceInheritanceMode(spermRace);
   const eggHasNucleus = eggMode !== RACE_INHERITANCE_MODES.NORMAL;
   const spermHasNucleus = spermMode !== RACE_INHERITANCE_MODES.NORMAL;
 
-  if (!karyotypeImmune && eggHasNucleus !== spermHasNucleus) {
+  if (!crossSpecies && eggHasNucleus !== spermHasNucleus) {
     const activeMode = eggHasNucleus ? eggMode : spermMode;
     const selectedRace = activeMode === RACE_INHERITANCE_MODES.PATERNAL ? spermRace : eggRace;
     const selectedParts = getRaceDescriptorComponents(selectedRace);
@@ -1909,12 +1909,12 @@ export function deriveFetusRace(eggRace, spermRace, { karyotypeImmune = false } 
  * 只有精卵双方恰有一方使用特殊核型时，胚胎才属于雄核或雌核发生。
  * 双方皆一般或双方皆有特殊核型时依九格规则形成混血，不附核型标签。
  */
-export function getFetusInheritanceTag(eggRace, spermRace, { karyotypeImmune = false } = {}) {
+export function getFetusInheritanceTag(eggRace, spermRace, { crossSpecies = false } = {}) {
   const eggMode = getRaceInheritanceMode(eggRace);
   const spermMode = getRaceInheritanceMode(spermRace);
   const eggHasNucleus = eggMode !== RACE_INHERITANCE_MODES.NORMAL;
   const spermHasNucleus = spermMode !== RACE_INHERITANCE_MODES.NORMAL;
-  if (karyotypeImmune || eggHasNucleus === spermHasNucleus) return null;
+  if (crossSpecies || eggHasNucleus === spermHasNucleus) return null;
   const activeMode = eggHasNucleus ? eggMode : spermMode;
   return activeMode === RACE_INHERITANCE_MODES.PATERNAL ? 'androgenesis' : 'gynogenesis';
 }
