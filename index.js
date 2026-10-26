@@ -4228,6 +4228,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
         metabolism: Boolean(immune.metabolism),
         miscarriage: Boolean(immune.miscarriage),
         realisticLabor: Boolean(immune.realisticLabor),
+        karyotype: Boolean(immune.karyotype),
       },
       isHere: base.isHere !== false,
       gestationModifier: {
