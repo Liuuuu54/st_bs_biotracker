@@ -869,7 +869,7 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "魔像": {
     embryoType: "不定型",
-    introductionLine: "Golem，人类造物之一，以黏土或金属塑成、由核心驱动的无性种族；受精难度极高，繁殖基本限于同族。",
+    introductionLine: "Golem，人类造物之一，以黏土、岩石或金属塑成、由核心驱动的无性种族；受精难度极高，繁殖基本限于同族。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.5, birthDifficulty: 2, breedTolerance: 3,
     impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: -1,
