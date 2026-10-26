@@ -2678,6 +2678,70 @@
   opacity: 0.78;
 }
 
+#bs-biotracker-settings .bs-bt-intimacy {
+  display: grid;
+  gap: 8px;
+}
+
+/* 契合度是份额：一条分段条，空着的部分就是陌生 */
+#bs-biotracker-settings .bs-bt-intimacy-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+}
+
+#bs-biotracker-settings .bs-bt-intimacy-segment {
+  height: 100%;
+  background: currentColor;
+}
+
+#bs-biotracker-settings .bs-bt-intimacy .is-rank-1 { opacity: 0.85; }
+#bs-biotracker-settings .bs-bt-intimacy .is-rank-2 { opacity: 0.6; }
+#bs-biotracker-settings .bs-bt-intimacy .is-rank-3 { opacity: 0.4; }
+#bs-biotracker-settings .bs-bt-intimacy-segment.is-others { opacity: 0.22; }
+
+#bs-biotracker-settings .bs-bt-intimacy-row {
+  display: grid;
+  gap: 2px;
+}
+
+#bs-biotracker-settings .bs-bt-intimacy-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9em;
+}
+
+#bs-biotracker-settings .bs-bt-intimacy-pips {
+  display: inline-flex;
+  gap: 3px;
+}
+
+#bs-biotracker-settings .bs-bt-intimacy-pip {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+#bs-biotracker-settings .bs-bt-intimacy-pip.is-on {
+  background: currentColor;
+}
+
+#bs-biotracker-settings .bs-bt-intimacy-detail {
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+#bs-biotracker-settings .bs-bt-intimacy-fading {
+  white-space: nowrap;
+}
+
 #bs-biotracker-settings .bs-bt-track-tag-list {
   display: flex;
   flex-wrap: wrap;

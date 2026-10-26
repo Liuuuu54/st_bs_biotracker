@@ -94,7 +94,7 @@ import {
   isFetusKnownToCharacter,
 } from './scripts/tools.js';
 import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
-import { getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
+import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
 import { deleteSireRecord, describeSpermQuality, formatSireRaceDescriptor, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
@@ -4192,8 +4192,9 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
         speciesSpeed: gestationSpeciesSpeed,
       },
     },
-    // 契合度前三名：与提示词同一套算法，衰减到现在
-    intimacy: intimacyRanking.filter((item) => item.fit >= 0.005).slice(0, 3),
+    // 契合度前三名：与提示词同一套算法，衰减到现在；份额条另需第四名之后的合计与陌生的部分
+    intimacy: intimacyRanking.filter((item) => item.fit >= 0.005).slice(0, 3).map((item) => ({ ...item, level: getIntimacyLevel(item.fit) })),
+    intimacyOthersFit: intimacyRanking.filter((item) => item.fit >= 0.005).slice(3).reduce((sum, item) => sum + item.fit, 0),
     sheathStretch: getSheathStretch(experience),
     experience: {
       items: [
@@ -5106,22 +5107,51 @@ function renderTrackSkillSection(viewModel) {
   `;
 }
 
-/** 经历页的「契合」：身体对各性伴的熟悉度前三名，附最近一场的体型相容；只是身体记忆，不代表感情 */
+/** 契合距今多久：契合按半衰期一直在淡，这里只给相对时间 */
+function formatIntimacyElapsed(minutes) {
+  const value = Math.max(0, Number(minutes) || 0);
+  if (value < 60) return '刚刚';
+  if (value < 24 * 60) return `${Math.floor(value / 60)} 小时前`;
+  if (value < 30 * 24 * 60) return `${Math.floor(value / (24 * 60))} 天前`;
+  return `${Math.floor(value / (30 * 24 * 60))} 个月前`;
+}
+
+/** 一周没有再做就标「淡去」：契合按半衰期衰减，久了份额会被别人或陌生吃回去 */
+const INTIMACY_FADING_MINUTES = 7 * 24 * 60;
+
+/**
+ * 经历页的「契合」：身体对各性伴的熟悉度。契合度是份额（全部对象加上陌生的部分恰好 100%），
+ * 所以上方一条分段条看身体被谁占了多少，下面每人一行写称呼、五格、次数与多久前；百分比放在滑鼠提示。
+ * 只是身体记忆，不代表感情
+ */
 function renderTrackIntimacySection(viewModel) {
   const items = Array.isArray(viewModel.intimacy) ? viewModel.intimacy : [];
   const stretch = Number(viewModel.sheathStretch) || 0;
-  const rows = items.map((item) => {
-    const percent = Math.round(item.fit * 100);
-    const detail = [item.compatLabel, `${item.count} 次`].filter(Boolean).join('，');
-    return `<div class="bs-bt-track-progress">
-      <div class="bs-bt-track-progress-head"><span>${escapeHtml(item.name)}<small>（${escapeHtml(detail)}）</small></span><span>${percent}%</span></div>
-      <div class="bs-bt-track-progress-bar" style="width:100%;"><div class="bs-bt-track-progress-fill" style="width:${percent}%;"></div></div>
+  const othersFit = Math.max(0, Number(viewModel.intimacyOthersFit) || 0);
+  const percent = (fit) => Math.round(Math.max(0, Number(fit) || 0) * 1000) / 10;
+  const shownFit = items.reduce((sum, item) => sum + item.fit, 0) + othersFit;
+  const segments = [
+    ...items.map((item, index) => `<span class="bs-bt-intimacy-segment is-rank-${index + 1}" style="width:${percent(item.fit)}%;" title="${escapeHtml(item.name)} ${percent(item.fit)}%"></span>`),
+    othersFit > 0 ? `<span class="bs-bt-intimacy-segment is-others" style="width:${percent(othersFit)}%;" title="其他 ${percent(othersFit)}%"></span>` : '',
+  ].join('');
+  const rows = items.map((item, index) => {
+    const level = item.level || { name: '', pips: 0 };
+    const pips = Array.from({ length: 5 }, (_, pip) => `<span class="bs-bt-intimacy-pip${pip < level.pips ? ` is-on is-rank-${index + 1}` : ''}"></span>`).join('');
+    const fading = Number(item.elapsedMinutes) >= INTIMACY_FADING_MINUTES;
+    const detail = [`${item.count} 次`, formatIntimacyElapsed(item.elapsedMinutes)].join(' · ');
+    const tooltip = [`契合度 ${percent(item.fit)}%`, item.compatLabel ? `最近一场：${item.compatLabel}` : ''].filter(Boolean).join('，');
+    return `<div class="bs-bt-intimacy-row" title="${escapeHtml(tooltip)}">
+      <div class="bs-bt-intimacy-head"><span>${escapeHtml(item.name)} · ${escapeHtml(level.name)}</span><span class="bs-bt-intimacy-pips" aria-label="${escapeHtml(level.name)}">${pips}</span></div>
+      <div class="bs-bt-intimacy-detail">${escapeHtml(detail)}${fading ? ' · <span class="bs-bt-intimacy-fading" title="一周以上没有再做，正在淡去">↘ 淡去</span>' : ''}</div>
     </div>`;
   }).join('');
   return `
     <div class="bs-bt-track-section">
-      <div class="bs-bt-track-section-title" title="身体对各性伴的熟悉度：次数越多、体型越合越高，久了会淡；不代表感情">契合</div>
-      ${items.length > 0 ? `<div class="bs-bt-track-progress-list">${rows}</div>` : '<div class="bs-bt-track-description-empty">尚无性爱纪录</div>'}
+      <div class="bs-bt-track-section-title" title="身体对各性伴的熟悉度：次数越多、体型越合越高，久了会淡；所有人加上陌生的部分恰好是整个身体，新对象会稀释旧的。不代表感情">契合</div>
+      ${items.length > 0 ? `<div class="bs-bt-intimacy">
+        <div class="bs-bt-intimacy-bar" title="陌生 ${percent(1 - shownFit)}%">${segments}</div>
+        ${rows}
+      </div>` : '<div class="bs-bt-track-description-empty">尚无性爱纪录</div>'}
       ${stretch > 0 ? `<div class="bs-bt-track-meta"><div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">经产扩张</span><span class="bs-bt-track-meta-value">+${stretch} 级</span></div></div>` : ''}
     </div>`;
 }

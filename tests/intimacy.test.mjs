@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as state from '../scripts/state.js';
-import { formatIntimacyPromptLine, getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from '../scripts/intimacy.js';
+import { formatIntimacyPromptLine, getCompatMultiplier, getIntimacyLevel, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from '../scripts/intimacy.js';
 import { normalizeSireRecord } from '../scripts/sires.js';
 import { applyToolCall } from '../scripts/tools.js';
 
@@ -155,4 +155,13 @@ test('高潮排卵：与身体最熟悉的对象交合时更容易排卵，其�
   } finally {
     Math.random = original;
   }
+});
+
+test('契合的称呼与五格：一夜情一次 25% 是初识；排行带上距今多久', () => {
+  assert.deepEqual([0, 0.1, 0.25, 0.3, 0.5, 0.7, 0.95].map((fit) => getIntimacyLevel(fit).name), ['生疏', '生疏', '初识', '熟悉', '默契', '刻骨', '刻骨']);
+  assert.deepEqual([0.1, 0.25, 0.4, 0.6, 0.8].map((fit) => getIntimacyLevel(fit).pips), [1, 2, 3, 4, 5]);
+  const profile = { intimacy: { 甲: { count: 1, effective: 1, lastMinutes: 100 } } };
+  const [item] = getIntimacyRanking(profile, { minutesPassed: 1540 });
+  assert.equal(item.elapsedMinutes, 1440);
+  assert.equal(getIntimacyLevel(item.fit).name, '初识', '一夜情一次');
 });

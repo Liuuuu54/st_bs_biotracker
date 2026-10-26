@@ -103,12 +103,29 @@ export function getIntimacyRanking(profile, { minutesPassed = 0, reproductiveSet
   const now = Math.max(0, Number(minutesPassed) || 0);
   const decayed = entries.map(([name, record]) => {
     const elapsed = Math.max(0, now - (Number(record?.lastMinutes) || 0));
-    return { name, effective: (Number(record?.effective) || 0) * 0.5 ** (elapsed / halfLifeMinutes), count: Number(record?.count) || 0, compatLabel: record?.compatLabel || null };
+    return { name, effective: (Number(record?.effective) || 0) * 0.5 ** (elapsed / halfLifeMinutes), count: Number(record?.count) || 0, compatLabel: record?.compatLabel || null, elapsedMinutes: elapsed };
   });
   const total = decayed.reduce((sum, item) => sum + item.effective, 0);
   return decayed
     .map((item) => ({ ...item, fit: total + baseline > 0 ? item.effective / (total + baseline) : 0 }))
     .sort((a, b) => b.fit - a.fit);
+}
+
+/**
+ * 契合度的称呼与五格：一夜情一次是 25%，落在「初识」。
+ * 门槛是契合度（份额），不是次数，所以同样的次数，对象越多越分散。
+ */
+export const INTIMACY_LEVELS = Object.freeze([
+  { min: 0.7, name: '刻骨', pips: 5 },
+  { min: 0.5, name: '默契', pips: 4 },
+  { min: 0.3, name: '熟悉', pips: 3 },
+  { min: 0.15, name: '初识', pips: 2 },
+  { min: 0, name: '生疏', pips: 1 },
+]);
+
+export function getIntimacyLevel(fit) {
+  const value = Math.max(0, Number(fit) || 0);
+  return INTIMACY_LEVELS.find((level) => value >= level.min) || INTIMACY_LEVELS[INTIMACY_LEVELS.length - 1];
 }
 
 /** 给模型看的一行：前三名与「身体最熟悉谁」；只描述身体记忆，不代表感情。没有值得一提的回空字串 */
