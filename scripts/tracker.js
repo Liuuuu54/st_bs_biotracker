@@ -935,6 +935,23 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
     vitalityLevelText: getVitalityLevelText(base.vitalityLevel),
     psyStressLevelText: getPsyStressLevelText(base.psyStressLevel),
   };
+  // 聚合 view 会继承 contact 元数据；pooled 提示词只取叙事字段，阻断历史/审计旁路。
+  // next 已深拷贝，权威 contacts 与持久化聚合 view 均保持原样；legacy 不改。
+  if (base.spermPool?.model === 'pooled-v1' && Array.isArray(base.sperms)) {
+    profile.base.sperms = base.sperms.map((source) => ({
+      male: source?.male,
+      race: source?.race,
+      bloodline: source?.bloodline,
+      bloodlineSource: source?.bloodlineSource,
+      derivedType: source?.derivedType,
+      bodySize: source?.bodySize,
+      quality: source?.quality,
+      value: source?.value,
+      blocked: source?.blocked,
+    }));
+  }
+  // 混合池只供机械结算：种子、卵 hazard 预算与内部索引均不进入模型视角。
+  delete profile.base.spermPool;
   // 子宫乏力只在反复延产后才有；没有就不送
   if (!(Number(base.uterineAtony) > 0)) delete profile.base.uterineAtony;
 
@@ -1056,6 +1073,17 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   delete profile.reproductiveMigration;
   delete profile.base?.spermContacts;
   delete profile.base?.nextSpermContactId;
+  // 审计元数据按白名单提供既成事实；不 spread 整个对象，也兼顾已出生孩子。
+  for (const holder of [
+    ...(Array.isArray(profile.pregnant?.fetuses) ? profile.pregnant.fetuses : []),
+    ...(Array.isArray(profile.children) ? profile.children : []),
+  ]) {
+    if (!holder || typeof holder !== 'object') continue;
+    const minute = holder.pooledConception?.minute;
+    delete holder.conceptionEvent;
+    delete holder.pooledConception;
+    if (typeof minute === 'number' && Number.isFinite(minute)) holder.pooledConception = { minute };
+  }
   delete profile.bio;
   // immune 只留 metabolism 与 crossSpecies：前者让 prompt 不发本人的需求与衍生需求说明，
   // 后者让异种精液的核型判定照免疫写

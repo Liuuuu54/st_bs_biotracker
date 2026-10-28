@@ -1,4 +1,5 @@
 import { getSpermQualityFactors } from './sires.js';
+import { integrateSpermPool } from './sperm_pool.js';
 import {
   deriveFetusRace,
   deriveFetusAncestry,
@@ -60,6 +61,7 @@ export function calculateSpermExposure(value, elapsedDays, decayPerDay = SPERM_D
  * 同体型的一对与人类一样难易。
  */
 export function calculateFertilizationPreview({
+  model = 'legacy',
   eggRace = '人类',
   impregnationDifficulty = null,
   elapsedDays = 1,
@@ -69,6 +71,9 @@ export function calculateFertilizationPreview({
   // 卵方万族相容（immune.crossSpecies）：异族与胚型不同都不加难度，与同族一样只看卵方
   crossSpecies = false,
 } = {}) {
+  if (model === 'pooled-v1') return calculatePooledFertilizationPreview({
+    eggRace, impregnationDifficulty, elapsedDays, chanceFactor, spermSources, uterusVolumeFactor, crossSpecies,
+  });
   const volumeFactor = clampNumber(uterusVolumeFactor, 0.01, 100, 1);
   const eggProfile = getMergedRacePhysiologyProfile(eggRace) || {};
   const femaleDifficulty = impregnationDifficulty === null || impregnationDifficulty === undefined || impregnationDifficulty === ''
@@ -152,6 +157,48 @@ export function calculateFertilizationPreview({
     totalChanceWeight,
     successChance,
     failureChance,
+  };
+}
+
+/** Existing race/embryo policy, without dose or elapsed-time factors. */
+export function getFertilizationSourceRates({
+  eggRace = '人类', impregnationDifficulty = null, spermSources = [], crossSpecies = false,
+} = {}) {
+  const eggProfile = getMergedRacePhysiologyProfile(eggRace) || {};
+  const femaleDifficulty = impregnationDifficulty === null || impregnationDifficulty === undefined || impregnationDifficulty === ''
+    ? clampNumber(eggProfile.impregnationDifficulty, 0.1, 100, 1)
+    : clampNumber(impregnationDifficulty, 0.1, 100, 1);
+  return (Array.isArray(spermSources) ? spermSources : []).map((source, sourceIndex) => {
+    const race = String(source?.race || '人类');
+    const maleProfile = getMergedRacePhysiologyProfile(race, source?.bloodline) || {};
+    const maleDifficulty = clampNumber(maleProfile.impregnationDifficulty, 0.1, 100, 1);
+    const sameRace = crossSpecies || isSameRaceGroup(eggRace, race);
+    let effectiveDifficulty = sameRace ? femaleDifficulty
+      : Math.sqrt(femaleDifficulty * maleDifficulty) * CROSS_RACE_DIFFICULTY_MULTIPLIER;
+    const embryoTypeMismatch = !crossSpecies && getEmbryoTypeByRace(eggRace) !== getEmbryoTypeByRace(race);
+    if (embryoTypeMismatch) effectiveDifficulty *= EMBRYO_TYPE_MISMATCH_MULTIPLIER;
+    return { ...source, sourceIndex, race, femaleDifficulty, maleDifficulty, sameRace,
+      embryoTypeMismatch, effectiveDifficulty, rate: 1 / effectiveDifficulty };
+  });
+}
+
+/** Opt-in preview. Legacy average-dose diagnostics intentionally remain legacy-only. */
+export function calculatePooledFertilizationPreview(options = {}) {
+  const metadata = getFertilizationSourceRates(options);
+  const volumeFactor = clampNumber(options.uterusVolumeFactor ?? 1, 0.01, 100, 1);
+  const rawFactor = Number(options.chanceFactor ?? 1);
+  const chanceFactor = Number.isFinite(rawFactor) ? Math.max(0, rawFactor) : 0;
+  const result = integrateSpermPool(metadata, Math.max(0, Number(options.elapsedDays ?? 1) || 0), {
+    volumeFactor, sourceRates: metadata.map((source) => source.rate * chanceFactor),
+  });
+  return {
+    model: 'pooled-v1', eggRace: options.eggRace || '人类', uterusVolumeFactor: volumeFactor,
+    totalSperm: metadata.reduce((amount, source) => amount + clampNumber(source.value, 0, 999999, 0), 0),
+    totalHazard: result.hazard, successChance: result.successChance, failureChance: 1 - result.successChance,
+    // A source's chance is its competing-risk cause probability, not an independent opportunity.
+    sources: result.sources.map((source, index) => ({ ...metadata[index], ...source, chance: source.winChance })),
+    totalChanceWeight: result.successChance,
+    remainingSources: result.remainingSources,
   };
 }
 

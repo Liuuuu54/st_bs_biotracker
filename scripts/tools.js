@@ -1,5 +1,7 @@
 import { recordExperience, normalizePaternityClaims, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
 import { getProfileSemenCapacity } from './semen_capacity.js';
+import { advancePooledConception, depositPooledSource, enablePooledConception, isPooledConception,
+  projectPooledSperms, syncPooledEggs } from './pooled_reproduction.js';
 import { getStageProgress } from './stage_progress.js';
 import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
@@ -83,6 +85,7 @@ import {
 import {
   calculateDerivedInheritanceProgress,
   calculateFertilizationPreview,
+  getFertilizationSourceRates,
   calculateImplantationDays,
   DERIVED_INHERITANCE_BASELINE_DAYS,
   DERIVED_INHERITANCE_THRESHOLD,
@@ -1151,12 +1154,12 @@ function getImplantationGestation(profile) {
   return { days, scale, speed, offsetDays: getObstetricPregnancyOffsetDays(profile) * speed * scale };
 }
 
-function randomNumber(min, max) {
-  return Math.random() * (max - min) + min;
+function randomNumber(min, max, random = Math.random) {
+  return random() * (max - min) + min;
 }
 
-function randomInt(min, max) {
-  return Math.floor(randomNumber(min, max + 1));
+function randomInt(min, max, random = Math.random) {
+  return Math.floor(randomNumber(min, max + 1, random));
 }
 
 function wrapAngle(angle) {
@@ -1182,20 +1185,20 @@ function deriveFetusEmbryoType(race) {
   return getEmbryoTypeByRace(race);
 }
 
-function deriveFetusGender(race, bloodline = null) {
+function deriveFetusGender(race, bloodline = null, random = Math.random) {
   const profile = getMergedRacePhysiologyProfile(race, bloodline);
   if (profile?.genderRatio === -1) return '无';
   if (profile?.genderRatio === null) return '双';
   const ratio = clampNumber(profile?.genderRatio, 0, 100, 50);
-  return Math.random() < (ratio / 100) ? '男' : '女';
+  return random() < (ratio / 100) ? '男' : '女';
 }
 
 // 胎重天生的变异（标准差见 body_size.js 的 CONCEPTION_WEIGHT_LOG_SD），截在 ±3 个标准差，免得抽出极端值
 const CONCEPTION_WEIGHT_SD_LIMIT = 3;
 
-export function getConceptionWeight(stage, gender, weightRatio = 1.0) {
+export function getConceptionWeight(stage, gender, weightRatio = 1.0, random = Math.random) {
   const baseWeight = getConceptionStageWeight(stage);
-  const z = Math.max(-CONCEPTION_WEIGHT_SD_LIMIT, Math.min(CONCEPTION_WEIGHT_SD_LIMIT, randomStandardNormal()));
+  const z = Math.max(-CONCEPTION_WEIGHT_SD_LIMIT, Math.min(CONCEPTION_WEIGHT_SD_LIMIT, randomStandardNormal(random)));
   const fluctuation = Math.exp(CONCEPTION_WEIGHT_LOG_SD * z);
   const sexMultiplier = gender === '男' ? 1.05 : gender === '女' ? 1 / 1.05 : 1.0;
   return Math.max(0.33, Math.min(3.0, Number(baseWeight * fluctuation * sexMultiplier * weightRatio)));
@@ -1405,8 +1408,8 @@ function shareCompanionEggs(group) {
 // 与 tendencyAngle（剖面上的旋转）互相独立：同一个头位可以胎背朝左前，也可以朝右后。
 export const BACK_SIDES = Object.freeze(['左前', '右前', '左后', '右后']);
 
-function randomBackSide() {
-  return BACK_SIDES[randomInt(0, BACK_SIDES.length - 1)];
+function randomBackSide(random = Math.random) {
+  return BACK_SIDES[randomInt(0, BACK_SIDES.length - 1, random)];
 }
 
 function normalizeBackSide(value) {
@@ -1833,6 +1836,7 @@ function forceIdenticalTwinSplit(profile, batch = null, sizes = []) {
  *        胎儿种族按她推导；母系衍生类型始终来自实际孕育胚胎的承载者。
  */
 function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
+  const random = options.random || Math.random;
   const geneticProfile = options.geneticProfile || profile;
   const motherRace = parseRaceDescriptor(geneticProfile?.base?.race || '人类').race || '人类';
   const fatherRace = parseRaceDescriptor(sperm?.race || motherRace || '人类').race || motherRace || '人类';
@@ -1844,7 +1848,7 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
   const tieBloodline = crossSpecies ? fatherBloodline.bloodline : motherBloodline;
   const fetusRace = ancestry.race;
   const inheritanceTag = getFetusInheritanceTag(motherRace, fatherRace, { crossSpecies });
-  const gender = deriveFetusGender(fetusRace, ancestry.bloodline);
+  const gender = deriveFetusGender(fetusRace, ancestry.bloodline, random);
   const weightRatio = getConceptionWeightRatio(profile, sperm);
   const motherDerivedType = profile?.base?.derivedType ? String(profile.base.derivedType) : null;
   const fatherDerivedType = sperm?.derivedType ? String(sperm.derivedType) : null;
@@ -1871,10 +1875,10 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     embryoType: getEmbryoTypeByRace(fetusRace, ancestry.bloodline, tieBloodline),
     // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
     // 精液量按承载者的子宫容积换算成人类尺度，同体型的一对与人类一样
-    companionEggCount: rollCompanionEggCount(fetusRace, Math.random, Number.isFinite(Number(sperm?.value)) ? Number(sperm.value) / getUterusVolumeFactor(profile?.base) : undefined, ancestry.bloodline, tieBloodline),
-    weight: getConceptionWeight(cycleStage, gender, weightRatio),
-    tendencyAngle: randomInt(0, 360),
-    backSide: randomBackSide(),
+    companionEggCount: rollCompanionEggCount(fetusRace, random, Number.isFinite(Number(sperm?.value)) ? Number(sperm.value) / getUterusVolumeFactor(profile?.base) : undefined, ancestry.bloodline, tieBloodline),
+    weight: getConceptionWeight(cycleStage, gender, weightRatio, random),
+    tendencyAngle: randomInt(0, 360, random),
+    backSide: randomBackSide(random),
     affinity: derivedSeed.affinity,
     maternalDerivedTypeProgress: derivedSeed.progress,
     // 先天天赋：遗传母方与父方各 25%；之后的胎教在这上面加减
@@ -2444,6 +2448,16 @@ export function getCharacterSemenCapacity(profile) {
  */
 function spillSpermOverflow(profile) {
   const base = profile?.base;
+  if (isPooledConception(base)) {
+    const contacts = Array.isArray(base.spermContacts) ? base.spermContacts : [];
+    const total = contacts.reduce((amount, item) => amount + Math.max(0, Number(item.value) || 0), 0);
+    const capacity = getCharacterSemenCapacity(profile);
+    if (!(total > capacity)) return 0;
+    const ratio = capacity > 0 ? capacity / total : 0;
+    base.spermContacts = contacts.map((item) => ({ ...item, value: item.value * ratio }));
+    projectPooledSperms(base);
+    return total - Math.max(0, capacity);
+  }
   const sperms = Array.isArray(base?.sperms) ? base.sperms : [];
   const total = sperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
   if (total <= 0) return 0;
@@ -2463,6 +2477,17 @@ function stageAllowsSpermRetention(stage) {
 
 function processSpermLifecycle(profile, stage, tick) {
   const base = profile.base || {};
+  if (isPooledConception(base)) {
+    // Minute advancement already performed physical clearance; never deduct it twice.
+    if (stage === '月经期') {
+      base.spermContacts = [];
+      base.eggs = 0;
+      syncPooledEggs(base, Math.round(tick.nowMinutes));
+      projectPooledSperms(base);
+    }
+    spillSpermOverflow(profile);
+    return;
+  }
   const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   if (sperms.length === 0) {
     base.sperms = [];
@@ -2668,6 +2693,68 @@ function markNestedFetus(profile, fetus, host) {
   fetus.tags = sanitizeFetusTagList([...(fetus.tags || []), 'nested']);
 }
 
+function pooledFetusRandom(seed, eggId) {
+  let state = 2166136261;
+  for (const ch of `${seed}:fetus:${eggId}`) state = Math.imul(state ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return () => {
+    state = (state + 0x6D2B79F5) >>> 0;
+    let n = Math.imul(state ^ (state >>> 15), 1 | state);
+    n ^= n + Math.imul(n ^ (n >>> 7), 61 | n);
+    return ((n ^ (n >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Experimental path: persistent per-egg thresholds, canonical absolute-minute clock. */
+function processPooledConception(profile, tick, notify, name) {
+  const base = profile.base;
+  const pregnant = profile.pregnant || (profile.pregnant = {});
+  const stage = String(base.stage || '');
+  const endMinute = Math.round(tick.nowMinutes);
+  const startMinute = endMinute - Math.round(tick.deltaMinutes);
+  enablePooledConception(base, startMinute);
+  syncPooledEggs(base, startMinute);
+  const normal = MENSTRUAL_STAGES.includes(stage) && stage !== '月经期';
+  const windowDays = stage === SUPERFETATION_STAGE ? getSuperfetationWindowDays(profile) : 0;
+  const conceivedAt = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+  const superfetation = windowDays > 0 && conceivedAt < windowDays;
+  const chanceFactor = superfetation ? SUPERFETATION_CHANCE_FACTOR * (1 - conceivedAt / windowDays) : 1;
+  const metadata = getFertilizationSourceRates({ eggRace: base.race,
+    impregnationDifficulty: profile.bio?.impregnationDifficulty, spermSources: base.spermContacts,
+    crossSpecies: Boolean(profile.immune?.crossSpecies) });
+  const rates = new Map(metadata.map((source) => [String(source.id), source.rate * chanceFactor]));
+  const events = advancePooledConception(base, endMinute, {
+    volumeFactor: getUterusVolumeFactor(base), canFertilize: normal || superfetation,
+    sourceRate: (source) => rates.get(String(source.id)) ?? 0,
+  });
+  for (const event of events) {
+    const winner = event.winner;
+    // A split contact is bookkeeping, not a smaller biological dose for companion eggs.
+    const conceptionSource = { ...winner, value: event.winnerPhysicalAmount };
+    const fetus = createSimpleFetus(profile, conceptionSource, stage, {
+      fatherTalents: tick.parentTalentsOf ? tick.parentTalentsOf(winner.male) : [],
+      random: pooledFetusRandom(base.spermPool.seed, event.eggId),
+    });
+    fetus.amnionDurability = AMNION_INTACT;
+    fetus.contactIds = [event.winnerSpermId];
+    fetus.contactMinutes = winner.minutesPassed;
+    fetus.pooledConception = { model: 'pooled-v1', minute: event.minute,
+      eggId: event.eggId, winnerContactId: event.winnerSpermId };
+    const nestedHost = superfetation && conceivedAt >= NESTED_WINDOW_MIN_DAYS
+      && event.activePhysicalAmount > NESTED_MIN_SPERM * getUterusVolumeFactor(base)
+      ? pickNestedHostFetus(profile) : null;
+    if (nestedHost) markNestedFetus(profile, fetus, nestedHost);
+    else if (superfetation) markSuperfetationFetus(profile, fetus);
+    pregnant.fetuses = [...(Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []), fetus];
+    ensureEmbryoMetadata(pregnant);
+    const receipt = { female: name, minute: event.minute, eggId: event.eggId,
+      father: String(winner.male || '未知'), winnerContactId: event.winnerSpermId };
+    if (Array.isArray(tick.pooledEvents)) tick.pooledEvents.push(receipt);
+    notify.secondly = `${name}在累计第 ${event.minute} 分钟受精成功（混合池结算，不代表角色知情）`;
+    if (!superfetation) setVisualCue(profile, 'fertilization');
+  }
+  return events.length;
+}
+
 function processSimpleConception(profile, tick, notify, name) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
@@ -2676,6 +2763,13 @@ function processSimpleConception(profile, tick, notify, name) {
   const fullDays = tick.passedDays;
   const passedHours = tick.passedHours;
   const allowsNaturalConception = MENSTRUAL_STAGES.includes(stage);
+  const pooled = isPooledConception(base);
+  const hadPreimplantationEmbryos = !isPregnancyStage(stage)
+    && Array.isArray(pregnant.fetuses) && pregnant.fetuses.length > 0;
+  if (pooled) {
+    processSuperfetationImplantation(profile, tick, notify, name);
+    processPooledConception(profile, tick, notify, name);
+  }
 
   if (allowsNaturalConception) {
     // 一次性排出本周期的份额：按天累加会让长排卵期窗口把卵数堆到上限，
@@ -2691,12 +2785,12 @@ function processSimpleConception(profile, tick, notify, name) {
     } else {
       // 先让这段时间里还活着的卵受精，再扣掉过期的：先扣的话，黄体期里的卵在整天推进时
       // 一颗都轮不到受精（黄体期高潮排卵、排卵期残留的卵都会白白消失）
-      base.eggs = attemptFertilization(profile, { deltaDays, stage, name, notify, parentTalentsOf: tick.parentTalentsOf });
+      if (!pooled) base.eggs = attemptFertilization(profile, { deltaDays, stage, name, notify, parentTalentsOf: tick.parentTalentsOf });
       if (base.eggs > 0 && fullDays > 0 && stage !== '排卵期') {
         base.eggs = Math.max(0, clampNumber(base.eggs, 0, 99, 0) - fullDays);
       }
     }
-  } else if (stage === SUPERFETATION_STAGE) {
+  } else if (stage === SUPERFETATION_STAGE && !pooled) {
     // 异期复孕。卵不是这里排的——高潮排卵本来就不挡妊娠，而孕期中卵子既不衰减
     // 也不清除，所以「这个周期没用掉的排卵留到孕早期」是现成行为，不必新增。
     // 这里只把受精那一步的闸门打开，并按进度压低机率：越晚越难，视窗末端归零。
@@ -2713,14 +2807,15 @@ function processSimpleConception(profile, tick, notify, name) {
     }
   }
 
-  processSuperfetationImplantation(profile, tick, notify, name);
+  if (!pooled) processSuperfetationImplantation(profile, tick, notify, name);
 
   const hasPreimplantationEmbryos = !isPregnancyStage(stage)
     && Array.isArray(pregnant.fetuses)
     && pregnant.fetuses.length > 0;
   if (hasPreimplantationEmbryos) {
     ensureEmbryoMetadata(pregnant);
-    base.fertilizationDays = clampNumber(base.fertilizationDays, 0, 9999, 0) + deltaDays;
+    base.fertilizationDays = clampNumber(base.fertilizationDays, 0, 9999, 0)
+      + (pooled && !hadPreimplantationEmbryos ? 0 : deltaDays);
     const beforeFusionCount = pregnant.fetuses.length;
     applyChimeraFusion(profile, name);
     if (pregnant.fetuses.length < beforeFusionCount) notify.secondly = `${name}的早期受精卵发生了融合`;
@@ -2764,6 +2859,7 @@ function processSimpleConception(profile, tick, notify, name) {
   }
 
   pregnant.fetusesCount = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.length : 0;
+  if (pooled) syncPooledEggs(base, Math.round(tick.nowMinutes));
   updateFetalEnergyDrain(profile);
 }
 function normalizeToolCallArguments(value) {
@@ -3293,9 +3389,9 @@ const TERM_READINESS_SPREAD = 0.5;
 const TERM_PRESSURE_RAMP_DAYS = 14;
 const POSTTERM_PRESSURE_MULTIPLIER = 2;
 
-function randomStandardNormal() {
-  const u = Math.max(Number.EPSILON, Math.random());
-  const v = Math.max(Number.EPSILON, Math.random());
+function randomStandardNormal(random = Math.random) {
+  const u = Math.max(Number.EPSILON, random());
+  const v = Math.max(Number.EPSILON, random());
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
@@ -6948,15 +7044,31 @@ function mergeStageNotice(stageText, own) {
   return text.includes(stageText) ? text : [stageText, text].filter(Boolean).join('；');
 }
 
-function applyPassedTime(chatState, args) {
+function requestedTimeMinutes(args) {
   const minute = clampNumber(args?.minute, 0, 60 * 24 * 365, 0);
   const hour = clampNumber(args?.hour, 0, 24 * 365, 0);
   const day = clampNumber(args?.day, 0, 36500, 0);
   const week = clampNumber(args?.week, 0, 5200, 0);
   const month = clampNumber(args?.month, 0, 1200, 0);
   const year = clampNumber(args?.year, 0, 200, 0);
-  const totalMinutes = minute + (hour * 60) + (day * 24 * 60) + (week * 7 * 24 * 60) + (month * 30 * 24 * 60) + (year * 365 * 24 * 60);
+  return minute + (hour * 60) + (day * 24 * 60) + (week * 7 * 24 * 60) + (month * 30 * 24 * 60) + (year * 365 * 24 * 60);
+}
+
+function pooledTimeError(chatState, args) {
+  const enabled = Object.values(chatState.characters || {}).some((item) => isPooledConception(item?.profile?.base));
+  const total = requestedTimeMinutes(args);
+  return enabled && (!Number.isSafeInteger(total) || total > 31 * 1440)
+    ? { applied: false, message: 'bsPassedTime skipped: 实验性混合池要求整数分钟，单次最多31天；请分段推进。' } : null;
+}
+
+function applyPassedTime(chatState, args) {
+  const totalMinutes = requestedTimeMinutes(args);
   if (totalMinutes <= 0) return { applied: false, message: 'bsPassedTime skipped: no positive duration.' };
+  const hasPooledCharacter = Object.values(chatState.characters || {}).some((item) => isPooledConception(item?.profile?.base));
+  // Experimental mode deliberately bounds canonical minute stepping; reject before changing any character.
+  const timeError = pooledTimeError(chatState, args);
+  if (timeError) return timeError;
+  const pooledEvents = [];
 
   for (const name of Object.keys(chatState.characters || {})) {
     const current = chatState.characters[name];
@@ -6966,27 +7078,57 @@ function applyPassedTime(chatState, args) {
     const frozenHost = String(current?.profile?.base?.wombReturnHost || '').trim();
     if (frozenHost) {
       // 承载者已经不在了（被注销），再冻着就永远出不来，自动放人后照常推进
-      if (chatState.characters?.[frozenHost]) continue;
+      if (chatState.characters?.[frozenHost]) {
+        if (isPooledConception(current.profile.base)) {
+          // Frozen biology, but its absolute-clock cursor must remain aligned for a later thaw.
+          current.profile.base.spermPool.lastMinute = Math.round(Number(chatState.minutesPassed) || 0) + totalMinutes;
+        }
+        continue;
+      }
       subject = cloneValue(current);
       subject.profile = subject.profile || {};
       const thawedBase = { ...(subject.profile.base || {}), isHere: true };
       delete thawedBase.wombReturnHost;
       subject.profile.base = thawedBase;
     }
-    const tick = buildTimeTick(subject, totalMinutes);
-    // 契合度要衰减到这段时间的终点；衍生遗传拉锯用得到
-    tick.nowMinutes = Math.max(0, Number(chatState.minutesPassed) || 0) + totalMinutes;
-    tick.reproductiveSettings = chatState.reproductiveSettings;
-    // 受孕时种先天天赋要查父方（精方档案或同名卵方）
-    tick.parentTalentsOf = (male) => getParentTalents(chatState, male);
-    const result = applyTimeToCharacter(subject, tick);
-    chatState.characters[name] = result.character;
+    if (isPooledConception(subject.profile?.base)) {
+      const startMinute = Math.round(Number(chatState.minutesPassed) || 0);
+      enablePooledConception(subject.profile.base, startMinute);
+      const notices = { firstly: new Set(), secondly: new Set(), thirdly: new Set() };
+      for (let offset = 1; offset <= totalMinutes; offset++) {
+        const tick = buildTimeTick(subject, 1);
+        tick.nowMinutes = startMinute + offset;
+        tick.reproductiveSettings = chatState.reproductiveSettings;
+        tick.parentTalentsOf = (male) => getParentTalents(chatState, male);
+        tick.pooledEvents = pooledEvents;
+        subject = applyTimeToCharacter(subject, tick).character;
+        for (const key of Object.keys(notices)) {
+          if (subject.profile.notify?.[key]) notices[key].add(subject.profile.notify[key]);
+        }
+      }
+      subject.profile.notify = Object.fromEntries(Object.entries(notices)
+        .map(([key, values]) => [key, [...values].slice(-8).join('；')]));
+      chatState.characters[name] = subject;
+    } else {
+      const tick = buildTimeTick(subject, totalMinutes);
+      // 契合度要衰减到这段时间的终点；衍生遗传拉锯用得到
+      tick.nowMinutes = Math.max(0, Number(chatState.minutesPassed) || 0) + totalMinutes;
+      tick.reproductiveSettings = chatState.reproductiveSettings;
+      tick.parentTalentsOf = (male) => getParentTalents(chatState, male);
+      const result = applyTimeToCharacter(subject, tick);
+      chatState.characters[name] = result.character;
+    }
   }
   transferProviderChildren(chatState);
   const elapsedMinutes = Math.round(totalMinutes);
   const previousMinutes = Math.max(0, Number(chatState.minutesPassed) || 0);
   chatState.minutesPassed = previousMinutes + elapsedMinutes;
-  return { applied: true, message: `bsPassedTime applied ${elapsedMinutes} minutes; accumulated ${chatState.minutesPassed} minutes.` };
+  pooledEvents.sort((a, b) => a.minute - b.minute || a.female.localeCompare(b.female) || String(a.eggId).localeCompare(String(b.eggId)));
+  return { applied: true,
+    ...(hasPooledCharacter ? { conceptionEvents: pooledEvents } : {}),
+    message: `bsPassedTime applied ${elapsedMinutes} minutes; accumulated ${chatState.minutesPassed} minutes.`
+      + (pooledEvents.length ? ` 混合池受精：${pooledEvents.map((event) => `${event.female}@${event.minute}分钟（父方${event.father}）`).join('；')}。` : ''),
+  };
 }
 
 function applyCharacterStatus(chatState, args) {
@@ -7652,29 +7794,42 @@ function applyAddSperm(chatState, args) {
   const maleDerivedType = fatherBase ? (fatherBase.derivedType || null) : (parsedRace.derivedType || null);
   // 精子品质在射精当下记快照，比照体型；未注册的一次性对象为 1。之后改档案不影响已射进去的
   const quality = sireInfo ? sireInfo.spermQuality : 1;
+  const pooled = isPooledConception(base);
+  let pooledSpilled = 0;
   const existing = sperms.find((item) => String(item?.male || '') === male);
-  if (enteredAmount > 0) {
-    if (existing) {
-      existing.value = Math.max(0, clampNumber(existing.value, 0, 999999, 0) + enteredAmount);
-      existing.race = race;
-      existing.derivedType = maleDerivedType;
-      existing.quality = quality;
-      Object.assign(existing, ancestry);
-      if (maleBodySize !== null) existing.bodySize = maleBodySize;
-    } else sperms.push({ male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality, value: enteredAmount });
-    base.nextSpermContactId = (Number(base.nextSpermContactId) || 0) + 1;
-    base.spermContacts = [...(base.spermContacts || []), {
-      id: base.nextSpermContactId, male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality,
-      minutesPassed: Number(chatState.minutesPassed) || 0, value: enteredAmount, blocked: false,
-    }];
+  if (pooled) {
+    const now = Math.round(Number(chatState.minutesPassed) || 0);
+    enablePooledConception(base, now);
+    if (enteredAmount > 0) {
+      pooledSpilled = depositPooledSource(base, {
+        male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality,
+        minutesPassed: now, value: enteredAmount, blocked: false,
+      }, getCharacterSemenCapacity(next.profile), now).spilled;
+    }
+  } else {
+    if (enteredAmount > 0) {
+      if (existing) {
+        existing.value = Math.max(0, clampNumber(existing.value, 0, 999999, 0) + enteredAmount);
+        existing.race = race;
+        existing.derivedType = maleDerivedType;
+        existing.quality = quality;
+        Object.assign(existing, ancestry);
+        if (maleBodySize !== null) existing.bodySize = maleBodySize;
+      } else sperms.push({ male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality, value: enteredAmount });
+      base.nextSpermContactId = (Number(base.nextSpermContactId) || 0) + 1;
+      base.spermContacts = [...(base.spermContacts || []), {
+        id: base.nextSpermContactId, male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality,
+        minutesPassed: Number(chatState.minutesPassed) || 0, value: enteredAmount, blocked: false,
+      }];
+    }
+    base.sperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
   }
-  base.sperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
   next.profile.lastCondomResult = { hasCondom, condomFailed, condomFailReason, enteredAmount, minutesPassed: Number(chatState.minutesPassed) || 0 };
   base.penetrationState = 'spent';
   base.penetrationSource = male;
   base.latestSexDays = 0;
   next.profile.base = base;
-  const spilled = enteredAmount > 0 ? spillSpermOverflow(next.profile) : 0;
+  const spilled = pooled ? pooledSpilled : (enteredAmount > 0 ? spillSpermOverflow(next.profile) : 0);
   const experience = {
     ...(next.profile?.experience || {}),
     latestSexPartner: male,
@@ -7704,6 +7859,21 @@ function applyDrainSperm(chatState, args) {
 
   const next = cloneValue(character);
   const base = next.profile?.base || {};
+  if (isPooledConception(base)) {
+    const contacts = base.spermContacts || [];
+    const total = contacts.reduce((sum, source) => sum + Math.max(0, Number(source.value) || 0), 0);
+    const fraction = total > 0 ? Math.min(1, amount / total) : 0;
+    base.spermContacts = contacts.map((source) => {
+      const value = Math.max(0, Number(source.value) || 0);
+      return { ...source, value: Math.max(0, value - Math.min(value,
+        value * fraction * getSpermQualityFactors(source.quality).drain)) };
+    });
+    projectPooledSperms(base);
+    const remaining = base.spermContacts.reduce((sum, source) => sum + source.value, 0);
+    next.profile.base = base;
+    chatState.characters[female] = next;
+    return { applied: true, message: `bsDrainSperm applied to ${female}: 实际排出 ${Number((total - remaining).toFixed(6))}，剩余 ${Number(remaining.toFixed(6))}（混合池逐次品质快照，不向下取整）。` };
+  }
   let sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   const total = sperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
 
@@ -8355,6 +8525,10 @@ function applyDebugSetProdromal(chatState, args) {
 }
 
 export function applyToolCall(chatState, call) {
+  if (call?.name === 'bsPassedTime') {
+    const error = pooledTimeError(chatState, normalizeToolCallArguments(call.arguments));
+    if (error) return error;
+  }
   // 先让每个母体的编号计数器越过现存号码，再执行可能移除胎儿的操作；
   // 否则从未发过号的母体减胎后，会把被移除那胎的号码重发给下一个新胎
   for (const character of Object.values(chatState?.characters || {})) {
