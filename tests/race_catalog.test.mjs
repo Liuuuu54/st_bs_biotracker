@@ -139,7 +139,7 @@ test('v0.9.5 新增种族有完整参数并归入正确的繁殖分组', async (
   const { getRacePhysiologyProfile, getEmbryoTypeByRace } = await import('../scripts/race_config.js');
   const expected = {
     月兔族: '胎生', 狗头人: '卵生', 梅杜莎: '卵胎生',
-    修格斯: '胎转卵生', 活体铠甲: '不定型', 伪人: '不定型',
+    修格斯: '卵生', 活体铠甲: '不定型', 伪人: '不定型',
   };
   for (const [race, embryoType] of Object.entries(expected)) {
     const profile = getRacePhysiologyProfile(race);

@@ -196,3 +196,36 @@ test('追踪提示的依个体名单跟着百科覆写走，写实世界不送',
   }
   assert.equal(note({ realistic_world: true }), '');
 });
+
+test('射精沿用插入时的型态：变化态的套子尺寸与子宫容量按变化态体型，精液纪录仍记常态', () => {
+  const realRandom = Math.random;
+  Math.random = () => 0.01;
+  try {
+    // 西方龙常态 5 级、真身 7 级：套子 50 × 2 = 100，真身 50 × 8 = 400
+    const condom = (maleAltForm) => {
+      const chatState = chatWith();
+      insert(chatState, { male: '龙', race: '西方龙', hasCondom: true, maleAltForm });
+      deposit(chatState, { male: '龙', race: '西方龙', amount: 200 });
+      return P(chatState).lastCondomResult;
+    };
+    assert.equal(condom(false).condomFailed, true, '人态撑破');
+    assert.equal(condom(true).condomFailed, false, '真身的套子装得下');
+
+    // 卵方是西方龙：真身的子宫装得比人态多，变回常态后下次推进再流出
+    const womb = (femaleAltForm) => {
+      const chatState = chatWith({ race: '西方龙', bodySize: 5 });
+      insert(chatState, { male: '龙', race: '西方龙', femaleAltForm });
+      deposit(chatState, { male: '龙', race: '西方龙', amount: 2000 });
+      return chatState;
+    };
+    const human = womb(false);
+    const dragon = womb(true);
+    const total = (chatState) => P(chatState).base.sperms.reduce((sum, item) => sum + item.value, 0);
+    assert.ok(total(dragon) > total(human), `真身留下 ${total(dragon)}，人态 ${total(human)}`);
+    assert.equal(P(dragon).base.sperms[0].bodySize ?? null, null, '精液纪录不记变化态体型');
+    applyToolCall(dragon, { name: 'bsPassedTime', arguments: { hour: 1 } });
+    assert.ok(total(dragon) <= total(human) + 1e-6, '变回常态后多出来的流出');
+  } finally {
+    Math.random = realRandom;
+  }
+});
