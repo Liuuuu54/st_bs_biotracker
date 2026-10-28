@@ -1,4 +1,4 @@
-import { ALL_BUILTIN_RACES, BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, RACE_BODY_PLAN_LABELS, DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
+import { getAllRaces, BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, RACE_BODY_PLAN_LABELS, DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN } from './stage_config.js';
 import { CROSS_RACE_DIFFICULTY_MULTIPLIER, EMBRYO_TYPE_MISMATCH_MULTIPLIER } from './calculator.js';
 
@@ -183,7 +183,7 @@ function getBodySizeText({ bodySize, bodySizeSd, altFormBodySize } = {}) {
  * 插入当下精方还不在状态里、他的生理块不会送出，模型只能靠这一段知道要不要填体型。
  */
 export function buildBodySizeToolNote({ selection = null } = {}) {
-  const individual = ALL_BUILTIN_RACES.filter((race) => isRaceInCatalogSelection(selection, race)
+  const individual = getAllRaces().filter((race) => isRaceInCatalogSelection(selection, race)
     && getRacePhysiologyProfile(race)?.bodySize === BODY_SIZE_INDIVIDUAL);
   return [
     '[体型参数]',

@@ -149,6 +149,13 @@ const HYBRID_GAP = 0.8;
 
 const baseName = (name) => String(name || '').split('-')[0].trim();
 
+// 自订物种借用内置物种的图示：{ 自订名: 内置名 }，由 race_config 的 setRacePhysiologyOverrides 设定
+let ICON_ALIASES = {};
+export function setRaceIconAliases(aliases = {}) {
+  ICON_ALIASES = { ...aliases };
+}
+const iconOf = (name) => (ICONS[name] ? name : (ICONS[ICON_ALIASES[name]] ? ICON_ALIASES[name] : null));
+
 function splitRace(race) {
   return String(race || '').split(/[xX×]/).map((part) => part.trim()).filter(Boolean);
 }
@@ -158,7 +165,7 @@ function splitRace(race) {
  * 只在选图示时让母系稍占上风；母方也平手才取种族文字中排在前面的。没有任何成分有图示时回传 null
  */
 export function pickIconRace(race, bloodline = null, motherBloodline = null) {
-  const parts = splitRace(race).filter((part) => ICONS[baseName(part)]);
+  const parts = splitRace(race).filter((part) => iconOf(baseName(part)));
   if (parts.length === 0) return null;
   const share = (part) => Number(bloodline?.[part]) || 0;
   const motherShare = (part) => Number(motherBloodline?.[part]) || 0;
@@ -167,7 +174,7 @@ export function pickIconRace(race, bloodline = null, motherBloodline = null) {
     const diff = share(part) - share(best);
     if (diff > 1e-9 || (Math.abs(diff) <= 1e-9 && motherShare(part) > motherShare(best) + 1e-9)) best = part;
   }
-  return baseName(best);
+  return iconOf(baseName(best));
 }
 
 /** 两个以上不同基种族、且不止一个成分有份额，才算混血 */

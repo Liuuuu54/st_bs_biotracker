@@ -1,4 +1,5 @@
 import { toSimplifiedName } from './race_names.js';
+import { setRaceIconAliases } from './race_icons.js';
 
 export const EMBRYO_TYPES = Object.freeze(["胎生", "卵生", "卵胎生", "胎转卵生", "不定型"]);
 /** 胚型是字串，不进 RACE_PHYSIOLOGY_FIELDS（那里的栏位会被当数值平均） */
@@ -176,7 +177,7 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "欧克": {
     embryoType: "胎生",
-    introductionLine: "Orc，绿皮的高大战斗种族，旧称兽人、半兽人。",
+    introductionLine: "Orc，绿皮的高大战斗种族，旧称兽人、半兽人；日系作品里猪头的オーク亦归此类（欧克-猪）。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 1, breedTolerance: 2,
     impregnationDifficulty: 0.8, orgasmOvulationAmount: 1, identicalProbability: 20, genderRatio: 75,
@@ -1060,6 +1061,12 @@ const RACE_DEFINITIONS = Object.freeze({
 
 export const ALL_BUILTIN_RACES = Object.freeze(Object.keys(RACE_DEFINITIONS));
 
+/** 自订物种缺栏位时的底：人类的内置值（不含短敘述） */
+const HUMAN_TEMPLATE_PROFILE = (() => {
+  const { [RACE_INTRODUCTION_FIELD]: _line, ...profile } = RACE_DEFINITIONS['人类'];
+  return Object.freeze(profile);
+})();
+
 /**
  * 改名：旧名在读取时一律换成新名（存档另由 state_migration 一次改写）。
  * 只列内置种族的基名，装饰子项（百足姬-赤）由 canonicalizeRaceName 保留。
@@ -1088,14 +1095,18 @@ const RACE_NAME_LOOKUP = new Map([
   ...Object.entries(RACE_RENAMES).map(([from, to]) => [toSimplifiedName(from), to]),
 ]);
 
-/** 单一成分（可带 -装饰子项）的规范名；查不到的自订种族原样返回 */
+// 百科自订物种的名称（setRacePhysiologyOverrides 时重建）：繁简写法都对得上
+let customRaceNameLookup = new Map();
+
+/** 单一成分（可带 -装饰子项）的规范名；查不到的名录外种族原样返回 */
 export function canonicalizeRaceName(component) {
   const value = String(component || '').trim();
   if (!value) return '';
   const separatorIndex = value.indexOf('-');
   const base = separatorIndex >= 0 ? value.slice(0, separatorIndex).trim() : value;
   const subtype = separatorIndex >= 0 ? value.slice(separatorIndex) : '';
-  return (RACE_NAME_LOOKUP.get(toSimplifiedName(base)) || base) + subtype;
+  const simplified = toSimplifiedName(base);
+  return (RACE_NAME_LOOKUP.get(simplified) || customRaceNameLookup.get(simplified) || base) + subtype;
 }
 
 /**
@@ -1338,6 +1349,11 @@ export function getDerivedTypeIntroductionLine(derivedType) {
 export function sanitizeRacePhysiologyProfilePatch(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return null;
   const result = {};
+  // 自订物种：条目带 custom 与借用的族谱图示（内置物种名）
+  if (profile[CUSTOM_RACE_FIELD] === true) result[CUSTOM_RACE_FIELD] = true;
+  if (typeof profile[CUSTOM_RACE_ICON_FIELD] === 'string' && profile[CUSTOM_RACE_ICON_FIELD].trim()) {
+    result[CUSTOM_RACE_ICON_FIELD] = profile[CUSTOM_RACE_ICON_FIELD].trim();
+  }
   if (Object.prototype.hasOwnProperty.call(profile, RACE_INTRODUCTION_FIELD)) {
     const introductionLine = String(profile[RACE_INTRODUCTION_FIELD] || '').trim();
     if (introductionLine) result[RACE_INTRODUCTION_FIELD] = introductionLine;
@@ -1408,14 +1424,93 @@ function sanitizeBodySizeLevel(value) {
 
 export function setRacePhysiologyOverrides(overrides = {}) {
   const next = {};
+  const customNames = [];
+  const nameLookup = new Map();
+  const iconAliases = {};
   if (overrides && typeof overrides === 'object' && !Array.isArray(overrides)) {
     for (const [race, profile] of Object.entries(overrides)) {
-      const key = getBaseRaceName(race);
+      const isCustom = profile?.[CUSTOM_RACE_FIELD] === true;
+      // 自订物种用原名当键；内置物种的覆写收敛到基名
+      const key = isCustom ? normalizeCustomRaceName(race) : getBaseRaceName(race);
       const patch = sanitizeRacePhysiologyProfilePatch(profile);
-      if (key && patch) next[key] = Object.freeze(patch);
+      if (!key || !patch) continue;
+      if (isCustom) {
+        if (validateCustomRaceName(key, { allowExisting: true })) continue;
+        // 自订物种没有内置值可退：缺的栏位以人类补齐
+        next[key] = Object.freeze({ ...HUMAN_TEMPLATE_PROFILE, ...patch, [CUSTOM_RACE_FIELD]: true });
+        customNames.push(key);
+        nameLookup.set(toSimplifiedName(key), key);
+        const icon = patch[CUSTOM_RACE_ICON_FIELD];
+        if (icon && RACE_DEFINITIONS[icon]) iconAliases[key] = icon;
+      } else if (RACE_DEFINITIONS[key]) {
+        next[key] = Object.freeze(patch);
+      }
     }
   }
   customRacePhysiologyProfiles = Object.freeze(next);
+  customRaceNames = Object.freeze(customNames);
+  customRaceNameLookup = nameLookup;
+  setRaceIconAliases(iconAliases);
+}
+
+/** 自订物种的栏位：标记与借用的族谱图示 */
+export const CUSTOM_RACE_FIELD = 'custom';
+export const CUSTOM_RACE_ICON_FIELD = 'iconRace';
+export const CUSTOM_RACE_NAME_MAX_LENGTH = 12;
+let customRaceNames = Object.freeze([]);
+
+function normalizeCustomRaceName(name) {
+  return String(name || '').trim();
+}
+
+/** 目前生效的自订物种（全域与当前角色卡合并后），依建立先后 */
+export function getCustomRaceNames() {
+  return [...customRaceNames];
+}
+
+export function isCustomRace(race) {
+  const key = getBaseRaceName(race);
+  return customRaceNames.includes(key);
+}
+
+/** 内置 109 族加上目前生效的自订物种 */
+export function getAllRaces() {
+  return [...ALL_BUILTIN_RACES, ...customRaceNames];
+}
+
+/**
+ * 自订物种名的检查；回传错误讯息，合法时回传空字串。
+ * 不能与内置物种、旧名、衍生类型同名（含繁简），不能含子项与混血分隔符。
+ * allowExisting：编辑既有自订物种时不算与自己冲突
+ */
+export function validateCustomRaceName(name, { allowExisting = false } = {}) {
+  const value = normalizeCustomRaceName(name);
+  if (!value) return '请输入物种名称';
+  if ([...value].length > CUSTOM_RACE_NAME_MAX_LENGTH) return `名称最多 ${CUSTOM_RACE_NAME_MAX_LENGTH} 字`;
+  if (/[-xX×\[\]%\/\s]/.test(value)) return '名称不能含 -、x、×、[]、%、/ 或空白（这些用来写子项、混血与衍生）';
+  const simplified = toSimplifiedName(value);
+  if (RACE_NAME_LOOKUP.has(simplified)) return `与内置物种「${RACE_NAME_LOOKUP.get(simplified)}」同名`;
+  if (DERIVED_TYPE_RACES.some((type) => toSimplifiedName(type) === simplified)) return '与衍生类型同名';
+  if (!allowExisting && customRaceNameLookup.has(simplified)) return `已有自订物种「${customRaceNameLookup.get(simplified)}」`;
+  return '';
+}
+
+/** 自订物种借用的族谱图示（内置物种名）；没有就回 null */
+export function getCustomRaceIconRace(race) {
+  const key = getBaseRaceName(race);
+  const icon = customRacePhysiologyProfiles[key]?.[CUSTOM_RACE_ICON_FIELD];
+  return customRaceNames.includes(key) && icon && RACE_DEFINITIONS[icon] ? icon : null;
+}
+
+/**
+ * 以既有物种为范本建立自订物种的完整定义（含短敘述与借用图示）；
+ * 范本可以是内置或另一个自订物种，生效中的百科覆写也一起带过来
+ */
+export function buildCustomRaceFromTemplate(templateRace = '人类') {
+  const template = getRacePhysiologyProfile(templateRace) || getRacePhysiologyProfile('人类');
+  const { [CUSTOM_RACE_FIELD]: _custom, [CUSTOM_RACE_ICON_FIELD]: templateIcon, ...fields } = template;
+  const icon = RACE_DEFINITIONS[getBaseRaceName(templateRace)] ? getBaseRaceName(templateRace) : (templateIcon || '人类');
+  return { ...fields, [RACE_INTRODUCTION_FIELD]: '', [CUSTOM_RACE_FIELD]: true, [CUSTOM_RACE_ICON_FIELD]: icon };
 }
 
 export function getRacePhysiologyOverride(race) {
@@ -1498,7 +1593,12 @@ export function getRaceIntroductionLine(race) {
 function getEffectiveRacePhysiologyProfileValue(race) {
   const key = getBaseRaceName(race);
   const builtin = getBuiltinRacePhysiologyProfile(key);
-  if (!builtin) return null;
+  if (!builtin) {
+    // 自订物种：条目本身就是完整定义（短敘述另走 getRaceIntroductionLine）
+    if (!customRaceNames.includes(key)) return null;
+    const { [RACE_INTRODUCTION_FIELD]: _line, ...profile } = customRacePhysiologyProfiles[key];
+    return profile;
+  }
   return {
     ...builtin,
     ...(customRacePhysiologyProfiles[key] || {}),
@@ -1537,7 +1637,7 @@ export function isRaceInCatalogSelection(selection, race) {
 /** 内置物种按「当前生效」的胚型分组（百科改过胚型的物种会移到新组） */
 export function getRaceGroupsByEmbryoType() {
   const groups = new Map(EMBRYO_TYPES.map((type) => [type, []]));
-  for (const race of ALL_BUILTIN_RACES) {
+  for (const race of getAllRaces()) {
     const type = getEffectiveRacePhysiologyProfileValue(race)?.[RACE_EMBRYO_TYPE_FIELD];
     groups.get(EMBRYO_TYPES.includes(type) ? type : '胎生').push(race);
   }
