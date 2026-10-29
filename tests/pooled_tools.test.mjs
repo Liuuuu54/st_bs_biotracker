@@ -100,7 +100,11 @@ test('pooled drain uses per-contact quality and preserves mass, unlike legacy fl
   const result = call(chat, 'bsDrainSperm', { female: '母方', amount: 10 });
   assert.equal(result.applied, true); assert.match(result.message, /实际排出/);
   const contacts = baseOf(chat).spermContacts;
-  near(contacts[0].value, 15); near(contacts[1].value, 20 - 5 * 4 ** -.25);
+  assert.ok(contacts[0].value < contacts[1].value, 'lower quality is removed more readily');
+  near(result.drainResult.before, before);
+  near(result.drainResult.remaining, residual(chat));
+  near(result.drainResult.removed + result.drainResult.remaining, before);
+  assert.equal(result.drainResult.sources.length, 2);
   assert.ok(residual(chat) < before);
 });
 test('pooled real full-capacity deposit splitting is invariant across serialized tool calls', () => {

@@ -51,9 +51,11 @@ function copySources(sources) {
   }));
 }
 
-function prepare(sources, volumeFactor) {
+function prepare(sources, volumeFactor, qualityExponent = 0.5, clearance = DECAY) {
   const rows = copySources(sources);
-  const roots = rows.map((source) => Math.sqrt(source.quality));
+  // Keep the existing natural-clearance path bit-for-bit; active effort uses q^(1/4).
+  const roots = rows.map((source) => qualityExponent === 0.5
+    ? Math.sqrt(source.quality) : Math.sqrt(Math.sqrt(source.quality)));
   const live = rows.map((source, i) => ({ value: source.value, root: roots[i] })).filter((row) => row.value > 0);
   const scale = Math.max(0, ...live.map((row) => row.value));
   const weighted = live.map((row) => (row.value / scale) * row.root);
@@ -61,11 +63,11 @@ function prepare(sources, volumeFactor) {
   const u = unit(volumeFactor);
   const scaledVolume = scale / u;
   const effective = sum(live.map((row) => row.value * row.root));
-  const directLifetime = effective / u / DECAY;
+  const directLifetime = effective / u / clearance;
   return {
     rows, roots, live, u,
     lifetime: Number.isFinite(directLifetime) ? directLifetime
-      : (Number.isFinite(scaledVolume) ? scaledVolume / DECAY : scale / DECAY / u) * normalizedMass,
+      : (Number.isFinite(scaledVolume) ? scaledVolume / clearance : scale / clearance / u) * normalizedMass,
     uniform: live.length === 0 || live.every((row) => row.root === live[0].root),
     weights: weighted.map((value) => value / normalizedMass),
   };
@@ -117,6 +119,33 @@ export function advanceSpermPool(sources, elapsedDays, { volumeFactor = 1 } = {}
   const fraction = t > 0 && pool.lifetime > 0 ? Math.min(1, t / pool.lifetime) : 0;
   const values = valuesAt(pool, fraction);
   return pool.rows.map((source, i) => ({ ...source, value: values[i] }));
+}
+
+/** Instantaneous active removal, with absolute effort a (not time or body-scaled dose).
+ * dVi/da = -(Vi/sum V)/q_i^(1/4). No per-command fraction cap or rounding:
+ * equal effort in one or several operations produces the same physical state.
+ * Inactivated material is physical; not-entered material never joins the pool.
+ * Egg/random/pregnancy state is deliberately outside this pure function.
+ */
+export function drainSpermPool(sources, attemptAmount) {
+  if (!Number.isFinite(attemptAmount) || attemptAmount < 0) {
+    throw new RangeError('Sperm drain effort must be finite and nonnegative.');
+  }
+  const physical = (Array.isArray(sources) ? sources : []).map((source) =>
+    source?.fertilityStatus === 'not-entered' ? { ...source, value: 0 } : source);
+  const pool = prepare(physical, 1, 0.25, 1);
+  const fraction = pool.lifetime > 0 ? Math.min(1, attemptAmount / pool.lifetime) : 0;
+  const values = valuesAt(pool, fraction);
+  const after = pool.rows.map((source, i) => ({ ...source, value: values[i] }));
+  const details = pool.rows.map((source, sourceIndex) => ({
+    sourceIndex, id: source.id ?? null, male: source.male ?? '', quality: source.quality,
+    before: source.value, removed: Math.max(0, source.value - values[sourceIndex]),
+    remaining: values[sourceIndex],
+  }));
+  return { sources: after, attempted: attemptAmount,
+    before: sum(details.map((source) => source.before)),
+    removed: sum(details.map((source) => source.removed)),
+    remaining: sum(details.map((source) => source.remaining)), details };
 }
 
 /** Fill spare capacity, then stream incoming through a continuously mixed pool.

@@ -1,6 +1,9 @@
 // Reproduction against the unchanged legacy branch plus the opt-in proposed model.
 // Run: node tests/repro_sperm_pool.mjs
 import { calculateFertilizationPreview } from '../scripts/calculator.js';
+import { applyToolCall } from '../scripts/tools.js';
+import { enablePooledConception } from '../scripts/pooled_reproduction.js';
+import { createDefaultFemaleState, createEmptyChatState } from '../scripts/state.js';
 const percent = (p) => `${(p * 100).toFixed(6)}%`;
 const cases = [
   ['1×20', [20]], ['2×10 (same total)', [10, 10]],
@@ -13,3 +16,27 @@ console.table(cases.map(([input, amounts]) => {
     pooled: percent(calculateFertilizationPreview({ ...options, model: 'pooled-v1' }).successChance) };
 }));
 console.log('These are single-egg, no-new-input mathematical projections, not browser/clinical results.');
+
+// Actual public-tool calls: the legacy branch is unchanged, not a hand-written approximation.
+function runDrain(rows, attempts, pooled) {
+  const chat = createEmptyChatState();
+  const mother = createDefaultFemaleState('母方');
+  mother.initialized = true;
+  Object.assign(mother.profile.base, { age: 24, race: '人类', bodySize: 4, stage: '卵泡期', days: 3, sperms: rows.map((row) => ({ ...row })) });
+  chat.characters['母方'] = mother;
+  if (pooled) enablePooledConception(mother.profile.base, 0, { seed: 'drain-reproduction' });
+  for (const amount of attempts) {
+    const result = applyToolCall(chat, { name: 'bsDrainSperm', arguments: { female: '母方', amount } });
+    if (!result.applied) throw new Error(result.message);
+  }
+  return chat.characters['母方'].profile.base.sperms.reduce((n, row) => n + row.value, 0);
+}
+const high = [{ male: 'A', race: '人类', value: 40, quality: 4 }];
+const mixed = [{ male: 'A', race: '人类', value: 20, quality: .25 }, { male: 'B', race: '人类', value: 20, quality: 4 }];
+console.table([
+  ['40/q4, effort20', high, [20]], ['40/q4, effort10+10', high, [10, 10]],
+  ['40/q4, effort80', high, [80]], ['40/q4, effort20x4', high, [20, 20, 20, 20]],
+  ['mixed, effort20', mixed, [20]], ['mixed, effort10+10', mixed, [10, 10]],
+].map(([input, rows, attempts]) => ({ input,
+  legacyRemaining: runDrain(rows, attempts, false), pooledRemaining: runDrain(rows, attempts, true) })));
+console.log('Drain rows use actual bsDrainSperm dispatch at one world minute; no clock advancement.');

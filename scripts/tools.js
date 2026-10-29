@@ -1,5 +1,6 @@
 import { recordExperience, normalizePaternityClaims, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
 import { getProfileSemenCapacity } from './semen_capacity.js';
+import { drainSpermPool } from './sperm_pool.js';
 import { advancePooledConception, depositPooledSource, enablePooledConception, isPooledConception,
   projectPooledSperms, syncPooledEggs } from './pooled_reproduction.js';
 import { getStageProgress } from './stage_progress.js';
@@ -407,7 +408,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsDrainSperm',
-    description: '让角色主动排出体内部分或全部精液残留，按当前各来源比例一并减少。用于角色主动清洗、灌洗或使用道具排出。注意：受精是在每次时间推进时用当下仍存在的精液判定，清空后这次性交不再有受孕机会；清洗/沐浴若剧情支持体内冲洗可选用，不要求避孕意图，不自动联动臭意解除。排出不撤销已受精结果。精子品质高的精源浓稠难洗，实际排得比 amount 少，回覆会写体内还留多少。',
+    description: '让角色主动排出体内部分或全部精液残留，按当前各来源比例一并减少。用于角色主动清洗、灌洗或使用道具排出。注意：受精是在每次时间推进时用当下仍存在的精液判定，清空后这次性交不再有受孕机会；清洗/沐浴若剧情支持体内冲洗可选用，不要求避孕意图，不自动联动臭意解除。排出不撤销已受精结果。精子品质高的精源浓稠难洗，实际排得比 amount 少，回覆会写体内还留多少。实验性混合池中 amount 是绝对尝试量：同刻20一次与10两次等效，足够的量可以排净，不按每次当前总量封顶；只在本操作位置瞬时结算，不自动推进时间。',
     input_schema: {
       type: 'object',
       properties: {
@@ -7860,19 +7861,16 @@ function applyDrainSperm(chatState, args) {
   const next = cloneValue(character);
   const base = next.profile?.base || {};
   if (isPooledConception(base)) {
-    const contacts = base.spermContacts || [];
-    const total = contacts.reduce((sum, source) => sum + Math.max(0, Number(source.value) || 0), 0);
-    const fraction = total > 0 ? Math.min(1, amount / total) : 0;
-    base.spermContacts = contacts.map((source) => {
-      const value = Math.max(0, Number(source.value) || 0);
-      return { ...source, value: Math.max(0, value - Math.min(value,
-        value * fraction * getSpermQualityFactors(source.quality).drain)) };
-    });
+    const result = drainSpermPool(base.spermContacts || [], amount);
+    base.spermContacts = result.sources;
     projectPooledSperms(base);
-    const remaining = base.spermContacts.reduce((sum, source) => sum + source.value, 0);
     next.profile.base = base;
     chatState.characters[female] = next;
-    return { applied: true, message: `bsDrainSperm applied to ${female}: 实际排出 ${Number((total - remaining).toFixed(6))}，剩余 ${Number(remaining.toFixed(6))}（混合池逐次品质快照，不向下取整）。` };
+    return { applied: true,
+      drainResult: { minute: Number(chatState.minutesPassed) || 0, attempted: result.attempted,
+        before: result.before, removed: result.removed, remaining: result.remaining, sources: result.details },
+      message: `bsDrainSperm applied to ${female}: 尝试量 ${amount}，实际排出 ${Number(result.removed.toFixed(6))}，剩余 ${Number(result.remaining.toFixed(6))}（按逐次品质连续结算，不推进时间、不撤销已受精结果）。`,
+    };
   }
   let sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
   const total = sperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
