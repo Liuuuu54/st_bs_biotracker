@@ -1073,6 +1073,28 @@
               </select>
             </div>
 
+            <details class="settings_section bs-bt-custom-race">
+              <summary>自订物种 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#自訂物種" target="_blank" rel="noopener noreferrer" title="自订物种说明" aria-label="自订物种说明">?</a></summary>
+              <div class="bs-bt-custom-race-form">
+                <label for="bs-bt-custom-race-name">名称</label>
+                <input id="bs-bt-custom-race-name" class="text_pole" type="text" maxlength="12" placeholder="宝可梦" />
+                <label for="bs-bt-custom-race-template">范本（复制它的全部数值）</label>
+                <select id="bs-bt-custom-race-template" class="text_pole"></select>
+                <label for="bs-bt-custom-race-icon">借用族谱图示</label>
+                <select id="bs-bt-custom-race-icon" class="text_pole"></select>
+                <div class="bs-bt-action-row">
+                  <button id="bs-bt-custom-race-create" class="menu_button" type="button">新增物种</button>
+                </div>
+                <label for="bs-bt-custom-race-json">单一物种 JSON（汇出后可分享，贴上后汇入）</label>
+                <textarea id="bs-bt-custom-race-json" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="4"></textarea>
+                <div class="bs-bt-action-row">
+                  <button id="bs-bt-custom-race-export" class="menu_button" type="button">汇出所选物种</button>
+                  <button id="bs-bt-custom-race-import" class="menu_button" type="button">汇入</button>
+                </div>
+                <div id="bs-bt-custom-race-status" class="bs-bt-inline-status">存到上方选的编辑范围（全域或角色卡）。</div>
+              </div>
+            </details>
+
             <div class="settings_section">
               <button id="bs-bt-race-open-editor" class="menu_button" type="button">调整参数</button>
               <div id="bs-bt-race-editor-modal" class="bs-bt-race-editor-modal" hidden>
@@ -1082,6 +1104,10 @@
                     <button id="bs-bt-race-editor-close" class="bs-bt-race-close-button" type="button" aria-label="关闭参数覆盖">×</button>
                   </div>
                   <div id="bs-bt-race-editor" class="bs-bt-race-editor"></div>
+                  <label id="bs-bt-race-custom-icon-row" class="bs-bt-race-editor-field bs-bt-race-editor-field-wide" hidden>
+                    <span>借用族谱图示</span>
+                    <select id="bs-bt-race-custom-icon" class="text_pole"></select>
+                  </label>
                   <div class="settings_section bs-bt-action-row">
                     <button id="bs-bt-race-use-human" class="menu_button" type="button">套用人类预设值</button>
                     <button id="bs-bt-race-save-override" class="menu_button" type="button">保存覆盖</button>

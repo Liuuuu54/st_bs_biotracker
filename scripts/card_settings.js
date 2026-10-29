@@ -41,7 +41,10 @@ function sanitizeOverrideMap(value, normalize, sanitize) {
       if (!safeKey(key)) continue;
       if (typeof field === 'number' && Number.isFinite(field)) fields[key] = field;
       else if (typeof field === 'string') fields[key] = field.slice(0, 4000);
-      else if (key === 'genderRatio' && field === null) fields[key] = null;
+      // 可为 null 的栏位：性别比（雌雄同体）与体型（可变、没有变化态、没有标准差）
+      else if (['genderRatio', 'bodySize', 'bodySizeSd', 'altFormBodySize'].includes(key) && field === null) fields[key] = null;
+      // 自订物种的标记
+      else if (key === 'custom' && field === true) fields[key] = true;
     }
     typed[name] = fields;
   }
@@ -50,7 +53,7 @@ function sanitizeOverrideMap(value, normalize, sanitize) {
     if (!safeKey(name)) continue;
     // Numeric strings are not trusted card numbers; sanitize reuses the runtime bounds.
     for (const key of Object.keys(profile)) {
-      if (typeof profile[key] === 'string' && !['introductionLine', 'fluxDefinition', 'inheritanceMode', 'embryoType'].includes(key)) delete profile[key];
+      if (typeof profile[key] === 'string' && !['introductionLine', 'fluxDefinition', 'inheritanceMode', 'embryoType', 'bodySize', 'bodyPlan', 'iconRace'].includes(key)) delete profile[key];
     }
     const patch = sanitize(profile);
     if (patch) result[name] = patch;

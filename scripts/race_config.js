@@ -1,4 +1,5 @@
 import { toSimplifiedName } from './race_names.js';
+import { setRaceIconAliases } from './race_icons.js';
 
 export const EMBRYO_TYPES = Object.freeze(["胎生", "卵生", "卵胎生", "胎转卵生", "不定型"]);
 /** 胚型是字串，不进 RACE_PHYSIOLOGY_FIELDS（那里的栏位会被当数值平均） */
@@ -111,6 +112,15 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 0, recoveryCoefficient: 0.25,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
+  "鬣狗族": {
+    embryoType: "胎生",
+    introductionLine: "Gnoll／Hyena-folk，斑鬣狗系亚人，母系社会，雌性比雄性高大强势；雌性经伪阴茎分娩，初产极难，是胎生中分娩最艰难的种族。雌核遗传：孩子随母族。",
+    inheritanceMode: "maternal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2.5, birthDifficulty: 4.5, breedTolerance: 2,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.9,
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
+  },
   "米诺陶族": {
     embryoType: "胎生",
     introductionLine: "Minotaur／Cowfolk，牛系亚人，从牛头壮汉到丰乳牛娘皆归此类，不写作兽耳族-牛；承载耐受为胎生之最，乳量充沛。",
@@ -144,8 +154,17 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 5, birthDifficulty: 0.3, breedTolerance: 0.01,
     impregnationDifficulty: 1, orgasmOvulationAmount: 1, identicalProbability: 25, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 6,
+    companionEggsMean: 0, recoveryCoefficient: 0.25,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "赛尔克族": {
+    embryoType: "胎生",
+    introductionLine: "Selkie，海豹人外：人类上身接海豹的下半身与鳍，脱下海豹皮便化出人腿上陆。海豹是哺乳类，胎生、一胎一仔；传说多为女性。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.2, breedTolerance: 2,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 0, identicalProbability: 1, genderRatio: 35,
+    companionEggsMean: 0, recoveryCoefficient: 0.8,
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "哥布林": {
     embryoType: "胎生",
@@ -158,10 +177,10 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "欧克": {
     embryoType: "胎生",
-    introductionLine: "Orc，绿皮的高大战斗种族，旧称兽人、半兽人。",
+    introductionLine: "Orc，绿皮的高大战斗种族，旧称兽人、半兽人；日系作品里猪头的オーク亦归此类（欧克-猪）。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 1, breedTolerance: 2,
-    impregnationDifficulty: 0.8, orgasmOvulationAmount: 1, identicalProbability: 50, genderRatio: 75,
+    impregnationDifficulty: 0.8, orgasmOvulationAmount: 1, identicalProbability: 20, genderRatio: 75,
     companionEggsMean: 0, recoveryCoefficient: 0.4,
     bodySize: 5, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
@@ -191,6 +210,15 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 2, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 66,
     companionEggsMean: 0, recoveryCoefficient: 3.8,
     bodySize: 5, bodySizeSd: 0.4, altFormBodySize: 4, bodyPlan: "hybrid",
+  },
+  "半人鹿": {
+    embryoType: "胎生",
+    introductionLine: "Deer-taur，上身为人、下身为鹿的半人形，比照半人马之于马；北美鹿女、凯尔特鹿角神与鹿化少女、中国鹿女夫人皆以此形象出现。可借魔法化出人腿，化人后更娇小。只有鹿耳鹿角的人形写作兽耳族-鹿。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.25, gestationSpeciesSpeed: 1.4, birthDifficulty: 1, breedTolerance: 0.8,
+    impregnationDifficulty: 1.2, orgasmOvulationAmount: 2, identicalProbability: 5, genderRatio: 30,
+    companionEggsMean: 0, recoveryCoefficient: 0.9,
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 3, bodyPlan: "hybrid",
   },
   "巨人": {
     embryoType: "胎生",
@@ -386,7 +414,7 @@ const RACE_DEFINITIONS = Object.freeze({
     introductionLine: "Lizardfolk，又称亚龙人的鳞甲亚人；设定上从部落怪物到与人平起平坐皆有。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.75, gestationSpeciesSpeed: 1.25, birthDifficulty: 0.8, breedTolerance: 1,
-    impregnationDifficulty: 1.5, orgasmOvulationAmount: 3, identicalProbability: 20, genderRatio: null,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 3, identicalProbability: 20, genderRatio: 50,
     companionEggsMean: 4, recoveryCoefficient: 0.8,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
@@ -401,12 +429,21 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "触手怪": {
     embryoType: "卵生",
-    introductionLine: "Tentacle Monster，起源不明、擅长拟态的异形外星群体生命；主要向异族宿主植入同族胚体扩散，真正与宿主发生遗传融合的案例极少。",
+    introductionLine: "Tentacle Monster，起源不明、擅长拟态的异形外星群体生命；主要向异族宿主植入同族胚体扩散，真正与宿主发生遗传融合的案例极少。与夺心魔不同：触手怪是异形群体，夺心魔是人形、靠蝌蚪寄生。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 5, birthDifficulty: 0.2, breedTolerance: 1.67,
     impregnationDifficulty: 0.25, orgasmOvulationAmount: 9, identicalProbability: 25, genderRatio: -1,
     companionEggsMean: 3, recoveryCoefficient: 0.25,
     bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
+  },
+  "夺心魔": {
+    embryoType: "卵生",
+    introductionLine: "Mind Flayer／Illithid，头生触须的人形异种，以灵能吞食心智；自然受孕极难，繁衍靠把蝌蚪植入宿主脑中蜕变（以 bsImplantEmbryo 表现），孩子必定是夺心魔。雌雄同体、雄核遗传。",
+    inheritanceMode: "paternal",
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 1,
+    impregnationDifficulty: 4, orgasmOvulationAmount: 0, identicalProbability: 0, genderRatio: null,
+    companionEggsMean: 6, recoveryCoefficient: 0.5,
+    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "妖精": {
     embryoType: "卵生",
@@ -414,7 +451,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.8, birthDifficulty: 1, breedTolerance: 1,
     impregnationDifficulty: 3, orgasmOvulationAmount: 1, identicalProbability: 2, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 3.8,
+    companionEggsMean: 0, recoveryCoefficient: 1.3,
     bodySize: 1, bodySizeSd: 0.4, altFormBodySize: 4, bodyPlan: "humanoid",
   },
   "怪菌类": {
@@ -437,7 +474,7 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "海蛞蝓族": {
     embryoType: "卵生",
-    introductionLine: "Sea Slug-folk，海兔拟人，下半身是蛞蝓的腹足，可借魔法化出人腿，化人后更娇小；雌雄同体，交配方式奇特（交配列车、阴茎击剑）。",
+    introductionLine: "Sea Slug-folk，海兔拟人，下半身是蛞蝓的腹足，可借魔法化出人腿，化人后更娇小；雌雄同体，交配方式奇特（交配列车、阴茎击剑）。陆生的蛞蝓、鼻涕虫归绒虫族。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 3.3, birthDifficulty: 0.25, breedTolerance: 0.25,
     impregnationDifficulty: 0.25, orgasmOvulationAmount: 5, identicalProbability: 10, genderRatio: null,
@@ -516,6 +553,15 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 2, recoveryCoefficient: 0.7,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 6, bodyPlan: "humanoid",
   },
+  "修格斯": {
+    embryoType: "卵生",
+    introductionLine: "Shoggoth，形似史莱姆却更为古老的太古存在，常化作人形女仆侍奉主人；承载力极强而极难受孕，一胎只怀一个。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 2, gestationSpeciesSpeed: 1, birthDifficulty: 2, breedTolerance: 2.4,
+    impregnationDifficulty: 5, orgasmOvulationAmount: 0, identicalProbability: 0, genderRatio: null,
+    companionEggsMean: 0, recoveryCoefficient: 0.8,
+    bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
+  },
   "狗头人": {
     embryoType: "卵生",
     introductionLine: "Kobold，与哥布林同生态位的小型犬首亚人；却如鸭嘴兽般产卵，分娩负担远低于哥布林。",
@@ -531,7 +577,7 @@ const RACE_DEFINITIONS = Object.freeze({
     inheritanceMode: "normal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.5, breedTolerance: 0.75,
     impregnationDifficulty: 2, orgasmOvulationAmount: 2, identicalProbability: 20, genderRatio: 50,
-    companionEggsMean: 0, recoveryCoefficient: 5,
+    companionEggsMean: 0, recoveryCoefficient: 2.5,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "hybrid",
   },
   "鱼人": {
@@ -587,6 +633,15 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 1, identicalProbability: 0, genderRatio: 0,
     companionEggsMean: 0, recoveryCoefficient: 3.8,
     bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "绒虫族": {
+    embryoType: "卵胎生",
+    introductionLine: "Velvet Worm-folk，外形像陆生蛞蝓的柔软虫娘：天鹅绒般湿软的身躯、下身成排短肉足，能喷黏液缠住猎物；蛞蝓、鼻涕虫一类的陆生软体人外归此。原型是栉蚕：胎盘胎生、孕期长达一年多，常同时怀着不同大小的数胎，雌多雄少。可借魔法化出人腿。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.5, gestationSpeciesSpeed: 0.6, birthDifficulty: 0.8, breedTolerance: 1.2,
+    impregnationDifficulty: 0.8, orgasmOvulationAmount: 2, identicalProbability: 0, genderRatio: 30,
+    companionEggsMean: 1, recoveryCoefficient: 1.1,
+    bodySize: 3, bodySizeSd: 0.5, altFormBodySize: 3, bodyPlan: "hybrid",
   },
   "蛇人": {
     embryoType: "卵胎生",
@@ -696,6 +751,15 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 0, recoveryCoefficient: 10,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 7, bodyPlan: "humanoid",
   },
+  "羽蛇": {
+    embryoType: "胎转卵生",
+    introductionLine: "Feathered Serpent，奎查尔科亚特尔一类、身披彩羽的有翼蛇神（阿兹特克、玛雅神话），可在人态与完全态之间转换；有翼有羽，与东方龙、蛇人区隔。传说其母吞玉成孕、难产而亡，又与昏星之神修洛特尔为孪生，故易受孕、难分娩、多双生，孕期约一个金星会合周期。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 3, gestationSpeciesSpeed: 0.5, birthDifficulty: 4.5, breedTolerance: 1.5,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 0, identicalProbability: 40, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 6,
+    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: 6, bodyPlan: "humanoid",
+  },
   "海德拉": {
     embryoType: "胎转卵生",
     introductionLine: "Hydra，多头龙族，一具身躯生有多个头颅，仍是单一个体；以断首再生著称，是胎转卵生中产后恢复最快的一族。",
@@ -786,6 +850,15 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 0, recoveryCoefficient: 9,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: 5, bodyPlan: "humanoid",
   },
+  "鵺": {
+    embryoType: "胎转卵生",
+    introductionLine: "Nue，日本的合成妖兽，以猴为主体：猿首、狸身、虎足、蛇尾，夜啼不祥；可在人态与完全态之间转换，与白泽同为东方的「四不像」。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 0.6, birthDifficulty: 2.5, breedTolerance: 2,
+    impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 15, genderRatio: 60,
+    companionEggsMean: 0, recoveryCoefficient: 2.1,
+    bodySize: 3, bodySizeSd: 0.5, altFormBodySize: 5, bodyPlan: "humanoid",
+  },
   "独角兽": {
     embryoType: "胎转卵生",
     introductionLine: "Unicorn，额生独角的上位幻兽，可在人态与完全态之间转换。",
@@ -822,23 +895,23 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 0, recoveryCoefficient: 5,
     bodySize: 3, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
-  "修格斯": {
-    embryoType: "胎转卵生",
-    introductionLine: "Shoggoth，形似史莱姆却更为古老的太古存在，承载力极强而极难受孕。",
-    inheritanceMode: "normal",
-    menstrualLengthRatio: 2, gestationSpeciesSpeed: 0.3, birthDifficulty: 2, breedTolerance: 2.4,
-    impregnationDifficulty: 5, orgasmOvulationAmount: 2, identicalProbability: 50, genderRatio: null,
-    companionEggsMean: 0, recoveryCoefficient: 2.8,
-    bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
-  },
   "史萊姆": {
     embryoType: "不定型",
-    introductionLine: "Slime，繁殖策略极多样：可无性分裂，可孕育任何种族之胎，亦可寄入异族子宫。",
+    introductionLine: "Slime，繁殖策略极多样：可无性分裂，可孕育任何种族之胎，亦可寄入异族子宫。与菌毒族不同：史莱姆是凝胶身躯，菌毒族是微生物的聚合。",
     inheritanceMode: "normal",
-    menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 0.5, birthDifficulty: 0.25, breedTolerance: 2,
+    menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 3, birthDifficulty: 0.25, breedTolerance: 2,
     impregnationDifficulty: 1, orgasmOvulationAmount: 3, identicalProbability: 75, genderRatio: null,
     companionEggsMean: 3, recoveryCoefficient: 0.25,
     bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
+  },
+  "菌毒族": {
+    embryoType: "不定型",
+    introductionLine: "Microbe-folk，细菌、病毒一类的微生物拟人（工作细胞、病毒娘之属）：菌落可聚成娇小人形也可散开，靠分裂增殖与感染宿主繁衍，族中多同卵的复制体；无性。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 4, birthDifficulty: 0.3, breedTolerance: 1.5,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 5, identicalProbability: 60, genderRatio: -1,
+    companionEggsMean: 8, recoveryCoefficient: 0.25,
+    bodySize: 2, bodySizeSd: 0.8, altFormBodySize: null, bodyPlan: "any",
   },
   "石像鬼": {
     embryoType: "不定型",
@@ -905,7 +978,7 @@ const RACE_DEFINITIONS = Object.freeze({
   },
   "夢魔": {
     embryoType: "不定型",
-    introductionLine: "Incubus，近乎纯男性的性欲特化恶魔系不定型种族；胚胎发育随母体调整外形，但基因定序仍属夢魔。",
+    introductionLine: "Incubus，近乎纯男性的性欲特化恶魔系不定型种族，四处播种；雌核遗传，与异族所生的孩子随母族，只有族中极少数的女性夢魔才生得出夢魔。与媚魔是对应种族。",
     inheritanceMode: "maternal",
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 1,
     impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 95,
@@ -988,6 +1061,12 @@ const RACE_DEFINITIONS = Object.freeze({
 
 export const ALL_BUILTIN_RACES = Object.freeze(Object.keys(RACE_DEFINITIONS));
 
+/** 自订物种缺栏位时的底：人类的内置值（不含短敘述） */
+const HUMAN_TEMPLATE_PROFILE = (() => {
+  const { [RACE_INTRODUCTION_FIELD]: _line, ...profile } = RACE_DEFINITIONS['人类'];
+  return Object.freeze(profile);
+})();
+
 /**
  * 改名：旧名在读取时一律换成新名（存档另由 state_migration 一次改写）。
  * 只列内置种族的基名，装饰子项（百足姬-赤）由 canonicalizeRaceName 保留。
@@ -1016,14 +1095,18 @@ const RACE_NAME_LOOKUP = new Map([
   ...Object.entries(RACE_RENAMES).map(([from, to]) => [toSimplifiedName(from), to]),
 ]);
 
-/** 单一成分（可带 -装饰子项）的规范名；查不到的自订种族原样返回 */
+// 百科自订物种的名称（setRacePhysiologyOverrides 时重建）：繁简写法都对得上
+let customRaceNameLookup = new Map();
+
+/** 单一成分（可带 -装饰子项）的规范名；查不到的名录外种族原样返回 */
 export function canonicalizeRaceName(component) {
   const value = String(component || '').trim();
   if (!value) return '';
   const separatorIndex = value.indexOf('-');
   const base = separatorIndex >= 0 ? value.slice(0, separatorIndex).trim() : value;
   const subtype = separatorIndex >= 0 ? value.slice(separatorIndex) : '';
-  return (RACE_NAME_LOOKUP.get(toSimplifiedName(base)) || base) + subtype;
+  const simplified = toSimplifiedName(base);
+  return (RACE_NAME_LOOKUP.get(simplified) || customRaceNameLookup.get(simplified) || base) + subtype;
 }
 
 /**
@@ -1266,6 +1349,11 @@ export function getDerivedTypeIntroductionLine(derivedType) {
 export function sanitizeRacePhysiologyProfilePatch(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return null;
   const result = {};
+  // 自订物种：条目带 custom 与借用的族谱图示（内置物种名）
+  if (profile[CUSTOM_RACE_FIELD] === true) result[CUSTOM_RACE_FIELD] = true;
+  if (typeof profile[CUSTOM_RACE_ICON_FIELD] === 'string' && profile[CUSTOM_RACE_ICON_FIELD].trim()) {
+    result[CUSTOM_RACE_ICON_FIELD] = profile[CUSTOM_RACE_ICON_FIELD].trim();
+  }
   if (Object.prototype.hasOwnProperty.call(profile, RACE_INTRODUCTION_FIELD)) {
     const introductionLine = String(profile[RACE_INTRODUCTION_FIELD] || '').trim();
     if (introductionLine) result[RACE_INTRODUCTION_FIELD] = introductionLine;
@@ -1336,14 +1424,93 @@ function sanitizeBodySizeLevel(value) {
 
 export function setRacePhysiologyOverrides(overrides = {}) {
   const next = {};
+  const customNames = [];
+  const nameLookup = new Map();
+  const iconAliases = {};
   if (overrides && typeof overrides === 'object' && !Array.isArray(overrides)) {
     for (const [race, profile] of Object.entries(overrides)) {
-      const key = getBaseRaceName(race);
+      const isCustom = profile?.[CUSTOM_RACE_FIELD] === true;
+      // 自订物种用原名当键；内置物种的覆写收敛到基名
+      const key = isCustom ? normalizeCustomRaceName(race) : getBaseRaceName(race);
       const patch = sanitizeRacePhysiologyProfilePatch(profile);
-      if (key && patch) next[key] = Object.freeze(patch);
+      if (!key || !patch) continue;
+      if (isCustom) {
+        if (validateCustomRaceName(key, { allowExisting: true })) continue;
+        // 自订物种没有内置值可退：缺的栏位以人类补齐
+        next[key] = Object.freeze({ ...HUMAN_TEMPLATE_PROFILE, ...patch, [CUSTOM_RACE_FIELD]: true });
+        customNames.push(key);
+        nameLookup.set(toSimplifiedName(key), key);
+        const icon = patch[CUSTOM_RACE_ICON_FIELD];
+        if (icon && RACE_DEFINITIONS[icon]) iconAliases[key] = icon;
+      } else if (RACE_DEFINITIONS[key]) {
+        next[key] = Object.freeze(patch);
+      }
     }
   }
   customRacePhysiologyProfiles = Object.freeze(next);
+  customRaceNames = Object.freeze(customNames);
+  customRaceNameLookup = nameLookup;
+  setRaceIconAliases(iconAliases);
+}
+
+/** 自订物种的栏位：标记与借用的族谱图示 */
+export const CUSTOM_RACE_FIELD = 'custom';
+export const CUSTOM_RACE_ICON_FIELD = 'iconRace';
+export const CUSTOM_RACE_NAME_MAX_LENGTH = 12;
+let customRaceNames = Object.freeze([]);
+
+function normalizeCustomRaceName(name) {
+  return String(name || '').trim();
+}
+
+/** 目前生效的自订物种（全域与当前角色卡合并后），依建立先后 */
+export function getCustomRaceNames() {
+  return [...customRaceNames];
+}
+
+export function isCustomRace(race) {
+  const key = getBaseRaceName(race);
+  return customRaceNames.includes(key);
+}
+
+/** 内置 109 族加上目前生效的自订物种 */
+export function getAllRaces() {
+  return [...ALL_BUILTIN_RACES, ...customRaceNames];
+}
+
+/**
+ * 自订物种名的检查；回传错误讯息，合法时回传空字串。
+ * 不能与内置物种、旧名、衍生类型同名（含繁简），不能含子项与混血分隔符。
+ * allowExisting：编辑既有自订物种时不算与自己冲突
+ */
+export function validateCustomRaceName(name, { allowExisting = false } = {}) {
+  const value = normalizeCustomRaceName(name);
+  if (!value) return '请输入物种名称';
+  if ([...value].length > CUSTOM_RACE_NAME_MAX_LENGTH) return `名称最多 ${CUSTOM_RACE_NAME_MAX_LENGTH} 字`;
+  if (/[-xX×\[\]%\/\s]/.test(value)) return '名称不能含 -、x、×、[]、%、/ 或空白（这些用来写子项、混血与衍生）';
+  const simplified = toSimplifiedName(value);
+  if (RACE_NAME_LOOKUP.has(simplified)) return `与内置物种「${RACE_NAME_LOOKUP.get(simplified)}」同名`;
+  if (DERIVED_TYPE_RACES.some((type) => toSimplifiedName(type) === simplified)) return '与衍生类型同名';
+  if (!allowExisting && customRaceNameLookup.has(simplified)) return `已有自订物种「${customRaceNameLookup.get(simplified)}」`;
+  return '';
+}
+
+/** 自订物种借用的族谱图示（内置物种名）；没有就回 null */
+export function getCustomRaceIconRace(race) {
+  const key = getBaseRaceName(race);
+  const icon = customRacePhysiologyProfiles[key]?.[CUSTOM_RACE_ICON_FIELD];
+  return customRaceNames.includes(key) && icon && RACE_DEFINITIONS[icon] ? icon : null;
+}
+
+/**
+ * 以既有物种为范本建立自订物种的完整定义（含短敘述与借用图示）；
+ * 范本可以是内置或另一个自订物种，生效中的百科覆写也一起带过来
+ */
+export function buildCustomRaceFromTemplate(templateRace = '人类') {
+  const template = getRacePhysiologyProfile(templateRace) || getRacePhysiologyProfile('人类');
+  const { [CUSTOM_RACE_FIELD]: _custom, [CUSTOM_RACE_ICON_FIELD]: templateIcon, ...fields } = template;
+  const icon = RACE_DEFINITIONS[getBaseRaceName(templateRace)] ? getBaseRaceName(templateRace) : (templateIcon || '人类');
+  return { ...fields, [RACE_INTRODUCTION_FIELD]: '', [CUSTOM_RACE_FIELD]: true, [CUSTOM_RACE_ICON_FIELD]: icon };
 }
 
 export function getRacePhysiologyOverride(race) {
@@ -1426,7 +1593,12 @@ export function getRaceIntroductionLine(race) {
 function getEffectiveRacePhysiologyProfileValue(race) {
   const key = getBaseRaceName(race);
   const builtin = getBuiltinRacePhysiologyProfile(key);
-  if (!builtin) return null;
+  if (!builtin) {
+    // 自订物种：条目本身就是完整定义（短敘述另走 getRaceIntroductionLine）
+    if (!customRaceNames.includes(key)) return null;
+    const { [RACE_INTRODUCTION_FIELD]: _line, ...profile } = customRacePhysiologyProfiles[key];
+    return profile;
+  }
   return {
     ...builtin,
     ...(customRacePhysiologyProfiles[key] || {}),
@@ -1465,7 +1637,7 @@ export function isRaceInCatalogSelection(selection, race) {
 /** 内置物种按「当前生效」的胚型分组（百科改过胚型的物种会移到新组） */
 export function getRaceGroupsByEmbryoType() {
   const groups = new Map(EMBRYO_TYPES.map((type) => [type, []]));
-  for (const race of ALL_BUILTIN_RACES) {
+  for (const race of getAllRaces()) {
     const type = getEffectiveRacePhysiologyProfileValue(race)?.[RACE_EMBRYO_TYPE_FIELD];
     groups.get(EMBRYO_TYPES.includes(type) ? type : '胎生').push(race);
   }

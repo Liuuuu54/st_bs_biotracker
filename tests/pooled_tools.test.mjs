@@ -145,6 +145,36 @@ test('pooled superfetation preserves the existing nested-host gates and hidden-e
   assert.equal(nested.nestedInEmbryoId, 1);
   assert.notEqual(chat.characters['母方'].profile.visualCue?.type, 'fertilization');
 });
+test('pooled integration preserves upstream 1.2.3 alternate-form condom and uterine capacities', () => {
+  const act = (chat, action, options = {}) => call(chat, 'bsAddSperm', {
+    female: '母方', male: '龙', race: '西方龙', action, amount: action === 'deposit' ? 200 : 0, ...options,
+  });
+  const condom = (maleAltForm) => {
+    const chat = fixture({ eggs: 0 }); chat.reproductiveSettings = { condomReliability: 1 };
+    assert.equal(act(chat, 'insert', { hasCondom: true, maleAltForm }).applied, true);
+    assert.equal(act(chat, 'deposit').applied, true);
+    return chat.characters['母方'].profile.lastCondomResult;
+  };
+  assert.equal(condom(false).condomFailed, true);
+  assert.equal(condom(true).condomFailed, false);
+  const womb = (femaleAltForm) => {
+    const chat = fixture({ eggs: 0 });
+    Object.assign(baseOf(chat), { race: '西方龙', bloodline: { 西方龙: 1 }, bloodlineSource: 'pure', bodySize: 5 });
+    assert.equal(act(chat, 'insert', { femaleAltForm }).applied, true);
+    assert.equal(act(chat, 'deposit', { amount: 2000 }).applied, true);
+    return chat;
+  };
+  const normal = womb(false), alternate = womb(true);
+  assert.ok(residual(alternate) > residual(normal));
+  assert.equal(baseOf(alternate).bodySize, 5, 'temporary form must not rewrite permanent body size');
+  assert.equal(baseOf(alternate).spermContacts[0].bodySize, null, 'donor snapshot must not freeze the alternate form');
+  const beforeDrain = residual(alternate);
+  const result = call(alternate, 'bsDrainSperm', { female: '母方', amount: 10 });
+  near(result.drainResult.removed, 10); // Absolute effort does not scale with temporary capacity.
+  near(residual(alternate), beforeDrain - 10);
+  assert.equal(call(alternate, 'bsPassedTime', { minute: 1 }).applied, true);
+  assert.ok(residual(alternate) <= residual(normal) + 1e-6, 'on the next minute normal-form capacity applies again');
+});
 test('experimental time limit rejects atomically; legacy mode does not acquire pooled state', () => {
   const pooled = fixture(), before = JSON.stringify(pooled);
   assert.equal(call(pooled, 'bsPassedTime', { day: 32 }).applied, false);

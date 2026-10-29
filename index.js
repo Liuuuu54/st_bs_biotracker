@@ -21,7 +21,6 @@ import {
   runRegistryWardrobeInference,
 } from './scripts/registry.js';
 import {
-  AMORPHOUS_RACES,
   DERIVED_TYPE_FLUX_PROFILES,
   DERIVED_TYPE_INHERITANCE_PROFILES,
   DERIVED_TYPE_RACES,
@@ -58,10 +57,17 @@ import {
   removeRaceOverrideEntry,
   setRacePhysiologyOverrides,
   setDerivedTypeOverrides,
-  METOVIVIPAROUS_RACES,
-  OVIPAROUS_RACES,
-  OVOVIVIPAROUS_RACES,
-  VIVIPAROUS_RACES,
+  ALL_BUILTIN_RACES,
+  CUSTOM_RACE_FIELD,
+  CUSTOM_RACE_ICON_FIELD,
+  buildCustomRaceFromTemplate,
+  getAllRaces,
+  getCustomRaceIconRace,
+  getRaceComponents,
+  getRacePhysiologyProfile,
+  isCustomRace,
+  sanitizeRacePhysiologyProfilePatch,
+  validateCustomRaceName,
 } from './scripts/race_config.js';
 import { clampIndividualBodySize, getAltFormBodySize, getUterusVolumeFactor, resolveBodySize } from './scripts/body_size.js';
 import { normalizeDescriptionList } from './scripts/descriptions.js';
@@ -312,15 +318,15 @@ let debugFetalTalentDraft = {
 function getRacePaletteGroups() {
   return getRaceGroupsByEmbryoType();
 }
-const RACE_ENCYCLOPEDIA_LIST = Array.from(
-  new Set([
-    ...VIVIPAROUS_RACES,
-    ...OVIPAROUS_RACES,
-    ...OVOVIVIPAROUS_RACES,
-    ...METOVIVIPAROUS_RACES,
-    ...AMORPHOUS_RACES,
-  ]),
-).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+// 内置加上目前生效的自订物种；自订物种随全域与角色卡设定变动，每次重算
+function getRaceEncyclopediaList() {
+  return Array.from(new Set(getAllRaces())).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+}
+
+/** 编辑器比对用的底：内置物种取内置值，自订物种取目前生效的完整定义 */
+function getEditorBaseRaceProfile(race) {
+  return getBuiltinRacePhysiologyProfile(race) || (isCustomRace(race) ? getRacePhysiologyProfile(race) : null);
+}
 function getRaceEncyclopediaGroups() {
   return getRacePaletteGroups().map((group) => ({
     label: group.label,
@@ -2157,8 +2163,8 @@ async function clearAllOverrideEntries(ctx) {
 function getRaceCatalogSelection(settings) {
   const raw = normalizeRaceCatalogSelection(settings?.raceCatalogSelection);
   const races = raw
-    ? RACE_ENCYCLOPEDIA_LIST.filter((race) => raw.races.includes(race))
-    : [...RACE_ENCYCLOPEDIA_LIST];
+    ? getRaceEncyclopediaList().filter((race) => raw.races.includes(race))
+    : [...getRaceEncyclopediaList()];
   const derivedTypes = raw
     ? DERIVED_ENCYCLOPEDIA_LIST.filter((type) => raw.derivedTypes.includes(type))
     : [...DERIVED_ENCYCLOPEDIA_LIST];
@@ -2168,7 +2174,7 @@ function getRaceCatalogSelection(settings) {
 async function saveRaceCatalogSelection(ctx, selection) {
   const raceCatalogSelection = {
     version: RACE_CATALOG_SELECTION_VERSION,
-    races: RACE_ENCYCLOPEDIA_LIST.filter((race) => selection.races.includes(race)),
+    races: getRaceEncyclopediaList().filter((race) => selection.races.includes(race)),
     derivedTypes: DERIVED_ENCYCLOPEDIA_LIST.filter((type) => selection.derivedTypes.includes(type)),
   };
   await saveEncyclopediaPatch(ctx, { raceCatalogSelection });
@@ -2285,7 +2291,7 @@ function getRacePhysiologyInputValue(race, field) {
   if (override && Object.prototype.hasOwnProperty.call(override, field)) {
     return override[field] === null ? '' : String(override[field]);
   }
-  const builtin = getBuiltinRacePhysiologyProfile(race);
+  const builtin = getEditorBaseRaceProfile(race);
   if (!builtin || !Object.prototype.hasOwnProperty.call(builtin, field)) return '';
   return builtin[field] === null ? '' : String(builtin[field]);
 }
@@ -2293,7 +2299,7 @@ function getRacePhysiologyInputValue(race, field) {
 // 编辑卡片时，未覆写的短敘述沿用全域覆写，再落回内置
 function getRaceIntroductionBaseValue(race) {
   const globalLine = isEditingCard() ? getSettings(getContextSafe()).racePhysiologyOverrides?.[race]?.[RACE_INTRODUCTION_FIELD] : '';
-  return globalLine || getBuiltinRaceIntroductionLine(race);
+  return globalLine || getBuiltinRaceIntroductionLine(race) || (isCustomRace(race) ? getRaceIntroductionLine(race) : '');
 }
 
 function getRaceIntroductionInputValue(race) {
@@ -2311,7 +2317,7 @@ function renderRacePhysiologyEditor(race) {
     return;
   }
   const override = getEncyclopediaEditorSettings().racePhysiologyOverrides?.[race];
-  const builtin = getBuiltinRacePhysiologyProfile(race);
+  const builtin = getEditorBaseRaceProfile(race);
   if (!builtin) {
     editorNode.textContent = '此种族没有内置生理资料。';
     return;
@@ -2456,7 +2462,7 @@ function renderRacePhysiologyEditor(race) {
 function getRaceBodySizeInputValue(race, field) {
   const override = getEncyclopediaEditorSettings().racePhysiologyOverrides?.[race];
   if (override && Object.prototype.hasOwnProperty.call(override, field)) return override[field];
-  return getBuiltinRacePhysiologyProfile(race)?.[field] ?? null;
+  return getEditorBaseRaceProfile(race)?.[field] ?? null;
 }
 
 // 追踪页的体型：个体值优先，没有就标示种族平均；变化态另附
@@ -2591,8 +2597,8 @@ function readRaceBodySizeEditorValues() {
 }
 
 function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
-  const base = getBuiltinRacePhysiologyProfile(race);
-  const builtin = base && { ...base, ...(isEditingCard() ? getSettings(getContextSafe()).racePhysiologyOverrides?.[race] : {}) };
+  const base = getEditorBaseRaceProfile(race);
+  const builtin = base && { ...base, ...(isEditingCard() && !isCustomRace(race) ? getSettings(getContextSafe()).racePhysiologyOverrides?.[race] : {}) };
   if (!builtin) return null;
   const result = {};
   const introductionInput = document.querySelector(`[data-race-introduction-field="${RACE_INTRODUCTION_FIELD}"]`);
@@ -2638,8 +2644,14 @@ function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
 
 async function saveRacePhysiologyOverrideFromEditor(ctx, mode = 'diff') {
   if (!ctx || !selectedRaceEncyclopedia) return;
-  const profile = collectRacePhysiologyEditorProfile(selectedRaceEncyclopedia, { onlyDiff: mode === 'diff' });
-  if (!profile) return;
+  const custom = isCustomRace(selectedRaceEncyclopedia);
+  const collected = collectRacePhysiologyEditorProfile(selectedRaceEncyclopedia, { onlyDiff: mode === 'diff' && !custom });
+  if (!collected) return;
+  const iconSelect = document.getElementById('bs-bt-race-custom-icon');
+  // 自订物种没有内置值可退，整份存下，连同借用的族谱图示
+  const profile = custom
+    ? { ...collected, [CUSTOM_RACE_FIELD]: true, [CUSTOM_RACE_ICON_FIELD]: (iconSelect instanceof HTMLSelectElement && iconSelect.value) || getCustomRaceIconRace(selectedRaceEncyclopedia) || '人类' }
+    : collected;
   const name = selectedRaceEncyclopedia;
   await saveEncyclopediaPatch(ctx, current => {
     const overrides = removeRaceOverrideEntry(current.racePhysiologyOverrides, name);
@@ -2652,9 +2664,139 @@ async function saveRacePhysiologyOverrideFromEditor(ctx, mode = 'diff') {
 
 async function resetRacePhysiologyOverride(ctx) {
   if (!ctx || !selectedRaceEncyclopedia) return;
+  if (isCustomRace(selectedRaceEncyclopedia) && !confirmDeleteCustomRace(ctx, selectedRaceEncyclopedia)) return;
   await clearOverrideEntry(ctx, 'race', selectedRaceEncyclopedia);
   racePhysiologyEditorOpen = false;
   renderRaceEncyclopediaPage(ctx);
+}
+
+/** 这个聊天里用到某物种的角色、胎儿、孩子与精方（种族字串的成分含它就算） */
+function countRaceUsage(chatState, race) {
+  const uses = (value) => getRaceComponents(String(value || '')).includes(race);
+  let count = 0;
+  for (const character of Object.values(chatState?.characters || {})) {
+    const profile = character?.profile || {};
+    if (uses(profile.base?.race)) count += 1;
+    count += (profile.pregnant?.fetuses || []).filter((fetus) => uses(fetus?.race)).length;
+    count += (profile.children || []).filter((child) => uses(child?.race)).length;
+  }
+  for (const sire of Object.values(chatState?.sires || {})) if (uses(sire?.race)) count += 1;
+  return count;
+}
+
+/** 删除自订物种前确认：用到它的角色保留种族字串，之后变回名录外 */
+function confirmDeleteCustomRace(ctx, race) {
+  const used = countRaceUsage(getChatState(ctx, getSettings(ctx)), race);
+  const note = used > 0 ? `这个聊天里有 ${used} 名角色、胎儿、孩子或精方用到它，删除后它们保留种族名称，但会变回名录外（数值退回预设）。` : '';
+  return globalThis.confirm ? globalThis.confirm(`删除自订物种「${race}」？${note}`) : true;
+}
+
+/** 族谱图示只能借用内置物种的图 */
+function fillCustomRaceIconSelect(select, selected = '人类') {
+  if (!(select instanceof HTMLSelectElement)) return;
+  if (select.options.length !== ALL_BUILTIN_RACES.length) {
+    select.innerHTML = '';
+    for (const race of ALL_BUILTIN_RACES) {
+      const option = document.createElement('option');
+      option.value = race;
+      option.textContent = race;
+      select.appendChild(option);
+    }
+  }
+  select.value = ALL_BUILTIN_RACES.includes(selected) ? selected : '人类';
+}
+
+function setCustomRaceStatus(text, kind = '') {
+  const node = document.getElementById('bs-bt-custom-race-status');
+  if (!node) return;
+  node.textContent = text;
+  node.dataset.kind = kind;
+}
+
+/** 自订物种区块：范本选单（含自订）、图示选单 */
+function renderCustomRacePanel() {
+  const template = document.getElementById('bs-bt-custom-race-template');
+  if (template instanceof HTMLSelectElement) {
+    const current = template.value || '人类';
+    template.innerHTML = '';
+    for (const group of getRaceEncyclopediaGroups()) {
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = group.label;
+      for (const race of group.races) {
+        const option = document.createElement('option');
+        option.value = race;
+        option.textContent = race;
+        optgroup.appendChild(option);
+      }
+      template.appendChild(optgroup);
+    }
+    template.value = getRaceEncyclopediaList().includes(current) ? current : '人类';
+  }
+  const icon = document.getElementById('bs-bt-custom-race-icon');
+  if (icon instanceof HTMLSelectElement && !icon.options.length) {
+    fillCustomRaceIconSelect(icon, ALL_BUILTIN_RACES.includes(template?.value) ? template.value : getCustomRaceIconRace(template?.value) || '人类');
+  }
+}
+
+/** 把一个自订物种（含名录勾选）写进当前编辑范围；同名的自订物种直接覆盖 */
+async function saveCustomRaceDefinition(ctx, name, definition) {
+  await saveEncyclopediaPatch(ctx, (current) => {
+    const overrides = removeRaceOverrideEntry(current.racePhysiologyOverrides, name);
+    overrides[name] = definition;
+    const patch = { racePhysiologyOverrides: overrides };
+    // 名录自订过勾选时，新物种预设勾上
+    const selection = normalizeRaceCatalogSelection(current.raceCatalogSelection);
+    if (selection && !selection.races.includes(name)) patch.raceCatalogSelection = { ...selection, races: [...selection.races, name] };
+    return patch;
+  });
+}
+
+async function createCustomRaceFromPanel(ctx) {
+  const name = String(document.getElementById('bs-bt-custom-race-name')?.value || '').trim();
+  const error = validateCustomRaceName(name);
+  if (error) throw new Error(error);
+  const template = String(document.getElementById('bs-bt-custom-race-template')?.value || '人类');
+  const icon = String(document.getElementById('bs-bt-custom-race-icon')?.value || '人类');
+  const definition = { ...buildCustomRaceFromTemplate(template), [CUSTOM_RACE_ICON_FIELD]: icon };
+  await saveCustomRaceDefinition(ctx, name, definition);
+  selectedRaceEncyclopedia = name;
+  const nameInput = document.getElementById('bs-bt-custom-race-name');
+  if (nameInput) nameInput.value = '';
+  setCustomRaceStatus(`已以「${template}」为范本建立「${name}」，接着按「编辑自订物种」调整数值与短敘述。`, 'success');
+}
+
+/** 汇出：{ name, ...定义 }，可贴到别的聊天或讨论区 */
+function exportCustomRaceToPanel() {
+  const name = selectedRaceEncyclopedia;
+  if (!isCustomRace(name)) throw new Error('请先在上方选单选一个自订物种。');
+  const definition = getEncyclopediaEditorSettings().racePhysiologyOverrides?.[name];
+  const text = JSON.stringify({ name, ...definition }, null, 2);
+  const box = document.getElementById('bs-bt-custom-race-json');
+  if (box) box.value = text;
+  globalThis.navigator?.clipboard?.writeText?.(text).catch(() => {});
+  setCustomRaceStatus(`已汇出「${name}」，也已复制到剪贴簿。`, 'success');
+}
+
+async function importCustomRaceFromPanel(ctx) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(document.getElementById('bs-bt-custom-race-json')?.value || ''));
+  } catch (error) {
+    throw new Error(`JSON 格式错误：${String(error?.message || error)}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON 必须是单一物种的物件。');
+  const name = String(parsed.name || '').trim();
+  const existing = isCustomRace(name);
+  const error = validateCustomRaceName(name, { allowExisting: existing });
+  if (error) throw new Error(error);
+  const { name: _name, ...rest } = parsed;
+  const patch = sanitizeRacePhysiologyProfilePatch({ ...rest, [CUSTOM_RACE_FIELD]: true });
+  // 缺的栏位以人类为底补齐，存下来就是完整定义
+  const definition = { ...buildCustomRaceFromTemplate('人类'), ...patch, [CUSTOM_RACE_FIELD]: true };
+  if (existing && globalThis.confirm && !globalThis.confirm(`已有自订物种「${name}」，要用汇入的内容覆盖吗？`)) return;
+  await saveCustomRaceDefinition(ctx, name, definition);
+  selectedRaceEncyclopedia = name;
+  setCustomRaceStatus(`已汇入「${name}」。`, 'success');
 }
 
 function copyHumanPhysiologyToEditor() {
@@ -2782,7 +2924,7 @@ function renderOverrideInventory(settings) {
     const kindLabel = entry.kind === 'derived' ? '衍生' : '种族';
     const missing = entry.kind === 'derived'
       ? !DERIVED_ENCYCLOPEDIA_LIST.includes(entry.name)
-      : !RACE_ENCYCLOPEDIA_LIST.includes(entry.name);
+      : !getRaceEncyclopediaList().includes(entry.name);
     label.textContent = `[${kindLabel}] ${entry.name}${missing ? '（名录外）' : ''}`;
     row.appendChild(label);
 
@@ -2836,12 +2978,13 @@ function renderRaceEncyclopediaPage(ctx = null) {
   const worldBaselineInput = document.getElementById('bs-bt-world-baseline-prompt');
   if (!countNode || !selectNode || !outputNode || !derivedSelectNode || !derivedOutputNode) return;
 
-  countNode.innerHTML = `物种数量：${RACE_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.races.length}）<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.derivedTypes.length}）`;
+  countNode.innerHTML = `物种数量：${getRaceEncyclopediaList().length}（名录启用 ${catalogSelection.races.length}）<br>衍生类型数量：${DERIVED_ENCYCLOPEDIA_LIST.length}（名录启用 ${catalogSelection.derivedTypes.length}）`;
   renderOverrideInventory(globalSettings && { ...settings,
     racePhysiologyOverrides: getEditorOverrideMap(ctx, 'racePhysiologyOverrides'),
     derivedTypeOverrides: getEditorOverrideMap(ctx, 'derivedTypeOverrides'),
   });
   renderRaceCatalogChecklist(settings);
+  renderCustomRacePanel();
   renderWorldModeControls(ctx, globalSettings, settings);
   if (settings) renderReproductiveControls(settings);
   const baselineSource = document.getElementById('bs-bt-world-baseline-source');
@@ -2849,8 +2992,8 @@ function renderRaceEncyclopediaPage(ctx = null) {
   if (worldBaselineInput && document.activeElement !== worldBaselineInput) {
     worldBaselineInput.value = String(settings?.worldBaselinePrompt || '');
   }
-  if (!selectedRaceEncyclopedia || !RACE_ENCYCLOPEDIA_LIST.includes(selectedRaceEncyclopedia)) {
-    selectedRaceEncyclopedia = RACE_ENCYCLOPEDIA_LIST[0] || '';
+  if (!selectedRaceEncyclopedia || !getRaceEncyclopediaList().includes(selectedRaceEncyclopedia)) {
+    selectedRaceEncyclopedia = getRaceEncyclopediaList()[0] || '';
   }
   if (!selectedDerivedEncyclopedia || !DERIVED_ENCYCLOPEDIA_LIST.includes(selectedDerivedEncyclopedia)) {
     selectedDerivedEncyclopedia = DERIVED_ENCYCLOPEDIA_LIST[0] || '';
@@ -2888,7 +3031,14 @@ function renderRaceEncyclopediaPage(ctx = null) {
       editButton.textContent = getRacePhysiologyOverride(selectedRaceEncyclopedia) ? '编辑覆盖' : '调整参数';
     }
     if (editorModal) editorModal.hidden = !racePhysiologyEditorOpen;
-    if (editorTitle) editorTitle.textContent = `${selectedRaceEncyclopedia} 参数覆盖`;
+    const custom = isCustomRace(selectedRaceEncyclopedia);
+    if (editorTitle) editorTitle.textContent = custom ? `${selectedRaceEncyclopedia}（自订物种）参数` : `${selectedRaceEncyclopedia} 参数覆盖`;
+    if (editButton && custom) editButton.textContent = '编辑自订物种';
+    const resetButton = document.getElementById('bs-bt-race-reset-override');
+    if (resetButton && custom) resetButton.textContent = '删除物种';
+    const iconRow = document.getElementById('bs-bt-race-custom-icon-row');
+    if (iconRow) iconRow.hidden = !custom;
+    if (custom) fillCustomRaceIconSelect(document.getElementById('bs-bt-race-custom-icon'), getCustomRaceIconRace(selectedRaceEncyclopedia) || '人类');
     if (racePhysiologyEditorOpen) renderRacePhysiologyEditor(selectedRaceEncyclopedia);
     const embryoType = getEmbryoTypeByRace(selectedRaceEncyclopedia);
     const embryoText = getEmbryoTypeReferenceText(embryoType);
@@ -9759,6 +9909,19 @@ async function ensureModal(ctx) {
       setButtonBusy(button, false, '刷新预设列表');
     }
   });
+  document.getElementById('bs-bt-custom-race-template')?.addEventListener('change', (event) => {
+    const template = String(event.target?.value || '人类');
+    fillCustomRaceIconSelect(document.getElementById('bs-bt-custom-race-icon'), ALL_BUILTIN_RACES.includes(template) ? template : getCustomRaceIconRace(template) || '人类');
+  });
+  document.getElementById('bs-bt-custom-race-create')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    try { await createCustomRaceFromPanel(ctx); } catch (error) { setCustomRaceStatus(error.message, 'error'); }
+  }));
+  document.getElementById('bs-bt-custom-race-export')?.addEventListener('click', () => {
+    try { exportCustomRaceToPanel(); } catch (error) { setCustomRaceStatus(error.message, 'error'); }
+  });
+  document.getElementById('bs-bt-custom-race-import')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    try { await importCustomRaceFromPanel(ctx); } catch (error) { setCustomRaceStatus(error.message, 'error'); }
+  }));
   document.getElementById('bs-bt-race-select')?.addEventListener('change', (event) => {
     selectedRaceEncyclopedia = String(event.target?.value || '');
     racePhysiologyEditorOpen = false;
@@ -9794,7 +9957,7 @@ async function ensureModal(ctx) {
   }));
   document.getElementById('bs-bt-race-catalog-select-all')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
     await saveRaceCatalogSelection(ctx, {
-      races: [...RACE_ENCYCLOPEDIA_LIST],
+      races: [...getRaceEncyclopediaList()],
       derivedTypes: [...DERIVED_ENCYCLOPEDIA_LIST],
     });
     globalThis.toastr?.success?.('[BS BioTracker] 已将全部种族与衍生类型加入提示词名录');

@@ -13,8 +13,8 @@ import {
 } from '../scripts/race_config.js';
 import { buildSingleRacePhysiologyText } from '../scripts/race_prompt_context.js';
 
-test('101 个内置物种都有体型资料，值在合法范围内', () => {
-  assert.equal(ALL_BUILTIN_RACES.length, 101);
+test('109 个内置物种都有体型资料，值在合法范围内', () => {
+  assert.equal(ALL_BUILTIN_RACES.length, 109);
   for (const race of ALL_BUILTIN_RACES) {
     const { bodySize, bodySizeSd, altFormBodySize } = getRacePhysiologyProfile(race);
     if (typeof bodySize === 'number') {
@@ -101,7 +101,7 @@ test('体态：四种分类、蝎罗氏为半人形、混血按血统且任意�
     assert.ok(RACE_BODY_PLANS.includes(plan), `${race} bodyPlan ${plan}`);
     counts[plan] = (counts[plan] || 0) + 1;
   }
-  assert.deepEqual(counts, { humanoid: 69, beast: 7, hybrid: 14, any: 11 });
+  assert.deepEqual(counts, { humanoid: 73, beast: 7, hybrid: 17, any: 12 });
   assert.equal(getRacePhysiologyProfile('蝎罗氏').bodyPlan, 'hybrid');
   assert.equal(getRacePhysiologyProfile('修格斯').bodyPlan, 'any');
   assert.equal(getMergedRaceBodyPlan('史萊姆x人类'), 'humanoid', '任意不参与投票');

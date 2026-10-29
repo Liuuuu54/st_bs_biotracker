@@ -382,7 +382,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     name: 'bsAddSperm',
     description: '记录可受孕生殖道内的插入、精液沉积与拔出；口交、肛交、体外射精、手淫或单纯体表接触一律不要调用。戴套生殖道行为仍用本工具，hasCondom 决定本次 deposit 是否阻隔；省略沿用本次 insert 的设置，旧调用默认未戴套。'
       + 'action=insert／withdraw 时 amount=0；只有 insert 后才能以 action=deposit 沉积正数精液，沉积后若要再次射精须重新 insert。不同来源 insert 会直接交棒。'
-      + 'amount 以人类精方 10-30 为准，按精方体型每级翻倍（体型 5 约 20-60、6 约 40-120、7 约 80-240、3 约 5-15、2 约 2.5-7.5）；残留每天自动衰减，人类女方每天 10、同样按女方体型每级翻倍，所以同体型的一次射精约 1-3 天内自然消失；剧情写得特别多或特别少时可以偏离。当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
+      + 'amount 以人类精方 10-30 为准，按精方体型每级翻倍（体型 5 约 20-60、6 约 40-120、7 约 80-240、3 约 5-15、2 约 2.5-7.5），精方以变化态进行时按变化态的体型；残留每天自动衰减，人类女方每天 10、同样按女方体型每级翻倍，所以同体型的一次射精约 1-3 天内自然消失；剧情写得特别多或特别少时可以偏离。当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
       + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。'
       + 'male 是已注册精方或同名卵方（扶她）时，种族、血脉、衍生类型、体型与精子品质一律以档案为准，race 照填档案种族、maleBodySize 省略。'
       + 'insert 会按双方体型结算体型契合（只影响叙述，不限制交合与受孕），结果写在回传讯息与次级提示；体型参数见 maleBodySize、femaleAltForm、maleAltForm、sizeBridge。'
@@ -398,8 +398,8 @@ export const TOOL_DEFINITIONS = Object.freeze([
         hasCondom: { type: 'boolean', description: '本次是否使用屏障式避孕（套子，或世界观中的等效手段，如羊肠套、魔法屏障）；只有剧情确实使用时才为 true，不得引入世界观没有的器具。insert 设置、deposit 可显式更新、省略沿用，withdraw 不结算。' },
         amount: { type: 'number', description: 'insert／withdraw 必须为 0；deposit 必须为正数。' },
         maleBodySize: { type: 'number', description: '精方常态（人态）的个体体型，1–7 级（人类 4，可带小数，约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7）。insert 时给出。精方是已注册角色时省略；种族为依个体（名单见追踪提示的 [体型参数] 段）或未收录的自订种族时必须按剧情填写，例如一人高的大蟑螂填 4；其余种族只在剧情写明对方比同族明显高大或矮小时填写。' },
-        femaleAltForm: { type: 'boolean', description: '本次卵方以变化态进行（龙的真身、妖精以魔法变成人类大小等）；只有该种族有变化态、剧情确实变身时才为 true。insert 设置。' },
-        maleAltForm: { type: 'boolean', description: '本次精方以变化态进行，规则同 femaleAltForm。insert 设置。' },
+        femaleAltForm: { type: 'boolean', description: '本次卵方以变化态进行（龙的真身、妖精以魔法变成人类大小、人鱼化出人腿等）；只有该种族有变化态、剧情确实变身时才为 true。insert 设置，deposit 沿用：射精当下的子宫容量按变化态体型算，变回常态后装不下的会在下次时间推进时流出。' },
+        maleAltForm: { type: 'boolean', description: '本次精方以变化态进行，规则同 femaleAltForm。insert 设置，deposit 沿用：射精量与套子尺寸按变化态体型。' },
         sizeBridge: { type: 'boolean', description: '本次以魔法、变形等手段消弭双方体型差，视为恰好契合；比照 hasCondom，只有剧情确实使用、且世界观存在该手段时才为 true。insert 设置。' },
       },
       required: ['female', 'male', 'race', 'action', 'amount'],
@@ -2447,12 +2447,12 @@ export function getCharacterSemenCapacity(profile) {
  * 超过子宫容量的精液当下就流出：各来源按比例缩到刚好装满，接触纪录跟着缩。
  * 大体型射进小体型时不会留上好几周；回传流出的量。
  */
-function spillSpermOverflow(profile) {
+function spillSpermOverflow(profile, { formBodySize = null } = {}) {
   const base = profile?.base;
   if (isPooledConception(base)) {
     const contacts = Array.isArray(base.spermContacts) ? base.spermContacts : [];
     const total = contacts.reduce((amount, item) => amount + Math.max(0, Number(item.value) || 0), 0);
-    const capacity = getCharacterSemenCapacity(profile);
+    const capacity = getCharacterSemenCapacity(formBodySize === null ? profile : { ...profile, base: { ...base, bodySize: formBodySize } });
     if (!(total > capacity)) return 0;
     const ratio = capacity > 0 ? capacity / total : 0;
     base.spermContacts = contacts.map((item) => ({ ...item, value: item.value * ratio }));
@@ -2462,7 +2462,8 @@ function spillSpermOverflow(profile) {
   const sperms = Array.isArray(base?.sperms) ? base.sperms : [];
   const total = sperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
   if (total <= 0) return 0;
-  const capacity = getCharacterSemenCapacity(profile);
+  // 射精当下若卵方是变化态（龙的真身等），容量按那个体型算；变回常态后多出来的在下次推进时流出
+  const capacity = getCharacterSemenCapacity(formBodySize === null ? profile : { ...profile, base: { ...base, bodySize: formBodySize } });
   if (!(total > capacity)) return 0;
   const ratio = capacity / total;
   base.sperms = sperms
@@ -7784,9 +7785,17 @@ function applyAddSperm(chatState, args) {
     ?? clampIndividualBodySize(args?.maleBodySize);
   const config = normalizeReproductiveSettings(chatState.reproductiveSettings);
   const hasCondom = args.hasCondom ?? base.penetrationCondom ?? false;
+  // 射精沿用插入时的型态：变化态的套子尺寸与子宫容量按变化态体型；精液纪录与受孕胎重仍记常态（那是遗传上的体型）
+  const insertedFit = base.penetrationFit?.male === male ? base.penetrationFit : null;
+  const maleAltForm = (args.maleAltForm ?? insertedFit?.maleAltForm) === true;
+  const femaleAltForm = (args.femaleAltForm ?? insertedFit?.femaleAltForm) === true;
   // 套子照精方的尺寸做：容量以人类为准，按精方体型每级翻倍
   const maleSize = resolveBodySize({ race, bloodline: ancestry?.bloodline ?? null, bodySize: maleBodySize });
-  const condomCapacity = config.condomCapacity * (maleSize.kind === 'fixed' ? getBodySizeVolumeFactor(maleSize.size) : 1);
+  const maleFormSize = maleSize.kind === 'fixed' ? (maleAltForm ? getAltFormBodySize(maleSize) ?? maleSize.size : maleSize.size) : null;
+  const condomCapacity = config.condomCapacity * (maleFormSize !== null ? getBodySizeVolumeFactor(maleFormSize) : 1);
+  const femaleFormSize = femaleAltForm
+    ? getAltFormBodySize(resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize }))
+    : null;
   const condomOverflow = hasCondom && amount > condomCapacity; const condomFailed = condomOverflow || (hasCondom && Math.random() >= config.condomReliability); const condomFailReason = condomFailed ? (condomOverflow ? 'overflow' : 'tear') : null;
   const enteredAmount = hasCondom && !condomFailed ? 0 : amount;
   base.penetrationCondom = hasCondom;
@@ -7805,7 +7814,8 @@ function applyAddSperm(chatState, args) {
       pooledSpilled = depositPooledSource(base, {
         male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality,
         minutesPassed: now, value: enteredAmount, blocked: false,
-      }, getCharacterSemenCapacity(next.profile), now).spilled;
+      }, getCharacterSemenCapacity(femaleFormSize === null ? next.profile
+        : { ...next.profile, base: { ...base, bodySize: femaleFormSize } }), now).spilled;
     }
   } else {
     if (enteredAmount > 0) {
@@ -7830,7 +7840,8 @@ function applyAddSperm(chatState, args) {
   base.penetrationSource = male;
   base.latestSexDays = 0;
   next.profile.base = base;
-  const spilled = pooled ? pooledSpilled : (enteredAmount > 0 ? spillSpermOverflow(next.profile) : 0);
+  const spilled = pooled ? pooledSpilled : (enteredAmount > 0
+    ? spillSpermOverflow(next.profile, { formBodySize: femaleFormSize }) : 0);
   const experience = {
     ...(next.profile?.experience || {}),
     latestSexPartner: male,

@@ -68,4 +68,6 @@ node tests/repro_sperm_pool.mjs
 node --test tests/*.test.mjs
 ```
 
+已同步上游1.2.3并解决原PR冲突，保留新增物种、自定义百科及变身容量规则；另加pooled模式变身兼容回归。最终完整分支 **1223/1223通过，0失败、0跳过**。
+
 这是Node数学/实际工具dispatcher验证，不代表完成宿主浏览器或长期存档场景验收。
