@@ -55,7 +55,7 @@ export function getStageProgress(profile) {
   }
   const limit = getStageLimit(profile, stage);
   if (limit !== null) {
-    return { label: stage === '产后恢复' ? '恢复进度' : '阶段进度', value: days, max: limit, unit: 'd', emptyLabel: '无需恢复' };
+    return { label: stage === '产后恢复' ? '恢复进度' : '阶段进度', value: days, max: limit, unit: 'd', emptyLabel: stage === '休眠期' ? '没有休眠期，即将进入卵泡期' : '无需恢复' };
   }
   return null;
 }

@@ -484,7 +484,9 @@ function randomInt(min, max) {
 }
 
 export function deriveMenstrualStageState() {
-  const stage = MENSTRUAL_STAGES[randomInt(0, MENSTRUAL_STAGES.length - 1)];
+  // 只在活动周期四期里抽；休眠期的长短因物种而异，这里不知道物种
+  const stages = Object.keys(MENSTRUAL_STAGE_DAYS);
+  const stage = stages[randomInt(0, stages.length - 1)];
   const days = randomInt(0, MENSTRUAL_STAGE_DAYS[stage]);
   return { stage, days };
 }
@@ -743,6 +745,7 @@ export function createDefaultFemaleState(name = '') {
         vitalityLevel,
         psyStressLevel,
         uterineAtony: 0,
+        seasonCycle: 0,
       },
       pregnant: {
         pregnantDays: 0,
@@ -790,6 +793,8 @@ export function createDefaultFemaleState(name = '') {
       diary: [],
       bio: {
         menstrualLengthRatio: 1.0,
+        dormancyDays: 0,
+        seasonCycles: 1,
         gestationSpeciesSpeed: 1.0,
         gestationEffectiveSpeed: 1.0,
         gestationModifierMultiplier: 1.0,
@@ -2009,6 +2014,7 @@ function createSnapshotCharacterBaseline(name = '') {
         vitalityLevel: 4,
         psyStressLevel: 4,
         uterineAtony: 0,
+        seasonCycle: 0,
       },
       pregnant: {
         pregnantDays: 0,
@@ -2056,6 +2062,8 @@ function createSnapshotCharacterBaseline(name = '') {
       diary: [],
       bio: {
         menstrualLengthRatio: 1.0,
+        dormancyDays: 0,
+        seasonCycles: 1,
         gestationSpeciesSpeed: 1.0,
         gestationEffectiveSpeed: 1.0,
         gestationModifierMultiplier: 1.0,

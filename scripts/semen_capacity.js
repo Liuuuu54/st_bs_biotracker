@@ -4,7 +4,7 @@ import { LABOR_STAGES } from './stage_config.js';
 import { getUterusVolumeFactor } from './body_size.js';
 
 export const FULL_TERM_DAYS = 280;
-export const EMPTY_STAGES = Object.freeze(['月经期', '卵泡期', '排卵期', '黄体期', '产后恢复', '假孕期']);
+export const EMPTY_STAGES = Object.freeze(['月经期', '休眠期', '卵泡期', '排卵期', '黄体期', '产后恢复', '假孕期']);
 export const GESTATION_STAGES = Object.freeze(['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '延产期', '产兆前驱', '回归期', ...LABOR_STAGES]);
 
 const SEMEN_CAPACITY_FLOOR = 25;
@@ -26,6 +26,7 @@ export function getEmptyLining(stage, progress) {
   const p = clamp(progress, 0, 1);
   const table = {
     月经期: Math.round(7 - 2 * p),
+    休眠期: 5,
     卵泡期: 5 + Math.round(2 * p),
     排卵期: 7,
     黄体期: 7 + Math.round(p),

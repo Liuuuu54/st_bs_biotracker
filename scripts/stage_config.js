@@ -1,9 +1,16 @@
-export const MENSTRUAL_STAGES = Object.freeze(['卵泡期', '排卵期', '黄体期', '月经期']);
+/**
+ * 休眠期排在月经期之后、下一轮卵泡期之前：长周期物种的「很久才有一次机会」放在这里，
+ * 排卵、月经与着床前都维持正常长度。天数来自物种的 dormancyDays，人类与多数物种为 0（直接跳过）。
+ */
+export const DORMANCY_STAGE = '休眠期';
+
+export const MENSTRUAL_STAGES = Object.freeze(['卵泡期', '排卵期', '黄体期', '月经期', DORMANCY_STAGE]);
 
 export const PREGNANCY_STAGES = Object.freeze(['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '延产期']);
 
 export const LABOR_STAGES = Object.freeze(['第一产程', '第二产程', '第三产程']);
 
+/** 活动周期四期的人类天数（乘经期倍率）；休眠期不在表里，天数另看 dormancyDays */
 export const MENSTRUAL_STAGE_DAYS = Object.freeze({
   卵泡期: 9,
   排卵期: 2,

@@ -335,6 +335,8 @@ function getRaceEncyclopediaGroups() {
 const DERIVED_ENCYCLOPEDIA_LIST = Array.from(new Set(DERIVED_TYPE_RACES)).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
 const RACE_PHYSIOLOGY_FIELD_LABELS = Object.freeze({
   menstrualLengthRatio: '经期长度倍率',
+  dormancyDays: '休眠天数',
+  seasonCycles: '每季轮数',
   gestationSpeciesSpeed: '妊娠速度倍率',
   birthDifficulty: '分娩难度',
   breedTolerance: '承载耐受',
@@ -349,7 +351,9 @@ const RACE_PHYSIOLOGY_FIELD_LABELS = Object.freeze({
 const RACE_FIELD_DESCRIPTIONS = Object.freeze({
   inheritanceMode: '只有一方带核型时孩子归哪边：雄核随父方种族、雌核随母方种族；双方都一般或都带核型时混血。人类为一般。',
   embryoType: '胎儿在体内的样子：胎生、卵生（孕晚结壳）、卵胎生（体内孵卵）、胎转卵生（孕晚转成卵）、不定型。只影响之后的受孕。',
-  menstrualLengthRatio: '月经周期的长度，人类为 1（约 28 天）。越大越久才排卵一次、越难怀上，受精到着床也越久。',
+  menstrualLengthRatio: '活动周期（卵泡、排卵、黄体、月经）的长度，人类为 1（约 28 天）。越大每一期都越长，受精到着床也越久；只想让一年才有一次机会，改休眠天数。',
+  dormancyDays: '繁殖季结束后的休眠天数，人类为 0。季节性繁殖与长寿低产的物种用它表达「很久才有一次机会」；休眠期不排卵、不受孕、高潮也不排卵，排卵窗口与着床前不受影响。',
+  seasonCycles: '繁殖季内连续几轮周期才休眠，人类为 1。马、鹿、猫、鸟在发情季反复发情；一年只发情一次的狐、海豹为 1。没有休眠天数时不影响。',
   gestationSpeciesSpeed: '胎儿发育的快慢，人类为 1（约 280 天足月）。越大孕期越短，0.5 就是两倍长。',
   birthDifficulty: '生产有多难，人类为 1。越高产程越长越痛、越容易难产。',
   breedTolerance: '怀孕对母体的负担有多重，人类为 1。越高越轻松：饥饿、困意、泄意累积越慢，泌乳越多；越低越容易被胎儿拖垮。只影响之后注册的角色。',
@@ -385,6 +389,8 @@ const RACE_PHYSIOLOGY_FIELD_HINTS = Object.freeze({
   genderRatio: '0-100；空白=双性，-1=无性',
   companionEggsMean: '每名有效后代伴随的背景卵数；0=没有伴生卵',
   recoveryCoefficient: '人类预设 56 天为 1；实际再依活力、经产与胎数调整',
+  dormancyDays: '0=没有休眠期',
+  seasonCycles: '整数，至少 1',
 });
 const EDITABLE_RACE_PHYSIOLOGY_FIELDS = RACE_PHYSIOLOGY_FIELDS;
 const BODY_SIZE_VARIABLE_OPTION = 'variable';
@@ -4282,7 +4288,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
   const stage = String(base.stage || '未设定');
   const totalSperm = (Array.isArray(base.sperms) ? base.sperms : []).reduce((sum, item) => sum + (Number(item?.value) || 0), 0);
   const eggs = Number(base.eggs) || 0;
-  const allowsNaturalConception = MENSTRUAL_STAGES.includes(stage) && stage !== '月经期';
+  const allowsNaturalConception = MENSTRUAL_STAGES.includes(stage) && !['月经期', '休眠期'].includes(stage);
   const conceptionPreview = eggs > 0 && totalSperm > 0 && allowsNaturalConception
     ? calculateFertilizationPreview({
       eggRace: base.race,
@@ -5795,7 +5801,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
     ? Math.round(Math.max(0, Math.min(100, (Number(viewModel.overview.stageProgress.value) / Number(viewModel.overview.stageProgress.max)) * 100)))
     : 0;
 
-  const phaseOptions = ['卵泡期', '排卵期', '黄体期', '月经期', '假孕期', '产后恢复'].map(phase =>
+  const phaseOptions = ['卵泡期', '排卵期', '黄体期', '月经期', '休眠期', '假孕期', '产后恢复'].map(phase =>
     `<option value="${phase}"${currentStage === phase ? ' selected' : ''}>${phase}</option>`
   ).join('');
 
@@ -5812,7 +5818,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
   const debugFetuses = Array.isArray(viewModel.debug?.fetuses) ? viewModel.debug.fetuses : [];
   const implantedFetuses = debugFetuses.filter((fetus) => !fetus.pendingImplantation);
   const canStartNewPregnancy = !hasConceptionState;
-  const canWombReturn = canStartNewPregnancy && ['卵泡期', '排卵期', '黄体期', '月经期', '无经期'].includes(currentStage);
+  const canWombReturn = canStartNewPregnancy && ['卵泡期', '排卵期', '黄体期', '月经期', '休眠期', '无经期'].includes(currentStage);
   const canAddDuringPregnancy = currentStage === '孕早期' && implantedFetuses.length > 0;
   // 孕中孕宿主只列胎生、胎转卵生、不定型：卵生在壳里、卵胎生在卵膜里，进不去
   const nestedHostFetuses = implantedFetuses.filter((fetus) => fetus.canHostNested);

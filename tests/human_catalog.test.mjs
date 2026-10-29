@@ -77,7 +77,7 @@ test('人类可以覆写参数与短敘述，覆写只影响人类本身', () =>
     assert.match(prompt, /本世界的人类孕期负担较轻/);
     assert.match(prompt, /数值 2；/);
     // 其他物种的说明仍以人类预设值为比较基准
-    assert.match(buildRacePhysiologyPrompt(payloadWith('精灵', null)), /经期长度: 84天左右/);
+    assert.match(buildRacePhysiologyPrompt(payloadWith('精灵', null)), /经期长度: 35天左右；繁殖季连续约 2 轮（约 70 天，每轮都能受孕），之后休眠约 295 天/);
   } finally {
     setRacePhysiologyOverrides({});
   }

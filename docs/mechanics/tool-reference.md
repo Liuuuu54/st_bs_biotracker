@@ -13,7 +13,7 @@
 | [`bsPassedTime`](../../scripts/tools.js#L6849) | `minute`、`hour`、`day`、`week`、`month`、`year`，至少一個正數。 | 單位相加，月=30 日、年=365 日，推進**整個聊天所有角色**，並增加 `minutesPassed`。沒有正時間則拒絕；胎內回歸且承載者仍在的角色凍結。時間零頭和各階段規則見[時間機制](cycles-and-conception.md#時間怎樣推進)。 |
 | [`bsUpdateCharacterStatus`](../../scripts/tools.js#L6885) | 必填 `female`、`options`；可傳 `vitality`、`psyStress`、`libido`、`uterinePressure`，以及布林 `orgasm`。 | 四項都是**增減量**，受各自上限限制。`orgasm=true` 表示劇情中高潮：系統把性欲推到上限、走高潮排卵結算，結束後性欲歸零；冷卻中或不排卵的物種也歸零，不會停在上限。活力會連動代謝，性欲連動乳意，達上限時可能高潮排卵（額外排卵傾向的每一顆按當前活力占比排出；每週期黃體期前、黃體期各一次），宮壓可磨損羊膜並更新風險。空 `options` 在實作中仍會回報套用，但沒有數值變化。 |
 | [`bsSetCharacterPresence`](../../scripts/tools.js#L7143) | 必填 `female`、明示布林 `isPresent`。 | 寫入 `base.isHere`；離場後追蹤 payload 預設不送完整狀態，部分在場代謝略過。設回在場也會解除 `wombReturnHost` 凍結；省略布林值會拒絕。`female` 查不到卵方但有同名[精方檔案](registration.md#精方檔案)時改切精方的在場。 |
-| [`bsSetMenstrualPhases`](../../scripts/tools.js#L7573) | 必填 `female`、`stage`。 | 只接受卵泡、排卵、黃體、月經、產後恢復、假孕；階段天數歸零並調整排卵冷卻：切到排卵期重新允許高潮排卵，切到黃體期也吃到黃體期那一次刷新。已有胚胎、受精進度、真妊娠、回歸期、產兆或產程時拒絕，不能用它直接設成懷孕。 |
+| [`bsSetMenstrualPhases`](../../scripts/tools.js#L7573) | 必填 `female`、`stage`。 | 只接受卵泡、排卵、黃體、月經、休眠、產後恢復、假孕（物種沒有休眠期時切到休眠，下一次推進就進卵泡期）；階段天數歸零並調整排卵冷卻：切到排卵期重新允許高潮排卵，切到黃體期也吃到黃體期那一次刷新。已有胚胎、受精進度、真妊娠、回歸期、產兆或產程時拒絕，不能用它直接設成懷孕。 |
 
 ## 精源、受孕與分娩
 

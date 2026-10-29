@@ -47,9 +47,10 @@ test('人类著床当下仍是第 20 天', () => {
   assert.equal(Math.round(pregnancy(chatState).pregnant.effectivePregnantDays), 20);
 });
 
-test('经期约一年的天使与孕速 20 倍的怪鸟类，著床当下都还在孕早期', () => {
+test('天使的长周期改由休眠期表达，著床孕龄回到正常；孕速 20 倍的怪鸟类仍由饱和曲线压在孕早期', () => {
+  // 天使活动周期 42 天：着床前 9 天、产科偏移 21 天，×孕速 0.8 再过曲线约 23
   // 怪鸟类著床只要 1.71 天，每天推进时那一步多出的 0.29 天照孕速 20 加上去：曲线值 58 + 5.7
-  for (const [race, expected] of [['天使', 71], ['怪鸟类', 64]]) {
+  for (const [race, expected] of [['天使', 23], ['怪鸟类', 64]]) {
     const chatState = conceive(race);
     let days = 0;
     while (pregnancy(chatState).base.stage !== '孕早期' && days < 200) { pass(chatState, 1); days += 1; }
