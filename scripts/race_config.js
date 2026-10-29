@@ -215,9 +215,9 @@ const RACE_DEFINITIONS = Object.freeze({
     embryoType: "胎生",
     introductionLine: "Deer-taur，上身为人、下身为鹿的半人形，比照半人马之于马；北美鹿女、凯尔特鹿角神与鹿化少女、中国鹿女夫人皆以此形象出现。可借魔法化出人腿，化人后更娇小。只有鹿耳鹿角的人形写作兽耳族-鹿。",
     inheritanceMode: "normal",
-    menstrualLengthRatio: 1.25, gestationSpeciesSpeed: 1.4, birthDifficulty: 1, breedTolerance: 0.8,
+    menstrualLengthRatio: 1.25, gestationSpeciesSpeed: 1.1, birthDifficulty: 1, breedTolerance: 0.8,
     impregnationDifficulty: 1.2, orgasmOvulationAmount: 2, identicalProbability: 5, genderRatio: 30,
-    companionEggsMean: 0, recoveryCoefficient: 0.9,
+    companionEggsMean: 0, recoveryCoefficient: 1.1,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 3, bodyPlan: "hybrid",
   },
   "巨人": {
