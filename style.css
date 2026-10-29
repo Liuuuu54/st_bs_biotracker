@@ -2357,6 +2357,11 @@
   grid-column: 1 / -1;
 }
 
+/* display: grid 会盖过 hidden 属性；借用族谱图示这类只在自订物种出现的栏位要真的藏起来 */
+#bs-biotracker-settings .bs-bt-race-editor-field[hidden] {
+  display: none;
+}
+
 #bs-biotracker-settings .bs-bt-race-introduction-input {
   min-height: 56px;
   resize: vertical;
@@ -2365,6 +2370,14 @@
 #bs-biotracker-settings .bs-bt-race-editor-field > span:first-child {
   font-size: 0.84em;
   opacity: 0.82;
+}
+
+/* 百科编辑器：数值的即时换算（改数字就跟着变） */
+#bs-biotracker-settings .bs-bt-race-editor-live {
+  font-size: 0.8em;
+  line-height: 1.45;
+  font-weight: 600;
+  opacity: 0.9;
 }
 
 #bs-biotracker-settings .bs-bt-race-editor-hint {

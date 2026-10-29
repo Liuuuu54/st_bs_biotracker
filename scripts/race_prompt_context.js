@@ -254,21 +254,55 @@ function getProlificacyText(orgasmOvulationAmount, identicalProbability) {
     summary = '大多仍是单胎，偶尔会出现双胎。';
   }
 
-  let ovulationText = '异卵多胎倾向未知';
-  // 自然排卵每周期只有 1 颗；额外排卵只在高潮时按当下活力排出，异卵多胎主要由此而来
-  if (safeOvulation <= 0) ovulationText = '每周期只排 1 颗卵，高潮也不会额外排卵，异卵多胎几乎不会发生。';
-  else if (safeOvulation <= 1) ovulationText = '平时只排 1 颗卵；高潮时可额外排出 1 颗，异卵双胎主要由此而来。';
-  else if (safeOvulation <= 3) ovulationText = '平时只排 1 颗卵；高潮时可额外排出数颗，高潮前后同房容易形成异卵多胎。';
-  else if (safeOvulation <= 6) ovulationText = '平时只排 1 颗卵；高潮时一次排出多颗，高潮前后同房常形成异卵多胎。';
-  else ovulationText = '平时只排 1 颗卵；高潮时一次排出大量卵，高潮前后同房几乎必成一窝。';
+  return `${overall}。${summary} ${getOvulationText(safeOvulation)} ${getIdenticalText(safeIdentical)}`;
+}
 
-  let identicalText = '同卵倾向未知';
-  if (safeIdentical <= 5) identicalText = '同卵分裂倾向很低，由单胎扩增出的同卵多胎较少见。';
-  else if (safeIdentical <= 20) identicalText = '同卵分裂倾向偏低到中等，存在由单胎扩增为同卵双胎的机会。';
-  else if (safeIdentical <= 50) identicalText = '同卵分裂倾向明显，受精后继续分裂形成同卵多胎并不罕见。';
-  else identicalText = '同卵分裂倾向很高，单一受精卵扩增成复数胎儿的概率相当显著。';
+// 自然排卵每周期只有 1 颗；额外排卵只在高潮时按当下活力排出，异卵多胎主要由此而来
+function getOvulationText(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '异卵多胎倾向未知';
+  if (num <= 0) return '每周期只排 1 颗卵，高潮也不会额外排卵，异卵多胎几乎不会发生。';
+  if (num <= 1) return '平时只排 1 颗卵；高潮时可额外排出 1 颗，异卵双胎主要由此而来。';
+  if (num <= 3) return '平时只排 1 颗卵；高潮时可额外排出数颗，高潮前后同房容易形成异卵多胎。';
+  if (num <= 6) return '平时只排 1 颗卵；高潮时一次排出多颗，高潮前后同房常形成异卵多胎。';
+  return '平时只排 1 颗卵；高潮时一次排出大量卵，高潮前后同房几乎必成一窝。';
+}
 
-  return `${overall}。${summary} ${ovulationText} ${identicalText}`;
+function getIdenticalText(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '同卵倾向未知';
+  if (num <= 5) return '同卵分裂倾向很低，由单胎扩增出的同卵多胎较少见。';
+  if (num <= 20) return '同卵分裂倾向偏低到中等，存在由单胎扩增为同卵双胎的机会。';
+  if (num <= 50) return '同卵分裂倾向明显，受精后继续分裂形成同卵多胎并不罕见。';
+  return '同卵分裂倾向很高，单一受精卵扩增成复数胎儿的概率相当显著。';
+}
+
+/**
+ * 百科编辑器的即时换算：把一个栏位的数值翻成白话（孕期几天、产后几天、负担多重…），
+ * 与资料页、提示词同一套句子。value 为空字串或无效时回空字串
+ */
+export function describeRaceFieldValue(field, value) {
+  const empty = value === '' || value === undefined;
+  const num = Number(value);
+  switch (field) {
+    case 'menstrualLengthRatio': return empty || !(num > 0) ? '' : `周期${formatCycleDays(num)}。`;
+    case 'gestationSpeciesSpeed': return empty || !(num > 0) ? '' : `足月${formatGestation(num)}。`;
+    case 'recoveryCoefficient': return empty || !(num > 0) ? '' : `产后${formatRecoveryDays(computePostpartumRecoveryDays({ recoveryCoefficient: num }))}才回到月经周期（实际再依活力、经产与胎数调整）。`;
+    case 'birthDifficulty': return empty ? '' : getBirthDifficultyText(num);
+    case 'breedTolerance': return empty ? '' : getBreedToleranceText(num);
+    case 'impregnationDifficulty': return empty ? '' : getImpregnationDifficultyText(num);
+    case 'orgasmOvulationAmount': return empty ? '' : getOvulationText(Math.round(num));
+    case 'identicalProbability': return empty ? '' : getIdenticalText(num);
+    case 'companionEggsMean': return empty ? '' : num <= 0 ? '没有伴生卵：一胎就是一个孩子。' : `平均每名后代旁伴随约 ${formatNumber(num)} 颗不会发育的背景卵，一窝看起来会大得多。`;
+    case 'genderRatio': return empty ? getGenderRatioText(null) : getGenderRatioText(num);
+    case 'bodySize': return value === null ? '可变：能随对象调整形体，与任何对象都恰好契合。'
+      : value === BODY_SIZE_INDIVIDUAL ? '依个体：同族大小差异极大，按子项或个体判断，插入时要给体型。'
+        : `${formatBodySizeLevel(num)}。`;
+    case 'bodySizeSd': return empty ? '' : num > 0 ? `族内个体约有 ±${formatNumber(num)} 级的高矮差异；注册时按这个分布抽个体体型。` : '族内个体大小一致。';
+    case 'altFormBodySize': return empty || value === null ? '没有变化态。' : `变身后 ${formatBodySizeLevel(num)}；以变化态交合时，契合、套子与子宫容量按这个体型算。`;
+    case 'bodyPlan': return getBodyPlanText(value);
+    default: return '';
+  }
 }
 
 function getGenderRatioText(value) {
