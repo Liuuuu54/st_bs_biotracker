@@ -1,6 +1,6 @@
 // Progress reads physiological clocks and shares limits with the engine; never advances time.
-import { LABOR_STAGES, PREGNANCY_STAGE_DAYS, POSTTERM_START_DAYS } from './stage_config.js';
-import { getStageLimit, getPseudoPregnancyLimit, getProdromalInitialHours, getLaborPhaseForStage, resolveLaborPhaseHours } from './tools.js';
+import { DORMANCY_STAGE, LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGE_DAYS, POSTTERM_START_DAYS } from './stage_config.js';
+import { getDormancyDays, getSeasonCycles, getStageLimit, getPseudoPregnancyLimit, getProdromalInitialHours, getLaborPhaseForStage, resolveLaborPhaseHours } from './tools.js';
 
 function number(value, fallback = 0) {
   const n = Number(value);
@@ -55,11 +55,34 @@ export function getStageProgress(profile) {
   }
   const limit = getStageLimit(profile, stage);
   if (limit !== null) {
-    return { label: stage === '产后恢复' ? '恢复进度' : '阶段进度', value: days, max: limit, unit: 'd', emptyLabel: stage === '休眠期' ? '没有休眠期，即将进入卵泡期' : '无需恢复' };
+    const season = getSeasonBadge(profile, stage);
+    return {
+      label: stage === '产后恢复' ? '恢复进度' : stage === DORMANCY_STAGE ? '乏情进度' : '阶段进度',
+      value: days, max: limit, unit: 'd',
+      emptyLabel: stage === DORMANCY_STAGE ? '没有乏情期，即将进入卵泡期' : '无需恢复',
+      ...(season ? { season } : {}),
+    };
   }
   return null;
 }
 
+/**
+ * 有乏情期的物种在活动周期里标出本季第几轮、这一轮完了是否乏情（追踪页阶段标题旁的徽章）。
+ * 没有乏情期的物种回 null。
+ */
+function getSeasonBadge(profile, stage) {
+  if (!MENSTRUAL_STAGES.includes(stage) || stage === DORMANCY_STAGE || getDormancyDays(profile) <= 0) return null;
+  const cycles = getSeasonCycles(profile);
+  const current = Math.min(cycles, Math.max(0, Math.floor(number(profile?.base?.seasonCycle))) + 1);
+  const round = cycles > 1 ? `第 ${current}／${cycles} 轮` : '';
+  return current >= cycles ? (round ? `${round} · 之后乏情` : '之后乏情') : round;
+}
+
 export function formatProgressNumber(value) {
   return String(Math.round((Math.max(0, number(value)) + Number.EPSILON) * 100) / 100);
+}
+
+/** 以天计的进度一律显示到小数点后一位（3.0 / 6.8 天），对齐不跳动 */
+export function formatProgressDays(value) {
+  return (Math.round((Math.max(0, number(value)) + Number.EPSILON) * 10) / 10).toFixed(1);
 }

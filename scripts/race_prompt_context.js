@@ -102,14 +102,14 @@ function formatCycleDays(ratio) {
   return `${days}天左右`;
 }
 
-/** 经期加上休眠：休眠期在月经之后，不排卵、不受孕；没有休眠就只报经期。季内多轮的写出发情季长短 */
+/** 经期加上乏情：乏情期在月经之后，不排卵、不受孕；没有乏情就只报经期。季内多轮的写出发情季长短 */
 function formatCycleWithDormancy(ratio, dormancyDays, seasonCycles = 1) {
   const dormancy = Math.round(Math.max(0, Number(dormancyDays) || 0));
   if (dormancy <= 0) return formatCycleDays(ratio);
   const active = Math.round(28 * Number(ratio || 1));
   const cycles = Math.max(1, Math.round(Number(seasonCycles) || 1));
-  if (cycles <= 1) return `${active}天左右；月经后另有约 ${dormancy} 天休眠期（不排卵、不受孕），约 ${active + dormancy} 天才有一次受孕机会`;
-  return `${active}天左右；繁殖季连续约 ${cycles} 轮（约 ${active * cycles} 天，每轮都能受孕），之后休眠约 ${dormancy} 天（不排卵、不受孕），约 ${active * cycles + dormancy} 天一季`;
+  if (cycles <= 1) return `${active}天左右；月经后另有约 ${dormancy} 天乏情期（不排卵、不受孕），约 ${active + dormancy} 天才有一次受孕机会`;
+  return `${active}天左右；繁殖季连续约 ${cycles} 轮（约 ${active * cycles} 天，每轮都能受孕），之后进入乏情期约 ${dormancy} 天（不排卵、不受孕），约 ${active * cycles + dormancy} 天一季`;
 }
 
 function formatYearMonthApprox(days) {
@@ -295,9 +295,9 @@ export function describeRaceFieldValue(field, value) {
   const empty = value === '' || value === undefined;
   const num = Number(value);
   switch (field) {
-    case 'menstrualLengthRatio': return empty || !(num > 0) ? '' : `周期${formatCycleDays(num)}（不含休眠），受精后约 ${formatNumber(calculateImplantationDays(28 * num))} 天着床。`;
-    case 'dormancyDays': return empty ? '' : num > 0 ? `每季结束后休眠约 ${Math.round(num)} 天，这段时间不排卵、不受孕。` : '没有休眠期：月经结束就进入下一轮。';
-    case 'seasonCycles': return empty || !(num >= 1) ? '' : Math.round(num) <= 1 ? '一季只有一轮：每次月经后就休眠（休眠天数为 0 时不影响）。' : `繁殖季内连续 ${Math.round(num)} 轮周期，跑满才休眠（休眠天数为 0 时不影响）。`;
+    case 'menstrualLengthRatio': return empty || !(num > 0) ? '' : `周期${formatCycleDays(num)}（不含乏情），受精后约 ${formatNumber(calculateImplantationDays(28 * num))} 天着床。`;
+    case 'dormancyDays': return empty ? '' : num > 0 ? `每季结束后进入乏情期约 ${Math.round(num)} 天，这段时间不排卵、不受孕。` : '没有乏情期：月经结束就进入下一轮。';
+    case 'seasonCycles': return empty || !(num >= 1) ? '' : Math.round(num) <= 1 ? '一季只有一轮：每次月经后就进入乏情期（乏情天数为 0 时不影响）。' : `繁殖季内连续 ${Math.round(num)} 轮周期，跑满才进入乏情期（乏情天数为 0 时不影响）。`;
     case 'gestationSpeciesSpeed': return empty || !(num > 0) ? '' : `足月${formatGestation(num)}。`;
     case 'recoveryCoefficient': return empty || !(num > 0) ? '' : `产后${formatRecoveryDays(computePostpartumRecoveryDays({ recoveryCoefficient: num }))}才回到月经周期（实际再依活力、经产与胎数调整）。`;
     case 'birthDifficulty': return empty ? '' : getBirthDifficultyText(num);

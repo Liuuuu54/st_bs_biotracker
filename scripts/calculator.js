@@ -162,7 +162,7 @@ export function calculateImplantationDays(cycleLength = 28) {
 export function calculateRaceImplantationDays(race = '人类') {
   const profile = getMergedRacePhysiologyProfile(race) || {};
   const ratio = clampNumber(profile.menstrualLengthRatio, 0.1, 20, 1);
-  // 只算活动周期：休眠期不影响着床
+  // 只算活动周期：乏情期不影响着床
   const cycleLength = Object.values(MENSTRUAL_STAGE_DAYS).reduce((sum, days) => (
     sum + Math.max(1, (Number(days) || 0) * ratio)
   ), 0);

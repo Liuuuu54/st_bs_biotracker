@@ -32,7 +32,7 @@ export const RACE_PHYSIOLOGY_FIELDS = Object.freeze([
  * 体型栏位不进 RACE_PHYSIOLOGY_FIELDS：bodySize 可为 null（可变）或 'individual'（依个体），
  * 混血也不是单纯加权平均，另由 getMergedRaceBodySize 处理。
  */
-/** 休眠天数上限：十年一次 */
+/** 乏情天数上限：十年一次 */
 export const DORMANCY_DAYS_MAX = 3650;
 export const SEASON_CYCLES_MAX = 99;
 
@@ -64,9 +64,9 @@ export const RACE_BODY_PLAN_LABELS = Object.freeze({ humanoid: "人形", hybrid:
  * - inheritanceMode：normal 一般；paternal 雄核（仅一方具核型时后代取精方种族，如哥布林）；
  *   maternal 雌核（取卵方种族，如媚魔）
  * - menstrualLengthRatio：活动周期（卵泡、排卵、黄体、月经四期）的长度倍率，人类为 1
- * - dormancyDays：月经后到下一轮卵泡期之间的休眠天数，不排卵、不受孕；人类为 0，没写的物种也是 0。
- *   「很久才有一次机会」的长周期物种用休眠表达，倍率只管活动周期，排卵窗口与着床前才不会跟着拉长
- * - seasonCycles：每个繁殖季连续跑几轮活动周期才进休眠（马、鹿、猫、鸟在季内反复发情）；人类与没写的物种为 1
+ * - dormancyDays：月经后到下一轮卵泡期之间的乏情天数，不排卵、不受孕；人类为 0，没写的物种也是 0。
+ *   「很久才有一次机会」的长周期物种用乏情表达，倍率只管活动周期，排卵窗口与着床前才不会跟着拉长
+ * - seasonCycles：每个繁殖季连续跑几轮活动周期才进乏情（马、鹿、猫、鸟在季内反复发情）；人类与没写的物种为 1
  * - gestationSpeciesSpeed：孕速倍率，越高孕期越短；混血按「280／孕速」加权平均
  * - birthDifficulty：分娩难度；breedTolerance：承载耐受，越高孕期负担越轻
  * - impregnationDifficulty：受精难度，越高越难受孕、跨种越难
@@ -1143,7 +1143,7 @@ export const OVOVIVIPAROUS_RACES = racesByEmbryoType("卵胎生");
 export const METOVIVIPAROUS_RACES = racesByEmbryoType("胎转卵生");
 export const AMORPHOUS_RACES = racesByEmbryoType("不定型");
 
-/** 大多数物种不写的栏位：没有休眠、每季一轮 */
+/** 大多数物种不写的栏位：没有乏情、每季一轮 */
 const PHYSIOLOGY_FIELD_DEFAULTS = Object.freeze({ dormancyDays: 0, seasonCycles: 1 });
 const BASE_PHYSIOLOGY_FIELDS = RACE_PHYSIOLOGY_FIELDS.filter((field) => field !== "companionEggsMean" && field !== "recoveryCoefficient");
 /** 只含八项基础生理数值的内置表（伴生卵、恢复系数、核型与胚型见 getBuiltinRacePhysiologyProfile） */
