@@ -85,7 +85,8 @@ test('混合品质与独立二次 closed form 一致，接近全清时仍保留�
     const effort = capacity * fraction;
     const result = drainSpermSources(sources, effort);
     const expected = twoQualityClosedForm(29, 71, effort);
-    result.sources.forEach((source, i) => close(source.value, expected[i], `闭式来源 ${i}`, 1e-11, 1e-25));
+    // 接近全清时要从约 140 的总量减出 1e-8 的差，双精度只剩约百万分之一的相对精度（随 V8 版本的 exp／log 尾数而变）；绝对容差放到 1e-12，物理上仍是零误差
+    result.sources.forEach((source, i) => close(source.value, expected[i], `闭式来源 ${i}`, 1e-11, 1e-12));
     assert.ok(result.sources.every((source) => source.value > 0), '全清之前不按阈值删除正残留');
   }
 });
