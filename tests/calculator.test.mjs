@@ -26,7 +26,7 @@ test('fertilization calculator removes source-order bias while preserving source
   assert.equal(result.sources.length, 2);
   const [first, second] = result.sources;
   assert.equal(first.chance, second.chance, '同量同族的两个精源机率相同');
-  assert.ok(Math.abs(result.successChance - (1 - (1 - first.chance) ** 2)) < 1e-12);
+  assert.ok(Math.abs(result.successChance - (first.chance + second.chance)) < 1e-12, '材料份额相加，不把拆记录当独立抽签');
   assert.ok(Math.abs(first.winChance - result.successChance / 2) < 1e-12);
   assert.ok(Math.abs(second.winChance - result.successChance / 2) < 1e-12);
 });

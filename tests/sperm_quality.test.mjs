@@ -71,8 +71,8 @@ test('难洗：品质 4 排一次约七成，回覆写明还留多少；品质 1
   const chat = chatWithMother();
   chat.characters['艾拉'].profile.base.sperms = [{ male: '凯', race: '人类', value: 40, quality: 4 }];
   const result = call(chat, 'bsDrainSperm', { female: '艾拉', amount: 40 });
-  assert.equal(chat.characters['艾拉'].profile.base.sperms[0].value, 11);
-  assert.match(result.message, /还留着 11/);
+  assert.ok(Math.abs(chat.characters['艾拉'].profile.base.sperms[0].value - (40 - 40 / Math.sqrt(2))) < 1e-12, '保存连续残量，不逐笔向下取整');
+  assert.match(result.message, /还留着 12/);
   assert.match(result.message, /凯 的精液浓稠难洗/);
   chat.characters['艾拉'].profile.base.sperms = [{ male: '路人', race: '人类', value: 40 }];
   assert.match(call(chat, 'bsDrainSperm', { female: '艾拉', amount: 50 }).message, /cleared all/);

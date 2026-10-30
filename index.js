@@ -78,6 +78,7 @@ import { createRacePaletteSelection, appendRacePaletteTag, removeRacePaletteTag,
 import { createDocViewer, parseDocHref } from './scripts/doc_viewer.js';
 import { calculateDerivedInheritancePreview, calculateFertilizationPreview, DERIVED_INHERITANCE_THRESHOLD } from './scripts/calculator.js';
 import { enablePooledConception, isPooledConception } from './scripts/pooled_reproduction.js';
+import { getSpermSources } from './scripts/sperm_sources.js';
 import {
   LABOR_STAGES,
   MENSTRUAL_STAGES,
@@ -106,7 +107,7 @@ import { deleteSireRecord, describeSpermQuality, formatSireRaceDescriptor, getSi
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
-import { buildRaceCatalogHint, buildSingleRacePhysiologyText } from './scripts/race_prompt_context.js';
+import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue } from './scripts/race_prompt_context.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
 import { appendSkillHistory, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
 import {
@@ -346,6 +347,42 @@ const RACE_PHYSIOLOGY_FIELD_LABELS = Object.freeze({
   recoveryCoefficient: '产后恢复系数',
   genderRatio: '男胎比例',
 });
+/** 百科编辑器每一栏底下固定显示的白话说明：影响什么、越大越怎样、人类是多少 */
+const RACE_FIELD_DESCRIPTIONS = Object.freeze({
+  inheritanceMode: '只有一方带核型时孩子归哪边：雄核随父方种族、雌核随母方种族；双方都一般或都带核型时混血。人类为一般。',
+  embryoType: '胎儿在体内的样子：胎生、卵生（孕晚结壳）、卵胎生（体内孵卵）、胎转卵生（孕晚转成卵）、不定型。只影响之后的受孕。',
+  menstrualLengthRatio: '月经周期的长度，人类为 1（约 28 天）。越大越久才排卵一次、越难怀上，受精到着床也越久。',
+  gestationSpeciesSpeed: '胎儿发育的快慢，人类为 1（约 280 天足月）。越大孕期越短，0.5 就是两倍长。',
+  birthDifficulty: '生产有多难，人类为 1。越高产程越长越痛、越容易难产。',
+  breedTolerance: '怀孕对母体的负担有多重，人类为 1。越高越轻松：饥饿、困意、泄意累积越慢，泌乳越多；越低越容易被胎儿拖垮。只影响之后注册的角色。',
+  impregnationDifficulty: '受孕有多难，人类为 1。越高越难怀上；跨物种时双方难度一起算，胚型不同再加难。',
+  orgasmOvulationAmount: '高潮时额外排出几颗卵（平时每周期只排 1 颗），人类为 1。越多越容易异卵多胎。',
+  identicalProbability: '一颗受精卵分裂成同卵多胎的机率（%），人类为 1。',
+  companionEggsMean: '每名后代旁边伴随几颗不会发育的背景卵，也就是一窝的大小，人类为 0。胎生与胎转卵生恒为 0。',
+  recoveryCoefficient: '分娩或流产后多久才回到月经周期、能再怀孕，人类为 1（约 56 天）。',
+  genderRatio: '后代是雄性的百分比，人类为 50。留空是雌雄同体，-1 是无性。',
+  bodySize: '常态（人态）的大小，1–7 级，人类为 4。影响体型契合、子宫容量、射精量与受精胎重。',
+  bodySizeSd: '同族个体之间的高矮差异（级），人类为 0.4。',
+  altFormBodySize: '变身后的大小，例如龙的真身、人鱼化出人腿；没有变化态就选「无」。',
+  bodyPlan: '身体的样子与孕肚长在哪：人形、半人形（人身接兽躯或尾身）、非人形、任意。',
+});
+
+/** 编辑器栏位底下的说明与即时换算：改数值就跟着更新 */
+function appendRaceFieldHelp(label, field, control, read = () => control.value) {
+  label.classList.add('bs-bt-race-editor-field-wide');
+  const help = document.createElement('small');
+  help.className = 'bs-bt-race-editor-hint';
+  help.textContent = RACE_FIELD_DESCRIPTIONS[field] || '';
+  const live = document.createElement('small');
+  live.className = 'bs-bt-race-editor-live';
+  const update = () => { live.textContent = describeRaceFieldValue(field, read()); live.hidden = !live.textContent; };
+  control.addEventListener('input', update);
+  control.addEventListener('change', update);
+  update();
+  label.appendChild(live);
+  label.appendChild(help);
+}
+
 const RACE_PHYSIOLOGY_FIELD_HINTS = Object.freeze({
   genderRatio: '0-100；空白=双性，-1=无性',
   companionEggsMean: '每名有效后代伴随的背景卵数；0=没有伴生卵',
@@ -2394,6 +2431,7 @@ function renderRacePhysiologyEditor(race) {
     badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, RACE_INHERITANCE_FIELD);
     inheritanceLabel.appendChild(badge);
   }
+  appendRaceFieldHelp(inheritanceLabel, RACE_INHERITANCE_FIELD, inheritanceSelect);
   editorNode.appendChild(inheritanceLabel);
 
   const embryoLabel = document.createElement('label');
@@ -2421,6 +2459,7 @@ function renderRacePhysiologyEditor(race) {
     badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, RACE_EMBRYO_TYPE_FIELD);
     embryoLabel.appendChild(badge);
   }
+  appendRaceFieldHelp(embryoLabel, RACE_EMBRYO_TYPE_FIELD, embryoSelect);
   editorNode.appendChild(embryoLabel);
 
   for (const field of EDITABLE_RACE_PHYSIOLOGY_FIELDS) {
@@ -2452,6 +2491,7 @@ function renderRacePhysiologyEditor(race) {
       badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, field);
       label.appendChild(badge);
     }
+    appendRaceFieldHelp(label, field, input);
 
     editorNode.appendChild(label);
   }
@@ -2527,6 +2567,10 @@ function renderRaceBodySizeEditorFields(editorNode, race) {
     badge.className = 'bs-bt-race-editor-badge';
     badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, field);
     label.appendChild(badge);
+    const read = field === 'bodySize' ? () => decodeBodySizeOption(control.value)
+      : field === 'altFormBodySize' ? () => (control.value === '' ? null : Number(control.value))
+        : () => control.value;
+    appendRaceFieldHelp(label, field, control, read);
     editorNode.appendChild(label);
   };
 
@@ -4245,7 +4289,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
   // pooled 的逐次来源保留各次快照；占比环仍使用 base.sperms 的真实残量聚合。
   const previewSpermSources = pooledConception
     ? (Array.isArray(base.spermContacts) ? base.spermContacts : [])
-    : base.sperms;
+    : getSpermSources(base);
   const previewSpermTotal = pooledConception
     ? previewSpermSources.reduce((sum, item) => sum + (Number(item?.value) || 0), 0)
     : totalSperm;
@@ -4257,7 +4301,8 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       chanceFactor: 1,
       spermSources: previewSpermSources,
       uterusVolumeFactor: getUterusVolumeFactor(base),
-      ...(pooledConception ? { model: 'pooled-v1', crossSpecies: immune.crossSpecies === true } : {}),
+      crossSpecies: Boolean(immune.crossSpecies),
+      ...(pooledConception ? { model: 'pooled-v1' } : {}),
     })
     : null;
   const rawFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
@@ -4687,7 +4732,7 @@ function renderSpermShareChart(sperms, conceptionChance = null, capacity = null)
   `).join('');
   const chance = Number(conceptionChance);
   const chanceHtml = conceptionChance !== null && conceptionChance !== undefined && Number.isFinite(chance)
-    ? `<div class="bs-bt-sperm-share__chance">24h受孕率 <strong>${Math.round(Math.max(0, Math.min(1, chance)) * 100)}%</strong></div>`
+    ? `<div class="bs-bt-sperm-share__chance" title="目前既有卵的单卵24小时静态预览；不预测未来排卵、阶段切换或其他行动">24h受孕率 <strong>${Math.round(Math.max(0, Math.min(1, chance)) * 100)}%</strong></div>`
     : '';
 
   return `
@@ -5119,7 +5164,7 @@ function renderTrackPregnancy(viewModel) {
       conceptionChance: data.conceptionChance,
       capacity: data.womb?.semenCapacity,
       previewNote: data.conceptionModel === 'pooled-v1'
-        ? '实验性混合池：24h数值是当前已有卵的单卵静态预览，不含未来排卵、阶段切换或新行动；真实事件按分钟结算。' : '',
+        ? '实验性混合池：24h数值是当前已有卵的单卵静态预览，不含未来排卵、阶段切换或新行动；真实受精在连续时刻结算，显示分钟向上取整。' : '',
     })}
     ${data.showPregnantFields
       ? `          ${renderDescriptionGroup('孕态描述', data.pregnantBlocks, pregnantDescriptionOptions)}`

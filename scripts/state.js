@@ -489,7 +489,7 @@ export function deriveMenstrualStageState() {
   return { stage, days };
 }
 
-export function derivePregnancyStageState(pregnantDays, gestationSpeed = 1, { extensionUntilDays = null } = {}) {
+export function derivePregnancyStageState(pregnantDays, gestationSpeed = 1, { extensionUntilDays = null, rightContinuous = false } = {}) {
   const actualPregnantDays = Math.max(0, Number(pregnantDays) || 0);
   const speed = Math.max(0.1, Number(gestationSpeed) || 1);
   // 延产期按到期日黏住，不随孕日推回逾期；到期与否由时间推进处理（到期就进产兆前驱并清掉到期日）
@@ -500,7 +500,9 @@ export function derivePregnancyStageState(pregnantDays, gestationSpeed = 1, { ex
   let totalPregnancyDays = 0;
   for (const stageName of stageNames) totalPregnancyDays += PREGNANCY_STAGE_DAYS[stageName] / speed;
 
-  if (actualPregnantDays > totalPregnancyDays) {
+  const atBoundary = (value) => Math.abs(actualPregnantDays - value)
+    <= 32 * Number.EPSILON * Math.max(1, actualPregnantDays, value);
+  if (actualPregnantDays > totalPregnancyDays || (rightContinuous && atBoundary(totalPregnancyDays))) {
     return {
       stage: '逾期',
       days: actualPregnantDays - totalPregnancyDays,
@@ -513,7 +515,10 @@ export function derivePregnancyStageState(pregnantDays, gestationSpeed = 1, { ex
   for (const stageName of stageNames) {
     const stageLimit = PREGNANCY_STAGE_DAYS[stageName] / speed;
     const nextBaseDays = baseDays + stageLimit;
-    if (actualPregnantDays >= baseDays && actualPregnantDays <= baseDays + stageLimit) {
+    // 实验生殖时间线在边界已完成换段；默认模式保留阶段末端仍归旧阶段的行为。
+    const inside = rightContinuous ? actualPregnantDays < nextBaseDays && !atBoundary(nextBaseDays)
+      : actualPregnantDays >= baseDays && actualPregnantDays <= nextBaseDays;
+    if (inside) {
       stage = stageName;
       currentStageDays = actualPregnantDays - baseDays;
       break;
@@ -577,7 +582,8 @@ export function syncCharacterStageFromProfile(characterState) {
       return next;
     }
 
-    const derived = derivePregnancyStageState(pregnant.effectivePregnantDays, 1, pregnant);
+    const derived = derivePregnancyStageState(pregnant.effectivePregnantDays, 1,
+      { ...pregnant, rightContinuous: base.spermPool?.model === 'pooled-v1' });
     next.profile.base = {
       ...base,
       stage: derived.stage,

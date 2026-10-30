@@ -1,5 +1,5 @@
-// Reproduction against the unchanged legacy branch plus the opt-in proposed model.
-// Run: node tests/repro_sperm_pool.mjs
+// 对照第一PR修复后的默认算法与显式启用的实验池；不是未修复上游的旧算法。
+// 执行：node tests/repro_sperm_pool.mjs；原版对照另见 repro_sperm_consistency.mjs。
 import { calculateFertilizationPreview } from '../scripts/calculator.js';
 import { applyToolCall } from '../scripts/tools.js';
 import { enablePooledConception } from '../scripts/pooled_reproduction.js';
@@ -12,12 +12,12 @@ const cases = [
 console.table(cases.map(([input, amounts]) => {
   const options = { eggRace: '人类', elapsedDays: 1, uterusVolumeFactor: 1,
     spermSources: amounts.map((value) => ({ male: 'same-donor', race: '人类', value, quality: 1 })) };
-  return { input, legacy: percent(calculateFertilizationPreview(options).successChance),
+  return { input, defaultFixed: percent(calculateFertilizationPreview(options).successChance),
     pooled: percent(calculateFertilizationPreview({ ...options, model: 'pooled-v1' }).successChance) };
 }));
 console.log('These are single-egg, no-new-input mathematical projections, not browser/clinical results.');
 
-// Actual public-tool calls: the legacy branch is unchanged, not a hand-written approximation.
+// 直接执行公开工具；默认路径保留第一PR的修复，不以手写公式冒充原生结果。
 function runDrain(rows, attempts, pooled) {
   const chat = createEmptyChatState();
   const mother = createDefaultFemaleState('母方');
@@ -38,5 +38,5 @@ console.table([
   ['40/q4, effort80', high, [80]], ['40/q4, effort20x4', high, [20, 20, 20, 20]],
   ['mixed, effort20', mixed, [20]], ['mixed, effort10+10', mixed, [10, 10]],
 ].map(([input, rows, attempts]) => ({ input,
-  legacyRemaining: runDrain(rows, attempts, false), pooledRemaining: runDrain(rows, attempts, true) })));
+  defaultFixedRemaining: runDrain(rows, attempts, false), pooledRemaining: runDrain(rows, attempts, true) })));
 console.log('Drain rows use actual bsDrainSperm dispatch at one world minute; no clock advancement.');

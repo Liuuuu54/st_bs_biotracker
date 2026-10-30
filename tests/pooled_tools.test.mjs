@@ -31,7 +31,7 @@ const baseOf = (chat) => chat.characters['母方'].profile.base;
 const fetusOf = (chat) => chat.characters['母方'].profile.pregnant.fetuses[0];
 const residual = (chat) => baseOf(chat).spermContacts.reduce((sum, source) => sum + source.value, 0);
 
-// This suite exercises the actual public tool dispatcher, not only the pool helper.
+// 此组直接执行公开工具分派器，不仅测试纯池函数。
 test('pooled public tools: 24h / 24×1h / 1440×1min yield identical minute, father and frozen fetus', () => {
   const initial = fixture(); deposit(initial, 20);
   const outcomes = [];
@@ -170,15 +170,16 @@ test('pooled integration preserves upstream 1.2.3 alternate-form condom and uter
   assert.equal(baseOf(alternate).spermContacts[0].bodySize, null, 'donor snapshot must not freeze the alternate form');
   const beforeDrain = residual(alternate);
   const result = call(alternate, 'bsDrainSperm', { female: '母方', amount: 10 });
-  near(result.drainResult.removed, 10); // Absolute effort does not scale with temporary capacity.
+  near(result.drainResult.removed, 10); // 绝对尝试量不随临时容量缩放。
   near(residual(alternate), beforeDrain - 10);
   assert.equal(call(alternate, 'bsPassedTime', { minute: 1 }).applied, true);
   assert.ok(residual(alternate) <= residual(normal) + 1e-6, 'on the next minute normal-form capacity applies again');
 });
-test('experimental time limit rejects atomically; legacy mode does not acquire pooled state', () => {
-  const pooled = fixture(), before = JSON.stringify(pooled);
-  assert.equal(call(pooled, 'bsPassedTime', { day: 32 }).applied, false);
-  assert.equal(JSON.stringify(pooled), before);
+test('实验模式不限制长跳，默认模式仍不自动获得混合池状态', () => {
+  const pooled = fixture({ eggs: 0 });
+  assert.equal(call(pooled, 'bsPassedTime', { day: 32 }).applied, true);
+  assert.equal(pooled.minutesPassed, 32 * 1440);
+  assert.equal(baseOf(pooled).spermPool.lastMinute, pooled.minutesPassed);
   const legacy = fixture({ eggs: 0, pooled: false }); deposit(legacy, 20);
   const result = call(legacy, 'bsPassedTime', { hour: 1 });
   assert.equal(result.applied, true); assert.equal('conceptionEvents' in result, false);

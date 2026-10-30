@@ -22,7 +22,7 @@ function conserved(result) {
   assert.ok(result.sources.every((row) => Number.isFinite(row.value) && row.value >= 0));
 }
 
-// Independent RK4 directly in the effort domain: no production implicit root reused.
+// 独立尝试量域 RK4，不复用生产代码的隐式求根。
 function reference(rows, effort, steps = 4000) {
   let values = rows.map((row) => row.value);
   const h = effort / steps;
@@ -155,7 +155,7 @@ function fixture({ rows = [source('A', 40, 4)], eggs = 1, stage = '卵泡期' } 
   chat.characters['母方'] = mother;
   enablePooledConception(mother.profile.base, 0, { seed: 'active-drain-native' });
   for (const egg of mother.profile.base.spermPool.eggs) egg.threshold = egg.remainingHazard = 1e-6;
-  // Normalize upstream lazy metadata before comparing effects of the drain itself.
+  // 先完成上游的延迟元数据补全，再比较排出本身的效果。
   call(chat, 'bsPassedTime', { minute: 0 });
   return chat;
 }
@@ -189,7 +189,7 @@ test('actual tool: mixed-quality attempts split identically and each receipt con
     const r = result.drainResult; near(r.before, r.removed + r.remaining);
     near(r.removed, r.sources.reduce((n, x) => n + x.removed, 0));
   }
-  // Legacy aggregate IDs are reassigned during forward migration; donor identity remains stable.
+  // 旧汇总来源迁移时会分配编号，但父方身份保持稳定。
   assert.equal(base(one).spermContacts.find((x) => x.male === 'high').blocked, true);
 });
 test('actual tool: active removal does not change clock, egg budgets, identity or source snapshots', () => {
@@ -210,7 +210,10 @@ test('actual tool: drain before clock prevents later risk; drain after clock kee
   const fetuses = clone(after.characters['母方'].profile.pregnant.fetuses), budget = clone(base(after).spermPool);
   drain(after, 80);
   assert.deepEqual(after.characters['母方'].profile.pregnant.fetuses, fetuses);
-  assert.deepEqual(base(after).spermPool, budget); assert.equal(after.minutesPassed, 1);
+  // 排出是新物理事件，应失效积分缓存，但不得重置卵预算、种子或身份时钟。
+  const { segment: oldSegment, ...budgetState } = budget;
+  assert.ok(oldSegment);
+  assert.deepEqual(base(after).spermPool, budgetState); assert.equal(after.minutesPassed, 1);
   assert.equal(base(after).spermContacts[0].value, 0); assert.equal(base(after).spermContacts[0].id, fetuses[0].contactIds[0]);
 });
 test('actual tool: empty, no eggs, pregnant and postpartum pools all allow instantaneous removal', () => {
@@ -231,11 +234,12 @@ test('actual tool: body size does not silently multiply the absolute effort', ()
   const a = fixture(), b = fixture(); base(b).bodySize = 7;
   near(drain(a, 20).drainResult.remaining, drain(b, 20).drainResult.remaining);
 });
-test('legacy remains legacy: q4 amount80 still follows the original result until explicit opt-in', () => {
+test('默认模式保留第一PR的连续排出修复，但不暗中启用混合池', () => {
   const chat = fixture(); delete base(chat).spermPool;
   const result = drain(chat, 80);
   assert.equal(result.applied, true); assert.equal('drainResult' in result, false);
-  assert.equal(base(chat).sperms[0].value, 11);
+  assert.deepEqual(base(chat).sperms, []);
+  assert.equal(base(chat).spermPool, undefined);
 });
 test('actual tool rejects invalid amounts with no physical or budget mutation', () => {
   const chat = fixture();

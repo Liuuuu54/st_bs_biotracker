@@ -10,7 +10,7 @@
 
 | 工具 | 參數 | 成功效果與拒絕條件 |
 | --- | --- | --- |
-| [`bsPassedTime`](../../scripts/tools.js#L6849) | `minute`、`hour`、`day`、`week`、`month`、`year`，至少一個正數。 | 單位相加，月=30 日、年=365 日，推進**整個聊天所有角色**，並增加 `minutesPassed`。沒有正時間則拒絕；胎內回歸且承載者仍在的角色凍結。時間零頭和各階段規則見[時間機制](cycles-and-conception.md#時間怎樣推進)。 |
+| [`bsPassedTime`](../../scripts/tools.js#L6849) | `minute`、`hour`、`day`、`week`、`month`、`year`，至少一個正數。 | 單位相加，月=30 日、年=365 日，推進**整個聊天所有角色**，並增加 `minutesPassed`。沒有正時間則拒絕；胎內回歸且承載者仍在的角色凍結。預設 legacy 保留批次行為；顯式啟用 `pooled-v1` 的角色以連續生殖事件積分，`atMinute` 是真實時刻，`minute` 僅向上取整顯示，不要求整數分鐘或單次 31 天上限。其他系統仍批次處理，不承諾完整狀態拆時全等。時間零頭和各階段規則見[時間機制](cycles-and-conception.md#時間怎樣推進)及[實驗模型](cycles-and-conception.md#實驗性事件積分混合池)。 |
 | [`bsUpdateCharacterStatus`](../../scripts/tools.js#L6885) | 必填 `female`、`options`；可傳 `vitality`、`psyStress`、`libido`、`uterinePressure`，以及布林 `orgasm`。 | 四項都是**增減量**，受各自上限限制。`orgasm=true` 表示劇情中高潮：系統把性欲推到上限、走高潮排卵結算，結束後性欲歸零；冷卻中或不排卵的物種也歸零，不會停在上限。活力會連動代謝，性欲連動乳意，達上限時可能高潮排卵（額外排卵傾向的每一顆按當前活力占比排出；每週期黃體期前、黃體期各一次），宮壓可磨損羊膜並更新風險。空 `options` 在實作中仍會回報套用，但沒有數值變化。 |
 | [`bsSetCharacterPresence`](../../scripts/tools.js#L7143) | 必填 `female`、明示布林 `isPresent`。 | 寫入 `base.isHere`；離場後追蹤 payload 預設不送完整狀態，部分在場代謝略過。設回在場也會解除 `wombReturnHost` 凍結；省略布林值會拒絕。`female` 查不到卵方但有同名[精方檔案](registration.md#精方檔案)時改切精方的在場。 |
 | [`bsSetMenstrualPhases`](../../scripts/tools.js#L7573) | 必填 `female`、`stage`。 | 只接受卵泡、排卵、黃體、月經、產後恢復、假孕；階段天數歸零並調整排卵冷卻：切到排卵期重新允許高潮排卵，切到黃體期也吃到黃體期那一次刷新。已有胚胎、受精進度、真妊娠、回歸期、產兆或產程時拒絕，不能用它直接設成懷孕。 |
@@ -22,7 +22,7 @@
 | 工具 | 參數 | 成功效果與拒絕條件 |
 | --- | --- | --- |
 | [`bsAddSperm`](../../scripts/tools.js) | 必填 `female/male/race/action/amount`；`action=insert/deposit/withdraw`，可傳 bool `hasCondom`；insert 另可傳 `maleBodySize`（精方個體體型）與 bool `femaleAltForm`、`maleAltForm`、`sizeBridge`。 | insert／withdraw 的量為 0；deposit 必須來源相同且已插入，量須正數。insert 預設未戴套，deposit 省略時承接、明示時更新。量超容量必失敗，否則抽可靠度；成功全擋，失敗全進。每次有效 deposit 有來源時間，重試不重抽，不清旧殘留。受精留待時間推進。insert 結算體型契合，只影響敘述（見[物種體型](settings-and-encyclopedia.md#物種體型)）。`male` 是已註冊卵方（扶她）或[精方檔案](registration.md#精方檔案)時，種族、血脈、衍生類型與體型以檔案為準，傳入的 `race` 不同時照檔案記錄並提示；檔案沒填體型才用 `maleBodySize`；精子品質也由檔案帶入並記在精液紀錄上。insert 與內射同時更新卵方的[性愛紀錄與契合度](settings-and-encyclopedia.md#性愛紀錄與契合度)。 |
-| [`bsDrainSperm`](../../scripts/tools.js#L7538) | 必填 `female`、正數 `amount`。 | 按各精源目前比例減少殘留；量足夠時全清。精子品質高的精源實際排掉 ×品質^-0.25，可能洗不乾淨，回覆寫明體內還留多少、哪些精源難洗。清空後下次時間推進便沒有該批精源的受孕機會。零、負數或非有限值拒絕。 |
+| [`bsDrainSperm`](../../scripts/tools.js#L7538) | 必填 `female`、正數 `amount`。 | `amount` 是絕對嘗試量，不暗乘體型、不推進時間。沿當下比例連續減少各筆殘留，品質阻力為 ×品質^-0.25；不逐筆取整、不封頂嘗試量，同一時刻無中間變化時，拆多次與合計量一次等效（含混合品質）。全清所需量為 `Σ殘量×品質^0.25`，回覆寫明剩多少、哪些來源難洗。清空只消除未來該批精源的受孕機會，不撤銷既有胚胎。詳見[排出機制](cycles-and-conception.md#主動排出與操作拆分)。零、負數或非有限值拒絕。 |
 | [`bsImplantEmbryo`](../../scripts/tools.js#L5687) | 必填 `female`、`provider`；可傳 `fathers`、`count`（1–50）、`race`、`fatherRace`、`hostFetusIndex`。 | 建立外源、**尚未著床**的胚胎；`provider` 必須異於承載者，給了 `hostFetusIndex` 時可以是承載者自己。`hostFetusIndex`（從 0 起、按可見順序）把胚胎植入腹中那一胎體內，成為它的孕中孕，限制同孕期追加，宿主須是胎生、胎轉卵生或不定型。`count` 是有效胎兒卡數，不是伴生卵枚數。孕期追加只允許孕早期有已著床胎且異期窗口未關閉；回歸期拒絕。供體歸屬與種族細節見[特殊流程](special-cases.md#外源胚胎植入)。 |
 | [`bsAbortion`](../../scripts/tools.js) | 必填 `female`；可傳 `purpose=emergency/termination/miscarriage`（省略為 termination）；非 emergency 可傳 `fetusIndex/force`。 | emergency 只处理服用前、來源與時間已知的著床前接觸，逐次成功率為 `E × max(0, 1−d/T)`，T 沿用角色著床時長（標準人類 6 天）；不能 force、選胎或繞过免疫，保留殘留、不计損失、不保護未來。確定結果分別累計人工終止／自然流產，著床前不计损失；減胎未結束整次妊娠時不计整次損失。 |
 | [`bsExtendPregnancy`](../../scripts/tools.js#L4626) | 必填 `female`、`action=extend/induce`、`reason`。 | `extend`：在逾期，或由逾期／延產期進入的產兆前驅延產，第一次延到 52 週、之後每次 28 天，第二次起子宮乏力 +1；已破水、已進產程時拒絕。`induce`：只在延產期，立即進入產兆前驅。 |

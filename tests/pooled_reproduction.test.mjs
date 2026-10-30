@@ -20,7 +20,7 @@ function semanticOutcome(events) {
   return outcome(events).map(({ winnerSpermId, ...event }) => event);
 }
 
-// These tests import the actual pure kernel, never a mock or substitute implementation.
+// 所有测试直接使用真实纯内核，不替换或模拟积分实现。
 test('legacy opt-in boundary: helpers leave the old model untouched', () => {
   const base = { eggs: 2, sperms: [{ male: 'A', value: 20 }] };
   const before = copy(base);
@@ -230,7 +230,7 @@ test('winnerPhysicalAmount is the event-time male/snapshot group, without changi
     close(event.poolPhysicalAmount - event.activePhysicalAmount, eventSources.find((source) => source.id === 6).value);
     if (selectedId === 1) {
       assert.equal(group.length, 2);
-      // The second same-snapshot contact has zero pairing risk but still physical volume.
+      // 第二条同快照接触的配对率为零，但仍贡献物理体积。
       assert.ok(event.winnerPhysicalAmount > event.winner.value);
     } else assert.equal(group.length, 1);
   }
@@ -284,7 +284,7 @@ test('zero-volume canonical contacts retain winner linkage and frozen snapshots 
   Object.assign(base.spermPool.eggs[0], { threshold, remainingHazard: threshold });
   const [event] = advancePooledConception(base, 1);
   assert.equal(event.winnerSpermId, 70);
-  // Active risk advancement has already exhausted this tiny source in the same minute.
+  // 风险推进在该分钟内已完全耗尽这条微量精源。
   assert.equal(base.spermContacts.length, 1);
   assert.equal(base.spermContacts[0].value, 0);
   assert.deepEqual(base.sperms, []);
@@ -379,13 +379,18 @@ test('exact minute threshold crossing is settled before events at that boundary'
   assert.equal(base.eggs, 0);
 });
 
-test('backwards/fractional time throws without silently recalculating or redrawing', () => {
+test('倒退或无效时间保持状态不变，小数分钟按连续时间推进', () => {
   const base = make([{ id: 1, male: 'A', value: 20, quality: 1 }], { minute: 10 });
   const before = copy(base);
   assert.throws(() => advancePooledConception(base, 9), /backwards/);
-  assert.throws(() => advancePooledConception(base, 10.5), /integer minute/);
+  for (const invalid of [-1, NaN, Infinity, '10.5']) {
+    assert.throws(() => advancePooledConception(base, invalid), /finite nonnegative minute/);
+  }
   assert.throws(() => depositPooledSource(base, { value: 1 }, 30, 11), /event minute/);
   assert.deepEqual(base, before);
   assert.deepEqual(advancePooledConception(base, 10), []);
   assert.deepEqual(base, before);
+  assert.deepEqual(advancePooledConception(base, 10.5), []);
+  assert.equal(base.spermPool.lastMinute, 10.5);
+  close(total(base), 20 - 10 * 0.5 / 1440);
 });

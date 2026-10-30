@@ -33,9 +33,9 @@ const checkRiskMass = (result, tolerance = 2e-11) => {
   }
 };
 
-// Independent time-domain RK4 reference: integrate physical Vi, Hi and Wi directly,
-// without the production latent root, transformed clock or adaptive RK tableau.
-// Fixtures stop well before exhaustion, where this fixed-grid reference is smooth.
+// 独立时间域 RK4：直接积分物理量 Vi、风险 Hi 与胜出质量 Wi，
+// 不复用生产代码的隐变量求根、时钟变换或自适应积分系数。
+// 样例终止于耗尽之前，固定网格参考解在这段内保持光滑。
 function reference(sources, duration, volumeFactor, sourceRates, steps = 8192) {
   const n = sources.length;
   let state = [...sources.map((source) => source.value), ...Array(2 * n).fill(0)];
@@ -122,7 +122,7 @@ test('instant rates use active effective shares and pairing coefficients, with n
 test('blocked means inactivated entered volume: physical denominator, capacity and clearance retained', () => {
   const rows = [row('active', 10), row('inactive', 10, 1, { blocked: true })];
   const after = advanceSpermPool(rows, 1);
-  near(after[0].value, 5); // Not zero: blocked volume belongs in sum V.
+  near(after[0].value, 5); // 不为零：失活体积仍属于总物理量。
   near(after[1].value, 5);
   const result = integrateSpermPool(rows, 1);
   near(result.sources[1].hazard, 0);
@@ -133,7 +133,7 @@ test('blocked means inactivated entered volume: physical denominator, capacity a
   near(overflow.spilled, 10);
   near(total(overflow.sources), 20);
   assert.ok(overflow.sources[1].value > 0);
-  // Never-entered input is absent, not a hidden extra blocked source.
+  // 未入体材料应缺席，不是额外隐藏的失活来源。
   assert.equal(integrateSpermPool([], 1).sources.length, 0);
 });
 
@@ -179,7 +179,7 @@ test('mixed-quality winner weights are causal Wi/P, not normalized cumulative Hi
   const result = integrateSpermPool(rows, 4, options);
   checkRiskMass(result);
   assert.ok(result.sources[0].winnerWeight > result.sources[0].hazard / result.hazard + 0.03);
-  // Direct independent integration before depletion also checks survival weighting.
+  // 在耗尽前直接独立积分，同时验证存活概率加权。
   const partial = integrateSpermPool(rows, 3, options);
   const expected = reference(rows, 3, 1, options.sourceRates, 16384);
   near(partial.sources[0].winChance, expected.wins[0], 5e-10);
@@ -319,7 +319,7 @@ test('uniform and mixed quantities scale with U; dose cap stays 2', () => {
 
 test('exact dose-cap crossing and mixed exhaustion endpoints remain integrable', () => {
   const capped = integrateSpermPool([row('A', 90)], 3);
-  // X falls 90 -> 60: one day capped, then integral sqrt(X/20) for two days.
+  // 有效量从90降至60：先有一天触顶，再对后两天的平方根剂量积分。
   const expected = 0.6 + 0.3 / 10 * (2 / (3 * Math.sqrt(20))) * (80 ** 1.5 - 60 ** 1.5);
   near(capped.hazard, expected);
   const rows = [row('A', 8, 0.25), row('B', 3, 4), row('off', 2, 1, { blocked: true })];
@@ -383,7 +383,7 @@ test('all four APIs preserve metadata and inputs, including frozen objects and s
 test('mixed q with equal pairing has analytic total H across saturation and exhaustion', () => {
   const primitive = (x) => 2 * Math.min(80, x) ** 1.5 / (3 * Math.sqrt(20)) + 2 * Math.max(0, x - 80);
   for (const blocked of [false, true]) {
-    // The closed form applies only when all physical material is active.
+    // 此闭式只适用于全部物理材料均活性的情况。
     const rows = [row('low', 60, 0.25), row('high', 70, 4)];
     const r = blocked ? 0 : 0.75;
     for (const duration of [0.1, 9, 12, 17, 100]) {
@@ -455,7 +455,7 @@ test('mixed micro pools retain relative accuracy and finite huge sources retain 
   const expected = integrateSpermPool(rows, 100, { sourceRates: [0.4, 1.2] });
   for (const scale of [1e-6, 1e-12, 1e-20]) {
     const tiny = integrateSpermPool(rows.map((source) => ({ ...source, value: source.value * scale })), 1, { sourceRates: [0.4, 1.2] });
-    // Below the cap, rate scales sqrt(volume), lifetime scales volume.
+    // 未触顶时，速率随体积平方根缩放，存续时间随体积缩放。
     near(tiny.hazard / (expected.hazard * scale ** 1.5), 1, 2e-9);
     checkRiskMass(tiny);
   }

@@ -950,7 +950,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
       blocked: source?.blocked,
     }));
   }
-  // 混合池只供机械结算：种子、卵 hazard 预算与内部索引均不进入模型视角。
+  // 整个混合池只供机械结算：包括种子、卵风险预算、索引，以及 segment 中的锚点和冻结来源，均不进入模型视角。
   delete profile.base.spermPool;
   // 子宫乏力只在反复延产后才有；没有就不送
   if (!(Number(base.uterineAtony) > 0)) delete profile.base.uterineAtony;
