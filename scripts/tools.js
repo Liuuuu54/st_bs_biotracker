@@ -1,5 +1,7 @@
 import { recordExperience, normalizePaternityClaims, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
 import { getProfileSemenCapacity } from './semen_capacity.js';
+import { getSpermSources, getSpermSnapshotAmount, setSpermSources } from './sperm_sources.js';
+import { drainSpermSources } from './sperm_drain.js';
 import { getStageProgress } from './stage_progress.js';
 import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
@@ -87,7 +89,7 @@ import {
   DERIVED_INHERITANCE_BASELINE_DAYS,
   DERIVED_INHERITANCE_THRESHOLD,
   getDerivedInheritanceSeed,
-  SPERM_DECAY_PER_DAY,
+  calculateSpermSourceExposures,
 } from './calculator.js';
 export {
   calculateDerivedInheritanceProgress,
@@ -404,7 +406,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsDrainSperm',
-    description: '让角色主动排出体内部分或全部精液残留，按当前各来源比例一并减少。用于角色主动清洗、灌洗或使用道具排出。注意：受精是在每次时间推进时用当下仍存在的精液判定，清空后这次性交不再有受孕机会；清洗/沐浴若剧情支持体内冲洗可选用，不要求避孕意图，不自动联动臭意解除。排出不撤销已受精结果。精子品质高的精源浓稠难洗，实际排得比 amount 少，回覆会写体内还留多少。',
+    description: '让角色主动排出体内部分或全部精液残留，按当前各来源比例一并减少。用于角色主动清洗、灌洗或使用道具排出。注意：受精是在每次时间推进时用当下仍存在的精液判定，清空后这次性交不再有受孕机会；清洗/沐浴若剧情支持体内冲洗可选用，不要求避孕意图，不自动联动臭意解除。排出不撤销已受精结果。amount 是绝对尝试量，不暗乘体型；品质 1 时等于实际排出量，品质高的精源浓稠难洗、品质低的更易排出，回覆会写体内还留多少。同一时刻无新沉积时，拆成多次调用与合计 amount 一次调用等效；不推进时间。',
     input_schema: {
       type: 'object',
       properties: {
@@ -2420,16 +2422,6 @@ function advanceLaborFetalActivity(profile, tick, female) {
   appendFetalActivityNotice(profile, female, events);
 }
 
-function rescaleSpermContacts(base) {
-  for (const male of new Set((base.spermContacts || []).map((x) => x.male))) {
-    const contacts = base.spermContacts.filter((x) => x.male === male);
-    const previous = contacts.reduce((sum, x) => sum + x.value, 0);
-    const residue = (base.sperms || []).find((x) => x.male === male)?.value || 0;
-    const factor = previous > 0 ? Math.min(1, residue / previous) : 0;
-    for (const contact of contacts) contact.value *= factor;
-  }
-}
-
 /** 角色当下的精液容量，与子宫图同一套算法（见 semen_capacity.js） */
 export function getCharacterSemenCapacity(profile) {
   const progress = getStageProgress(profile);
@@ -2451,10 +2443,7 @@ function spillSpermOverflow(profile, { formBodySize = null } = {}) {
   const capacity = getCharacterSemenCapacity(formBodySize === null ? profile : { ...profile, base: { ...base, bodySize: formBodySize } });
   if (!(total > capacity)) return 0;
   const ratio = capacity / total;
-  base.sperms = sperms
-    .map((item) => ({ ...item, value: clampNumber(item?.value, 0, 999999, 0) * ratio }))
-    .filter((item) => item.value > 0);
-  rescaleSpermContacts(base);
+  setSpermSources(base, getSpermSources(base).map((source) => ({ ...source, value: source.value * ratio })));
   return total - capacity;
 }
 
@@ -2464,33 +2453,15 @@ function stageAllowsSpermRetention(stage) {
 
 function processSpermLifecycle(profile, stage, tick) {
   const base = profile.base || {};
-  const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
-  if (sperms.length === 0) {
-    base.sperms = [];
-    rescaleSpermContacts(base);
+  const sources = getSpermSources(base);
+  if ((stage === '月经期' && tick.passedHours > 0) || !stageAllowsSpermRetention(stage)) {
+    setSpermSources(base, sources.map((source) => ({ ...source, value: 0 })));
     return;
   }
 
-  if (stage === '月经期' && tick.passedHours > 0) {
-    base.sperms = [];
-    rescaleSpermContacts(base);
-    return;
-  }
-
-  if (!stageAllowsSpermRetention(stage)) {
-    base.sperms = [];
-    rescaleSpermContacts(base);
-    return;
-  }
-
-  base.sperms = sperms
-    .map((item) => ({
-      ...item,
-      // 每天排掉的量随子宫容积：同体型的一次射精都约 1-3 天消失；精子品质高的活得久（×q^-0.5）
-      value: Math.max(0, clampNumber(item?.value, 0, 999999, 0) - (tick.deltaDays * SPERM_DECAY_PER_DAY * getUterusVolumeFactor(base) * getSpermQualityFactors(item?.quality).decay)),
-    }))
-    .filter((item) => item.value > 0);
-  rescaleSpermContacts(base);
+  // 与受精预览用同一段线性暴露，按各笔接触的品质快照回写，不让后来沉积改写旧品质。
+  const exposures = calculateSpermSourceExposures(sources, tick.deltaDays, getUterusVolumeFactor(base));
+  setSpermSources(base, sources.map((source, index) => ({ ...source, value: exposures[index].endingValue })));
   // 子宫可能因宫压、阶段改变而变小，衰减之后再看一次有没有装不下的
   spillSpermOverflow(profile);
 }
@@ -2502,14 +2473,7 @@ function processSpermLifecycle(profile, stage, tick) {
 function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceFactor = 1, superfetation = false, parentTalentsOf = null }) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
-  const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
-  const contacts = base.spermContacts || [];
-  const availableSperms = sperms.flatMap((item) => {
-    const sources = contacts.filter((x) => x.male === item.male);
-    const total = sources.reduce((sum, x) => sum + x.value, 0);
-    const unknown = Math.max(0, Number(item.value) - total);
-    return [...sources.filter((x) => !x.blocked && x.value > 0), ...(unknown > 0 ? [{ ...item, value: unknown }] : [])];
-  }).filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
+  const availableSperms = getSpermSources(base);
   const eggs = clampNumber(base.eggs, 0, 99, 0);
   if (eggs <= 0 || availableSperms.length === 0) return eggs;
 
@@ -2543,7 +2507,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
     }
     if (winner) {
       pregnant.fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-      const fetus = createSimpleFetus(profile, winner, stage, { fatherTalents: parentTalentsOf ? parentTalentsOf(winner.male) : [] });
+      const fetus = createSimpleFetus(profile, { ...winner, value: getSpermSnapshotAmount(availableSperms, winner) }, stage, { fatherTalents: parentTalentsOf ? parentTalentsOf(winner.male) : [] });
       if (winner.id !== undefined) { fetus.contactIds = [winner.id]; fetus.contactMinutes = winner.minutesPassed; }
       // 孕中孕：异期受精成立之后，再看三个额外条件同时成不成立
       const conceivedAt = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
@@ -7656,28 +7620,20 @@ function applyAddSperm(chatState, args) {
   const condomOverflow = hasCondom && amount > condomCapacity; const condomFailed = condomOverflow || (hasCondom && Math.random() >= config.condomReliability); const condomFailReason = condomFailed ? (condomOverflow ? 'overflow' : 'tear') : null;
   const enteredAmount = hasCondom && !condomFailed ? 0 : amount;
   base.penetrationCondom = hasCondom;
-  const sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
+  // 先保留旧存档尚无接触时间的余量快照，避免新沉积覆盖它的品质或遗传资料。
+  const sources = getSpermSources(base);
   // 父方衍生类型有档案就由档案带入，不再依赖模型每次在 race 写前缀
   const maleDerivedType = fatherBase ? (fatherBase.derivedType || null) : (parsedRace.derivedType || null);
   // 精子品质在射精当下记快照，比照体型；未注册的一次性对象为 1。之后改档案不影响已射进去的
   const quality = sireInfo ? sireInfo.spermQuality : 1;
-  const existing = sperms.find((item) => String(item?.male || '') === male);
   if (enteredAmount > 0) {
-    if (existing) {
-      existing.value = Math.max(0, clampNumber(existing.value, 0, 999999, 0) + enteredAmount);
-      existing.race = race;
-      existing.derivedType = maleDerivedType;
-      existing.quality = quality;
-      Object.assign(existing, ancestry);
-      if (maleBodySize !== null) existing.bodySize = maleBodySize;
-    } else sperms.push({ male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality, value: enteredAmount });
     base.nextSpermContactId = (Number(base.nextSpermContactId) || 0) + 1;
-    base.spermContacts = [...(base.spermContacts || []), {
+    sources.push({
       id: base.nextSpermContactId, male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality,
       minutesPassed: Number(chatState.minutesPassed) || 0, value: enteredAmount, blocked: false,
-    }];
+    });
+    setSpermSources(base, sources);
   }
-  base.sperms = sperms.filter((item) => clampNumber(item?.value, 0, 999999, 0) > 0);
   next.profile.lastCondomResult = { hasCondom, condomFailed, condomFailReason, enteredAmount, minutesPassed: Number(chatState.minutesPassed) || 0 };
   base.penetrationState = 'spent';
   base.penetrationSource = male;
@@ -7713,26 +7669,15 @@ function applyDrainSperm(chatState, args) {
 
   const next = cloneValue(character);
   const base = next.profile?.base || {};
-  let sperms = Array.isArray(base.sperms) ? base.sperms.map((item) => ({ ...item })) : [];
-  const total = sperms.reduce((sum, item) => sum + clampNumber(item?.value, 0, 999999, 0), 0);
-
-  // 各来源按比例排；精子品质高的黏稠难洗，实际排掉 ×q^-0.25（品质 4 约七成），不超过剩下的量
-  const factor = total > 0 ? Math.min(1, amount / total) : 0;
-  sperms = sperms
-    .map((item) => {
-      const value = clampNumber(item?.value, 0, 999999, 0);
-      const removed = Math.min(value, value * factor * getSpermQualityFactors(item?.quality).drain);
-      return { ...item, value: factor >= 1 && removed >= value ? 0 : Math.max(Math.floor(value - removed), 0) };
-    })
-    .filter((item) => item.value > 0);
-
-  base.sperms = sperms;
-  rescaleSpermContacts(base);
+  // amount 是绝对尝试量；沿当前比例连续分配，保留品质阻力，不逐笔取整或封顶尝试量。
+  const drained = drainSpermSources(getSpermSources(base), amount);
+  setSpermSources(base, drained.sources);
+  const sperms = base.sperms;
   next.profile.base = base;
   chatState.characters[female] = next;
   const remaining = sperms.reduce((sum, item) => sum + item.value, 0);
   if (remaining <= 0) return { applied: true, message: `bsDrainSperm cleared all sperm for ${female}.` };
-  const stubborn = sperms.filter((item) => getSpermQualityFactors(item?.quality).drain < 1).map((item) => item.male);
+  const stubborn = [...new Set(drained.sources.filter((item) => item.value > 0 && getSpermQualityFactors(item.quality).drain < 1).map((item) => item.male))];
   return {
     applied: true,
     message: `bsDrainSperm applied to ${female}: 体内还留着 ${Math.round(remaining)}${stubborn.length > 0 ? `（${stubborn.join('、')} 的精液浓稠难洗，比预期排得少）` : ''}.`,
