@@ -77,6 +77,7 @@ import { createRacePaletteSelection, appendRacePaletteTag, removeRacePaletteTag,
   setRacePalettePercent, palettePercentText, buildRacePaletteValue } from './scripts/race_palette.js';
 import { createDocViewer, parseDocHref } from './scripts/doc_viewer.js';
 import { calculateDerivedInheritancePreview, calculateFertilizationPreview, DERIVED_INHERITANCE_THRESHOLD } from './scripts/calculator.js';
+import { getSpermSources } from './scripts/sperm_sources.js';
 import {
   LABOR_STAGES,
   MENSTRUAL_STAGES,
@@ -4295,8 +4296,9 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       impregnationDifficulty: bio.impregnationDifficulty,
       elapsedDays: 1,
       chanceFactor: 1,
-      spermSources: base.sperms,
+      spermSources: getSpermSources(base),
       uterusVolumeFactor: getUterusVolumeFactor(base),
+      crossSpecies: Boolean(immune.crossSpecies),
     })
     : null;
   const rawFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
@@ -4732,7 +4734,7 @@ function renderSpermShareChart(sperms, conceptionChance = null, capacity = null)
   `).join('');
   const chance = Number(conceptionChance);
   const chanceHtml = conceptionChance !== null && conceptionChance !== undefined && Number.isFinite(chance)
-    ? `<div class="bs-bt-sperm-share__chance">24h受孕率 <strong>${Math.round(Math.max(0, Math.min(1, chance)) * 100)}%</strong></div>`
+    ? `<div class="bs-bt-sperm-share__chance" title="目前既有卵的单卵24小时静态预览；不预测未来排卵、阶段切换或其他行动">24h受孕率 <strong>${Math.round(Math.max(0, Math.min(1, chance)) * 100)}%</strong></div>`
     : '';
 
   return `

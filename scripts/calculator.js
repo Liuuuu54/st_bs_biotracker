@@ -1,4 +1,5 @@
 import { getSpermQualityFactors } from './sires.js';
+import { getSpermDecayKey } from './sperm_sources.js';
 import {
   deriveFetusRace,
   deriveFetusAncestry,
@@ -54,6 +55,38 @@ export function calculateSpermExposure(value, elapsedDays, decayPerDay = SPERM_D
 }
 
 /**
+ * 同父方、同品质只临时合计物理量来计算原有线性衰减，再按残量分回每笔接触。
+ * 不合并存档记录，不共享不同父方或不同品质的自然衰减；失活来源照常参与物理衰减。
+ */
+export function calculateSpermSourceExposures(spermSources = [], elapsedDays = 1, uterusVolumeFactor = 1) {
+  const volumeFactor = clampNumber(uterusVolumeFactor, 0.01, 100, 1);
+  const sources = (Array.isArray(spermSources) ? spermSources : []).map((source, sourceIndex) => ({
+    ...source,
+    sourceIndex,
+    race: String(source?.race || '人类'),
+    value: clampNumber(source?.value, 0, 999999, 0),
+    quality: getSpermQualityFactors(source?.quality).quality,
+  }));
+  const totals = new Map();
+  for (const source of sources) {
+    const key = getSpermDecayKey(source);
+    totals.set(key, (totals.get(key) || 0) + source.value);
+  }
+  return sources.map((source) => {
+    const total = totals.get(getSpermDecayKey(source));
+    const factors = getSpermQualityFactors(source.quality);
+    const decay = SPERM_DECAY_PER_DAY * volumeFactor * factors.decay;
+    const exposureDays = source.value > 0 ? Math.min(Math.max(0, Number(elapsedDays) || 0), total / decay) : 0;
+    const remainingRatio = total > 0 ? Math.max(0, 1 - decay * exposureDays / total) : 0;
+    const endingValue = source.value * remainingRatio;
+    return {
+      ...source, startingValue: source.value, endingValue, exposureDays,
+      exposureAmountDays: (source.value + endingValue) / 2 * exposureDays * factors.amount,
+    };
+  });
+}
+
+/**
  * 只计算一次自然受精判定的概率，不抽随机数、不写角色状态。
  * 多精源先计算整体受精率，再按各精源的 chance 权重分配胜出率，避免阵列顺序偏差。
  * uterusVolumeFactor 是女方子宫容积倍率（见 body_size.js）：每天排掉的量与剂量加成都按容积换算，
@@ -74,21 +107,8 @@ export function calculateFertilizationPreview({
   const femaleDifficulty = impregnationDifficulty === null || impregnationDifficulty === undefined || impregnationDifficulty === ''
     ? clampNumber(eggProfile.impregnationDifficulty, 0.1, 100, 1)
     : clampNumber(impregnationDifficulty, 0.1, 100, 1);
-  const validSources = (Array.isArray(spermSources) ? spermSources : [])
-    .map((source, index) => ({
-      ...source,
-      sourceIndex: index,
-      race: String(source?.race || '人类'),
-      value: clampNumber(source?.value, 0, 999999, 0),
-    }))
-    .filter((source) => source.value > 0)
-    .map((source) => {
-      // 精子品质：留存时间按每天流失 ×q^-0.5 算真实的暴露天数，再把有效量 ×q^0.5；量与时间各分一半效果
-      const factors = getSpermQualityFactors(source.quality);
-      const exposure = calculateSpermExposure(source.value, elapsedDays, SPERM_DECAY_PER_DAY * volumeFactor * factors.decay);
-      return { ...source, quality: factors.quality, ...exposure, exposureAmountDays: exposure.exposureAmountDays * factors.amount };
-    })
-    .filter((source) => source.exposureDays > 0);
+  const validSources = calculateSpermSourceExposures(spermSources, elapsedDays, volumeFactor)
+    .filter((source) => source.value > 0 && source.exposureDays > 0 && !source.blocked);
   const totalSperm = validSources.reduce((sum, source) => sum + source.value, 0);
   const effectiveExposureDays = validSources.reduce((max, source) => Math.max(max, source.exposureDays), 0);
   const totalExposureAmountDays = validSources.reduce((sum, source) => sum + source.exposureAmountDays, 0);
@@ -118,7 +138,7 @@ export function calculateFertilizationPreview({
       1,
       0.001,
     );
-    const chance = clampNumber(baseChance * share * Math.max(0, Number(chanceFactor) || 0), 0, 1, 0);
+    const chance = baseChance * share * clampNumber(chanceFactor, 0, 999999, 0);
     return {
       ...source,
       share,
@@ -130,14 +150,17 @@ export function calculateFertilizationPreview({
     };
   });
 
-  const failureChance = sources.reduce((remaining, source) => remaining * (1 - source.chance), 1);
-  const successChance = 1 - failureChance;
-  const totalChanceWeight = sources.reduce((sum, source) => sum + source.chance, 0);
-  const weightedSources = sources.map((source) => ({
-    ...source,
-    winnerWeight: totalChanceWeight > 0 ? source.chance / totalChanceWeight : 0,
-    winChance: totalChanceWeight > 0 ? successChance * source.chance / totalChanceWeight : 0,
-  }));
+  // 接触记录是同一次判定中的材料份额，不是彼此独立的额外抽签机会。
+  // 直接相加可保持单来源原校准；只在最后截断总率，避免放大系数使拆记录重新有利。
+  const rawChanceWeight = sources.reduce((sum, source) => sum + source.chance, 0);
+  const successChance = Math.min(1, rawChanceWeight);
+  const failureChance = 1 - successChance;
+  const totalChanceWeight = successChance;
+  const weightedSources = sources.map((source) => {
+    const winnerWeight = rawChanceWeight > 0 ? source.chance / rawChanceWeight : 0;
+    const winChance = successChance * winnerWeight;
+    return { ...source, chance: winChance, winnerWeight, winChance };
+  });
 
   return {
     eggRace,
