@@ -7799,8 +7799,9 @@ function applySetMenstrualPhases(chatState, args) {
     metabolism.milk = 0;
     profile.metabolism = metabolism;
   }
-  // 手动切阶段视同进入该阶段：排卵期从新的一轮开始，黄体期吃到那一次刷新
-  if (stage === '排卵期') {
+  // 手动切阶段视同进入该阶段：排卵期从新的一轮开始，黄体期吃到那一次刷新；
+  // 乏情期自然是从月经期（冷却重置）进来的，所以也给一次新的机会
+  if (stage === '排卵期' || stage === DORMANCY_STAGE) {
     profile.cooldown = {
       ...cooldown,
       orgasmOvulationUsed: false,

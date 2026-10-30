@@ -89,6 +89,11 @@ test('乏情期诱发排卵：子宫灌满且八成以上是异种精液，高�
     climax(same);
     assert.equal(base(same).eggs, 0, '同族灌满也不会触发');
 
+    const switched = setup('天使', '黄体期', 1);
+    switched.characters.A.profile.cooldown = { orgasmOvulationUsed: true };
+    applyToolCall(switched, { name: 'bsSetMenstrualPhases', arguments: { female: 'A', stage: '乏情期' } });
+    assert.equal(switched.characters.A.profile.cooldown.orgasmOvulationUsed, false, '手动切进乏情期与自然从月经期进来一样，冷却是新的');
+
     const partial = setup('天使', '乏情期', 10);
     deposit(partial, '人', '人类', 5);
     climax(partial);
