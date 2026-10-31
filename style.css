@@ -4650,6 +4650,45 @@
   background: color-mix(in srgb, var(--bsbt-lcd-text) 88%, transparent);
 }
 
+#bs-biotracker-settings .bs-bt-wardrobe-maternity-tag {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.78em;
+  font-weight: 700;
+  border: 1px solid color-mix(in srgb, var(--bsbt-lcd-text) 45%, transparent);
+  vertical-align: 1px;
+}
+
+#bs-biotracker-settings .bs-bt-wardrobe-maternity-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86em;
+}
+
+/* 爆表（压力 > 10）：刻线钉在满格处加粗，标题旁一枚斜纹徽章，与缺口同一套斜纹，任何主题都看得出 */
+#bs-biotracker-settings .bs-bt-pregfit__tick.is-burst {
+  width: 3px;
+  margin-left: -3px;
+}
+
+#bs-biotracker-settings .bs-bt-pregfit__burst {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.86em;
+  font-weight: 800;
+  color: var(--bsbt-lcd-text);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--bsbt-lcd-text) 30%, transparent) 0 2px,
+      transparent 2px 5px
+    ),
+    rgba(226, 52, 108, 0.45);
+}
+
 #bs-biotracker-settings .bs-bt-pregfit__legend {
   font-size: 0.68em;
   opacity: 0.55;

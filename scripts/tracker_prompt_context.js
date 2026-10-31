@@ -259,7 +259,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- accessoryItemIds 覆盖当前配件整表；addAccessoryItemIds/removeAccessoryItemIds 用于增量穿脱。全裸传 mainItemId:0 与 accessoryItemIds:[]。wearState 只是 12 字内的状态标签，不会改变穿了哪些衣物；换主件而未传 wearState 时自动回到整齐。',
   '- recent_messages 出现穿脱、更衣、借穿、被脱除、淋湿、衣衫不整或洗浴后着装时，调用 bsChangeOutfit 使 outfit 与叙事一致。outfit.currentWearText 与 currentItems 只供核对，不要写回，也不要在 descriptions 另建衣着状态。',
   '- 幕外角色也会附精简衣柜名录与当前穿着摘要；重新登场时若衣着改变，应与 bsSetCharacterPresence 同轮换装。衣柜名录始终精简；当前衣物才附稳定外观，内部换算分数只在孕期窗口发送并参与 pregFit。',
-  '- outfit.pregFit 只在真实妊娠、产兆前驱、产程或产后恢复中存在；其余阶段为 null。pregFit.pregWearPressure 为孕期衣着压力，产后恢复期间会随恢复进度从产后初期水平递减到 0；gap 为四维余裕：masking/support/capacity/convenience。gap 低于 0 表示该维度已被孕期变化压过。',
+  '- outfit.pregFit 只在真实妊娠、产兆前驱、产程或产后恢复中存在；其余阶段为 null。pregFit.pregWearPressure 为孕期衣着压力（0–15：足月单胎约 7、双胎约 8.5、三胎约 10 已是任何衣服的极限；超过 10 为爆表，表示孕肚已大到衣服完全包不住，可描写衣料绷开、露出下半个肚子），产后恢复期间会随恢复进度从产后初期水平递减到 0；gap 为四维余裕：masking/support/capacity/convenience。gap 低于 0 表示该维度已被孕期变化压过。一般衣着四维最高 10，压不住爆表；衣物带 maternity=true 是特制孕妇用品，穿着任一件时四维上限放宽到 15，叠得够高才压得住。',
   '- gap 表示衣物该维度扣除孕期压力后的余裕。一般 gap 约 3 以上表示仍有余裕；0 到 2 表示开始吃紧；-1 到 -3 表示明显冲突；-4 以下表示该维度严重失效。按具体维度叙述：masking 失效是轮廓、孕肚或胸腹变化难藏；support 失效是承托不足、下坠、晃动或重心负担外溢；capacity 失效是版型固定、尺寸死、腰腹胸臀被迫撑紧或扣合困难；convenience 失效是行动、穿脱、如厕或排解需求明显受阻。不要把 gap 数值直接写进叙事，除非是调试说明。',
   '',
   '[descriptions]',

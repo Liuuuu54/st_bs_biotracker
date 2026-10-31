@@ -394,7 +394,7 @@ function makePregnancyState(stage, days) {
   };
 }
 
-test('pregnancy wear pressure: single term 7, twins 8.5, only triplets at term reach the cap', () => {
+test('pregnancy wear pressure: single term 7, twins 8.5, triplets 10 fill the gauge', () => {
   const at = (days, weights, extra = {}) => calculatePregWearPressure({
     pregnant: { effectivePregnantDays: days, fetuses: weights.map((weight) => ({ weight, ...extra })) },
     ...extra.profile,
@@ -402,8 +402,11 @@ test('pregnancy wear pressure: single term 7, twins 8.5, only triplets at term r
   assert.equal(at(0, [1]), 0);
   assert.equal(Number(at(280, [1]).toFixed(2)), 7);
   assert.equal(Number(at(280, [1, 1]).toFixed(2)), 8.5);
-  assert.equal(at(280, [1, 1, 1]), 10);
+  assert.equal(Number(at(280, [1, 1, 1]).toFixed(2)), 10);
   assert.ok(at(294, [1.3, 1.3]) < 10, '重双胎逾期两周接近但不顶满');
+  // 超过 10 照样往上算（爆表）：足月五胎 13，再大也停在 15
+  assert.equal(Number(at(280, [1, 1, 1, 1, 1]).toFixed(2)), 13);
+  assert.equal(at(300, [3, 3, 3, 3, 3]), 15);
   assert.ok(at(140, [1]) < at(280, [1]));
 });
 
@@ -463,4 +466,51 @@ test('state normalization leaves user description fields untouched', () => {
   const plain = { name: 'B', profile: { base: {}, descriptions: { normalDescription: '外貌|红发;;' } } };
   normalizeCharacterPsychologyState(plain);
   assert.equal(plain.profile.descriptions.normalDescription, '外貌|红发;;');
+});
+
+test('burst wear pressure survives normalisation on load', () => {
+  const character = {
+    profile: {
+      wardrobe: { enabled: true, items: [{ id: 1, name: '孕妇裙', slot: 'main' }] },
+      outfit: { mainItemId: 1, accessoryItemIds: [], transientItems: [], wearState: '整齐', pregFit: { pregWearPressure: 13, gap: { masking: -9, support: -9, capacity: -9, convenience: -9 } } },
+    },
+  };
+  normalizeCharacterPsychologyState(JSON.parse(JSON.stringify(character)));
+  const restored = JSON.parse(JSON.stringify(character));
+  normalizeCharacterPsychologyState(restored);
+  assert.equal(restored.profile.outfit.pregFit.pregWearPressure, 13);
+});
+
+test('a maternity item lifts the outfit cap to 15 so stacked gear can hold a burst belly', () => {
+  const quintuplets = Array.from({ length: 5 }, (_, index) => ({ embryoId: index + 1, weight: 1 }));
+  const chatState = createEmptyChatState();
+  chatState.characters.A = {
+    name: 'A', initialized: true,
+    profile: {
+      base: { stage: '孕晚期', days: 0 },
+      pregnant: { effectivePregnantDays: 280, pregnantDays: 280, fetuses: quintuplets },
+      wardrobe: { enabled: true, items: [] },
+      outfit: { mainItemId: null, accessoryItemIds: [], transientItems: [], wearState: '整齐', pregFit: null },
+    },
+  };
+  const wear = (maternity) => {
+    applyToolCall(chatState, { name: 'bsChangeOutfit', arguments: {
+      female: 'A',
+      main: { name: maternity ? '魔法孕妇长裙' : '宽松长裙', note: '长裙', maternity, fitProfile: { masking: 'high', support: 'strong', capacity: 'loose', convenience: 'convenient' } },
+      accessories: [
+        { name: maternity ? '孕肚托' : '托腹带', note: '托腹', category: 'support', effects: ['support_up', 'capacity_up'], maternity },
+        { name: maternity ? '披肩' : '外套', note: '外搭', category: 'outerwear', effects: ['masking_up', 'convenience_up'] },
+        { name: maternity ? '围巾' : '头巾', note: '饰品', category: 'ornament', effects: ['masking_up', 'convenience_up'] },
+        { name: maternity ? '束腹带' : '腰封', note: '束腹', category: 'support', effects: ['support_up', 'capacity_up'] },
+        { name: maternity ? '胸托' : '胸衣', note: '承托', category: 'underwear', effects: ['support_up'] },
+      ],
+    } });
+    return chatState.characters.A.profile.outfit.pregFit;
+  };
+  const plain = wear(false);
+  assert.equal(Number(plain.pregWearPressure.toFixed(2)), 13);
+  assert.ok(Object.values(plain.gap).every((gap) => gap < 0), '一般衣物叠再多也卡在 10');
+  const special = wear(true);
+  assert.ok(Object.values(special.gap).every((gap) => gap >= 0), `特制品叠够就压得住：${JSON.stringify(special.gap)}`);
+  assert.equal(chatState.characters.A.profile.wardrobe.items.find((item) => item.name === '孕肚托').maternity, true);
 });

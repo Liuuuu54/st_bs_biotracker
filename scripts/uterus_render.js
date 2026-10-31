@@ -24,6 +24,9 @@ function hexToRgb(hex) {
   return Number.isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [0, 0, 0];
 }
 
+/** 乏情期的灰褐色调：宫壁、内膜与卵巢往这个色混，和卵泡期的亮粉拉开差距；各主题共用 */
+const DORMANT_TINT = '#7a6152';
+
 export function mixColor(from, to, ratio) {
   const t = Math.max(0, Math.min(1, ratio));
   const a = hexToRgb(from);
@@ -562,11 +565,13 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   function liningTone() {
     const { emptyStage, pressureLevel } = layout;
     if (!emptyStage) return pressureLevel >= 2 ? P.wallTense : P.wallLight;
-    return { 月经期: P.blood, 乏情期: P.wall, 卵泡期: P.wallLight, 排卵期: P.shine, 黄体期: P.lining, 产后恢复: P.blood, 假孕期: P.lining }[emptyStage] || P.wallLight;
+    if (emptyStage === '乏情期') return mixColor(mixColor(P.wall, P.wallDark, 0.4), DORMANT_TINT, 0.45);
+    return { 月经期: P.blood, 卵泡期: P.wallLight, 排卵期: P.shine, 黄体期: P.lining, 产后恢复: P.blood, 假孕期: P.lining }[emptyStage] || P.wallLight;
   }
 
   function wallTone() {
-    return layout.pressureLevel >= 2 ? P.wallTense : layout.pressureLevel >= 1 ? P.wallLight : P.wall;
+    const tone = layout.pressureLevel >= 2 ? P.wallTense : layout.pressureLevel >= 1 ? P.wallLight : P.wall;
+    return layout.emptyStage === '乏情期' ? mixColor(tone, DORMANT_TINT, 0.35) : tone;
   }
 
   function paintWomb(pad, shift, color) {
@@ -643,18 +648,21 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     const { px, line, ellipse } = pen;
     const { womb, tract, wallInset, libidoHeat, pressureLevel } = layout;
     const { cx, cy, rx, ry, top } = womb;
-    // 输卵管与卵巢：卵巢随性欲变红，接近上限时中心发黄光
+    // 输卵管与卵巢：卵巢随性欲变红，接近上限时中心发黄光。
+    // 乏情期卵巢休止：小一圈、内芯不发光，性欲再高也只微微泛红
     const tubeY = top + Math.round(ry * 0.48);
-    const ovaryOuter = mixColor(P.wallDark, P.ovaryHot, libidoHeat);
-    const ovaryInner = mixColor(P.wallLight, P.ovaryGlow, libidoHeat);
+    const dormant = layout.emptyStage === '乏情期';
+    const heat = dormant ? libidoHeat * 0.3 : libidoHeat;
+    const ovaryOuter = mixColor(dormant ? mixColor(P.wallDark, DORMANT_TINT, 0.4) : P.wallDark, P.ovaryHot, heat);
+    const ovaryInner = dormant ? mixColor(P.wallDark, P.wall, 0.5) : mixColor(P.wallLight, P.ovaryGlow, heat);
     for (const side of [-1, 1]) {
       const start = cx + side * wombRadius(womb, tubeY);
       const end = cx + side * Math.min(42, rx + 10);
       line(start, tubeY, end, tubeY - 5, P.wallDark);
       line(start, tubeY - 1, end, tubeY - 6, P.wallLight);
-      ellipse(end, tubeY - 6, 4, 5, ovaryOuter);
-      ellipse(end - side, tubeY - 7, 2, 3, ovaryInner);
-      px(end - side, tubeY - 8, 1, 1, P.shine);
+      ellipse(end, tubeY - 6, dormant ? 3 : 4, dormant ? 4 : 5, ovaryOuter);
+      ellipse(end - side, tubeY - 7, dormant ? 1 : 2, dormant ? 2 : 3, ovaryInner);
+      if (!dormant) px(end - side, tubeY - 8, 1, 1, P.shine);
     }
     // 子宫颈（孕晚期变短）与产道
     px(cx - 8, tract.neckTop, 16, tract.neckLength + 1, P.wallDark);

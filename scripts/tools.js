@@ -47,6 +47,8 @@ import {
   getNextWardrobeItemId,
   normalizeTransientOutfitItems,
   normalizeWardrobeItem,
+  WARDROBE_DIMENSION_CAP,
+  WARDROBE_MATERNITY_CAP,
   resolveWardrobeItemRef,
   sanitizeWearState,
   WARDROBE_DIMENSIONS,
@@ -166,7 +168,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddWardrobeItem',
-    description: '向单一角色的长期衣柜添加或更新衣物，无需先准备衣柜。main 是一套完整基础衣着，可用 parts 列出组成，fitProfile 使用隐藏四档与支撑/容身/方便档位。accessory 使用 category，effects 最多两项。新增可省略 id；更新传整数 id 或准确名称。以 id 或名称引用正在穿的临时衣物时，会把它转为长期衣物（id 与穿着不变），用于借来的衣服被送下等情况。note 只写稳定外观与来源。',
+    description: '向单一角色的长期衣柜添加或更新衣物，无需先准备衣柜。main 是一套完整基础衣着，可用 parts 列出组成，fitProfile 使用隐藏四档与支撑/容身/方便档位。accessory 使用 category，effects 最多两项。新增可省略 id；更新传整数 id 或准确名称。以 id 或名称引用正在穿的临时衣物时，会把它转为长期衣物（id 与穿着不变），用于借来的衣服被送下等情况。note 只写稳定外观与来源。maternity=true 只给专为巨大孕肚设计的特制品（孕肚托、魔法伸缩布料、特制孕妇装等）：穿着任一件时，这套衣着四维的上限由 10 放宽到 15，叠得够高才压得住爆表的衣着压力；一般孕妇装不要标。',
     input_schema: {
       type: 'object',
       properties: {
@@ -191,6 +193,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
             },
             category: { type: 'string', enum: ['underwear', 'outerwear', 'footwear', 'headwear', 'ornament', 'support', 'other'] },
             effects: { type: 'array', maxItems: 2, items: { type: 'string', enum: ['masking_up', 'masking_down', 'support_up', 'support_down', 'capacity_up', 'capacity_down', 'convenience_up', 'convenience_down'] } },
+            maternity: { type: 'boolean' },
           },
           required: ['name', 'note', 'slot'],
           additionalProperties: false,
@@ -215,7 +218,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsChangeOutfit',
-    description: '原子更换单一角色的当前穿着，无需先准备衣柜。可用 mainItemId/配件 id 或准确名称引用既有衣物，也可在 main 与 accessories 直接建立并穿上新衣；scope=owned 收入衣柜，temporary 只存在当前穿着。mainItemId=0 是明确全裸，null 是衣着未记录。accessoryItemIds 覆盖整表，add/removeAccessoryItemIds 增量穿脱。wearState 只是 12 字内的动态状态标签。',
+    description: '原子更换单一角色的当前穿着，无需先准备衣柜。可用 mainItemId/配件 id 或准确名称引用既有衣物，也可在 main 与 accessories 直接建立并穿上新衣；scope=owned 收入衣柜，temporary 只存在当前穿着。mainItemId=0 是明确全裸，null 是衣着未记录。accessoryItemIds 覆盖整表，add/removeAccessoryItemIds 增量穿脱。wearState 只是 12 字内的动态状态标签。新建的 main 或 accessories 可带 maternity=true 表示特制孕妇用品（规则同 bsAddWardrobeItem）。',
     input_schema: {
       type: 'object',
       properties: {
@@ -238,6 +241,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
               required: ['masking', 'support', 'capacity', 'convenience'],
               additionalProperties: false,
             },
+            maternity: { type: 'boolean' },
           },
           required: ['name', 'note', 'fitProfile'],
           additionalProperties: false,
@@ -250,6 +254,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
               name: { type: 'string' }, note: { type: 'string' },
               category: { type: 'string', enum: ['underwear', 'outerwear', 'footwear', 'headwear', 'ornament', 'support', 'other'] },
               effects: { type: 'array', maxItems: 2, items: { type: 'string', enum: ['masking_up', 'masking_down', 'support_up', 'support_down', 'capacity_up', 'capacity_down', 'convenience_up', 'convenience_down'] } },
+              maternity: { type: 'boolean' },
             },
             required: ['name', 'note', 'category', 'effects'],
             additionalProperties: false,
@@ -700,10 +705,12 @@ function getOutfitItems(profile) {
 
 function getOutfitDimensionTotals(profile) {
   const totals = Object.fromEntries(WARDROBE_DIMENSIONS.map((key) => [key, 0]));
-  for (const item of getOutfitItems(profile)) {
+  const items = getOutfitItems(profile);
+  for (const item of items) {
     for (const key of WARDROBE_DIMENSIONS) totals[key] += clampNumber(item[key], -10, 10, 0);
   }
-  for (const key of WARDROBE_DIMENSIONS) totals[key] = clampNumber(totals[key], 0, 10, 0);
+  const cap = items.some((item) => item?.maternity === true) ? WARDROBE_MATERNITY_CAP : WARDROBE_DIMENSION_CAP;
+  for (const key of WARDROBE_DIMENSIONS) totals[key] = clampNumber(totals[key], 0, cap, 0);
   return totals;
 }
 
@@ -729,8 +736,12 @@ export function getFetalBulk(profile) {
 
 /**
  * 孕期衣着压力 = 基础 + 身形随孕周改变 + 肚子装的量。锚点：
- * 足月单胎 1.0 = 7、双胎 1.0 = 8.5、三胎 1.0 才碰到上限 10，与母体种族无关
+ * 足月单胎 1.0 = 7、双胎 1.0 = 8.5、三胎 1.0 = 10，与母体种族无关。
+ * 10 是衣服的极限（量表满格）；之后照样往上算到 15「爆表」：足月五胎约 13，过期再撑到 15 为止，
+ * 免得巨胎或大量伴生卵算出没有意义的大数。产后恢复与胎内回归不是撑大的肚子，仍以 10 为顶。
  */
+export const PREG_WEAR_PRESSURE_FULL = 10;
+export const PREG_WEAR_PRESSURE_MAX = 15;
 export function calculatePregWearPressure(profile) {
   const pregnant = profile?.pregnant || {};
   const effectiveDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
@@ -740,7 +751,7 @@ export function calculatePregWearPressure(profile) {
   const basePressure = 0.5;
   const progressPressure = Math.pow(progress, 1.35) * 5;
   const fetalPressure = getFetalBulk(profile) * 1.5;
-  return clampNumber(basePressure + progressPressure + fetalPressure, 0, 10, 0);
+  return clampNumber(basePressure + progressPressure + fetalPressure, 0, PREG_WEAR_PRESSURE_MAX, 0);
 }
 
 // 产后恢复的衣着压力：从产后初期的水平随恢复进度线性递减到 0（体型回缩、乳胀消退）。
