@@ -767,6 +767,14 @@
                 <label for="bs-bt-time-flow">时间推进</label>
               </div>
               <small>关闭即冻结整条时间轴：追踪不再推进时间，经期、孕期、受孕判定都停住，其余照常结算。适合时间线穿越、回到过去这类剧情；回到原时间线再打开。手动「全角色时间推进」不受影响。</small>
+              <div class="bs-bt-setting-toggle-row">
+                <input type="checkbox" id="bs-bt-edit-gate-enabled" />
+                <label for="bs-bt-edit-gate-enabled">修改后重追判断</label>
+              </div>
+              <small>用铅笔改了最新一楼 AI 回复后，先让决策模型判断要不要重新追踪。</small>
+              <div id="bs-bt-edit-gate-entry" class="bs-bt-action-row" hidden>
+                <button class="menu_button" type="button" data-nav-view="edit-gate">修改后重追判断设置</button>
+              </div>
             </div>
 
             <div class="bs-bt-track-list-note">说明：离场角色会以精简状态发送给追踪器；点击仍可查看资料，并可在调试面板手动切回在场。</div>
@@ -780,6 +788,51 @@
             <div class="settings_section" hidden>
               <label for="bs-bt-system-prompt">角色提示词 / 异步分析系统提示词</label>
               <textarea id="bs-bt-system-prompt" class="text_pole bs-bt-textarea" rows="10"></textarea>
+            </div>
+          </div>
+        </section>
+
+        <section id="bs-bt-view-edit-gate" class="bs-bt-view" data-view="edit-gate">
+          <div class="bs-bt-panel">
+            <div class="settings_section bs-bt-action-row">
+              <button id="bs-bt-edit-gate-back" class="menu_button" type="button">返回追踪</button>
+            </div>
+
+            <div class="settings_section">
+              <small>用铅笔改了最新一楼 AI 回复后，先把改动前后的差异交给决策模型，按性行为、避孕、经过时间、衣着、在场角色、月经怀孕等身体状况，以及进食、排泄、睡眠、清洁逐项判断有没有变；都没变就沿用上次的追踪结果，不再重新追踪。只看最新一楼。只改了空白或标点（数字里的除外）时不用问模型；在末尾接着写（续写）或大段改写照常重新追踪。判断失败、20 秒内没有回应或下面没填好时，也照常重新追踪。</small>
+              <div id="bs-bt-edit-gate-status" class="bs-bt-inline-status" hidden></div>
+            </div>
+
+            <div class="settings_section">
+              <label for="bs-bt-edit-gate-url">决策接口地址</label>
+              <input id="bs-bt-edit-gate-url" class="text_pole" type="text" placeholder="https://example.com/v1/systemone" />
+              <small>填完整地址。要用 /v1/systemone 格式的决策模型接口（只回答选项与概率、不生成文字），并且允许网页直接访问（跨域）。</small>
+            </div>
+
+            <div class="settings_section">
+              <label for="bs-bt-edit-gate-key">API Key</label>
+              <input id="bs-bt-edit-gate-key" class="text_pole" type="password" placeholder="sk-..." />
+            </div>
+
+            <div class="settings_section">
+              <label for="bs-bt-edit-gate-model">模型名</label>
+              <input id="bs-bt-edit-gate-model" class="text_pole" type="text" placeholder="决策模型的名称" />
+            </div>
+
+            <div class="settings_section">
+              <div class="bs-bt-status-title">高级参数</div>
+              <label for="bs-bt-edit-gate-keep-floors">保留最近几楼的正文</label>
+              <input id="bs-bt-edit-gate-keep-floors" class="text_pole" type="number" min="1" max="10" step="1" />
+              <small>追踪时记下最近几楼 AI 回复的正文（1–10，默认 3）。删掉最新几楼后，再改变成最新的那一楼也能判断；只保留 1 楼时，这种情况照常重新追踪。</small>
+              <label for="bs-bt-edit-gate-threshold">判为要重新追踪的概率（%）</label>
+              <input id="bs-bt-edit-gate-threshold" class="text_pole" type="number" min="1" max="99" step="1" />
+              <small>任意一项「改变了」的概率达到这个值就重新追踪（1–99，默认 60）。调低更容易重新追踪，调高更容易沿用上次的结果。</small>
+            </div>
+
+            <div class="settings_section bs-bt-action-row">
+              <button id="bs-bt-edit-gate-test" class="menu_button" type="button">测试判断</button>
+              <small>发一段示例改动（「射在体内」改成「射在小腹上」），看接口能不能用、能不能判断出要重新追踪。</small>
+              <div id="bs-bt-edit-gate-test-status" class="bs-bt-inline-status"></div>
             </div>
           </div>
         </section>

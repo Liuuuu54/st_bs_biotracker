@@ -20,6 +20,7 @@ import {
   runRegistrySkillInference,
   runRegistryWardrobeInference,
 } from './scripts/registry.js';
+import { describeEditGateUrlProblem, EDIT_GATE_TOPIC_LABELS, isEditGateConfigured, normalizeEditGateKeepFloors, normalizeEditGateThresholdPercent, requestEditGateDecision } from './scripts/edit_gate.js';
 import {
   DERIVED_TYPE_FLUX_PROFILES,
   DERIVED_TYPE_INHERITANCE_PROFILES,
@@ -8437,7 +8438,7 @@ function setView(view) {
   const normalizedView = (requestedView === 'wardrobe' && !extensionSystems.wardrobe) || (requestedView === 'skill-catalog' && !extensionSystems.skill)
     ? 'home'
     : requestedView;
-  const next = ['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'track-sire', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog'].includes(normalizedView) ? normalizedView : 'home';
+  const next = ['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'track-sire', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog', 'edit-gate'].includes(normalizedView) ? normalizedView : 'home';
   if (root.dataset.view !== next && racePaletteState.isOpen) {
     closeRacePalettePopover();
     refreshRegisterRacePalette();
@@ -8459,14 +8460,29 @@ function setView(view) {
     if (viewport) viewport.scrollTop = 0;
   }
   const title = document.getElementById('bs-bt-title');
-  if (title) title.textContent = next === 'help' ? 'HELP' : next === 'theme' ? 'THEME' : next === 'system' ? 'SYSTEM' : next === 'register' ? 'REGISTRY' : next === 'worldbook-filter' ? 'WORLDBOOK' : next === 'track-list' ? 'TRACK LIST' : next === 'track-char' ? 'TRACK CHAR' : next === 'track-sire' ? 'TRACK SIRE' : next === 'full-state' ? 'FULL STATE' : next === 'race-encyclopedia' ? 'RACE DATA' : next === 'tracker-preset' ? 'PRESET' : next === 'wardrobe' ? 'WARDROBE' : next === 'skill-catalog' ? 'SKILLS' : 'HOME';
+  if (title) title.textContent = next === 'help' ? 'HELP' : next === 'theme' ? 'THEME' : next === 'system' ? 'SYSTEM' : next === 'register' ? 'REGISTRY' : next === 'worldbook-filter' ? 'WORLDBOOK' : next === 'track-list' ? 'TRACK LIST' : next === 'track-char' ? 'TRACK CHAR' : next === 'track-sire' ? 'TRACK SIRE' : next === 'full-state' ? 'FULL STATE' : next === 'race-encyclopedia' ? 'RACE DATA' : next === 'tracker-preset' ? 'PRESET' : next === 'wardrobe' ? 'WARDROBE' : next === 'skill-catalog' ? 'SKILLS' : next === 'edit-gate' ? 'EDIT CHECK' : 'HOME';
+}
+
+/** 追踪页的修改后重追判断：勾上才显示设置入口；设置页的状态行提示接口填好没有 */
+function renderEditGateStatus(settings) {
+  const entry = document.getElementById('bs-bt-edit-gate-entry');
+  if (entry) entry.hidden = settings?.editGateEnabled !== true;
+  const node = document.getElementById('bs-bt-edit-gate-status');
+  if (!node) return;
+  let problem = describeEditGateUrlProblem(settings?.editGateApiUrl);
+  if (!problem && settings?.editGateEnabled === true && !isEditGateConfigured(settings)) {
+    problem = '还没填好接口地址、API Key 或模型名：改了楼层会照常重新追踪。';
+  }
+  node.dataset.kind = problem ? 'error' : '';
+  node.textContent = problem;
+  node.hidden = !problem;
 }
 
 function getLastPagerView() {
   try {
     const value = String(globalThis.localStorage?.getItem(LAST_VIEW_STORAGE_KEY) || '').trim();
     if (value === 'time-lapse') return 'full-state';
-    if (['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'track-sire', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog'].includes(value)) {
+    if (['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'track-sire', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog', 'edit-gate'].includes(value)) {
       return value;
     }
   } catch {}
@@ -8510,6 +8526,13 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-enabled', settings.enabled);
   setValue('bs-bt-auto-track', settings.autoTrackEnabled !== false);
   setValue('bs-bt-time-flow', settings.timeFlowEnabled !== false);
+  setValue('bs-bt-edit-gate-enabled', settings.editGateEnabled === true);
+  setValue('bs-bt-edit-gate-url', settings.editGateApiUrl || '');
+  setValue('bs-bt-edit-gate-key', settings.editGateApiKey || '');
+  setValue('bs-bt-edit-gate-model', settings.editGateModel || '');
+  setValue('bs-bt-edit-gate-keep-floors', normalizeEditGateKeepFloors(settings.editGateKeepFloors));
+  setValue('bs-bt-edit-gate-threshold', normalizeEditGateThresholdPercent(settings.editGateThresholdPercent));
+  renderEditGateStatus(settings);
   setValue('bs-bt-tracker-preset-list', settings.useStPresetForAsync ? CURRENT_PRESET_OPTION_VALUE : (settings.trackerPresetName || NO_PRESET_OPTION_VALUE));
   setValue('bs-bt-api-url', settings.apiUrl);
   setValue('bs-bt-api-format', normalizeApiFormat(settings.apiFormat));
@@ -10152,6 +10175,78 @@ async function ensureModal(ctx) {
     globalThis.toastr?.info?.(settings.autoTrackEnabled
       ? '[BS BioTracker] 已开启自动追踪：AI 回复后自动分析'
       : '[BS BioTracker] 已关闭自动追踪：只在手动分析时追踪，状态注入照常');
+  });
+  // 修改后重追判断：追踪页勾选后显示入口，接口设置在单开的一页，各栏改完即存
+  document.getElementById('bs-bt-edit-gate-back')?.addEventListener('click', () => setView('track-list'));
+  document.getElementById('bs-bt-edit-gate-enabled')?.addEventListener('change', (event) => {
+    const settings = getSettings(ctx);
+    settings.editGateEnabled = Boolean(event.currentTarget?.checked);
+    saveSettings(ctx);
+    renderEditGateStatus(settings);
+  });
+  const editGateFields = [['bs-bt-edit-gate-url', 'editGateApiUrl'], ['bs-bt-edit-gate-key', 'editGateApiKey'], ['bs-bt-edit-gate-model', 'editGateModel']];
+  const readEditGateFields = () => {
+    const settings = getSettings(ctx);
+    for (const [id, key] of editGateFields) {
+      const node = document.getElementById(id);
+      if (node) settings[key] = String(node.value || '').trim();
+    }
+    return settings;
+  };
+  for (const [id] of editGateFields) {
+    document.getElementById(id)?.addEventListener('change', () => {
+      const settings = readEditGateFields();
+      saveSettings(ctx);
+      renderEditGateStatus(settings);
+    });
+  }
+  // 高级参数：超出范围或清空时规整后写回输入框
+  for (const [id, key, normalize] of [
+    ['bs-bt-edit-gate-keep-floors', 'editGateKeepFloors', normalizeEditGateKeepFloors],
+    ['bs-bt-edit-gate-threshold', 'editGateThresholdPercent', normalizeEditGateThresholdPercent],
+  ]) {
+    const node = document.getElementById(id);
+    node?.addEventListener('change', () => {
+      const settings = getSettings(ctx);
+      settings[key] = normalize(node.value);
+      node.value = String(settings[key]);
+      saveSettings(ctx);
+    });
+  }
+  document.getElementById('bs-bt-edit-gate-test')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const status = document.getElementById('bs-bt-edit-gate-test-status');
+    const settings = readEditGateFields();
+    saveSettings(ctx);
+    renderEditGateStatus(settings);
+    const show = (text, kind = '') => {
+      if (!status) return;
+      status.dataset.kind = kind;
+      status.textContent = text;
+    };
+    if (!isEditGateConfigured(settings)) {
+      show('先填好接口地址、API Key 和模型名。', 'error');
+      return;
+    }
+    if (button) button.disabled = true;
+    show('正在发示例改动……');
+    const startedAt = Date.now();
+    try {
+      const decision = await requestEditGateDecision(
+        settings,
+        '雷恩没有戴避孕套，最后在她体内射精。艾琳喘息着抱紧了他。',
+        '雷恩没有戴避孕套，最后及时抽出，射在了她的小腹上。艾琳喘息着抱紧了他。',
+      );
+      const top = Object.entries(decision.scores).sort((a, b) => b[1] - a[1])[0];
+      const topText = top ? `${EDIT_GATE_TOPIC_LABELS[top[0]] || top[0]} ${Math.round(top[1] * 100)}%` : '';
+      show(decision.retrack
+        ? `接口正常（${Date.now() - startedAt} 毫秒）：示例改动判为要重新追踪，变化最明显的一项是${topText}。`
+        : `接口能用，但示例改动被判为不用重新追踪（最高一项${topText}），这个模型可能不适合做修改判断。`, decision.retrack ? '' : 'error');
+    } catch (error) {
+      show(`测试失败：${String(error?.message || error)}`, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
   });
   document.getElementById('bs-bt-save')?.addEventListener('click', () => {
     readSettingsFromForm(ctx);
