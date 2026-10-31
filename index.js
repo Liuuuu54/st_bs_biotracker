@@ -3896,7 +3896,7 @@ function renderWardrobeItemRow(item = {}, options = {}) {
     <div class="bs-bt-wardrobe-row-wrap">
       <button class="bs-bt-wardrobe-row${options.current ? ' is-current' : ''}" type="button" data-wardrobe-item-id="${escapeHtml(item.id)}">
         <span class="bs-bt-wardrobe-row-main">
-          <span class="bs-bt-wardrobe-row-title">${escapeHtml(item.name || item.id || '未命名')}</span>
+          <span class="bs-bt-wardrobe-row-title">${escapeHtml(item.name || item.id || '未命名')}${item.maternity ? '<span class="bs-bt-wardrobe-maternity-tag" title="特制孕妇用品：穿着时衣着四维上限放宽到 15">特制</span>' : ''}</span>
           ${item.note ? `<span class="bs-bt-wardrobe-row-note">${escapeHtml(item.note)}</span>` : ''}
         </span>
       </button>
@@ -3964,13 +3964,15 @@ function renderWardrobeCharacterList(characters = []) {
 const PREGFIT_DIM_LABELS = { masking: '遮蔽', support: '承托', capacity: '余裕', convenience: '便利' };
 
 /**
- * 孕期衣着压力。四个维度画成共用同一条压力刻线的小量表：
+ * 孕期衣着压力。量表以 10（衣服的极限）为满格；压力超过 10 是「爆表」，
+ * 刻线钉在最右、标出爆表徽章，各维的红色缺口也一路画满。
+ * 四个维度画成共用同一条压力刻线的小量表：
  * 长条是这套衣服在该维度的总值，刻线是当前孕期压力，条子没顶到刻线就是压不住，
  * 差额直接用红色补在缺口上。这样「为什么这一维是负的」是看得出来的，
  * 而不是丢四个各自独立的数字让人自己减。
  *
  * 总值不必另外存：gap = 总值 - 压力（tools.js refreshOutfitPregFit），
- * 两者都被夹在 0-10，差值落在 -10~10，不会碰到 gap 自己的 -20/20 夹界，
+ * 总值夹在 0-10（穿特制孕妇用品时 0-15）、压力最多 15，差值落在 -15~15，不会碰到 gap 自己的 -20/20 夹界，
  * 所以 总值 = gap + 压力 可以精确还原。
  */
 function renderPregFitGauge(pregFit) {
@@ -3978,6 +3980,7 @@ function renderPregFitGauge(pregFit) {
   if (!Number.isFinite(pressure)) return '';
   const pct = (value) => Math.max(0, Math.min(100, (value / 10) * 100));
   const pressurePct = pct(pressure);
+  const burst = pressure > 10;
   const gap = pregFit?.gap || {};
   const dims = Object.keys(PREGFIT_DIM_LABELS).map((key) => {
     const rawGap = Number(gap[key]);
@@ -3993,18 +3996,18 @@ function renderPregFitGauge(pregFit) {
       <div class="bs-bt-pregfit__track">
         <div class="bs-bt-pregfit__fill" style="width:${totalPct}%"></div>
         ${short ? `<div class="bs-bt-pregfit__deficit" style="left:${totalPct}%;width:${Math.max(0, pressurePct - totalPct)}%"></div>` : ''}
-        <div class="bs-bt-pregfit__tick" style="left:${pressurePct}%"></div>
+        <div class="bs-bt-pregfit__tick${burst ? ' is-burst' : ''}" style="left:${pressurePct}%"></div>
       </div>
     </div>`;
   }).join('');
   return `
-    <div class="bs-bt-pregfit">
+    <div class="bs-bt-pregfit${burst ? ' is-burst' : ''}">
       <div class="bs-bt-pregfit__head">
-        <span class="bs-bt-pregfit__label">孕期衣着压力</span>
+        <span class="bs-bt-pregfit__label">孕期衣着压力${burst ? '<span class="bs-bt-pregfit__burst">爆表</span>' : ''}</span>
         <span class="bs-bt-pregfit__value">${escapeHtml(formatFixedDisplay(pressure, 1))}<span class="bs-bt-pregfit__scale">/10</span></span>
       </div>
       <div class="bs-bt-pregfit__dims">${dims}</div>
-      <div class="bs-bt-pregfit__legend">竖线为当前压力，条子未及即为该维度压不住</div>
+      <div class="bs-bt-pregfit__legend">${burst ? '超过 10 即爆表：孕肚已大到任何衣服都包不住' : '竖线为当前压力，条子未及即为该维度压不住'}</div>
     </div>
   `;
 }
@@ -4035,6 +4038,7 @@ function renderWardrobeCharacterPage(character) {
     <div class="bs-bt-wardrobe-group-title">编辑衣物 #${escapeHtml(editingItem.id)}</div>
     <label>名称<input id="bs-bt-wardrobe-edit-name" class="text_pole" type="text" value="${escapeHtml(editingItem.name)}"></label>
     <label>稳定描述 Prompt<textarea id="bs-bt-wardrobe-edit-note" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="3">${escapeHtml(editingItem.note || '')}</textarea></label>
+    <label class="bs-bt-wardrobe-maternity-check"><input id="bs-bt-wardrobe-edit-maternity" type="checkbox"${editingItem.maternity ? ' checked' : ''}> 特制孕妇用品（穿着时四维上限放宽到 15，压得住爆表）</label>
     <div class="bs-bt-inline-status">此描述会随衣柜资料送入 Tracker；保存不会改变衣物 ID 或当前穿着。</div>
     <div class="bs-bt-wardrobe-editor-actions">
       <button class="menu_button" type="button" data-wardrobe-item-edit-save="${escapeHtml(editingItem.id)}">保存衣物</button>
@@ -4089,6 +4093,7 @@ function renderWardrobeAddPage(slot = 'main', category = 'other') {
     <label id="bs-bt-wardrobe-item-parts-field" class="bs-bt-wardrobe-editor-wide" data-wardrobe-type-field="main">组成部件（逗号分隔）<input id="bs-bt-wardrobe-item-parts" class="text_pole" type="text"></label>
     ${levelSelect('masking', '隐藏')}${levelSelect('support', '支撑')}${levelSelect('capacity', '容身')}${levelSelect('convenience', '方便')}
     <fieldset id="bs-bt-wardrobe-item-effects-field" class="bs-bt-wardrobe-editor-wide" data-wardrobe-type-field="accessory" hidden><legend>配件效果（最多两项）</legend>${Object.entries(WARDROBE_ACCESSORY_EFFECTS).map(([value, definition]) => `<label><input type="checkbox" data-wardrobe-item-effect="${value}"> ${escapeHtml(definition.label)}</label>`).join('')}</fieldset>
+    <label class="bs-bt-wardrobe-editor-wide bs-bt-wardrobe-maternity-check"><input id="bs-bt-wardrobe-item-maternity" type="checkbox"> 特制孕妇用品（孕肚托、魔法伸缩布料等；穿着时四维上限放宽到 15，压得住爆表）</label>
     <button class="menu_button bs-bt-wardrobe-editor-wide" type="button" data-wardrobe-item-save>新增衣物</button>
     <div id="bs-bt-wardrobe-add-status" class="bs-bt-inline-status bs-bt-wardrobe-editor-wide"></div>
   </div>`;
@@ -9571,6 +9576,7 @@ async function ensureModal(ctx) {
               id: itemId,
               name,
               note: String(document.getElementById('bs-bt-wardrobe-edit-note')?.value || '').trim(),
+              maternity: Boolean(document.getElementById('bs-bt-wardrobe-edit-maternity')?.checked),
             },
           },
         }, 'manual_wardrobe_item_update');
@@ -9636,6 +9642,7 @@ async function ensureModal(ctx) {
         name: String(document.getElementById('bs-bt-wardrobe-item-name')?.value || '').trim(),
         note: String(document.getElementById('bs-bt-wardrobe-item-note')?.value || '').trim(),
         slot,
+        maternity: Boolean(document.getElementById('bs-bt-wardrobe-item-maternity')?.checked),
         ...(slot === 'accessory' ? {
           category: String(document.getElementById('bs-bt-wardrobe-item-category')?.value || 'other'),
           effects: Array.from(document.querySelectorAll('[data-wardrobe-item-effect]:checked'))

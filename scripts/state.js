@@ -327,7 +327,8 @@ function normalizePregFitState(value) {
   };
   const gapSource = value.gap && typeof value.gap === 'object' ? value.gap : {};
   return {
-    pregWearPressure: Math.max(0, Math.min(10, Number(value.pregWearPressure) || 0)),
+    // 孕期可爆表到 15（见 tools.js PREG_WEAR_PRESSURE_MAX）；不能在读档时砍回 10
+    pregWearPressure: Math.max(0, Math.min(15, Number(value.pregWearPressure) || 0)),
     gap: {
       masking: normalizeGap(gapSource.masking),
       support: normalizeGap(gapSource.support),

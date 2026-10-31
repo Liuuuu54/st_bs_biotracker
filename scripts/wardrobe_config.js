@@ -116,6 +116,13 @@ export function sanitizeWearState(value, fallback = DEFAULT_WEAR_STATE) {
   return Array.from(text).slice(0, WEAR_STATE_MAX_LENGTH).join('');
 }
 
+/**
+ * 衣着四维的上限：平常加总夹在 10（三胎足月的孕期衣着压力）。穿着任一件「特制孕妇用品」
+ * （maternity，例如孕肚托、魔法伸缩布料）时放宽到 15，叠得够高就压得住爆表的孕肚。
+ */
+export const WARDROBE_DIMENSION_CAP = 10;
+export const WARDROBE_MATERNITY_CAP = 15;
+
 export function normalizeWardrobeItem(value, { allowMissingId = false } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const hasId = Object.hasOwn(value, 'id') && value.id !== undefined;
@@ -132,7 +139,7 @@ export function normalizeWardrobeItem(value, { allowMissingId = false } = {}) {
   const semantic = slot === 'main'
     ? { fitProfile: normalizeFitProfile(value) }
     : { category: getAccessoryCategory(value), effects: normalizeAccessoryEffects(value) };
-  const item = { id, name, note, slot, ...(parts.length ? { parts } : {}), ...semantic };
+  const item = { id, name, note, slot, ...(parts.length ? { parts } : {}), ...semantic, ...(value.maternity === true ? { maternity: true } : {}) };
   return { ...item, ...getWardrobeItemMetrics(item) };
 }
 
