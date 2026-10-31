@@ -7,6 +7,8 @@ import * as state from '../scripts/state.js';
 import {
   getCompanionEggsMeanByRace,
   getEmbryoTypeByRace,
+  computeAutoFetalBulkRatio,
+  getFetalBulkRatioByRace,
   getRacePhysiologyProfile,
   getSpermDoseCompanionMultiplier,
   getSpermDoseDifficultyBonus,
@@ -167,4 +169,46 @@ test('提示词明确区分伴生卵、胎儿卡与祖谱人数', () => {
   assert.match(TRACKER_VARIABLE_GUIDE_PROMPT, /fetuses\[\*\]\.companionEggCount/);
   assert.match(TRACKER_VARIABLE_GUIDE_PROMPT, /children\[\*\]\.birthCompanionEggCount/);
   assert.doesNotMatch(TRACKER_VARIABLE_GUIDE_PROMPT, /clutchSize/);
+});
+
+test('胎儿份量倍率：一窝越大每只越小，多产性不高于人类的为 1', () => {
+  assert.equal(getFetalBulkRatioByRace('人类'), 1);
+  assert.equal(getFetalBulkRatioByRace('精灵'), 1);
+  assert.equal(Number(getFetalBulkRatioByRace('月兔').toFixed(2)), 0.68);
+  assert.equal(Number(getFetalBulkRatioByRace('兽耳族').toFixed(2)), 0.74);
+  assert.equal(Number(getFetalBulkRatioByRace('蛙族').toFixed(2)), 0.44);
+  // 伴生卵也算进一窝：同样排卵与同卵率，多卵的那族每只更小
+  assert.ok(getFetalBulkRatioByRace('蛙族') < getFetalBulkRatioByRace('月兔'));
+  // 混血按血统比例加权
+  const mix = getFetalBulkRatioByRace('人类x月兔', { 人类: 0.5, 月兔: 0.5 });
+  assert.ok(Math.abs(mix - (1 + getFetalBulkRatioByRace('月兔')) / 2) < 1e-9);
+});
+
+test('胎儿份量倍率：百科填了就覆写，留空回到自动，改额外排卵会连动自动值', () => {
+  setRacePhysiologyOverrides({ 月兔: { fetalBulkRatio: 1.2 } });
+  assert.equal(getFetalBulkRatioByRace('月兔'), 1.2);
+  assert.equal(getRacePhysiologyProfile('月兔').fetalBulkRatio, 1.2);
+  setRacePhysiologyOverrides({ 月兔: { fetalBulkRatio: null } });
+  assert.equal(Number(getFetalBulkRatioByRace('月兔').toFixed(2)), 0.68);
+  setRacePhysiologyOverrides({ 人类: { orgasmOvulationAmount: 4, identicalProbability: 10 } });
+  assert.equal(Number(getFetalBulkRatioByRace('人类').toFixed(2)), 0.68);
+  setRacePhysiologyOverrides({ 月兔: { fetalBulkRatio: 99 } });
+  assert.equal(getFetalBulkRatioByRace('月兔'), 3);
+});
+
+test('胎儿份量写进物种提示词与百科即时换算', async () => {
+  const { buildSingleRacePhysiologyText, describeRaceFieldValue } = await import('../scripts/race_prompt_context.js');
+  assert.match(buildSingleRacePhysiologyText('月兔'), /- 胎儿份量: 每胎约标准胎的 0\.68，一窝幼崽个头小，孕肚比同胎数的人类小/);
+  assert.match(buildSingleRacePhysiologyText('人类'), /- 胎儿份量: 每胎与人类标准胎相当/);
+  assert.match(describeRaceFieldValue('fetalBulkRatio', ''), /^自动/);
+  assert.match(describeRaceFieldValue('fetalBulkRatio', '', { autoFetalBulkRatio: 0.6776 }), /^自动（按额外排卵、同卵率与伴生卵推算）：每胎约标准胎的 0.68，一窝幼崽个头小/);
+  assert.match(describeRaceFieldValue('fetalBulkRatio', '1.5'), /个头大/);
+});
+
+test('编辑器预览用的纯计算与按物种算的自动值一致', () => {
+  for (const race of ['人类', '月兔', '蛙族', '阿拉克涅', '史萊姆']) {
+    const profile = getRacePhysiologyProfile(race);
+    const auto = computeAutoFetalBulkRatio({ ...profile, companionEggsMean: getCompanionEggsMeanByRace(race) });
+    assert.ok(Math.abs(auto - getFetalBulkRatioByRace(race)) < 1e-12, race);
+  }
 });

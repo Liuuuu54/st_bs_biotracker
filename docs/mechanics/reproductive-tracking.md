@@ -100,7 +100,9 @@ e = min(本次經過實際日 × 有效孕速, max(0, G - 259))
 ramp = 1 + max(0, G - e / 2 - 259) / 14
 postTerm = 逾期時 2，臨產期時 1
 B = Σ [max(0, G - conceivedAtDays_i) / 280
-       × (clamp(weight_i, 0.33, 3) + 0.15 × companionEggCount_i)]
+       × (clamp(weight_i, 0.33, 3) × ratio_i + egg_i × companionEggCount_i)]
+ratio_i = 胎兒 i 所屬族的胎兒份量倍率（窩仔物種小於 1）
+egg_i = 0.15 / (1 + 胎兒 i 所屬族的典型伴生卵數 / 8)
 宮壓增量 = B × R × ramp × postTerm × e
 新宮壓 = clamp(原宮壓 + 宮壓增量, 0, 個人宮壓上限)
 ```

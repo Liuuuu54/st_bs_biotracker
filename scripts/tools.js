@@ -85,6 +85,8 @@ import {
   SEASON_CYCLES_MAX,
   getRecoveryCoefficientByRace,
   rollCompanionEggCount,
+  getCompanionEggBulk,
+  getFetalBulkRatioByRace,
   parseRaceDescriptor,
   getRaceDescriptorComponents,
 } from './race_config.js';
@@ -710,11 +712,9 @@ function getOutfitDimensionTotals(profile) {
   return totals;
 }
 
-// 一颗伴生卵占肚子的份量，以足月标准胎为 1；只影响衣着压力，不进代谢负担
-const COMPANION_EGG_BULK = 0.15;
-
 /**
- * 肚子实际装了多少：每胎「自身孕龄 × 胎重 / 280」加总，伴生卵按份量随所属那胎一起长大。
+ * 肚子实际装了多少：每胎「自身孕龄 × 胎重 × 份量倍率 / 280」加总，伴生卵按份量随所属那胎一起长大。
+ * 份量倍率表达窝仔物种每只较小（getFetalBulkRatioByRace），只管肚子大小，胎重本身不动。
  * 与 fetalEnergyDrain 同源但不除以承载耐受——耐受是「扛不扛得住」，
  * 衣服合不合身只看肚子多大；除下去会让高耐受的龙娘足月像七个月、低耐受的一胎就撑爆
  */
@@ -726,7 +726,9 @@ export function getFetalBulk(profile) {
     const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
     const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
     const eggs = Math.max(0, Math.floor(Number(fetus?.companionEggCount) || 0));
-    return sum + (ownAge / DUE_DATE_DAYS) * (weight + eggs * COMPANION_EGG_BULK);
+    // 伴生卵只影响衣着压力，不进代谢负担；单颗份量依胎儿族的典型卵群缩小
+    const eggBulk = eggs > 0 ? eggs * getCompanionEggBulk(fetus?.race, fetus?.bloodline) : 0;
+    return sum + (ownAge / DUE_DATE_DAYS) * (weight * getFetalBulkRatioByRace(fetus?.race, fetus?.bloodline) + eggBulk);
   }, 0);
 }
 

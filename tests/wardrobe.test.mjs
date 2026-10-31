@@ -11,6 +11,7 @@ import {
   sanitizeWearState,
 } from '../scripts/wardrobe_config.js';
 import { applyToolCall, calculatePregWearPressure, getFetalBulk, TOOL_DEFINITIONS } from '../scripts/tools.js';
+import { getFetalBulkRatioByRace } from '../scripts/race_config.js';
 import { createEmptyChatState, normalizeCharacterPsychologyState } from '../scripts/state.js';
 import { applyRegistryResult, applyStartingOutfit, applyWardrobePrepResult } from '../scripts/registry.js';
 
@@ -421,6 +422,14 @@ test('wear pressure follows the belly, not the carrier tolerance, and counts com
   // 伴生卵占肚子：一胎带九颗卵比单胎撑
   assert.ok(pressure([{ weight: 1, companionEggCount: 9 }]) > pressure([{ weight: 1 }]));
   assert.equal(Number(getFetalBulk({ pregnant: { effectivePregnantDays: 280, fetuses: [{ weight: 1, companionEggCount: 2 }] } }).toFixed(2)), 1.3);
+  // 单颗伴生卵依胎儿族的典型卵群缩小，胎儿本身再乘份量倍率：蛙族满窝 35 颗约 0.44 ＋ 0.98
+  const frogBulk = getFetalBulk({ pregnant: { effectivePregnantDays: 280, fetuses: [{ race: '蛙族', weight: 1, companionEggCount: 35 }] } });
+  assert.ok(Math.abs(frogBulk - (getFetalBulkRatioByRace('蛙族') + 35 * 0.15 / (1 + 35 / 8))) < 1e-9);
+  assert.ok(frogBulk < 1.5);
+  // 月兔四胞胎足月不再是 4 胎份；胎重不动
+  const rabbits = Array.from({ length: 4 }, () => ({ race: '月兔', weight: 1 }));
+  assert.equal(Number(getFetalBulk({ pregnant: { effectivePregnantDays: 280, fetuses: rabbits } }).toFixed(2)), 2.71);
+  assert.ok(rabbits.every((fetus) => fetus.weight === 1));
   // 异期复孕晚到的那胎按自己的孕龄算
   assert.equal(getFetalBulk({ pregnant: { effectivePregnantDays: 280, fetuses: [{ weight: 1 }, { weight: 1, conceivedAtDays: 140 }] } }), 1.5);
 });

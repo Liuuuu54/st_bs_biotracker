@@ -2,13 +2,13 @@
 // 画面与引擎才不会各说各话。只读角色状态，不依赖绘图或工具模组。
 import { LABOR_STAGES } from './stage_config.js';
 import { getUterusVolumeFactor } from './body_size.js';
+import { getCompanionEggBulk, getFetalBulkRatioByRace } from './race_config.js';
 
 export const FULL_TERM_DAYS = 280;
 export const EMPTY_STAGES = Object.freeze(['月经期', '乏情期', '卵泡期', '排卵期', '黄体期', '产后恢复', '假孕期']);
 export const GESTATION_STAGES = Object.freeze(['孕早期', '孕中期', '孕晚期', '临产期', '逾期', '延产期', '产兆前驱', '回归期', ...LABOR_STAGES]);
 
 const SEMEN_CAPACITY_FLOOR = 25;
-const COMPANION_EGG_SIZE = 0.15;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
@@ -51,9 +51,10 @@ export function getSemenCapacity({ gestating, emptyStage, emptyLining, emptyProg
   if (gestating && fetuses.length > 0) {
     const n = fetuses.length;
     const t = clamp(days / FULL_TERM_DAYS, 0, 1.25);
-    const averageSize = fetuses.reduce((sum, fetus) => (
-      sum + clamp(finite(fetus?.weight, 1), 0.33, 3) + Math.max(0, Math.floor(finite(fetus?.companionEggCount))) * COMPANION_EGG_SIZE
-    ), 0) / n;
+    const averageSize = fetuses.reduce((sum, fetus) => {
+      const eggs = Math.max(0, Math.floor(finite(fetus?.companionEggCount)));
+      return sum + clamp(finite(fetus?.weight, 1), 0.33, 3) * getFetalBulkRatioByRace(fetus?.race, fetus?.bloodline) + (eggs > 0 ? eggs * getCompanionEggBulk(fetus?.race, fetus?.bloodline) : 0);
+    }, 0) / n;
     const stretch = Math.min(1.6, t * averageSize) ** 1.7 * (1 + 0.45 * (n - 1));
     const volume = 100 * (1 + 4 * stretch);
     const occupied = Math.min(0.95, 0.8 * Math.min(1, t) ** 1.5 + 0.05 * (n - 1) * t);

@@ -120,3 +120,10 @@ test('装得下就不流出；时间推进后也不会超过容量', () => {
   applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } });
   assert.ok(totalSperm(chatState, '人') <= 125, `推进后仍超出：${totalSperm(chatState, '人')}`);
 });
+
+test('伴生卵撑大子宫的份量依胎儿族缩小：蛙族满窝 35 颗撑得比旧的每颗 0.15 少，仍比没有卵多', () => {
+  const at = (race) => getSemenCapacity({ gestating: true, days: 200, fetuses: [{ race, weight: 1, companionEggCount: 35 }], pressureLevel: 0 });
+  const none = getSemenCapacity({ gestating: true, days: 200, fetuses: [{ weight: 1 }], pressureLevel: 0 });
+  assert.ok(at('蛙族') < at(null));
+  assert.ok(at('蛙族') > none);
+});

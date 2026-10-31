@@ -24,6 +24,7 @@ export const RACE_PHYSIOLOGY_FIELDS = Object.freeze([
   "orgasmOvulationAmount",
   "identicalProbability",
   "companionEggsMean",
+  "fetalBulkRatio",
   "recoveryCoefficient",
   "genderRatio"
 ]);
@@ -35,6 +36,8 @@ export const RACE_PHYSIOLOGY_FIELDS = Object.freeze([
 /** 乏情天数上限：十年一次 */
 export const DORMANCY_DAYS_MAX = 3650;
 export const SEASON_CYCLES_MAX = 99;
+export const FETAL_BULK_RATIO_MIN = 0.05;
+export const FETAL_BULK_RATIO_MAX = 3;
 
 export const RACE_BODY_SIZE_FIELDS = Object.freeze(["bodySize", "bodySizeSd", "altFormBodySize"]);
 export const BODY_SIZE_INDIVIDUAL = "individual";
@@ -74,6 +77,8 @@ export const RACE_BODY_PLAN_LABELS = Object.freeze({ humanoid: "人形", hybrid:
  * - genderRatio：后代雄性百分比；null 为雌雄同体或双性，-1 为无性
  * - companionEggsMean：每个有效胚胎平均伴随多少颗不会发育成胎儿卡的背景卵（伴生卵）。
  *   胚型只代表「允许多卵」，不会让卵生／卵胎生／不定型自动高产；胎生与胎转卵生恒无伴生卵
+ * - fetalBulkRatio：每胎占肚子的份量倍率（标准胎为 1），只管孕服压、宫压累积与子宫容量，不改胎重。
+ *   内置表不写＝自动，由额外排卵、同卵率与伴生卵推出一窝的大小（见 getAutoFetalBulkRatio）；百科填了才覆写
  * - recoveryCoefficient：产后恢复系数，以人类 56 天为 1，只看母体物种（混血取各成分平均），衍生类型不参与；
  *   实际天数在分娩／流产当下再乘活力、经产与胎数因子，见 computePostpartumRecoveryDays
  * - bodySize：常态（人态）体型 1–7 级，人类为 4；null 为可变（随对象调整，与任何对象都恰好契合）；
@@ -1144,8 +1149,8 @@ export const METOVIVIPAROUS_RACES = racesByEmbryoType("胎转卵生");
 export const AMORPHOUS_RACES = racesByEmbryoType("不定型");
 
 /** 大多数物种不写的栏位：没有乏情、每季一轮 */
-const PHYSIOLOGY_FIELD_DEFAULTS = Object.freeze({ dormancyDays: 0, seasonCycles: 1 });
-const BASE_PHYSIOLOGY_FIELDS = RACE_PHYSIOLOGY_FIELDS.filter((field) => field !== "companionEggsMean" && field !== "recoveryCoefficient");
+const PHYSIOLOGY_FIELD_DEFAULTS = Object.freeze({ dormancyDays: 0, seasonCycles: 1, fetalBulkRatio: null });
+const BASE_PHYSIOLOGY_FIELDS = RACE_PHYSIOLOGY_FIELDS.filter((field) => field !== "companionEggsMean" && field !== "recoveryCoefficient" && field !== "fetalBulkRatio");
 /** 只含八项基础生理数值的内置表（伴生卵、恢复系数、核型与胚型见 getBuiltinRacePhysiologyProfile） */
 export const RACE_PHYSIOLOGY_PROFILES = Object.freeze(Object.fromEntries(ALL_BUILTIN_RACES.map((race) => [
   race,
@@ -1381,7 +1386,7 @@ export function sanitizeRacePhysiologyProfilePatch(profile) {
   }
   for (const field of RACE_PHYSIOLOGY_FIELDS) {
     if (!Object.prototype.hasOwnProperty.call(profile, field)) continue;
-    if (field === 'genderRatio' && profile[field] === null) {
+    if ((field === 'genderRatio' || field === 'fetalBulkRatio') && profile[field] === null) {
       result[field] = null;
       continue;
     }
@@ -1390,6 +1395,7 @@ export function sanitizeRacePhysiologyProfilePatch(profile) {
     if (field === 'genderRatio') result[field] = Math.max(-1, Math.min(100, Math.round(value)));
     else if (field === 'orgasmOvulationAmount') result[field] = Math.max(0, Math.round(value));
     else if (field === 'companionEggsMean') result[field] = Math.max(0, Math.min(9999, Math.round(value)));
+    else if (field === 'fetalBulkRatio') result[field] = Math.max(FETAL_BULK_RATIO_MIN, Math.min(FETAL_BULK_RATIO_MAX, value));
     else if (field === 'identicalProbability') result[field] = Math.max(0, Math.min(100, value));
     else if (field === 'recoveryCoefficient') result[field] = Math.max(0.01, Math.min(100, value));
     else if (field === 'dormancyDays') result[field] = Math.max(0, Math.min(DORMANCY_DAYS_MAX, value));
@@ -2026,7 +2032,7 @@ export function getMergedRacePhysiologyProfile(race, bloodline = null) {
 
   const merged = {};
   for (const field of RACE_PHYSIOLOGY_FIELDS) {
-    if (field === 'genderRatio' || field === 'companionEggsMean') continue;
+    if (field === 'genderRatio' || field === 'companionEggsMean' || field === 'fetalBulkRatio') continue;
     const values = profiles
       .map(({ profile, weight }) => ({ value: Number(profile[field]), weight }))
       .filter(({ value }) => Number.isFinite(value));
@@ -2041,6 +2047,7 @@ export function getMergedRacePhysiologyProfile(race, bloodline = null) {
   }
 
   merged.companionEggsMean = getCompanionEggsMeanByRace(race, bloodline);
+  merged.fetalBulkRatio = getFetalBulkRatioByRace(race, bloodline);
   merged.genderRatio = mergeWeightedGenderRatio(profiles.map(({ profile, weight }) => ({ value: profile.genderRatio, weight })));
   Object.assign(merged, getMergedRaceBodySize(race, bloodline));
   merged.bodyPlan = getMergedRaceBodyPlan(race, bloodline);
@@ -2153,6 +2160,54 @@ export function getCompanionEggsMeanByRace(race, bloodline = null, motherBloodli
     ? clutches[0].value
     : Math.exp(clutches.reduce((sum, item) => sum + item.weight * Math.log(item.value), 0));
   return Math.max(0, clutch - 1);
+}
+
+// 人类的窝数指数：额外排卵 1、同卵率 1%、没有伴生卵
+const HUMAN_LITTER_INDEX = (1 + 1 / 2) * 1.01;
+
+/**
+ * 没覆写时每胎占肚子的份量：一窝越大的物种每只越小。
+ * 窝数指数 ＝ (1 ＋ 额外排卵 ÷ 2) × (1 ＋ 同卵率) × √(1 ＋ 典型伴生卵 ÷ 8)，
+ * 倍率 ＝ √(人类指数 ÷ 窝数指数)，最多 1；开根号让一窝的总份量仍比单胎大，只是不照胎数线性增长。
+ * 月兔约 0.68、阿拉克涅约 0.49、蛙族约 0.44；多产性不高于人类的都是 1。
+ */
+export function getAutoFetalBulkRatio(race) {
+  const profile = getEffectiveRacePhysiologyProfileValue(race);
+  if (!profile) return 1;
+  return computeAutoFetalBulkRatio({ ...profile, companionEggsMean: getCompanionEggsMeanByRace(race) });
+}
+
+/** 自动倍率的纯计算；companionEggsMean 要先按胚型归零（胎生、胎转卵生为 0）。百科编辑器用它即时预览 */
+export function computeAutoFetalBulkRatio({ orgasmOvulationAmount, identicalProbability, companionEggsMean }) {
+  const ovulation = Math.max(0, Number(orgasmOvulationAmount) || 0);
+  const identical = Math.max(0, Math.min(100, Number(identicalProbability) || 0));
+  const eggs = Math.max(0, Number(companionEggsMean) || 0);
+  const index = (1 + ovulation / 2) * (1 + identical / 100) * Math.sqrt(1 + eggs / 8);
+  return Math.min(1, Math.sqrt(HUMAN_LITTER_INDEX / index));
+}
+
+/** 每胎份量倍率：各血统成分取百科覆写或自动值，按血统比例加权平均；未收录的种族为 1 */
+export function getFetalBulkRatioByRace(race, bloodline = null) {
+  const parts = getWeightedRaceParts(race, bloodline);
+  if (parts.length === 0) return 1;
+  const totalWeight = parts.reduce((sum, part) => sum + part.weight, 0);
+  if (!(totalWeight > 0)) return 1;
+  return parts.reduce((sum, part) => {
+    const explicit = getEffectiveRacePhysiologyProfileValue(part.name)?.fetalBulkRatio;
+    const ratio = explicit === null || explicit === undefined || !Number.isFinite(Number(explicit))
+      ? getAutoFetalBulkRatio(part.name)
+      : Math.max(FETAL_BULK_RATIO_MIN, Math.min(FETAL_BULK_RATIO_MAX, Number(explicit)));
+    return sum + part.weight * ratio;
+  }, 0) / totalWeight;
+}
+
+/**
+ * 一颗伴生卵占肚子的份量，以足月标准胎为 1。典型卵群越大的物种单颗越小：0.15 ÷ (1 ＋ 典型数量 ÷ 8)，
+ * 赛壬（1）约 0.13、阿拉克涅（12）0.06、蛙族（35）约 0.03，满窝的总量才不会把小卵物种撑成五胞胎。
+ * 典型数量看胎儿自己的族（混血按血统加权）；孕服压的胎量与子宫容量共用。
+ */
+export function getCompanionEggBulk(race, bloodline = null) {
+  return 0.15 / (1 + getCompanionEggsMeanByRace(race, bloodline) / 8);
 }
 
 /**

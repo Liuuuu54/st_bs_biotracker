@@ -40,6 +40,7 @@ import {
   RACE_BODY_PLAN_LABELS,
   getEmbryoTypeByRace,
   getBuiltinRacePhysiologyProfile,
+  computeAutoFetalBulkRatio,
   getBuiltinRaceIntroductionLine,
   getMergedRacePhysiologyProfile,
   formatBloodlineLabel,
@@ -345,6 +346,7 @@ const RACE_PHYSIOLOGY_FIELD_LABELS = Object.freeze({
   orgasmOvulationAmount: '额外排卵倾向',
   identicalProbability: '同卵多胎概率(%)',
   companionEggsMean: '典型伴生卵数量',
+  fetalBulkRatio: '胎儿份量倍率',
   recoveryCoefficient: '产后恢复系数',
   genderRatio: '男胎比例',
 });
@@ -362,6 +364,7 @@ const RACE_FIELD_DESCRIPTIONS = Object.freeze({
   orgasmOvulationAmount: '高潮时额外排出几颗卵（平时每周期只排 1 颗），人类为 1。越多越容易异卵多胎。',
   identicalProbability: '一颗受精卵分裂成同卵多胎的机率（%），人类为 1。',
   companionEggsMean: '每名后代旁边伴随几颗不会发育的背景卵，也就是一窝的大小，人类为 0。胎生与胎转卵生恒为 0。',
+  fetalBulkRatio: '每一胎占肚子多少，标准胎为 1。只影响孕服压、足月宫压累积与子宫容量，不改胎重。留空自动：一窝越大（额外排卵、同卵率、伴生卵越多）每只越小，月兔约 0.68，多产性不高于人类的为 1。',
   recoveryCoefficient: '分娩或流产后多久才回到月经周期、能再怀孕，人类为 1（约 56 天）。',
   genderRatio: '后代是雄性的百分比，人类为 50。留空是雌雄同体，-1 是无性。',
   bodySize: '常态（人态）的大小，1–7 级，人类为 4。影响体型契合、子宫容量、射精量与受精胎重。',
@@ -371,16 +374,18 @@ const RACE_FIELD_DESCRIPTIONS = Object.freeze({
 });
 
 /** 编辑器栏位底下的说明与即时换算：改数值就跟着更新 */
-function appendRaceFieldHelp(label, field, control, read = () => control.value) {
+function appendRaceFieldHelp(label, field, control, read = () => control.value, { context = () => ({}), watch = [] } = {}) {
   label.classList.add('bs-bt-race-editor-field-wide');
   const help = document.createElement('small');
   help.className = 'bs-bt-race-editor-hint';
   help.textContent = RACE_FIELD_DESCRIPTIONS[field] || '';
   const live = document.createElement('small');
   live.className = 'bs-bt-race-editor-live';
-  const update = () => { live.textContent = describeRaceFieldValue(field, read()); live.hidden = !live.textContent; };
-  control.addEventListener('input', update);
-  control.addEventListener('change', update);
+  const update = () => { live.textContent = describeRaceFieldValue(field, read(), context()); live.hidden = !live.textContent; };
+  for (const node of [control, ...watch]) {
+    node.addEventListener('input', update);
+    node.addEventListener('change', update);
+  }
   update();
   label.appendChild(live);
   label.appendChild(help);
@@ -389,6 +394,7 @@ function appendRaceFieldHelp(label, field, control, read = () => control.value) 
 const RACE_PHYSIOLOGY_FIELD_HINTS = Object.freeze({
   genderRatio: '0-100；空白=双性，-1=无性',
   companionEggsMean: '每名有效后代伴随的背景卵数；0=没有伴生卵',
+  fetalBulkRatio: '空白=自动；0.05-3',
   recoveryCoefficient: '人类预设 56 天为 1；实际再依活力、经产与胎数调整',
   dormancyDays: '0=没有乏情期',
   seasonCycles: '整数，至少 1',
@@ -2325,6 +2331,7 @@ function getRacePhysiologyFieldStep(field) {
 
 function getRacePhysiologyFieldMin(field) {
   if (field === 'recoveryCoefficient') return '0.01';
+  if (field === 'fetalBulkRatio') return '0.05';
   return field === 'genderRatio' ? '-1' : '0';
 }
 
@@ -2485,6 +2492,7 @@ function renderRacePhysiologyEditor(race) {
     if (field === 'genderRatio') input.max = '100';
     if (field === 'identicalProbability') input.max = '100';
     if (field === 'companionEggsMean') input.max = '9999';
+    if (field === 'fetalBulkRatio') input.max = '3';
     input.dataset.racePhysiologyField = field;
     input.value = getRacePhysiologyInputValue(race, field);
     input.placeholder = RACE_PHYSIOLOGY_FIELD_HINTS[field] || '';
@@ -2496,7 +2504,25 @@ function renderRacePhysiologyEditor(race) {
       badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, field);
       label.appendChild(badge);
     }
-    appendRaceFieldHelp(label, field, input);
+    if (field === 'fetalBulkRatio') {
+      // 留空时预览自动值：跟着编辑器里尚未保存的额外排卵、同卵率、伴生卵与胚型一起变
+      const peer = (name) => editorNode.querySelector(`[data-race-physiology-field="${name}"]`);
+      const ovulation = peer('orgasmOvulationAmount');
+      const identical = peer('identicalProbability');
+      const eggs = peer('companionEggsMean');
+      appendRaceFieldHelp(label, field, input, undefined, {
+        watch: [ovulation, identical, eggs, embryoSelect].filter(Boolean),
+        context: () => ({
+          autoFetalBulkRatio: computeAutoFetalBulkRatio({
+            orgasmOvulationAmount: ovulation?.value,
+            identicalProbability: identical?.value,
+            companionEggsMean: ['胎生', '胎转卵生'].includes(embryoSelect.value) ? 0 : eggs?.value,
+          }),
+        }),
+      });
+    } else {
+      appendRaceFieldHelp(label, field, input);
+    }
 
     editorNode.appendChild(label);
   }
@@ -2671,7 +2697,7 @@ function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
     const input = document.querySelector(`[data-race-physiology-field="${field}"]`);
     if (!(input instanceof HTMLInputElement)) continue;
     let value;
-    if (field === 'genderRatio' && String(input.value || '').trim() === '') value = null;
+    if ((field === 'genderRatio' || field === 'fetalBulkRatio') && String(input.value || '').trim() === '') value = null;
     else {
       const num = Number(input.value);
       if (!Number.isFinite(num)) continue;

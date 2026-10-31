@@ -1,4 +1,4 @@
-import { getAllRaces, BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, RACE_BODY_PLAN_LABELS, DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
+import { getAllRaces, BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, RACE_BODY_PLAN_LABELS, DERIVED_TYPE_RACES, computePostpartumRecoveryDays, deriveFetusAncestry, formatBloodline, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getFetalBulkRatioByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN } from './stage_config.js';
 import { CROSS_RACE_DIFFICULTY_MULTIPLIER, EMBRYO_TYPE_MISMATCH_MULTIPLIER, calculateImplantationDays } from './calculator.js';
 
@@ -291,7 +291,7 @@ function getIdenticalText(value) {
  * 百科编辑器的即时换算：把一个栏位的数值翻成白话（孕期几天、产后几天、负担多重…），
  * 与资料页、提示词同一套句子。value 为空字串或无效时回空字串
  */
-export function describeRaceFieldValue(field, value) {
+export function describeRaceFieldValue(field, value, { autoFetalBulkRatio = null } = {}) {
   const empty = value === '' || value === undefined;
   const num = Number(value);
   switch (field) {
@@ -307,6 +307,12 @@ export function describeRaceFieldValue(field, value) {
     case 'identicalProbability': return empty ? '' : getIdenticalText(num);
     case 'companionEggsMean': return empty ? '' : num <= 0 ? '没有伴生卵：一胎就是一个孩子。' : `平均每名后代旁伴随约 ${formatNumber(num)} 颗不会发育的背景卵，一窝看起来会大得多。`;
     case 'genderRatio': return empty ? getGenderRatioText(null) : getGenderRatioText(num);
+    case 'fetalBulkRatio': {
+      if (!empty && value !== null) return num > 0 ? getFetalBulkText(num) : '';
+      return Number.isFinite(autoFetalBulkRatio)
+        ? `自动（按额外排卵、同卵率与伴生卵推算）：${getFetalBulkText(autoFetalBulkRatio)}。`
+        : '自动：按额外排卵、同卵率与伴生卵推算。';
+    }
     case 'bodySize': return value === null ? '可变：能随对象调整形体，与任何对象都恰好契合。'
       : value === BODY_SIZE_INDIVIDUAL ? '依个体：同族大小差异极大，按子项或个体判断，插入时要给体型。'
         : `${formatBodySizeLevel(num)}。`;
@@ -315,6 +321,14 @@ export function describeRaceFieldValue(field, value) {
     case 'bodyPlan': return getBodyPlanText(value);
     default: return '';
   }
+}
+
+/** 每胎占肚子多少：给模型描写孕肚大小用，胎重本身不受影响 */
+function getFetalBulkText(ratio) {
+  const value = formatNumber(ratio);
+  if (ratio < 0.995) return `每胎约标准胎的 ${value}，一窝幼崽个头小，孕肚比同胎数的人类小`;
+  if (ratio > 1.005) return `每胎约标准胎的 ${value}，个头大，孕肚比同胎数的人类大`;
+  return '每胎与人类标准胎相当';
 }
 
 function getGenderRatioText(value) {
@@ -380,6 +394,7 @@ function buildSingleRacePhysiologyBlock(race) {
     `- 受精难度: ${getImpregnationDifficultyText(profile.impregnationDifficulty)}`,
     `- 遗传核型: ${getInheritanceModeText(race)}`,
     `- 典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race))}（每名有效后代伴随的背景卵；自然受精会依有效精液量调整后再作约 ±10% 波动；均值 0 恒为 0）`,
+    `- 胎儿份量: ${getFetalBulkText(getFetalBulkRatioByRace(race))}（只影响孕肚大小与衣着压力，胎重照常）`,
     `- 多产性: ${getProlificacyText(profile.orgasmOvulationAmount, profile.identicalProbability)}；额外排卵倾向 ${formatNumber(profile.orgasmOvulationAmount)}（高潮时按当下活力占比排出，每周期黄体期前、黄体期各一次），同卵多胎概率 ${formatNumber(profile.identicalProbability)}%`,
     `- 性别比: ${getGenderRatioText(profile.genderRatio)}`,
     `- 体型: ${getBodySizeText(profile)}`,
@@ -406,6 +421,7 @@ function buildHybridAverageBlock(race, bloodline = null) {
     `- 平均承载耐受: ${getBreedToleranceText(merged.breedTolerance)}`,
     `- 平均受精难度: ${getImpregnationDifficultyText(merged.impregnationDifficulty)}`,
     `- 混血典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race, bloodline))}（先由血脉占比最高的成分决定胚型（平手取孕期较长者，再平手取母系）；胎生／胎转卵生恒为 0，其余按血脉比例对整群规模做加权几何平均）`,
+    `- 胎儿份量参考: ${getFetalBulkText(getFetalBulkRatioByRace(race, bloodline))}（按血脉比例加权，只影响孕肚大小与衣着压力）`,
     `- 平均多产性参考: ${getProlificacyText(merged.orgasmOvulationAmount, merged.identicalProbability)}；额外排卵倾向 ${formatNumber(merged.orgasmOvulationAmount)}（高潮时按当下活力占比排出，每周期黄体期前、黄体期各一次），同卵多胎概率 ${formatNumber(merged.identicalProbability)}%`,
     `- 平均性别比参考: ${getGenderRatioText(merged.genderRatio)}`,
     `- 平均体型参考: ${getBodySizeText(merged)}`,
