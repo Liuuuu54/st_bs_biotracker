@@ -10,6 +10,7 @@ import { formatIntimacyPromptLine, getIntimacyRanking } from './intimacy.js';
 import { DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
+import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
 import { applyToolCallsResult, describeBackSide, describeFetalPosition, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, getPregnancyNutritionTotal, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import {
@@ -629,16 +630,34 @@ function isReplacementAfter(snapshot, currentFloor) {
   return stamp > anchorAtMs;
 }
 
-function findReplacementAnchorSnapshot(chatState, count) {
+/** 可作重锚基准的快照：追踪回执，以及在它之上静默重锚过的（正文替换、改了但不用重追的编辑） */
+const REPLACEMENT_ANCHOR_REASONS = Object.freeze(['tracker', 'silent_replace', 'edit_adopted']);
+/** 实际按正文追踪（或正文替换后沿用）的快照；修改判断记下的正文绑在它上面 */
+const TRACKED_ANCHOR_REASONS = Object.freeze(['tracker', 'silent_replace']);
+
+function findReplacementAnchorSnapshot(chatState, count, reasons = REPLACEMENT_ANCHOR_REASONS) {
   const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
   for (let index = snapshots.length - 1; index >= 0; index -= 1) {
     const snapshot = snapshots[index];
-    const reason = String(snapshot?.reason || '');
-    if (reason !== 'tracker' && reason !== 'silent_replace') continue;
+    if (!reasons.includes(String(snapshot?.reason || ''))) continue;
     if (Number(snapshot?.messageCount) !== count) continue;
     return snapshot;
   }
   return null;
+}
+
+/**
+ * 尾楼正文一变，getChatState 就认不出这一楼的快照（边界签名对不上），会把状态退回更早的快照。
+ * 静默重锚前先取回这一楼最新的快照，否则这一楼追踪出的变化（时间推进、性行为结算……）会被丢掉。
+ */
+function restoreLatestFloorSnapshot(chatState, count) {
+  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
+  for (let index = snapshots.length - 1; index >= 0; index -= 1) {
+    if (Number(snapshots[index]?.messageCount) !== count) continue;
+    restoreChatStateFromSnapshot(chatState, snapshots[index]);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -666,15 +685,142 @@ export function tryAdoptSilentTailReplacement(ctx, settings, chatState) {
   if (Number.isFinite(stampSeq) && stampSeq >= 0 && hostRunState.mutSeq > stampSeq) return false;
   if (isHostGenerationBusy(ctx)) return false;
   settings.hostMutSeqCounter = hostRunState.mutSeq;
-  recordChatStateSnapshot(ctx, chatState, {
+  restoreLatestFloorSnapshot(chatState, count);
+  const anchored = recordChatStateSnapshot(ctx, chatState, {
     messageCount: count,
     reason: 'silent_replace',
     ...getFloorAnchorFields(last),
   });
+  // 替换后的正文就是使用者看到的那一版，之后的手动修改拿它来比
+  rememberEditGateBaseline(settings, chatState, anchored, last);
   chatState.lastProcessedSignature = currentSignature;
   saveSettings(ctx);
   console.debug('[BS BioTracker] 偵測到正文替換回寫（替换戳前进且无编辑事件），已重新锚定，未重發請求');
   return true;
+}
+
+// ---- 手动修改尾楼后的重追判断（scripts/edit_gate.js） ----
+// 追踪时记下这一楼的正文；使用者改了这一楼以后，先问决策模型改动有没有动到生理相关的事实，
+// 没动到就像正文替换一样静默重锚、不重发追踪。只管尾楼：更早的楼层多半已不在追踪上下文里。
+// 判断请求不在轮询里等：发出后本轮先跳过，结论回来后由下一轮轮询取用；
+// 进度与结论按「聊天 + 记下的正文 + 当前正文」缓存，同一处改动只问一次。
+const editGateRuns = new Map();
+export const __editGateRunsForTest = editGateRuns;
+
+/** 楼层的生成时刻：重新生成会换一条新讯息（swipe_id 可能仍是 0），手动编辑不动它 */
+function getFloorTimeFingerprint(message) {
+  const normalize = (value) => {
+    if (value === undefined || value === null || value === '') return '';
+    const ms = value instanceof Date ? value.getTime() : Date.parse(String(value));
+    // 存档读回来是字符串、内存里可能是 Date：都换成毫秒数再比，读不出来就比原字符串
+    return Number.isFinite(ms) ? String(ms) : String(value);
+  };
+  return `${normalize(message?.send_date)}|${normalize(message?.gen_started)}`;
+}
+
+/**
+ * 记下这一楼追踪时的正文，连同更早几楼的一起保留最近几楼（高级参数可调）。
+ * 只在开了修改判断时记；关着时顺手清掉旧的。这一楼及之后的旧记录一律作废（那些楼已被删掉或重来）。
+ * 用快照的边界签名把正文与那份追踪快照绑在一起：这一楼重新追踪过，旧正文自然失效。
+ */
+function rememberEditGateBaseline(settings, chatState, snapshot, message) {
+  // 早期测试版只记一楼的字段
+  delete chatState.editGateBaseline;
+  if (settings?.editGateEnabled !== true) {
+    delete chatState.editGateBaselines;
+    return;
+  }
+  const messageCount = Number(snapshot?.messageCount);
+  const previous = Array.isArray(chatState.editGateBaselines) ? chatState.editGateBaselines : [];
+  const kept = previous.filter((item) => Number(item?.messageCount) < messageCount);
+  const text = String(message?.mes || '');
+  const boundarySignature = String(snapshot?.boundarySignature || '');
+  if (boundarySignature && text.length <= EDIT_GATE_BASELINE_MAX_CHARS) {
+    kept.push({ messageCount, boundarySignature, floorTime: getFloorTimeFingerprint(message), text });
+  }
+  chatState.editGateBaselines = kept.slice(-normalizeEditGateKeepFloors(settings.editGateKeepFloors));
+}
+
+function rememberEditGateRun(key, entry) {
+  editGateRuns.set(key, entry);
+  while (editGateRuns.size > 32) editGateRuns.delete(editGateRuns.keys().next().value);
+}
+
+function startEditGateDecision(key, settings, before, after) {
+  rememberEditGateRun(key, { status: 'pending', reason: 'decision' });
+  requestEditGateDecision(settings, before, after)
+    .then((decision) => {
+      rememberEditGateRun(key, { status: decision.retrack ? 'retrack' : 'adopt', reason: 'decision', decision });
+      console.debug('[BS BioTracker] 修改判断结果', decision);
+    })
+    .catch((error) => {
+      const message = String(error?.message || error);
+      rememberEditGateRun(key, { status: 'retrack', reason: 'error', error: message });
+      console.warn('[BS BioTracker] 修改判断失败，照常重新追踪', error);
+      globalThis.toastr?.warning?.(`[BS BioTracker] 修改判断失败，照常重新追踪：${message}`);
+    });
+}
+
+/**
+ * 回传 null = 不归修改判断管（没开、不是尾楼的同一条讯息、没记下正文……），照常走追踪；
+ * { action: 'pending' } = 正在问决策模型，本轮先跳过；
+ * { action: 'retrack' } = 要重追，照常走追踪；{ action: 'adopted' } = 已沿用上次的结果、重锚完毕。
+ */
+function evaluateEditedTail(ctx, settings, chatState) {
+  if (settings?.editGateEnabled !== true) return null;
+  const chat = getHostChat(ctx);
+  const count = chat.length;
+  const last = chat[count - 1];
+  if (!last || last.is_user) return null;
+  const currentSignature = buildSignature(ctx, count);
+  if (!currentSignature || currentSignature === String(chatState?.lastProcessedSignature || '')) return null;
+  const baselines = Array.isArray(chatState?.editGateBaselines) ? chatState.editGateBaselines : [];
+  const baseline = baselines.find((item) => Number(item?.messageCount) === count);
+  if (!baseline || typeof baseline.text !== 'string') return null;
+  const anchor = findReplacementAnchorSnapshot(chatState, count, TRACKED_ANCHOR_REASONS);
+  if (!anchor || !baseline.boundarySignature || String(anchor.boundarySignature || '') !== baseline.boundarySignature) return null;
+  if (!sameFloorIdentity(anchor, last)) return null;
+  if (String(baseline.floorTime || '') !== getFloorTimeFingerprint(last)) return null;
+  const after = String(last.mes || '');
+  const key = `${getChatKey(ctx)}|${baseline.boundarySignature}|${currentSignature}`;
+  let run = editGateRuns.get(key);
+  if (!run) {
+    const kind = classifyTailEdit(baseline.text, after);
+    if (kind === 'needs_decision' && isEditGateConfigured(settings)) {
+      startEditGateDecision(key, settings, baseline.text, after);
+      return { action: 'pending' };
+    }
+    if (kind === 'same' || kind === 'cosmetic') run = { status: 'adopt', reason: kind };
+    else run = { status: 'retrack', reason: kind === 'needs_decision' ? 'not_configured' : kind };
+    rememberEditGateRun(key, run);
+  }
+  if (run.status === 'pending') return { action: 'pending' };
+  if (run.status !== 'adopt') return { action: 'retrack', reason: run.reason };
+  settings.hostMutSeqCounter = hostRunState.mutSeq;
+  restoreLatestFloorSnapshot(chatState, count);
+  recordChatStateSnapshot(ctx, chatState, {
+    messageCount: count,
+    reason: 'edit_adopted',
+    ...getFloorAnchorFields(last),
+  });
+  // 记下的正文不跟着换：之后再改，仍拿追踪时那一版来比，几次小改累积起来也不会漏
+  chatState.lastProcessedSignature = currentSignature;
+  saveSettings(ctx);
+  if (run.reason === 'decision') {
+    globalThis.toastr?.info?.('[BS BioTracker] 这次修改没有动到生理相关的内容，沿用上次的追踪结果');
+  } else if (run.reason === 'cosmetic') {
+    globalThis.toastr?.info?.('[BS BioTracker] 只改了空白或标点，沿用上次的追踪结果');
+  }
+  return { action: 'adopted', reason: run.reason };
+}
+
+/** 宿主的楼层编辑框还开着：开了「自动保存编辑」时每打一个字都会写回正文，要等编辑完再追 */
+function isHostMessageEditorOpen() {
+  try {
+    return Boolean(globalThis.document?.querySelector?.('#curEditTextarea'));
+  } catch {
+    return false;
+  }
 }
 
 function getVitalityLevelText(level) {
@@ -1791,11 +1937,13 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   chatState.lastProcessedSignature = silentReplacementDuringRun ? postCallSignature : attemptedSignature;
   chatState.lastFailedChatSignature = '';
   settings.hostMutSeqCounter = hostRunState.mutSeq;
-  recordChatStateSnapshot(ctx, chatState, {
+  const trackedFloor = getHostChat(ctx)[messageIndex];
+  const trackedSnapshot = recordChatStateSnapshot(ctx, chatState, {
     messageCount: messageIndex + 1,
     reason: 'tracker',
-    ...getFloorAnchorFields(getHostChat(ctx)[messageIndex]),
+    ...getFloorAnchorFields(trackedFloor),
   });
+  rememberEditGateBaseline(settings, chatState, trackedSnapshot, trackedFloor);
   saveSettings(ctx);
   return { discarded: false, triggered: true };
 }
@@ -1909,6 +2057,9 @@ export async function runTracker(ctx, deps, reason = 'manual') {
         { source: busyDetail.source || '' },
       );
     }
+    if (isHostMessageEditorOpen()) {
+      return recordPollSkip(ctx, deps, 'message_editing', '正在编辑楼层内容，保存后再追踪。');
+    }
   }
   if (reason === 'poll') {
     const agentBarrier = await getHostAgentRunBarrier(ctx, lastMessage);
@@ -1944,7 +2095,20 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     // 正文替换的无痕改写：静默重锚，不发请求也不弹任何提示；上一轮待命提示作废
     clearPollWaitStatus(ctx);
     deps.renderStatusPanel(ctx);
+    deps.updateMainFlowPrompt?.(ctx);
     return { skipped: true, reason: 'silent_tail_replacement' };
+  }
+  if (reason === 'poll') {
+    const editOutcome = evaluateEditedTail(ctx, settings, chatState);
+    if (editOutcome?.action === 'pending') {
+      return recordPollSkip(ctx, deps, 'edit_gate_pending', '正在判断这次修改要不要重新追踪生理数据。');
+    }
+    if (editOutcome?.action === 'adopted') {
+      clearPollWaitStatus(ctx);
+      deps.renderStatusPanel(ctx);
+      deps.updateMainFlowPrompt?.(ctx);
+      return { skipped: true, reason: 'edit_adopted' };
+    }
   }
   if (reason === 'poll' && isFailedAutoRetryBlocked(ctx, chatState)) {
     return recordPollSkip(
