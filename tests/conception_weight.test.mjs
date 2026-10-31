@@ -46,7 +46,7 @@ test('计算器的初始胎重范围是约 95% 会落在的 ±2 个标准差', (
 });
 
 test('受精阶段系数以排卵期为基准 1.0：自然受孕几乎都在排卵期，正常妊娠的胎重平均回到 1.0；产后恢复不会受孕，不列', () => {
-  assert.deepEqual({ ...CONCEPTION_STAGE_WEIGHTS }, { 月经期: 0.75, 卵泡期: 0.9, 排卵期: 1.0, 黄体期: 1.1 });
+  assert.deepEqual({ ...CONCEPTION_STAGE_WEIGHTS }, { 乏情期: 0.6, 月经期: 0.75, 卵泡期: 0.9, 排卵期: 1.0, 黄体期: 1.1 });
   Math.random = seeded(7);
   const logs = Array.from({ length: 4000 }, () => Math.log(getConceptionWeight('排卵期', '无', 1)));
   const mean = Math.exp(logs.reduce((sum, x) => sum + x, 0) / logs.length);

@@ -1,5 +1,5 @@
 // 只调度生殖事件；角色的代谢、心理与产程仍由宿主整批推进。
-import { MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, PREGNANCY_STAGES, PREGNANCY_STAGE_DAYS,
+import { MENSTRUAL_STAGES, PREGNANCY_STAGES, PREGNANCY_STAGE_DAYS,
   POSTTERM_START_DAYS } from './stage_config.js';
 import { advancePooledConception, invalidatePooledSegment, isPooledConception,
   projectPooledSperms, syncPooledEggs } from './pooled_reproduction.js';
@@ -38,7 +38,8 @@ function pendingKind(profile) {
 }
 
 /**
- * hooks 负责真实生物学：阶段期限、着床期限、孕速、异期窗口、每源配对率和事件效果。
+ * hooks 负责真实生物学：stageLimit 与 nextMenstrualStage 必须接共用周期策略。
+ * 时间轴只调度边界，不决定季节轮数、乏情天数或零天阶段如何跳过。
  * sourceRate 不含异期公共线性倍率；volumeFactor 可选，缺省为一。
  * onPhaseChange 可返回实际阶段或原位改 stage（例如转入假孕）；月经清理由该回调负责。
  * onConception 创建胎儿并更新生物参数；onImplantation 必须结清当前共用等待批次。
@@ -58,11 +59,13 @@ export function advancePooledTimeline(profile, { fromMinute, toMinute, dayCarryM
   const plan = { spans: [], transitions: [], enteredFollicular: false, implantationEvents: [],
     clockAdvanced: true, pregnancyMinutes: 0 };
   if (fromMinute === toMinute) return plan;
+  if (typeof hooks.stageLimit !== 'function' || typeof hooks.nextMenstrualStage !== 'function') {
+    throw new TypeError('生殖时间线需要共用的 stageLimit 与 nextMenstrualStage 策略回调。');
+  }
   let now = pool.lastMinute;
   const carryDay = nonnegative(dayCarryMinutes) % DAY;
   const carryHour = nonnegative(hourCarryMinutes) % 60;
-  const stageLimit = (stage) => finiteLimit(hooks.stageLimit
-    ? hooks.stageLimit(profile, stage) : MENSTRUAL_STAGE_DAYS[stage]);
+  const stageLimit = (stage) => finiteLimit(hooks.stageLimit(profile, stage));
   const speedOf = () => nonnegative(hooks.gestationSpeed ? hooks.gestationSpeed(profile) : 1);
   const nextCalendar = (period, carry) => {
     const elapsed = carry + now - fromMinute;
@@ -160,7 +163,8 @@ export function advancePooledTimeline(profile, { fromMinute, toMinute, dayCarryM
         const limit = stageLimit(stage);
         const age = stage === '假孕期' ? nonnegative(pregnant.pregnantDays) : nonnegative(base.days);
         if (Number.isFinite(limit) && reached(age, limit)) {
-          const next = isNatural(stage) ? MENSTRUAL_STAGES[(MENSTRUAL_STAGES.indexOf(stage) + 1) % MENSTRUAL_STAGES.length] : '月经期';
+          // 阶段后继、季节计数及零天跳过只由默认模式共用策略决定，不在时间轴复制规则。
+          const next = isNatural(stage) ? hooks.nextMenstrualStage(profile, stage) : '月经期';
           changePhase(next, Math.max(0, age - limit));
           continue;
         }

@@ -62,6 +62,7 @@ import {
   LABOR_STAGE_BASE_HOURS,
   LABOR_STAGE_INCREMENT,
   LABOR_POSTPARTUM_OBSERVATION_HOURS,
+  DORMANCY_STAGE,
   MENSTRUAL_STAGE_DAYS,
   MENSTRUAL_STAGES,
   PREGNANCY_STAGE_DAYS,
@@ -80,6 +81,9 @@ import {
   getDerivedTypeMetabolismExemptions,
   getEmbryoTypeByRace,
   getMergedRacePhysiologyProfile,
+  getWeightedRaceParts,
+  DORMANCY_DAYS_MAX,
+  SEASON_CYCLES_MAX,
   getRecoveryCoefficientByRace,
   rollCompanionEggCount,
   parseRaceDescriptor,
@@ -424,8 +428,9 @@ export const TOOL_DEFINITIONS = Object.freeze([
   {
     name: 'bsSetMenstrualPhases',
     description: '直接设置月经相关阶段，用于催情、药物、外力或剧情推进。'
-      + 'stage 只接受这几个值：卵泡期、排卵期、黄体期、月经期、产后恢复、假孕期；其他值（含妊娠阶段与回归期）一律拒绝，无法用本工具让角色怀孕或结束妊娠。'
+      + 'stage 只接受这几个值：卵泡期、排卵期、黄体期、月经期、乏情期、产后恢复、假孕期；其他值（含妊娠阶段与回归期）一律拒绝，无法用本工具让角色怀孕或结束妊娠。'
       + '切到排卵期时会重新允许高潮排卵，切到黄体期时也会刷新一次；假孕期可留精但不会排卵或受孕。'
+      + '乏情期是长周期物种月经后的静止期，不会自然排卵；只有子宫被灌满、且至少八成是异种精液时，高潮才会诱发排卵。物种没有乏情期时切过去会立刻进入卵泡期。'
       + '角色体内已有胎儿或受精进行中，或正处于真妊娠、回归期、产兆前驱、产程时，本工具会被拒绝，不会覆盖这些状态。',
     input_schema: {
       type: 'object',
@@ -536,7 +541,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + 'returner 可以是任何人：user、未注册的路人、或已注册角色都行，不必事先注册。'
       + '未注册的 returner 请一并给 returnerRace 说明其种族；已注册角色可省略，系统会读她自己的种族。'
       + 'returnerRace 使用 [derivedType-装饰子项]race-装饰子项 格式，混血以 X 分隔；两者都缺时视同与承载者同族。'
-      + '\n呼叫条件：承载者必须处于月经阶段（卵泡期/排卵期/黄体期/月经期）或无经期；她自己正在别人体内、或已在回归期时不可呼叫。'
+      + '\n呼叫条件：承载者必须处于月经阶段（卵泡期/排卵期/黄体期/月经期/乏情期）或无经期；她自己正在别人体内、或已在回归期时不可呼叫。'
       + 'returner 若是已注册角色且已经在别人体内，也不可再次回归。不能让角色回归自己的子宫。'
       + '呼叫时承载者子宫内已有的胎儿、残留精液与卵子会被直接净空。'
       + '\n呼叫后承载者进入「回归期」：衣着压力冲到上限 10，体内多出一胎且胎重为上限 3.0，'
@@ -1129,13 +1134,14 @@ function shouldResetNaturalOvulation(stage) {
   return stage !== '排卵期';
 }
 
+// 着床前天数与产科偏移只看活动周期：乏情期不排卵，与这一轮受孕无关
 function getImplantationDays(profile) {
-  const cycleLength = getMenstrualCycleLength(profile);
+  const cycleLength = getActiveMenstrualCycleLength(profile);
   return calculateImplantationDays(cycleLength);
 }
 
 function getObstetricPregnancyOffsetDays(profile) {
-  return Math.max(0, getMenstrualCycleLength(profile) / 2);
+  return Math.max(0, getActiveMenstrualCycleLength(profile) / 2);
 }
 
 /** 人类著床当下的产科孕龄：受精后约 6 天著床，加上末次月经起算的 14 天 */
@@ -2674,7 +2680,7 @@ function processPooledConception(profile, tick, notify, name) {
     // 假孕入口仍使用到这一事件为止的近期接触，不让整段末态倒灌回过去。
     if (startingSexDays >= 0) {
       const fullDays = Math.floor(((Number(runtime.dayCarryMinutes) || 0) + atMinute - startMinute) / 1440);
-      if (startingSexDays + fullDays >= getMenstrualCycleLength(p)) {
+      if (startingSexDays + fullDays >= getActiveMenstrualCycleLength(p)) {
         p.experience = { ...(p.experience || {}), latestSexPartner: null };
       }
     }
@@ -2756,6 +2762,7 @@ function processPooledConception(profile, tick, notify, name) {
     dayCarryMinutes: Number(runtime.dayCarryMinutes) || 0, hourCarryMinutes: Number(runtime.hourCarryMinutes) || 0,
   }, {
     stageLimit: (p, stage) => stage === '假孕期' ? getPseudoPregnancyLimit(p) : getStageLimit(p, stage),
+    nextMenstrualStage: getNextMenstrualStage,
     implantationDays: getImplantationDays, gestationSpeed: getGestationEffectiveSpeed,
     superfetationWindowDays: getSuperfetationWindowDays, volumeFactor: (p) => getUterusVolumeFactor(p.base),
     sourceRate: (p, source) => getFertilizationSourceRates({ eggRace: p.base.race,
@@ -2834,6 +2841,7 @@ function processSimpleConception(profile, tick, notify, name) {
   const deltaDays = tick.deltaDays;
   const fullDays = tick.passedDays;
   const passedHours = tick.passedHours;
+  // 乏情期不会自然排卵（只有排卵期会），但被异种精液灌满诱发的高潮排卵照样能受精、照日程过期
   const allowsNaturalConception = MENSTRUAL_STAGES.includes(stage);
   if (isPooledConception(base)) return processPooledConception(profile, tick, notify, name);
 
@@ -6610,12 +6618,50 @@ function nextOrgasmOvulationCooldown(stage, cooldown = {}) {
   };
 }
 
-/** 一次高潮排卵：冷却中或假孕期不触发；排出 0 颗也算用掉这次机会 */
+/** 乏情期诱发排卵：子宫要灌满（与子宫图「灌满」同一判定），且至少八成是异种精液 */
+export const DORMANCY_OVULATION_FOREIGN_SHARE = 0.8;
+
+/** 物理灌满与血统占比读取同一份残留；实验池的父方汇总不代表每笔种族快照。 */
+function getPhysicalSpermSources(profile) {
+  const base = profile?.base || {};
+  const sources = isPooledConception(base) ? base.spermContacts : getSpermSources(base);
+  return Array.isArray(sources) ? sources : [];
+}
+
+/**
+ * 子宫里异种精液的占比。每份精液按「精方与卵方血统不重叠的份额」计入：
+ * 纯种异族全算、半精灵射入精灵算一半；衍生类型（[血族]精灵）与子项（兽耳族-猫）只看基种族，算同族。
+ */
+export function getForeignSemenShare(profile) {
+  const base = profile?.base || {};
+  const own = new Map(getWeightedRaceParts(base.race, base.bloodline).map((part) => [part.name, part.weight]));
+  let total = 0;
+  let foreign = 0;
+  for (const sperm of getPhysicalSpermSources(profile)) {
+    const value = Math.max(0, Number(sperm?.value) || 0);
+    if (value <= 0) continue;
+    const overlap = getWeightedRaceParts(sperm.race, sperm.bloodline)
+      .reduce((sum, part) => sum + Math.min(part.weight, own.get(part.name) || 0), 0);
+    total += value;
+    foreign += value * Math.max(0, 1 - overlap);
+  }
+  return total > 0 ? foreign / total : 0;
+}
+
+export function canDormancyOvulate(profile) {
+  const total = getPhysicalSpermSources(profile).reduce((sum, item) => sum + Math.max(0, Number(item?.value) || 0), 0);
+  if (total <= 0 || total < getCharacterSemenCapacity(profile) - 1e-6) return false;
+  return getForeignSemenShare(profile) >= DORMANCY_OVULATION_FOREIGN_SHARE - 1e-9;
+}
+
+/** 一次高潮排卵：冷却中、假孕期，或乏情期没被异种精液灌满时不触发；排出 0 颗也算用掉这次机会 */
 function applyEggGain(profile, amount) {
   const nextAmount = Math.max(0, Math.floor(Number(amount) || 0));
   const base = profile.base || {};
   const cooldown = profile.cooldown || {};
-  if (String(base.stage || '') === '假孕期' || cooldown.orgasmOvulationUsed) return { applied: false };
+  const stage = String(base.stage || '');
+  if (stage === '假孕期' || cooldown.orgasmOvulationUsed) return { applied: false };
+  if (stage === DORMANCY_STAGE && !canDormancyOvulate(profile)) return { applied: false };
   if (nextAmount > 0) {
     base.eggs = clampNumber(base.eggs, 0, 999, 0) + nextAmount;
     base.uterinePressure = clampNumber(base.uterinePressure, 0, 999, 0) + 2;
@@ -6670,15 +6716,54 @@ function maybeTriggerOrgasmOvulation(character, intimacyOptions = {}) {
   profile.notify = {
     ...notify,
     secondly: amount > 0
-      ? `${next.name}因高潮而额外排卵${amount > 1 ? ` ${amount} 颗` : ''}${familiarNote}，性欲归零`
+      ? `${next.name}${String(base.stage || '') === DORMANCY_STAGE ? '在乏情期被异种精液灌满，' : ''}因高潮而额外排卵${amount > 1 ? ` ${amount} 颗` : ''}${familiarNote}，性欲归零`
       : `${next.name}达到高潮，但体力不济，这次没有额外排卵，性欲归零`,
   };
   return true;
 }
 
-function getMenstrualCycleLength(profile) {
-  const total = MENSTRUAL_STAGES.reduce((sum, stage) => sum + (getStageLimit(profile, stage) || 0), 0);
+/** 活动周期：卵泡、排卵、黄体、月经四期，不含乏情 */
+function getActiveMenstrualCycleLength(profile) {
+  const total = MENSTRUAL_STAGES
+    .filter((stage) => stage !== DORMANCY_STAGE)
+    .reduce((sum, stage) => sum + (getStageLimit(profile, stage) || 0), 0);
   return Math.max(1, total || 28);
+}
+
+export function getDormancyDays(profile) {
+  return clampNumber(profile?.bio?.dormancyDays, 0, DORMANCY_DAYS_MAX, 0);
+}
+
+/** 每个繁殖季连续几轮活动周期才乏情；混血加权后可能不是整数，四舍五入 */
+export function getSeasonCycles(profile) {
+  return Math.round(clampNumber(profile?.bio?.seasonCycles, 1, SEASON_CYCLES_MAX, 1));
+}
+
+/**
+ * 月经结束、要进乏情期时才数这一轮：本季还没跑满 seasonCycles 轮就直接回卵泡期，
+ * 跑满了才乏情并把计数归零。base.seasonCycle 是本季已经跑完的轮数。
+ */
+function nextStageAfterMenstruation(profile) {
+  const base = profile.base || {};
+  const done = Math.max(0, Math.floor(Number(base.seasonCycle) || 0)) + 1;
+  if (getDormancyDays(profile) > 0 && done < getSeasonCycles(profile)) {
+    base.seasonCycle = done;
+    return '卵泡期';
+  }
+  base.seasonCycle = 0;
+  return DORMANCY_STAGE;
+}
+
+/**
+ * 两种推进方式共用唯一的月经后继规则；仅在实际消费阶段边界时调用。
+ * 月经结束会更新 seasonCycle；零天乏情直接跳过，不创建另一次季节计数。
+ */
+export function getNextMenstrualStage(profile, stage) {
+  if (!MENSTRUAL_STAGES.includes(stage)) return null;
+  const next = stage === '月经期' ? nextStageAfterMenstruation(profile)
+    : MENSTRUAL_STAGES[(MENSTRUAL_STAGES.indexOf(stage) + 1) % MENSTRUAL_STAGES.length];
+  return next === DORMANCY_STAGE && getStageLimit(profile, next) === 0
+    ? getNextMenstrualStage(profile, next) : next;
 }
 
 function buildTimeTick(character, addedMinutes) {
@@ -6730,6 +6815,7 @@ function getMenstrualStageFluctuation(profile, stage) {
 }
 
 export function getStageLimit(profile, stage) {
+  if (stage === DORMANCY_STAGE) return getDormancyDays(profile);
   if (MENSTRUAL_STAGE_DAYS[stage]) {
     const ratio = clampNumber(profile?.bio?.menstrualLengthRatio, 0.1, 20, 1);
     const fluctuation = getMenstrualStageFluctuation(profile, stage);
@@ -6754,8 +6840,7 @@ function advanceMenstrualStage(profile, stage, daysValue) {
     const limit = getStageLimit(profile, nextStage);
     if (limit === null || nextDays <= limit) break;
     nextDays -= limit;
-    const stageIndex = MENSTRUAL_STAGES.indexOf(nextStage);
-    nextStage = MENSTRUAL_STAGES[(stageIndex + 1) % MENSTRUAL_STAGES.length];
+    nextStage = getNextMenstrualStage(profile, nextStage);
     if (nextStage === '月经期') {
       if (shouldEnterPseudoPregnancy(profile, '黄体期', nextStage)) return { stage: '假孕期', days: 0, changed: true, enteredFollicular };
       refreshCognition(profile);
@@ -7046,7 +7131,7 @@ function applyTimeToCharacter(character, tick) {
 
   if (base.latestSexDays !== null && base.latestSexDays !== undefined && Number(base.latestSexDays) >= 0) {
     base.latestSexDays = clampNumber(base.latestSexDays, -1, 9999, 0) + tick.passedDays;
-    if (base.latestSexDays >= getMenstrualCycleLength(profile)) {
+    if (base.latestSexDays >= getActiveMenstrualCycleLength(profile)) {
       base.latestSexDays = -1;
       profile.experience = {
         ...(profile.experience || {}),
@@ -8030,8 +8115,11 @@ function applySetMenstrualPhases(chatState, args) {
     };
   }
 
+  const requestedDormancy = stage === DORMANCY_STAGE;
+  if (requestedDormancy && getStageLimit(profile, stage) === 0) stage = getNextMenstrualStage(profile, stage);
   base.stage = stage;
   base.days = 0;
+  if (requestedDormancy) base.seasonCycle = 0;
   if (stage === '月经期' && ['产后恢复', '假孕期'].includes(currentStage)) clearPregnancyState(profile);
   profile.base = base;
   if (stage === '卵泡期') {
@@ -8039,8 +8127,9 @@ function applySetMenstrualPhases(chatState, args) {
     metabolism.milk = 0;
     profile.metabolism = metabolism;
   }
-  // 手动切阶段视同进入该阶段：排卵期从新的一轮开始，黄体期吃到那一次刷新
-  if (stage === '排卵期') {
+  // 手动切阶段视同进入该阶段：排卵期从新的一轮开始，黄体期吃到那一次刷新；
+  // 乏情期自然是从月经期（冷却重置）进来的，所以也给一次新的机会
+  if (stage === '排卵期' || requestedDormancy) {
     profile.cooldown = {
       ...cooldown,
       orgasmOvulationUsed: false,

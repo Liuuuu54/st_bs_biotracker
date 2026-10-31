@@ -241,12 +241,15 @@ test('天使与恶魔刻意对称：胚型、核型与生理数值完全相同',
   }
 });
 
-test('卓尔沿用精灵数值，只是较易受精、较难分娩', async () => {
+test('卓尔沿用精灵数值，只是较易受精、较难分娩，且地底没有繁殖季', async () => {
   const { getRacePhysiologyProfile, RACE_PHYSIOLOGY_FIELDS } = await import('../scripts/race_config.js');
   const elf = getRacePhysiologyProfile('精灵');
   const drow = getRacePhysiologyProfile('卓尔');
+  const seasonal = ['impregnationDifficulty', 'birthDifficulty', 'dormancyDays', 'seasonCycles'];
+  assert.equal(drow.seasonCycles, 1);
+  assert.ok(elf.seasonCycles > 1);
   for (const field of RACE_PHYSIOLOGY_FIELDS) {
-    if (field === 'impregnationDifficulty' || field === 'birthDifficulty') continue;
+    if (seasonal.includes(field)) continue;
     assert.equal(drow[field], elf[field], `卓尔的 ${field} 应与精灵相同`);
   }
   assert.ok(drow.impregnationDifficulty < elf.impregnationDifficulty);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getStageProgress, formatProgressNumber } from '../scripts/stage_progress.js';
+import { getStageProgress, formatProgressDays, formatProgressNumber } from '../scripts/stage_progress.js';
 import { getStageLimit, getPseudoPregnancyLimit, applyToolCall } from '../scripts/tools.js';
 import { createEmptyChatState, derivePregnancyStageState } from '../scripts/state.js';
 import { progressProfile, stageProgressFixtures } from './stage-progress-fixtures.mjs';
@@ -107,4 +107,5 @@ test('every UI fixture is read-only and fractional duration formatting preserves
     const before=JSON.stringify(profile);getStageProgress(profile);assert.equal(JSON.stringify(profile),before);
   }
   for(const [value,expected] of [[0,'0'],[0.25,'0.25'],[0.5,'0.5'],[8.4,'8.4'],[14.123456,'14.12']])assert.equal(formatProgressNumber(value),expected);
+  for(const [value,expected] of [[0,'0.0'],[3,'3.0'],[6.75,'6.8'],[14.123456,'14.1'],[322,'322.0']])assert.equal(formatProgressDays(value),expected);
 });

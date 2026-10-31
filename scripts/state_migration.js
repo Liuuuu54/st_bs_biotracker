@@ -8,13 +8,15 @@ import {
   getRaceComponents,
   getBloodlineInfo,
   getRecoveryCoefficientByRace,
+  getWeightedRaceParts,
 } from './race_config.js';
+import { MENSTRUAL_STAGE_DAYS } from './stage_config.js';
 
 /**
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 10;
+export const CHAT_STATE_SCHEMA_VERSION = 11;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -227,6 +229,53 @@ function migrateCharacterV7ToV8(character, { minutesPassed = 0 } = {}) {
   profile.descriptions = Object.fromEntries(DESCRIPTION_FIELDS.map((field) => [field, normalizeDescriptionList(descriptions[field], minutesPassed)]));
 }
 
+/**
+ * 1.2.3 以前的内置经期倍率：这些物种改成「活动周期＋乏情」（长周期、季节性繁殖），
+ * 倍率可能不变（妖狐 1 → 1 加乏情）。只列有改动的物种，其余物种没有乏情、每季一轮。
+ */
+const LEGACY_MENSTRUAL_RATIO_V10 = Object.freeze({
+  天使: 13, 恶魔: 13, 西方龙: 4, 东方龙: 4, 狮鹫: 3.5,
+  精灵: 3, 卓尔: 3, 妖精: 3, 甲壳族: 3, 斯芬克斯: 3, 空鲸: 3, 宝石人: 3, 羽蛇: 3,
+  兽耳族: 0.75, 米诺陶族: 0.75, 萨堤尔族: 0.75, 月兔: 0.5, 妖狐: 1, 化狸: 0.75, 镰鼬: 0.75, 赛尔克族: 1, 鲛人: 1, 蛇人: 1, 龟族: 2, 华根蕴桃: 1.5,
+  半人马: 1, 独角兽: 1.5, 天马: 1.5, 半人鹿: 1.25, 貓又: 0.75, 地狱犬: 1.5,
+  鸟族: 1, 天狗: 1, 赛壬: 1, 爱那温: 1, 蜥蜴人: 0.75, 鱼人: 2, 蝾螈族: 1, 蛙族: 0.5, 海马族: 1.5, 绒虫族: 1.5,
+  巨人: 2, 杜拉罕: 2, 魔族: 2, 海德拉: 2, 修格斯: 2, 夺心魔: 2, 眼魔: 2,
+  麒麟: 1.75, 凤凰: 1.75, 白泽: 1.75, 米戈: 1.5, 深潜者: 1.5, 星繭族: 1.5, 灯神: 1.5, 梅杜莎: 1.5,
+});
+
+/** 按血统加权内置值；有成分不是内置物种（自订或未收录）就回 null，不动 */
+function weightedBuiltinValue(parts, valueOf) {
+  if (parts.length === 0 || parts.some((part) => !RACE_PHYSIOLOGY_PROFILES[part.name])) return null;
+  const total = parts.reduce((sum, part) => sum + part.weight, 0);
+  if (!(total > 0)) return null;
+  return parts.reduce((sum, part) => sum + part.weight * valueOf(part.name), 0) / total;
+}
+
+/**
+ * v10 → v11（1.2.3 乏情期）：经期倍率仍等于旧内置值的角色，换成新倍率、乏情天数与每季轮数；百科或手动改过的不动。
+ * 正在活动周期某一期中间的，已过天数按新旧倍率等比缩放，免得一迁移就跳过整段经期。
+ */
+function migrateCharacterV10ToV11(character) {
+  const profile = character?.profile;
+  if (!profile || typeof profile !== 'object') return;
+  const base = profile.base || {};
+  const bio = profile.bio && typeof profile.bio === 'object' ? profile.bio : null;
+  if (!bio) return;
+  const parts = getWeightedRaceParts(base.race, base.bloodline);
+  if (!parts.some((part) => LEGACY_MENSTRUAL_RATIO_V10[part.name])) return;
+  const legacy = weightedBuiltinValue(parts, (name) => LEGACY_MENSTRUAL_RATIO_V10[name] ?? RACE_PHYSIOLOGY_PROFILES[name].menstrualLengthRatio);
+  const nextRatio = weightedBuiltinValue(parts, (name) => RACE_PHYSIOLOGY_PROFILES[name].menstrualLengthRatio);
+  const nextDormancy = weightedBuiltinValue(parts, (name) => Number(RACE_PHYSIOLOGY_PROFILES[name].dormancyDays) || 0);
+  const nextSeasonCycles = weightedBuiltinValue(parts, (name) => Number(RACE_PHYSIOLOGY_PROFILES[name].seasonCycles) || 1);
+  if (legacy === null || nextRatio === null || !isClose(bio.menstrualLengthRatio, legacy)) return;
+  if (MENSTRUAL_STAGE_DAYS[String(base.stage || '')]) {
+    base.days = clamp(base.days, 0, 9999, 0) * (nextRatio / legacy);
+  }
+  bio.menstrualLengthRatio = nextRatio;
+  bio.dormancyDays = nextDormancy;
+  bio.seasonCycles = nextSeasonCycles;
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
   2: migrateCharacterV2ToV3,
@@ -235,6 +284,7 @@ const CHARACTER_MIGRATIONS = Object.freeze({
   6: migrateCharacterV6ToV7,
   7: migrateCharacterV7ToV8,
   9: migrateCharacterV6ToV7,
+  10: migrateCharacterV10ToV11,
 });
 
 export function getChatStateSchemaVersion(chatState) {

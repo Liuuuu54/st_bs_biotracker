@@ -3,7 +3,7 @@ import test from 'node:test';
 import { advancePooledTimeline } from '../scripts/pooled_timeline.js';
 import { enablePooledConception, projectPooledSperms } from '../scripts/pooled_reproduction.js';
 import { integrateSpermPoolRisk } from '../scripts/sperm_pool.js';
-import { MENSTRUAL_STAGE_DAYS } from '../scripts/stage_config.js';
+import { getNextMenstrualStage, getStageLimit } from '../scripts/tools.js';
 
 // 这些模拟回调只证明调度顺序和钟，不代替宿主真实生物学验收。
 const DAY = 1440;
@@ -19,7 +19,9 @@ function make({ stage = '卵泡期', days = 0, eggs = 0, sources = [], minute = 
 }
 function mockHooks(trace = [], overrides = {}) {
   return {
-    stageLimit: (_, stage) => MENSTRUAL_STAGE_DAYS[stage] ?? ({ 产后恢复: 2, 假孕期: 3 })[stage] ?? null,
+    // 周期拓扑和正常期限直接接真实共用策略；仅恢复/假孕短期限用于调度隔离测试。
+    stageLimit: (profile, stage) => ({ 产后恢复: 2, 假孕期: 3 })[stage] ?? getStageLimit(profile, stage),
+    nextMenstrualStage: getNextMenstrualStage,
     implantationDays: () => 2,
     gestationSpeed: () => 1,
     superfetationWindowDays: () => 90,
@@ -84,6 +86,14 @@ test('起点必须对齐混合池且零跨度保持状态', () => {
   assert.throws(() => advancePooledTimeline(profile, { fromMinute: 1, toMinute: 2 }), /lastMinute/);
   assert.throws(() => advancePooledTimeline(profile, { fromMinute: 0, toMinute: -1 }), /分钟区间/);
   assert.throws(() => advancePooledTimeline({ base: {} }, { fromMinute: 0, toMinute: 2 }), /pooled-v1/);
+});
+
+test('正跨度必须显式接入共用期限与后继策略，不隐式另建一套周期', () => {
+  const profile = make();
+  const before = copy(profile);
+  assert.throws(() => advancePooledTimeline(profile, { fromMinute: 0, toMinute: DAY }), /stageLimit.*nextMenstrualStage/);
+  assert.throws(() => advancePooledTimeline(profile, { fromMinute: 0, toMinute: DAY }, { stageLimit: getStageLimit }), /stageLimit.*nextMenstrualStage/);
+  assert.deepEqual(profile, before);
 });
 
 test('空物料全年只按阶段和必要卵事件推进而不逐小时扫描', () => {
@@ -308,7 +318,7 @@ test('阶段回调可原位进入假孕且用hook期限结束而不死循环', (
   const trace = [];
   const standard = mockHooks(trace);
   const plan = advancePooledTimeline(profile, { fromMinute: 0, toMinute: 2 * DAY }, mockHooks(trace, {
-    stageLimit: (_, stage) => stage === '假孕期' ? 0.5 : MENSTRUAL_STAGE_DAYS[stage],
+    stageLimit: (profile, stage) => stage === '假孕期' ? 0.5 : getStageLimit(profile, stage),
     onPhaseChange: (value, context) => {
       if (context.from === '黄体期' && context.to === '月经期') {
         value.base.stage = '假孕期';

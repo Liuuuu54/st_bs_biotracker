@@ -562,7 +562,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   function liningTone() {
     const { emptyStage, pressureLevel } = layout;
     if (!emptyStage) return pressureLevel >= 2 ? P.wallTense : P.wallLight;
-    return { 月经期: P.blood, 卵泡期: P.wallLight, 排卵期: P.shine, 黄体期: P.lining, 产后恢复: P.blood, 假孕期: P.lining }[emptyStage] || P.wallLight;
+    return { 月经期: P.blood, 乏情期: P.wall, 卵泡期: P.wallLight, 排卵期: P.shine, 黄体期: P.lining, 产后恢复: P.blood, 假孕期: P.lining }[emptyStage] || P.wallLight;
   }
 
   function wallTone() {

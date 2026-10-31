@@ -11,7 +11,7 @@ import {
   PSY_PREG_FIELDS,
   PSY_PREG_BOOL_FIELDS,
 } from './registry_psy_config.js';
-import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
+import { DORMANCY_STAGE, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
 import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines, renameStoredRaces } from './state_migration.js';
 import { createEmptySires, normalizeSires, pruneFutaSireRecord } from './sires.js';
@@ -483,10 +483,23 @@ function randomInt(min, max) {
   return Math.floor(Math.random() * (nextMax - nextMin + 1)) + nextMin;
 }
 
-export function deriveMenstrualStageState() {
-  const stage = MENSTRUAL_STAGES[randomInt(0, MENSTRUAL_STAGES.length - 1)];
-  const days = randomInt(0, MENSTRUAL_STAGE_DAYS[stage]);
-  return { stage, days };
+/**
+ * 注册时的初始月经阶段。先按「乏情期占整季的时间比例」决定是否正在乏情：天使一年有八成多在乏情，
+ * 不能一注册就是发情期。不在乏情时照旧从活动周期四期等机率抽，并抽本季已经跑完几轮。
+ * bio 没有乏情天数的（人类与多数物种）不会抽到乏情期。
+ */
+export function deriveMenstrualStageState(bio = {}, random = Math.random) {
+  const ratio = Math.max(0.1, Math.min(20, Number(bio?.menstrualLengthRatio) || 1));
+  const dormancy = Math.max(0, Number(bio?.dormancyDays) || 0);
+  const cycles = Math.max(1, Math.round(Number(bio?.seasonCycles) || 1));
+  const activeSeason = Object.values(MENSTRUAL_STAGE_DAYS).reduce((sum, days) => sum + days * ratio, 0) * cycles;
+  if (dormancy > 0 && random() * (activeSeason + dormancy) >= activeSeason) {
+    return { stage: DORMANCY_STAGE, days: Math.floor(random() * dormancy), seasonCycle: 0 };
+  }
+  const stages = Object.keys(MENSTRUAL_STAGE_DAYS);
+  const stage = stages[Math.min(stages.length - 1, Math.floor(random() * stages.length))];
+  const days = Math.floor(random() * (MENSTRUAL_STAGE_DAYS[stage] + 1));
+  return { stage, days, seasonCycle: dormancy > 0 ? Math.min(cycles - 1, Math.floor(random() * cycles)) : 0 };
 }
 
 export function derivePregnancyStageState(pregnantDays, gestationSpeed = 1, { extensionUntilDays = null, rightContinuous = false } = {}) {
@@ -611,11 +624,12 @@ export function syncCharacterStageFromProfile(characterState) {
     return next;
   }
 
-  const derived = deriveMenstrualStageState();
+  const derived = deriveMenstrualStageState(next.profile.bio);
   next.profile.base = {
     ...base,
     stage: derived.stage,
     days: derived.days,
+    seasonCycle: derived.seasonCycle,
   };
   return next;
 }
@@ -749,6 +763,7 @@ export function createDefaultFemaleState(name = '') {
         vitalityLevel,
         psyStressLevel,
         uterineAtony: 0,
+        seasonCycle: 0,
       },
       pregnant: {
         pregnantDays: 0,
@@ -796,6 +811,8 @@ export function createDefaultFemaleState(name = '') {
       diary: [],
       bio: {
         menstrualLengthRatio: 1.0,
+        dormancyDays: 0,
+        seasonCycles: 1,
         gestationSpeciesSpeed: 1.0,
         gestationEffectiveSpeed: 1.0,
         gestationModifierMultiplier: 1.0,
@@ -2015,6 +2032,7 @@ function createSnapshotCharacterBaseline(name = '') {
         vitalityLevel: 4,
         psyStressLevel: 4,
         uterineAtony: 0,
+        seasonCycle: 0,
       },
       pregnant: {
         pregnantDays: 0,
@@ -2062,6 +2080,8 @@ function createSnapshotCharacterBaseline(name = '') {
       diary: [],
       bio: {
         menstrualLengthRatio: 1.0,
+        dormancyDays: 0,
+        seasonCycles: 1,
         gestationSpeciesSpeed: 1.0,
         gestationEffectiveSpeed: 1.0,
         gestationModifierMultiplier: 1.0,

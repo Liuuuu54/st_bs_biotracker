@@ -15,7 +15,7 @@ import {
   getSpermDoseCompanionMultiplier,
   getSpermDoseDifficultyBonus,
 } from './race_config.js';
-import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, MENSTRUAL_STAGE_DAYS, MENSTRUAL_STAGES } from './stage_config.js';
+import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, MENSTRUAL_STAGE_DAYS } from './stage_config.js';
 import { CONCEPTION_WEIGHT_LOG_SD, getConceptionStageWeight, resolveConceptionWeightRatio } from './body_size.js';
 
 export const SPERM_DECAY_PER_DAY = 10;
@@ -232,8 +232,9 @@ export function calculateImplantationDays(cycleLength = 28) {
 export function calculateRaceImplantationDays(race = '人类') {
   const profile = getMergedRacePhysiologyProfile(race) || {};
   const ratio = clampNumber(profile.menstrualLengthRatio, 0.1, 20, 1);
-  const cycleLength = MENSTRUAL_STAGES.reduce((sum, stage) => (
-    sum + Math.max(1, (Number(MENSTRUAL_STAGE_DAYS[stage]) || 0) * ratio)
+  // 只算活动周期：乏情期不影响着床
+  const cycleLength = Object.values(MENSTRUAL_STAGE_DAYS).reduce((sum, days) => (
+    sum + Math.max(1, (Number(days) || 0) * ratio)
   ), 0);
   return calculateImplantationDays(cycleLength || 28);
 }
