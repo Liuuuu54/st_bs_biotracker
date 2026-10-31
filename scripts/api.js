@@ -380,6 +380,28 @@ function shouldUseHostProxy(url) {
   return isBrowserRuntime() && isCrossOriginUrl(url);
 }
 
+/**
+ * 连不上 API 时的错误讯息。有代理的 HTTP 状态码就以它为主（那才是上游真正的回答）；
+ * 完全没有回应时说清楚「没有状态码」代表什么：请求没送达，或被浏览器拦下。
+ */
+export function describeConnectionFailure({ error, proxyFailure = null, upstreamUrl = '' }) {
+  const direct = String(error?.message || error || '未知错误');
+  let host = '';
+  try { host = new URL(upstreamUrl).host; } catch {}
+  const target = host ? `（${host}）` : '';
+  if (proxyFailure && Number.isFinite(proxyFailure.status)) {
+    return `API ${proxyFailure.status}［经酒馆代理${target}］: ${sanitizeErrorText(proxyFailure.text) || '（上游没有附错误内容）'}`
+      + `。之后改用浏览器直连也失败（${direct}），所以以代理拿到的状态码为准。`;
+  }
+  const proxyNote = proxyFailure?.error
+    ? `先经酒馆代理也连不上（${String(proxyFailure.error?.message || proxyFailure.error)}），`
+    : '';
+  return `无法连接到 API${target}：没有 HTTP 状态码，代表请求没有送达上游，或在浏览器端就被拦下。${proxyNote}`
+    + '常见原因：Base URL 打错或少了版本路径、网络或代理不通、渠道不允许浏览器直连（CORS）。'
+    + '若使用原版 SillyTavern 而渠道不允许浏览器直连，可在 config.yaml 设置 corsProxy.enabled: true 后重启，让酒馆服务器代为转发。'
+    + `原始错误: ${direct}`;
+}
+
 function shouldFallbackFromHostProxy(responseText, status) {
   // 不含 429：上游限流时再直连一次等于对已限流的端点翻倍施压，
   // 而浏览器跨域直连多半又会 CORS 失败，白白多打一次
@@ -1280,6 +1302,9 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     let url = canUseHostProxy ? '/api/backends/chat-completions/generate' : (transparentProxyUrl || upstreamUrl);
     const payloadForTransport = canUseHostProxy ? requestBody : buildDirectPayload(fmt, requestBody);
     assertSafeDirectApiBase(apiBase);
+    // 代理失败后改走浏览器直连时，记下代理那边的结果：直连多半又被 CORS 挡成 Failed to fetch，
+    // 只报直连的错会把上游真正的状态码（401 key 错、404 模型或网址错…）丢掉
+    let proxyFailure = null;
     let requestText = '';
     try {
       requestText = JSON.stringify(payloadForTransport);
@@ -1304,6 +1329,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
           if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
         }
         if (proxyError || (!response.ok && shouldFallbackFromHostProxy(responseText, response.status))) {
+          proxyFailure = proxyError ? { via: transport, error: proxyError } : { via: transport, status: response.status, text: responseText };
           transport = proxyError ? 'direct-after-proxy-error' : `direct-after-proxy-${response.status}`;
           url = upstreamUrl;
           if (!proxyError && (response.status === 401 || response.status === 403)) {
@@ -1335,6 +1361,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
           if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
         }
         if (proxyError || (!response.ok && shouldFallbackFromHostProxy(responseText, response.status))) {
+          proxyFailure = proxyError ? { via: transport, error: proxyError } : { via: transport, status: response.status, text: responseText };
           transport = proxyError ? 'direct-after-proxy-error' : `direct-after-proxy-${response.status}`;
           url = upstreamUrl;
           ({ response, responseText } = await fetchText(upstreamUrl, {
@@ -1389,7 +1416,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
         error,
       });
       if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
-      throw new Error(`无法连接到 API。请检查 Base URL、API Key、服务是否启动；浏览器环境会优先通过酒馆后端代理。若使用原版 SillyTavern 且渠道不允许浏览器直连（CORS 拦截），可在 config.yaml 设置 corsProxy.enabled: true 后重启，让酒馆服务器代为转发。原始错误: ${String(error?.message || error)}`);
+      throw new Error(describeConnectionFailure({ error, proxyFailure, upstreamUrl }));
     }
   };
 

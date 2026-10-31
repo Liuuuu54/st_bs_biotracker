@@ -175,6 +175,29 @@ test('callOpenAICompatible falls back to direct access when the SillyTavern prox
   assert.equal(calls[1].options.headers.Authorization, 'Bearer relay-key');
 });
 
+test('when the proxy answers with an HTTP error and direct access is blocked, the proxy status is reported', async () => {
+  installBrowserHost(async (url) => {
+    if (url === '/api/backends/chat-completions/generate') {
+      return { ok: false, status: 404, async text() { return '{"error":{"message":"models/gemini-x is not found"}}'; } };
+    }
+    throw new TypeError('Failed to fetch');
+  });
+  await assert.rejects(
+    callOpenAICompatible({ apiUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', apiKey: 'k', model: 'gemini-x' }, { recent_messages: [] }, 'Return JSON.'),
+    (error) => /^API 404［经酒馆代理（generativelanguage\.googleapis\.com）］/.test(error.message)
+      && /is not found/.test(error.message) && /Failed to fetch/.test(error.message),
+  );
+});
+
+test('a request that never gets a response says there is no status code and why', async () => {
+  installBrowserHost(async () => { throw new TypeError('Failed to fetch'); });
+  await assert.rejects(
+    callOpenAICompatible({ apiUrl: 'https://relay.example.test/v1', apiKey: 'k', model: 'm' }, { recent_messages: [] }, 'Return JSON.'),
+    (error) => /没有 HTTP 状态码/.test(error.message) && /先经酒馆代理也连不上/.test(error.message)
+      && /relay\.example\.test/.test(error.message) && /原始错误: Failed to fetch/.test(error.message),
+  );
+});
+
 test('callOpenAICompatible aborts a hanging request instead of waiting forever', async () => {
   const calls = [];
   installBrowserHost((url, options) => {
