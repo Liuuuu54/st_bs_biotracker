@@ -201,12 +201,14 @@ test('不问模型就能定的改动：原样、只动空白标点沿用；续�
   assert.equal(classifyTailEdit(TRACKED_TEXT, TRACKED_TEXT.replace('夜里下着雨。', '')), 'needs_decision');
 });
 
-test('决策请求按六类事实逐项提问，只带改动的那一段与少量上下文', () => {
+test('决策请求按各类生理事实逐项提问，只带改动的那一段与少量上下文', () => {
   const before = `${'前文'.repeat(200)}${TRACKED_TEXT}`;
   const after = before.replace('在她体内射精', '射在了她的小腹上');
   const body = buildEditGateRequestBody('m', before, after);
   assert.equal(body.model, 'm');
-  assert.deepEqual(Object.keys(body.questions), ['sex', 'contraception', 'time', 'clothing', 'presence', 'body']);
+  assert.deepEqual(Object.keys(body.questions), [
+    'sex', 'contraception', 'time', 'clothing', 'presence', 'body', 'eating', 'excretion', 'sleep', 'hygiene',
+  ]);
   for (const question of Object.values(body.questions)) {
     assert.equal(question.type, 'choice');
     assert.deepEqual(Object.keys(question.criteria), ['改变了', '没改变']);
@@ -517,4 +519,60 @@ test('重新追踪更早那楼后，已删掉的更晚楼层的正文一并作�
   const counts = chatStateOf(ctx).editGateBaselines.map((item) => item.messageCount);
   assert.equal(counts.at(-1), count);
   assert.ok(counts.every((value) => value <= count), `不该留着已删掉楼层的正文：${counts.join(',')}`);
+});
+
+test('数字里的标点不算无关修改：1.5 改 15、1-2 改 12、50% 改 50 都要问模型', () => {
+  const text = '两人在旅店里休息了 1.5 小时，又走了 1-2 天的路，体力只剩 50%。';
+  assert.equal(classifyTailEdit(text, text.replace('1.5', '15')), 'needs_decision');
+  assert.equal(classifyTailEdit(text, text.replace('1-2', '12')), 'needs_decision');
+  assert.equal(classifyTailEdit(text, text.replace('50%', '50')), 'needs_decision');
+  assert.equal(classifyTailEdit(text, text.replace('１', '1')), 'same', '没动到');
+  assert.equal(classifyTailEdit(text, text.replace('小时，', '小时。').replace('路，', '路；')), 'cosmetic', '数字以外的标点照旧算无关');
+});
+
+test('把经过 1.5 小时改成 15 小时：要问决策模型，不直接沿用', async () => {
+  const { ctx, counter } = await setupTracked();
+  const before = '两人在旅店里休息了 1.5 小时。';
+  // 先按含数字的正文追踪一次，再改数字
+  await trackOneReply(ctx, before);
+  counter.tracker = 0;
+  await editTail(ctx, before.replace('1.5', '15'));
+  assert.equal(counter.decision, 1);
+});
+
+test('回传的概率要有效：null 退回看选项，超出 0–1 或读不出来算判断失败', () => {
+  const nullProbability = decisionAnswers({});
+  nullProbability.answers.time = { choice: '改变了', probabilities: { 改变了: null, 没改变: null } };
+  assert.equal(interpretEditGateResponse(nullProbability).retrack, true, '选了改变了，概率是 null 时不能当成 0');
+  const nullInArray = decisionAnswers({});
+  nullInArray.answers.time = { choice: '改变了', probabilities: [{ choice: '改变了', probability: null }] };
+  assert.equal(interpretEditGateResponse(nullInArray).retrack, true);
+  for (const bad of [1.5, -0.1, 'abc', 97]) {
+    const payload = decisionAnswers({});
+    payload.answers.sex = { choice: '没改变', probabilities: { 改变了: bad, 没改变: 0.5 } };
+    assert.throws(() => interpretEditGateResponse(payload), /概率/, `概率 ${bad} 要算判断失败`);
+  }
+});
+
+test('决策模型选了改变了但概率是 null：照常重追', async () => {
+  const answers = decisionAnswers({});
+  answers.answers.sex = { choice: '改变了', probabilities: { 改变了: null, 没改变: null } };
+  const { ctx, counter } = await setupTracked({ decide: () => jsonResponse(answers) });
+  await editTail(ctx, TRACKED_TEXT.replace('在她体内射精', '射在了她的小腹上'));
+  await sleep(10);
+  await runTracker(ctx, deps, 'poll');
+  assert.equal(counter.decision, 1);
+  assert.equal(counter.tracker, 1);
+});
+
+test('进食、排泄、睡眠、清洁也逐项询问：任一项变了就重追', async () => {
+  for (const topic of ['eating', 'excretion', 'sleep', 'hygiene']) {
+    assert.ok(EDIT_GATE_TOPICS[topic], topic);
+    assert.equal(interpretEditGateResponse(decisionAnswers({ [topic]: 0.9 })).retrack, true, topic);
+  }
+  const body = buildEditGateRequestBody('m', '她吃了早饭。', '她没吃早饭。');
+  assert.match(body.questions.eating.instructions, /进食/);
+  assert.match(body.questions.excretion.instructions, /排尿|排便/);
+  assert.match(body.questions.sleep.instructions, /睡/);
+  assert.match(body.questions.hygiene.instructions, /洗澡|清洗/);
 });

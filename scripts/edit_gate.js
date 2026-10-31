@@ -30,6 +30,10 @@ export const EDIT_GATE_TOPICS = Object.freeze({
   clothing: '角色穿着什么、是否换衣服或脱衣服',
   presence: '哪些角色在场、谁离开或到来',
   body: '月经、排卵、怀孕、分娩、哺乳、受伤或疾病',
+  eating: '进食、喝水、饥饿或口渴',
+  excretion: '排尿、排便',
+  sleep: '睡觉、小睡、醒来或熬夜',
+  hygiene: '洗澡、清洗身体、清理体内的精液',
 });
 
 export const EDIT_GATE_TOPIC_LABELS = Object.freeze({
@@ -39,6 +43,10 @@ export const EDIT_GATE_TOPIC_LABELS = Object.freeze({
   clothing: '衣着',
   presence: '在场角色',
   body: '身体状况',
+  eating: '进食',
+  excretion: '排泄',
+  sleep: '睡眠',
+  hygiene: '清洁',
 });
 
 function toFiniteNumber(value) {
@@ -102,16 +110,24 @@ function stripWhitespaceAndPunctuation(text) {
   return String(text || '').replace(/[\s\p{P}\p{S}]/gu, '');
 }
 
+/** 数字连同夹在数字之间、紧跟其后的符号（1.5、1-2、3:30、50%）：这些标点一改，意思就变了 */
+const NUMERIC_TOKEN_PATTERN = /\p{Nd}+(?:[^\p{L}\p{Nd}\s]+\p{Nd}+)*[%％‰]?/gu;
+
+function numericTokens(text) {
+  return (String(text || '').match(NUMERIC_TOKEN_PATTERN) || []).join('|');
+}
+
 /**
  * 不问模型就能定的改动：
- * same / cosmetic（只动了空白或标点）→ 沿用；append（只在末尾接了内容，多半是续写）
+ * same / cosmetic（只动了空白或标点，数字里的不算）→ 沿用；append（只在末尾接了内容，多半是续写）
  * 与 too_large（大段改写）→ 直接重追；其余交给决策模型。
  */
 export function classifyTailEdit(before, after) {
   const prev = String(before || '');
   const next = String(after || '');
   if (prev === next) return 'same';
-  if (stripWhitespaceAndPunctuation(prev) === stripWhitespaceAndPunctuation(next)) return 'cosmetic';
+  if (stripWhitespaceAndPunctuation(prev) === stripWhitespaceAndPunctuation(next)
+    && numericTokens(prev) === numericTokens(next)) return 'cosmetic';
   const kept = prev.trimEnd();
   if (next.length > kept.length && next.startsWith(kept)) return 'append';
   const { removed, added } = diffEditWindow(prev, next);
@@ -144,18 +160,25 @@ export function buildEditGateRequestBody(model, before, after) {
   return { model, state: buildEditGateState(before, after), questions };
 }
 
-/** 概率可能是 { 选项: p } 或 [{ choice, probability }]；读不到返回 null。 */
+/**
+ * 概率可能是 { 选项: p } 或 [{ choice, probability }]。
+ * 没给（缺项、null、空字符串）回传 null，由调用方改看选项；
+ * 给了却不是 0–1 之间的数回传 NaN——Number(null) 之类会悄悄变成 0，不能当真。
+ */
 function readLabelProbability(probabilities, label) {
+  let raw;
   if (Array.isArray(probabilities)) {
     const entry = probabilities.find((item) => (item?.choice ?? item?.label ?? item?.option) === label);
-    const value = Number(entry?.probability ?? entry?.p);
-    return entry && Number.isFinite(value) ? value : null;
+    if (!entry) return null;
+    raw = entry.probability ?? entry.p;
+  } else if (probabilities && typeof probabilities === 'object') {
+    raw = probabilities[label];
+  } else {
+    return null;
   }
-  if (probabilities && typeof probabilities === 'object') {
-    const value = Number(probabilities[label]);
-    return Number.isFinite(value) ? value : null;
-  }
-  return null;
+  if (raw === null || raw === undefined || (typeof raw === 'string' && !raw.trim())) return null;
+  const value = typeof raw === 'number' || typeof raw === 'string' ? Number(raw) : NaN;
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : NaN;
 }
 
 /**
@@ -170,6 +193,7 @@ export function interpretEditGateResponse(payload, threshold = DEFAULT_EDIT_GATE
     const answer = answers[key];
     if (!answer || typeof answer !== 'object') throw new Error(`决策接口少了「${key}」这一项的回答`);
     const probability = readLabelProbability(answer.probabilities, CHANGED_LABEL);
+    if (Number.isNaN(probability)) throw new Error(`决策接口「${key}」这一项的概率无效`);
     if (probability !== null) scores[key] = probability;
     else if (answer.choice === CHANGED_LABEL || answer.choice === UNCHANGED_LABEL) scores[key] = answer.choice === CHANGED_LABEL ? 1 : 0;
     else throw new Error(`决策接口「${key}」这一项的回答读不出来`);
