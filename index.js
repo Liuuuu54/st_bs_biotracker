@@ -77,6 +77,7 @@ import { createRacePaletteSelection, appendRacePaletteTag, removeRacePaletteTag,
   setRacePalettePercent, palettePercentText, buildRacePaletteValue } from './scripts/race_palette.js';
 import { createDocViewer, parseDocHref } from './scripts/doc_viewer.js';
 import { calculateDerivedInheritancePreview, calculateFertilizationPreview, DERIVED_INHERITANCE_THRESHOLD } from './scripts/calculator.js';
+import { enablePooledConception, isPooledConception } from './scripts/pooled_reproduction.js';
 import { getSpermSources } from './scripts/sperm_sources.js';
 import {
   LABOR_STAGES,
@@ -4295,15 +4296,24 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
   const totalSperm = (Array.isArray(base.sperms) ? base.sperms : []).reduce((sum, item) => sum + (Number(item?.value) || 0), 0);
   const eggs = Number(base.eggs) || 0;
   const allowsNaturalConception = MENSTRUAL_STAGES.includes(stage) && stage !== '月经期';
-  const conceptionPreview = eggs > 0 && totalSperm > 0 && allowsNaturalConception
+  const pooledConception = isPooledConception(base);
+  // pooled 的逐次来源保留各次快照；占比环仍使用 base.sperms 的真实残量聚合。
+  const previewSpermSources = pooledConception
+    ? (Array.isArray(base.spermContacts) ? base.spermContacts : [])
+    : getSpermSources(base);
+  const previewSpermTotal = pooledConception
+    ? previewSpermSources.reduce((sum, item) => sum + (Number(item?.value) || 0), 0)
+    : totalSperm;
+  const conceptionPreview = eggs > 0 && previewSpermTotal > 0 && allowsNaturalConception
     ? calculateFertilizationPreview({
       eggRace: base.race,
       impregnationDifficulty: bio.impregnationDifficulty,
       elapsedDays: 1,
       chanceFactor: 1,
-      spermSources: getSpermSources(base),
+      spermSources: previewSpermSources,
       uterusVolumeFactor: getUterusVolumeFactor(base),
       crossSpecies: Boolean(immune.crossSpecies),
+      ...(pooledConception ? { model: 'pooled-v1' } : {}),
     })
     : null;
   const rawFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
@@ -4350,6 +4360,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       totalSperm,
       sperms: Array.isArray(base.sperms) ? base.sperms : [],
       conceptionChance: conceptionPreview?.successChance ?? null,
+      conceptionModel: pooledConception ? 'pooled-v1' : 'legacy',
       hasFertilizedEmbryo,
       hasPendingImplantation,
       pregnantDays: Number(pregnant.pregnantDays) || 0,
@@ -4760,7 +4771,7 @@ function renderSpermShareChart(sperms, conceptionChance = null, capacity = null)
   `;
 }
 
-function renderSpermShareSection(sperms, { badge = '', badgeClass = '', conceptionChance = null, capacity = null } = {}) {
+function renderSpermShareSection(sperms, { badge = '', badgeClass = '', conceptionChance = null, capacity = null, previewNote = '' } = {}) {
   const chart = renderSpermShareChart(sperms, conceptionChance, capacity);
   const emptyText = Number(capacity) > 0 ? `当前无精液残留（最大 ${Math.round(Number(capacity))}）` : '当前无精液残留';
   const statusBadge = String(badge || '').trim()
@@ -4773,6 +4784,7 @@ function renderSpermShareSection(sperms, { badge = '', badgeClass = '', concepti
         ${statusBadge}
       </div>
       ${chart || `<div class="bs-bt-track-card-empty">${emptyText}</div>`}
+      ${previewNote ? `<div class="bs-bt-track-card-empty">${escapeHtml(previewNote)}</div>` : ''}
     </div>
   `;
 }
@@ -5169,6 +5181,8 @@ function renderTrackPregnancy(viewModel) {
       badgeClass: hasPendingImplantation ? 'is-conceived' : '',
       conceptionChance: data.conceptionChance,
       capacity: data.womb?.semenCapacity,
+      previewNote: data.conceptionModel === 'pooled-v1'
+        ? '实验性混合池：24h数值是当前已有卵的单卵静态预览，不含未来排卵、阶段切换或新行动；真实受精在连续时刻结算，显示分钟向上取整。' : '',
     })}
     ${data.showPregnantFields
       ? `          ${renderDescriptionGroup('孕态描述', data.pregnantBlocks, pregnantDescriptionOptions)}`
@@ -7556,7 +7570,16 @@ function setFullStateEditStatus(message, kind = 'info') {
   status.dataset.kind = kind;
 }
 
-function updateFullStateControls() {
+function updateFullStateControls(ctx) {
+  const pooledButton = document.getElementById('bs-bt-full-state-enable-pooled');
+  if (pooledButton) {
+    const chatState = getChatState(ctx, getSettings(ctx));
+    const character = selectedFullStateKind !== 'sire' && selectedFullStateName
+      ? chatState.characters?.[selectedFullStateName] : null;
+    const enabled = isPooledConception(character?.profile?.base);
+    pooledButton.disabled = !character?.profile?.base || enabled;
+    pooledButton.textContent = enabled ? '实验性混合池已启用' : '启用实验性混合池';
+  }
   const button = document.getElementById('bs-bt-full-state-unregister');
   const applyButton = document.getElementById('bs-bt-full-state-apply');
   const resetButton = document.getElementById('bs-bt-full-state-reset');
@@ -7688,7 +7711,7 @@ function renderSelectedFullStateEditor(ctx) {
     setFullStateEditStatus('请选择角色后再编辑。');
   }
   renderChildMoveControls(ctx);
-  updateFullStateControls();
+  updateFullStateControls(ctx);
   renderFullStateHistory(ctx);
 }
 
@@ -7882,6 +7905,27 @@ function validateManualCharacterState(next, currentName) {
     normalized.profile.pregnant.fetusesCount = normalized.profile.pregnant.fetuses.length;
   }
   return { ok: true, value: normalized };
+}
+
+function enableSelectedPooledConception(ctx) {
+  if (!selectedFullStateName || selectedFullStateKind === 'sire') return;
+  const chatState = getChatState(ctx, getSettings(ctx));
+  const character = chatState.characters?.[selectedFullStateName];
+  if (!character?.profile?.base || isPooledConception(character.profile.base)) return;
+  try {
+    // 迁移前后各记一份，完整变量与快照保留历史；此入口只启用，不提供降级切换。
+    recordChatStateSnapshot(ctx, chatState, { reason: 'before_enable_pooled_conception' });
+    enablePooledConception(character.profile.base, Number(chatState.minutesPassed) || 0);
+    recordChatStateSnapshot(ctx, chatState, { reason: 'manual_enable_pooled_conception' });
+    saveSettings(ctx);
+    renderStatusPanel(ctx);
+    renderFullStatePage(ctx);
+    updateMainFlowPrompt(ctx);
+    resetPoller(ctx, trackerDeps);
+    setFullStateEditStatus(`已为 ${selectedFullStateName} 启用实验性混合池（pooled-v1）；启用前状态已记入快照。`, 'success');
+  } catch (error) {
+    setFullStateEditStatus(String(error?.message || error), 'error');
+  }
 }
 
 function applyFullStateManualEdit(ctx) {
@@ -8216,7 +8260,7 @@ function renderFullStatePage(ctx) {
     output.value = '请选择角色查看完整变量。';
     setFullStateEditStatus('请选择角色后再编辑。');
     if (debugPanel) debugPanel.innerHTML = '<div class="bs-bt-connect-status">请选择角色后使用调试工具。</div>';
-    updateFullStateControls();
+    updateFullStateControls(ctx);
     updateFullStateSubpage();
     closeFullStateConfirm();
     return;
@@ -8270,7 +8314,7 @@ function renderFullStatePage(ctx) {
     if (debugPanel) debugPanel.innerHTML = '<div class="bs-bt-connect-status">请选择角色后使用调试工具。</div>';
   }
   renderChildMoveControls(ctx);
-  updateFullStateControls();
+  updateFullStateControls(ctx);
   updateFullStateSubpage();
   closeFullStateConfirm();
 }
@@ -10596,6 +10640,9 @@ async function ensureModal(ctx) {
   });
   document.getElementById('bs-bt-full-state-reset')?.addEventListener('click', () => {
     renderSelectedFullStateEditor(ctx);
+  });
+  document.getElementById('bs-bt-full-state-enable-pooled')?.addEventListener('click', () => {
+    enableSelectedPooledConception(ctx);
   });
   document.getElementById('bs-bt-child-move-apply')?.addEventListener('click', () => {
     if (!selectedFullStateName) return;

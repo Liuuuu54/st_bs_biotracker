@@ -6,7 +6,7 @@
 
 1. [角色註冊與初始值](registration.md)：活力／情壓七級、起始狀態、開局妊娠和再次註冊。
 2. [追蹤、API 與存檔](tracking-and-state.md)：一則訊息怎樣變成工具呼叫，以及怎樣避免重複處理。
-3. [時間、週期與受孕](cycles-and-conception.md)：時間單位、排卵、精源、受精、著床、種族繼承。
+3. [時間、週期與受孕](cycles-and-conception.md)：時間單位、排卵、預設一致性修復、顯式啟用的事件積分混合池、著床與種族繼承。
 4. [妊娠、供養與分娩](pregnancy-and-labor.md)：孕程、胎位、羊膜、宮壓、產程和出生。
 5. [代謝與角色附屬系統](character-systems.md)：需求、心理、技能、衣櫃、日記和經歷。
 6. [服裝與技能機制](wardrobe-and-skills.md)：衣物數值、孕期合身、換裝及技能／天賦計算。
