@@ -202,6 +202,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
   autoTrackEnabled: true,
   // 时间推进：关掉就冻结整条时间轴，追踪模型不得调用 bsPassedTime（使用者手动推进不受影响）
   timeFlowEnabled: true,
+  // 手动改了尾楼后先问决策模型要不要重追（scripts/edit_gate.js）；只填自定义的决策接口
+  editGateEnabled: false,
+  editGateApiUrl: '',
+  editGateApiKey: '',
+  editGateModel: '',
+  editGateKeepFloors: 3,
+  editGateThresholdPercent: 60,
   useStPresetForAsync: false,
   trackerPresetName: '',
   trackerPromptToggles: {},
