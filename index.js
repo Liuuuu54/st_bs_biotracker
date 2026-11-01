@@ -5113,7 +5113,7 @@ function mountWombView(ctx, content, viewModel) {
     }
   }
   host.querySelector('[data-womb-replay]')?.addEventListener('click', (event) => {
-    wombRenderer?.playCue(String(event.currentTarget.dataset.wombReplay || ''));
+    wombRenderer?.playCue(String(event.currentTarget.dataset.wombReplay || ''), { userRequested: true });
   });
 
   host.querySelectorAll('canvas[data-sprite-type]').forEach((node) => {

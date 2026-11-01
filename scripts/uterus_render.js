@@ -1428,9 +1428,13 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       wantsAnimation = Boolean(value);
       kick();
     },
-    /** 事件演出不受「关闭动画」影响：它只播一次，是资讯而不是装饰；减少动态效果时则跳过 */
-    playCue(type) {
-      if (reducedMotion) return false;
+    /**
+     * 事件演出不受「关闭动画」影响：它只播一次，是资讯而不是装饰。
+     * 系统开了「减少动态效果」时不自动播；但使用者按重播是明确要看（userRequested），照播。
+     * WebView2（TauriTavern）跟着 Windows 的「动画效果」设定，关掉的人不少，按重播却毫无反应会像坏掉。
+     */
+    playCue(type, { userRequested = false } = {}) {
+      if (reducedMotion && !userRequested) return false;
       cue = { type, start: performance.now() };
       kick();
       return true;
