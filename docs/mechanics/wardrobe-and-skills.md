@@ -4,7 +4,7 @@
 
 ## 衣櫃與當前穿著是兩份資料
 
-`profile.wardrobe.items` 存長期擁有的衣物；`profile.outfit` 存此刻主服、配件 ID、暫時衣物、穿著狀態與孕期合身評估。衣櫃預設有不可刪的 `id=0`「全裸」，但當前主服 `mainItemId=null` 表示**衣著未記錄**，`mainItemId=0` 才是**明確全裸**。暫時衣物只存在於目前穿著，脫掉後會從 `transientItems` 移除；要留下就用 `bsAddWardrobeItem` 引用它（或在衣櫃頁按「收進衣櫃」），會轉成長期衣物，id 與穿著不變。[預設值](../../scripts/state.js#L804)、[換裝實作](../../scripts/tools.js#L6963)。
+`profile.wardrobe.items` 存長期擁有的衣物；`profile.outfit` 存此刻主服、配件 ID、暫時衣物、穿著狀態與孕期合身評估。衣櫃預設有不可刪的 `id=0`「全裸」，但當前主服 `mainItemId=null` 表示**衣著未記錄**，`mainItemId=0` 才是**明確全裸**。暫時衣物只存在於目前穿著，脫掉後會從 `transientItems` 移除；要留下就用 `bsAddWardrobeItem` 引用它（或在衣櫃頁按「收進衣櫃」），會轉成長期衣物，id 與穿著不變。[預設值](../../scripts/state.js#L805)、[換裝實作](../../scripts/tools.js#L6963)。
 
 ### 衣物數值
 
@@ -33,13 +33,13 @@
 | [`bsRemoveWardrobeItem`](../../scripts/tools.js#L6994) | `female`、`itemId` 必填；ID 或準確名稱皆可。刪除正在穿的主服會使主服變成未記錄，刪配件則自當前配件清單移除。`id=0` 不可刪。 |
 | [`bsChangeOutfit`](../../scripts/tools.js#L7031) | `female` 必填。可用既有 ID／名稱，也可在 `main`、`accessories` 直接建立並穿上；`scope=owned` 存衣櫃，`temporary` 僅暫存。`accessoryItemIds` 覆蓋整表；`addAccessoryItemIds`／`removeAccessoryItemIds` 在現有清單增減。主服變更時若未指定 `wearState`，預設回「整齊」。無效引用會拒絕整次換裝。 |
 
-衣櫃頁的「備裝」讓模型代入角色整理衣櫃，結果是 `{items, remove}`：`items` 逐件以 `bsAddWardrobeItem` 寫入，`remove` 是要丟的既有衣物 id 與理由。套用時先丟後加，正在穿的、`id=0` 與找不到的丟棄項會跳過並回報，任一新增失敗整份不寫。[備裝套用](../../scripts/registry.js#L517)。
+衣櫃頁的「備裝」讓模型代入角色整理衣櫃，結果是 `{items, remove}`：`items` 逐件以 `bsAddWardrobeItem` 寫入，`remove` 是要丟的既有衣物 id 與理由。套用時先丟後加，正在穿的、`id=0` 與找不到的丟棄項會跳過並回報，任一新增失敗整份不寫。[備裝套用](../../scripts/registry.js#L522)。
 
 `wearState` 是動態文字標籤，移除 `|`、`;` 與換行並截至 12 個字元；它不改衣物的長期 `note` 或四維數值。[sanitizeWearState](../../scripts/wardrobe_config.js#L113)。
 
 ## 技能目錄、角色技能與天賦
 
-`chatState.skillCatalog` 是**本聊天共用**的技能定義（ID、名稱、描述）；`profile.skills` 是角色已覺醒技能的等級／經驗；`profile.talents` 是角色資質；`profile.skillHistory` 記錄升級事件。技能 ID 隨 `nextSkillId` 遞增，同名定義會重用。註冊角色時也可推論初始技能和天賦。[狀態](../../scripts/state.js#L676)、[定義規則](../../scripts/skill_config.js#L57)、[初始化](../../scripts/registry.js#L1994)。
+`chatState.skillCatalog` 是**本聊天共用**的技能定義（ID、名稱、描述）；`profile.skills` 是角色已覺醒技能的等級／經驗；`profile.talents` 是角色資質；`profile.skillHistory` 記錄升級事件。技能 ID 隨 `nextSkillId` 遞增，同名定義會重用。註冊角色時也可推論初始技能和天賦。[狀態](../../scripts/state.js#L677)、[定義規則](../../scripts/skill_config.js#L57)、[初始化](../../scripts/registry.js#L2002)。
 
 技能頁的「技能基準」按聊天保存，送入初始技能推演與追蹤，約束要建立、成長哪些方向的技能；它不刪除已有的技能，留空即不限制。「可選預設技能」把一組預設技能（部位開發、行為與傾向）按聊天匯入圖鑑，兩組可各自匯入，重複匯入會自動去重；這個聊天還沒有技能基準時，匯入會一併把基準設成「只追蹤調教類技能」。每個技能的描述會隨圖鑑送進追蹤，作為技能成立與成長的判斷標準。[預設技能](../../scripts/skill_config.js#L144)。
 

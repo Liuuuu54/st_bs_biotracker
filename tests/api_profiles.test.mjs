@@ -13,7 +13,7 @@ test('saving captures url, format, key and model under a name; same name overwri
   assert.equal(state.saveApiProfile(settings, '  主力  '), false);
   assert.deepEqual(settings.apiProfiles, [{
     name: '主力', apiUrl: 'https://a.example/v1', apiFormat: 'openai_compat', apiKey: 'sk-a', model: 'model-a',
-    temperatureMode: 'legacy', temperature: null, reasoningEffort: 'auto', formattedOutputV4: true,
+    temperatureMode: 'legacy', temperature: null, reasoningEffort: 'auto', replyFormat: 'formatted',
     mainflowCopyCharLimit: 400000,
   }]);
 
@@ -27,12 +27,12 @@ test('saving captures url, format, key and model under a name; same name overwri
 test('applying a profile restores its connection fields and drops the stale model list', () => {
   const settings = makeSettings({
     apiUrl: 'https://a.example/v1', apiFormat: 'claude_messages', apiKey: 'sk-a', model: 'model-a',
-    temperatureMode: 'manual', temperature: 0.7, reasoningEffort: 'high', formattedOutputV4: false,
+    temperatureMode: 'manual', temperature: 0.7, reasoningEffort: 'high', replyFormat: 'tools',
   });
   state.saveApiProfile(settings, '备用');
   Object.assign(settings, {
     apiUrl: 'https://b.example', apiFormat: 'openai_compat', apiKey: 'sk-b', model: 'model-b', modelOptions: ['x', 'y'],
-    temperatureMode: 'omit', temperature: null, reasoningEffort: 'auto', formattedOutputV4: true,
+    temperatureMode: 'omit', temperature: null, reasoningEffort: 'auto', replyFormat: 'plain',
   });
 
   state.applyApiProfile(settings, '备用');
@@ -43,7 +43,7 @@ test('applying a profile restores its connection fields and drops the stale mode
   assert.equal(settings.temperatureMode, 'manual');
   assert.equal(settings.temperature, 0.7);
   assert.equal(settings.reasoningEffort, 'high');
-  assert.equal(settings.formattedOutputV4, false);
+  assert.equal(settings.replyFormat, 'tools');
   assert.deepEqual(settings.modelOptions, []);
   assert.throws(() => state.applyApiProfile(settings, '不存在'), /找不到/);
 });
@@ -75,7 +75,7 @@ test('loading drops malformed and duplicate profiles and normalizes the format',
   const loaded = state.getSettings(ctx);
   assert.deepEqual(loaded.apiProfiles, [{
     name: '甲', apiUrl: 'https://a', apiFormat: state.normalizeApiFormat('bogus'), apiKey: 'k', model: 'm',
-    temperatureMode: 'legacy', temperature: null, reasoningEffort: 'auto', formattedOutputV4: true,
+    temperatureMode: 'legacy', temperature: null, reasoningEffort: 'auto', replyFormat: 'formatted',
     mainflowCopyCharLimit: 400000,
   }]);
 });

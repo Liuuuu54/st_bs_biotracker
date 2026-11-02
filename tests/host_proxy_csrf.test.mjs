@@ -36,7 +36,7 @@ function makeSettings() {
     apiKey: 'k',
     model: 'test-model',
     apiTimeoutMs: 5000,
-    formattedOutputV4: false,
+    replyFormat: 'plain',
   };
 }
 
