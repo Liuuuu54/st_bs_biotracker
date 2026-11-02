@@ -4,13 +4,14 @@
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 
-import { callOpenAICompatible, isDeepSeekFamilyModel, shouldInjectV4Instruction, shouldUseResponseFormat, __nativeToolsDisabledForTest } from '../scripts/api.js';
+import { callOpenAICompatible, isDeepSeekFamilyModel, shouldInjectV4Instruction, shouldUseResponseFormat, __nativeToolsDisabledForTest, __responseFormatRejectedForTest } from '../scripts/api.js';
 import * as state from '../scripts/state.js';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
 beforeEach(() => {
   __nativeToolsDisabledForTest.clear();
+  __responseFormatRejectedForTest.clear();
 });
 
 afterEach(() => {
@@ -231,4 +232,75 @@ test('工具调用退回格式化输出也会先试工具：追踪、备装、�
   assert.equal(calls.length, 1);
   assert.ok(calls[0].body.tools);
   assert.equal(calls[0].body.response_format, undefined);
+});
+
+// ---- 格式化输出被拒：退回原生聊天消息并记住 ----
+
+const RESPONSES_TEXT_REPLY = { status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '{"tool_calls":[]}' }] }] };
+
+test('格式化输出被 400 拒绝、只拿掉 response_format 就成功：本次会话里这个模型不再带', async () => {
+  const settings = { ...SETTINGS, replyFormat: 'formatted', reasoningEffort: 'high' };
+  const calls = installDirectFetch([
+    jsonResponse({ error: { message: 'response_format is not supported' } }, 400),
+    jsonResponse(textJsonResponse({ tool_calls: [] })),
+  ]);
+  await callOpenAICompatible(settings, trackerPayload(), 'SYSTEM', { flow: 'tracker' });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].body.response_format, { type: 'json_object' });
+  assert.equal(calls[1].body.response_format, undefined);
+  assert.equal(calls[1].body.reasoning_effort, 'high', '只拿掉 response_format，其他参数不动');
+
+  const again = installDirectFetch([jsonResponse(textJsonResponse({ name: '艾拉' }))]);
+  await callOpenAICompatible(settings, { target_character: '艾拉' }, 'SYSTEM', { flow: 'registry' });
+  assert.equal(again.length, 1);
+  assert.equal(again[0].body.response_format, undefined, '同一个模型的其他流程也不再带');
+
+  const otherModel = installDirectFetch([jsonResponse(textJsonResponse({ tool_calls: [] }))]);
+  await callOpenAICompatible({ ...settings, model: 'other-model' }, trackerPayload(), 'SYSTEM', { flow: 'tracker' });
+  assert.deepEqual(otherModel[0].body.response_format, { type: 'json_object' }, '换了模型照样带');
+});
+
+test('拿掉 response_format 仍是 400：照旧版连同其他采样参数一起拿掉再试，不记住', async () => {
+  const settings = { ...SETTINGS, replyFormat: 'formatted', reasoningEffort: 'high' };
+  const calls = installDirectFetch([
+    jsonResponse({ error: { message: 'unknown parameter' } }, 400),
+    jsonResponse({ error: { message: 'unknown parameter' } }, 400),
+    jsonResponse(textJsonResponse({ tool_calls: [] })),
+  ]);
+  await callOpenAICompatible(settings, trackerPayload(), 'SYSTEM', { flow: 'tracker' });
+  assert.equal(calls.length, 3);
+  assert.equal(calls[1].body.reasoning_effort, 'high');
+  assert.equal(calls[2].body.response_format, undefined);
+  assert.equal(calls[2].body.reasoning_effort, undefined, '第二次退回只留基本采样参数');
+  assert.equal(__responseFormatRejectedForTest.size, 0, '不能断定是 response_format 的问题');
+
+  const again = installDirectFetch([jsonResponse(textJsonResponse({ tool_calls: [] }))]);
+  await callOpenAICompatible(settings, trackerPayload(), 'SYSTEM', { flow: 'tracker' });
+  assert.deepEqual(again[0].body.response_format, { type: 'json_object' });
+});
+
+test('格式化输出：Responses 直连的 text.format 被 400 拒绝也退回并记住', async () => {
+  const settings = { ...SETTINGS, replyFormat: 'formatted', apiFormat: 'openai_responses' };
+  const calls = installDirectFetch([
+    jsonResponse({ error: { message: "Unsupported parameter: 'text.format'" } }, 400),
+    jsonResponse(RESPONSES_TEXT_REPLY),
+  ]);
+  await callOpenAICompatible(settings, trackerPayload(), 'SYSTEM', { flow: 'tracker' });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].body.text, { format: { type: 'json_object' } });
+  assert.equal(calls[1].body.text, undefined);
+
+  const again = installDirectFetch([jsonResponse(RESPONSES_TEXT_REPLY)]);
+  await callOpenAICompatible(settings, trackerPayload(), 'SYSTEM', { flow: 'tracker' });
+  assert.equal(again[0].body.text, undefined);
+});
+
+test('没真的送出 response_format 的格式（Claude Messages）：400 照常报错重试，不当成格式化输出被拒', async () => {
+  const calls = installDirectFetch([
+    jsonResponse({ error: { message: 'overloaded' } }, 400),
+    jsonResponse({ content: [{ type: 'text', text: '{"tool_calls":[]}' }] }),
+  ]);
+  await callOpenAICompatible({ ...SETTINGS, replyFormat: 'formatted', apiFormat: 'claude_messages' }, trackerPayload(), 'SYSTEM', { flow: 'tracker' });
+  assert.equal(calls.length, 2);
+  assert.equal(__responseFormatRejectedForTest.size, 0);
 });

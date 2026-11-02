@@ -61,6 +61,21 @@ export function shouldUseResponseFormat(settings) {
   return replyFormat === REPLY_FORMATS.FORMATTED || replyFormat === REPLY_FORMATS.TOOLS_FORMATTED;
 }
 
+// 格式化输出被 400 拒绝、只拿掉 response_format 就成功的「端点 + 模型」：本次会话里不再带，
+// 免得每次请求都先白费一个 400（见 requestChatCompletion）
+const responseFormatRejected = new Set();
+export const __responseFormatRejectedForTest = responseFormatRejected;
+
+function getModelSessionKey(apiBase, model) {
+  return `${apiBase}|${model}`;
+}
+
+/** 本次会话里记住的「端点 + 模型」最多留 32 笔，先进先出 */
+function rememberInSession(set, key) {
+  set.add(key);
+  while (set.size > 32) set.delete(set.values().next().value);
+}
+
 /** 是否注入 v4 结构指令：选了格式化输出且模型是 DeepSeek 系才注入。 */
 export function shouldInjectV4Instruction(settings, model) {
   return shouldUseResponseFormat(settings) && isDeepSeekFamilyModel(model);
@@ -1464,7 +1479,10 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
         responseText,
         requestText,
       });
-      return { response, responseText, requestText, format: fmt };
+      // response_format 真的送出去了没有：TauriTavern 翻成其他格式时不带，Claude 与 Gemini 直连也没有对应参数
+      const sentResponseFormat = Boolean(requestBody.response_format)
+        && (isCompat || (fmt === API_FORMATS.OPENAI_RESPONSES && !formatAwareProxy));
+      return { response, responseText, requestText, format: fmt, sentResponseFormat };
     } catch (error) {
       traceRequestToUi('POST', upstreamUrl, 0, transport);
       logApiDebug(`error:${attempt}`, {
@@ -1488,21 +1506,34 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   const isGemini = result.format === API_FORMATS.GEMINI_INTERACTIONS;
   const isNonCompatFormat = isResponses || isClaude || isGemini;
 
-  if (!response.ok && response.status === 400 && body.response_format && !isNonCompatFormat) {
-    const fallbackBody = stripTemperatureField(settings, {
-      model: body.model,
-      temperature: body.temperature,
-      top_p: body.top_p,
-      frequency_penalty: body.frequency_penalty,
-      presence_penalty: body.presence_penalty,
-      max_tokens: body.max_tokens,
-      seed: body.seed,
-      messages: body.messages,
-    });
-    result = await postBody(fallbackBody, 'without_response_format');
+  // 格式化输出被 400 拒绝：先只拿掉 response_format 重送，成功就证明渠道不认它，
+  // 本次会话里这个模型不再带（见 callOpenAICompatible）；仍是 400 再照旧版连同其他采样参数一起拿掉试一次，
+  // 这时说不准是哪个参数的问题，不记住
+  if (!response.ok && response.status === 400 && result.sentResponseFormat) {
+    const { response_format: _rejected, ...withoutResponseFormat } = body;
+    result = await postBody(withoutResponseFormat, 'without_response_format');
     response = result.response;
     responseText = result.responseText;
     errorText = response.ok ? '' : responseText;
+    if (response.ok) {
+      rememberInSession(responseFormatRejected, getModelSessionKey(apiBase, body.model));
+      console.warn(`[BS BioTracker] 渠道不接受 response_format，本次会话里 ${body.model} 的格式化输出改用原生聊天消息`);
+    } else if (response.status === 400) {
+      const fallbackBody = stripTemperatureField(settings, {
+        model: body.model,
+        temperature: body.temperature,
+        top_p: body.top_p,
+        frequency_penalty: body.frequency_penalty,
+        presence_penalty: body.presence_penalty,
+        max_tokens: body.max_tokens,
+        seed: body.seed,
+        messages: body.messages,
+      });
+      result = await postBody(fallbackBody, 'without_response_format_and_extras');
+      response = result.response;
+      responseText = result.responseText;
+      errorText = response.ok ? '' : responseText;
+    }
   }
 
   const invalidArgument = response.status === 400 && /invalid argument|badRequest/i.test(errorText);
@@ -1660,7 +1691,7 @@ const nativeToolsDisabled = new Set();
 export const __nativeToolsDisabledForTest = nativeToolsDisabled;
 
 function getNativeToolsKey(apiBase, model, flow = '') {
-  return flow ? `${apiBase}|${model}|${flow}` : `${apiBase}|${model}`;
+  return flow ? `${getModelSessionKey(apiBase, model)}|${flow}` : getModelSessionKey(apiBase, model);
 }
 
 function isNativeToolsDisabled(apiBase, model, flow) {
@@ -1668,8 +1699,7 @@ function isNativeToolsDisabled(apiBase, model, flow) {
 }
 
 function rememberNativeToolsDisabled(key) {
-  nativeToolsDisabled.add(key);
-  while (nativeToolsDisabled.size > 32) nativeToolsDisabled.delete(nativeToolsDisabled.values().next().value);
+  rememberInSession(nativeToolsDisabled, key);
 }
 
 /**
@@ -1708,7 +1738,8 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   // 格式化输出(v4兼容)：response_format.type = json_object（无 json_schema）。
   // DeepSeek 系额外注入输出结构指令——但只在追踪流程注入：registry/日记/着衣/备装/技能/
   // 繁育推演各自声明了不同的 JSON 结构，注入 tool_calls 指令会压过它们的 schema。
-  const useFormattedOutputV4 = shouldUseResponseFormat(settings);
+  // 本次会话里被渠道拒过的模型不再带 response_format（DeepSeek 的结构指令照样注入）
+  const useFormattedOutputV4 = shouldUseResponseFormat(settings) && !responseFormatRejected.has(getModelSessionKey(apiBase, model));
   const isTrackerFlow = !safePayload?.target_character;
   const injectV4Instruction = shouldInjectV4Instruction(settings, model) && isTrackerFlow;
   if (injectV4Instruction && effectiveMessages[0]?.role === 'system') {
