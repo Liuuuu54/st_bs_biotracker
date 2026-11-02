@@ -1,15 +1,19 @@
-// 追踪流程改用原生工具调用：四种 API 格式都把工具定义放进 tools 参数、直接读回包的工具调用；
-// 上游不认 tools、模型没用工具、或调用没发完时退回原本的文本 JSON 协议。格式化输出（response_format）已移除。
+// 原生工具调用：追踪把工具定义放进 tools 参数、直接读回包的工具调用；备装与起始着衣各用一个提交工具，
+// 参数沿用追踪工具的衣物定义。四种 API 格式都适用；上游不认 tools、模型没用工具、或调用没发完时
+// 退回原本的文本 JSON 协议。格式化输出（response_format）已移除。
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 
 import { callOpenAICompatible, __nativeToolsDisabledForTest } from '../scripts/api.js';
 import {
   buildNativeTrackerTools,
+  buildStartingOutfitSubmitTool,
+  buildWardrobePrepSubmitTool,
   CHARACTER_CHECKS_TOOL_NAME,
   isNativeToolRejection,
   readNativeToolCalls,
 } from '../scripts/native_tools.js';
+import { TOOL_DEFINITIONS as REAL_TOOL_DEFINITIONS } from '../scripts/tools.js';
 
 const ORIGINAL_GLOBALS = {
   fetch: globalThis.fetch,
@@ -466,4 +470,131 @@ test('上游回「invalid argument」拒绝 tools 时，不退成丢掉工具定
   assert.equal(calls.length, 2);
   assert.equal(calls[1].body.tools, undefined);
   assert.ok(JSON.parse(calls[1].body.messages.at(-1).content).available_tools, '第二个请求要带回工具定义');
+});
+
+// ---- 备装与起始着衣：一个提交工具交整份结果 ----
+
+const REAL_SCHEMAS = Object.fromEntries(REAL_TOOL_DEFINITIONS.map((tool) => [tool.name, tool.input_schema]));
+const WARDROBE_TOOL = buildWardrobePrepSubmitTool(REAL_TOOL_DEFINITIONS);
+const OUTFIT_TOOL = buildStartingOutfitSubmitTool(REAL_TOOL_DEFINITIONS);
+const FIT = { masking: 'medium', support: 'normal', capacity: 'loose', convenience: 'normal' };
+
+function submitToolResponse(name, args) {
+  return { choices: [{ message: { content: null, tool_calls: [
+    { id: 's1', type: 'function', function: { name, arguments: JSON.stringify(args) } },
+  ] }, finish_reason: 'tool_calls' }] };
+}
+
+test('备装与起始着衣的提交工具：参数沿用追踪工具的衣物定义，档位枚举一致', () => {
+  assert.equal(WARDROBE_TOOL.name, 'bsSubmitWardrobePrep');
+  const wardrobe = WARDROBE_TOOL.parameters;
+  assert.deepEqual(wardrobe.properties.items.items, REAL_SCHEMAS.bsAddWardrobeItem.properties.item);
+  assert.deepEqual(wardrobe.properties.remove.items.properties.id, REAL_SCHEMAS.bsRemoveWardrobeItem.properties.itemId);
+  assert.equal(wardrobe.properties.remove.items.properties.reason.type, 'string');
+  assert.deepEqual(wardrobe.required, ['items', 'remove']);
+
+  assert.equal(OUTFIT_TOOL.name, 'bsSubmitStartingOutfit');
+  const current = OUTFIT_TOOL.parameters.properties.currentOutfit;
+  assert.deepEqual(current.properties.main, REAL_SCHEMAS.bsChangeOutfit.properties.main);
+  assert.deepEqual(current.properties.accessories, REAL_SCHEMAS.bsChangeOutfit.properties.accessories);
+  assert.deepEqual(current.properties.wearState, REAL_SCHEMAS.bsChangeOutfit.properties.wearState);
+  assert.equal(current.properties.nude.type, 'boolean');
+  assert.deepEqual(OUTFIT_TOOL.parameters.required, ['currentOutfit']);
+
+  assert.equal(buildWardrobePrepSubmitTool([]), null, '找不到衣物定义就不提供工具');
+  assert.equal(buildStartingOutfitSubmitTool([]), null);
+});
+
+test('备装：勾选工具调用时只带一个提交工具，调用的参数就是结果', async () => {
+  const prep = { items: [{ name: '孕妇连衣裙', note: '浅蓝棉质', slot: 'main', fitProfile: FIT }], remove: [{ id: 3, reason: '孕后期穿不下' }] };
+  const calls = installDirectFetch([jsonResponse(submitToolResponse(WARDROBE_TOOL.name, prep))]);
+  const result = await callOpenAICompatible(SETTINGS, { target_character: '艾拉', existing_wardrobe: null }, 'SYSTEM', { flow: 'wardrobe', nativeSubmitTool: WARDROBE_TOOL });
+  assert.deepEqual(result, prep);
+  assert.equal(calls.length, 1);
+  const body = calls[0].body;
+  assert.deepEqual(body.tools.map((tool) => tool.function.name), [WARDROBE_TOOL.name]);
+  assert.deepEqual(body.tools[0].function.parameters, WARDROBE_TOOL.parameters);
+  assert.match(body.messages[0].content, /^SYSTEM/);
+  assert.match(body.messages[0].content, new RegExp(WARDROBE_TOOL.name));
+  assert.equal(JSON.parse(body.messages.at(-1).content).target_character, '艾拉', '用户消息照旧');
+});
+
+test('提交工具：没勾选不带 tools；模型直接回 JSON 照用；回一段话退回文本请求', async () => {
+  const prep = { items: [], remove: [{ id: 2, reason: '撑破了' }] };
+  const payload = { target_character: '艾拉' };
+  const off = installDirectFetch([jsonResponse(textJsonResponse(prep))]);
+  await callOpenAICompatible({ ...SETTINGS, nativeToolCalls: false }, payload, 'SYSTEM', { flow: 'wardrobe', nativeSubmitTool: WARDROBE_TOOL });
+  assert.equal(off.length, 1);
+  assert.equal(off[0].body.tools, undefined);
+  assert.equal(off[0].body.messages[0].content, 'SYSTEM');
+
+  const jsonReply = installDirectFetch([jsonResponse(textJsonResponse(prep))]);
+  assert.deepEqual(await callOpenAICompatible(SETTINGS, payload, 'SYSTEM', { flow: 'wardrobe', nativeSubmitTool: WARDROBE_TOOL }), prep);
+  assert.equal(jsonReply.length, 1);
+
+  const prose = installDirectFetch([
+    jsonResponse({ choices: [{ message: { content: '好的，我来整理衣柜。' } }] }),
+    jsonResponse(textJsonResponse(prep)),
+  ]);
+  assert.deepEqual(await callOpenAICompatible(SETTINGS, payload, 'SYSTEM', { flow: 'wardrobe', nativeSubmitTool: WARDROBE_TOOL }), prep);
+  assert.equal(prose.length, 2);
+  assert.equal(prose[1].body.tools, undefined);
+  assert.equal(prose[1].body.messages[0].content, 'SYSTEM', '文本请求用原本的系统提示词');
+});
+
+test('追踪的「调用没发完」只让追踪改用文本；上游拒绝 tools 则其他流程也改用文本', async () => {
+  installDirectFetch([
+    jsonResponse({ choices: [{ message: { tool_calls: [{ id: 'c1', type: 'function', function: { name: 'bsPassedTime', arguments: '{"hour":1}' } }] } }] }),
+    jsonResponse(textJsonResponse({ tool_calls: [], character_checks: [] })),
+  ]);
+  await callOpenAICompatible(SETTINGS, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  const prep = { items: [], remove: [] };
+  const wardrobe = installDirectFetch([jsonResponse(submitToolResponse(WARDROBE_TOOL.name, prep))]);
+  await callOpenAICompatible(SETTINGS, { target_character: '艾拉' }, 'SYSTEM', { flow: 'wardrobe', nativeSubmitTool: WARDROBE_TOOL });
+  assert.ok(wardrobe[0].body.tools, '同一个模型的备装照样先试提交工具');
+
+  __nativeToolsDisabledForTest.clear();
+  installDirectFetch([
+    jsonResponse({ error: { message: 'tools is not supported' } }, 400),
+    jsonResponse(textJsonResponse(prep)),
+  ]);
+  await callOpenAICompatible(SETTINGS, { target_character: '艾拉' }, 'SYSTEM', { flow: 'wardrobe', nativeSubmitTool: WARDROBE_TOOL });
+  const tracker = installDirectFetch([jsonResponse(textJsonResponse({ tool_calls: [] }))]);
+  await callOpenAICompatible(SETTINGS, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.equal(tracker.length, 1);
+  assert.equal(tracker[0].body.tools, undefined, '上游不认 tools，追踪也直接走文本');
+});
+
+test('备装与起始着衣全流程：请求带上提交工具，回来的结果照常校验', async () => {
+  const state = await import('../scripts/state.js');
+  const { runRegistryOutfitInference, runRegistryWardrobeInference } = await import('../scripts/registry.js');
+  const ctx = {
+    chatId: 'native-submit-chat',
+    name1: '雷恩',
+    name2: '艾拉',
+    characterId: 0,
+    characters: [{ name: '艾拉', description: '旅行中的冒险者', avatar: 'ella.png' }],
+    chat: [{ is_user: true, name: '雷恩', mes: '去成衣店看看吧。' }],
+    extensionSettings: {},
+    saveSettingsDebounced() {},
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  Object.assign(settings, { apiUrl: 'https://api.example.test/v1', apiKey: 'k', model: 'tool-model', nativeToolCalls: true });
+  state.getChatState(ctx, settings).characters['艾拉'] = { ...state.createDefaultFemaleState('艾拉'), initialized: true };
+  const outfit = { nude: false, main: { name: '旅行斗篷套装', note: '深绿羊毛', parts: ['斗篷', '长裙'], fitProfile: FIT }, accessories: [], wearState: '整齐' };
+  const prep = { items: [{ name: '孕妇连衣裙', note: '浅蓝棉质', slot: 'main', fitProfile: FIT }], remove: [] };
+  const bodies = [];
+  globalThis.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    bodies.push(body);
+    const name = body.tools?.[0]?.function?.name;
+    return jsonResponse(name === OUTFIT_TOOL.name
+      ? submitToolResponse(name, { currentOutfit: outfit })
+      : submitToolResponse(name, prep));
+  };
+
+  assert.deepEqual(await runRegistryOutfitInference(ctx, { targetName: '艾拉' }), outfit);
+  assert.deepEqual(await runRegistryWardrobeInference(ctx, { targetName: '艾拉' }), prep);
+  assert.deepEqual(bodies.map((body) => body.tools.map((tool) => tool.function.name)), [[OUTFIT_TOOL.name], [WARDROBE_TOOL.name]]);
 });

@@ -1,6 +1,8 @@
-// 追踪流程的原生工具调用：工具定义放进请求的 tools 参数，模型直接回 tool_calls，
-// 不再靠正文里的一段 JSON。各家对 response_format 的支持参差（原版 SillyTavern 的自定义来源
-// 甚至不转发它），tools 却是 SillyTavern、TauriTavern 与主流中转都会原样转发的参数。
+// 原生工具调用：工具定义放进请求的 tools 参数，模型直接回 tool_calls，不再靠正文里的一段 JSON。
+// 各家对 response_format 的支持参差（原版 SillyTavern 的自定义来源甚至不转发它），
+// tools 却是 SillyTavern、TauriTavern 与主流中转都会原样转发的参数。
+// - 追踪：每个动作一个工具，另加提交检查清单的工具。
+// - 备装、起始着衣：一个提交工具交整份结果，参数沿用追踪工具的衣物定义。
 // 四种 API 格式都启用（直连时由 api.js 翻成各家的工具格式）；上游不认 tools、模型没用工具、
 // 或调用没发完时，由 api.js 退回原本的文本 JSON 协议，所以任何渠道都不会比以前差。
 
@@ -106,6 +108,136 @@ export function readNativeToolCalls(data) {
   // 调用了检查清单工具就带上 character_checks（参数坏了是空清单）：api.js 以它判断本轮的调用已经发完
   if (checksReported) result.character_checks = checks;
   return result;
+}
+
+function isTrackerResultShape(value) {
+  return Boolean(value) && typeof value === 'object'
+    && (Array.isArray(value.tool_calls) || Array.isArray(value.character_checks));
+}
+
+function isJsonObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * 追踪的方案。read 回传 { result }（可用）、{ incomplete, toolCalls }（调用没发完）或 null（没用工具）。
+ * 检查清单工具是「本轮调用已全部发出」的标记：有调用却没交检查清单，多半是模型调用一个就停下
+ * 等工具结果（实测 GPT、Kimi 常这样），其余更新全落掉了，不能用这份残缺结果。
+ */
+function buildTrackerToolPlan(payload) {
+  const tools = buildNativeTrackerTools(payload?.available_tools);
+  if (!tools.length) return null;
+  return {
+    tools,
+    instruction: buildNativeToolInstruction(),
+    omitPayloadKeys: ['available_tools'],
+    read(data) {
+      const native = readNativeToolCalls(data);
+      if (!native) return null;
+      return Array.isArray(native.character_checks) ? { result: native } : { incomplete: true, toolCalls: native.tool_calls };
+    },
+    acceptsContent: isTrackerResultShape,
+  };
+}
+
+export const WARDROBE_PREP_TOOL_NAME = 'bsSubmitWardrobePrep';
+export const STARTING_OUTFIT_TOOL_NAME = 'bsSubmitStartingOutfit';
+
+function findToolSchema(toolDefinitions, name) {
+  const tool = (Array.isArray(toolDefinitions) ? toolDefinitions : []).find((entry) => entry?.name === name);
+  return isJsonObject(tool?.input_schema) ? tool.input_schema : null;
+}
+
+/** 备装的提交工具：参数就是文本协议的 { items, remove }，衣物结构取自 bsAddWardrobeItem，丢弃的 id 取自 bsRemoveWardrobeItem */
+export function buildWardrobePrepSubmitTool(toolDefinitions) {
+  const item = findToolSchema(toolDefinitions, 'bsAddWardrobeItem')?.properties?.item;
+  const itemId = findToolSchema(toolDefinitions, 'bsRemoveWardrobeItem')?.properties?.itemId;
+  if (!item || !itemId) return null;
+  return {
+    name: WARDROBE_PREP_TOOL_NAME,
+    description: '提交本次备装结果，只调用一次。items 是要新增或更新的衣物；remove 是要丢掉的既有衣物 id 与原因。没有要新增或丢掉的就给空数组。',
+    parameters: {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: item },
+        remove: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { id: itemId, reason: { type: 'string' } },
+            required: ['id', 'reason'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['items', 'remove'],
+      additionalProperties: false,
+    },
+  };
+}
+
+/** 起始着衣的提交工具：参数就是文本协议的 { currentOutfit }，main 与 accessories 的结构取自 bsChangeOutfit */
+export function buildStartingOutfitSubmitTool(toolDefinitions) {
+  const outfit = findToolSchema(toolDefinitions, 'bsChangeOutfit')?.properties;
+  if (!outfit?.main || !outfit?.accessories) return null;
+  return {
+    name: STARTING_OUTFIT_TOOL_NAME,
+    description: '提交这名角色此刻的起始着衣，只调用一次。nude=true 表示全裸，此时不给 main 与 accessories。',
+    parameters: {
+      type: 'object',
+      properties: {
+        currentOutfit: {
+          type: 'object',
+          properties: {
+            nude: { type: 'boolean' },
+            main: outfit.main,
+            accessories: outfit.accessories,
+            wearState: outfit.wearState || { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['currentOutfit'],
+      additionalProperties: false,
+    },
+  };
+}
+
+/** 接在提交类流程的系统提示词末尾：系统提示词仍要求输出 JSON，这里说明改由工具参数交这份 JSON */
+function buildSubmitToolInstruction(name) {
+  return [
+    '[本次输出方式：工具调用]',
+    `- 调用一次 ${name} 提交结果：它的参数就是上文要求输出的那份 JSON（结构、字段与取值规则都照上文），不要在正文里输出 JSON。`,
+    '- 这是唯一的一次回复，不会收到工具结果，也没有下一轮：整份结果在这一次调用里交完。',
+  ].join('\n');
+}
+
+/** 提交类流程的方案：只有一个工具，调用一次就是整份结果，不会有调用没发完的情况 */
+function buildSubmitToolPlan(tool) {
+  const name = String(tool?.name || '').trim();
+  if (!name || !isJsonObject(tool.parameters)) return null;
+  return {
+    tools: [{ type: 'function', function: { name, description: String(tool.description || ''), parameters: tool.parameters } }],
+    instruction: buildSubmitToolInstruction(name),
+    omitPayloadKeys: [],
+    read(data) {
+      const call = readNativeToolCalls(data)?.tool_calls.find((entry) => entry.name === name);
+      // 参数解析不了（原样留下的字符串）就当没交，改发文本请求
+      return call && isJsonObject(call.arguments) ? { result: call.arguments } : null;
+    },
+    acceptsContent: isJsonObject,
+  };
+}
+
+/**
+ * 这次请求的原生工具调用方案：tools、接在系统提示词末尾的说明、要从用户消息里拿掉的栏位、读回包的方式。
+ * options.nativeSubmitTool（备装、起始着衣）给一个提交工具；options.nativeTools=true 是追踪。
+ * 没有可用方案时回传 null，照旧走文本 JSON。
+ */
+export function resolveNativeToolPlan(options, payload) {
+  if (options?.nativeSubmitTool) return buildSubmitToolPlan(options.nativeSubmitTool);
+  if (options?.nativeTools === true && !payload?.target_character) return buildTrackerToolPlan(payload);
+  return null;
 }
 
 /** 上游明确拒绝了请求参数（多半是不认 tools）：只有这种情况才改用文本协议，鉴权、限流、服务端错误照常报错重试 */

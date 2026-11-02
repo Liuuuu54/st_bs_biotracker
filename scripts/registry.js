@@ -1,6 +1,7 @@
 import { normalizeExperience, initializeCognitionRecords, normalizePaternityClaims, normalizeReproductiveSettings, psychologySide } from './reproductive.js';
 import { getWorldbookEntryActivationMode, worldbookEntryKeywordsMatch } from './worldbook_match.js';
 import { callOpenAICompatible } from './api.js';
+import { buildStartingOutfitSubmitTool, buildWardrobePrepSubmitTool } from './native_tools.js';
 import { getEffectiveSettings } from './card_settings.js';
 import { isRealisticWorld } from './world_mode.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
@@ -73,7 +74,7 @@ import {
   resolveSkillDefinition,
 } from './skill_config.js';
 import { resolveWardrobeItemRef, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCall, BACK_SIDES, calculateDerivedInheritanceProgress, canHostNestedPregnancy, ensureNaturalNoticeSample, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
+import { applyToolCall, TOOL_DEFINITIONS, BACK_SIDES, calculateDerivedInheritanceProgress, canHostNestedPregnancy, ensureNaturalNoticeSample, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
 import { EXTENSION_MONTH_DAYS, FIRST_EXTENSION_UNTIL_DAYS, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS } from './stage_config.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
@@ -440,7 +441,11 @@ export async function runRegistryOutfitInference(ctx, options = {}) {
     userInstruction: outfitPrompt,
   });
   payload.outfit_prompt = outfitPrompt;
-  const result = await callOpenAICompatible(settings, payload, buildStartingOutfitSystemPrompt({ outfitPrompt }), { flow: 'outfit' });
+  const result = await callOpenAICompatible(settings, payload, buildStartingOutfitSystemPrompt({ outfitPrompt }), {
+    flow: 'outfit',
+    // 勾选了「工具调用」时改用一个提交工具交结果，衣物结构沿用追踪工具的定义
+    nativeSubmitTool: buildStartingOutfitSubmitTool(TOOL_DEFINITIONS),
+  });
   return sanitizeStartingOutfit(result);
 }
 
@@ -682,7 +687,10 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
   payload.existing_wardrobe = chatState.characters[targetName]?.profile?.wardrobe || null;
   payload.existing_outfit = chatState.characters[targetName]?.profile?.outfit || null;
   const systemPrompt = options.wardrobePrepSystemPrompt || buildWardrobePrepSystemPrompt(settings, { ...options, wardrobePrepPrompt });
-  const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'wardrobe' });
+  const result = await callOpenAICompatible(settings, payload, systemPrompt, {
+    flow: 'wardrobe',
+    nativeSubmitTool: buildWardrobePrepSubmitTool(TOOL_DEFINITIONS),
+  });
   return sanitizeWardrobePrepResult(result);
 }
 

@@ -1,7 +1,7 @@
 import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, resolveUserTemperature } from './state.js';
 import { resolveHostWorldInfo } from './worldinfo_resolve.js';
 import { markOwnRequest } from './own_requests.js';
-import { buildNativeToolInstruction, buildNativeTrackerTools, isNativeToolRejection, readNativeToolCalls } from './native_tools.js';
+import { isNativeToolRejection, resolveNativeToolPlan } from './native_tools.js';
 import {
   getHostChatCompletionSettings,
   getHostContext,
@@ -1598,28 +1598,30 @@ async function buildPresetEnvelope(settings, baseSystemPrompt, payloadText) {
   }
 }
 
-// 原生工具调用走不通的「端点 + 模型」（上游拒绝 tools 参数，或模型没在一次回复里发完调用）：
-// 本次会话里直接走文本协议，不再每轮白费一个请求
+// 原生工具调用走不通的「端点 + 模型」：本次会话里直接走文本协议，不再每轮白费一个请求。
+// 上游拒绝 tools 参数记在「端点 + 模型」上，所有流程都不再试；模型没在一次回复里发完调用
+// 只说明需要多次调用的流程（追踪）走不通，记在「端点 + 模型 + 流程」上
 const nativeToolsDisabled = new Set();
 export const __nativeToolsDisabledForTest = nativeToolsDisabled;
 
-function getNativeToolsKey(apiBase, model) {
-  return `${apiBase}|${model}`;
+function getNativeToolsKey(apiBase, model, flow = '') {
+  return flow ? `${apiBase}|${model}|${flow}` : `${apiBase}|${model}`;
 }
 
-function rememberNativeToolsDisabled(apiBase, model) {
-  nativeToolsDisabled.add(getNativeToolsKey(apiBase, model));
+function isNativeToolsDisabled(apiBase, model, flow) {
+  return nativeToolsDisabled.has(getNativeToolsKey(apiBase, model)) || nativeToolsDisabled.has(getNativeToolsKey(apiBase, model, flow));
+}
+
+function rememberNativeToolsDisabled(key) {
+  nativeToolsDisabled.add(key);
   while (nativeToolsDisabled.size > 32) nativeToolsDisabled.delete(nativeToolsDisabled.values().next().value);
 }
 
-function isTrackerResultShape(value) {
-  return Boolean(value) && typeof value === 'object'
-    && (Array.isArray(value.tool_calls) || Array.isArray(value.character_checks));
-}
-
 /**
- * options.nativeTools：追踪流程传 true；使用者勾选了「工具调用」（settings.nativeToolCalls）时先试原生工具调用（见 native_tools.js）。
- * 其余流程（注册、日记、着衣、备装、技能、繁育、精方）各有自己的 JSON 结构，照旧走文本 JSON。
+ * 使用者勾选了「工具调用」（settings.nativeToolCalls）时，以下流程先试原生工具调用（见 native_tools.js）：
+ * - options.nativeTools=true：追踪。
+ * - options.nativeSubmitTool：备装、起始着衣，用一个提交工具交整份结果。
+ * 其余流程（注册、日记、技能、繁育、精方）各有自己的 JSON 结构，照旧走文本 JSON。
  */
 export async function callOpenAICompatible(settings, payload, systemPrompt = DEFAULT_SYSTEM_PROMPT, options = {}) {
   const apiBase = getApiBase(settings);
@@ -1652,22 +1654,22 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
     ...resolveReasoningEffortField(settings),
     messages: effectiveMessages,
   });
+  const flow = String(options?.flow || (safePayload?.target_character ? 'registry' : 'tracker'));
   const debugSource = `${safePayload?.target_character ? 'registry' : 'tracker'}${mainflowCopy.hasMainflowCopy ? '-mainflow-copy' : (safePayload?.resolved_worldbook_prompt ? '-mainflow-worldinfo' : '')}`;
   const recordTextRequestDebug = () => recordEffectiveRequestDebug(debugSource, effectivePresetName, stPresetSampling, effectiveMessages, body);
 
-  // 追踪流程先试原生工具调用：工具定义移进 tools 参数，用户消息里不再重复一份；
-  // 系统提示词末尾说明本轮改用工具调用。上游不认或模型没用工具时退回上面这份文本协议请求。
+  // 先试原生工具调用：工具定义放进 tools 参数（追踪的工具定义因此不再在用户消息里重复一份），
+  // 系统提示词末尾说明本次改用工具调用。上游不认或模型没用工具时退回上面这份文本协议请求。
   // 四种 API 格式都适用：请求体一律先组成 OpenAI 格式，直连时由 buildDirectPayload 翻成各家格式，
   // TauriTavern 的格式感知代理则交给后端翻译。
-  const nativeTools = options?.nativeTools === true && settings?.nativeToolCalls === true && !safePayload?.target_character
-    && !nativeToolsDisabled.has(getNativeToolsKey(apiBase, model))
-    ? buildNativeTrackerTools(safePayload?.available_tools)
-    : [];
+  const nativePlan = settings?.nativeToolCalls === true && !isNativeToolsDisabled(apiBase, model, flow)
+    ? resolveNativeToolPlan(options, safePayload)
+    : null;
   let nativeBody = null;
-  if (nativeTools.length) {
+  if (nativePlan) {
     const nativePayload = { ...safePayload };
-    delete nativePayload.available_tools;
-    const nativeSystemPrompt = `${safeSystemPrompt}\n\n${buildNativeToolInstruction()}`;
+    for (const key of nativePlan.omitPayloadKeys) delete nativePayload[key];
+    const nativeSystemPrompt = `${safeSystemPrompt}\n\n${nativePlan.instruction}`;
     const nativePayloadText = JSON.stringify(nativePayload);
     const nativeEnvelope = shouldApplyAsyncPreset(settings)
       ? await buildPresetEnvelope(settings, nativeSystemPrompt, nativePayloadText)
@@ -1683,7 +1685,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
       ...resolveManualTemperatureField(settings),
       ...resolveReasoningEffortField(settings),
       messages: nativeMessages,
-      tools: nativeTools,
+      tools: nativePlan.tools,
     });
     recordEffectiveRequestDebug(`${debugSource}-native-tools`, nativeEnvelope?.presetName || '', nativeSampling, nativeMessages, nativeBody);
   } else {
@@ -1703,7 +1705,6 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
       } catch {}
     }, deadlineMs);
   }
-  const flow = String(options?.flow || (safePayload?.target_character ? 'registry' : 'tracker'));
   const requestEntry = overallController
     ? { id: ++apiRequestSeq, flow, label: API_FLOW_LABELS[flow] || callLabel, startedAt: Date.now(), controller: overallController, userAborted: false }
     : null;
@@ -1723,7 +1724,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   let nativeFallback = '';
   try {
     return await withGlobalApiRetries(async (globalAttempt) => {
-      if (nativeBody && !nativeFallback && !nativeToolsDisabled.has(getNativeToolsKey(apiBase, model))) {
+      if (nativeBody && !nativeFallback && !isNativeToolsDisabled(apiBase, model, flow)) {
         let nativeData = null;
         try {
           nativeData = await requestChatCompletion(apiBase, settings, nativeBody, runContext);
@@ -1733,24 +1734,23 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
           console.warn('[BS BioTracker] 带工具调用的请求被上游拒绝，这次改用文本 JSON', error);
         }
         if (nativeData) {
-          const native = readNativeToolCalls(nativeData);
-          // 检查清单工具是「本轮调用已全部发出」的标记。有调用却没交检查清单，多半是模型调用一个就停下
-          // 等工具结果（实测 GPT、Kimi 常这样），其余更新全落掉了：不用这份残缺结果，改发文本请求
-          if (native && Array.isArray(native.character_checks)) return native;
-          if (native) {
+          const native = nativePlan.read(nativeData);
+          if (native?.result) return native.result;
+          if (native?.incomplete) {
+            // 调用没发完（追踪没交检查清单）：不用这份残缺结果，改发文本请求
             nativeFallback = 'incomplete';
-            console.warn('[BS BioTracker] 模型的工具调用没发完（没交检查清单），这次改用文本 JSON', native.tool_calls);
+            console.warn('[BS BioTracker] 模型的工具调用没发完（没交检查清单），这次改用文本 JSON', native.toolCalls);
           } else {
-            // 模型没用工具，但正文里照文本协议写了追踪 JSON：直接采用
+            // 模型没用工具，但正文里照文本协议写了 JSON：直接采用
             const nativeContent = extractJson(nativeData?.choices?.[0]?.message?.content || '');
-            if (isTrackerResultShape(nativeContent)) return nativeContent;
+            if (nativePlan.acceptsContent(nativeContent)) return nativeContent;
           }
         }
         recordTextRequestDebug();
       }
       const data = await requestChatCompletion(apiBase, settings, body, runContext);
-      if (nativeFallback && !nativeToolsDisabled.has(getNativeToolsKey(apiBase, model))) {
-        rememberNativeToolsDisabled(apiBase, model);
+      if (nativeFallback && !isNativeToolsDisabled(apiBase, model, flow)) {
+        rememberNativeToolsDisabled(nativeFallback === 'rejected' ? getNativeToolsKey(apiBase, model) : getNativeToolsKey(apiBase, model, flow));
         const reason = nativeFallback === 'rejected' ? '上游不接受工具调用参数' : '模型没在一次回复里发完工具调用';
         console.warn(`[BS BioTracker] ${reason}，本次会话里 ${model} 改用文本 JSON`);
       }
