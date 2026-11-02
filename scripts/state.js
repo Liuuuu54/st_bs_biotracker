@@ -872,9 +872,9 @@ export function createDefaultFemaleState(name = '') {
  * 回复格式：模型怎么交回结果。
  * - plain：原生聊天消息，正文写一段 JSON，不带额外参数，任何渠道都能用。
  * - formatted：格式化输出，请求附加 response_format.json_object，能减少掉格式，渠道不支持时回 400 会去掉重送。
- * - tools：工具调用不允许格式化回退（见 native_tools.js），对较新的模型有帮助；禁止代码用途的公益站不要选。
+ * - tools：工具调用退回原生消息（见 native_tools.js），对较新的模型有帮助；禁止代码用途的公益站不要选。
  *   工具调用不成时退回的文本请求、以及没有工具的流程按原生聊天消息发。
- * - tools_formatted：工具调用允许格式化回退，同 tools，但上面那些文本请求按格式化输出发。
+ * - tools_formatted：工具调用退回格式化输出，同 tools，但上面那些文本请求按格式化输出发。
  */
 export const REPLY_FORMATS = Object.freeze({ PLAIN: 'plain', FORMATTED: 'formatted', TOOLS: 'tools', TOOLS_FORMATTED: 'tools_formatted' });
 

@@ -54,7 +54,7 @@ export function isDeepSeekFamilyModel(model) {
 
 /**
  * 文本请求是否附加 response_format.json_object：只看使用者选的回复格式（渠道不支持时要能改掉）。
- * 带工具的请求从不附加；「工具调用允许格式化回退」下，退回的文本请求与没有工具的流程附加。
+ * 带工具的请求从不附加；「工具调用退回格式化输出」下，退回的文本请求与没有工具的流程附加。
  */
 export function shouldUseResponseFormat(settings) {
   const replyFormat = normalizeReplyFormat(settings?.replyFormat, settings);
@@ -1677,7 +1677,7 @@ function rememberNativeToolsDisabled(key) {
  * - 原生聊天消息：正文写 JSON，不带额外参数。
  * - 格式化输出：附加 response_format.json_object；DeepSeek 系的追踪请求另注入输出结构指令。
  * - 工具调用：以下流程先试原生工具调用（见 native_tools.js），其余流程与退回的文本请求
- *   「不允许格式化回退」时按原生聊天消息发，「允许格式化回退」时按格式化输出发：
+ *   按选项名里退回的那种格式发（原生聊天消息或格式化输出）：
  *   - options.nativeTools=true：追踪。
  *   - options.nativeSubmitTool：备装、起始着衣，用一个提交工具交整份结果。
  */

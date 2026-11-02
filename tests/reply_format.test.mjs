@@ -1,5 +1,5 @@
 // 回复格式四选一：原生聊天消息（正文写 JSON）、格式化输出（response_format.json_object）、
-// 工具调用不允许格式化回退、工具调用允许格式化回退。取代旧的「格式化输出」开关（formattedOutputV4）、
+// 工具调用退回原生消息、工具调用退回格式化输出。取代旧的「格式化输出」开关（formattedOutputV4）、
 // 「工具调用」勾选（nativeToolCalls）与「退回时用格式化输出」勾选（toolFallbackFormatted），旧设定自动迁移。
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
@@ -101,7 +101,7 @@ test('格式化输出的闸门：只有选格式化输出才带 response_format�
   assert.equal(shouldUseResponseFormat({ replyFormat: 'formatted' }), true);
   assert.equal(shouldUseResponseFormat({ replyFormat: 'plain' }), false);
   assert.equal(shouldUseResponseFormat({ replyFormat: 'tools' }), false);
-  assert.equal(shouldUseResponseFormat({ replyFormat: 'tools_formatted' }), true, '允许格式化回退：不带工具的请求附加');
+  assert.equal(shouldUseResponseFormat({ replyFormat: 'tools_formatted' }), true, '退回格式化输出：不带工具的请求附加');
   assert.equal(shouldUseResponseFormat({ formattedOutputV4: false }), false, '旧设定照样认');
   assert.equal(shouldInjectV4Instruction({}, 'deepseek-chat'), true);
   assert.equal(shouldInjectV4Instruction({}, 'gpt-4o-mini'), false);
@@ -186,7 +186,7 @@ test('工具调用：有工具的流程带 tools；没有工具的流程与退�
 
 // ---- 工具调用退回格式化输出 ----
 
-test('工具调用允许格式化回退：带工具的请求不带 response_format，退回的文本请求与没有工具的流程带上', async () => {
+test('工具调用退回格式化输出：带工具的请求不带 response_format，退回的文本请求与没有工具的流程带上', async () => {
   const settings = { ...SETTINGS, replyFormat: 'tools_formatted' };
 
   const tracker = installDirectFetch([
@@ -205,7 +205,7 @@ test('工具调用允许格式化回退：带工具的请求不带 response_form
   assert.deepEqual(registry[0].body.response_format, { type: 'json_object' });
 });
 
-test('API 配置组保存两种工具调用；旧的「退回时用格式化输出」勾选迁移成允许格式化回退', () => {
+test('API 配置组保存两种工具调用；旧的「退回时用格式化输出」勾选迁移成退回格式化输出', () => {
   const [noFallback, fallback, legacy] = state.normalizeApiProfiles([
     { name: '甲', apiUrl: 'a', replyFormat: 'tools' },
     { name: '乙', apiUrl: 'b', replyFormat: 'tools_formatted' },
@@ -218,7 +218,7 @@ test('API 配置组保存两种工具调用；旧的「退回时用格式化输�
   assert.equal('toolFallbackFormatted' in state.DEFAULT_SETTINGS, false);
 });
 
-test('工具调用允许格式化回退也会先试工具：追踪、备装、起始着衣照样带 tools', async () => {
+test('工具调用退回格式化输出也会先试工具：追踪、备装、起始着衣照样带 tools', async () => {
   assert.equal(state.usesNativeToolCalls('tools'), true);
   assert.equal(state.usesNativeToolCalls('tools_formatted'), true);
   assert.equal(state.usesNativeToolCalls('formatted'), false);
