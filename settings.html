@@ -360,13 +360,9 @@
               <select id="bs-bt-reply-format" class="text_pole">
                 <option value="plain">原生聊天消息</option>
                 <option value="formatted">格式化输出</option>
-                <option value="tools">工具调用</option>
+                <option value="tools">工具调用不允许格式化回退</option>
+                <option value="tools_formatted">工具调用允许格式化回退</option>
               </select>
-              <label id="bs-bt-tool-fallback-formatted-row" style="display:flex;align-items:center;gap:8px;margin-top:6px;">
-                <input id="bs-bt-tool-fallback-formatted" type="checkbox" />
-                <span>退回时用格式化输出</span>
-              </label>
-              <small id="bs-bt-tool-fallback-formatted-hint">工具调用不成时会改发一次文本请求；没有工具的流程（注册、日记等）也走文本请求。勾选后这些请求用格式化输出，否则用原生聊天消息。</small>
             </div>
 
             <div class="settings_section">

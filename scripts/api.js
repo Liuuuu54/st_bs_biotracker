@@ -1,4 +1,4 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, REPLY_FORMATS, resolveUserTemperature } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, REPLY_FORMATS, resolveUserTemperature, usesNativeToolCalls } from './state.js';
 import { resolveHostWorldInfo } from './worldinfo_resolve.js';
 import { markOwnRequest } from './own_requests.js';
 import { isNativeToolRejection, resolveNativeToolPlan } from './native_tools.js';
@@ -54,12 +54,11 @@ export function isDeepSeekFamilyModel(model) {
 
 /**
  * 文本请求是否附加 response_format.json_object：只看使用者选的回复格式（渠道不支持时要能改掉）。
- * 选工具调用时，带工具的请求从不附加；退回的文本请求与没有工具的流程看「退回时用格式化输出」。
+ * 带工具的请求从不附加；「工具调用允许格式化回退」下，退回的文本请求与没有工具的流程附加。
  */
 export function shouldUseResponseFormat(settings) {
   const replyFormat = normalizeReplyFormat(settings?.replyFormat, settings);
-  return replyFormat === REPLY_FORMATS.FORMATTED
-    || (replyFormat === REPLY_FORMATS.TOOLS && settings?.toolFallbackFormatted === true);
+  return replyFormat === REPLY_FORMATS.FORMATTED || replyFormat === REPLY_FORMATS.TOOLS_FORMATTED;
 }
 
 /** 是否注入 v4 结构指令：选了格式化输出且模型是 DeepSeek 系才注入。 */
@@ -1677,8 +1676,8 @@ function rememberNativeToolsDisabled(key) {
  * 依使用者选的回复格式（settings.replyFormat，见 normalizeReplyFormat）组请求：
  * - 原生聊天消息：正文写 JSON，不带额外参数。
  * - 格式化输出：附加 response_format.json_object；DeepSeek 系的追踪请求另注入输出结构指令。
- * - 工具调用：以下流程先试原生工具调用（见 native_tools.js），其余流程与退回的文本请求按原生聊天消息发，
- *   勾了「退回时用格式化输出」（settings.toolFallbackFormatted）则按格式化输出发：
+ * - 工具调用：以下流程先试原生工具调用（见 native_tools.js），其余流程与退回的文本请求
+ *   「不允许格式化回退」时按原生聊天消息发，「允许格式化回退」时按格式化输出发：
  *   - options.nativeTools=true：追踪。
  *   - options.nativeSubmitTool：备装、起始着衣，用一个提交工具交整份结果。
  */
@@ -1735,7 +1734,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   // 系统提示词末尾说明本次改用工具调用。上游不认或模型没用工具时退回上面这份文本协议请求。
   // 四种 API 格式都适用：请求体一律先组成 OpenAI 格式，直连时由 buildDirectPayload 翻成各家格式，
   // TauriTavern 的格式感知代理则交给后端翻译。
-  const nativePlan = replyFormat === REPLY_FORMATS.TOOLS && !isNativeToolsDisabled(apiBase, model, flow)
+  const nativePlan = usesNativeToolCalls(replyFormat) && !isNativeToolsDisabled(apiBase, model, flow)
     ? resolveNativeToolPlan(options, safePayload)
     : null;
   let nativeBody = null;

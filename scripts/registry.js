@@ -443,7 +443,7 @@ export async function runRegistryOutfitInference(ctx, options = {}) {
   payload.outfit_prompt = outfitPrompt;
   const result = await callOpenAICompatible(settings, payload, buildStartingOutfitSystemPrompt({ outfitPrompt }), {
     flow: 'outfit',
-    // 回复格式选了「工具调用」时改用一个提交工具交结果，衣物结构沿用追踪工具的定义
+    // 回复格式选了工具调用时改用一个提交工具交结果，衣物结构沿用追踪工具的定义
     nativeSubmitTool: buildStartingOutfitSubmitTool(TOOL_DEFINITIONS),
   });
   return sanitizeStartingOutfit(result);

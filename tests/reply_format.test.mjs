@@ -1,5 +1,6 @@
-// 回复格式三选一：原生聊天消息（正文写 JSON）、格式化输出（response_format.json_object）、工具调用。
-// 取代旧的「格式化输出」开关（formattedOutputV4）与「工具调用」勾选（nativeToolCalls），旧设定自动迁移。
+// 回复格式四选一：原生聊天消息（正文写 JSON）、格式化输出（response_format.json_object）、
+// 工具调用不允许格式化回退、工具调用允许格式化回退。取代旧的「格式化输出」开关（formattedOutputV4）、
+// 「工具调用」勾选（nativeToolCalls）与「退回时用格式化输出」勾选（toolFallbackFormatted），旧设定自动迁移。
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 
@@ -45,9 +46,11 @@ const trackerPayload = () => ({ tracked_females: ['艾拉'], recent_messages: []
 
 // ---- 设定 ----
 
-test('回复格式只认三个值；缺值时按旧设定推断，都没有就是格式化输出', () => {
-  assert.deepEqual(Object.values(state.REPLY_FORMATS), ['plain', 'formatted', 'tools']);
-  for (const value of ['plain', 'formatted', 'tools']) assert.equal(state.normalizeReplyFormat(value), value);
+test('回复格式只认四个值；缺值时按旧设定推断，都没有就是格式化输出', () => {
+  assert.deepEqual(Object.values(state.REPLY_FORMATS), ['plain', 'formatted', 'tools', 'tools_formatted']);
+  for (const value of ['plain', 'formatted', 'tools', 'tools_formatted']) assert.equal(state.normalizeReplyFormat(value), value);
+  assert.equal(state.normalizeReplyFormat('tools', { toolFallbackFormatted: true }), 'tools_formatted', '旧的「退回时用格式化输出」勾选');
+  assert.equal(state.normalizeReplyFormat('plain', { toolFallbackFormatted: true }), 'plain');
   assert.equal(state.normalizeReplyFormat(undefined), 'formatted');
   assert.equal(state.normalizeReplyFormat('json'), 'formatted');
   assert.equal(state.normalizeReplyFormat(undefined, { formattedOutputV4: false }), 'plain');
@@ -62,6 +65,8 @@ test('读设定时把旧开关迁移成回复格式，并删掉旧键', () => {
     [{ formattedOutputV4: false }, 'plain'],
     [{ formattedOutputV4: true }, 'formatted'],
     [{ nativeToolCalls: true }, 'tools'],
+    [{ replyFormat: 'tools', toolFallbackFormatted: true }, 'tools_formatted'],
+    [{ replyFormat: 'tools', toolFallbackFormatted: false }, 'tools'],
     [{}, 'formatted'],
   ];
   for (const [legacy, expected] of cases) {
@@ -70,6 +75,7 @@ test('读设定时把旧开关迁移成回复格式，并删掉旧键', () => {
     assert.equal(settings.replyFormat, expected, JSON.stringify(legacy));
     assert.equal('formattedOutputV4' in settings, false);
     assert.equal('nativeToolCalls' in settings, false);
+    assert.equal('toolFallbackFormatted' in settings, false);
   }
 });
 
@@ -95,6 +101,7 @@ test('格式化输出的闸门：只有选格式化输出才带 response_format�
   assert.equal(shouldUseResponseFormat({ replyFormat: 'formatted' }), true);
   assert.equal(shouldUseResponseFormat({ replyFormat: 'plain' }), false);
   assert.equal(shouldUseResponseFormat({ replyFormat: 'tools' }), false);
+  assert.equal(shouldUseResponseFormat({ replyFormat: 'tools_formatted' }), true, '允许格式化回退：不带工具的请求附加');
   assert.equal(shouldUseResponseFormat({ formattedOutputV4: false }), false, '旧设定照样认');
   assert.equal(shouldInjectV4Instruction({}, 'deepseek-chat'), true);
   assert.equal(shouldInjectV4Instruction({}, 'gpt-4o-mini'), false);
@@ -179,11 +186,8 @@ test('工具调用：有工具的流程带 tools；没有工具的流程与退�
 
 // ---- 工具调用退回格式化输出 ----
 
-test('工具调用 + 「退回时用格式化输出」：带工具的请求不带 response_format，退回的文本请求与没有工具的流程带上', async () => {
-  const settings = { ...SETTINGS, replyFormat: 'tools', toolFallbackFormatted: true };
-  assert.equal(shouldUseResponseFormat(settings), true);
-  assert.equal(shouldUseResponseFormat({ ...settings, toolFallbackFormatted: false }), false);
-  assert.equal(shouldUseResponseFormat({ replyFormat: 'plain', toolFallbackFormatted: true }), false, '只在工具调用下有作用');
+test('工具调用允许格式化回退：带工具的请求不带 response_format，退回的文本请求与没有工具的流程带上', async () => {
+  const settings = { ...SETTINGS, replyFormat: 'tools_formatted' };
 
   const tracker = installDirectFetch([
     jsonResponse({ choices: [{ message: { content: '没什么要更新的。' } }] }),
@@ -201,12 +205,30 @@ test('工具调用 + 「退回时用格式化输出」：带工具的请求不�
   assert.deepEqual(registry[0].body.response_format, { type: 'json_object' });
 });
 
-test('「退回时用格式化输出」默认关，随 API 配置组保存', () => {
-  assert.equal(state.DEFAULT_SETTINGS.toolFallbackFormatted, false);
-  const [plain, enabled] = state.normalizeApiProfiles([
+test('API 配置组保存两种工具调用；旧的「退回时用格式化输出」勾选迁移成允许格式化回退', () => {
+  const [noFallback, fallback, legacy] = state.normalizeApiProfiles([
     { name: '甲', apiUrl: 'a', replyFormat: 'tools' },
-    { name: '乙', apiUrl: 'b', replyFormat: 'tools', toolFallbackFormatted: true },
+    { name: '乙', apiUrl: 'b', replyFormat: 'tools_formatted' },
+    { name: '丙', apiUrl: 'c', replyFormat: 'tools', toolFallbackFormatted: true },
   ]);
-  assert.equal(plain.toolFallbackFormatted, false);
-  assert.equal(enabled.toolFallbackFormatted, true);
+  assert.equal(noFallback.replyFormat, 'tools');
+  assert.equal(fallback.replyFormat, 'tools_formatted');
+  assert.equal(legacy.replyFormat, 'tools_formatted');
+  assert.equal('toolFallbackFormatted' in legacy, false);
+  assert.equal('toolFallbackFormatted' in state.DEFAULT_SETTINGS, false);
+});
+
+test('工具调用允许格式化回退也会先试工具：追踪、备装、起始着衣照样带 tools', async () => {
+  assert.equal(state.usesNativeToolCalls('tools'), true);
+  assert.equal(state.usesNativeToolCalls('tools_formatted'), true);
+  assert.equal(state.usesNativeToolCalls('formatted'), false);
+  assert.equal(state.usesNativeToolCalls('plain'), false);
+  const calls = installDirectFetch([jsonResponse({ choices: [{ message: { tool_calls: [
+    { id: 'c1', type: 'function', function: { name: 'bsReportCharacterChecks', arguments: '{"checks":[]}' } },
+  ] } }] })]);
+  const result = await callOpenAICompatible({ ...SETTINGS, replyFormat: 'tools_formatted' }, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.deepEqual(result, { tool_calls: [], character_checks: [] });
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].body.tools);
+  assert.equal(calls[0].body.response_format, undefined);
 });
