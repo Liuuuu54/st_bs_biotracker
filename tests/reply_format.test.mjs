@@ -304,3 +304,17 @@ test('没真的送出 response_format 的格式（Claude Messages）：400 照�
   assert.equal(calls.length, 2);
   assert.equal(__responseFormatRejectedForTest.size, 0);
 });
+
+test('不接受 response_format 的记忆分 API 格式：Chat Completions 拒过，换成 Responses 照样带 text.format', async () => {
+  const settings = { ...SETTINGS, replyFormat: 'formatted' };
+  installDirectFetch([
+    jsonResponse({ error: { message: 'response_format is not supported' } }, 400),
+    jsonResponse(textJsonResponse({ tool_calls: [] })),
+  ]);
+  await callOpenAICompatible(settings, trackerPayload(), 'SYSTEM', { flow: 'tracker' });
+  assert.equal(__responseFormatRejectedForTest.size, 1);
+
+  const responses = installDirectFetch([jsonResponse(RESPONSES_TEXT_REPLY)]);
+  await callOpenAICompatible({ ...settings, apiFormat: 'openai_responses' }, trackerPayload(), 'SYSTEM', { flow: 'tracker' });
+  assert.deepEqual(responses[0].body.text, { format: { type: 'json_object' } });
+});

@@ -61,16 +61,20 @@ export function shouldUseResponseFormat(settings) {
   return replyFormat === REPLY_FORMATS.FORMATTED || replyFormat === REPLY_FORMATS.TOOLS_FORMATTED;
 }
 
-// 格式化输出被 400 拒绝、只拿掉 response_format 就成功的「端点 + 模型」：本次会话里不再带，
+// 格式化输出被 400 拒绝、只拿掉 response_format 就成功的「端点 + 格式 + 模型」：本次会话里不再带，
 // 免得每次请求都先白费一个 400（见 requestChatCompletion）
 const responseFormatRejected = new Set();
 export const __responseFormatRejectedForTest = responseFormatRejected;
 
-function getModelSessionKey(apiBase, model) {
-  return `${apiBase}|${model}`;
+/**
+ * 本次会话记忆的键：端点 + API 格式 + 模型。同一个网关换了格式（例如 Chat Completions 换成 Claude Messages）
+ * 是另一个端点、另一套参数，要分开记
+ */
+function getModelSessionKey(apiBase, apiFormat, model) {
+  return `${apiBase}|${normalizeApiFormat(apiFormat)}|${model}`;
 }
 
-/** 本次会话里记住的「端点 + 模型」最多留 32 笔，先进先出 */
+/** 本次会话里记住的键最多留 32 笔，先进先出 */
 function rememberInSession(set, key) {
   set.add(key);
   while (set.size > 32) set.delete(set.values().next().value);
@@ -1516,7 +1520,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     responseText = result.responseText;
     errorText = response.ok ? '' : responseText;
     if (response.ok) {
-      rememberInSession(responseFormatRejected, getModelSessionKey(apiBase, body.model));
+      rememberInSession(responseFormatRejected, getModelSessionKey(apiBase, result.format, body.model));
       console.warn(`[BS BioTracker] 渠道不接受 response_format，本次会话里 ${body.model} 的格式化输出改用原生聊天消息`);
     } else if (response.status === 400) {
       const fallbackBody = stripTemperatureField(settings, {
@@ -1684,18 +1688,18 @@ async function buildPresetEnvelope(settings, baseSystemPrompt, payloadText) {
   }
 }
 
-// 原生工具调用走不通的「端点 + 模型」：本次会话里直接走文本协议，不再每轮白费一个请求。
-// 上游拒绝 tools 参数记在「端点 + 模型」上，所有流程都不再试；模型没在一次回复里发完调用
-// 只说明需要多次调用的流程（追踪）走不通，记在「端点 + 模型 + 流程」上
+// 原生工具调用走不通的「端点 + 格式 + 模型」（见 getModelSessionKey）：本次会话里直接走文本协议，不再每轮白费一个请求。
+// 上游拒绝 tools 参数记在这个键上，所有流程都不再试；模型没在一次回复里发完调用
+// 只说明需要多次调用的流程（追踪）走不通，键再加上流程
 const nativeToolsDisabled = new Set();
 export const __nativeToolsDisabledForTest = nativeToolsDisabled;
 
-function getNativeToolsKey(apiBase, model, flow = '') {
-  return flow ? `${getModelSessionKey(apiBase, model)}|${flow}` : getModelSessionKey(apiBase, model);
+function getNativeToolsKey(sessionKey, flow = '') {
+  return flow ? `${sessionKey}|${flow}` : sessionKey;
 }
 
-function isNativeToolsDisabled(apiBase, model, flow) {
-  return nativeToolsDisabled.has(getNativeToolsKey(apiBase, model)) || nativeToolsDisabled.has(getNativeToolsKey(apiBase, model, flow));
+function isNativeToolsDisabled(sessionKey, flow) {
+  return nativeToolsDisabled.has(getNativeToolsKey(sessionKey)) || nativeToolsDisabled.has(getNativeToolsKey(sessionKey, flow));
 }
 
 function rememberNativeToolsDisabled(key) {
@@ -1739,7 +1743,8 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   // DeepSeek 系额外注入输出结构指令——但只在追踪流程注入：registry/日记/着衣/备装/技能/
   // 繁育推演各自声明了不同的 JSON 结构，注入 tool_calls 指令会压过它们的 schema。
   // 本次会话里被渠道拒过的模型不再带 response_format（DeepSeek 的结构指令照样注入）
-  const useFormattedOutputV4 = shouldUseResponseFormat(settings) && !responseFormatRejected.has(getModelSessionKey(apiBase, model));
+  const sessionKey = getModelSessionKey(apiBase, settings?.apiFormat, model);
+  const useFormattedOutputV4 = shouldUseResponseFormat(settings) && !responseFormatRejected.has(sessionKey);
   const isTrackerFlow = !safePayload?.target_character;
   const injectV4Instruction = shouldInjectV4Instruction(settings, model) && isTrackerFlow;
   if (injectV4Instruction && effectiveMessages[0]?.role === 'system') {
@@ -1765,7 +1770,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   // 系统提示词末尾说明本次改用工具调用。上游不认或模型没用工具时退回上面这份文本协议请求。
   // 四种 API 格式都适用：请求体一律先组成 OpenAI 格式，直连时由 buildDirectPayload 翻成各家格式，
   // TauriTavern 的格式感知代理则交给后端翻译。
-  const nativePlan = usesNativeToolCalls(replyFormat) && !isNativeToolsDisabled(apiBase, model, flow)
+  const nativePlan = usesNativeToolCalls(replyFormat) && !isNativeToolsDisabled(sessionKey, flow)
     ? resolveNativeToolPlan(options, safePayload)
     : null;
   let nativeBody = null;
@@ -1827,7 +1832,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   let nativeFallback = '';
   try {
     return await withGlobalApiRetries(async (globalAttempt) => {
-      if (nativeBody && !nativeFallback && !isNativeToolsDisabled(apiBase, model, flow)) {
+      if (nativeBody && !nativeFallback && !isNativeToolsDisabled(sessionKey, flow)) {
         let nativeData = null;
         try {
           nativeData = await requestChatCompletion(apiBase, settings, nativeBody, runContext);
@@ -1843,6 +1848,9 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
             // 调用没发完（追踪没交检查清单）：不用这份残缺结果，改发文本请求
             nativeFallback = 'incomplete';
             console.warn('[BS BioTracker] 模型的工具调用没发完（没交检查清单），这次改用文本 JSON', native.toolCalls);
+          } else if (native?.invalid) {
+            // 有工具参数解析不了：整批不用，改发文本请求。多半是偶发的截断或转义错误，不记住
+            console.warn('[BS BioTracker] 工具调用的参数解析不了，这次改用文本 JSON', native.toolCalls);
           } else {
             // 模型没用工具，但正文里照文本协议写了 JSON：直接采用
             const nativeContent = extractJson(nativeData?.choices?.[0]?.message?.content || '');
@@ -1852,8 +1860,8 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
         recordTextRequestDebug();
       }
       const data = await requestChatCompletion(apiBase, settings, body, runContext);
-      if (nativeFallback && !isNativeToolsDisabled(apiBase, model, flow)) {
-        rememberNativeToolsDisabled(nativeFallback === 'rejected' ? getNativeToolsKey(apiBase, model) : getNativeToolsKey(apiBase, model, flow));
+      if (nativeFallback && !isNativeToolsDisabled(sessionKey, flow)) {
+        rememberNativeToolsDisabled(nativeFallback === 'rejected' ? getNativeToolsKey(sessionKey) : getNativeToolsKey(sessionKey, flow));
         const reason = nativeFallback === 'rejected' ? '上游不接受工具调用参数' : '模型没在一次回复里发完工具调用';
         console.warn(`[BS BioTracker] ${reason}，本次会话里 ${model} 改用文本 JSON`);
       }

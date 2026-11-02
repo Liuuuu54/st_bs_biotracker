@@ -598,3 +598,77 @@ test('备装与起始着衣全流程：请求带上提交工具，回来的结�
   assert.deepEqual(await runRegistryWardrobeInference(ctx, { targetName: '艾拉' }), prep);
   assert.deepEqual(bodies.map((body) => body.tools.map((tool) => tool.function.name)), [[OUTFIT_TOOL.name], [WARDROBE_TOOL.name]]);
 });
+
+// ---- PR #18 审查：参数坏了整批退回；本次会话记忆分 API 格式 ----
+
+function brokenArgsResponse(passedTimeArgs, checksArgs) {
+  return { choices: [{ message: { content: null, tool_calls: [
+    { id: 'c1', type: 'function', function: { name: 'bsPassedTime', arguments: passedTimeArgs } },
+    { id: 'c2', type: 'function', function: { name: CHARACTER_CHECKS_TOOL_NAME, arguments: checksArgs } },
+  ] }, finish_reason: 'tool_calls' }] };
+}
+
+test('追踪：任一工具参数解析不了（即使交了检查清单）就整批不用，同一次改发文本请求；不记住', async () => {
+  const goodChecks = '{"checks":[{"female":"艾拉","status":"updated"}]}';
+  const textResult = { tool_calls: [{ name: 'bsPassedTime', arguments: { hour: 2 } }], character_checks: [{ female: '艾拉', status: 'updated' }] };
+  for (const [label, response] of [
+    ['动作工具参数坏了', brokenArgsResponse('{"hour":', goodChecks)],
+    ['检查清单参数坏了', brokenArgsResponse('{"hour":2}', '{"checks":[{"female":')],
+  ]) {
+    __nativeToolsDisabledForTest.clear();
+    const calls = installDirectFetch([jsonResponse(response), jsonResponse(textJsonResponse(textResult))]);
+    const result = await callOpenAICompatible(SETTINGS, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+    assert.deepEqual(result, textResult, label);
+    assert.equal(calls.length, 2, label);
+    assert.equal(calls[1].body.tools, undefined, label);
+    assert.equal(__nativeToolsDisabledForTest.size, 0, `${label}：多半是偶发的截断或转义错误，下次照样先试工具`);
+  }
+});
+
+test('追踪全流程：工具参数坏了时由文本请求补上，时间照常推进', async () => {
+  const state = await import('../scripts/state.js');
+  const { runTracker } = await import('../scripts/tracker.js');
+  const ctx = {
+    chatId: 'native-tools-broken-args',
+    chat: [
+      { is_user: true, name: 'User', mes: '我们休息一下吧。' },
+      { is_user: false, name: 'Alice', mes: '两人在旅店里休息了两个小时。', swipe_id: 0 },
+    ],
+    extensionSettings: {},
+    saveSettingsDebounced() {},
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  Object.assign(settings, { enabled: true, apiUrl: 'https://api.example.test/v1', apiKey: 'k', model: 'tool-model', replyFormat: 'tools' });
+  state.getChatState(ctx, settings).characters['艾拉'] = { ...state.createDefaultFemaleState('艾拉'), initialized: true };
+  const replies = [
+    brokenArgsResponse('{"hour":', '{"checks":[{"female":"艾拉","status":"updated"}]}'),
+    textJsonResponse({ tool_calls: [{ name: 'bsPassedTime', arguments: { hour: 2 } }], character_checks: [{ female: '艾拉', status: 'updated' }] }),
+  ];
+  let index = 0;
+  globalThis.fetch = async () => jsonResponse(replies[Math.min(index++, replies.length - 1)]);
+
+  await runTracker(ctx, { renderStatusPanel() {}, updateMainFlowPrompt() {} }, 'manual');
+
+  assert.equal(index, 2);
+  assert.equal(state.getChatState(ctx, state.getSettings(ctx)).minutesPassed, 120);
+});
+
+test('不接受工具的记忆分 API 格式：同一个网关的 Chat Completions 拒过工具，换成 Claude Messages 照样先试', async () => {
+  installDirectFetch([
+    jsonResponse({ error: { message: 'tools is not supported' } }, 400),
+    jsonResponse(textJsonResponse({ tool_calls: [] })),
+  ]);
+  await callOpenAICompatible(SETTINGS, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.equal(__nativeToolsDisabledForTest.size, 1);
+
+  const sameFormat = installDirectFetch([jsonResponse(textJsonResponse({ tool_calls: [] }))]);
+  await callOpenAICompatible(SETTINGS, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.equal(sameFormat[0].body.tools, undefined, '同一个格式仍记得');
+
+  const claude = installDirectFetch([jsonResponse({
+    content: [{ type: 'tool_use', id: 't1', name: CHARACTER_CHECKS_TOOL_NAME, input: { checks: [] } }],
+  })]);
+  await callOpenAICompatible({ ...SETTINGS, apiFormat: 'claude_messages' }, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.ok(claude[0].body.tools, '换了 API 格式是另一条路，照样先试工具');
+});

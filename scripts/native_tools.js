@@ -63,7 +63,7 @@ export function buildNativeToolInstruction() {
   ].join('\n');
 }
 
-/** 参数可能是 JSON 字符串或对象；解析不了就原样留下，交给工具层按参数缺失报错 */
+/** 参数可能是 JSON 字符串或对象；解析不了就原样留下，由各流程的方案决定怎么处理（追踪整批退回、提交工具当作没交） */
 function parseToolArguments(raw) {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
   if (typeof raw !== 'string' || !raw.trim()) return {};
@@ -75,26 +75,28 @@ function parseToolArguments(raw) {
   }
 }
 
-/**
- * 读回包里的原生工具调用，转成追踪器原本的 { tool_calls, character_checks }。
- * 没有任何具名工具调用时回传 null，由调用方改看正文或退回文本协议。
- */
-export function readNativeToolCalls(data) {
+/** 回包里的具名工具调用 [{ name, args }]（args 已尝试解析）；一个都没有时回传 null */
+function collectToolCalls(data) {
   const message = data?.choices?.[0]?.message;
   if (!message || typeof message !== 'object') return null;
   const rawCalls = Array.isArray(message.tool_calls) && message.tool_calls.length
     ? message.tool_calls
     : (message.function_call ? [{ function: message.function_call }] : []);
-  const toolCalls = [];
-  const checks = [];
-  let checksReported = false;
-  let named = 0;
+  const calls = [];
   for (const call of rawCalls) {
     const fn = call?.function && typeof call.function === 'object' ? call.function : call;
     const name = String(fn?.name || '').trim();
-    if (!name) continue;
-    named += 1;
-    const args = parseToolArguments(fn?.arguments);
+    if (name) calls.push({ name, args: parseToolArguments(fn?.arguments) });
+  }
+  return calls.length ? calls : null;
+}
+
+/** 工具调用转成追踪器原本的 { tool_calls, character_checks } */
+function toTrackerResult(calls) {
+  const toolCalls = [];
+  const checks = [];
+  let checksReported = false;
+  for (const { name, args } of calls) {
     if (name === CHARACTER_CHECKS_TOOL_NAME) {
       checksReported = true;
       const list = args && typeof args === 'object' ? (args.checks ?? args.character_checks) : null;
@@ -103,11 +105,19 @@ export function readNativeToolCalls(data) {
     }
     toolCalls.push({ name, arguments: args });
   }
-  if (!named) return null;
   const result = { tool_calls: toolCalls };
   // 调用了检查清单工具就带上 character_checks（参数坏了是空清单）：api.js 以它判断本轮的调用已经发完
   if (checksReported) result.character_checks = checks;
   return result;
+}
+
+/**
+ * 读回包里的原生工具调用，转成追踪器原本的 { tool_calls, character_checks }。
+ * 没有任何具名工具调用时回传 null，由调用方改看正文或退回文本协议。
+ */
+export function readNativeToolCalls(data) {
+  const calls = collectToolCalls(data);
+  return calls ? toTrackerResult(calls) : null;
 }
 
 function isTrackerResultShape(value) {
@@ -120,9 +130,11 @@ function isJsonObject(value) {
 }
 
 /**
- * 追踪的方案。read 回传 { result }（可用）、{ incomplete, toolCalls }（调用没发完）或 null（没用工具）。
- * 检查清单工具是「本轮调用已全部发出」的标记：有调用却没交检查清单，多半是模型调用一个就停下
- * 等工具结果（实测 GPT、Kimi 常这样），其余更新全落掉了，不能用这份残缺结果。
+ * 追踪的方案。read 回传 { result }（可用）、{ invalid, toolCalls }（有参数解析不了）、
+ * { incomplete, toolCalls }（调用没发完）或 null（没用工具）。
+ * - 任一工具（含检查清单）的参数解析不了就整批不用：派发下去那一项会被工具层略过，该楼却已标成追踪完成。
+ * - 检查清单工具是「本轮调用已全部发出」的标记：有调用却没交检查清单，多半是模型调用一个就停下
+ *   等工具结果（实测 GPT、Kimi 常这样），其余更新全落掉了，不能用这份残缺结果。
  */
 function buildTrackerToolPlan(payload) {
   const tools = buildNativeTrackerTools(payload?.available_tools);
@@ -132,8 +144,11 @@ function buildTrackerToolPlan(payload) {
     instruction: buildNativeToolInstruction(),
     omitPayloadKeys: ['available_tools'],
     read(data) {
-      const native = readNativeToolCalls(data);
-      if (!native) return null;
+      const calls = collectToolCalls(data);
+      if (!calls) return null;
+      const invalid = calls.filter((call) => !isJsonObject(call.args));
+      if (invalid.length) return { invalid: true, toolCalls: invalid.map((call) => call.name) };
+      const native = toTrackerResult(calls);
       return Array.isArray(native.character_checks) ? { result: native } : { incomplete: true, toolCalls: native.tool_calls };
     },
     acceptsContent: isTrackerResultShape,
