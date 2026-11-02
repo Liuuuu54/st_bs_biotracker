@@ -1,6 +1,7 @@
 import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, resolveUserTemperature } from './state.js';
 import { resolveHostWorldInfo } from './worldinfo_resolve.js';
 import { markOwnRequest } from './own_requests.js';
+import { buildNativeToolInstruction, buildNativeTrackerTools, isNativeToolRejection, readNativeToolCalls } from './native_tools.js';
 import {
   getHostChatCompletionSettings,
   getHostContext,
@@ -40,37 +41,6 @@ export function extractJson(text) {
     } catch {}
   }
   return null;
-}
-
-/**
- * DeepSeek 系模型对 response_format(json_object) 支持好，但工具调用兼容层不稳定，
- * 掉格式概率明显高于其他模型，需要额外注入输出结构指令。
- * 只匹配 deepseek——原始实现还匹配子串 ds，会误伤名字里恰好含 ds 的其他模型。
- */
-export function isDeepSeekFamilyModel(model) {
-  return String(model || '').trim().toLowerCase().includes('deepseek');
-}
-
-/** 是否附加 response_format.json_object：完全听使用者的开关（渠道不支持时要能关掉）。 */
-export function shouldUseResponseFormat(settings, _model) {
-  return settings?.formattedOutputV4 !== false;
-}
-
-/** 是否注入 v4 结构指令：开关开着且模型是 DeepSeek 系才注入。 */
-export function shouldInjectV4Instruction(settings, model) {
-  return shouldUseResponseFormat(settings, model) && isDeepSeekFamilyModel(model);
-}
-
-/** v4 兼容模式的输出结构指令，与 response_format 双重约束降低掉格式概率。 */
-function buildFormattedOutputV4Instruction() {
-  return [
-    '【输出格式（强制）】',
-    '你处于格式化输出模式：不要输出 Markdown、不要输出代码块、不要输出解释文字或任何对象之外的字符。',
-    '只输出一个可直接 JSON.parse 的 JSON 对象，结构为：',
-    '{"tool_calls": [{"name": "工具名", "arguments": {"参数名": "值"}}], "character_checks": [{"female": "角色名", "status": "no_change|updated|present|offscreen"}]}',
-    'arguments 必须是一个对象；工具名与参数必须来自 available_tools 与变量语义说明。',
-    'character_checks 必须对每名已追踪角色恰好输出一笔（即使无变化 status 也写 no_change）；无工具操作时输出 {"tool_calls": []}，但 character_checks 仍须完整。',
-  ].join('\n');
 }
 
 export function getApiBase(settings) {
@@ -598,8 +568,11 @@ async function requestHostProxyChatCompletion(apiBase, settings, requestBody, ru
     max_tokens: requestBody.max_tokens,
     seed: requestBody.seed,
     reasoning_effort: requestBody.reasoning_effort,
-    // 非 compat 格式交给宿主后端按 custom_api_format 翻译；response_format 不在其中
-    ...(formatAware ? { custom_api_format: apiFormat } : { response_format: requestBody.response_format }),
+    // 原生工具调用：SillyTavern 的自定义来源与 TauriTavern 都原样转发 tools / tool_choice
+    tools: requestBody.tools,
+    tool_choice: requestBody.tool_choice,
+    // 非 compat 格式交给宿主后端按 custom_api_format 翻译
+    ...(formatAware ? { custom_api_format: apiFormat } : {}),
     stream: false,
     ...buildHostProxyConfig(apiBase, settings, runContext.sessionId || ''),
   };
@@ -1257,9 +1230,6 @@ function buildDirectPayload(fmt, requestBody) {
     if (typeof requestBody.reasoning_effort === 'string' && requestBody.reasoning_effort) {
       payload.reasoning = { effort: requestBody.reasoning_effort };
     }
-    if (requestBody.response_format?.type === 'json_object') {
-      payload.text = { format: { type: 'json_object' } };
-    }
     return payload;
   }
   if (fmt === API_FORMATS.CLAUDE_MESSAGES) {
@@ -1429,25 +1399,9 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   const isGemini = result.format === API_FORMATS.GEMINI_INTERACTIONS;
   const isNonCompatFormat = isResponses || isClaude || isGemini;
 
-  if (!response.ok && response.status === 400 && body.response_format && !isNonCompatFormat) {
-    const fallbackBody = stripTemperatureField(settings, {
-      model: body.model,
-      temperature: body.temperature,
-      top_p: body.top_p,
-      frequency_penalty: body.frequency_penalty,
-      presence_penalty: body.presence_penalty,
-      max_tokens: body.max_tokens,
-      seed: body.seed,
-      messages: body.messages,
-    });
-    result = await postBody(fallbackBody, 'without_response_format');
-    response = result.response;
-    responseText = result.responseText;
-    errorText = response.ok ? '' : responseText;
-  }
-
   const invalidArgument = response.status === 400 && /invalid argument|badRequest/i.test(errorText);
-  if (!response.ok && invalidArgument && !isNonCompatFormat) {
+  // 带 tools 的请求被拒时不在这里砍成最小请求体（会把 tools 一起丢掉），交给调用方改用文本协议
+  if (!response.ok && invalidArgument && !isNonCompatFormat && !body.tools) {
     const minimalBody = {
       model: body.model,
       messages: body.messages,
@@ -1459,7 +1413,10 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(`API ${response.status}［实际请求: ${getApiUrlForFormat(apiBase, result.format)}］: ${sanitizeErrorText(errorText)}`);
+    const error = new Error(`API ${response.status}［实际请求: ${getApiUrlForFormat(apiBase, result.format)}］: ${sanitizeErrorText(errorText)}`);
+    // 调用方据此区分「上游不认请求参数」与鉴权、限流、服务端错误
+    error.status = response.status;
+    throw error;
   }
   try {
     const parsed = JSON.parse(responseText);
@@ -1590,6 +1547,28 @@ async function buildPresetEnvelope(settings, baseSystemPrompt, payloadText) {
   }
 }
 
+// 上游明确拒绝过 tools 参数的「端点 + 模型」：本次会话里直接走文本协议，不再每轮白费一个请求
+const nativeToolsRejected = new Set();
+export const __nativeToolsRejectedForTest = nativeToolsRejected;
+
+function getNativeToolsKey(apiBase, model) {
+  return `${apiBase}|${model}`;
+}
+
+function rememberNativeToolsRejected(apiBase, model) {
+  nativeToolsRejected.add(getNativeToolsKey(apiBase, model));
+  while (nativeToolsRejected.size > 32) nativeToolsRejected.delete(nativeToolsRejected.values().next().value);
+}
+
+function isTrackerResultShape(value) {
+  return Boolean(value) && typeof value === 'object'
+    && (Array.isArray(value.tool_calls) || Array.isArray(value.character_checks));
+}
+
+/**
+ * options.nativeTools：追踪流程传 true，OpenAI 兼容格式下先试原生工具调用（见 native_tools.js）。
+ * 其余流程（注册、日记、着衣、备装、技能、繁育、精方）各有自己的 JSON 结构，照旧走文本 JSON。
+ */
 export async function callOpenAICompatible(settings, payload, systemPrompt = DEFAULT_SYSTEM_PROMPT, options = {}) {
   const apiBase = getApiBase(settings);
   const model = String(settings.model || '').trim();
@@ -1610,21 +1589,9 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   const presetEnvelope = shouldApplyAsyncPreset(settings)
     ? await buildPresetEnvelope(settings, safeSystemPrompt, payloadText)
     : null;
-  let effectiveMessages = presetEnvelope?.messages?.length ? presetEnvelope.messages : baseMessages;
+  const effectiveMessages = presetEnvelope?.messages?.length ? presetEnvelope.messages : baseMessages;
   const stPresetSampling = presetEnvelope?.sampling || {};
   const effectivePresetName = presetEnvelope?.presetName || '';
-  // 格式化输出(v4兼容)：response_format.type = json_object（无 json_schema），可在设置关闭。
-  // DeepSeek 系额外注入输出结构指令——但只在追踪流程注入：registry/日记/着衣/备装/技能/
-  // 繁育推演各自声明了不同的 JSON 结构，注入 tool_calls 指令会压过它们的 schema。
-  const useFormattedOutputV4 = shouldUseResponseFormat(settings, model);
-  const isTrackerFlow = !safePayload?.target_character;
-  const injectV4Instruction = shouldInjectV4Instruction(settings, model) && isTrackerFlow;
-  if (injectV4Instruction && effectiveMessages[0]?.role === 'system') {
-    effectiveMessages = [
-      { role: 'system', content: `${effectiveMessages[0].content}\n\n${buildFormattedOutputV4Instruction()}` },
-      ...effectiveMessages.slice(1),
-    ];
-  }
   const body = stripTemperatureField(settings, {
     model,
     ...resolveBaseTemperatureField(settings, 0.2),
@@ -1632,15 +1599,43 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
     ...resolveManualTemperatureField(settings),
     ...resolveReasoningEffortField(settings),
     messages: effectiveMessages,
-    ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
   });
-  recordEffectiveRequestDebug(
-    `${safePayload?.target_character ? 'registry' : 'tracker'}${mainflowCopy.hasMainflowCopy ? '-mainflow-copy' : (safePayload?.resolved_worldbook_prompt ? '-mainflow-worldinfo' : '')}${useFormattedOutputV4 ? '' : '-no-response-format'}${injectV4Instruction ? '-v4-instruction' : ''}`,
-    effectivePresetName,
-    stPresetSampling,
-    effectiveMessages,
-    body,
-  );
+  const debugSource = `${safePayload?.target_character ? 'registry' : 'tracker'}${mainflowCopy.hasMainflowCopy ? '-mainflow-copy' : (safePayload?.resolved_worldbook_prompt ? '-mainflow-worldinfo' : '')}`;
+  const recordTextRequestDebug = () => recordEffectiveRequestDebug(debugSource, effectivePresetName, stPresetSampling, effectiveMessages, body);
+
+  // 追踪流程先试原生工具调用：工具定义移进 tools 参数，用户消息里不再重复一份；
+  // 系统提示词末尾说明本轮改用工具调用。上游不认或模型没用工具时退回上面这份文本协议请求。
+  const nativeTools = options?.nativeTools === true && !safePayload?.target_character
+    && normalizeApiFormat(settings?.apiFormat) === API_FORMATS.OPENAI_COMPAT
+    && !nativeToolsRejected.has(getNativeToolsKey(apiBase, model))
+    ? buildNativeTrackerTools(safePayload?.available_tools)
+    : [];
+  let nativeBody = null;
+  if (nativeTools.length) {
+    const nativePayload = { ...safePayload };
+    delete nativePayload.available_tools;
+    const nativeSystemPrompt = `${safeSystemPrompt}\n\n${buildNativeToolInstruction()}`;
+    const nativePayloadText = JSON.stringify(nativePayload);
+    const nativeEnvelope = shouldApplyAsyncPreset(settings)
+      ? await buildPresetEnvelope(settings, nativeSystemPrompt, nativePayloadText)
+      : null;
+    const nativeMessages = nativeEnvelope?.messages?.length
+      ? nativeEnvelope.messages
+      : [{ role: 'system', content: nativeSystemPrompt }, { role: 'user', content: nativePayloadText }];
+    const nativeSampling = nativeEnvelope?.sampling || {};
+    nativeBody = stripTemperatureField(settings, {
+      model,
+      ...resolveBaseTemperatureField(settings, 0.2),
+      ...nativeSampling,
+      ...resolveManualTemperatureField(settings),
+      ...resolveReasoningEffortField(settings),
+      messages: nativeMessages,
+      tools: nativeTools,
+    });
+    recordEffectiveRequestDebug(`${debugSource}-native-tools`, nativeEnvelope?.presetName || '', nativeSampling, nativeMessages, nativeBody);
+  } else {
+    recordTextRequestDebug();
+  }
   const callLabel = safePayload?.target_character ? '注册请求' : '追踪请求';
 
   // 整轮总时限：一个信号统管全部重试与子请求，到点后中止在飞的 fetch 并停止重试，
@@ -1670,6 +1665,24 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
 
   try {
     return await withGlobalApiRetries(async (globalAttempt) => {
+      if (nativeBody && !nativeToolsRejected.has(getNativeToolsKey(apiBase, model))) {
+        let nativeData = null;
+        try {
+          nativeData = await requestChatCompletion(apiBase, settings, nativeBody, runContext);
+        } catch (error) {
+          if (!isNativeToolRejection(error)) throw error;
+          rememberNativeToolsRejected(apiBase, model);
+          console.warn('[BS BioTracker] 上游不接受工具调用参数，本次会话里这个模型改用文本 JSON', error);
+        }
+        if (nativeData) {
+          const native = readNativeToolCalls(nativeData);
+          if (native) return native;
+          // 模型没用工具，但正文里照文本协议写了追踪 JSON：直接采用
+          const nativeContent = extractJson(nativeData?.choices?.[0]?.message?.content || '');
+          if (isTrackerResultShape(nativeContent)) return nativeContent;
+        }
+        recordTextRequestDebug();
+      }
       const data = await requestChatCompletion(apiBase, settings, body, runContext);
       const content = data?.choices?.[0]?.message?.content || '';
       let parsed = extractJson(content);
@@ -1687,7 +1700,6 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
           { role: 'assistant', content: String(content || '') },
           { role: 'user', content: buildJsonRetryInstruction() },
         ],
-        ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
       });
       const retryData = await requestChatCompletion(apiBase, settings, retryBody, runContext);
       const retryContent = retryData?.choices?.[0]?.message?.content || '';

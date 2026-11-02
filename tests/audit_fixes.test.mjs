@@ -1,9 +1,9 @@
-// 工具/传输层修复回归：工具参数门禁、极端时间的循环上限、API Base 校验与格式化输出闸门。
+// 工具/传输层修复回归：工具参数门禁、极端时间的循环上限与 API Base 校验。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { applyToolCall } from '../scripts/tools.js';
-import { assertSafeDirectApiBase, isDeepSeekFamilyModel, shouldInjectV4Instruction, shouldUseResponseFormat } from '../scripts/api.js';
+import { assertSafeDirectApiBase } from '../scripts/api.js';
 
 function makeCharacter(overrides = {}) {
   return {
@@ -135,27 +135,6 @@ test('assertSafeDirectApiBase：本机与内网 http 放行（自建后端常规
   ]) {
     assert.doesNotThrow(() => assertSafeDirectApiBase(base), `base=${base} 应放行`);
   }
-});
-
-test('DeepSeek 判定只认 deepseek，不用 ds 子串', () => {
-  assert.equal(isDeepSeekFamilyModel('deepseek-chat'), true);
-  assert.equal(isDeepSeekFamilyModel('DeepSeek-R1'), true);
-  assert.equal(isDeepSeekFamilyModel('xx-deepseek-v4-pro'), true);
-  assert.equal(isDeepSeekFamilyModel('ds-chat'), false, 'ds 子串不应命中');
-  assert.equal(isDeepSeekFamilyModel('gpt-4o-mini'), false);
-  assert.equal(isDeepSeekFamilyModel('qwen2.5-coder'), false);
-});
-
-test('格式化输出开关：使用者关掉时一律不启用，不被模型判定覆盖', () => {
-  // 开关开（默认）：所有模型带 response_format；只有 DeepSeek 系额外注入结构指令
-  assert.equal(shouldUseResponseFormat({}, 'gpt-4o-mini'), true);
-  assert.equal(shouldUseResponseFormat({}, 'deepseek-chat'), true);
-  assert.equal(shouldInjectV4Instruction({}, 'deepseek-chat'), true);
-  assert.equal(shouldInjectV4Instruction({}, 'gpt-4o-mini'), false);
-  // 开关关：渠道不支持该参数时要能真的关掉，DeepSeek 也不例外
-  assert.equal(shouldUseResponseFormat({ formattedOutputV4: false }, 'gpt-4o-mini'), false);
-  assert.equal(shouldUseResponseFormat({ formattedOutputV4: false }, 'deepseek-chat'), false);
-  assert.equal(shouldInjectV4Instruction({ formattedOutputV4: false }, 'deepseek-chat'), false);
 });
 
 test('characters 用 null-proto：保留名不再被当成角色对象', async () => {
