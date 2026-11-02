@@ -1618,7 +1618,7 @@ function isTrackerResultShape(value) {
 }
 
 /**
- * options.nativeTools：追踪流程传 true，先试原生工具调用（见 native_tools.js）。
+ * options.nativeTools：追踪流程传 true；使用者勾选了「工具调用」（settings.nativeToolCalls）时先试原生工具调用（见 native_tools.js）。
  * 其余流程（注册、日记、着衣、备装、技能、繁育、精方）各有自己的 JSON 结构，照旧走文本 JSON。
  */
 export async function callOpenAICompatible(settings, payload, systemPrompt = DEFAULT_SYSTEM_PROMPT, options = {}) {
@@ -1659,7 +1659,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   // 系统提示词末尾说明本轮改用工具调用。上游不认或模型没用工具时退回上面这份文本协议请求。
   // 四种 API 格式都适用：请求体一律先组成 OpenAI 格式，直连时由 buildDirectPayload 翻成各家格式，
   // TauriTavern 的格式感知代理则交给后端翻译。
-  const nativeTools = options?.nativeTools === true && !safePayload?.target_character
+  const nativeTools = options?.nativeTools === true && settings?.nativeToolCalls === true && !safePayload?.target_character
     && !nativeToolsDisabled.has(getNativeToolsKey(apiBase, model))
     ? buildNativeTrackerTools(safePayload?.available_tools)
     : [];

@@ -8543,6 +8543,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-temperature-mode', normalizeTemperatureMode(settings.temperatureMode));
   syncTemperatureInput();
   setValue('bs-bt-reasoning-effort', normalizeReasoningEffort(settings.reasoningEffort));
+  setValue('bs-bt-native-tool-calls', settings.nativeToolCalls === true);
   updateApiEndpointPreview();
   setValue('bs-bt-poll-ms', settings.pollMs);
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
@@ -9122,6 +9123,8 @@ function readSettingsFromForm(ctx) {
     ? resolveUserTemperature({ temperature: getValue('bs-bt-temperature') })
     : null;
   settings.reasoningEffort = normalizeReasoningEffort(getValue('bs-bt-reasoning-effort'));
+  const nativeToolCallsToggle = document.getElementById('bs-bt-native-tool-calls');
+  if (nativeToolCallsToggle) settings.nativeToolCalls = Boolean(nativeToolCallsToggle.checked);
   settings.pollMs = Math.max(800, Number(getValue('bs-bt-poll-ms')) || 1800);
   const rawApiTimeoutSec = String(getValue('bs-bt-api-timeout-sec')).trim();
   const apiTimeoutSec = rawApiTimeoutSec === '' ? NaN : Number(rawApiTimeoutSec);

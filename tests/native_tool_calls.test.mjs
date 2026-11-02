@@ -62,6 +62,7 @@ const SETTINGS = {
   apiUrl: 'https://api.example.test/v1',
   apiKey: 'secret',
   model: 'tool-model',
+  nativeToolCalls: true,
 };
 
 function nativeToolResponse() {
@@ -279,6 +280,20 @@ test('模型没用工具、但正文是追踪 JSON：直接采用，不再多发
   assert.equal(calls.length, 1);
 });
 
+test('没勾选「工具调用」（默认）：追踪请求照旧走文本 JSON，不带 tools', async () => {
+  const state = await import('../scripts/state.js');
+  assert.equal(state.DEFAULT_SETTINGS.nativeToolCalls, false);
+  const textResult = { tool_calls: [], character_checks: [] };
+  for (const settings of [{ ...SETTINGS, nativeToolCalls: undefined }, { ...SETTINGS, nativeToolCalls: false }]) {
+    const calls = installDirectFetch([jsonResponse(textJsonResponse(textResult))]);
+    await callOpenAICompatible(settings, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.tools, undefined);
+    assert.equal(calls[0].body.messages[0].content, 'SYSTEM', '系统提示词不加工具调用说明');
+    assert.ok(JSON.parse(calls[0].body.messages.at(-1).content).available_tools, '工具定义照旧放在用户消息里');
+  }
+});
+
 test('非追踪流程与没要求原生工具时：照旧走文本 JSON，不带 tools 也不带 response_format', async () => {
   const textResult = { tool_calls: [] };
   const registry = installDirectFetch([jsonResponse(textJsonResponse({ items: [] }))]);
@@ -420,7 +435,7 @@ test('追踪全流程：模型用原生工具调用回包，状态照常结算�
   };
   globalThis.SillyTavern = { getContext: () => ctx };
   const settings = state.getSettings(ctx);
-  Object.assign(settings, { enabled: true, apiUrl: 'https://api.example.test/v1', apiKey: 'k', model: 'tool-model' });
+  Object.assign(settings, { enabled: true, apiUrl: 'https://api.example.test/v1', apiKey: 'k', model: 'tool-model', nativeToolCalls: true });
   state.getChatState(ctx, settings).characters['艾拉'] = { ...state.createDefaultFemaleState('艾拉'), initialized: true };
   const bodies = [];
   globalThis.fetch = async (_url, options) => {

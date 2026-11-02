@@ -1883,7 +1883,7 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
     settings,
     payload,
     systemPrompt,
-    // 先试原生工具调用（OpenAI 兼容格式），不行再退回文本 JSON（见 api.js / native_tools.js）
+    // 勾选了「工具调用」时先试原生工具调用，不行再退回文本 JSON（见 api.js / native_tools.js）
     { flow: 'tracker', nativeTools: true }
   );
   recordTrackerResultDebug(rawResult);
