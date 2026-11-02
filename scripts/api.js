@@ -1,4 +1,4 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, resolveUserTemperature } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, REPLY_FORMATS, resolveUserTemperature } from './state.js';
 import { resolveHostWorldInfo } from './worldinfo_resolve.js';
 import { markOwnRequest } from './own_requests.js';
 import { isNativeToolRejection, resolveNativeToolPlan } from './native_tools.js';
@@ -41,6 +41,42 @@ export function extractJson(text) {
     } catch {}
   }
   return null;
+}
+
+/**
+ * DeepSeek 系模型对 response_format(json_object) 支持好，但工具调用兼容层不稳定，
+ * 掉格式概率明显高于其他模型，需要额外注入输出结构指令。
+ * 只匹配 deepseek——原始实现还匹配子串 ds，会误伤名字里恰好含 ds 的其他模型。
+ */
+export function isDeepSeekFamilyModel(model) {
+  return String(model || '').trim().toLowerCase().includes('deepseek');
+}
+
+/**
+ * 文本请求是否附加 response_format.json_object：只看使用者选的回复格式（渠道不支持时要能改掉）。
+ * 选工具调用时，带工具的请求从不附加；退回的文本请求与没有工具的流程看「退回时用格式化输出」。
+ */
+export function shouldUseResponseFormat(settings) {
+  const replyFormat = normalizeReplyFormat(settings?.replyFormat, settings);
+  return replyFormat === REPLY_FORMATS.FORMATTED
+    || (replyFormat === REPLY_FORMATS.TOOLS && settings?.toolFallbackFormatted === true);
+}
+
+/** 是否注入 v4 结构指令：选了格式化输出且模型是 DeepSeek 系才注入。 */
+export function shouldInjectV4Instruction(settings, model) {
+  return shouldUseResponseFormat(settings) && isDeepSeekFamilyModel(model);
+}
+
+/** v4 兼容模式的输出结构指令，与 response_format 双重约束降低掉格式概率。 */
+function buildFormattedOutputV4Instruction() {
+  return [
+    '【输出格式（强制）】',
+    '你处于格式化输出模式：不要输出 Markdown、不要输出代码块、不要输出解释文字或任何对象之外的字符。',
+    '只输出一个可直接 JSON.parse 的 JSON 对象，结构为：',
+    '{"tool_calls": [{"name": "工具名", "arguments": {"参数名": "值"}}], "character_checks": [{"female": "角色名", "status": "no_change|updated|present|offscreen"}]}',
+    'arguments 必须是一个对象；工具名与参数必须来自 available_tools 与变量语义说明。',
+    'character_checks 必须对每名已追踪角色恰好输出一笔（即使无变化 status 也写 no_change）；无工具操作时输出 {"tool_calls": []}，但 character_checks 仍须完整。',
+  ].join('\n');
 }
 
 export function getApiBase(settings) {
@@ -571,8 +607,8 @@ async function requestHostProxyChatCompletion(apiBase, settings, requestBody, ru
     // 原生工具调用：SillyTavern 的自定义来源与 TauriTavern 都原样转发 tools / tool_choice
     tools: requestBody.tools,
     tool_choice: requestBody.tool_choice,
-    // 非 compat 格式交给宿主后端按 custom_api_format 翻译
-    ...(formatAware ? { custom_api_format: apiFormat } : {}),
+    // 非 compat 格式交给宿主后端按 custom_api_format 翻译；response_format 不在其中
+    ...(formatAware ? { custom_api_format: apiFormat } : { response_format: requestBody.response_format }),
     stream: false,
     ...buildHostProxyConfig(apiBase, settings, runContext.sessionId || ''),
   };
@@ -1276,6 +1312,9 @@ function buildDirectPayload(fmt, requestBody) {
     if (typeof requestBody.reasoning_effort === 'string' && requestBody.reasoning_effort) {
       payload.reasoning = { effort: requestBody.reasoning_effort };
     }
+    if (requestBody.response_format?.type === 'json_object') {
+      payload.text = { format: { type: 'json_object' } };
+    }
     // Responses 的函数工具默认 strict（要求每层都 additionalProperties:false、全部字段必填），
     // 插件的工具 schema 不是按严格模式写的，必须显式关掉（同 TauriTavern 的翻译）
     const tools = readFunctionTools(requestBody.tools)
@@ -1450,6 +1489,23 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   const isGemini = result.format === API_FORMATS.GEMINI_INTERACTIONS;
   const isNonCompatFormat = isResponses || isClaude || isGemini;
 
+  if (!response.ok && response.status === 400 && body.response_format && !isNonCompatFormat) {
+    const fallbackBody = stripTemperatureField(settings, {
+      model: body.model,
+      temperature: body.temperature,
+      top_p: body.top_p,
+      frequency_penalty: body.frequency_penalty,
+      presence_penalty: body.presence_penalty,
+      max_tokens: body.max_tokens,
+      seed: body.seed,
+      messages: body.messages,
+    });
+    result = await postBody(fallbackBody, 'without_response_format');
+    response = result.response;
+    responseText = result.responseText;
+    errorText = response.ok ? '' : responseText;
+  }
+
   const invalidArgument = response.status === 400 && /invalid argument|badRequest/i.test(errorText);
   // 带 tools 的请求被拒时不在这里砍成最小请求体（会把 tools 一起丢掉），交给调用方改用文本协议
   if (!response.ok && invalidArgument && !isNonCompatFormat && !body.tools) {
@@ -1618,10 +1674,13 @@ function rememberNativeToolsDisabled(key) {
 }
 
 /**
- * 使用者勾选了「工具调用」（settings.nativeToolCalls）时，以下流程先试原生工具调用（见 native_tools.js）：
- * - options.nativeTools=true：追踪。
- * - options.nativeSubmitTool：备装、起始着衣，用一个提交工具交整份结果。
- * 其余流程（注册、日记、技能、繁育、精方）各有自己的 JSON 结构，照旧走文本 JSON。
+ * 依使用者选的回复格式（settings.replyFormat，见 normalizeReplyFormat）组请求：
+ * - 原生聊天消息：正文写 JSON，不带额外参数。
+ * - 格式化输出：附加 response_format.json_object；DeepSeek 系的追踪请求另注入输出结构指令。
+ * - 工具调用：以下流程先试原生工具调用（见 native_tools.js），其余流程与退回的文本请求按原生聊天消息发，
+ *   勾了「退回时用格式化输出」（settings.toolFallbackFormatted）则按格式化输出发：
+ *   - options.nativeTools=true：追踪。
+ *   - options.nativeSubmitTool：备装、起始着衣，用一个提交工具交整份结果。
  */
 export async function callOpenAICompatible(settings, payload, systemPrompt = DEFAULT_SYSTEM_PROMPT, options = {}) {
   const apiBase = getApiBase(settings);
@@ -1643,9 +1702,22 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   const presetEnvelope = shouldApplyAsyncPreset(settings)
     ? await buildPresetEnvelope(settings, safeSystemPrompt, payloadText)
     : null;
-  const effectiveMessages = presetEnvelope?.messages?.length ? presetEnvelope.messages : baseMessages;
+  let effectiveMessages = presetEnvelope?.messages?.length ? presetEnvelope.messages : baseMessages;
   const stPresetSampling = presetEnvelope?.sampling || {};
   const effectivePresetName = presetEnvelope?.presetName || '';
+  const replyFormat = normalizeReplyFormat(settings?.replyFormat, settings);
+  // 格式化输出(v4兼容)：response_format.type = json_object（无 json_schema）。
+  // DeepSeek 系额外注入输出结构指令——但只在追踪流程注入：registry/日记/着衣/备装/技能/
+  // 繁育推演各自声明了不同的 JSON 结构，注入 tool_calls 指令会压过它们的 schema。
+  const useFormattedOutputV4 = shouldUseResponseFormat(settings);
+  const isTrackerFlow = !safePayload?.target_character;
+  const injectV4Instruction = shouldInjectV4Instruction(settings, model) && isTrackerFlow;
+  if (injectV4Instruction && effectiveMessages[0]?.role === 'system') {
+    effectiveMessages = [
+      { role: 'system', content: `${effectiveMessages[0].content}\n\n${buildFormattedOutputV4Instruction()}` },
+      ...effectiveMessages.slice(1),
+    ];
+  }
   const body = stripTemperatureField(settings, {
     model,
     ...resolveBaseTemperatureField(settings, 0.2),
@@ -1653,16 +1725,17 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
     ...resolveManualTemperatureField(settings),
     ...resolveReasoningEffortField(settings),
     messages: effectiveMessages,
+    ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
   });
   const flow = String(options?.flow || (safePayload?.target_character ? 'registry' : 'tracker'));
-  const debugSource = `${safePayload?.target_character ? 'registry' : 'tracker'}${mainflowCopy.hasMainflowCopy ? '-mainflow-copy' : (safePayload?.resolved_worldbook_prompt ? '-mainflow-worldinfo' : '')}`;
+  const debugSource = `${safePayload?.target_character ? 'registry' : 'tracker'}${mainflowCopy.hasMainflowCopy ? '-mainflow-copy' : (safePayload?.resolved_worldbook_prompt ? '-mainflow-worldinfo' : '')}${useFormattedOutputV4 ? '' : '-no-response-format'}${injectV4Instruction ? '-v4-instruction' : ''}`;
   const recordTextRequestDebug = () => recordEffectiveRequestDebug(debugSource, effectivePresetName, stPresetSampling, effectiveMessages, body);
 
   // 先试原生工具调用：工具定义放进 tools 参数（追踪的工具定义因此不再在用户消息里重复一份），
   // 系统提示词末尾说明本次改用工具调用。上游不认或模型没用工具时退回上面这份文本协议请求。
   // 四种 API 格式都适用：请求体一律先组成 OpenAI 格式，直连时由 buildDirectPayload 翻成各家格式，
   // TauriTavern 的格式感知代理则交给后端翻译。
-  const nativePlan = settings?.nativeToolCalls === true && !isNativeToolsDisabled(apiBase, model, flow)
+  const nativePlan = replyFormat === REPLY_FORMATS.TOOLS && !isNativeToolsDisabled(apiBase, model, flow)
     ? resolveNativeToolPlan(options, safePayload)
     : null;
   let nativeBody = null;
@@ -1770,6 +1843,7 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
           { role: 'assistant', content: String(content || '') },
           { role: 'user', content: buildJsonRetryInstruction() },
         ],
+        ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
       });
       const retryData = await requestChatCompletion(apiBase, settings, retryBody, runContext);
       const retryContent = retryData?.choices?.[0]?.message?.content || '';

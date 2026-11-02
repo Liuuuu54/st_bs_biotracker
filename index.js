@@ -148,6 +148,7 @@ import {
   isWardrobeSystemEnabled,
   normalizeApiFormat,
   normalizeReasoningEffort,
+  normalizeReplyFormat,
   normalizeTemperatureMode,
   resolveUserTemperature,
   getCharacterWorldBookName,
@@ -8514,6 +8515,16 @@ function syncTemperatureInput() {
   inputNode.placeholder = mode === 'omit' ? 'N/A' : 'default';
 }
 
+/** 「退回时用格式化输出」只在回复格式选了工具调用时显示 */
+function syncReplyFormatOptions() {
+  const formatNode = document.getElementById('bs-bt-reply-format');
+  const isTools = normalizeReplyFormat(formatNode?.value) === 'tools';
+  for (const id of ['bs-bt-tool-fallback-formatted-row', 'bs-bt-tool-fallback-formatted-hint']) {
+    const node = document.getElementById(id);
+    if (node) node.style.display = isTools ? '' : 'none';
+  }
+}
+
 function applySettingsToForm(ctx) {
   const settings = getSettings(ctx);
   syncRacePhysiologyOverrides(settings);
@@ -8543,7 +8554,9 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-temperature-mode', normalizeTemperatureMode(settings.temperatureMode));
   syncTemperatureInput();
   setValue('bs-bt-reasoning-effort', normalizeReasoningEffort(settings.reasoningEffort));
-  setValue('bs-bt-native-tool-calls', settings.nativeToolCalls === true);
+  setValue('bs-bt-reply-format', normalizeReplyFormat(settings.replyFormat, settings));
+  setValue('bs-bt-tool-fallback-formatted', settings.toolFallbackFormatted === true);
+  syncReplyFormatOptions();
   updateApiEndpointPreview();
   setValue('bs-bt-poll-ms', settings.pollMs);
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
@@ -9123,8 +9136,9 @@ function readSettingsFromForm(ctx) {
     ? resolveUserTemperature({ temperature: getValue('bs-bt-temperature') })
     : null;
   settings.reasoningEffort = normalizeReasoningEffort(getValue('bs-bt-reasoning-effort'));
-  const nativeToolCallsToggle = document.getElementById('bs-bt-native-tool-calls');
-  if (nativeToolCallsToggle) settings.nativeToolCalls = Boolean(nativeToolCallsToggle.checked);
+  settings.replyFormat = normalizeReplyFormat(getValue('bs-bt-reply-format'));
+  const toolFallbackToggle = document.getElementById('bs-bt-tool-fallback-formatted');
+  if (toolFallbackToggle) settings.toolFallbackFormatted = Boolean(toolFallbackToggle.checked);
   settings.pollMs = Math.max(800, Number(getValue('bs-bt-poll-ms')) || 1800);
   const rawApiTimeoutSec = String(getValue('bs-bt-api-timeout-sec')).trim();
   const apiTimeoutSec = rawApiTimeoutSec === '' ? NaN : Number(rawApiTimeoutSec);
@@ -10254,6 +10268,9 @@ async function ensureModal(ctx) {
   });
   document.getElementById('bs-bt-temperature-mode')?.addEventListener('change', () => {
     syncTemperatureInput();
+  });
+  document.getElementById('bs-bt-reply-format')?.addEventListener('change', () => {
+    syncReplyFormatOptions();
   });
   document.getElementById('bs-bt-worldbook-clear-all')?.addEventListener('click', async () => {
     try {

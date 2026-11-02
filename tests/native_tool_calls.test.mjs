@@ -66,7 +66,7 @@ const SETTINGS = {
   apiUrl: 'https://api.example.test/v1',
   apiKey: 'secret',
   model: 'tool-model',
-  nativeToolCalls: true,
+  replyFormat: 'tools',
 };
 
 function nativeToolResponse() {
@@ -284,11 +284,11 @@ test('模型没用工具、但正文是追踪 JSON：直接采用，不再多发
   assert.equal(calls.length, 1);
 });
 
-test('没勾选「工具调用」（默认）：追踪请求照旧走文本 JSON，不带 tools', async () => {
+test('回复格式不是「工具调用」（默认是格式化输出）：追踪请求照旧走文本 JSON，不带 tools', async () => {
   const state = await import('../scripts/state.js');
-  assert.equal(state.DEFAULT_SETTINGS.nativeToolCalls, false);
+  assert.equal(state.DEFAULT_SETTINGS.replyFormat, 'formatted');
   const textResult = { tool_calls: [], character_checks: [] };
-  for (const settings of [{ ...SETTINGS, nativeToolCalls: undefined }, { ...SETTINGS, nativeToolCalls: false }]) {
+  for (const settings of [{ ...SETTINGS, replyFormat: undefined }, { ...SETTINGS, replyFormat: 'plain' }, { ...SETTINGS, replyFormat: 'formatted' }]) {
     const calls = installDirectFetch([jsonResponse(textJsonResponse(textResult))]);
     await callOpenAICompatible(settings, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
     assert.equal(calls.length, 1);
@@ -439,7 +439,7 @@ test('追踪全流程：模型用原生工具调用回包，状态照常结算�
   };
   globalThis.SillyTavern = { getContext: () => ctx };
   const settings = state.getSettings(ctx);
-  Object.assign(settings, { enabled: true, apiUrl: 'https://api.example.test/v1', apiKey: 'k', model: 'tool-model', nativeToolCalls: true });
+  Object.assign(settings, { enabled: true, apiUrl: 'https://api.example.test/v1', apiKey: 'k', model: 'tool-model', replyFormat: 'tools' });
   state.getChatState(ctx, settings).characters['艾拉'] = { ...state.createDefaultFemaleState('艾拉'), initialized: true };
   const bodies = [];
   globalThis.fetch = async (_url, options) => {
@@ -505,7 +505,7 @@ test('备装与起始着衣的提交工具：参数沿用追踪工具的衣物�
   assert.equal(buildStartingOutfitSubmitTool([]), null);
 });
 
-test('备装：勾选工具调用时只带一个提交工具，调用的参数就是结果', async () => {
+test('备装：选了工具调用时只带一个提交工具，调用的参数就是结果', async () => {
   const prep = { items: [{ name: '孕妇连衣裙', note: '浅蓝棉质', slot: 'main', fitProfile: FIT }], remove: [{ id: 3, reason: '孕后期穿不下' }] };
   const calls = installDirectFetch([jsonResponse(submitToolResponse(WARDROBE_TOOL.name, prep))]);
   const result = await callOpenAICompatible(SETTINGS, { target_character: '艾拉', existing_wardrobe: null }, 'SYSTEM', { flow: 'wardrobe', nativeSubmitTool: WARDROBE_TOOL });
@@ -519,11 +519,11 @@ test('备装：勾选工具调用时只带一个提交工具，调用的参数�
   assert.equal(JSON.parse(body.messages.at(-1).content).target_character, '艾拉', '用户消息照旧');
 });
 
-test('提交工具：没勾选不带 tools；模型直接回 JSON 照用；回一段话退回文本请求', async () => {
+test('提交工具：没选工具调用不带 tools；模型直接回 JSON 照用；回一段话退回文本请求', async () => {
   const prep = { items: [], remove: [{ id: 2, reason: '撑破了' }] };
   const payload = { target_character: '艾拉' };
   const off = installDirectFetch([jsonResponse(textJsonResponse(prep))]);
-  await callOpenAICompatible({ ...SETTINGS, nativeToolCalls: false }, payload, 'SYSTEM', { flow: 'wardrobe', nativeSubmitTool: WARDROBE_TOOL });
+  await callOpenAICompatible({ ...SETTINGS, replyFormat: 'plain' }, payload, 'SYSTEM', { flow: 'wardrobe', nativeSubmitTool: WARDROBE_TOOL });
   assert.equal(off.length, 1);
   assert.equal(off[0].body.tools, undefined);
   assert.equal(off[0].body.messages[0].content, 'SYSTEM');
@@ -580,7 +580,7 @@ test('备装与起始着衣全流程：请求带上提交工具，回来的结�
   };
   globalThis.SillyTavern = { getContext: () => ctx };
   const settings = state.getSettings(ctx);
-  Object.assign(settings, { apiUrl: 'https://api.example.test/v1', apiKey: 'k', model: 'tool-model', nativeToolCalls: true });
+  Object.assign(settings, { apiUrl: 'https://api.example.test/v1', apiKey: 'k', model: 'tool-model', replyFormat: 'tools' });
   state.getChatState(ctx, settings).characters['艾拉'] = { ...state.createDefaultFemaleState('艾拉'), initialized: true };
   const outfit = { nude: false, main: { name: '旅行斗篷套装', note: '深绿羊毛', parts: ['斗篷', '长裙'], fitProfile: FIT }, accessories: [], wearState: '整齐' };
   const prep = { items: [{ name: '孕妇连衣裙', note: '浅蓝棉质', slot: 'main', fitProfile: FIT }], remove: [] };

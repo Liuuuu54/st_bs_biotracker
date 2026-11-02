@@ -222,8 +222,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   reasoningEffort: 'auto',
   temperature: null,
   temperatureMode: 'legacy',
-  // 追踪改用原生工具调用（见 native_tools.js）；默认关：禁止代码用途的公益站可能把带工具定义的请求当成违规
-  nativeToolCalls: false,
+  // 回复格式（见 normalizeReplyFormat）；默认沿用旧版的格式化输出
+  replyFormat: 'formatted',
+  // 回复格式为工具调用时，退回的文本请求与没有工具的流程改用格式化输出（默认是原生聊天消息）
+  toolFallbackFormatted: false,
   raceCatalogSelection: null,
   worldBaselinePrompt: '',
   realisticWorld: false,
@@ -868,16 +870,36 @@ export function createDefaultFemaleState(name = '') {
   return syncCharacterStageFromProfile(normalizeCharacterPsychologyState(character));
 }
 
+/**
+ * 回复格式：模型怎么交回结果。
+ * - plain：原生聊天消息，正文写一段 JSON，不带额外参数，任何渠道都能用。
+ * - formatted：格式化输出，请求附加 response_format.json_object，能减少掉格式，渠道不支持时回 400 会去掉重送。
+ * - tools：工具调用（见 native_tools.js），对较新的模型有帮助；禁止代码用途的公益站不要选。
+ *   工具调用不成时退回的文本请求、以及没有工具的流程按原生聊天消息发；勾了 toolFallbackFormatted 则按格式化输出发。
+ */
+export const REPLY_FORMATS = Object.freeze({ PLAIN: 'plain', FORMATTED: 'formatted', TOOLS: 'tools' });
+
+/**
+ * 缺值时按旧设定推断：旧「格式化输出」开关（formattedOutputV4）关着的是 plain，
+ * 勾了「工具调用」（nativeToolCalls）的是 tools，其余沿用旧版默认的 formatted
+ */
+export function normalizeReplyFormat(value, legacy = null) {
+  if (Object.values(REPLY_FORMATS).includes(value)) return value;
+  if (legacy?.nativeToolCalls === true) return REPLY_FORMATS.TOOLS;
+  if (legacy?.formattedOutputV4 === false) return REPLY_FORMATS.PLAIN;
+  return REPLY_FORMATS.FORMATTED;
+}
+
 const API_PROFILE_LIMIT = 30;
 const API_PROFILE_FIELDS = Object.freeze([
-  'apiUrl', 'apiFormat', 'apiKey', 'model', 'temperatureMode', 'temperature', 'reasoningEffort', 'nativeToolCalls',
+  'apiUrl', 'apiFormat', 'apiKey', 'model', 'temperatureMode', 'temperature', 'reasoningEffort', 'replyFormat', 'toolFallbackFormatted',
   // 主线复制的字数上限要跟着这组 API 的上下文大小走
   'mainflowCopyCharLimit',
 ]);
 
 /**
  * 已命名的连接配置组：名称唯一（去头尾空白后比对）。
- * 保存系统页分隔线以上的整段连接设定：端点、格式、Key、模型、温度、思考强度与工具调用
+ * 保存系统页分隔线以上的整段连接设定：端点、格式、Key、模型、温度、思考强度与回复格式（含退回方式）
  */
 /** 主线复制字数上限：缺值用预设 40 万，0 表示不限，其余至少 1 万字（与 api.js 的解析一致） */
 export function normalizeMainflowCopyCharLimit(value) {
@@ -904,7 +926,8 @@ export function normalizeApiProfiles(list) {
       temperatureMode: normalizeTemperatureMode(entry.temperatureMode),
       temperature: resolveUserTemperature(entry),
       reasoningEffort: normalizeReasoningEffort(entry.reasoningEffort),
-      nativeToolCalls: entry.nativeToolCalls === true,
+      replyFormat: normalizeReplyFormat(entry.replyFormat, entry),
+      toolFallbackFormatted: entry.toolFallbackFormatted === true,
       mainflowCopyCharLimit: normalizeMainflowCopyCharLimit(entry.mainflowCopyCharLimit),
     });
     if (profiles.length >= API_PROFILE_LIMIT) break;
@@ -994,6 +1017,18 @@ export function getSettings(ctx) {
     settings.enabled = true;
     settings.autoTrackEnabled = false;
     shouldSave = true;
+  }
+  // 「回复格式」取代旧的「格式化输出」开关与「工具调用」勾选：先按旧值推断，再删掉旧键
+  const replyFormat = normalizeReplyFormat(settings.replyFormat, settings);
+  if (settings.replyFormat !== replyFormat) {
+    settings.replyFormat = replyFormat;
+    shouldSave = true;
+  }
+  for (const key of ['formattedOutputV4', 'nativeToolCalls']) {
+    if (Object.prototype.hasOwnProperty.call(settings, key)) {
+      delete settings[key];
+      shouldSave = true;
+    }
   }
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     if (useHostChatStore && key === 'chatStates') continue;

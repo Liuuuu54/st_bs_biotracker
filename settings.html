@@ -356,11 +356,17 @@
             </div>
 
             <div class="settings_section">
-              <label style="display:flex;align-items:center;gap:8px;">
-                <input id="bs-bt-native-tool-calls" type="checkbox" />
-                <span>工具调用</span>
-                <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#工具調用" target="_blank" rel="noopener noreferrer" title="工具调用对较新的模型有帮助；禁止代码用途的公益站请勿勾选" aria-label="工具调用说明">?</a>
+              <label for="bs-bt-reply-format">回复格式 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#回覆格式" target="_blank" rel="noopener noreferrer" title="工具调用对较新的模型有帮助；禁止代码用途的公益站请勿选用工具调用" aria-label="回复格式说明">?</a></label>
+              <select id="bs-bt-reply-format" class="text_pole">
+                <option value="plain">原生聊天消息</option>
+                <option value="formatted">格式化输出</option>
+                <option value="tools">工具调用</option>
+              </select>
+              <label id="bs-bt-tool-fallback-formatted-row" style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+                <input id="bs-bt-tool-fallback-formatted" type="checkbox" />
+                <span>退回时用格式化输出</span>
               </label>
+              <small id="bs-bt-tool-fallback-formatted-hint">工具调用不成时会改发一次文本请求；没有工具的流程（注册、日记等）也走文本请求。勾选后这些请求用格式化输出，否则用原生聊天消息。</small>
             </div>
 
             <div class="settings_section">

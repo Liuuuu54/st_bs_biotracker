@@ -108,7 +108,7 @@ test('callOpenAICompatible sends chat completions through the SillyTavern backen
   );
   assert.equal(body.model, 'grok-compatible');
   assert.equal(body.stream, false);
-  assert.equal('response_format' in body, false, '格式化输出已移除');
+  assert.deepEqual(body.response_format, { type: 'json_object' }, '默认格式化输出');
   assert.equal(Array.isArray(body.messages), true);
 });
 
@@ -323,7 +323,7 @@ test('openai_responses format on vanilla SillyTavern goes through the /proxy/ tr
   assert.equal(body.store, false);
   assert.equal(Array.isArray(body.input), true);
   assert.equal(body.input[0].role, 'developer');
-  assert.equal(body.text, undefined, '格式化输出已移除');
+  assert.deepEqual(body.text, { format: { type: 'json_object' } }, '默认格式化输出');
   assert.equal(calls[0].options.headers.Authorization, 'Bearer go-key');
   assert.equal(calls[0].options.headers['X-CSRF-Token'], 'test-csrf');
 });
