@@ -1,8 +1,8 @@
 // 追踪流程的原生工具调用：工具定义放进请求的 tools 参数，模型直接回 tool_calls，
 // 不再靠正文里的一段 JSON。各家对 response_format 的支持参差（原版 SillyTavern 的自定义来源
 // 甚至不转发它），tools 却是 SillyTavern、TauriTavern 与主流中转都会原样转发的参数。
-// 只在 OpenAI 兼容格式下启用；上游不认 tools、或模型没用工具时，由 api.js 退回原本的
-// 文本 JSON 协议，所以任何渠道都不会比以前差。
+// 四种 API 格式都启用（直连时由 api.js 翻成各家的工具格式）；上游不认 tools、模型没用工具、
+// 或调用没发完时，由 api.js 退回原本的文本 JSON 协议，所以任何渠道都不会比以前差。
 
 /** 提交逐角色检查清单（原本的 character_checks）的工具；不派发给工具层 */
 export const CHARACTER_CHECKS_TOOL_NAME = 'bsReportCharacterChecks';
@@ -54,8 +54,9 @@ export function buildNativeToolInstruction() {
   return [
     '[本轮输出方式：工具调用]',
     '- 本轮的可用工具已通过请求的 tools 参数提供（即上文所说的 available_tools），请直接用工具调用完成更新，不要在正文里输出 JSON。',
-    '- 本轮要做的更新一次全部发出：可以同时调用多个工具，同一个工具也可以调用多次；调用的先后顺序就是执行顺序（例如先调用 bsPassedTime）。',
-    `- 最后调用一次 ${CHARACTER_CHECKS_TOOL_NAME}，提交上文所说的 character_checks。`,
+    '- 这是唯一的一次回复：你不会收到任何工具结果，也没有下一轮。必须在这一次回复里同时发出本轮全部的工具调用，不要只调用一个就停下等结果。',
+    '- 可以同时调用多个工具，同一个工具也可以调用多次；调用的先后顺序就是执行顺序（例如先调用 bsPassedTime）。',
+    `- 在同一次回复的最后调用一次 ${CHARACTER_CHECKS_TOOL_NAME}，提交上文所说的 character_checks；它表示本轮的调用已经全部发出。`,
     `- 没有任何状态需要更新时，只调用 ${CHARACTER_CHECKS_TOOL_NAME}。`,
   ].join('\n');
 }
@@ -83,7 +84,8 @@ export function readNativeToolCalls(data) {
     ? message.tool_calls
     : (message.function_call ? [{ function: message.function_call }] : []);
   const toolCalls = [];
-  let checks = null;
+  const checks = [];
+  let checksReported = false;
   let named = 0;
   for (const call of rawCalls) {
     const fn = call?.function && typeof call.function === 'object' ? call.function : call;
@@ -92,15 +94,17 @@ export function readNativeToolCalls(data) {
     named += 1;
     const args = parseToolArguments(fn?.arguments);
     if (name === CHARACTER_CHECKS_TOOL_NAME) {
+      checksReported = true;
       const list = args && typeof args === 'object' ? (args.checks ?? args.character_checks) : null;
-      if (Array.isArray(list)) checks = [...(checks || []), ...list];
+      if (Array.isArray(list)) checks.push(...list);
       continue;
     }
     toolCalls.push({ name, arguments: args });
   }
   if (!named) return null;
   const result = { tool_calls: toolCalls };
-  if (checks) result.character_checks = checks;
+  // 调用了检查清单工具就带上 character_checks（参数坏了是空清单）：api.js 以它判断本轮的调用已经发完
+  if (checksReported) result.character_checks = checks;
   return result;
 }
 

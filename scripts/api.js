@@ -1058,6 +1058,23 @@ function buildPresetSamplingBodyFromPreset(preset) {
   return body;
 }
 
+/** OpenAI 的 tools 参数（{ type: 'function', function: {...} }）拆成名称、说明、参数 schema，供各家格式重组 */
+function readFunctionTools(tools) {
+  return (Array.isArray(tools) ? tools : [])
+    .map((tool) => (tool?.type === 'function' && tool.function && typeof tool.function === 'object' ? tool.function : null))
+    .filter((fn) => fn && typeof fn.name === 'string' && fn.name.trim())
+    .map((fn) => ({
+      name: fn.name.trim(),
+      description: String(fn.description || ''),
+      parameters: fn.parameters && typeof fn.parameters === 'object' ? fn.parameters : { type: 'object', properties: {} },
+    }));
+}
+
+/** 读回来的工具调用统一成 OpenAI 的 tool_calls 结构；arguments 可以是字符串或对象（native_tools.js 都认） */
+function toOpenAiToolCall(id, name, args) {
+  return { id: String(id || ''), type: 'function', function: { name: String(name || ''), arguments: args ?? {} } };
+}
+
 function buildResponsesInput(messages) {
   return (Array.isArray(messages) ? messages : []).map((m) => {
     const role = String(m?.role || 'user').toLowerCase();
@@ -1108,6 +1125,9 @@ function buildClaudeMessagesBody(body) {
     messages: claudeMessages,
   };
   if (system) out.system = system;
+  const tools = readFunctionTools(body.tools)
+    .map((fn) => ({ name: fn.name, description: fn.description, input_schema: fn.parameters }));
+  if (tools.length) out.tools = tools;
   if (body.temperature !== undefined) out.temperature = body.temperature;
   if (body.top_p !== undefined) out.top_p = body.top_p;
   if (body.top_k !== undefined) out.top_k = body.top_k;
@@ -1126,21 +1146,35 @@ function extractClaudeText(data) {
   return '';
 }
 
+/** 组回 OpenAI 结构；有工具调用才带 tool_calls */
+function buildNormalizedChoice(content, toolCalls) {
+  const message = { content };
+  if (toolCalls.length) message.tool_calls = toolCalls;
+  return { choices: [{ message }] };
+}
+
 function normalizeResponsesData(data) {
-  const text = extractResponsesText(data);
-  return { choices: [{ message: { content: text } }] };
+  // TauriTavern 的格式感知代理回来的已经是 OpenAI 结构（含 tool_calls），原样用
+  if (Array.isArray(data?.choices)) return data;
+  const toolCalls = (Array.isArray(data?.output) ? data.output : [])
+    .filter((item) => item?.type === 'function_call' && item.name)
+    .map((item) => toOpenAiToolCall(item.call_id || item.id, item.name, item.arguments));
+  return buildNormalizedChoice(extractResponsesText(data), toolCalls);
 }
 
 function normalizeClaudeData(data) {
-  const text = extractClaudeText(data);
-  return { choices: [{ message: { content: text } }] };
+  if (Array.isArray(data?.choices)) return data;
+  const toolCalls = (Array.isArray(data?.content) ? data.content : [])
+    .filter((block) => block?.type === 'tool_use' && block.name)
+    .map((block) => toOpenAiToolCall(block.id, block.name, block.input));
+  return buildNormalizedChoice(extractClaudeText(data), toolCalls);
 }
 
 /**
  * Gemini Interactions API 请求体（参照 TauriTavern gemini_interactions.rs）：
  * messages → steps（user_input / model_output + text block），system 合并为
- * system_instruction，采样参数进 generation_config。插件只发纯文本，不涉及
- * tool / 媒体 block；response_format 仅在有 json_schema 时才会出现，这里省略。
+ * system_instruction，采样参数进 generation_config。插件只发纯文本，不涉及媒体 block；
+ * 追踪的原生工具调用把 tools 翻成 { type: 'function', name, description, parameters }。
  */
 function buildGeminiInteractionsBody(body) {
   const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -1164,6 +1198,9 @@ function buildGeminiInteractionsBody(body) {
     store: false,
   };
   if (systemParts.length) request.system_instruction = systemParts.join('\n\n');
+  const tools = readFunctionTools(body.tools)
+    .map((fn) => ({ type: 'function', name: fn.name, description: fn.description, parameters: fn.parameters }));
+  if (tools.length) request.tools = tools;
   const generationConfig = {};
   if (Number.isFinite(body.temperature)) generationConfig.temperature = body.temperature;
   if (Number.isFinite(body.top_p)) generationConfig.top_p = body.top_p;
@@ -1208,7 +1245,16 @@ function extractGeminiInteractionsText(data) {
 }
 
 function normalizeGeminiInteractionsData(data) {
-  return { choices: [{ message: { content: extractGeminiInteractionsText(data) } }] };
+  if (Array.isArray(data?.choices)) return data;
+  const toolCalls = (Array.isArray(data?.steps) ? data.steps : [])
+    .filter((step) => step?.type === 'function_call' && step.name)
+    .map((step) => toOpenAiToolCall(step.id, step.name, step.arguments));
+  if (!toolCalls.length) return buildNormalizedChoice(extractGeminiInteractionsText(data), toolCalls);
+  // 只调用工具时常常没有文字（status 为 requires_action），不能按「没有可消费的文本」报错
+  if (String(data?.status || '') === 'failed') {
+    throw new Error(`Gemini Interactions 回传失败：${String(data?.error?.message || 'unknown error')}`);
+  }
+  return buildNormalizedChoice('', toolCalls);
 }
 
 /** 直连时按格式转换请求体；宿主代理走格式感知翻译时用不到（后端自己转）。 */
@@ -1230,6 +1276,11 @@ function buildDirectPayload(fmt, requestBody) {
     if (typeof requestBody.reasoning_effort === 'string' && requestBody.reasoning_effort) {
       payload.reasoning = { effort: requestBody.reasoning_effort };
     }
+    // Responses 的函数工具默认 strict（要求每层都 additionalProperties:false、全部字段必填），
+    // 插件的工具 schema 不是按严格模式写的，必须显式关掉（同 TauriTavern 的翻译）
+    const tools = readFunctionTools(requestBody.tools)
+      .map((fn) => ({ type: 'function', name: fn.name, description: fn.description, parameters: fn.parameters, strict: false }));
+    if (tools.length) payload.tools = tools;
     return payload;
   }
   if (fmt === API_FORMATS.CLAUDE_MESSAGES) {
@@ -1547,17 +1598,18 @@ async function buildPresetEnvelope(settings, baseSystemPrompt, payloadText) {
   }
 }
 
-// 上游明确拒绝过 tools 参数的「端点 + 模型」：本次会话里直接走文本协议，不再每轮白费一个请求
-const nativeToolsRejected = new Set();
-export const __nativeToolsRejectedForTest = nativeToolsRejected;
+// 原生工具调用走不通的「端点 + 模型」（上游拒绝 tools 参数，或模型没在一次回复里发完调用）：
+// 本次会话里直接走文本协议，不再每轮白费一个请求
+const nativeToolsDisabled = new Set();
+export const __nativeToolsDisabledForTest = nativeToolsDisabled;
 
 function getNativeToolsKey(apiBase, model) {
   return `${apiBase}|${model}`;
 }
 
-function rememberNativeToolsRejected(apiBase, model) {
-  nativeToolsRejected.add(getNativeToolsKey(apiBase, model));
-  while (nativeToolsRejected.size > 32) nativeToolsRejected.delete(nativeToolsRejected.values().next().value);
+function rememberNativeToolsDisabled(apiBase, model) {
+  nativeToolsDisabled.add(getNativeToolsKey(apiBase, model));
+  while (nativeToolsDisabled.size > 32) nativeToolsDisabled.delete(nativeToolsDisabled.values().next().value);
 }
 
 function isTrackerResultShape(value) {
@@ -1566,7 +1618,7 @@ function isTrackerResultShape(value) {
 }
 
 /**
- * options.nativeTools：追踪流程传 true，OpenAI 兼容格式下先试原生工具调用（见 native_tools.js）。
+ * options.nativeTools：追踪流程传 true，先试原生工具调用（见 native_tools.js）。
  * 其余流程（注册、日记、着衣、备装、技能、繁育、精方）各有自己的 JSON 结构，照旧走文本 JSON。
  */
 export async function callOpenAICompatible(settings, payload, systemPrompt = DEFAULT_SYSTEM_PROMPT, options = {}) {
@@ -1605,9 +1657,10 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
 
   // 追踪流程先试原生工具调用：工具定义移进 tools 参数，用户消息里不再重复一份；
   // 系统提示词末尾说明本轮改用工具调用。上游不认或模型没用工具时退回上面这份文本协议请求。
+  // 四种 API 格式都适用：请求体一律先组成 OpenAI 格式，直连时由 buildDirectPayload 翻成各家格式，
+  // TauriTavern 的格式感知代理则交给后端翻译。
   const nativeTools = options?.nativeTools === true && !safePayload?.target_character
-    && normalizeApiFormat(settings?.apiFormat) === API_FORMATS.OPENAI_COMPAT
-    && !nativeToolsRejected.has(getNativeToolsKey(apiBase, model))
+    && !nativeToolsDisabled.has(getNativeToolsKey(apiBase, model))
     ? buildNativeTrackerTools(safePayload?.available_tools)
     : [];
   let nativeBody = null;
@@ -1663,27 +1716,44 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
     sessionId: buildOpenCodeSessionId(apiBase, safePayload, options?.flow),
   };
 
+  // 这次调用放弃原生工具调用的原因：rejected（带 tools 的请求被 400／422 拒绝）或 incomplete（调用没发完）。
+  // 放弃后这次调用不再试 tools；只有改发的文本请求成功了，才把这个模型记到整个会话——文本请求也被拒，
+  // 说明 400 另有原因（账号区域限制、参数错误……），不能因此把这个模型永久降成文本模式。
+  // 模型只是没用工具（回了一段话）不记：多半是这一轮没什么可更新，下一轮照样先试 tools。
+  let nativeFallback = '';
   try {
     return await withGlobalApiRetries(async (globalAttempt) => {
-      if (nativeBody && !nativeToolsRejected.has(getNativeToolsKey(apiBase, model))) {
+      if (nativeBody && !nativeFallback && !nativeToolsDisabled.has(getNativeToolsKey(apiBase, model))) {
         let nativeData = null;
         try {
           nativeData = await requestChatCompletion(apiBase, settings, nativeBody, runContext);
         } catch (error) {
           if (!isNativeToolRejection(error)) throw error;
-          rememberNativeToolsRejected(apiBase, model);
-          console.warn('[BS BioTracker] 上游不接受工具调用参数，本次会话里这个模型改用文本 JSON', error);
+          nativeFallback = 'rejected';
+          console.warn('[BS BioTracker] 带工具调用的请求被上游拒绝，这次改用文本 JSON', error);
         }
         if (nativeData) {
           const native = readNativeToolCalls(nativeData);
-          if (native) return native;
-          // 模型没用工具，但正文里照文本协议写了追踪 JSON：直接采用
-          const nativeContent = extractJson(nativeData?.choices?.[0]?.message?.content || '');
-          if (isTrackerResultShape(nativeContent)) return nativeContent;
+          // 检查清单工具是「本轮调用已全部发出」的标记。有调用却没交检查清单，多半是模型调用一个就停下
+          // 等工具结果（实测 GPT、Kimi 常这样），其余更新全落掉了：不用这份残缺结果，改发文本请求
+          if (native && Array.isArray(native.character_checks)) return native;
+          if (native) {
+            nativeFallback = 'incomplete';
+            console.warn('[BS BioTracker] 模型的工具调用没发完（没交检查清单），这次改用文本 JSON', native.tool_calls);
+          } else {
+            // 模型没用工具，但正文里照文本协议写了追踪 JSON：直接采用
+            const nativeContent = extractJson(nativeData?.choices?.[0]?.message?.content || '');
+            if (isTrackerResultShape(nativeContent)) return nativeContent;
+          }
         }
         recordTextRequestDebug();
       }
       const data = await requestChatCompletion(apiBase, settings, body, runContext);
+      if (nativeFallback && !nativeToolsDisabled.has(getNativeToolsKey(apiBase, model))) {
+        rememberNativeToolsDisabled(apiBase, model);
+        const reason = nativeFallback === 'rejected' ? '上游不接受工具调用参数' : '模型没在一次回复里发完工具调用';
+        console.warn(`[BS BioTracker] ${reason}，本次会话里 ${model} 改用文本 JSON`);
+      }
       const content = data?.choices?.[0]?.message?.content || '';
       let parsed = extractJson(content);
       if (parsed && typeof parsed === 'object') return parsed;

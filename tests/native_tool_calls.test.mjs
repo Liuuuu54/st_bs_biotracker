@@ -1,9 +1,9 @@
-// 追踪流程改用原生工具调用：OpenAI 兼容格式下把工具定义放进 tools 参数、直接读回包的 tool_calls；
-// 上游不认 tools、或模型没用工具时退回原本的文本 JSON 协议。格式化输出（response_format）已移除。
+// 追踪流程改用原生工具调用：四种 API 格式都把工具定义放进 tools 参数、直接读回包的工具调用；
+// 上游不认 tools、模型没用工具、或调用没发完时退回原本的文本 JSON 协议。格式化输出（response_format）已移除。
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 
-import { callOpenAICompatible, __nativeToolsRejectedForTest } from '../scripts/api.js';
+import { callOpenAICompatible, __nativeToolsDisabledForTest } from '../scripts/api.js';
 import {
   buildNativeTrackerTools,
   CHARACTER_CHECKS_TOOL_NAME,
@@ -20,7 +20,7 @@ const ORIGINAL_GLOBALS = {
 };
 
 beforeEach(() => {
-  __nativeToolsRejectedForTest.clear();
+  __nativeToolsDisabledForTest.clear();
 });
 
 afterEach(() => {
@@ -137,6 +137,19 @@ test('读回包：只交了检查清单也算有效；旧式 function_call 也�
   assert.deepEqual(broken.tool_calls, [{ name: 'bsPassedTime', arguments: '{"hour":' }]);
 });
 
+test('读回包：调用了检查清单工具就带 character_checks（参数坏了是空清单），没调用就不带', () => {
+  const badChecks = readNativeToolCalls({ choices: [{ message: { tool_calls: [
+    { type: 'function', function: { name: 'bsPassedTime', arguments: '{"hour":1}' } },
+    { type: 'function', function: { name: CHARACTER_CHECKS_TOOL_NAME, arguments: '{"checks":"艾拉没变化"}' } },
+  ] } }] });
+  assert.deepEqual(badChecks.character_checks, []);
+
+  const noChecks = readNativeToolCalls({ choices: [{ message: { tool_calls: [
+    { type: 'function', function: { name: 'bsPassedTime', arguments: '{"hour":1}' } },
+  ] } }] });
+  assert.equal('character_checks' in noChecks, false);
+});
+
 test('读回包：没有工具调用回传 null', () => {
   assert.equal(readNativeToolCalls({ choices: [{ message: { content: '今天没有变化' } }] }), null);
   assert.equal(readNativeToolCalls({ choices: [{ message: { tool_calls: [] } }] }), null);
@@ -195,6 +208,17 @@ test('上游拒绝 tools（400）：同一次改用文本 JSON 再要，之后�
   assert.ok(otherModel[0].body.tools, '换了模型照样先试 tools');
 });
 
+test('400 不是因为工具（文本请求也被拒，例如账号区域限制）：不记为不支持工具，下次照样先试', async () => {
+  const regionError = jsonResponse({ error: { message: 'This Go model requires Global regions.' } }, 400);
+  const calls = installDirectFetch([regionError]);
+  await assert.rejects(
+    callOpenAICompatible(SETTINGS, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true }),
+    /400/,
+  );
+  assert.equal(__nativeToolsDisabledForTest.size, 0);
+  assert.equal(calls.filter((call) => call.body.tools).length, 1, '同一次调用里只试一次 tools，之后的重试直接走文本');
+});
+
 test('模型没用工具、正文也不是 JSON：退回文本 JSON 再要一次', async () => {
   const textResult = { tool_calls: [], character_checks: [{ female: '艾拉', status: 'no_change' }] };
   const calls = installDirectFetch([
@@ -205,7 +229,46 @@ test('模型没用工具、正文也不是 JSON：退回文本 JSON 再要一次
   assert.deepEqual(result, textResult);
   assert.equal(calls.length, 2);
   assert.equal(calls[1].body.tools, undefined);
-  assert.equal(__nativeToolsRejectedForTest.size, 0, '没被上游拒绝，下次照样先试 tools');
+  assert.equal(__nativeToolsDisabledForTest.size, 0, '没被上游拒绝，下次照样先试 tools');
+});
+
+test('有工具调用却没交检查清单（模型调用一个就停下等结果）：不用这份残缺结果，同一次改用文本 JSON，之后这个模型直接走文本', async () => {
+  const textResult = {
+    tool_calls: [{ name: 'bsPassedTime', arguments: { hour: 2 } }, { name: 'bsUpdateCharacterStatus', arguments: { female: '艾拉' } }],
+    character_checks: [{ female: '艾拉', status: 'updated' }],
+  };
+  const calls = installDirectFetch([
+    jsonResponse({ choices: [{ message: { content: null, tool_calls: [
+      { id: 'c1', type: 'function', function: { name: 'bsPassedTime', arguments: '{"hour":2}' } },
+    ] }, finish_reason: 'tool_calls' }] }),
+    jsonResponse(textJsonResponse(textResult)),
+  ]);
+  const result = await callOpenAICompatible(SETTINGS, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.deepEqual(result, textResult);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[0].body.tools);
+  assert.equal(calls[1].body.tools, undefined);
+  assert.ok(JSON.parse(calls[1].body.messages.at(-1).content).available_tools, '文本协议带回工具定义');
+
+  const again = installDirectFetch([jsonResponse(textJsonResponse(textResult))]);
+  await callOpenAICompatible(SETTINGS, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.equal(again.length, 1);
+  assert.equal(again[0].body.tools, undefined, '本次会话里这个模型不再试 tools');
+});
+
+test('有工具调用却没交检查清单、改发的文本请求也失败：不记为文本模型，下次照样先试 tools', async () => {
+  const calls = installDirectFetch([
+    jsonResponse({ choices: [{ message: { tool_calls: [
+      { id: 'c1', type: 'function', function: { name: 'bsPassedTime', arguments: '{"hour":2}' } },
+    ] } }] }),
+    jsonResponse({ error: { message: 'bad request' } }, 400),
+  ]);
+  await assert.rejects(
+    callOpenAICompatible(SETTINGS, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true }),
+    /400/,
+  );
+  assert.equal(calls.filter((call) => call.body.tools).length, 1);
+  assert.equal(__nativeToolsDisabledForTest.size, 0);
 });
 
 test('模型没用工具、但正文是追踪 JSON：直接采用，不再多发请求', async () => {
@@ -216,14 +279,8 @@ test('模型没用工具、但正文是追踪 JSON：直接采用，不再多发
   assert.equal(calls.length, 1);
 });
 
-test('其他 API 格式与非追踪流程：照旧走文本 JSON，不带 tools 也不带 response_format', async () => {
+test('非追踪流程与没要求原生工具时：照旧走文本 JSON，不带 tools 也不带 response_format', async () => {
   const textResult = { tool_calls: [] };
-  const responses = installDirectFetch([jsonResponse({ output_text: JSON.stringify(textResult) })]);
-  await callOpenAICompatible({ ...SETTINGS, apiFormat: 'openai_responses' }, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
-  assert.equal(responses[0].body.tools, undefined);
-  assert.equal(responses[0].body.text, undefined);
-  assert.ok(JSON.parse(responses[0].body.input.at(-1).content).available_tools, '其他格式照旧在用户消息里带工具定义');
-
   const registry = installDirectFetch([jsonResponse(textJsonResponse({ items: [] }))]);
   await callOpenAICompatible(SETTINGS, { target_character: '艾拉', available_tools: TOOL_DEFINITIONS }, 'SYSTEM', { flow: 'registry' });
   assert.equal(registry[0].body.tools, undefined);
@@ -232,6 +289,103 @@ test('其他 API 格式与非追踪流程：照旧走文本 JSON，不带 tools 
   const notAsked = installDirectFetch([jsonResponse(textJsonResponse(textResult))]);
   await callOpenAICompatible(SETTINGS, trackerPayload(), 'SYSTEM', { flow: 'tracker' });
   assert.equal(notAsked[0].body.tools, undefined, '没要求原生工具就不带');
+});
+
+test('OpenAI Responses 直连：工具写成 Responses 的函数格式（strict=false），回包的 function_call 项读回来', async () => {
+  const calls = installDirectFetch([jsonResponse({
+    status: 'completed',
+    output: [
+      { type: 'reasoning', summary: [] },
+      { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'bsPassedTime', arguments: '{"hour":2}' },
+      { type: 'function_call', id: 'fc_2', call_id: 'call_2', name: CHARACTER_CHECKS_TOOL_NAME, arguments: '{"checks":[{"female":"艾拉","status":"updated"}]}' },
+    ],
+  })]);
+  const result = await callOpenAICompatible({ ...SETTINGS, apiFormat: 'openai_responses' }, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.equal(calls[0].url, 'https://api.example.test/v1/responses');
+  const body = calls[0].body;
+  assert.deepEqual(body.tools[0], { type: 'function', name: 'bsPassedTime', description: '推进时间', parameters: TOOL_DEFINITIONS[0].input_schema, strict: false });
+  assert.equal(body.tools.at(-1).name, CHARACTER_CHECKS_TOOL_NAME);
+  assert.equal(body.text, undefined);
+  assert.equal(JSON.parse(body.input.at(-1).content).available_tools, undefined);
+  assert.deepEqual(result, { tool_calls: [{ name: 'bsPassedTime', arguments: { hour: 2 } }], character_checks: [{ female: '艾拉', status: 'updated' }] });
+});
+
+test('Claude Messages 直连：工具写成 name / input_schema，回包的 tool_use 块读回来', async () => {
+  const calls = installDirectFetch([jsonResponse({
+    content: [
+      { type: 'text', text: '我来更新状态。' },
+      { type: 'tool_use', id: 'toolu_1', name: 'bsPassedTime', input: { hour: 2 } },
+      { type: 'tool_use', id: 'toolu_2', name: CHARACTER_CHECKS_TOOL_NAME, input: { checks: [{ female: '艾拉', status: 'updated' }] } },
+    ],
+    stop_reason: 'tool_use',
+  })]);
+  const result = await callOpenAICompatible({ ...SETTINGS, apiFormat: 'claude_messages' }, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.equal(calls[0].url, 'https://api.example.test/v1/messages');
+  const body = calls[0].body;
+  assert.deepEqual(body.tools[0], { name: 'bsPassedTime', description: '推进时间', input_schema: TOOL_DEFINITIONS[0].input_schema });
+  assert.equal(body.tools.at(-1).name, CHARACTER_CHECKS_TOOL_NAME);
+  assert.equal(body.tool_choice, undefined);
+  assert.equal(JSON.parse(body.messages.at(-1).content).available_tools, undefined);
+  assert.match(body.system, new RegExp(CHARACTER_CHECKS_TOOL_NAME));
+  assert.deepEqual(result, { tool_calls: [{ name: 'bsPassedTime', arguments: { hour: 2 } }], character_checks: [{ female: '艾拉', status: 'updated' }] });
+});
+
+test('Gemini Interactions 直连：工具写成 function 步骤格式，requires_action 的 function_call 读回来、不因没有文字报错', async () => {
+  const calls = installDirectFetch([jsonResponse({
+    status: 'requires_action',
+    steps: [
+      { type: 'function_call', id: 'call_1', name: 'bsPassedTime', arguments: { hour: 2 } },
+      { type: 'function_call', id: 'call_2', name: CHARACTER_CHECKS_TOOL_NAME, arguments: { checks: [{ female: '艾拉', status: 'updated' }] } },
+    ],
+  })]);
+  const result = await callOpenAICompatible({ ...SETTINGS, apiUrl: 'https://gemini.example.test/v1beta', apiFormat: 'gemini_interactions' }, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.equal(calls[0].url, 'https://gemini.example.test/v1beta/interactions');
+  const body = calls[0].body;
+  assert.deepEqual(body.tools[0], { type: 'function', name: 'bsPassedTime', description: '推进时间', parameters: TOOL_DEFINITIONS[0].input_schema });
+  assert.equal(body.tools.at(-1).name, CHARACTER_CHECKS_TOOL_NAME);
+  assert.deepEqual(result, { tool_calls: [{ name: 'bsPassedTime', arguments: { hour: 2 } }], character_checks: [{ female: '艾拉', status: 'updated' }] });
+});
+
+test('原生格式下模型没用工具：照样退回文本 JSON（Gemini 只回文字也不算失败）', async () => {
+  const textResult = { tool_calls: [], character_checks: [] };
+  const calls = installDirectFetch([
+    jsonResponse({ status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: '没有变化。' }] }] }),
+    jsonResponse({ status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: JSON.stringify(textResult) }] }] }),
+  ]);
+  const result = await callOpenAICompatible({ ...SETTINGS, apiUrl: 'https://gemini.example.test/v1beta', apiFormat: 'gemini_interactions' }, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+  assert.deepEqual(result, textResult);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[0].body.tools);
+  assert.equal(calls[1].body.tools, undefined);
+  assert.ok(JSON.parse(calls[1].body.input.at(-1).content[0].text).available_tools, '文本协议带回工具定义');
+});
+
+test('TauriTavern 格式感知代理：tools 以 OpenAI 格式交给后端翻译，回来的 OpenAI 结构原样读', async () => {
+  const calls = [];
+  globalThis.__TAURITAVERN__ = {};
+  globalThis.window = {};
+  globalThis.document = { cookie: '' };
+  globalThis.location = { origin: 'http://tauri.localhost', href: 'http://tauri.localhost/' };
+  globalThis.SillyTavern = { getContext: () => null, getRequestHeaders: () => ({}) };
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    return jsonResponse(nativeToolResponse());
+  };
+  try {
+    for (const apiFormat of ['openai_responses', 'claude_messages', 'gemini_interactions']) {
+      calls.length = 0;
+      const result = await callOpenAICompatible({ ...SETTINGS, apiFormat }, trackerPayload(), 'SYSTEM', { flow: 'tracker', nativeTools: true });
+      assert.equal(calls.length, 1, apiFormat);
+      assert.equal(calls[0].url, '/api/backends/chat-completions/generate');
+      assert.equal(calls[0].body.custom_api_format, apiFormat);
+      assert.equal(calls[0].body.tools[0].type, 'function');
+      assert.equal(calls[0].body.tools[0].function.name, 'bsPassedTime');
+      assert.deepEqual(result.tool_calls.map((call) => call.name), ['bsPassedTime', 'bsUpdateCharacterStatus'], apiFormat);
+      assert.deepEqual(result.character_checks, [{ female: '艾拉', status: 'updated' }], apiFormat);
+    }
+  } finally {
+    delete globalThis.__TAURITAVERN__;
+  }
 });
 
 test('原版 SillyTavern 后端代理：tools 跟着转发，不再带 response_format', async () => {
