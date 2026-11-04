@@ -10,7 +10,7 @@
 
 | 工具 | 參數 | 成功效果與拒絕條件 |
 | --- | --- | --- |
-| [`bsPassedTime`](../../scripts/tools.js#L6849) | `minute`、`hour`、`day`、`week`、`month`、`year`，至少一個正數。 | 單位相加，月=30 日、年=365 日，推進**整個聊天所有角色**，並增加 `minutesPassed`。沒有正時間則拒絕；胎內回歸且承載者仍在的角色凍結。時間零頭和各階段規則見[時間機制](cycles-and-conception.md#時間怎樣推進)。 |
+| [`bsPassedTime`](../../scripts/tools.js#L6849) | `minute`、`hour`、`day`、`week`、`month`、`year`，至少一個正數。 | 單位相加，月=30 日、年=365 日，推進**整個聊天所有角色**，並增加 `minutesPassed`。沒有正時間則拒絕；胎內回歸且承載者仍在的角色凍結。預設 legacy 保留批次行為；顯式啟用 `pooled-v1` 的角色以連續生殖事件積分，`atMinute` 是真實時刻，`minute` 僅向上取整顯示，不要求整數分鐘或單次 31 天上限。其他系統仍批次處理，不承諾完整狀態拆時全等。時間零頭和各階段規則見[時間機制](cycles-and-conception.md#時間怎樣推進)及[實驗模型](cycles-and-conception.md#實驗性事件積分混合池)。 |
 | [`bsUpdateCharacterStatus`](../../scripts/tools.js#L6885) | 必填 `female`、`options`；可傳 `vitality`、`psyStress`、`libido`、`uterinePressure`，以及布林 `orgasm`。 | 四項都是**增減量**，受各自上限限制。`orgasm=true` 表示劇情中高潮：系統把性欲推到上限、走高潮排卵結算，結束後性欲歸零；冷卻中或不排卵的物種也歸零，不會停在上限。活力會連動代謝，性欲連動乳意，達上限時可能高潮排卵（額外排卵傾向的每一顆按當前活力占比排出；每週期黃體期前、黃體期各一次），宮壓可磨損羊膜並更新風險。空 `options` 在實作中仍會回報套用，但沒有數值變化。 |
 | [`bsSetCharacterPresence`](../../scripts/tools.js#L7143) | 必填 `female`、明示布林 `isPresent`。 | 寫入 `base.isHere`；離場後追蹤 payload 預設不送完整狀態，部分在場代謝略過。設回在場也會解除 `wombReturnHost` 凍結；省略布林值會拒絕。`female` 查不到卵方但有同名[精方檔案](registration.md#精方檔案)時改切精方的在場。 |
 | [`bsSetMenstrualPhases`](../../scripts/tools.js#L7573) | 必填 `female`、`stage`。 | 只接受卵泡、排卵、黃體、月經、乏情、產後恢復、假孕（物種沒有乏情期時切到乏情，下一次推進就進卵泡期）；階段天數歸零並調整排卵冷卻：切到排卵期或乏情期重新允許高潮排卵（乏情期本來就是從重置冷卻的月經期進來的），切到黃體期也吃到黃體期那一次刷新。已有胚胎、受精進度、真妊娠、回歸期、產兆或產程時拒絕，不能用它直接設成懷孕。 |
@@ -58,7 +58,7 @@
 | 工具 | 主要參數 | 效果與限制 |
 | --- | --- | --- |
 | [`bsDebugInjectPregnancy`](../../scripts/tools.js#L7649) | `female`、`mode`（`normal/surrogacy/womb_return/superfetation/nested`）、`father/race/fetusCount/genders/equivalentDays`，以及模式用的 provider、returner、host 索引、強制同卵／嵌合旗標，以及強制同卵時逐顆的分裂胎數 `identicalSizes`（如 `4,3`，每顆 1–4，1 為不分裂；沒給到的沿用最後一個值，留空為雙胎）。[逐顆分裂](../../scripts/tools.js#L1766)。 | 直接建立測試胚胎或指定有效孕日；`fetusCount` 夾在 1–9，`equivalentDays` 夾在 0–300。追加異期／巢狀胚胎須在孕早期窗口、有已著床胎；強制嵌合限一般／代孕且至少兩個基礎胚胎。 |
-| [`bsDebugClearContainers`](../../scripts/tools.js#L7938) | `female`、`container=sperms/fetuses/children`。 | 清精源、子女紀錄或受孕狀態；清已著床妊娠會轉產後恢復並增加流產經歷，清著床前則只清胚胎。空容器拒絕。 |
+| [`bsDebugClearContainers`](../../scripts/tools.js#L7938) | `female`、`container=sperms/fetuses/children`。 | 清精源、子女紀錄或受孕狀態。清精源會同步將接觸物理量歸零，保留來源編號與既有胚胎關聯；混合池另使積分錨點失效並重建匯總，之後推進不恢復舊殘留或產生其新受精，不撤銷既有胚胎。清已著床妊娠會轉產後恢復並增加流產經歷，清著床前則只清胚胎。空容器拒絕。 |
 | [`bsDebugSetGestationModifier`](../../scripts/tools.js#L8022) | `female`、`clear`，或 `name/multiplier/description`。 | 設定／清除妊娠速度修飾器；倍率夾在 0–30，0 可凍結有效孕日。調試面板用對數刻度拉桿（0.03–30）加「凍結」勾選設定，並即時換算整個孕期長度。非清除操作須有名稱，已有孕胎時重算孕期生理。 |
 | [`bsDebugFetalActivity`](../../scripts/tools.js#L8081) | `female`、非空 `activityText`。 | 把最多 500 字的胎動敘述附加到通知；須有胎兒且處於妊娠／產兆／產程。它不直接改胎位。 |
 | [`bsDebugSetFetalPosition`](../../scripts/tools.js#L8116) | `female`、**完整胎兒陣列**的 `fetusIndex`；可傳 `tendencyAngle/backSide/descentStage/makePresenting/allowPathologicalState`。 | 直接設定胎位與先露，再經下降位置校正；待著床胎拒絕。`allowPathologicalState` 限真實分娩模式下測試互鎖雙胎，與公開助產工具的可見胎索引不同。 |

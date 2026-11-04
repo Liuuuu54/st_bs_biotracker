@@ -7,6 +7,7 @@ import { applyToolCall } from '../scripts/tools.js';
 import { getUterusVolumeFactor } from '../scripts/body_size.js';
 import { MENSTRUAL_STAGES } from '../scripts/stage_config.js';
 import { normalizeSireRecord } from '../scripts/sires.js';
+import { isPooledConception } from '../scripts/pooled_reproduction.js';
 import { applyRegistryResult } from '../scripts/registry.js';
 import { createEmptyChatState, createDefaultFemaleState, recordChatStateSnapshot, getSnapshotCharacter } from '../scripts/state.js';
 
@@ -44,9 +45,9 @@ const deposit = (chat, amount = 20, male = 'A') => {
 // 执行实际面板内的预览表达式，而不是在测试中另写一份计算路径；不冒充浏览器端到端。
 const indexSource = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 const previewBlock = indexSource.slice(indexSource.indexOf("  const stage = String(base.stage || '未设定');", indexSource.indexOf('const intimacyRanking = getIntimacyRanking(profile')));
-const panelPreview = new Function('base', 'bio', 'immune', 'MENSTRUAL_STAGES', 'getUterusVolumeFactor', 'calculateFertilizationPreview', 'getSpermSources',
+const panelPreview = new Function('base', 'bio', 'immune', 'MENSTRUAL_STAGES', 'getUterusVolumeFactor', 'calculateFertilizationPreview', 'getSpermSources', 'isPooledConception',
   previewBlock.slice(0, previewBlock.indexOf('  const rawFetuses =')) + '\nreturn conceptionPreview;');
-const panel = (p) => panelPreview(p.base, p.bio, p.immune, MENSTRUAL_STAGES, getUterusVolumeFactor, calculateFertilizationPreview, getSpermSources);
+const panel = (p) => panelPreview(p.base, p.bio, p.immune, MENSTRUAL_STAGES, getUterusVolumeFactor, calculateFertilizationPreview, getSpermSources, isPooledConception);
 
 for (const quality of [0.25, 1, 4]) {
   for (const elapsedDays of [0.1, 1, 20]) {
