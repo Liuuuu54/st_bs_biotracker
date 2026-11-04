@@ -58,7 +58,7 @@
 | 工具 | 主要參數 | 效果與限制 |
 | --- | --- | --- |
 | [`bsDebugInjectPregnancy`](../../scripts/tools.js#L7649) | `female`、`mode`（`normal/surrogacy/womb_return/superfetation/nested`）、`father/race/fetusCount/genders/equivalentDays`，以及模式用的 provider、returner、host 索引、強制同卵／嵌合旗標，以及強制同卵時逐顆的分裂胎數 `identicalSizes`（如 `4,3`，每顆 1–4，1 為不分裂；沒給到的沿用最後一個值，留空為雙胎）。[逐顆分裂](../../scripts/tools.js#L1766)。 | 直接建立測試胚胎或指定有效孕日；`fetusCount` 夾在 1–9，`equivalentDays` 夾在 0–300。追加異期／巢狀胚胎須在孕早期窗口、有已著床胎；強制嵌合限一般／代孕且至少兩個基礎胚胎。 |
-| [`bsDebugClearContainers`](../../scripts/tools.js#L7938) | `female`、`container=sperms/fetuses/children`。 | 清精源、子女紀錄或受孕狀態；清已著床妊娠會轉產後恢復並增加流產經歷，清著床前則只清胚胎。空容器拒絕。 |
+| [`bsDebugClearContainers`](../../scripts/tools.js#L7938) | `female`、`container=sperms/fetuses/children`。 | 清精源、子女紀錄或受孕狀態。清精源會同步將接觸物理量歸零，保留來源編號與既有胚胎關聯；混合池另使積分錨點失效並重建匯總，之後推進不恢復舊殘留或產生其新受精，不撤銷既有胚胎。清已著床妊娠會轉產後恢復並增加流產經歷，清著床前則只清胚胎。空容器拒絕。 |
 | [`bsDebugSetGestationModifier`](../../scripts/tools.js#L8022) | `female`、`clear`，或 `name/multiplier/description`。 | 設定／清除妊娠速度修飾器；倍率夾在 0–30，0 可凍結有效孕日。調試面板用對數刻度拉桿（0.03–30）加「凍結」勾選設定，並即時換算整個孕期長度。非清除操作須有名稱，已有孕胎時重算孕期生理。 |
 | [`bsDebugFetalActivity`](../../scripts/tools.js#L8081) | `female`、非空 `activityText`。 | 把最多 500 字的胎動敘述附加到通知；須有胎兒且處於妊娠／產兆／產程。它不直接改胎位。 |
 | [`bsDebugSetFetalPosition`](../../scripts/tools.js#L8116) | `female`、**完整胎兒陣列**的 `fetusIndex`；可傳 `tendencyAngle/backSide/descentStage/makePresenting/allowPathologicalState`。 | 直接設定胎位與先露，再經下降位置校正；待著床胎拒絕。`allowPathologicalState` 限真實分娩模式下測試互鎖雙胎，與公開助產工具的可見胎索引不同。 |

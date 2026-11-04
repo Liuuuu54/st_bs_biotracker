@@ -8478,10 +8478,19 @@ function applyDebugClearContainers(chatState, args) {
 
   if (container === 'sperms') {
     const sperms = Array.isArray(base.sperms) ? base.sperms : [];
-    if (sperms.length === 0) {
+    const pooled = isPooledConception(base);
+    const contacts = Array.isArray(base.spermContacts) ? base.spermContacts : [];
+    if (sperms.length === 0 && !(pooled && contacts.some((source) => source.value > 0))) {
       return { applied: false, message: `bsDebugClearContainers skipped for ${female}: no sperms.` };
     }
-    base.sperms = [];
+    // 只归零物理量，保留身份与快照；默认模式之后启用实验池也不应恢复已清残留。
+    if (pooled || Array.isArray(base.spermContacts)) {
+      base.spermContacts = contacts.map((source) => ({ ...source, value: 0 }));
+    }
+    if (pooled) {
+      invalidatePooledSegment(base);
+      projectPooledSperms(base);
+    } else base.sperms = [];
     profile.base = base;
     profile.notify = {
       ...notify,
