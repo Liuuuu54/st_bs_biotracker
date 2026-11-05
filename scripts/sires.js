@@ -4,8 +4,11 @@
 // 同名同时是已注册卵方（扶她）时，种族、血统、衍生类型、年龄、体型、在场一律读卵方，
 // 精方档案只留精方专属栏位（精子品质）；描述也放在卵方那份。
 import { descriptionListToObject, getStaleDescriptionFields, normalizeDescriptionList, parseDescriptionGuideFields } from './descriptions.js';
-import { clampIndividualBodySize } from './body_size.js';
-import { getBloodlineInfo, parseRaceDescriptor } from './race_config.js';
+import { clampIndividualBodySize, describeSwordOffset, normalizeSwordOffset } from './body_size.js';
+import { getBloodlineInfo, getDerivedTypeSireCycleProfile, getMergedRacePhysiologyProfile, parseRaceDescriptor } from './race_config.js';
+import { normalizeReproductiveSettings } from './reproductive.js';
+import { getRaceSeasonShape, getSireSeasonPhase, hashPhase, hasSeasonOrigin, resolveSireSeasonOrigin } from './season_phase.js';
+import { DORMANCY_STAGE } from './stage_config.js';
 import { getTalentLabel, normalizeTalentList, resolveSkillDefinition } from './skill_config.js';
 
 export const SIRE_SOURCES = Object.freeze(['manual', 'card', 'father']);
@@ -27,14 +30,223 @@ export function getSpermQualityFactors(value) {
 }
 
 /**
- * 精子品质给模型看的分级描述，顺带影射雄风；只影射，体型契合仍看体型。一般（0.5–1.5）不写。
+ * 精子品质给模型看的分级描述：只讲精力与精液，不影射阳物（阳物大小是剑偏移）。一般（0.5–1.5）不写。
  */
 export function describeSpermQuality(value) {
   const quality = normalizeSpermQuality(value);
-  if (quality < 0.5) return '精水稀薄，阳物平平';
+  if (quality < 0.5) return '精水稀薄，不易使人受孕';
   if (quality < 1.5) return '';
-  if (quality < 3) return '精力旺盛，阳物粗壮';
-  return '精力极旺，阳物雄伟，一次就能灌满';
+  if (quality < 3) return '精力旺盛，精液浓稠';
+  return '精力极旺，精液浓稠量多，一次就能灌满';
+}
+
+function normalizeReserve(value) {
+  const num = Number(value);
+  if (value === null || value === undefined || value === '' || !Number.isFinite(num)) return 1;
+  return Math.max(0, Math.min(1, num));
+}
+
+const MINUTES_PER_DAY = 24 * 60;
+/** 非繁殖季的品质倍率：不归零，多数雄性全年仍有生育力 */
+export const SIRE_OFF_SEASON_FACTOR = 0.6;
+/** 季节交界的过渡（天）：两侧各 1.5 天线性过渡，避免一天之内跳变 */
+const SEASON_RAMP_DAYS = 1.5;
+/** 精方精力周期一轮的长度（人类天数，再乘经期倍率）；幅度与形状看衍生类型 */
+export const SPERMATOGENESIS_DAYS = 74;
+
+/**
+ * 精方周期在一轮里某一点的品质系数，fraction 是 0～1，波峰在正中间。
+ * 峰期天数 0：平滑起伏，系数 ＝ (1＋幅度)^(−cos 2πf)，波峰 ×(1＋幅度)、波谷 ÷(1＋幅度)。
+ * 峰期天数 > 0：平时为 1，只有正中间那几天按 cos² 冲高到 1＋幅度（易感期这类）。
+ */
+export function getSpermCycleFactor(fraction, { amplitude = 0.1, peakDays = 0, cycleDays = SPERMATOGENESIS_DAYS } = {}) {
+  const f = ((Number(fraction) % 1) + 1) % 1;
+  const a = Math.max(0, Number(amplitude) || 0);
+  const peak = Math.max(0, Number(peakDays) || 0);
+  if (!(peak > 0)) return (1 + a) ** (-Math.cos(2 * Math.PI * f));
+  const distance = Math.abs(f - 0.5) * cycleDays;
+  if (distance >= peak / 2) return 1;
+  return 1 + a * Math.cos(Math.PI * distance / peak) ** 2;
+}
+/** 禁欲：超过这些天后每天 −1%，最低 0.85 */
+const ABSTINENCE_GRACE_DAYS = 7;
+const ABSTINENCE_DAILY_LOSS = 0.01;
+const ABSTINENCE_FLOOR = 0.85;
+
+function lerp(a, b, t) {
+  return a + (b - a) * Math.max(0, Math.min(1, t));
+}
+
+/** 季节相位 → 季节系数；回传 { factor, inSeason, daysLeft } */
+function getSeasonFactorAt(shape, phase) {
+  const t = phase * shape.total;
+  const middle = (1 + SIRE_OFF_SEASON_FACTOR) / 2;
+  if (t < shape.active) {
+    const distance = Math.min(t, shape.active - t);
+    return { factor: distance >= SEASON_RAMP_DAYS ? 1 : lerp(middle, 1, distance / SEASON_RAMP_DAYS), inSeason: true, daysLeft: shape.active - t, elapsed: t, length: shape.active, day: t, active: shape.active, total: shape.total };
+  }
+  const distance = Math.min(t - shape.active, shape.total - t);
+  return {
+    factor: distance >= SEASON_RAMP_DAYS ? SIRE_OFF_SEASON_FACTOR : lerp(middle, SIRE_OFF_SEASON_FACTOR, distance / SEASON_RAMP_DAYS),
+    inSeason: false,
+    daysLeft: shape.total - t,
+    elapsed: t - shape.active,
+    length: shape.dormancy,
+    day: t,
+    active: shape.active,
+    total: shape.total,
+  };
+}
+
+/**
+ * 精方当下的有效精子品质与分项。没有精方档案（一次性对象）回传 null，呼叫端按品质 1。
+ * 有效品质 ＝ 档案品质 × 季节 × 精力周期 × 存量 × 禁欲，夹在 0.25～4。
+ * 扶她的季节读她卵方那一份：在乏情期就是非繁殖季（不过渡）。
+ */
+export function getSireQualityState(chatState, name, { minutesPassed = null } = {}) {
+  const key = String(name || '').trim();
+  const record = getSireRecord(chatState, key);
+  if (!record) return null;
+  const now = minutesPassed ?? (Number(chatState?.minutesPassed) || 0);
+  const character = chatState?.characters && Object.prototype.hasOwnProperty.call(chatState.characters, key)
+    ? chatState.characters[key]
+    : null;
+  const race = character?.profile?.base?.race ?? record.race;
+  const bloodline = character?.profile?.base?.bloodline ?? record.bloodline;
+  const derivedType = character ? character.profile?.base?.derivedType : record.derivedType;
+  const ratio = Math.max(0.1, Math.min(20, Number(character?.profile?.bio?.menstrualLengthRatio
+    ?? getMergedRacePhysiologyProfile(race || '人类', bloodline)?.menstrualLengthRatio) || 1));
+  const config = normalizeReproductiveSettings(chatState?.reproductiveSettings);
+
+  let season = { factor: 1, inSeason: null, daysLeft: null, elapsed: null, length: null };
+  if (character) {
+    const bio = character.profile?.bio || {};
+    if (Number(bio.dormancyDays) > 0) {
+      season = character.profile?.base?.stage === DORMANCY_STAGE
+        ? { factor: SIRE_OFF_SEASON_FACTOR, inSeason: false, daysLeft: null, elapsed: null, length: null }
+        : { factor: 1, inSeason: true, daysLeft: null, elapsed: null, length: null };
+    }
+  } else {
+    const shape = getRaceSeasonShape(race, bloodline);
+    const phase = shape ? getSireSeasonPhase(record, now) : null;
+    if (shape && phase !== null) season = getSeasonFactorAt(shape, phase);
+  }
+
+  // 起点：有季节起点就跟着它（同族一起），再按名字错开，免得每位精方一建档就在同一个位置
+  const cycleOrigin = hasSeasonOrigin(record) ? Number(record.seasonOrigin) : (Number(record.createdAt) || 0);
+  const cycleDays = SPERMATOGENESIS_DAYS * ratio;
+  const cycleElapsed = (now - cycleOrigin) / MINUTES_PER_DAY + hashPhase(key) * cycleDays;
+  const cycleDay = ((cycleElapsed % cycleDays) + cycleDays) % cycleDays;
+  const cycleProfile = getDerivedTypeSireCycleProfile(derivedType);
+  const cycleShape = {
+    amplitude: cycleProfile.sireCycleAmplitude,
+    peakDays: cycleProfile.sireCyclePeakDays,
+    cycleDays,
+    prompt: cycleProfile.sireCyclePrompt,
+  };
+  const cycle = getSpermCycleFactor(cycleDay / cycleDays, cycleShape);
+
+  const hours = Math.max(0, now - (Number(record.reserveAt) || 0)) / 60;
+  const halfLife = config.sireReserveHalfLifeHours * ratio;
+  const reserve = 1 - (1 - normalizeReserve(record.reserve)) * 0.5 ** (hours / halfLife);
+  const freshness = 0.5 + 0.5 * reserve;
+  const restDays = hours / 24;
+  const abstinence = restDays > ABSTINENCE_GRACE_DAYS
+    ? Math.max(ABSTINENCE_FLOOR, 1 - ABSTINENCE_DAILY_LOSS * (restDays - ABSTINENCE_GRACE_DAYS))
+    : 1;
+
+  const quality = normalizeSpermQuality(record.spermQuality);
+  if (record.alwaysPeak) {
+    return {
+      quality,
+      effective: quality,
+      alwaysPeak: true,
+      season: 1,
+      inSeason: null,
+      seasonDaysLeft: null,
+      seasonElapsed: null,
+      seasonLength: null,
+      cycle: 1,
+      cycleDay,
+      cycleDays,
+      cycleShape,
+      reserve: 1,
+      freshness: 1,
+      abstinence: 1,
+      restDays,
+    };
+  }
+  const effective = normalizeSpermQuality(quality * season.factor * cycle * freshness * abstinence);
+  return {
+    quality,
+    alwaysPeak: false,
+    effective,
+    season: season.factor,
+    inSeason: season.inSeason,
+    seasonDaysLeft: season.daysLeft,
+    // 这一段（繁殖季或非繁殖季）已过天数与总长；扶她与无季节物种为 null
+    seasonElapsed: season.elapsed,
+    seasonLength: season.length,
+    // 整季时间轴：现在是一季的第几天、活动季多长、整季多长（画时间轴用）
+    seasonDay: season.day ?? null,
+    seasonActive: season.active ?? null,
+    seasonTotal: season.total ?? null,
+    cycle,
+    cycleDay,
+    cycleDays,
+    cycleShape,
+    reserve,
+    freshness,
+    abstinence,
+    restDays,
+  };
+}
+
+/** 射精：存量扣掉一部分，从这一刻重新起算回复。没有档案回传 null */
+export function consumeSireReserve(chatState, name, { minutesPassed = null } = {}) {
+  const key = String(name || '').trim();
+  const record = getSireRecord(chatState, key);
+  if (!record) return null;
+  const now = minutesPassed ?? (Number(chatState?.minutesPassed) || 0);
+  const state = getSireQualityState(chatState, key, { minutesPassed: now });
+  if (state.alwaysPeak) {
+    record.reserve = 1;
+    record.reserveAt = now;
+    return 1;
+  }
+  const drain = normalizeReproductiveSettings(chatState?.reproductiveSettings).sireReserveDrain;
+  record.reserve = Math.max(0, Math.min(1, state.reserve * (1 - drain)));
+  record.reserveAt = now;
+  return record.reserve;
+}
+
+/** 给模型看的精方状态（摘要行）：存量偏低、禁欲太久、季节；都平常就回空字串 */
+export function describeSireCondition(state) {
+  if (!state) return '';
+  const parts = [];
+  // 存量低就是精液变稀、量也少：模型照这句写射精描写与 amount
+  if (state.reserve < 0.5) parts.push('刚连射多次，存量很低，精液稀薄、量明显变少');
+  else if (state.reserve < 0.8) parts.push('刚射过不久，存量偏低，精液比平时稀、量偏少');
+  else if (state.abstinence < 1) parts.push('禁欲太久，精液积存但活力略降');
+  // 精力周期冲到高峰才写：有衍生类型的短叙述就用它（易感期、发情期…），没有就写通用的；平时 ±10% 的起伏不写
+  const amplitude = Number(state.cycleShape?.amplitude) || 0;
+  const peakFloor = state.cycleShape?.peakDays > 0 ? 1 + amplitude * 0.5 : 1.3;
+  if (amplitude > 0 && state.cycle >= Math.max(1.05, peakFloor)) {
+    parts.push(String(state.cycleShape?.prompt || '').trim() || '正值精力高峰，精液浓稠量多');
+  }
+  if (state.inSeason === true) parts.push('正值繁殖季');
+  if (state.inSeason === false) parts.push('非繁殖季，精力较弱');
+  return parts.join('；');
+}
+
+/** 精子品质的短分级（介面用，一般也写出来）：稀薄／偏弱／一般／旺盛／极旺 */
+export function getSpermQualityTier(value) {
+  const quality = normalizeSpermQuality(value);
+  if (quality < 0.5) return '稀薄';
+  if (quality < 0.8) return '偏弱';
+  if (quality < 1.5) return '一般';
+  if (quality < 3) return '旺盛';
+  return '极旺';
 }
 
 export function normalizeSpermQuality(value) {
@@ -62,6 +274,17 @@ export function normalizeSireRecord(raw, minutesPassed = 0) {
     },
     source: SIRE_SOURCES.includes(value.source) ? value.source : 'manual',
     spermQuality: normalizeSpermQuality(value.spermQuality),
+    // 剑偏移（1.2.4）：剑 ＝ 体型 ＋ 偏移；扶她也存在精方这份
+    swordOffset: normalizeSwordOffset(value.swordOffset),
+    // 存量：上次射精后剩下的比例与记下它的分钟数，目前存量按时间惰性推算（getSireQualityState）
+    reserve: normalizeReserve(value.reserve),
+    reserveAt: value.reserveAt !== null && value.reserveAt !== undefined && Number.isFinite(Number(value.reserveAt))
+      ? Math.max(0, Number(value.reserveAt))
+      : Math.max(0, Number(value.createdAt) || 0),
+    // 作弊：当下品质恒等于档案品质，不受季节、精力周期、存量与禁欲影响；只有使用者在注册页能开。要改品质到变量页改档案
+    alwaysPeak: value.alwaysPeak === true,
+    // 季节时钟起点（分钟）；没有季节的种族与扶她为 null
+    seasonOrigin: hasSeasonOrigin(value) ? Math.round(Number(value.seasonOrigin)) : null,
     // 精方只有天赋（资质），没有技能：技能要靠追踪锻炼，精方不追踪
     talents: normalizeTalentList(value.talents),
     createdAt: Math.max(0, Number(value.createdAt) || 0),
@@ -98,6 +321,7 @@ export function resolveSireBase(chatState, name) {
     ? chatState.characters[key]
     : null;
   const quality = normalizeSpermQuality(sire?.spermQuality);
+  const swordOffset = normalizeSwordOffset(sire?.swordOffset);
   if (character?.profile?.base) {
     const base = character.profile.base;
     return {
@@ -112,6 +336,7 @@ export function resolveSireBase(chatState, name) {
         isHere: base.isHere !== false,
       },
       spermQuality: quality,
+      swordOffset,
     };
   }
   if (sire) {
@@ -127,6 +352,7 @@ export function resolveSireBase(chatState, name) {
         isHere: sire.isHere !== false,
       },
       spermQuality: quality,
+      swordOffset,
     };
   }
   return null;
@@ -140,7 +366,15 @@ export function pruneFutaSireRecord(chatState, name) {
   const key = String(name || '').trim();
   const sire = getSireRecord(chatState, key);
   if (!sire || !chatState?.characters || !Object.prototype.hasOwnProperty.call(chatState.characters, key)) return false;
-  chatState.sires[key] = normalizeSireRecord({ spermQuality: sire.spermQuality, source: sire.source, createdAt: sire.createdAt });
+  chatState.sires[key] = normalizeSireRecord({
+    spermQuality: sire.spermQuality,
+    swordOffset: sire.swordOffset,
+    alwaysPeak: sire.alwaysPeak,
+    reserve: sire.reserve,
+    reserveAt: sire.reserveAt,
+    source: sire.source,
+    createdAt: sire.createdAt,
+  });
   return true;
 }
 
@@ -188,13 +422,18 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
   const entries = [];
   for (const [name, record] of Object.entries(sires)) {
     if (chatState?.characters && Object.prototype.hasOwnProperty.call(chatState.characters, name)) continue;
-    const virility = describeSpermQuality(record.spermQuality);
+    const qualityState = getSireQualityState(chatState, name, { minutesPassed: now });
+    const virility = describeSpermQuality(qualityState ? qualityState.effective : record.spermQuality);
+    const condition = describeSireCondition(qualityState);
     const summary = {
       name,
       race: formatSireRace(record),
       ...(record.age ? { age: record.age } : {}),
       ...(record.bodySize ? { bodySize: record.bodySize } : {}),
       ...(virility ? { virility } : {}),
+      ...(condition ? { condition } : {}),
+      // 剑只送文字：模型看不懂偏移数字
+      ...(record.swordOffset ? { sword: describeSwordOffset(record.swordOffset) } : {}),
     };
     if (record.isHere !== false) {
       const list = record.descriptions?.normalDescription || [];
@@ -236,6 +475,8 @@ export function upsertSireRecord(chatState, name, fields = {}, { source = 'manua
   chatState.sires[key] = normalizeSireRecord({
     ...(previous || {}),
     ...(fields.spermQuality !== undefined && fields.spermQuality !== null ? { spermQuality: fields.spermQuality } : {}),
+    ...(fields.swordOffset !== undefined && fields.swordOffset !== null ? { swordOffset: fields.swordOffset } : {}),
+    ...(typeof fields.alwaysPeak === 'boolean' ? { alwaysPeak: fields.alwaysPeak } : {}),
     ...(isFuta ? {} : {
       race: fields.race || previous?.race || '人类',
       bloodline: fields.race ? null : previous?.bloodline,
@@ -249,7 +490,13 @@ export function upsertSireRecord(chatState, name, fields = {}, { source = 'manua
     descriptions: { normalDescription: nextList },
     source: previous?.source || source,
     createdAt: previous ? previous.createdAt : now,
+    ...(previous ? {} : { reserve: 1, reserveAt: now }),
   }, now);
+  // 季节起点：新建档或改了种族时，对齐主血统相同的已注册者（只在这时对齐一次）；扶她读卵方，不存
+  const record = chatState.sires[key];
+  const raceChanged = Boolean(previous && !isFuta && fields.race && previous.race !== record.race);
+  if (isFuta) record.seasonOrigin = null;
+  else if (!previous || raceChanged || !hasSeasonOrigin(record)) record.seasonOrigin = resolveSireSeasonOrigin(chatState, key, record, now);
   const verb = previous ? '已更新' : '已建立';
   return {
     applied: true,

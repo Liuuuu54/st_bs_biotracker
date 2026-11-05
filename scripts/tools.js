@@ -9,7 +9,7 @@ import { getStageProgress } from './stage_progress.js';
 import { syncCardSettings } from './card_settings.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
-import { getParentTalents, getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
+import { consumeSireReserve, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
 import { CONCEPTION_WEIGHT_LOG_SD, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getConceptionStageWeight, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
@@ -7850,7 +7850,7 @@ function applyUpdatePsychology(chatState, args) {
  * 插入时的体型契合：卵方看自己的个体体型，精方依序看已注册角色、本次 maleBodySize、种族平均。
  * 回传 record 存在 base.penetrationFit（拔出时清除），notice 进次级提示，message 进回传讯息。
  */
-function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args, femaleStretch = 0 }) {
+function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args, femaleStretch = 0, swordOffset = 0 }) {
   const maleBodySize = clampIndividualBodySize(fatherBase ? fatherBase.bodySize : args?.maleBodySize);
   const female = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
   const maleResolved = fatherBase
@@ -7872,6 +7872,9 @@ function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args, fe
     male: applyAltForm(maleResolved, args?.maleAltForm, '精方'),
     sizeBridge,
     femaleStretch,
+    // 剑偏移只有建档的精方才有，一次性对象为 0；鞘偏移读卵方自己的
+    femaleOffset: base.sheathOffset,
+    maleOffset: swordOffset,
   });
   const record = fit || maleBodySize !== null
     ? {
@@ -7940,7 +7943,11 @@ function applyAddSperm(chatState, args) {
     const experience = { ...(next.profile?.experience || {}), latestSexPartner: male };
     if (experience.virginity === null || experience.virginity === undefined) experience.virginity = male;
     next.profile.experience = experience;
-    const fit = buildPenetrationFit(base, { male, race, bloodline: ancestry.bloodline, fatherBase, args, femaleStretch: getSheathStretch(next.profile?.experience) });
+    const fit = buildPenetrationFit(base, {
+      male, race, bloodline: ancestry.bloodline, fatherBase, args,
+      femaleStretch: getSheathStretch(next.profile?.experience),
+      swordOffset: sireInfo?.swordOffset ?? 0,
+    });
     base.penetrationFit = fit.record;
     // 性爱纪录：相容倍率照体型契合（含经产扩张）；同一场重复 insert 不重算
     recordIntimacyInsert(next.profile, male, {
@@ -8006,12 +8013,16 @@ function applyAddSperm(chatState, args) {
   const sources = getSpermSources(base);
   // 父方衍生类型有档案就由档案带入，不再依赖模型每次在 race 写前缀
   const maleDerivedType = fatherBase ? (fatherBase.derivedType || null) : (parsedRace.derivedType || null);
-  // 精子品质在射精当下记快照，比照体型；未注册的一次性对象为 1。之后改档案不影响已射进去的
-  const quality = sireInfo ? sireInfo.spermQuality : 1;
+  // 精子品质在射精当下记快照，比照体型；未注册的一次性对象为 1。之后改档案不影响已射进去的。
+  // 有精方档案时记的是有效品质（季节、精力周期、存量、禁欲都算进去），射完再扣存量
+  const nowMinutes = Number(chatState.minutesPassed) || 0;
+  const qualityState = getSireQualityState(chatState, male, { minutesPassed: nowMinutes });
+  const quality = qualityState ? qualityState.effective : (sireInfo ? sireInfo.spermQuality : 1);
+  consumeSireReserve(chatState, male, { minutesPassed: nowMinutes });
   const pooled = isPooledConception(base);
   let pooledSpilled = 0;
   if (pooled) {
-    const now = Number(chatState.minutesPassed) || 0;
+    const now = nowMinutes;
     if (enteredAmount > 0) {
       pooledSpilled = depositPooledSource(base, {
         male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality,

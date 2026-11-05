@@ -2691,6 +2691,115 @@
   opacity: 0.78;
 }
 
+/* 精方的周期与存量：繁殖季时间轴、精子生成的波、十格存量，都用文字色，跟着主题换色 */
+#bs-biotracker-settings .bs-bt-sire-gauges {
+  display: grid;
+  gap: 10px;
+}
+
+#bs-biotracker-settings .bs-bt-sire-gauge {
+  display: grid;
+  gap: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-sire-gauge-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.9em;
+}
+
+#bs-biotracker-settings .bs-bt-sire-gauge-label {
+  font-weight: 600;
+}
+
+#bs-biotracker-settings .bs-bt-sire-gauge-note {
+  font-size: 0.85em;
+  opacity: 0.75;
+  text-align: right;
+}
+
+#bs-biotracker-settings .bs-bt-sire-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.14) 0 3px, rgba(0, 0, 0, 0.06) 3px 6px);
+}
+
+#bs-biotracker-settings .bs-bt-sire-track-active {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px 0 0 999px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+#bs-biotracker-settings .bs-bt-sire-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+#bs-biotracker-settings .bs-bt-sire-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72em;
+  opacity: 0.6;
+}
+
+#bs-biotracker-settings .bs-bt-sire-wave {
+  position: relative;
+  height: 22px;
+}
+
+#bs-biotracker-settings .bs-bt-sire-wave svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+#bs-biotracker-settings .bs-bt-sire-wave polyline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-opacity: 0.45;
+  stroke-dasharray: 3 2;
+  vector-effect: non-scaling-stroke;
+}
+
+#bs-biotracker-settings .bs-bt-sire-wave-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--bsbt-lcd-bg, transparent);
+}
+
+#bs-biotracker-settings .bs-bt-sire-cells {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 3px;
+}
+
+#bs-biotracker-settings .bs-bt-sire-cells span {
+  height: 8px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+#bs-biotracker-settings .bs-bt-sire-cells span.is-on {
+  background: currentColor;
+  opacity: 0.7;
+}
+
 #bs-biotracker-settings .bs-bt-intimacy {
   display: grid;
   gap: 8px;
@@ -4413,6 +4522,19 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-slider-value {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* 拉杆标题：勾选框文字与「?」说明连在一起，不被 space-between 推到中间 */
+#bs-biotracker-settings .bs-bt-slider-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
 #bs-biotracker-settings .bs-bt-gestation-slider-freeze {

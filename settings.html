@@ -526,6 +526,15 @@
                   placeholder="仅用于本次角色注册。例如：羊膜绒毛膜为 MCMA、时常泌乳体质、特殊繁殖设定等。"></textarea>
               </div>
 
+              <div id="bs-bt-register-sheath" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="offset" title="鞘的个人偏移，代表实际舒适的深度：子宫后倾、子宫颈偏低、很浅往负，很深往正。不勾就交给模型照角色卡判断（卡上没写为 0）">
+                <div class="bs-bt-gestation-slider-head">
+                  <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定鞘偏移</label>
+                  <span data-role="value" class="bs-bt-slider-value">交给模型</span>
+                </div>
+                <input type="range" data-role="range" min="-1" max="1" step="0.25" value="0" disabled aria-label="手动指定鞘偏移" />
+                <div class="bs-bt-gestation-slider-scale"><span>浅 −1</span><span>0</span><span>深 +1</span></div>
+              </div>
+
               <details class="settings_section">
                 <summary>初始认知纪录（选填）</summary>
                 <p>填写她开局知道、猜测或误解的内容；与真实生理状态分开。留空可正常注册。</p>
@@ -657,9 +666,29 @@
                   placeholder="可留空。例如：他是卡里的男主，三十出头，身高 195 cm"></textarea>
               </div>
 
+              <div id="bs-bt-sire-quality" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="log2" title="档案上的精子品质，影响受孕、留存与排出；射精当下另乘季节、精力周期、存量与禁欲。不勾就交给模型判断（一般为 1）">
+                <div class="bs-bt-gestation-slider-head">
+                  <span class="bs-bt-slider-title"><label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定精子品质</label> <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/registration.md#精方檔案" target="_blank" rel="noopener noreferrer" title="精子品质说明" aria-label="精子品质说明">?</a></span>
+                  <span data-role="value" class="bs-bt-slider-value">交给模型</span>
+                </div>
+                <input type="range" data-role="range" min="-2" max="2" step="0.25" value="0" disabled aria-label="手动指定精子品质" />
+                <div class="bs-bt-gestation-slider-scale"><span>稀薄 ×0.25</span><span>一般 ×1</span><span>极旺 ×4</span></div>
+              </div>
+
+              <div id="bs-bt-sire-sword" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="offset" title="剑 ＝ 体型 ＋ 偏移：比同体型的人大或小几级。不勾就交给模型照角色卡判断（一般为 0）">
+                <div class="bs-bt-gestation-slider-head">
+                  <span class="bs-bt-slider-title"><label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定剑偏移</label> <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/registration.md#精方檔案" target="_blank" rel="noopener noreferrer" title="剑偏移说明" aria-label="剑偏移说明">?</a></span>
+                  <span data-role="value" class="bs-bt-slider-value">交给模型</span>
+                </div>
+                <input type="range" data-role="range" min="-2" max="2" step="0.5" value="0" disabled aria-label="手动指定剑偏移" />
+                <div class="bs-bt-gestation-slider-scale"><span>小 −2</span><span>0</span><span>大 +2</span></div>
+              </div>
+
               <div class="settings_section">
-                <label for="bs-bt-sire-quality">精子品质 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/registration.md#精方檔案" target="_blank" rel="noopener noreferrer" title="精子品质说明" aria-label="精子品质说明">?</a></label>
-                <input id="bs-bt-sire-quality" class="text_pole" type="number" min="0.25" max="4" step="0.25" placeholder="留空交给模型判断（一般为 1）" />
+                <div class="bs-bt-setting-toggle-row" title="作弊：当下精子品质恒等于档案品质，不受繁殖季、精力周期、存量与禁欲影响。要改品质就到变量页改档案。只能在这里开关，模型不会判断">
+                  <input id="bs-bt-sire-always-peak" type="checkbox" />
+                  <label for="bs-bt-sire-always-peak">作弊：品质不受繁殖周期与存量影响</label>
+                </div>
               </div>
 
               <details class="settings_section bs-bt-register-fold">

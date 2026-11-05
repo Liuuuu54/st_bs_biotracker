@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import * as state from '../scripts/state.js';
 import { formatIntimacyPromptLine, getCompatMultiplier, getIntimacyLevel, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from '../scripts/intimacy.js';
-import { normalizeSireRecord } from '../scripts/sires.js';
+import { getSireQualityState, normalizeSireRecord } from '../scripts/sires.js';
 import { applyToolCall } from '../scripts/tools.js';
 
 const call = (chat, name, args) => applyToolCall(chat, { name, arguments: args });
@@ -94,10 +94,13 @@ test('bsAddSperm 接上：insert 记一场、内射加精液加成、戴套成�
   assert.equal(record.effective, 1, '套子挡住，不加精液加成');
   // 射完是 spent，再来一发要重新 insert；还在同一场，次数不加
   call(chat, 'bsAddSperm', { female: '艾拉', male: '凯', race: '人类', action: 'insert', amount: 0, hasCondom: false });
+  // 精液加成看射精当下的有效品质：上一发戴套也射了、存量被扣过（1.2.4）
+  const quality = getSireQualityState(chat, '凯').effective;
+  assert.ok(quality > 1 && quality < 4, `有效品质 ${quality}`);
   call(chat, 'bsAddSperm', { female: '艾拉', male: '凯', race: '人类', action: 'deposit', amount: 10 });
   record = chat.characters['艾拉'].profile.intimacy['凯'];
   assert.equal(record.count, 1);
-  assert.ok(Math.abs(record.effective - 1.5) < 1e-6);
+  assert.ok(Math.abs(record.effective - (1 + 0.25 * Math.log2(quality))) < 1e-6);
 
   const mom = chatWithMother();
   mom.characters['艾拉'].profile.experience.naturalBirthExperience = 8;

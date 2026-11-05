@@ -1,7 +1,7 @@
 import { normalizeExperience, normalizeCognitionRecords, normalizePaternityClaims, normalizeReproductiveSettings } from './reproductive.js';
 import { stripVariableUpdateBlocks } from './variable_isolation.js';
 import { syncCardSettings, importCardSkillSeed } from './card_settings.js';
-import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, LEGACY_NORMAL_DESCRIPTION_GUIDE, LEGACY_PREGNANT_DESCRIPTION_GUIDE } from './registry_config.js';
+import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, LEGACY_NORMAL_DESCRIPTION_GUIDE, LEGACY_PREGNANT_DESCRIPTION_GUIDE, LEGACY_SIRE_DESCRIPTION_GUIDE } from './registry_config.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -15,6 +15,7 @@ import { DORMANCY_STAGE, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES,
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
 import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines, renameStoredRaces } from './state_migration.js';
 import { createEmptySires, normalizeSires, pruneFutaSireRecord } from './sires.js';
+import { assignMissingSireSeasonOrigins } from './season_phase.js';
 import { announceSavedRevisions, claimChatRevision, clearHostSettingsPendingUpTo, markHostSettingsPending, queueRevisionAnnouncement, readLatestChatRevision } from './save_sync.js';
 import {
   createDefaultWardrobeItem,
@@ -496,19 +497,34 @@ function randomInt(min, max) {
  * 注册时的初始月经阶段。先按「乏情期占整季的时间比例」决定是否正在乏情：天使一年有八成多在乏情，
  * 不能一注册就是发情期。不在乏情时照旧从活动周期四期等机率抽，并抽本季已经跑完几轮。
  * bio 没有乏情天数的（人类与多数物种）不会抽到乏情期。
+ *
+ * phase（0～1，见 season_phase.js）：同族对齐。有季节时由相位决定在不在乏情、乏情第几天、本季第几轮；
+ * 这一轮里落在哪一期、第几天仍随机，排卵日不会整齐划一。没有季节的物种忽略 phase。
  */
-export function deriveMenstrualStageState(bio = {}, random = Math.random) {
+export function deriveMenstrualStageState(bio = {}, random = Math.random, { phase = null } = {}) {
   const ratio = Math.max(0.1, Math.min(20, Number(bio?.menstrualLengthRatio) || 1));
   const dormancy = Math.max(0, Number(bio?.dormancyDays) || 0);
   const cycles = Math.max(1, Math.round(Number(bio?.seasonCycles) || 1));
-  const activeSeason = Object.values(MENSTRUAL_STAGE_DAYS).reduce((sum, days) => sum + days * ratio, 0) * cycles;
+  const cycleLength = Object.values(MENSTRUAL_STAGE_DAYS).reduce((sum, days) => sum + days * ratio, 0);
+  const activeSeason = cycleLength * cycles;
+  const stages = Object.keys(MENSTRUAL_STAGE_DAYS);
+  const pickActive = () => {
+    const stage = stages[Math.min(stages.length - 1, Math.floor(random() * stages.length))];
+    return { stage, days: Math.floor(random() * (MENSTRUAL_STAGE_DAYS[stage] + 1)) };
+  };
+  const aligned = Number(phase);
+  if (dormancy > 0 && phase !== null && Number.isFinite(aligned)) {
+    const t = Math.max(0, Math.min(0.999999, aligned)) * (activeSeason + dormancy);
+    if (t >= activeSeason) {
+      return { stage: DORMANCY_STAGE, days: Math.min(Math.max(0, Math.ceil(dormancy) - 1), Math.floor(t - activeSeason)), seasonCycle: 0 };
+    }
+    return { ...pickActive(), seasonCycle: Math.min(cycles - 1, Math.floor(t / cycleLength)) };
+  }
   if (dormancy > 0 && random() * (activeSeason + dormancy) >= activeSeason) {
     return { stage: DORMANCY_STAGE, days: Math.floor(random() * dormancy), seasonCycle: 0 };
   }
-  const stages = Object.keys(MENSTRUAL_STAGE_DAYS);
-  const stage = stages[Math.min(stages.length - 1, Math.floor(random() * stages.length))];
-  const days = Math.floor(random() * (MENSTRUAL_STAGE_DAYS[stage] + 1));
-  return { stage, days, seasonCycle: dormancy > 0 ? Math.min(cycles - 1, Math.floor(random() * cycles)) : 0 };
+  const picked = pickActive();
+  return { ...picked, seasonCycle: dormancy > 0 ? Math.min(cycles - 1, Math.floor(random() * cycles)) : 0 };
 }
 
 export function derivePregnancyStageState(pregnantDays, gestationSpeed = 1, { extensionUntilDays = null, rightContinuous = false } = {}) {
@@ -573,7 +589,7 @@ export function getGestationEffectiveSpeed(profile) {
   return 1;
 }
 
-export function syncCharacterStageFromProfile(characterState) {
+export function syncCharacterStageFromProfile(characterState, { seasonPhase = null } = {}) {
   const next = characterState;
   const profile = next?.profile || {};
   const base = profile.base || {};
@@ -633,7 +649,7 @@ export function syncCharacterStageFromProfile(characterState) {
     return next;
   }
 
-  const derived = deriveMenstrualStageState(next.profile.bio);
+  const derived = deriveMenstrualStageState(next.profile.bio, Math.random, { phase: seasonPhase });
   next.profile.base = {
     ...base,
     stage: derived.stage,
@@ -773,6 +789,8 @@ export function createDefaultFemaleState(name = '') {
         psyStressLevel,
         uterineAtony: 0,
         seasonCycle: 0,
+        // 鞘偏移（1.2.4）：实际舒适的深度，−1～+1
+        sheathOffset: 0,
       },
       pregnant: {
         pregnantDays: 0,
@@ -1139,6 +1157,9 @@ export function getSettings(ctx) {
     }
     if (sameGuide(mergedGuides.pregnantDescription, LEGACY_PREGNANT_DESCRIPTION_GUIDE)) {
       mergedGuides.pregnantDescription = DEFAULT_REGISTRY_DESCRIPTION_GUIDES.pregnantDescription;
+    }
+    if (sameGuide(mergedGuides.sireDescription, LEGACY_SIRE_DESCRIPTION_GUIDE)) {
+      mergedGuides.sireDescription = DEFAULT_REGISTRY_DESCRIPTION_GUIDES.sireDescription;
     }
     if (JSON.stringify(mergedGuides) !== JSON.stringify(settings.registryDescriptionGuides)) shouldSave = true;
     settings.registryDescriptionGuides = mergedGuides;
@@ -1510,6 +1531,11 @@ function migrateChatStateSchema(chatState) {
   if (fromVersion < 9) chatState.sires = normalizeSires(chatState.sires, Number(chatState.minutesPassed) || 0);
   // v9 → v10（1.2.1 改名）：精方档案的种族与血统比例跟角色一起换新名
   if (fromVersion < 10) renameStoredRaces(chatState.sires);
+  // v11 → v12（1.2.4 精方周期）：剑偏移、存量由正规化补预设；季节起点对齐同族已注册者，没有就用名字杂凑
+  if (fromVersion < 12) {
+    chatState.sires = normalizeSires(chatState.sires, Number(chatState.minutesPassed) || 0);
+    assignMissingSireSeasonOrigins(chatState);
+  }
   migrateCharacters(chatState.characters, fromVersion, { minutesPassed: Number(chatState.minutesPassed) || 0 });
   if (Array.isArray(chatState.snapshots) && chatState.snapshots.length > 0) {
     const source = chatState.snapshots;
@@ -1521,6 +1547,7 @@ function migrateChatStateSchema(chatState) {
       if (fromVersion < 6) payload.cardSkillSeedApplied = true;
       if (fromVersion < 10 && payload.sires) renameStoredRaces(payload.sires);
       const characters = unpackSnapshotCharacters(payload.characters, false, true);
+      if (fromVersion < 12 && payload.sires) assignMissingSireSeasonOrigins({ characters, sires: payload.sires, minutesPassed: payload.minutesPassed });
       migrateCharacters(characters, fromVersion, { minutesPassed: Number(payload.minutesPassed) || 0 });
       rebuilt.push(createStoredSnapshotState(rebuilt, { ...payload, characters: packSnapshotCharacters(characters) }, source[index], rebuiltCache));
     }
@@ -2082,6 +2109,8 @@ function createSnapshotCharacterBaseline(name = '') {
         psyStressLevel: 4,
         uterineAtony: 0,
         seasonCycle: 0,
+        // 鞘偏移（1.2.4）：实际舒适的深度，−1～+1
+        sheathOffset: 0,
       },
       pregnant: {
         pregnantDays: 0,

@@ -7,9 +7,9 @@ import { normalizeSireRecord, normalizeSires, resolveSireBase } from '../scripts
 
 const ctxOf = (chatId) => ({ chatId, chat: [{ name: 'A', is_user: false, mes: '……' }], characters: [], name1: '用户', name2: 'A', extensionSettings: {}, saveSettingsDebounced() {} });
 
-test('新聊天有空的精方表，存档版本 10', () => {
+test('新聊天有空的精方表，存档为最新版本', () => {
   const chat = state.createEmptyChatState();
-  assert.equal(chat.schemaVersion, 11);
+  assert.equal(chat.schemaVersion, 12);
   assert.equal(Object.getPrototypeOf(chat.sires), null);
   assert.deepEqual(Object.keys(chat.sires), []);
 });
@@ -24,7 +24,7 @@ test('v8 存档迁移到最新版：补上空精方表，旧快照还原成空�
   state.recordChatStateSnapshot(ctx, old, { messageCount: 1, reason: 'old' });
   settings.chatStates[ctx.chatId] = old;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 11);
+  assert.equal(migrated.schemaVersion, 12);
   assert.equal(Object.getPrototypeOf(migrated.sires), null);
   state.restoreChatStateFromSnapshot(migrated, migrated.snapshots[0]);
   assert.deepEqual(Object.keys(migrated.sires), []);
@@ -355,7 +355,7 @@ test('没有在场精方时只送精简版说明；有在场的才送完整说�
   const away = buildTrackerSystemPrompt('', DEFAULT_REGISTRY_DESCRIPTION_GUIDES, { ...base, registered_sires: [{ name: '胎父', race: '人类', isHere: false }] });
   assert.match(away, /都不在场，只是本轮相关者的摘要/);
   assert.match(away, /"isPresent":true/);
-  assert.ok(!away.includes('virility 是精方精子品质'));
+  assert.ok(!away.includes('virility 是精方当下精子品质'));
   const here = buildTrackerSystemPrompt('', DEFAULT_REGISTRY_DESCRIPTION_GUIDES, { ...base, registered_sires: [{ name: '凯', race: '人类', isHere: true }] });
-  assert.ok(here.includes('virility 是精方精子品质'));
+  assert.ok(here.includes('virility 是精方当下精子品质'));
 });

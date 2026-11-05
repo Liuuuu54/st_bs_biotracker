@@ -15,8 +15,9 @@ function fixture({ eggs = 1, threshold = .08, pooled = true } = {}) {
   Object.assign(mother.profile.base, { age: 24, race: '人类', bodySize: 4, stage: '卵泡期', days: 3, eggs });
   mother.profile.cooldown.naturalOvulationUsed = true;
   chat.characters['母方'] = mother;
-  chat.sires.A = normalizeSireRecord({ race: '人类', spermQuality: 1, bodySize: 4 });
-  chat.sires.B = normalizeSireRecord({ race: '人类', spermQuality: 4, bodySize: 4 });
+  // 品质锁在档案值（1.2.4 起精方周期与存量会让当下品质起伏）；这组只测混合池的守恒与拆分不变
+  chat.sires.A = normalizeSireRecord({ race: '人类', spermQuality: 1, bodySize: 4, alwaysPeak: true });
+  chat.sires.B = normalizeSireRecord({ race: '人类', spermQuality: 4, bodySize: 4, alwaysPeak: true });
   if (pooled) {
     enablePooledConception(mother.profile.base, 0, { seed: 'native-tool-pool-fixture' });
     for (const egg of mother.profile.base.spermPool.eggs) egg.threshold = egg.remainingHazard = threshold;

@@ -1287,6 +1287,41 @@ export const DERIVED_TYPE_FLUX_PROFILES = Object.freeze({
   })
 });
 
+/**
+ * 精方的精力周期（1.2.4）：精子品质随一轮约 74 天 × 经期倍率起伏。衍生类型决定形状与幅度：
+ * - sireCycleAmplitude：波峰品质 ×(1＋幅度)；0 为没有周期、品质恒定
+ * - sireCyclePeakDays：0 为平滑起伏；填几天就是平时持平、每轮只有那几天冲高（易感期、发情期）
+ * - sireCyclePrompt：冲到高峰时给模型的短叙述，使用者可改写成自己的设定
+ * 没有衍生类型的精方用 DEFAULT_SIRE_CYCLE_PROFILE。
+ */
+export const DEFAULT_SIRE_CYCLE_PROFILE = Object.freeze({ sireCycleAmplitude: 0.1, sireCyclePeakDays: 0, sireCyclePrompt: '' });
+const STEADY_SIRE_CYCLE = Object.freeze({ sireCycleAmplitude: 0, sireCyclePeakDays: 0, sireCyclePrompt: '' });
+export const DERIVED_TYPE_SIRE_CYCLE_PROFILES = Object.freeze({
+  "修炼": DEFAULT_SIRE_CYCLE_PROFILE,
+  "魔导": DEFAULT_SIRE_CYCLE_PROFILE,
+  "妖怪": DEFAULT_SIRE_CYCLE_PROFILE,
+  // 没有生理节律：品质恒定
+  "神祇": STEADY_SIRE_CYCLE,
+  "不死": STEADY_SIRE_CYCLE,
+  "血族": DEFAULT_SIRE_CYCLE_PROFILE,
+  "星际": DEFAULT_SIRE_CYCLE_PROFILE,
+  "机械": STEADY_SIRE_CYCLE,
+  "器灵": STEADY_SIRE_CYCLE,
+  "变异": DEFAULT_SIRE_CYCLE_PROFILE,
+  // ABO 的易感期；哨兵／向导、Dom／Sub 的卡把幅度覆写成 0 即可
+  "序列": Object.freeze({
+    sireCycleAmplitude: 1,
+    sireCyclePeakDays: 3,
+    sireCyclePrompt: "正值易感期：信息素浓烈失控，占有与标记冲动强烈，对伴侣格外黏缠，精液浓稠量多",
+  }),
+  "兽化": Object.freeze({
+    sireCycleAmplitude: 0.5,
+    sireCyclePeakDays: 5,
+    sireCyclePrompt: "正值发情期：兽性占上风，嗅觉敏锐、交配冲动亢进而难以克制，精液浓稠量多",
+  }),
+  "咒缚": DEFAULT_SIRE_CYCLE_PROFILE,
+});
+
 export const DERIVED_TYPE_METABOLISM_EXEMPTIONS = Object.freeze({
   // 以血为食，没有消化残渣
   "血族": Object.freeze(["hunger", "excretion"]),
@@ -1330,6 +1365,18 @@ export function sanitizeDerivedTypeProfilePatch(profile) {
   if (Object.prototype.hasOwnProperty.call(profile, 'inheritanceSpeed')) {
     const value = Number(profile.inheritanceSpeed);
     if (Number.isFinite(value)) result.inheritanceSpeed = Math.max(0, value);
+  }
+  // 精力周期：幅度 0–3、峰期 0–60 天；短叙述可以存空字串（把内建的叙述拿掉）
+  if (Object.prototype.hasOwnProperty.call(profile, 'sireCycleAmplitude')) {
+    const value = Number(profile.sireCycleAmplitude);
+    if (Number.isFinite(value)) result.sireCycleAmplitude = Math.max(0, Math.min(3, value));
+  }
+  if (Object.prototype.hasOwnProperty.call(profile, 'sireCyclePeakDays')) {
+    const value = Number(profile.sireCyclePeakDays);
+    if (Number.isFinite(value)) result.sireCyclePeakDays = Math.max(0, Math.min(60, value));
+  }
+  if (Object.prototype.hasOwnProperty.call(profile, 'sireCyclePrompt') && typeof profile.sireCyclePrompt === 'string') {
+    result.sireCyclePrompt = profile.sireCyclePrompt.trim().slice(0, 300);
   }
   return Object.keys(result).length > 0 ? result : null;
 }
@@ -1743,6 +1790,18 @@ export function getDerivedTypeFluxProfile(derivedType) {
   return {
     ...builtin,
     ...(override.fluxDefinition !== undefined ? { fluxDefinition: override.fluxDefinition } : {}),
+  };
+}
+
+/** 精方精力周期的设定：衍生类型（含使用者覆写）；没有衍生类型或未收录回预设平滑 ±10% */
+export function getDerivedTypeSireCycleProfile(derivedType) {
+  const baseName = getBaseDerivedTypeName(derivedType);
+  const builtin = (baseName && DERIVED_TYPE_SIRE_CYCLE_PROFILES[baseName]) || DEFAULT_SIRE_CYCLE_PROFILE;
+  const override = (baseName && customDerivedTypeProfiles[baseName]) || {};
+  return {
+    sireCycleAmplitude: override.sireCycleAmplitude ?? builtin.sireCycleAmplitude,
+    sireCyclePeakDays: override.sireCyclePeakDays ?? builtin.sireCyclePeakDays,
+    sireCyclePrompt: override.sireCyclePrompt ?? builtin.sireCyclePrompt,
   };
 }
 

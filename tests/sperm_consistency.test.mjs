@@ -255,7 +255,8 @@ test('原生自然流失保持拆分总量与各自id/time/blocked，零量不�
 test('同父不同品质快照独立自然衰减，后来改精方不会重写旧品质', () => {
   Math.random = () => 0.99;
   const chat = setup([source(20, { id: 1, quality: 1, minutesPassed: 0 })], { eggs: 0 });
-  chat.sires.A = normalizeSireRecord({ race: '人类', spermQuality: 4 });
+  // 品质锁在档案值（1.2.4 起精方周期会让当下品质起伏），这里只测快照独立
+  chat.sires.A = normalizeSireRecord({ race: '人类', spermQuality: 4, alwaysPeak: true });
   profile(chat).base.nextSpermContactId = 1;
   deposit(chat);
   call(chat, 'bsPassedTime', { day: 1 });
@@ -270,7 +271,8 @@ test('旧未知余量在新沉积前冻结，但不补造编号时间或事后�
   const chat = setup([]);
   profile(chat).base.sperms = [source(20, { quality: 0.25, race: '精灵' })];
   delete profile(chat).base.spermContacts;
-  chat.sires.A = normalizeSireRecord({ race: '人类', spermQuality: 4 });
+  // 品质锁在档案值（1.2.4 起精方周期会让当下品质起伏），这里只测快照独立
+  chat.sires.A = normalizeSireRecord({ race: '人类', spermQuality: 4, alwaysPeak: true });
   deposit(chat);
   const contacts = profile(chat).base.spermContacts;
   assert.equal(contacts.length, 2);

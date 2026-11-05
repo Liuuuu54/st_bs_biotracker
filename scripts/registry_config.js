@@ -21,9 +21,15 @@ export const DEFAULT_REGISTRY_DESCRIPTION_GUIDES = Object.freeze({
   // 精方（1.2.0）只点名带 * 的字段
   sireDescription: `
   外貌|稳定的外貌与身分：体格、发色、疤痕、龙角或尾巴等人外特征；剧情揭晓真名或真实身分时更新
-  性器|阴茎（或种族的等效器官）的大小、形状与特征
+  性器|阴茎（或种族的等效器官）的形状、颜色与特征（龟头、青筋、种族特有的结或倒刺等）与勃起状态；大小与档案的剑（sword：偏大、硕大、偏小、短小，没写为与体型相称）一致，写相对体格的观感，不写尺寸数字
   *行动|正在执行的动作与身体姿势，以及当下的情绪`,
 });
+
+// 1.2.4 以前的精方预设（性器栏还要模型自己定大小）：没改过就换成新预设
+export const LEGACY_SIRE_DESCRIPTION_GUIDE = `
+  外貌|稳定的外貌与身分：体格、发色、疤痕、龙角或尾巴等人外特征；剧情揭晓真名或真实身分时更新
+  性器|阴茎（或种族的等效器官）的大小、形状与特征
+  *行动|正在执行的动作与身体姿势，以及当下的情绪`;
 
 // 1.2.0 以前的卵方预设（状态、表情、行动没有 *）：设定里存的还是这份就换成新预设，改过的不动
 export const LEGACY_NORMAL_DESCRIPTION_GUIDE = DEFAULT_REGISTRY_DESCRIPTION_GUIDES.normalDescription

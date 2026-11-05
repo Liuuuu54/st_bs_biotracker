@@ -24,6 +24,7 @@ import { describeEditGateUrlProblem, EDIT_GATE_TOPIC_LABELS, isEditGateConfigure
 import {
   DERIVED_TYPE_FLUX_PROFILES,
   DERIVED_TYPE_INHERITANCE_PROFILES,
+  DERIVED_TYPE_SIRE_CYCLE_PROFILES,
   DERIVED_TYPE_RACES,
   DERIVED_TYPE_INTRODUCTION_LINES,
   EMBRYO_TYPES,
@@ -47,6 +48,7 @@ import {
   formatBloodlineLabel,
   getDerivedTypeFluxProfile,
   getDerivedTypeInheritanceProfile,
+  getDerivedTypeSireCycleProfile,
   getDerivedTypeIntroductionLine,
   getDerivedTypeMetabolismExemptions,
   getDerivedTypeOverride,
@@ -71,7 +73,7 @@ import {
   sanitizeRacePhysiologyProfilePatch,
   validateCustomRaceName,
 } from './scripts/race_config.js';
-import { clampIndividualBodySize, getAltFormBodySize, getUterusVolumeFactor, resolveBodySize } from './scripts/body_size.js';
+import { clampIndividualBodySize, describeSheathOffset, describeSwordOffset, getAltFormBodySize, getSheathSize, getSwordSize, getUterusVolumeFactor, normalizeSheathOffset, normalizeSwordOffset, resolveBodySize } from './scripts/body_size.js';
 import { normalizeDescriptionList } from './scripts/descriptions.js';
 import { hasPendingHostSave, installSaveSync, settleHostSettingsSave } from './scripts/save_sync.js';
 import { initializeCalculatorUi } from './scripts/calculator_ui.js'; import { lifeStageIconSvg, raceIconSvg } from './scripts/race_icons.js';
@@ -105,7 +107,7 @@ import {
 } from './scripts/tools.js';
 import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
 import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
-import { deleteSireRecord, describeSpermQuality, formatSireRaceDescriptor, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
+import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
@@ -1385,7 +1387,11 @@ function loadSireIntoForm(ctx, name, prefill = null) {
   const source = record || prefill;
   setInputValue('bs-bt-register-name', String(name || ''));
   setInputValue('bs-bt-register-race', source ? formatSireRaceDescriptor(source) : '人类');
-  setInputValue('bs-bt-sire-quality', record && record.spermQuality !== 1 ? String(record.spermQuality) : '');
+  // 已有档案且不是预设值（品质 1、剑偏移 0）时把档案值放上拉杆；其余交给模型
+  setOverrideSlider('bs-bt-sire-quality', record && record.spermQuality !== 1 ? record.spermQuality : null);
+  setOverrideSlider('bs-bt-sire-sword', record && record.swordOffset ? record.swordOffset : null);
+  const alwaysPeak = document.getElementById('bs-bt-sire-always-peak');
+  if (alwaysPeak) alwaysPeak.checked = record?.alwaysPeak === true;
   const select = document.getElementById('bs-bt-sire-select');
   if (select) select.value = selectedSireName;
   closeRacePalettePopover();
@@ -1409,9 +1415,72 @@ function syncSireFutaLock(ctx) {
   if (notes) notes.disabled = isFuta;
 }
 
-function readOptionalNumber(id) {
-  const raw = String(document.getElementById(id)?.value ?? '').trim();
-  return raw === '' ? null : Number(raw);
+/**
+ * 注册页的「手动指定」拉杆：不勾就交给模型（回传 null）。scale=log2 的拉杆值是以 2 为底的指数（精子品质 0.25–4），
+ * offset 的拉杆值就是偏移本身。
+ */
+function overrideSliderParts(id) {
+  const node = document.getElementById(id);
+  if (!node) return null;
+  return { node, manual: node.querySelector('[data-role="manual"]'), range: node.querySelector('[data-role="range"]'), output: node.querySelector('[data-role="value"]') };
+}
+
+function overrideSliderValue(node, raw) {
+  return node.dataset.scale === 'log2' ? Math.round(2 ** Number(raw) * 100) / 100 : Number(raw);
+}
+
+function syncOverrideSlider(id) {
+  const parts = overrideSliderParts(id);
+  if (!parts?.manual || !parts.range) return;
+  parts.range.disabled = !parts.manual.checked;
+  if (!parts.output) return;
+  if (!parts.manual.checked) {
+    parts.output.textContent = '交给模型';
+    return;
+  }
+  // 从档案带出来、使用者还没拉过的值照原样显示（对数刻度对不准 3 这类值）
+  const exact = parts.node.dataset.exact;
+  const value = exact !== undefined && exact !== '' ? Number(exact) : overrideSliderValue(parts.node, parts.range.value);
+  // 数字之外附上文字分级，和追踪页、提示词的说法一致
+  const word = id === 'bs-bt-sire-quality' ? getSpermQualityTier(value)
+    : id === 'bs-bt-sire-sword' ? describeSwordOffset(value, { short: true })
+      : id === 'bs-bt-register-sheath' ? describeSheathOffset(value) : '';
+  const number = parts.node.dataset.scale === 'log2' ? `×${value}` : `${value > 0 ? '+' : ''}${value}`;
+  parts.output.textContent = word ? `${word}（${number}）` : number;
+}
+
+function readOverrideSlider(id) {
+  const parts = overrideSliderParts(id);
+  if (!parts?.manual?.checked || !parts.range) return null;
+  const exact = parts.node.dataset.exact;
+  if (exact !== undefined && exact !== '') return Number(exact);
+  return overrideSliderValue(parts.node, parts.range.value);
+}
+
+/** value 为 null 时回到「交给模型」，拉杆停在中间 */
+function setOverrideSlider(id, value) {
+  const parts = overrideSliderParts(id);
+  if (!parts?.manual || !parts.range) return;
+  const manual = value !== null && value !== undefined && Number.isFinite(Number(value));
+  parts.manual.checked = manual;
+  parts.range.value = String(!manual ? 0 : parts.node.dataset.scale === 'log2' ? Math.log2(Number(value)) : Number(value));
+  // 记下档案的原值：拉杆刻度对不准时，没拉过就照原值存回去，不会把 3 改成 2.83
+  parts.node.dataset.exact = manual ? String(Number(value)) : '';
+  syncOverrideSlider(id);
+}
+
+function bindOverrideSliders() {
+  document.querySelectorAll('[data-override-slider]').forEach((node) => {
+    if (node.dataset.ready === 'true' || !node.id) return;
+    node.dataset.ready = 'true';
+    const sync = () => syncOverrideSlider(node.id);
+    node.querySelector('[data-role="manual"]')?.addEventListener('change', sync);
+    node.querySelector('[data-role="range"]')?.addEventListener('input', () => {
+      node.dataset.exact = '';
+      sync();
+    });
+    sync();
+  });
 }
 
 function finishSireRegistration(ctx, chatState, name, result) {
@@ -1445,10 +1514,17 @@ async function registerSireFromForm(ctx) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const race = String(document.getElementById('bs-bt-register-race')?.value || '').trim() || '人类';
-  const typedQuality = readOptionalNumber('bs-bt-sire-quality');
+  const typedQuality = readOverrideSlider('bs-bt-sire-quality');
+  const typedSword = readOverrideSlider('bs-bt-sire-sword');
+  // 作弊开关只看使用者勾选，不交给模型
+  const alwaysPeak = document.getElementById('bs-bt-sire-always-peak')?.checked === true;
   const previous = getSireRecord(chatState, name);
   if (Object.prototype.hasOwnProperty.call(chatState.characters || {}, name)) {
-    const result = upsertSireRecord(chatState, name, { spermQuality: typedQuality ?? previous?.spermQuality ?? 1 });
+    const result = upsertSireRecord(chatState, name, {
+      spermQuality: typedQuality ?? previous?.spermQuality ?? 1,
+      swordOffset: typedSword ?? previous?.swordOffset ?? 0,
+      alwaysPeak,
+    });
     if (!result.applied) return setSireStatus(result.message, true);
     finishSireRegistration(ctx, chatState, name, result);
     return;
@@ -1469,6 +1545,8 @@ async function registerSireFromForm(ctx) {
       age: extracted.age ?? current?.age ?? prefill?.age ?? null,
       bodySize: extracted.bodySize ?? current?.bodySize ?? prefill?.bodySize ?? null,
       spermQuality: typedQuality ?? extracted.spermQuality ?? current?.spermQuality ?? 1,
+      swordOffset: typedSword ?? extracted.swordOffset ?? current?.swordOffset ?? 0,
+      alwaysPeak,
       isHere: extracted.isHere,
       // 天赋：技能系统关着时模型不判断（null），保留原本的
       ...(extracted.talents !== null ? { talents: extracted.talents } : {}),
@@ -1607,6 +1685,8 @@ const REPRODUCTIVE_EDITOR_FIELDS = Object.freeze([
   ['intimacyHalfLifeDays', '契合度半衰期（天）', false],
   ['intimacyBaseline', '契合度基准值（还不熟悉的身体，越大越难熟）', false],
   ['intimacyDedupeHours', '同一场插入的去重间隔（小时）', false],
+  ['sireReserveHalfLifeHours', '精方存量回复半衰期（小时，人类；再乘物种经期倍率）', false],
+  ['sireReserveDrain', '每次射精耗掉的存量（0～1）', true],
 ]);
 
 function renderReproductiveControls(settings) {
@@ -1629,6 +1709,7 @@ function getRegisterFormValues(ctx = getContextSafe()) {
     specialFetus: getSpecialFetusRequest(),
     useGestationModifier: Boolean(document.getElementById('bs-bt-register-gestation-modifier')?.checked),
     gestationModifierMultiplier: Number(document.getElementById('bs-bt-register-gestation-multiplier')?.value ?? 1),
+    sheathOffset: readOverrideSlider('bs-bt-register-sheath'),
     breedingInferencePrompt: String(document.getElementById('bs-bt-breeding-inference-prompt')?.value || '').trim(),
     skillPrompt: String(document.getElementById('bs-bt-register-skill-prompt')?.value || '').trim(),
     sourceChildKey,
@@ -2557,6 +2638,45 @@ function formatCharacterBodySizeLabel(base = {}) {
   return `${own ? '' : '约 '}${formatBodySizeLevel(resolved.size)}`;
 }
 
+function formatSignedOffset(value) {
+  const rounded = Math.round(Number(value) * 100) / 100;
+  return rounded > 0 ? `+${rounded}` : `${rounded}`;
+}
+
+function formatLevelShort(value) {
+  return `${Math.round(value * 10) / 10} 级`;
+}
+
+/**
+ * 鞘（有效）：种族平均 ＋ 0.25 ×（个体 − 平均）＋ 鞘偏移 ＋ 经产扩张。
+ * 回传 { value, title }，value 只写级数，和体型并在同一行；可变或未知回 null
+ */
+function formatSheathLabel(base = {}, experience = {}) {
+  const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
+  if (resolved.kind !== 'fixed') return null;
+  const offset = normalizeSheathOffset(base.sheathOffset);
+  const stretch = getSheathStretch(experience);
+  const notes = [
+    ...(offset !== 0 ? [`个人偏移 ${formatSignedOffset(offset)}`] : []),
+    ...(stretch > 0 ? [`经产扩张 +${Math.round(stretch * 1000) / 1000}`] : []),
+  ];
+  return {
+    value: describeSheathOffset(offset, stretch),
+    title: `鞘（实际舒适的深度）与同体型的人相比；鞘与身高只有弱相关。计算值 ${formatLevelShort(getSheathSize(resolved, { offset, stretch }))} ＝ 种族平均 ＋ 0.25 ×（个体 − 平均）＋ 个人偏移 ＋ 经产扩张${notes.length > 0 ? `；本人：${notes.join('，')}` : ''}`,
+  };
+}
+
+/** 剑：精方体型 ＋ 剑偏移。回传 { value, title }；可变或未知回 null */
+function formatSwordLabel(base = {}, swordOffset = 0) {
+  const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
+  if (resolved.kind !== 'fixed') return null;
+  const offset = normalizeSwordOffset(swordOffset);
+  return {
+    value: describeSwordOffset(offset, { short: true }),
+    title: `剑与同体型的人相比。计算值 ${formatLevelShort(getSwordSize(resolved, offset))} ＝ 体型 ＋ 剑偏移${offset !== 0 ? `（${formatSignedOffset(offset)}）` : ''}；体型契合以剑对鞘计算`,
+  };
+}
+
 /** 变化态体型另起一行；个体体型偏离种族平均多少，变化态跟着偏移。没有变化态回空字串 */
 function formatAltFormBodySizeLabel(base = {}) {
   const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
@@ -2924,11 +3044,15 @@ function renderDerivedTypeEditor(derivedType) {
   const flux = { ...builtinFlux, ...override };
   const introductionLine = override.introductionLine || DERIVED_TYPE_INTRODUCTION_LINES[derivedType] || '';
   const inheritance = { ...builtinInheritance, ...override };
+  const cycle = { ...(DERIVED_TYPE_SIRE_CYCLE_PROFILES[derivedType] || {}), ...override };
   editor.innerHTML =
     '<label class="bs-bt-race-editor-field bs-bt-race-editor-field-wide"><span>衍生短敘述</span><textarea id="bs-bt-derived-introduction-line" class="text_pole bs-bt-race-introduction-input">' + escapeHtml(introductionLine) + '</textarea></label>' +
     '<label class="bs-bt-race-editor-field bs-bt-race-editor-field-wide"><span>Flux 描述</span><textarea id="bs-bt-derived-flux-definition" class="text_pole bs-bt-race-introduction-input">' + escapeHtml(flux.fluxDefinition || '') + '</textarea></label>' +
-    '<label class="bs-bt-race-editor-field"><span>遗传速度</span><input id="bs-bt-derived-inheritance-speed" class="text_pole" type="number" min="0" step="0.01" value="' + escapeHtml(inheritance.inheritanceSpeed) + '" /></label>';
-  const fields = ['introductionLine', 'fluxDefinition', 'inheritanceSpeed'];
+    '<label class="bs-bt-race-editor-field"><span>遗传速度</span><input id="bs-bt-derived-inheritance-speed" class="text_pole" type="number" min="0" step="0.01" value="' + escapeHtml(inheritance.inheritanceSpeed) + '" /></label>' +
+    '<label class="bs-bt-race-editor-field" title="精方精力周期：波峰品质 ×(1＋幅度)。0＝没有周期、品质恒定；预设 0.1（±10% 的平滑起伏）"><span>精力周期幅度</span><input id="bs-bt-derived-sire-cycle-amplitude" class="text_pole" type="number" min="0" max="3" step="0.05" value="' + escapeHtml(cycle.sireCycleAmplitude ?? 0.1) + '" /></label>' +
+    '<label class="bs-bt-race-editor-field" title="0＝平滑起伏；填几天就是平时持平、每轮（约 74 天 × 经期倍率）只有这几天冲高，例如易感期、发情期"><span>精力周期峰期（天）</span><input id="bs-bt-derived-sire-cycle-peak" class="text_pole" type="number" min="0" max="60" step="1" value="' + escapeHtml(cycle.sireCyclePeakDays ?? 0) + '" /></label>' +
+    '<label class="bs-bt-race-editor-field bs-bt-race-editor-field-wide" title="精方冲到高峰时，摘要行写给模型的状态。留空就写通用的「正值精力高峰，精液浓稠量多」"><span>精力周期短叙述</span><textarea id="bs-bt-derived-sire-cycle-prompt" class="text_pole bs-bt-race-introduction-input" placeholder="例：正值易感期：信息素浓烈失控……">' + escapeHtml(cycle.sireCyclePrompt || '') + '</textarea></label>';
+  const fields = ['introductionLine', 'fluxDefinition', 'inheritanceSpeed', 'sireCycleAmplitude', 'sireCyclePeakDays', 'sireCyclePrompt'];
   editor.querySelectorAll('label').forEach((label, index) => {
     const badge = document.createElement('span');
     badge.className = 'bs-bt-race-editor-badge';
@@ -2949,6 +3073,15 @@ function collectDerivedTypeEditorOverride(derivedType) {
   if (introductionLine && introductionLine !== (globalOverride.introductionLine || DERIVED_TYPE_INTRODUCTION_LINES[derivedType] || '')) result.introductionLine = introductionLine;
   if (fluxDefinition && fluxDefinition !== (globalOverride.fluxDefinition || builtinFlux.fluxDefinition)) result.fluxDefinition = fluxDefinition;
   if (Number.isFinite(speed) && speed >= 0 && Math.abs(speed - (globalOverride.inheritanceSpeed ?? builtinInheritance.inheritanceSpeed)) > 0.0001) result.inheritanceSpeed = speed;
+  // 精力周期：与（全域覆写或内建）不同才存；短叙述可以清空，代表这个衍生不写高峰叙述
+  const builtinCycle = DERIVED_TYPE_SIRE_CYCLE_PROFILES[derivedType] || {};
+  const baseCycle = { ...builtinCycle, ...globalOverride };
+  const amplitude = Number(document.getElementById('bs-bt-derived-sire-cycle-amplitude')?.value);
+  const peakDays = Number(document.getElementById('bs-bt-derived-sire-cycle-peak')?.value);
+  const cyclePrompt = String(document.getElementById('bs-bt-derived-sire-cycle-prompt')?.value ?? '').trim();
+  if (Number.isFinite(amplitude) && amplitude >= 0 && Math.abs(amplitude - (baseCycle.sireCycleAmplitude ?? 0.1)) > 0.0001) result.sireCycleAmplitude = amplitude;
+  if (Number.isFinite(peakDays) && peakDays >= 0 && Math.abs(peakDays - (baseCycle.sireCyclePeakDays ?? 0)) > 0.0001) result.sireCyclePeakDays = peakDays;
+  if (cyclePrompt !== String(baseCycle.sireCyclePrompt || '').trim()) result.sireCyclePrompt = cyclePrompt;
   return result;
 }
 
@@ -3145,12 +3278,19 @@ function renderRaceEncyclopediaPage(ctx = null) {
   const fluxDefinition = String(fluxProfile?.fluxDefinition || '').trim();
   const exemptions = getDerivedTypeMetabolismExemptions(selectedDerivedEncyclopedia);
   const inheritanceSpeed = Number(getDerivedTypeInheritanceProfile(selectedDerivedEncyclopedia)?.inheritanceSpeed);
+  const sireCycle = getDerivedTypeSireCycleProfile(selectedDerivedEncyclopedia);
+  const sireCycleLine = !(sireCycle.sireCycleAmplitude > 0)
+    ? '无（品质恒定）'
+    : sireCycle.sireCyclePeakDays > 0
+      ? `每轮约 ${sireCycle.sireCyclePeakDays} 天冲高，最高 ×${(1 + sireCycle.sireCycleAmplitude).toFixed(2)}`
+      : `平滑起伏 ±${Math.round(sireCycle.sireCycleAmplitude * 100)}%`;
   derivedOutputNode.textContent = [
     `【${selectedDerivedEncyclopedia}】`,
     ...(introductionLine ? [introductionLine] : []),
     `- Flux: ${fluxName}`,
     `- 代谢抵免: ${exemptions.length > 0 ? exemptions.join(' / ') : '无'}`,
     `- 遗传速度: ${Number.isFinite(inheritanceSpeed) ? inheritanceSpeed : '未知'}x`,
+    `- 精方精力周期: ${sireCycleLine}${sireCycle.sireCyclePrompt ? `；高峰时：${sireCycle.sireCyclePrompt}` : ''}`,
     fluxDefinition || '- 暂无额外说明。',
   ].join('\n\n');
 }
@@ -4359,6 +4499,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       age: Number.isFinite(Number(base.age)) ? Math.round(Number(base.age)) : null,
       bodySizeLabel: formatCharacterBodySizeLabel(base),
       altFormBodySizeLabel: formatAltFormBodySizeLabel(base),
+      sheathLabel: formatSheathLabel(base, profile.experience || {}),
       stage,
       stageProgress: getStageProgress(profile),
       stats: [
@@ -4670,7 +4811,9 @@ function renderTrackOverview(viewModel) {
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">种族</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.raceLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">血脉</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bloodlineLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">年龄</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.age ?? '未知')}</span></div>
-        <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodySizeLabel)}</span></div>
+        ${viewModel.overview.sheathLabel
+    ? `<div class="bs-bt-track-meta-row" title="${escapeHtml(viewModel.overview.sheathLabel.title)}"><span class="bs-bt-track-meta-label">体型／鞘</span><span class="bs-bt-track-meta-value">${escapeHtml(`${viewModel.overview.bodySizeLabel}·鞘${viewModel.overview.sheathLabel.value}`)}</span></div>`
+    : `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodySizeLabel)}</span></div>`}
         ${viewModel.overview.altFormBodySizeLabel ? `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">变化态体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.altFormBodySizeLabel)}</span></div>` : ''}
       </div>
     </div>
@@ -7258,6 +7401,7 @@ function renderTrackSirePage(chatState) {
   const minutesPassed = Number(chatState.minutesPassed) || 0;
   const descriptions = isFuta ? [] : parseDescriptionBlocks(record.descriptions?.normalDescription, minutesPassed);
   const lineage = collectSireLineage(chatState, name);
+  const sword = formatSwordLabel(base || {}, record.swordOffset);
   const metaRow = (label, value, title = '') => `<div class="bs-bt-track-meta-row"${title ? ` title="${escapeHtml(title)}"` : ''}><span class="bs-bt-track-meta-label">${escapeHtml(label)}</span><span class="bs-bt-track-meta-value">${escapeHtml(String(value))}</span></div>`;
   const section = (title, rows) => `<div class="bs-bt-track-section"><div class="bs-bt-track-section-title">${escapeHtml(title)}</div><div class="bs-bt-track-meta">${rows}</div></div>`;
   content.innerHTML = [
@@ -7267,9 +7411,11 @@ function renderTrackSirePage(chatState) {
       metaRow('种族', formatRaceLabel(base?.race, base?.derivedType)),
       metaRow('血脉', formatBloodlineLabel(base?.race, base?.bloodline, base?.bloodlineSource) || '未知'),
       metaRow('年龄', base?.age ? `${Math.round(Number(base.age))} 岁` : '未记录'),
-      metaRow('体型', formatCharacterBodySizeLabel(base || {})),
+      ...(sword
+        ? [metaRow('体型／剑', `${formatCharacterBodySizeLabel(base || {})}·剑${sword.value}`, sword.title)]
+        : [metaRow('体型', formatCharacterBodySizeLabel(base || {}))]),
       ...(formatAltFormBodySizeLabel(base || {}) ? [metaRow('变化态体型', formatAltFormBodySizeLabel(base || {}))] : []),
-      metaRow('精子品质', `${record.spermQuality}${describeSpermQuality(record.spermQuality) ? `（${describeSpermQuality(record.spermQuality)}）` : '（一般）'}`),
+      ...renderSireQualityRows(chatState, name, record, metaRow),
       // 天赋：会有 25% 先天遗传给孩子；扶她读卵方
       metaRow('天赋', (isFuta ? normalizeTalentList(chatState.characters[name]?.profile?.talents) : (record.talents || []))
         .filter((talent) => talent.level !== 0)
@@ -7277,6 +7423,7 @@ function renderTrackSirePage(chatState) {
         .join('、') || '无'),
       ...(isFuta ? [metaRow('卵方', '同名卵方已注册（扶她），资料与描述读卵方')] : []),
     ].join('')),
+    renderSireCycleSections(chatState, name),
     isFuta
       ? section('基本描述', metaRow('描述', '同名卵方已注册（扶她），见卵方的描述页'))
       : renderDescriptionGroup('基本描述', descriptions),
@@ -7298,6 +7445,115 @@ function renderTrackSirePage(chatState) {
       <button type="button" class="menu_button" data-sire-full-state="${escapeHtml(name)}">变量</button>
     </div>`,
   ].join('');
+}
+
+/** 精方概览里的精子品质一行：档案值 → 当下值，滑鼠提示看分项 */
+function renderSireQualityRows(chatState, name, record, metaRow) {
+  const state = getSireQualityState(chatState, name);
+  const tier = getSpermQualityTier(record.spermQuality);
+  if (!state) return [metaRow('精子品质', tier, `档案值 ${record.spermQuality}`)];
+  if (state.alwaysPeak) return [metaRow('精子品质', `${tier}（作弊锁定）`, `作弊开启：当下恒等于档案值 ${record.spermQuality}，不受繁殖季、精力周期、存量与禁欲影响；要改品质到变量页`)];
+  const parts = [
+    `档案 ${state.quality}`,
+    `季节 ×${state.season.toFixed(2)}`,
+    `精力周期 ×${state.cycle.toFixed(2)}`,
+    `存量 ×${state.freshness.toFixed(2)}`,
+    ...(state.abstinence < 1 ? [`禁欲 ×${state.abstinence.toFixed(2)}`] : []),
+  ];
+  // 显示分级文字，数字放滑鼠提示；当下与档案同级就只写一次
+  const now = getSpermQualityTier(state.effective);
+  const condition = describeSireCondition(state);
+  const detail = describeSpermQuality(state.effective);
+  return [
+    metaRow('精子品质', now === tier ? tier : `${tier}，当下${now}`,
+      [`当下 ${state.effective.toFixed(2)} ＝ ${parts.join(' × ')}`, detail, condition].filter(Boolean).join('；')),
+  ];
+}
+
+/**
+ * 精方单页的「周期」与「状态值」，与卵方的「阶段」「状态值」同一个样子：
+ * 繁殖季（有乏情的物种）与精力周期各一条进度条，标题右侧标出现在是不是繁殖季；存量一条。
+ */
+function renderSireCycleSections(chatState, name) {
+  const state = getSireQualityState(chatState, name);
+  if (!state) return '';
+  if (state.alwaysPeak) {
+    return `
+    <div class="bs-bt-track-section bs-bt-track-stage-progress">
+      <div class="bs-bt-track-section-title bs-bt-track-section-title--split"><span class="bs-bt-track-title-left">${renderTrackTitle('周期与存量')}</span><span class="bs-bt-track-title-badge">作弊·品质锁定</span></div>
+      <div class="bs-bt-track-description-empty">精子品质恒等于档案值，不受繁殖季、精力周期、存量与禁欲影响。到注册页的精方分页取消勾选即可关闭。</div>
+    </div>`;
+  }
+  const badge = state.inSeason === null ? '全年可育' : state.inSeason ? '繁殖季' : '非繁殖季';
+  const pct = (value) => `${Math.max(0, Math.min(100, value * 100)).toFixed(2)}%`;
+  const gauge = (label, note, body, title = '') => `<div class="bs-bt-sire-gauge"${title ? ` title="${escapeHtml(title)}"` : ''}>
+      <div class="bs-bt-sire-gauge-head"><span class="bs-bt-sire-gauge-label">${escapeHtml(label)}</span><span class="bs-bt-sire-gauge-note">${escapeHtml(note)}</span></div>
+      ${body}
+    </div>`;
+  const gauges = [];
+
+  // 繁殖季：整季一条时间轴，实心段是繁殖季、淡的是乏情，竖线是现在
+  if (state.seasonTotal) {
+    const left = Math.max(1, Math.ceil(state.seasonDaysLeft));
+    gauges.push(gauge(
+      state.inSeason ? '繁殖季' : '非繁殖季',
+      state.inSeason ? `约 ${left} 天后结束` : `约 ${left} 天后回季`,
+      `<div class="bs-bt-sire-track">
+        <div class="bs-bt-sire-track-active" style="width:${pct(state.seasonActive / state.seasonTotal)};"></div>
+        <div class="bs-bt-sire-marker" style="left:${pct(state.seasonDay / state.seasonTotal)};"></div>
+      </div>
+      <div class="bs-bt-sire-scale"><span>繁殖季 ${Math.round(state.seasonActive)} 天</span><span>乏情 ${Math.round(state.seasonTotal - state.seasonActive)} 天</span></div>`,
+      '非繁殖季精力较弱，品质 ×0.6；交界前后各 1.5 天渐变',
+    ));
+  } else if (state.inSeason !== null) {
+    gauges.push(gauge(state.inSeason ? '繁殖季' : '非繁殖季', '随卵方周期', ''));
+  }
+
+  // 精方周期：照世界基准的幅度与峰期画出这一轮的形状（平滑波或尖峰），点是现在
+  const cyclePos = state.cycleDay / state.cycleDays;
+  const samples = Array.from({ length: 121 }, (_, i) => getSpermCycleFactor(i / 120, state.cycleShape));
+  const low = Math.min(...samples);
+  const high = Math.max(...samples);
+  const toY = (factor) => (high - low < 1e-6 ? 12 : 21 - ((factor - low) / (high - low)) * 18);
+  const wave = samples.map((factor, i) => `${(i / 1.2).toFixed(2)},${toY(factor).toFixed(2)}`).join(' ');
+  const peakMode = state.cycleShape.peakDays > 0;
+  const trend = state.cycle >= 1.3 ? '高峰' : state.cycle >= 1.03 ? '偏高' : state.cycle <= 0.97 ? '偏低' : '平稳';
+  const amplitudePct = Math.round(state.cycleShape.amplitude * 100);
+  // 尖峰型（易感期这类）报倒数：还有几天进入高峰、高峰还剩几天
+  const peakStart = (state.cycleDays - state.cycleShape.peakDays) / 2;
+  const peakEnd = peakStart + state.cycleShape.peakDays;
+  const peakNote = state.cycleDay >= peakStart && state.cycleDay < peakEnd
+    ? `高峰中·约 ${Math.max(1, Math.ceil(peakEnd - state.cycleDay))} 天后退`
+    : `约 ${Math.max(1, Math.ceil(((peakStart - state.cycleDay) % state.cycleDays + state.cycleDays) % state.cycleDays))} 天后高峰`;
+  gauges.push(gauge(
+    '精力周期',
+    peakMode ? peakNote : amplitudePct > 0 ? `${trend}·第 ${Math.floor(state.cycleDay) + 1}／${Math.round(state.cycleDays)} 天` : '无精力周期·恒定',
+    `<div class="bs-bt-sire-wave">
+        <svg viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><polyline points="${wave}" /></svg>
+        <div class="bs-bt-sire-wave-dot" style="left:${pct(cyclePos)};top:${(toY(state.cycle) / 24 * 100).toFixed(1)}%;"></div>
+      </div>`,
+    peakMode
+      ? `约 74 天 × 经期倍率一轮；平时持平，中间约 ${state.cycleShape.peakDays} 天冲高，最高品质 ×${(1 + state.cycleShape.amplitude).toFixed(2)}（看衍生类型，百科可调）`
+      : amplitudePct > 0
+        ? `约 74 天 × 经期倍率一轮，品质随之起伏约 ±${amplitudePct}%（看衍生类型，百科可调）`
+        : '这个衍生类型没有精力周期，品质恒定（百科可调）',
+  ));
+
+  // 存量：十格，射过之后精液变稀，标出品质掉了多少
+  const thinning = Math.round((1 - state.freshness) * 100);
+  const cells = Math.round(state.reserve * 10);
+  gauges.push(gauge(
+    '存量',
+    thinning < 3 ? '饱满' : `${state.reserve < 0.5 ? '稀薄' : '渐稀'}·品质 −${thinning}%`,
+    `<div class="bs-bt-sire-cells">${Array.from({ length: 10 }, (_, i) => `<span${i < cells ? ' class="is-on"' : ''}></span>`).join('')}</div>`,
+    `每次射精扣掉一部分、按半衰期回复；存量越低精液越稀，品质最多掉一半。${state.restDays >= 1 ? `上次射精约 ${Math.floor(state.restDays)} 天前。` : ''}`,
+  ));
+
+  return `
+    <div class="bs-bt-track-section bs-bt-sire-cycle">
+      <div class="bs-bt-track-section-title bs-bt-track-section-title--split"><span class="bs-bt-track-title-left">${renderTrackTitle('周期与存量')}</span><span class="bs-bt-track-title-badge">${escapeHtml(badge)}</span></div>
+      <div class="bs-bt-sire-gauges">${gauges.join('')}</div>
+    </div>`;
 }
 
 function renderStatusPanel(ctx) {
@@ -10453,6 +10709,7 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-register-outfit-write')?.addEventListener('click', () => writeRegistryOutfit(ctx));
   document.getElementById('bs-bt-register-source')?.addEventListener('change', () => syncRegisterChildSourceFields(ctx));
   setupRegisterGestationSlider();
+  bindOverrideSliders();
   // 改角色名后，上一个角色的推演结果就不再适用；留着会被误认为是这个角色的结果。
   // 以「编辑器内容属于谁」为准而不是 draft 是否存在——使用者看到的是编辑器内容。
   document.getElementById('bs-bt-register-name')?.addEventListener('input', () => {
@@ -10581,7 +10838,7 @@ async function ensureModal(ctx) {
       globalThis.toastr?.info?.('[BS BioTracker] 注册请求正在进行中，请等待完成');
       return;
     }
-    const { targetName, declaredRace, customNotes, initialCognitionRecords, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier } = getRegisterFormValues();
+    const { targetName, declaredRace, customNotes, initialCognitionRecords, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier, sheathOffset } = getRegisterFormValues();
     if (specialFetus?.error) {
       setRegisterStatus(specialFetus.error, true);
       globalThis.toastr?.warning?.(specialFetus.error, '[BS BioTracker]');
@@ -10617,7 +10874,7 @@ async function ensureModal(ctx) {
     const bundleReport = {};
     try {
       const character = await runRegistry(ctx, {
-        targetName, customNotes, initialCognitionRecords, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier,
+        targetName, customNotes, initialCognitionRecords, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier, sheathOffset,
         ...(useGestationModifier ? { gestationModifierMultiplier } : {}),
         ...(bundleOptions ? { bundle: bundleOptions, bundleReport } : {}),
       });

@@ -179,11 +179,73 @@ function formatLevel(value) {
   return `${Math.round(value * 10) / 10} 级`;
 }
 
+/** 剑的偏移：−2～+2，步长 0.5；剑 ＝ 精方体型 ＋ 偏移，体型缩放（变化态、抽样）时跟着缩放 */
+export const SWORD_OFFSET_MIN = -2;
+export const SWORD_OFFSET_MAX = 2;
+/** 鞘的偏移：−1～+1，步长 0.25；代表实际舒适的深度（子宫后倾、子宫颈偏低等都写成负的） */
+export const SHEATH_OFFSET_MIN = -1;
+export const SHEATH_OFFSET_MAX = 1;
+/** 个体身高对鞘长的影响：鞘与身高只有弱相关，高个子比矮个子浅是常见的 */
+export const SHEATH_BODY_SIZE_WEIGHT = 0.25;
+
+function normalizeOffset(value, min, max, step) {
+  const num = Number(value);
+  if (value === null || value === undefined || value === '' || typeof value === 'boolean' || !Number.isFinite(num)) return 0;
+  return Math.max(min, Math.min(max, Math.round(num / step) * step)) || 0;
+}
+
+export function normalizeSwordOffset(value) {
+  return normalizeOffset(value, SWORD_OFFSET_MIN, SWORD_OFFSET_MAX, 0.5);
+}
+
+export function normalizeSheathOffset(value) {
+  return normalizeOffset(value, SHEATH_OFFSET_MIN, SHEATH_OFFSET_MAX, 0.25);
+}
+
+/** 剑偏移的文字分级（介面与提示词共用）：比同体型的人大或小；short 时 0 写「相称」 */
+export function describeSwordOffset(value, { short = false } = {}) {
+  const offset = normalizeSwordOffset(value);
+  if (offset >= 1.5) return '硕大';
+  if (offset >= 0.5) return '偏大';
+  if (offset <= -1.5) return '短小';
+  if (offset <= -0.5) return '偏小';
+  return short ? '相称' : '与体型相称';
+}
+
+/** 鞘偏移的文字分级：实际舒适的深度比同体型的人深或浅；经产扩张另写 */
+export function describeSheathOffset(value, stretch = 0) {
+  const offset = normalizeSheathOffset(value);
+  const depth = offset >= 0.75 ? '很深' : offset >= 0.25 ? '偏深' : offset <= -0.75 ? '很浅' : offset <= -0.25 ? '偏浅' : '适中';
+  const extra = Math.max(0, Number(stretch) || 0);
+  return extra > 0 ? `${depth}，经产后${extra >= 0.5 ? '明显' : '略'}松宽` : depth;
+}
+
+/** 剑：精方当下的体型（变化态取 formSize）＋ 偏移 */
+export function getSwordSize(male, offset = 0) {
+  if (male?.kind !== 'fixed') return null;
+  return (male.formSize ?? male.size) + normalizeSwordOffset(offset);
+}
+
 /**
- * 插入时的体型契合。female／male 是 resolveBodySize 的结果加上本次是否变化态。
+ * 鞘（有效）：种族平均 ＋ 0.25 ×（个体 − 种族平均）＋ 偏移 ＋ 经产扩张。
+ * 跨物种仍随体型缩放；变化态的平均与个体都换成变化态。依个体的种族没有平均，直接用个体值。
+ */
+export function getSheathSize(female, { offset = 0, stretch = 0 } = {}) {
+  if (female?.kind !== 'fixed') return null;
+  const size = female.formSize ?? female.size;
+  const merged = female.merged || {};
+  const mean = female.altForm
+    ? (typeof merged.altFormBodySize === 'number' ? merged.altFormBodySize : size)
+    : (typeof merged.bodySize === 'number' ? merged.bodySize : size);
+  return mean + SHEATH_BODY_SIZE_WEIGHT * (size - mean) + normalizeSheathOffset(offset) + Math.max(0, Number(stretch) || 0);
+}
+
+/**
+ * 插入时的尺寸契合（剑对鞘）。female／male 是 resolveBodySize 的结果加上本次是否变化态；
+ * femaleOffset 是鞘偏移、maleOffset 是剑偏移，femaleStretch 是经产扩张。
  * 回传 null 表示资料不足（依个体又没给体型），不写体型差。
  */
-export function describeBodySizeFit({ female, male, sizeBridge = false, femaleStretch = 0 } = {}) {
+export function describeBodySizeFit({ female, male, sizeBridge = false, femaleStretch = 0, femaleOffset = 0, maleOffset = 0 } = {}) {
   if (sizeBridge) return { label: '恰好契合', gap: 0, bridged: true, text: '体型契合：本次以魔法、变形等手段消弭体型差，恰好契合。' };
   if (female?.kind === 'variable' || male?.kind === 'variable') {
     return { label: '恰好契合', gap: 0, variable: true, text: '体型契合：可变体型配合对象，恰好契合。' };
@@ -191,12 +253,19 @@ export function describeBodySizeFit({ female, male, sizeBridge = false, femaleSt
   if (female?.kind !== 'fixed' || male?.kind !== 'fixed') return null;
   // 经产扩张只加在鞘那一侧（见 intimacy.js 的 getSheathStretch）
   const stretch = Math.max(0, Number(femaleStretch) || 0);
-  const femaleSize = (female.formSize ?? female.size) + stretch;
-  const maleSize = male.formSize ?? male.size;
+  const sheathOffset = normalizeSheathOffset(femaleOffset);
+  const swordOffset = normalizeSwordOffset(maleOffset);
+  const femaleSize = getSheathSize(female, { offset: sheathOffset, stretch });
+  const maleSize = getSwordSize(male, swordOffset);
   const diff = maleSize - femaleSize;
   const gap = Math.round(Math.abs(diff) * 10) / 10;
   const band = BODY_SIZE_FIT_BANDS.find((item) => gap < item.max);
-  const sizes = `卵方 ${formatLevel(femaleSize)}${female.altForm ? '（变化态）' : ''}${stretch > 0 ? `，含经产扩张 +${Math.round(stretch * 1000) / 1000}` : ''}，精方 ${formatLevel(maleSize)}${male.altForm ? '（变化态）' : ''}`;
+  // 给模型看的是文字：鞘偏浅、剑偏大，不写偏移数字
+  const femaleNotes = [
+    ...(sheathOffset !== 0 ? [`鞘${describeSheathOffset(sheathOffset)}`] : []),
+    ...(stretch > 0 ? [`含经产扩张 +${Math.round(stretch * 1000) / 1000}`] : []),
+  ];
+  const sizes = `卵方 ${formatLevel(femaleSize)}${female.altForm ? '（变化态）' : ''}${femaleNotes.length > 0 ? `，${femaleNotes.join('，')}` : ''}，精方 ${formatLevel(maleSize)}${male.altForm ? '（变化态）' : ''}${swordOffset !== 0 ? `，剑${describeSwordOffset(swordOffset)}` : ''}`;
   if (!band.maleLarger) return { label: band.label, gap, text: `体型契合：${band.label}（${sizes}）。` };
   const detail = diff > 0 ? `精方较大，${band.maleLarger}` : `卵方较大，${band.femaleLarger}`;
   return { label: band.label, gap, text: `体型契合：${band.label}，${detail}（${sizes}）。只影响叙述，不限制交合与受孕。` };

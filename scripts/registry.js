@@ -7,7 +7,8 @@ import { isRealisticWorld } from './world_mode.js';
 import { buildEmbryoTypeLorePrompt } from './embryo_prompt_context.js';
 import { buildRaceCatalogBlock, buildRegistryRacePhysiologyPrompt, buildWorldBaselineBlock } from './race_prompt_context.js';
 import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
-import { clampIndividualBodySize, getExpectedBodySize, sampleBodySize } from './body_size.js';
+import { clampIndividualBodySize, getExpectedBodySize, normalizeSheathOffset, normalizeSwordOffset, sampleBodySize } from './body_size.js';
+import { findSeasonReference } from './season_phase.js';
 import { descriptionListToObject, normalizeDescriptionList, stripDescriptionGuideStars } from './descriptions.js';
 import { getSireRecord, normalizeSpermQuality, pruneFutaSireRecord } from './sires.js';
 import {
@@ -75,7 +76,7 @@ import {
 } from './skill_config.js';
 import { resolveWardrobeItemRef, sanitizeWearState } from './wardrobe_config.js';
 import { applyToolCall, TOOL_DEFINITIONS, BACK_SIDES, calculateDerivedInheritanceProgress, canHostNestedPregnancy, ensureNaturalNoticeSample, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
-import { EXTENSION_MONTH_DAYS, FIRST_EXTENSION_UNTIL_DAYS, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS } from './stage_config.js';
+import { EXTENSION_MONTH_DAYS, FIRST_EXTENSION_UNTIL_DAYS, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, MENSTRUAL_STAGES, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS } from './stage_config.js';
 
 const DEBUG_LAST_REGISTRY_REQUEST_KEY = '__bs_biotracker_debug_last_registry_request__';
 const DEBUG_LAST_REGISTRY_RESULT_KEY = '__bs_biotracker_debug_last_registry_result__';
@@ -713,12 +714,13 @@ export function buildSireExtractionSystemPrompt(settings, options = {}) {
     '- isHere: 最近对话里此人是否在场；看不出来填 true。',
     ...(options.withTalents ? ['- talents: 此人的天赋（资质），阵列 [{"skill":"技能名","level":整数}]，level 为 -5～5，正为擅长、负为苦手；技能名只能用 payload.skill_catalog 里的。天赋是与生俱来的资质，会有一部分遗传给孩子；只写设定里明确的长处或短处，没有就给空阵列。'] : []),
     '- payload.father_snapshot 若有，是这人当年在子女或胎儿记录里留下的父方资料（种族、血脉、体型），可作体型参考，以角色卡与设定为准。',
-    '- spermQuality: 精子品质倍率 0.25–4，一般人为 1。依设定里对精力、精液浓度、雄风、繁殖力的描写推估：精力衰退、不易使人受孕约 0.25–0.5；一般 1；精力旺盛、阳物粗壮约 2；精力极旺、传说级的雄风或种马设定约 3–4。只看体能与繁殖力，不看身分、性格或受欢迎程度；设定没有着墨填 null。',
+    '- swordOffset: 剑（阳物）的个人偏移，−2～+2，步长 0.5，一般为 0。剑的大小 ＝ 体型 ＋ 偏移，体型已由 bodySize 决定，这里只写比同体型的人大或小多少：设定写明阳物特别粗大（小个子巨根）约 +1～+2，偏小约 −0.5～−1。设定没有着墨填 null。要与描述里性器的写法一致。',
+    '- spermQuality: 精子品质倍率 0.25–4，一般人为 1。依设定里对精力、精液浓度、繁殖力的描写推估：精力衰退、不易使人受孕约 0.25–0.5；一般 1；精力旺盛、精液浓稠约 2；精力极旺、传说级的繁殖力或种马设定约 3–4。只看体能与繁殖力，不看阳物大小（那是 swordOffset）、身分、性格或受欢迎程度；设定没有着墨填 null。',
     '- descriptions: 以字段名为键的物件，字段名照下方规则每行「字段名|写作指引」的字段名；没有资料的字段省略。每栏一到三句白描，写当下状态，不写剧情摘要。',
     '[描述规则]',
     guide,
     ...(instruction ? ['[使用者补充]', sanitizePromptText(instruction)] : []),
-    `只输出 JSON：{"age":数字或null,"bodySize":数字或null,"spermQuality":数字或null,"isHere":true,${options.withTalents ? '"talents":[],' : ''}"descriptions":{"字段名":"内容"}}`,
+    `只输出 JSON：{"age":数字或null,"bodySize":数字或null,"swordOffset":数字或null,"spermQuality":数字或null,"isHere":true,${options.withTalents ? '"talents":[],' : ''}"descriptions":{"字段名":"内容"}}`,
   ].join('\n');
 }
 
@@ -736,6 +738,9 @@ export function sanitizeSireExtractionResult(result) {
   return {
     age: Number.isFinite(age) && age > 0 ? Math.round(age) : null,
     bodySize: clampIndividualBodySize(value.bodySize),
+    swordOffset: value.swordOffset === null || value.swordOffset === undefined || value.swordOffset === '' || !Number.isFinite(Number(value.swordOffset))
+      ? null
+      : normalizeSwordOffset(value.swordOffset),
     spermQuality: Number.isFinite(quality) && quality > 0 ? normalizeSpermQuality(quality) : null,
     isHere: value.isHere !== false,
     descriptions,
@@ -980,7 +985,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '你只需要填写角色注册时真正需要声明的内容，不需要补充其他无关信息。',
     '不要扩写额外分类，不要发散到注册步骤之外的内容。',
     '你只需要填写以下声明内容：',
-    '1. 角色基础注册：base.age、base.race、base.bodySize、base.vitalityLevel、base.psyStressLevel、base.libido、base.uterinePressure、base.latestSexDays、base.penetrationState、base.penetrationSource、base.sperms、metabolism',
+    '1. 角色基础注册：base.age、base.race、base.bodySize、base.sheathOffset、base.vitalityLevel、base.psyStressLevel、base.libido、base.uterinePressure、base.latestSexDays、base.penetrationState、base.penetrationSource、base.sperms、metabolism',
     '2. 情感与妊娠经验：experience',
     ...(includeBreedingPsychology ? ['3. 繁育心理：psychology.mens 或 psychology.preg（二选一，互斥）'] : []),
     '4. 既有孩子记录：children',
@@ -997,6 +1002,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- base.psyStressLevel: 1-7，默认语义为 情感丧失麻木不仁(1)-内向压抑冷感(2)-情绪平缓理性(3)-情绪均衡稳定(4)-情绪丰富敏感(5)-强烈波动焦躁(6)-极端情绪精神异常(7)',
     '- base.age: 必填，不得省略或填 null。依角色卡、世界书与对话推断实际年龄；长生种只写外表年龄时，按设定推估实际岁数；资料完全没有提到时，按外貌、身分与经历推估一个合理年龄。',
     '- base.bodySize: 常态（人态）的个体体型，1–7 级，人类为 4，可带一位小数。依角色卡写明的身高或身材换算：约 30 cm＝1.5、120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7，锚点之间按比例内插；萝莉体型约 3–3.5，八尺约 5.3。半人马、拉弥亚等大型下半身看整体量体，以种族体型为准再增减。能变形的种族只填常态，变化态由系统按种族推算。未成年角色填当下的体型。卡上没写身材就省略，系统按种族分布抽取；种族体型为依个体时（怪兽类、怪鸟类、怪鱼类、植物族、真菌族、独居虫族、心魇）必须按子项或描述填写；种族体型为可变时省略。',
+    '- base.sheathOffset: 鞘（阴道）的个人偏移，−1～+1，步长 0.25，一般为 0。代表实际舒适的插入深度，不只是解剖长度：鞘长与身高只有弱相关，系统已按体型算好平均，这里只写个人差异。角色卡写明很浅、一顶就到底、子宫后倾或子宫颈偏低、深了会痛，往负填（约 −0.5～−1）；写明很深、吞得下特别大的，往正填（约 +0.5～+1）。卡上没写就省略（视为 0），不要凭身材猜；原因写进私处描述。',
     '- base.libido: 初始性欲。非妊娠上限100；妊娠後会随孕期提升，临产最后一天上限可达150。若角色开场就在发情、催情、强欲状态，可给较高值。',
     '- base.uterinePressure: 初始宫压。非妊娠上限50；妊娠後会随进度平滑提升，臨產期上限达150。【危险警告】孕早期与孕中期前期上限极低，超过15便极易触发流产警告！除非开局正在临盆或剧烈腹痛，否则强烈建议填 0。',
     '- base.latestSexDays: 距最近一次性行为经过的天数。若 experience.latestSexPartner 有意义，建议一并填写；若已超过最近一月经周期或无从判断，可为 null。',
@@ -1128,6 +1134,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '      "age": 0,',
     '      "race": "string",',
     '      "bodySize": 4,',
+    '      "sheathOffset": 0,',
     '      "libido": 0,',
     '      "uterinePressure": 0,',
     '      "latestSexDays": 0,',
@@ -1812,6 +1819,9 @@ function sanitizeRegistryProfile(profile, baseProfile) {
       const bodySize = clampIndividualBodySize(profile.base.bodySize);
       if (bodySize !== null) nextBase.bodySize = bodySize;
     }
+    if (profile.base.sheathOffset !== undefined && profile.base.sheathOffset !== null) {
+      nextBase.sheathOffset = normalizeSheathOffset(profile.base.sheathOffset);
+    }
     if (profile.base.libido !== undefined) {
       const libido = sanitizeMeter(profile.base.libido, { min: 0, max: 150 });
       if (libido !== null) nextBase.libido = libido;
@@ -2039,7 +2049,19 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
       nextCharacter.profile.base.latestSexDays = -1;
     }
   }
-  const synchronized = syncCharacterStageFromProfile(nextCharacter);
+  // 第一次注册：预设状态的月经阶段是按人类（没有乏情）抽的，要照这个角色的物种重抽，
+  // 乏情占比高的物种才会照时间比例落在乏情期。重新注册已有角色就沿用原本的阶段。
+  if (!current?.initialized && !sanitizedProfile.base?.stage && MENSTRUAL_STAGES.includes(String(nextCharacter.profile.base?.stage || ''))) {
+    nextCharacter.profile.base.stage = '';
+  }
+  // 同族季节对齐（1.2.4）：主血统相同、有季节的已注册者在不在乏情、第几轮，新角色跟着对齐一次；
+  // 只有阶段交给系统推导时才用得到（重新注册的角色沿用原本的阶段）
+  const seasonReference = findSeasonReference(chatState, {
+    race: nextCharacter.profile.base?.race,
+    bloodline: nextCharacter.profile.base?.bloodline,
+    excludeName: name,
+  });
+  const synchronized = syncCharacterStageFromProfile(nextCharacter, { seasonPhase: seasonReference ? seasonReference.phase : null });
   if (allowBreedingPsychology && Object.keys(nextPsychology.stageProfiles || {}).length) {
     const side = psychologySide(synchronized.profile.base?.stage);
     nextPsychology.enabled = true;
@@ -2670,6 +2692,12 @@ export async function runRegistry(ctx, options = {}) {
     // 胎儿天赋要趁胎儿还是这次输出的顺序时挂上去：注册的正规化与特殊来历可能调整胎儿阵列
     const workingSkills = bundleOutput ? prepareBundleSkills(chatState, result, bundleOutput.skillSetup, bundleReport) : null;
     applyRequestedSpecialFetus(result, specialFetus);
+    // 注册页手动指定了鞘偏移就以使用者为准，盖过模型的判断
+    if (options.sheathOffset !== null && options.sheathOffset !== undefined && Number.isFinite(Number(options.sheathOffset))) {
+      result.profile = result.profile && typeof result.profile === 'object' ? result.profile : {};
+      result.profile.base = result.profile.base && typeof result.profile.base === 'object' ? result.profile.base : {};
+      result.profile.base.sheathOffset = Number(options.sheathOffset);
+    }
     recordRegistryResultDebug(result);
     chatState.reproductiveSettings = normalizeReproductiveSettings(settings.reproductiveSettings);
     let character = applyRegistryResult(chatState, result, {

@@ -12,6 +12,8 @@ export const REPRODUCTIVE_DEFAULTS = Object.freeze({
   laborExperienceMin: 0.9, laborExperienceMax: 1.1,
   // 契合度（精方计划 §6.5）：有效次数的半衰期、「还不熟悉」的基准值 c、同一场插入的去重间隔
   intimacyHalfLifeDays: 90, intimacyBaseline: 3, intimacyDedupeHours: 6,
+  // 精方存量（1.2.4）：射精后存量回复的半衰期（人类，再乘物种经期倍率）、每次射精耗掉的比例
+  sireReserveHalfLifeHours: 12, sireReserveDrain: 0.4,
 });
 
 export function normalizeReproductiveSettings(value = {}) {
@@ -26,6 +28,8 @@ export function normalizeReproductiveSettings(value = {}) {
   result.intimacyHalfLifeDays = Math.max(1, result.intimacyHalfLifeDays);
   result.intimacyBaseline = Math.max(0, result.intimacyBaseline);
   result.intimacyDedupeHours = Math.max(0, result.intimacyDedupeHours);
+  result.sireReserveHalfLifeHours = Math.max(0.1, result.sireReserveHalfLifeHours);
+  result.sireReserveDrain = Math.max(0, Math.min(1, result.sireReserveDrain));
   result.noticeMinDays = Math.max(0, result.noticeMinDays);
   result.noticeMaxDays = Math.max(result.noticeMinDays, result.noticeMaxDays);
   result.noticeBaseDays = Math.max(result.noticeMinDays, Math.min(result.noticeMaxDays, result.noticeBaseDays));

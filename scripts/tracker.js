@@ -1,3 +1,4 @@
+import { describeSheathOffset, normalizeSheathOffset } from './body_size.js';
 import { inferPendingPsychology } from './registry.js';
 import { findWorldInfoMissingFromSnapshot, resolveHostWorldInfo, stripExcludedFromSnapshot } from './worldinfo_resolve.js';
 import { isOwnRequest } from './own_requests.js';
@@ -1100,6 +1101,9 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   delete profile.base.spermPool;
   // 子宫乏力只在反复延产后才有；没有就不送
   if (!(Number(base.uterineAtony) > 0)) delete profile.base.uterineAtony;
+  // 鞘偏移只送文字（偏浅、很深…），适中不送；模型看不懂偏移数字
+  delete profile.base.sheathOffset;
+  if (normalizeSheathOffset(base.sheathOffset) !== 0) profile.base.sheath = describeSheathOffset(base.sheathOffset);
 
   if (!sendPregnantState) {
     delete profile.pregnant;
