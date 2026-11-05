@@ -631,13 +631,22 @@ const RACE_DEFINITIONS = Object.freeze({
     bodySize: 5, bodySizeSd: 0.6, altFormBodySize: 4, bodyPlan: "hybrid",
   },
   "独居虫人": {
-    embryoType: "卵胎生",
+    embryoType: "卵生",
     introductionLine: "Solitary Insectfolk，与群居虫人相对的独居性虫人；蛾、螳螂等虫娘归此，部分会将卵寄入异族代孕孵化。完整的巨虫写作怪虫类。",
     inheritanceMode: "normal",
     menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 4, birthDifficulty: 0.5, breedTolerance: 1,
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 4, identicalProbability: 0, genderRatio: 30,
     companionEggsMean: 6, recoveryCoefficient: 0.25,
     bodySize: 3, bodySizeSd: 0.6, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+  "蝇魔": {
+    embryoType: "卵胎生",
+    introductionLine: "Beelzebub-kin，蝇王别西卜的眷属：复眼、薄翅、细长腹节的蝇娘，个子娇小却魔力惊人，能高速飞行。生殖仿采采蝇：一次只怀一只幼体，卵在宫内孵化后靠子宫里的乳腺分泌喂养，临盆时产下几乎与母体等重、落地就能爬行的幼虫，生完很快又能再孕；只有一胎，没有卵胎生的同胞相残。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 5, birthDifficulty: 3, breedTolerance: 1.5,
+    impregnationDifficulty: 0.5, orgasmOvulationAmount: 0, identicalProbability: 0, genderRatio: 40,
+    companionEggsMean: 0, recoveryCoefficient: 0.25, fetalBulkRatio: 1.5,
+    bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
   },
   "炉蚜": {
     embryoType: "卵胎生",
@@ -1539,7 +1548,7 @@ export function isCustomRace(race) {
   return customRaceNames.includes(key);
 }
 
-/** 内置 109 族加上目前生效的自订物种 */
+/** 内置 110 族加上目前生效的自订物种 */
 export function getAllRaces() {
   return [...ALL_BUILTIN_RACES, ...customRaceNames];
 }

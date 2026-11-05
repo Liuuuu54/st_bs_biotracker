@@ -26,9 +26,9 @@ function makeHost(name, race) {
   };
 }
 
-test('内建名录共 109 个物种，新增种族进入正确胚胎分组', () => {
-  assert.equal(ALL_BUILTIN_RACES.length, 109);
-  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 108);
+test('内建名录共 110 个物种，新增种族进入正确胚胎分组', () => {
+  assert.equal(ALL_BUILTIN_RACES.length, 110);
+  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 109);
   const expected = {
     卓尔: '胎生',
     米诺陶族: '胎生',
@@ -51,6 +51,8 @@ test('内建名录共 109 个物种，新增种族进入正确胚胎分组', () 
     怪爬虫类: '卵生',
     鲛人: '卵胎生',
     炉蚜: '卵胎生',
+    蝇魔: '卵胎生',
+    独居虫人: '卵生',
     地狱犬: '胎转卵生',
     天马: '胎转卵生',
     烧瓶小人: '不定型',

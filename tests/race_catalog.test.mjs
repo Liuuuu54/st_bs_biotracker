@@ -290,3 +290,18 @@ test('承载耐受进入提示词，且偏移不再被胎儿种族放大', async
   assert.ok(shiftLine, '妊娠偏移应有承载耐受行');
   assert.match(shiftLine, /^- 承载耐受偏移: 1（/, `人类怀龙胎的耐受应维持 1，实际: ${shiftLine}`);
 });
+
+test('蝇魔：卵胎生、一次一胎（采采蝇式），繁体名也认得；独居虫人改为卵生', async () => {
+  const { canonicalizeRaceName, getEmbryoTypeByRace, getRacePhysiologyProfile } = await import('../scripts/race_config.js');
+  assert.equal(canonicalizeRaceName('蠅魔'), '蝇魔');
+  assert.equal(getEmbryoTypeByRace('蝇魔'), '卵胎生');
+  assert.equal(getEmbryoTypeByRace('独居虫人'), '卵生');
+  const fly = getRacePhysiologyProfile('蝇魔');
+  assert.equal(fly.orgasmOvulationAmount, 0, '不会额外排卵');
+  assert.equal(fly.companionEggsMean, 0, '没有伴生卵');
+  assert.equal(fly.identicalProbability, 0, '不会同卵分裂');
+  assert.ok(fly.fetalBulkRatio > 1, '幼虫几乎与母体等重，单胎孕肚就大');
+  assert.ok(fly.birthDifficulty >= 3);
+  assert.match(getRaceIntroductionLine('蝇魔'), /采采蝇/);
+  assert.match(buildRaceCatalogBlock(), /蝇魔/);
+});
