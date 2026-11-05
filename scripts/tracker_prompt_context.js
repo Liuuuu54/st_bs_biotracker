@@ -454,7 +454,7 @@ function buildSireTrackerBlock(payload, descriptionGuides) {
     '[已注册精方]',
     '- payload.registered_sires 是已建档的精方（精液提供者）。isHere=true 为在场，附描述；isHere=false 只是本轮相关者的摘要（当前胎儿的父亲或认定父亲，或最近讯息提到），不送描述。',
     '- bsAddSperm 的 male 写精方名字时，种族、衍生类型、体型与精子品质由档案带入：race 照填档案种族，maleBodySize 省略；传了不同的 race 也以档案为准。',
-    '- virility 是精方当下精子品质的分级描述（精力、精液浓度），condition 是他此刻的状态（刚射过存量偏低、繁殖季与否），都只供叙事参考；condition 写存量偏低或很低时，这次射精的 bsAddSperm amount 要比他平时少（偏低约七成、很低约一半），描写也写成较稀；没有这些栏代表一般。sword 是阳物与同体型的人相比（偏大、硕大、偏小、短小；没有这栏代表与体型相称），体型契合由系统按剑对鞘计算。',
+    '- virility 是精方天生的体质（精力与繁殖力），condition 是他此刻的状态（刚射过存量偏低、繁殖季与否、精力高峰），都只供叙事参考；精液此刻的稀稠与多寡以 condition 为准，没有 condition 就照常；condition 写存量偏低或很低时，这次射精的 bsAddSperm amount 要比他平时少（偏低约七成、很低约一半），描写也写成较稀；没有这些栏代表一般。sword 是阳物与同体型的人相比（偏大、硕大、偏小、短小；没有这栏代表与体型相称），体型契合由系统按剑对鞘计算。',
     `- 在场精方的描述用 bsSetDescription（female 填精方名字，只有 normalDescription），只传剧情影响到的字段${fieldNames.length > 0 ? `；描述还空着时按这些字段名建立：${fieldNames.join('、')}` : ''}。`,
     '- 精方进出场景照样用 bsSetCharacterPresence（female 填精方名字）：isHere=true 的精方在新讯息里出门、告别或已不在这一幕，就传 {"female":"精方名字","isPresent":false}；在场精方的完整档案每轮都会送，离场不切会一直占用提示词。精方不追踪生理需求、经期或妊娠，不要为精方调用其他工具。',
   ].join('\n');
@@ -657,7 +657,7 @@ export function buildMainFlowStatePrompt(payload = {}) {
     '',
     '[当前已注册角色状态]',
     serializeStateForPrompt(existingState),
-    ...(presentSires.length > 0 ? ['[在场精方]', '已建档的精方（精液提供者）；只读，描写须与描述一致。virility 是精力与精液的分级描述，condition 是此刻的状态（存量、繁殖季；存量偏低时射精较稀、量较少），sword 是阳物与同体型的人相比（偏大、硕大、偏小、短小）；没有这些栏代表一般、与体型相称。', serializeStateForPrompt(presentSires)] : []),
+    ...(presentSires.length > 0 ? ['[在场精方]', '已建档的精方（精液提供者）；只读，描写须与描述一致。virility 是天生的精力与繁殖力，condition 是此刻的状态（存量、繁殖季、精力高峰；存量偏低时射精较稀、量较少），精液的稀稠多寡以 condition 为准；sword 是阳物与同体型的人相比（偏大、硕大、偏小、短小）；没有这些栏代表一般、与体型相称。', serializeStateForPrompt(presentSires)] : []),
     ...(payload.recent_operation_results?.length ? ['[上轮已结算的生殖操作结果]', '可据此描写合理可见的后果（例如破套可能当场被发现），不要求本轮处理；这不是角色已知的事实，不得让角色无依据得知受孕、胎数或胎父，也不能自动写入认知。', serializeStateForPrompt(payload.recent_operation_results.map(({ name, applied, message }) => ({ name, applied, message })))] : []),
     fetusTagBlock,
     '</bs_biotracker>',

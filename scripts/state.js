@@ -15,7 +15,7 @@ import { DORMANCY_STAGE, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES,
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
 import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines, renameStoredRaces } from './state_migration.js';
 import { createEmptySires, normalizeSires, pruneFutaSireRecord } from './sires.js';
-import { assignMissingSireSeasonOrigins } from './season_phase.js';
+import { assignMissingSireSeasonOrigins, startMissingSireReserveClocks } from './season_phase.js';
 import { announceSavedRevisions, claimChatRevision, clearHostSettingsPendingUpTo, markHostSettingsPending, queueRevisionAnnouncement, readLatestChatRevision } from './save_sync.js';
 import {
   createDefaultWardrobeItem,
@@ -1533,6 +1533,7 @@ function migrateChatStateSchema(chatState) {
   if (fromVersion < 10) renameStoredRaces(chatState.sires);
   // v11 → v12（1.2.4 精方周期）：剑偏移、存量由正规化补预设；季节起点对齐同族已注册者，没有就用名字杂凑
   if (fromVersion < 12) {
+    startMissingSireReserveClocks(chatState.sires, chatState.minutesPassed);
     chatState.sires = normalizeSires(chatState.sires, Number(chatState.minutesPassed) || 0);
     assignMissingSireSeasonOrigins(chatState);
   }
@@ -1547,7 +1548,10 @@ function migrateChatStateSchema(chatState) {
       if (fromVersion < 6) payload.cardSkillSeedApplied = true;
       if (fromVersion < 10 && payload.sires) renameStoredRaces(payload.sires);
       const characters = unpackSnapshotCharacters(payload.characters, false, true);
-      if (fromVersion < 12 && payload.sires) assignMissingSireSeasonOrigins({ characters, sires: payload.sires, minutesPassed: payload.minutesPassed });
+      if (fromVersion < 12 && payload.sires) {
+        startMissingSireReserveClocks(payload.sires, payload.minutesPassed);
+        assignMissingSireSeasonOrigins({ characters, sires: payload.sires, minutesPassed: payload.minutesPassed });
+      }
       migrateCharacters(characters, fromVersion, { minutesPassed: Number(payload.minutesPassed) || 0 });
       rebuilt.push(createStoredSnapshotState(rebuilt, { ...payload, characters: packSnapshotCharacters(characters) }, source[index], rebuiltCache));
     }

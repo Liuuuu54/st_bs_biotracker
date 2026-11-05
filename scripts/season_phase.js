@@ -142,6 +142,22 @@ export function resolveSireSeasonOrigin(chatState, name, record, minutesPassed =
 }
 
 /**
+ * 存档升到 v12 时：旧精方没有射精纪录，存量从迁移当下起算（满存量、不算禁欲），
+ * 否则建档很久的精方一迁移就被当成禁欲太久。要在正规化之前呼叫：正规化会用 createdAt 补 reserveAt。
+ */
+export function startMissingSireReserveClocks(sires, minutesPassed) {
+  if (!sires || typeof sires !== 'object') return;
+  const now = Math.max(0, Number(minutesPassed) || 0);
+  for (const record of Object.values(sires)) {
+    if (!record || typeof record !== 'object') continue;
+    if (record.reserveAt === undefined || record.reserveAt === null || record.reserveAt === '') {
+      record.reserve = 1;
+      record.reserveAt = now;
+    }
+  }
+}
+
+/**
  * 存档升到 v12 时补精方的季节起点（主档与每一层快照都用这个）；已有的不动。
  * characters 用同一份状态里的卵方对齐。
  */

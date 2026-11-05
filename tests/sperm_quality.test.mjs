@@ -79,8 +79,8 @@ test('难洗：品质 4 排一次约七成，回覆写明还留多少；品质 1
 });
 
 test('分级描述：一般不写，其余按门槛', () => {
-  assert.equal(describeSpermQuality(0.25), '精水稀薄，不易使人受孕');
+  assert.equal(describeSpermQuality(0.25), '体质孱弱，不易使人受孕');
   assert.equal(describeSpermQuality(1), '');
-  assert.equal(describeSpermQuality(2), '精力旺盛，精液浓稠');
-  assert.equal(describeSpermQuality(4), '精力极旺，精液浓稠量多，一次就能灌满');
+  assert.equal(describeSpermQuality(2), '精力旺盛，繁殖力强');
+  assert.equal(describeSpermQuality(4), '精力极旺，繁殖力惊人');
 });

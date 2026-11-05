@@ -1388,16 +1388,33 @@ function loadSireIntoForm(ctx, name, prefill = null) {
   setInputValue('bs-bt-register-name', String(name || ''));
   setInputValue('bs-bt-register-race', source ? formatSireRaceDescriptor(source) : '人类');
   // 已有档案且不是预设值（品质 1、剑偏移 0）时把档案值放上拉杆；其余交给模型
-  setOverrideSlider('bs-bt-sire-quality', record && record.spermQuality !== 1 ? record.spermQuality : null);
-  setOverrideSlider('bs-bt-sire-sword', record && record.swordOffset ? record.swordOffset : null);
-  const alwaysPeak = document.getElementById('bs-bt-sire-always-peak');
-  if (alwaysPeak) alwaysPeak.checked = record?.alwaysPeak === true;
+  applySireRecordToControls(record);
+  sireControlsName = String(name || '');
   const select = document.getElementById('bs-bt-sire-select');
   if (select) select.value = selectedSireName;
   closeRacePalettePopover();
   refreshRegisterRacePalette();
   syncSireButtons();
   syncSireFutaLock(ctx);
+}
+
+// 拉杆与作弊勾选目前对应哪个名字：名字栏改成别人时要换掉，免得上一位的手动值套到新精方
+let sireControlsName = '';
+
+/** 精子品质、剑偏移拉杆与作弊勾选：已有档案且不是预设值时带出档案值，其余交给模型 */
+function applySireRecordToControls(record) {
+  setOverrideSlider('bs-bt-sire-quality', record && record.spermQuality !== 1 ? record.spermQuality : null);
+  setOverrideSlider('bs-bt-sire-sword', record && record.swordOffset ? record.swordOffset : null);
+  const alwaysPeak = document.getElementById('bs-bt-sire-always-peak');
+  if (alwaysPeak) alwaysPeak.checked = record?.alwaysPeak === true;
+}
+
+/** 精方分页的名字栏被改：换成另一个名字就照那人的档案（没有就交给模型）重设拉杆 */
+function syncSireControlsToName(ctx) {
+  const name = getSireFormName();
+  if (name === sireControlsName) return;
+  sireControlsName = name;
+  applySireRecordToControls(name ? getSireRecord(getChatState(ctx, getSettings(ctx)), name) : null);
 }
 
 function getSireFormName() {
@@ -3290,7 +3307,7 @@ function renderRaceEncyclopediaPage(ctx = null) {
     `- Flux: ${fluxName}`,
     `- 代谢抵免: ${exemptions.length > 0 ? exemptions.join(' / ') : '无'}`,
     `- 遗传速度: ${Number.isFinite(inheritanceSpeed) ? inheritanceSpeed : '未知'}x`,
-    `- 精方精力周期: ${sireCycleLine}${sireCycle.sireCyclePrompt ? `；高峰时：${sireCycle.sireCyclePrompt}` : ''}`,
+    `- 精方精力周期: ${sireCycleLine}${sireCycle.sireCyclePrompt && sireCycle.sireCycleAmplitude > 0 ? `；高峰时：${sireCycle.sireCyclePrompt}` : ''}`,
     fluxDefinition || '- 暂无额外说明。',
   ].join('\n\n');
 }
@@ -7463,7 +7480,7 @@ function renderSireQualityRows(chatState, name, record, metaRow) {
   // 显示分级文字，数字放滑鼠提示；当下与档案同级就只写一次
   const now = getSpermQualityTier(state.effective);
   const condition = describeSireCondition(state);
-  const detail = describeSpermQuality(state.effective);
+  const detail = describeSpermQuality(state.quality);
   return [
     metaRow('精子品质', now === tier ? tier : `${tier}，当下${now}`,
       [`当下 ${state.effective.toFixed(2)} ＝ ${parts.join(' × ')}`, detail, condition].filter(Boolean).join('；')),
@@ -10915,7 +10932,10 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-sire-register')?.addEventListener('click', () => registerSireFromForm(ctx));
   // 名字改成已注册卵方时马上锁住精方栏位；只在精方分页作用，卵方注册不受影响
   document.getElementById('bs-bt-register-name')?.addEventListener('input', () => {
-    if (!document.querySelector('[data-register-page="sire"]')?.hidden) syncSireFutaLock(ctx);
+    if (!document.querySelector('[data-register-page="sire"]')?.hidden) {
+      syncSireControlsToName(ctx);
+      syncSireFutaLock(ctx);
+    }
   });
   document.querySelector('#bs-bt-register-tabs [data-register-tab="sire"]')?.addEventListener('click', () => syncSireFutaLock(ctx));
   document.getElementById('bs-bt-sire-delete')?.addEventListener('click', () => deleteSelectedSire(ctx));

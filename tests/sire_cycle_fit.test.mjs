@@ -310,6 +310,7 @@ test('v11 存档迁移：精方补季节起点（对齐同族卵方），没有�
   const old = state.createEmptyChatState();
   const elf = register(old, '甲', '精灵');
   Object.assign(elf.profile.base, { stage: '乏情期', days: 120, seasonCycle: 0 });
+  old.minutesPassed = 30 * DAY;
   old.sires['精'] = { race: '精灵', spermQuality: 1, createdAt: 0 };
   old.sires['人'] = { race: '人类', spermQuality: 1, createdAt: 0 };
   state.recordChatStateSnapshot(ctx, old, { messageCount: 1, reason: 'old' });
@@ -326,6 +327,7 @@ test('v11 存档迁移：精方补季节起点（对齐同族卵方），没有�
   assert.equal(migrated.sires['人'].seasonOrigin, null);
   assert.equal(migrated.sires['精'].swordOffset, 0);
   assert.equal(migrated.sires['精'].reserve, 1);
+  assert.equal(migrated.sires['精'].reserveAt, migrated.minutesPassed, '存量从迁移当下起算，不把建档以来都算成禁欲');
   state.restoreChatStateFromSnapshot(migrated, migrated.snapshots.at(-1));
   assert.ok(Number.isFinite(Number(migrated.sires['精'].seasonOrigin)));
 });

@@ -30,14 +30,16 @@ export function getSpermQualityFactors(value) {
 }
 
 /**
- * 精子品质给模型看的分级描述：只讲精力与精液，不影射阳物（阳物大小是剑偏移）。一般（0.5–1.5）不写。
+ * 精子品质给模型看的分级描述（virility）：只讲天生体质，也就是精力与繁殖力，看档案品质。
+ * 精液此刻的稀稠与多寡交给 condition（存量、季节、精力高峰），两边才不会一个说浓稠、一个说稀。
+ * 不影射阳物（阳物大小是剑偏移）。一般（0.5–1.5）不写。
  */
 export function describeSpermQuality(value) {
   const quality = normalizeSpermQuality(value);
-  if (quality < 0.5) return '精水稀薄，不易使人受孕';
+  if (quality < 0.5) return '体质孱弱，不易使人受孕';
   if (quality < 1.5) return '';
-  if (quality < 3) return '精力旺盛，精液浓稠';
-  return '精力极旺，精液浓稠量多，一次就能灌满';
+  if (quality < 3) return '精力旺盛，繁殖力强';
+  return '精力极旺，繁殖力惊人';
 }
 
 function normalizeReserve(value) {
@@ -423,7 +425,8 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
   for (const [name, record] of Object.entries(sires)) {
     if (chatState?.characters && Object.prototype.hasOwnProperty.call(chatState.characters, name)) continue;
     const qualityState = getSireQualityState(chatState, name, { minutesPassed: now });
-    const virility = describeSpermQuality(qualityState ? qualityState.effective : record.spermQuality);
+    // 天生体质看档案品质；此刻的状态（存量、季节、高峰）在 condition
+    const virility = describeSpermQuality(record.spermQuality);
     const condition = describeSireCondition(qualityState);
     const summary = {
       name,
