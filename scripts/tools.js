@@ -7,11 +7,19 @@ import { advancePooledTimeline } from './pooled_timeline.js';
 import { drainSpermSources } from './sperm_drain.js';
 import { getStageProgress } from './stage_progress.js';
 import { syncCardSettings } from './card_settings.js';
+import {
+  FETAL_BURST_MAX_DAYS_PER_PASS, FETAL_CARE_GAIN_SCALE, FETAL_CARE_LOSS_SCALE, FETAL_EVENT_AFFINITY, FETAL_EVENT_CHANGES,
+  FETAL_EVENT_DAILY_AFFINITY_CAP, FETAL_EVENT_DAILY_CARE_CAP, FETAL_EVENT_DECAY_DAYS, FETAL_EVENT_HEALTH, FETAL_EVENT_KINDS,
+  FETAL_EVENT_NESTED_FACTOR, FETAL_EVENT_PRESSURE, FETAL_HEALTH_FLOOR_RATIO, addFetalHealth, buildPrenatalSummary, compactFetalEvents,
+  createFetalHealthFields, describeFetalEventChange, describeFetalEventKind, describeFetalEventMagnitude, getChangeMagnitude, getChangeSign,
+  getFetalEventSensitivity, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalHealthMax,
+  settleFetalHealthWeek,
+} from './fetal_health.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
 import { consumeSireReserve, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
-import { CONCEPTION_WEIGHT_LOG_SD, clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getConceptionStageWeight, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
+import { clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
   cloneValue,
   createChildId,
@@ -311,7 +319,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsRecordExperience',
-    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。cognition 需 method、content：只记角色感知、猜测、被告知或检查解读，允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她自己心里认定的父亲，可以是未注册人物，null 取消，省略保留；认定可以与真相不符。对外说法与心里认定不同时（谎称、隐瞒），selectedFather 仍记心里的认定，对外怎么说写进 content，例如「她心里认定是乙的，却对甲谎称是甲的」；心里认定改变（独自想通、起疑、改认）也用 claim 记，不改用 cognition。不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知实际进月经刷新，关系、孩子与胎父认定长期保留。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
+    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。cognition 需 method、content：只记角色感知、猜测、被告知或检查解读，允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她自己心里认定的父亲，可以是未注册人物，null 取消，省略保留；认定可以与真相不符。对外说法与心里认定不同时（谎称、隐瞒），selectedFather 仍记心里的认定，对外怎么说写进 content，例如「她心里认定是乙的，却对甲谎称是甲的」；心里认定改变（独自想通、起疑、改认）也用 claim 记，不改用 cognition。不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知纪录较多时只会送你最近几条、钉选的条目与一行更早纪录的摘要；重要的认知（确认怀孕、得知胎父、胎数）记得传 pin=true。认知实际进月经刷新，关系、孩子与胎父认定长期保留。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
     input_schema: {
       type: 'object',
       properties: {
@@ -322,6 +330,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         content: { type: 'string', minLength: 1 }, partner: { type: 'string', minLength: 1 },
         childIndex: { type: 'integer', minimum: 0 }, fetusIndex: { type: 'integer', minimum: 0 }, name: { type: 'string', minLength: 1 },
         selectedFather: { type: ['string', 'null'], minLength: 1 },
+        pin: { type: 'boolean', description: '只用于 cognition：这条认知重要、之后每轮都该看到时传 true（例如确认怀孕、得知胎父）。钉选有上限，超过时保留最新的。' },
       },
       required: ['female', 'action', 'time'], additionalProperties: false,
     },
@@ -599,13 +608,17 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + 'rupture：破水（每一胎有各自的羊膜，同卵共囊一起破）。只有在产兆前驱且宫压已达上限的 66%，或已在第一／第二产程时才会生效；产兆前驱破水会直接进入第一产程。剧情写到羊水流出、破水时必须调用，系统未确认前不要擅自描写破水。孕中孕内胎的胎膜破了代表它被宿主在宫内生出来，不算母亲破水。'
       + 'extract：第二产程中把正在产道里下降或娩出的那一胎直接助产拉出（胎膜未破会先破）；肩难产时也可以用。只生这一胎，不会结束其余胎儿的分娩；要一次结束全部请用 bsChildbirth。剧情已写出这一胎自己生下来、系统却还在下降或娩出中时，也直接用 extract 同步，记为自然产，不要让剧情等系统；不要为此改用 bsChildbirth（那会记成手术产）。'
       + 'push／rest：产妇自己用力推或停下来喘口气，产程中（第一产程、第二产程、第三产程娩出胎盘时）有效，不必给 fetusIndex，也不能由胎儿代劳。切换后一直维持到下次切换，剧情写到她停下来歇一下时给 rest，用力时给 push，切换要排在这段时间的 bsPassedTime 之前；胎体下降开始时预设推，其余阶段预设休。推的时候累积用力疲劳，胎越大越累得快，疲劳越高越推不动，休息时才会消退，换阶段不归零。第二产程下降与娩出时休息几乎不前进；第三产程用力让胎盘快一倍娩出；第一产程与间歇期用力是白费力气，只累积疲劳，只在剧情写到她提早用力时才给。系统不替她扣活力，用力时照剧情用 bsUpdateCharacterStatus 自己扣 vitality。'
+      + 'sibling：腹中两胎互动，只在剧情明确写到时用：fetusIndex 是动手的那一胎，otherFetusIndex 是被动的那一胎（省略时取它旁边的一胎；两个都省略时随机一对相邻的胎儿），'
+      + 'interaction=kick 踢一下（对方小幅偏转）、shove 推挤（两胎可能左右换位）、cuddle 依偎（位置不变）。只改胎位，不改亲和与健康，不消耗母体活力；只限角色已知、已着床、彼此相邻的胎儿；每个故事小时最多成功一次，推进满下一小时之前重复调用会被跳过。'
       + '所有操作都会带来瞬时的疼痛（产程中）或心理压力（孕期），描写不得超过系统给出的疼痛等级。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
-        action: { type: 'string', enum: ['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest'] },
+        action: { type: 'string', enum: ['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest', 'sibling'] },
         fetusIndex: { type: 'integer' },
+        otherFetusIndex: { type: 'integer' },
+        interaction: { type: 'string', enum: ['kick', 'shove', 'cuddle'] },
         targetAngle: { type: 'number' },
         backSide: { type: 'string', enum: ['左前', '右前', '左后', '右后'] },
         actor: { type: 'string', enum: ['assist', 'fetus'] },
@@ -615,22 +628,28 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
-    name: 'bsMaternalFetalInteraction',
-    description: '处理母体与胎儿、以及多胎之间的互动。每名角色在每个新小时内最多成功互动一次（三种 direction 共用）；在 bsPassedTime 推进满下一小时之前，重复调用会被跳过。direction=fetal 表示胎儿对母体的亲近或排斥，必须传 change，并调整随机一胎的 affinity。direction=maternal 表示母体安抚胎儿，不使用 change；系统会随机判定 affinity 变化。direction=sibling 只在剧情明确写到腹中两胎互动时使用（互踢、推挤、依偎），必须传 change：slight_decrease 一胎踢另一胎、使对方小幅偏转，significant_decrease 推挤、两胎可能左右换位，slight_increase／significant_increase 依偎、位置不变；对象是随机一对相邻且角色已知的胎儿，不影响 affinity。母胎互动（fetal、maternal）不影响供养力，也不改变胎位、下降或产程时间；要托高或推送胎儿请用 bsAssistFetalPosition。',
+    name: 'bsFetalEvent',
+    description: '记一件影响腹中胎儿的事，一次呼叫记一件。剧情明确写到才用；吃、睡、排泄等需求照料系统已自动计入胎儿健康，不要再记。'
+      + 'kind：soothe 母体安抚（不传 change，系统随机判定亲和变化，心理压力高时容易失败）；fetal_reaction 胎儿对母体的亲近或排斥（change 为 increase 亲近、decrease 排斥）；'
+      + '伤害，胎儿健康减少：substance 有害物质（酒、药物、毒）、trauma 腹部外伤、overexertion 过劳或剧烈运动、illness 生病发烧、curse 诅咒或腐化、other_harm 其他伤害；'
+      + '照料，胎儿健康增加、不超过先天上限：medicine 安胎药或补品、checkup 产检治疗、rest 充分休养、blessing 祝福或治疗魔法、other_care 其他照料。'
+      + 'change 只看程度 slight／significant／severe（伤害一律减、照料一律加，increase 或 decrease 都可）。毒物、生病、诅咒在孕早期伤得最重，外伤、过劳在孕晚期伤得最重，且另加宫压，可能引来流产或早产的风险警告。'
+      + 'fetusIndex 按目前可见的 fetuses 顺序从 0 起算；省略时伤害与照料作用于全部已着床的胎儿，亲和作用于随机一胎。角色不知道自己怀孕也照样结算，叙事照认知规则。'
+      + '防刷：同一天同一 kind 只结算一次，第二次只留纪录；亲和与照料在 7 天内重复会递减；每胎每天亲和最多 ±2（延产期 ±4）、照料最多 +10；伤害不递减。'
+      + 'time 为故事日期，写法同认知纪录；content 一句白描，例如「她不知道自己怀孕，在酒馆喝了半夜」。pin=true 表示这件事重要、之后每轮都该看到（例如中了诅咒、确诊重病），钉选有上限，超过时保留最新的。'
+      + '健康见底不会立刻流产：周结算先警告，下一周仍见底才流产、多胎时那一胎被吸收，孕晚期起改为早产。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
-        change: {
-          type: 'string',
-          enum: ['slight_increase', 'significant_increase', 'slight_decrease', 'significant_decrease'],
-        },
-        direction: {
-          type: 'string',
-          enum: ['fetal', 'maternal', 'sibling'],
-        },
+        time: { type: 'string', minLength: 1 },
+        kind: { type: 'string', enum: Object.keys(FETAL_EVENT_KINDS) },
+        change: { type: 'string', enum: [...FETAL_EVENT_CHANGES] },
+        fetusIndex: { type: 'integer', minimum: 0 },
+        content: { type: 'string', minLength: 1 },
+        pin: { type: 'boolean' },
       },
-      required: ['female'],
+      required: ['female', 'time', 'kind', 'content'],
       additionalProperties: false,
     },
   },
@@ -848,7 +867,7 @@ const WOMB_FROZEN_BLOCKED_TOOLS = new Set([
   'bsAbortion',
   'bsChildbirth',
   'bsExtendPregnancy',
-  'bsMaternalFetalInteraction',
+  'bsFetalEvent',
   'bsExcreteMetabolism',
   'bsUpdatePsychology',
 ]);
@@ -1215,15 +1234,13 @@ function deriveFetusGender(race, bloodline = null, random = Math.random) {
   return random() < (ratio / 100) ? '男' : '女';
 }
 
-// 胎重天生的变异（标准差见 body_size.js 的 CONCEPTION_WEIGHT_LOG_SD），截在 ±3 个标准差，免得抽出极端值
-const CONCEPTION_WEIGHT_SD_LIMIT = 3;
-
-export function getConceptionWeight(stage, gender, weightRatio = 1.0, random = Math.random) {
-  const baseWeight = getConceptionStageWeight(stage);
-  const z = Math.max(-CONCEPTION_WEIGHT_SD_LIMIT, Math.min(CONCEPTION_WEIGHT_SD_LIMIT, randomStandardNormal(random)));
-  const fluctuation = Math.exp(CONCEPTION_WEIGHT_LOG_SD * z);
+/**
+ * 受精胎重：只剩性别与体型（承载）系数。受孕时机与天生变异（1.2.5 起）改乘在胎儿健康的上限上，
+ * 大小差异在孕期中随照料长出来（fetal_health.js）。
+ */
+export function getConceptionWeight(gender, weightRatio = 1.0) {
   const sexMultiplier = gender === '男' ? 1.05 : gender === '女' ? 1 / 1.05 : 1.0;
-  return Math.max(0.33, Math.min(3.0, Number(baseWeight * fluctuation * sexMultiplier * weightRatio)));
+  return Math.max(0.33, Math.min(3.0, Number(sexMultiplier * weightRatio)));
 }
 
 /**
@@ -1479,7 +1496,7 @@ function cloneIdenticalFetus(fetus) {
   return {
     ...fetus,
     embryoId: null,
-    nutrition: 0,
+    // 同卵复制上限与当前健康
     companionEggCount: 0,
     fusionCheckedWith: [],
     providerSources: Array.isArray(fetus?.providerSources) ? [...fetus.providerSources] : undefined,
@@ -1658,7 +1675,9 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId, rand
     // 嵌合不是新的独立受精：不重新抽签，承接两边伴生卵的总和
     companionEggCount: getCompanionEggCount(fetusA) + getCompanionEggCount(fetusB),
     weight: (clampNumber(fetusA?.weight, 0.33, 3, 1) + clampNumber(fetusB?.weight, 0.33, 3, 1)) / 2,
-    nutrition: (Number(fetusA?.nutrition) || 0) + (Number(fetusB?.nutrition) || 0),
+    // 嵌合取平均
+    healthMax: (normalizeFetalHealthFields({ ...fetusA }).healthMax + normalizeFetalHealthFields({ ...fetusB }).healthMax) / 2,
+    health: (normalizeFetalHealthFields({ ...fetusA }).health + normalizeFetalHealthFields({ ...fetusB }).health) / 2,
     tendencyAngle: randomInt(0, 360, random),
     backSide: normalizeBackSide(fetusA?.backSide) || randomBackSide(random),
     affinity: derivedSeed.affinity,
@@ -1899,7 +1918,9 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     // 一次受孕只抽一次；之后随胎儿卡保存，不随渲染或日期推进重抽。
     // 精液量按承载者的子宫容积换算成人类尺度，同体型的一对与人类一样
     companionEggCount: rollCompanionEggCount(fetusRace, random, Number.isFinite(Number(sperm?.value)) ? Number(sperm.value) / getUterusVolumeFactor(profile?.base) : undefined, ancestry.bloodline, tieBloodline),
-    weight: getConceptionWeight(cycleStage, gender, weightRatio, random),
+    weight: getConceptionWeight(gender, weightRatio),
+    // 健康上限：精子品质（射精当下的快照）× 受孕时机 × 天生变异；受精时是上限的一半
+    ...createFetalHealthFields(sampleFetalHealthMax({ quality: sperm?.quality, stage: cycleStage, random })),
     tendencyAngle: randomInt(0, 360, random),
     backSide: randomBackSide(random),
     affinity: derivedSeed.affinity,
@@ -2571,7 +2592,7 @@ function attemptFertilization(profile, { deltaDays, stage, name, notify, chanceF
  *
  * 胎重折扣取 (1 − 落后 / 280)²。平方是因为生长亏损是复利而不是等差：
  * 线性版本在视窗上限只掉到 0.70，平方版本落到 0.49，符合「落后一整个孕早期
- * 大约只有一半重」的直觉。这是乘在 getConceptionWeight 既有的四个乘数之上，
+ * 大约只有一半重」的直觉。这是乘在 getConceptionWeight（性别与体型系数）之上，
  * 种族混血偏移（weightRatio）照常生效；两者都不利时会撞到 0.33 的地板。
  */
 function markSuperfetationFetus(profile, fetus) {
@@ -3378,12 +3399,8 @@ function applyHourlyPregnancyMetabolism(profile, tick) {
   applyDerivedMetabolismExemptions(profile);
 }
 
-// 供养力分池：每胎各记一个 fetus.nutrition。每次计分当下就按各胎需求拆开，
+// 胎儿健康（1.2.5，见 fetal_health.js）：需求照料的点数每次计分当下就按各胎需求拆开、加进各胎的健康，
 // 胎位在一周内上下移动时，在宫顶待得越久分得越多，而不是只看结算那一刻停在哪。
-// 每点供养力对胎重的对数影响；乘上妊娠变速让各种族整个孕期的总成长一致。
-const NUTRITION_WEIGHT_SCALE = 0.0005;
-// 单周（按有效孕程）胎重变化上限，同样乘妊娠变速，快孕期种族一周走完多周孕程不被卡住。
-const NUTRITION_WEEKLY_CAP = 0.03;
 // 越靠宫顶供养越好；亏损时取倒数，宫顶胎受保护、低位胎先亏。
 const NUTRITION_POSITION_FACTORS = Object.freeze({ '-3': 1.5, '-2': 1.0, '-1': 0.8, 0: 0.6 });
 // 三胎以上时的左右位置：中间最挤、供血被两侧瓜分（窝生哺乳类的实况），两端最好
@@ -3419,18 +3436,11 @@ function getNutritionDemand(fetus, fetuses, effectivePregnantDays, surplus) {
   return ownAge * getNutritionPositionFactor(fetus, fetuses, surplus);
 }
 
-function roundNutrition(value) {
-  return Math.round(value * 10000) / 10000;
-}
-
-/** 母体层面的供养力总额：各胎的加总。prompt 只看这个数，看不到每胎的份额。 */
-export function getPregnancyNutritionTotal(pregnant) {
-  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
-  const total = fetuses.reduce((sum, fetus) => sum + (Number(fetus?.nutrition) || 0), 0);
-  return Math.round(total * 100) / 100;
-}
-
-/** 按计分当下的需求把点数拆给各胎；一胎都接不上供养（全在待着床）时点数作废。 */
+/**
+ * 按计分当下的需求把照料点数拆给各胎、加进健康；一胎都接不上供养（全在待着床）时点数作废。
+ * 点数先换成健康：加分 × 0.18、扣分 × 0.57，再乘孕速（夹在 0.25～4），
+ * 让不同孕期长度的物种在「每个孕周」上的照料效果相近。
+ */
 function addNutrition(profile, amount) {
   const pregnant = profile?.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
@@ -3438,30 +3448,114 @@ function addNutrition(profile, amount) {
   const demands = fetuses.map((fetus) => getNutritionDemand(fetus, fetuses, effectivePregnantDays, amount > 0));
   const totalDemand = demands.reduce((sum, value) => sum + value, 0);
   if (!amount || totalDemand <= 0) return 0;
+  const speed = clampNumber(getGestationEffectiveSpeed(profile), 0.25, 4, 1);
+  const health = amount * (amount > 0 ? FETAL_CARE_GAIN_SCALE : FETAL_CARE_LOSS_SCALE) * speed;
   for (let i = 0; i < fetuses.length; i += 1) {
     if (demands[i] <= 0) continue;
-    fetuses[i].nutrition = roundNutrition((Number(fetuses[i].nutrition) || 0) + amount * (demands[i] / totalDemand));
+    normalizeFetalHealthFields(fetuses[i]);
+    // 上限各胎不同：按上限等比，同样的照料对每胎是同样的比例
+    addFetalHealth(fetuses[i], health * (demands[i] / totalDemand) * (fetuses[i].healthMax / 100));
   }
   return amount;
 }
 
-/** 周结算：每胎把自己累积的供养力换算成胎重倍率后归零。 */
-function applyWeeklyNutrition(profile) {
+/** 两个孕日之间跨了几个周结算点 */
+function countCrossedWeeks(fromDays, toDays) {
+  return Math.max(0, Math.floor(Number(toDays) / 7) - Math.floor(Number(fromDays) / 7));
+}
+
+/**
+ * 周结算（每个日历周一次，跨几周就结几次）：按健康换算胎重、见底检查、周回归，都乘孕速。
+ * 见底第一次只警告；连续第二次标记 healthCollapsed，由 applyFetalHealthCrisis 在阶段推进后执行。
+ */
+function applyWeeklyFetalHealth(profile, weeks = 1, female = '') {
   const pregnant = profile?.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1);
-  const cap = NUTRITION_WEEKLY_CAP * gestationSpeed;
-  let changed = false;
-  for (const fetus of fetuses) {
-    const nutrition = Number(fetus?.nutrition) || 0;
-    if (nutrition === 0) continue;
-    const delta = clampNumber(nutrition * gestationSpeed * NUTRITION_WEIGHT_SCALE, -cap, cap, 0);
-    // 以指数换算：亏空再深也只会逐步变小，不会跌穿成负值
-    fetus.weight = clampNumber((Number(fetus.weight) || 1) * Math.exp(delta), 0.33, 3.0, 1);
-    fetus.nutrition = 0;
-    changed = true;
+  for (let week = 0; week < weeks; week += 1) {
+    for (const fetus of fetuses) {
+      if (!isImplantedFetus(fetus)) continue;
+      normalizeFetalHealthFields(fetus);
+      settleFetalHealthWeek(fetus, gestationSpeed);
+    }
   }
-  return changed;
+  return fetuses.length > 0;
+}
+
+/** 见底警告中的提醒（每轮由 updateAdvisoryNotify 重算，回升后自动消失）；角色还不知道的那一胎不点名 */
+function describeFetalHealthWarning(profile, female) {
+  const fetuses = Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : [];
+  const pending = fetuses.filter((fetus) => isImplantedFetus(fetus) && fetus.healthWarned);
+  if (pending.length === 0) return '';
+  const stage = String(profile?.base?.stage || '');
+  const outcome = profile?.immune?.miscarriage || !['孕早期', '孕中期', '孕晚期', '临产期', '逾期'].includes(stage) ? ''
+    : (stage === '孕早期' || stage === '孕中期')
+      ? (getImplantedFetuses(profile).length > pending.length ? '停止发育、被母体吸收' : '流产')
+      : '早产';
+  const visible = fetuses.filter(isFetusKnownToCharacter);
+  const names = pending.filter((fetus) => visible.includes(fetus)).map((fetus) => `第${visible.indexOf(fetus) + 1}胎`);
+  const who = names.length > 0 && names.length === pending.length ? `腹中${names.join('、')}` : '腹中胎儿';
+  return `${female}${who}的健康已到危急${outcome ? `，下一次周结算仍未好转就会${outcome}` : ''}；休养、进补、治疗与照顾好需求能让它回升`;
+}
+
+/**
+ * 见底中断：连续两次周结算见底的胎儿。孕早中期单胎（或全部见底）流产、多胎只吸收那一胎，
+ * 孕晚期起早产（进产兆前驱）。流产免疫、延产期与其他阶段不中断，健康停在 1%。
+ */
+function applyFetalHealthCrisis(profile, runtime, female) {
+  const base = profile?.base || {};
+  const pregnant = profile?.pregnant || {};
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const collapsed = fetuses.filter((fetus) => isImplantedFetus(fetus) && fetus.healthCollapsed);
+  if (collapsed.length === 0) return { changed: false };
+  const stage = String(base.stage || '');
+  const notify = profile.notify || {};
+  const visible = fetuses.filter(isFetusKnownToCharacter);
+  const hold = (message) => {
+    for (const fetus of collapsed) {
+      delete fetus.healthCollapsed;
+      fetus.health = Math.max(Number(fetus.health) || 0, clampNumber(fetus.healthMax, 1, 1000, 100) * FETAL_HEALTH_FLOOR_RATIO);
+    }
+    if (message) profile.notify = { ...notify, secondly: message };
+    return { changed: false };
+  };
+  if (profile?.immune?.miscarriage) return hold(`${female}腹中胎儿的健康见底，但受到保护，依旧留着`);
+  if (!['孕早期', '孕中期', '孕晚期', '临产期', '逾期'].includes(stage)) return hold('');
+
+  if (stage === '孕早期' || stage === '孕中期') {
+    const implanted = getImplantedFetuses(profile);
+    if (collapsed.length < implanted.length) {
+      const gone = new Set(collapsed.map((fetus) => Number(fetus.embryoId)).filter(Number.isFinite));
+      const known = collapsed.filter((fetus) => visible.includes(fetus)).map((fetus) => `第${visible.indexOf(fetus) + 1}胎`);
+      // 宿主没了，套在它体内的那一胎也活不下来
+      pregnant.fetuses = fetuses.filter((fetus) => !collapsed.includes(fetus) && !gone.has(Number(fetus.nestedInEmbryoId)));
+      pregnant.fetusesCount = pregnant.fetuses.length;
+      updateFetalEnergyDrain(profile);
+      applyPregnancyPhysiology(profile, runtime || {});
+      profile.notify = {
+        ...notify,
+        // 角色还不知道的那一胎不能因吸收而曝光
+        secondly: known.length === collapsed.length
+          ? `${female}腹中${known.join('、')}停止发育，被母体吸收了`
+          : `${female}下腹隐隐作痛，有少量出血`,
+      };
+      return { changed: true, absorbed: collapsed.length };
+    }
+    const experience = profile.experience || {};
+    const recoveryDays = settlePostpartumRecoveryDays(profile, { miscarriage: true });
+    clearPregnancyState(profile);
+    restorePregnancyPhysiology(profile, runtime || {});
+    assignPostpartumRecoveryDays(profile, recoveryDays);
+    base.stage = '产后恢复';
+    base.days = 0;
+    experience.miscarriageExperience = clampNumber(experience.miscarriageExperience, 0, 999, 0) + 1;
+    profile.experience = experience;
+    profile.notify = { ...notify, firstly: `${female}进入了产后恢复`, secondly: `${female}腹中胎儿的健康衰竭，流产了` };
+    return { changed: true, miscarried: true };
+  }
+  for (const fetus of collapsed) delete fetus.healthCollapsed;
+  enterProdromalStage(profile, female, stage, `${female}腹中胎儿的健康衰竭，提早出现了分娩前兆`);
+  return { changed: true, preterm: true };
 }
 
 // 足月自然发动：宫压过上限一半先示警，下次推进仍未缓解就进入产兆前驱（applyPressureCrisis；66% 则当下发动）。
@@ -3663,8 +3757,8 @@ function getDerivedFluxNeedLabel(value) {
   return (Number(value) || 0) >= 0 ? '正极释放需求' : '负极释放需求';
 }
 
-// 供养力只来自需求照料：在「高」时处理到「无」+1，拖到「爆」−1、停在爆每满 24 小时再 −1（点数再按种族归一化）。
-// 「满」是中性区；产程中已无周结算，计分到产兆前驱为止。
+// 照料点数来自需求：在「高」时处理到「无」+1，拖到「爆」−1、停在爆每满 24 小时再 −1（点数再按种族归一化），
+// 再由 addNutrition 换成胎儿健康。「满」是中性区；产程中已无周结算，计分到产兆前驱为止。
 const NUTRITION_NEED_KEYS = Object.freeze(['excretion', 'hunger', 'sleep', 'milk', 'odor', 'companionship']);
 const NUTRITION_BURST_REPEAT_MINUTES = 24 * 60;
 
@@ -3766,7 +3860,8 @@ function accrueNutritionBurst(profile, deltaMinutes) {
     const repeats = Math.floor(minutes / NUTRITION_BURST_REPEAT_MINUTES);
     minutes -= repeats * NUTRITION_BURST_REPEAT_MINUTES;
     burst[key] = minutes;
-    if (scoring) charged += repeats;
+    // 单次推进超过 7 天只扣 7 天份：长时间跳过代表镜头外照常生活，要写成疏于照料就分段推进
+    if (scoring) charged += Math.min(repeats, FETAL_BURST_MAX_DAYS_PER_PASS);
   }
   if (charged === 0) return 0;
   return addNutrition(profile, -charged * getNutritionPointScale(levels));
@@ -3823,7 +3918,7 @@ function updateAdvisoryNotify(profile, female) {
   if (canScoreNutrition(profile)) {
     const levels = getNutritionNeedLevels(profile);
     if (Object.values(levels).includes('高')) {
-      reminders.push(`${female}有需求正处于「高」：趁现在彻底处理能为胎儿补充供养力，拖到「爆」则会流失`);
+      reminders.push(`${female}有需求正处于「高」：趁现在彻底处理能让胎儿更健康，拖到「爆」则会伤到胎儿`);
     }
   }
 
@@ -3855,6 +3950,9 @@ function updateAdvisoryNotify(profile, female) {
       ? `${female}正处于产兆前驱阶段；若剧情明确把胎儿往上托，可用 bsAssistFetalPosition（action=lift）延后分娩，需要足够活力；真实产程下分娩只能延后、无法取消，累计延后到上限后必然进入产程`
       : `${female}正处于产兆前驱阶段；若剧情明确把胎儿往上托，可用 bsAssistFetalPosition（action=lift）延后分娩，需要足够活力`);
   }
+
+  const healthWarning = describeFetalHealthWarning(profile, female);
+  if (healthWarning) reminders.push(healthWarning);
 
   profile.notify = {
     ...notify,
@@ -4017,6 +4115,8 @@ function clearPregnancyState(profile) {
   pregnant.fetuses = [];
   pregnant.fetusesCount = 0;
   pregnant.fetalEnergyDrain = 0;
+  pregnant.fetalEvents = [];
+  delete pregnant.fetalEventSummary;
   pregnant.blockage = null;
   pregnant.acceleration = null;
   pregnant.expansion = null;
@@ -4080,6 +4180,8 @@ function appendChildrenFromFetuses(profile, fetuses) {
       // 伴生卵只留下出生背景；无论几枚，祖谱仍只新增这一名有效后代。
       birthCompanionEggCount: getCompanionEggCount(fetus),
       birthAffinity: clampNumber(fetus?.affinity, -50, 50, 0),
+      // 胎儿事件堆在妊娠结束时清掉，孩子身上只留摘要（只是纪录，不影响孩子本身）
+      prenatalSummary: buildPrenatalSummary(profile.pregnant, fetus),
       talents: normalizeTalentList(fetus?.talents),
     });
   }
@@ -6197,7 +6299,7 @@ function shiftProdromalTime(profile, female, deltaHours) {
 // 通过检查就必定成功；难度完全由检查条件与活力门槛表现。
 // 托高是跟宫缩对抗，要母体撑得住：活力不足就拒绝，状态完全不变。
 const ASSIST_PAIN_BOOST_CAP = 5;
-const ASSIST_ACTIONS = Object.freeze(['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest']);
+const ASSIST_ACTIONS = Object.freeze(['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest', 'sibling']);
 /** 各动作的瞬时痛感（产程相关阶段）；孕期改为心理压力 × 2 */
 const ASSIST_PAIN = Object.freeze({ lift: 2, descend: 1.5, rotate: 2, extract: 3, rupture: 0.5 });
 /** 活力消耗倍率：托高吃满，顺着宫缩促降与转位减半，外力完成的拉出与破水不扣 */
@@ -6379,6 +6481,11 @@ function applyAssistFetalPosition(chatState, args) {
   const bySelf = actor === 'fetus';
   if (bySelf && action === 'extract') return skip('a fetus cannot pull itself out; extract needs an assistant.');
   if (action === 'push' || action === 'rest') return applyLaborEffortSwitch(character, female, action, bySelf, skip);
+  if (action === 'sibling') {
+    const stage = String(character?.profile?.base?.stage || '');
+    if (!(PREGNANCY_STAGES.includes(stage) || stage === '产兆前驱' || stage === '第一产程')) return skip(`stage ${stage || '(none)'} has no fetuses that can interact.`);
+    return applySiblingInteraction(chatState, character, female, args, skip);
+  }
 
   const next = cloneValue(character);
   const profile = next.profile || {};
@@ -6517,104 +6624,176 @@ function applyAssistFetalPosition(chatState, args) {
   return { applied: true, message: `bsAssistFetalPosition ${action}${bySelf ? ' (by the fetus itself)' : ''} applied to ${female}.` };
 }
 
-function applyMaternalFetalInteraction(chatState, args) {
+const FETAL_EVENT_AFFINITY_CHANGES = Object.freeze(['slight_increase', 'significant_increase', 'slight_decrease', 'significant_decrease']);
+const MINUTES_PER_DAY = 1440;
+
+/** 同一胎、同一 kind 在最近 7 天内已结算过几次（递减用） */
+function countRecentFetalEvents(events, embryoId, kind, minutesPassed) {
+  const since = minutesPassed - FETAL_EVENT_DECAY_DAYS * MINUTES_PER_DAY;
+  return events.filter((event) => event.kind === kind && event.counted !== false && Number(event.minutesPassed) > since
+    && event.effects?.[embryoId]).length;
+}
+
+/** 这一胎今天已用掉的额度：亲和取绝对值加总、照料取正值加总 */
+function sumTodayFetalEffect(events, embryoId, today, field, group) {
+  return events.filter((event) => Number(event.storyDayIndex) === today && FETAL_EVENT_KINDS[event.kind]?.group === group)
+    .reduce((sum, event) => sum + Math.abs(Number(event.effects?.[embryoId]?.[field]) || 0), 0);
+}
+
+/**
+ * 胎儿事件：健康（伤害、照料）与亲和（母体安抚、胎儿亲近或排斥）合一。
+ * 防刷以故事日记帐：同一天同一胎同一 kind 只结算一次；亲和与照料 7 天内递减、每天有上限；伤害不递减。
+ * 每次都记进 pregnant.fetalEvents，被挡下的也记（counted=false）。
+ */
+function applyFetalEvent(chatState, args, source = '') {
   const female = String(args?.female || '').trim();
-  const direction = String(args?.direction || 'fetal').trim();
-  const change = String(args?.change || '').trim();
   const character = chatState.characters?.[female];
-  if (!female || !character) {
-    return { applied: false, message: `bsMaternalFetalInteraction skipped: unknown character ${female || '(empty)'}.` };
+  const skip = (reason) => ({ applied: false, message: `bsFetalEvent skipped for ${female || '(empty)'}: ${reason}` });
+  if (!female || !character) return skip('unknown character.');
+  const kind = String(args?.kind || '').trim();
+  const meta = FETAL_EVENT_KINDS[kind];
+  if (!meta) return skip(`unknown kind ${kind || '(empty)'}.`);
+  const time = typeof args?.time === 'string' ? args.time.trim() : '';
+  const content = typeof args?.content === 'string' ? args.content.trim() : '';
+  if (!time || !content) return skip('time and content are required.');
+  if (args?.pin !== undefined && typeof args.pin !== 'boolean') return skip('pin must be a boolean.');
+  let change = String(args?.change || '').trim();
+  if (kind === 'soothe') {
+    if (change) return skip('soothe does not take change; the system rolls the result.');
+  } else if (!FETAL_EVENT_CHANGES.includes(change)) {
+    return skip('change must be one of slight/significant/severe with _increase or _decrease.');
   }
 
-  const changeMap = Object.freeze({
-    slight_increase: 0.5,
-    significant_increase: 1,
-    slight_decrease: -0.5,
-    significant_decrease: -1,
-  });
-  const changeDisplayMap = Object.freeze({
-    slight_increase: '轻微增加',
-    significant_increase: '显著增加',
-    slight_decrease: '轻微减少',
-    significant_decrease: '显著减少',
-  });
   const next = cloneValue(character);
   const profile = next.profile || {};
-  const stage = String(profile?.base?.stage || '');
-  // 延产期的胎儿被关得太久，对母体的情绪更敏感：亲和波动加倍（±1／±2）
-  const affinitySwing = stage === '延产期' ? 2 : 1;
-  const interactionCooldown = profile.cooldown || {};
-  if (interactionCooldown.maternalFetalInteractionUsed) {
-    return { applied: false, message: `bsMaternalFetalInteraction skipped for ${female}: already changed during this story hour.` };
-  }
+  const base = profile.base || {};
   const pregnant = profile.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  if (fetuses.length === 0) {
-    return { applied: false, message: `bsMaternalFetalInteraction skipped for ${female}: no fetuses.` };
+  const implanted = fetuses.filter(isImplantedFetus);
+  if (implanted.length === 0) return skip('no implanted fetus.');
+  const events = normalizeFetalEventList(pregnant.fetalEvents);
+  if (source && events.some((event) => event.source === source)) return { applied: false, unchanged: true, message: '胎儿事件来源已记录。' };
+
+  const stage = String(base.stage || '');
+  const minutesPassed = Math.max(0, Number(chatState.minutesPassed) || 0);
+  const today = getStoryDayIndex(minutesPassed);
+  const hasIndex = args?.fetusIndex !== undefined && args?.fetusIndex !== null;
+  let targets;
+  if (hasIndex) {
+    const target = resolveVisibleFetus(fetuses, args.fetusIndex);
+    if (!target || !isImplantedFetus(target)) return skip('invalid fetusIndex.');
+    targets = [target];
+  } else if (meta.group === 'affinity') {
+    targets = [implanted[randomInt(0, implanted.length - 1)]];
+  } else {
+    targets = implanted;
   }
 
-  const cooldown = profile.cooldown || {};
-  if (direction === 'sibling') return applySiblingInteraction(chatState, next, female, change); if (direction === 'maternal') {
-    const selectedIndex = pickImplantedFetusIndex(fetuses);
-    if (selectedIndex < 0) return { applied: false, message: 'bsMaternalFetalInteraction skipped: 没有已著床的胎儿。' };
-    const selectedFetus = fetuses[selectedIndex];
-    const maternalChangeKeys = Object.keys(changeMap);
-    const maternalChange = maternalChangeKeys[randomInt(0, maternalChangeKeys.length - 1)];
-    const maternalChangeValue = changeMap[maternalChange] * affinitySwing;
-    const maternalChangeDisplay = changeDisplayMap[maternalChange];
-
-    const psyStress = clampNumber(profile?.base?.psyStress, 0, 9999, 0);
-    const success = Math.random() >= Math.min(1, psyStress / 200);
-    // 失败只是没安抚到，胎位不受影响
-    if (success) {
-      const currentAffinity = clampNumber(selectedFetus?.affinity, -50, 50, 0);
-      selectedFetus.affinity = clampNumber(currentAffinity + maternalChangeValue, -50, 50, 0);
+  // 延产期的胎儿被关得太久，对母体的情绪更敏感：亲和波动与每日上限加倍
+  const extended = stage === '延产期';
+  let failed = false;
+  if (kind === 'soothe') {
+    change = FETAL_EVENT_AFFINITY_CHANGES[randomInt(0, FETAL_EVENT_AFFINITY_CHANGES.length - 1)];
+    const psyStress = clampNumber(base.psyStress, 0, 9999, 0);
+    failed = Math.random() < Math.min(1, psyStress / 200);
+  }
+  const magnitude = getChangeMagnitude(change);
+  const effects = {};
+  const blocked = [];
+  for (const fetus of targets) {
+    normalizeFetalHealthFields(fetus);
+    const id = String(fetus.embryoId ?? '');
+    const sameToday = events.some((event) => event.kind === kind && event.counted !== false
+      && Number(event.storyDayIndex) === today && event.effects?.[id]);
+    if (sameToday) {
+      blocked.push(fetus);
+      continue;
     }
-    pregnant.fetuses = fetuses;
-    pregnant.fetusesCount = fetuses.length;
-    profile.cooldown = {
-      ...cooldown,
-      maternalFetalInteractionUsed: true,
-    };
-    profile.pregnant = pregnant;
-    profile.notify = {
-      ...(profile.notify || {}),
-      secondly: success
-        ? `${female}安抚了第${selectedIndex + 1}胎，亲密度${maternalChangeDisplay}了`
-        : `${female}尝试安抚第${selectedIndex + 1}胎，但因心理压力过大而失败，胎儿没有回应`,
-    };
-    next.profile = profile;
-    chatState.characters[female] = next;
-    return { applied: true, message: `bsMaternalFetalInteraction applied to ${female}: maternal interaction.` };
+    const decay = meta.group === 'harm' ? 1 : 1 / (1 + countRecentFetalEvents(events, id, kind, minutesPassed));
+    if (meta.group === 'affinity') {
+      if (failed) continue;
+      const cap = FETAL_EVENT_DAILY_AFFINITY_CAP * (extended ? 2 : 1);
+      const room = Math.max(0, cap - sumTodayFetalEffect(events, id, today, 'affinity', 'affinity'));
+      const wanted = FETAL_EVENT_AFFINITY[magnitude] * (extended ? 2 : 1) * getChangeSign(change) * decay;
+      const amount = Math.sign(wanted) * Math.min(Math.abs(wanted), room);
+      const before = clampNumber(fetus.affinity, -50, 50, 0);
+      fetus.affinity = clampNumber(before + amount, -50, 50, 0);
+      const applied = Math.round((fetus.affinity - before) * 100) / 100;
+      if (applied !== 0) effects[id] = { affinity: applied };
+    } else {
+      const scale = clampNumber(fetus.healthMax, 1, 1000, 100) / 100;
+      const nested = getEnclosingHost(fetus, fetuses) ? FETAL_EVENT_NESTED_FACTOR : 1;
+      let amount = FETAL_EVENT_HEALTH[magnitude] * scale * nested * decay;
+      if (meta.group === 'harm') {
+        amount = -amount * getFetalEventSensitivity(kind, stage);
+      } else {
+        const room = Math.max(0, FETAL_EVENT_DAILY_CARE_CAP * scale - sumTodayFetalEffect(events, id, today, 'health', 'care'));
+        amount = Math.min(amount, room);
+      }
+      const applied = Math.round(addFetalHealth(fetus, amount) * 100) / 100;
+      if (applied !== 0) effects[id] = { health: applied };
+    }
   }
 
-  const changeValue = changeMap[change] === undefined ? undefined : changeMap[change] * affinitySwing;
-  if (changeValue === undefined) {
-    return { applied: false, message: `bsMaternalFetalInteraction skipped for ${female}: direction=fetal requires a valid change.` };
+  // 外伤、过劳另加宫压（整个子宫一次，不按胎数），同一天同类已结算就不再加
+  let pressure = 0;
+  if (meta.pressure && Object.keys(effects).length > 0) {
+    const cap = getUterinePressureCap(profile);
+    const before = clampNumber(base.uterinePressure, 0, cap, 0);
+    base.uterinePressure = clampNumber(before + FETAL_EVENT_PRESSURE[magnitude], 0, cap, before);
+    pressure = Math.round((base.uterinePressure - before) * 100) / 100;
   }
-  const selectedIndex = pickImplantedFetusIndex(fetuses);
-  if (selectedIndex < 0) return { applied: false, message: 'bsMaternalFetalInteraction skipped: 没有已著床的胎儿。' };
-  const selectedFetus = fetuses[selectedIndex];
-  const currentAffinity = clampNumber(selectedFetus?.affinity, -50, 50, 0);
-  selectedFetus.affinity = clampNumber(currentAffinity + changeValue, -50, 50, 0);
 
-  pregnant.fetuses = fetuses;
-  pregnant.fetusesCount = fetuses.length;
+  const counted = Object.keys(effects).length > 0 || (kind === 'soothe' && failed && blocked.length < targets.length);
+  const sequence = (events.at(-1)?.sequence || 0) + 1;
+  events.push({
+    id: `${sequence}`,
+    sequence,
+    ...(source ? { source } : {}),
+    time,
+    minutesPassed,
+    storyDayIndex: today,
+    kind,
+    ...(change ? { change } : {}),
+    scope: hasIndex || meta.group === 'affinity' ? 'one' : 'all',
+    embryoIds: targets.map((fetus) => fetus.embryoId),
+    content,
+    ...(args.pin === true ? { pin: true } : {}),
+    effects,
+    ...(pressure > 0 ? { pressure } : {}),
+    ...(kind === 'soothe' && failed ? { failed: true } : {}),
+    counted,
+  });
+  pregnant.fetalEvents = events;
+  compactFetalEvents(pregnant, chatState.reproductiveSettings);
+  profile.base = base;
   profile.pregnant = pregnant;
-  profile.cooldown = {
-    ...cooldown,
-    maternalFetalInteractionUsed: true,
-  };
 
-  const notify = profile.notify || {};
-  const changeDisplay = changeDisplayMap[change];
-  const targetName = `第${selectedIndex + 1}胎`;
-  notify.secondly = `${targetName}对${female}的亲密度${changeDisplay}了`;
-  profile.notify = notify;
-
+  const visible = fetuses.filter(isFetusKnownToCharacter);
+  const label = (fetus) => (visible.includes(fetus) ? `第${visible.indexOf(fetus) + 1}胎` : '胎儿');
+  const targetText = targets.length === 1 ? label(targets[0]) : '腹中胎儿';
+  let summary = '';
+  if (!counted) {
+    summary = '';
+  } else if (kind === 'soothe') {
+    summary = failed
+      ? `${female}尝试安抚${targetText}，但因心理压力过大而失败，胎儿没有回应`
+      : `${female}安抚了${targetText}，亲密度${describeFetalEventChange(change)}了`;
+  } else if (kind === 'fetal_reaction') {
+    summary = `${targetText}对${female}的亲密度${describeFetalEventChange(change)}了`;
+  } else if (meta.group === 'harm') {
+    summary = `${targetText}受到${describeFetalEventKind(kind)}影响（${describeFetalEventMagnitude(change)}）${pressure > 0 ? '，宫压随之升高' : ''}`;
+  } else {
+    summary = `${targetText}得到${describeFetalEventKind(kind)}（${describeFetalEventMagnitude(change)}）`;
+  }
+  if (summary) profile.notify = { ...(profile.notify || {}), secondly: summary };
   next.profile = profile;
   chatState.characters[female] = next;
-  return { applied: true, message: `bsMaternalFetalInteraction applied to ${female}.` };
+  if (!counted) {
+    return { applied: true, message: `bsFetalEvent recorded for ${female}: ${kind} already counted today (or capped), so it has no further effect.` };
+  }
+  const partial = blocked.length > 0 ? ` ${blocked.length} fetus(es) already had ${kind} counted today.` : '';
+  return { applied: true, message: `bsFetalEvent applied to ${female}: ${kind}${change ? ` ${change}` : ''}.${partial}` };
 }
 
 /**
@@ -6911,7 +7090,10 @@ function applyPooledPregnancyBatch(profile, tick, plan, runtime, isHere, name, n
   const crossedWeek = plan.spans.some((span) => pregnancy(span.stage)
     && Math.floor((span.pregnantDaysEnd + (span.pregnantDaysEnd === span.pregnantDaysStart
       ? (span.toMinute - span.fromMinute) / 1440 : 0)) / 7) > Math.floor(span.pregnantDaysStart / 7));
-  if (crossedWeek && isHere) applyWeeklyNutrition(profile);
+  const crossedWeeks = plan.spans.filter((span) => pregnancy(span.stage)).reduce((sum, span) => sum
+    + countCrossedWeeks(span.pregnantDaysStart, span.pregnantDaysEnd + (span.pregnantDaysEnd === span.pregnantDaysStart
+      ? (span.toMinute - span.fromMinute) / 1440 : 0)), 0);
+  if (crossedWeek && isHere) applyWeeklyFetalHealth(profile, Math.max(1, crossedWeeks), name);
   updateFetalEnergyDrain(profile);
   updateDerivedTypeProgress(profile, active);
   revealSuperfetationFetuses(profile, name, notify);
@@ -7010,7 +7192,7 @@ function applyTimeToCharacter(character, tick) {
     const crossedWeek = pooledPlan ? pooledPlan.spans.some((span) => PREGNANCY_STAGES.includes(span.stage)
       && Math.floor(span.pregnantDaysEnd / 7) > Math.floor(span.pregnantDaysStart / 7)) : newWeek > oldWeek;
     if (!pooledPlan) {
-      if (crossedWeek && isHere) applyWeeklyNutrition(profile);
+      if (crossedWeek && isHere) applyWeeklyFetalHealth(profile, countCrossedWeeks(oldPregnantDays, pregnant.pregnantDays), next.name);
       updateDerivedTypeProgress(profile, pregnancyTick);
       revealSuperfetationFetuses(profile, next.name, notify);
     }
@@ -7042,6 +7224,14 @@ function applyTimeToCharacter(character, tick) {
       stage = String(base.stage || stage);
       days = clampNumber(base.days, 0, 9999, 0);
       stageChanged = true;
+    }
+    const healthCrisis = isHere && PREGNANCY_STAGES.includes(stage)
+      ? applyFetalHealthCrisis(profile, next.runtime || {}, next.name)
+      : { changed: false };
+    if (healthCrisis.changed) {
+      stage = String(base.stage || stage);
+      days = clampNumber(base.days, 0, 9999, 0);
+      stageChanged = stageChanged || stage !== oldStage;
     }
     if (!isHere && maybeStartOffscreenLabor(profile, next.name)) {
       stage = String(base.stage || stage);
@@ -7107,7 +7297,7 @@ function applyTimeToCharacter(character, tick) {
     if (!pooledPlan) {
       pregnant.pregnantDays = oldPregnantDays + laborTick.deltaDays;
       pregnant.effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) + (laborTick.deltaDays * clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1));
-      if (Math.floor(pregnant.pregnantDays / 7) > Math.floor(oldPregnantDays / 7) && isHere) applyWeeklyNutrition(profile);
+      if (countCrossedWeeks(oldPregnantDays, pregnant.pregnantDays) > 0 && isHere) applyWeeklyFetalHealth(profile, countCrossedWeeks(oldPregnantDays, pregnant.pregnantDays), next.name);
       if (isHere) applyHourlyPregnancyMetabolism(profile, laborTick);
       updateDerivedTypeProgress(profile, laborTick);
     }
@@ -7207,7 +7397,7 @@ function applyTimeToCharacter(character, tick) {
     naturalOvulationUsed: shouldResetNaturalOvulation(stage) ? false : Boolean((profile.cooldown || cooldown).naturalOvulationUsed),
     pregnancyPressureWarning: shouldKeepPregnancyPressureWarning(profile) ? Boolean((profile.cooldown || cooldown).pregnancyPressureWarning) : false,
     psychologyUpdateUsed: tick.passedHours > 0 ? false : Boolean(cooldown.psychologyUpdateUsed),
-    maternalFetalInteractionUsed: tick.passedHours > 0 ? false : Boolean(cooldown.maternalFetalInteractionUsed),
+    siblingInteractionUsed: tick.passedHours > 0 ? false : Boolean(cooldown.siblingInteractionUsed),
   };
   accrueNutritionBurst(profile, tick.deltaMinutes);
   reconcileFetalDescent(profile);
@@ -8819,7 +9009,7 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsImplantEmbryo') return applyImplantEmbryo(chatState, args);
   if (name === 'bsWombReturn') return applyWombReturn(chatState, args);
   if (name === 'bsChildbirth') return applyChildbirth(chatState, args);
-  if (name === 'bsMaternalFetalInteraction') return applyMaternalFetalInteraction(chatState, args);
+  if (name === 'bsFetalEvent') return applyFetalEvent(chatState, args, call.sourceId || '');
   if (name === 'bsAssistFetalPosition') return applyAssistFetalPosition(chatState, args);
   if (name === 'bsDebugInjectPregnancy') return applyDebugInjectPregnancy(chatState, args);
   if (name === 'bsDebugClearContainers') return applyDebugClearContainers(chatState, args);
@@ -8857,13 +9047,16 @@ function captureVisibleFetusOrder(chatState) {
 
 function remapBatchFetusIndex(chatState, batchOrder, call) {
   const args = call?.arguments;
-  if (!args || !Number.isInteger(args.fetusIndex) || call.name === 'bsDebugSetFetalPosition') return;
+  if (!args || call.name === 'bsDebugSetFetalPosition') return;
   const female = String(args.female || '').trim();
-  const embryoId = batchOrder[female]?.[args.fetusIndex];
-  if (embryoId === undefined || embryoId === null) return;
   const fetuses = chatState?.characters?.[female]?.profile?.pregnant?.fetuses;
   const visible = (Array.isArray(fetuses) ? fetuses : []).filter(isFetusKnownToCharacter);
-  args.fetusIndex = visible.findIndex((fetus) => fetus?.embryoId === embryoId);
+  for (const key of ['fetusIndex', 'otherFetusIndex']) {
+    if (!Number.isInteger(args[key])) continue;
+    const embryoId = batchOrder[female]?.[args[key]];
+    if (embryoId === undefined || embryoId === null) continue;
+    args[key] = visible.findIndex((fetus) => fetus?.embryoId === embryoId);
+  }
 }
 
 export function applyToolCallsResult(ctx, result, sourceId = '') {
@@ -8986,31 +9179,50 @@ function settleNaturalCrowding(profile, fetuses, fetus, before) {
 }
 
 /**
- * direction=sibling：随机一对相邻且角色已知的胎儿互动。
- * 踢让对方小幅偏转、推挤可能左右换位、依偎不改位置；不碰 affinity。
+ * bsAssistFetalPosition action=sibling：腹中两胎互动。fetusIndex 动手、otherFetusIndex 被动（省略取它旁边的一胎），
+ * 两个都省略时随机一对。踢让对方小幅偏转、推挤可能左右换位、依偎不改位置；不碰亲和与健康。
+ * 只限角色已知、已着床、不在宿主体内且彼此相邻的胎儿；每个故事小时最多成功一次。
  */
-function applySiblingInteraction(chatState, next, female, change) {
-  const skip = (reason) => ({ applied: false, message: `bsMaternalFetalInteraction skipped for ${female}: ${reason}` });
-  if (!['slight_increase', 'significant_increase', 'slight_decrease', 'significant_decrease'].includes(change)) {
-    return skip('direction=sibling requires a valid change.');
-  }
+const SIBLING_INTERACTIONS = Object.freeze(['kick', 'shove', 'cuddle']);
+
+function applySiblingInteraction(chatState, character, female, args, skip) {
+  const interaction = String(args?.interaction || '').trim();
+  if (!SIBLING_INTERACTIONS.includes(interaction)) return skip('sibling needs interaction=kick, shove or cuddle.');
+  if (character?.profile?.cooldown?.siblingInteractionUsed) return skip('a sibling interaction already happened during this story hour.');
+  const next = cloneValue(character);
   const profile = next.profile || {};
   const pregnant = profile.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const known = (fetus) => isFetusKnownToCharacter(fetus) && !fetus?.pendingImplantation && !getEnclosingHost(fetus, fetuses);
-  const pairs = [];
-  for (const fetus of fetuses.filter(known)) {
-    for (const other of getSpatialNeighbors(fetuses, fetus)) {
-      if (known(other) && fetuses.indexOf(fetus) < fetuses.indexOf(other)) pairs.push([fetus, other]);
+  const pick = (index) => (index === undefined || index === null ? null : resolveVisibleFetus(fetuses, index));
+  let actor = pick(args?.fetusIndex);
+  let target = pick(args?.otherFetusIndex);
+  if ((args?.fetusIndex !== undefined && args?.fetusIndex !== null && !actor)
+    || (args?.otherFetusIndex !== undefined && args?.otherFetusIndex !== null && !target)) return skip('invalid fetusIndex or otherFetusIndex.');
+  if ((actor && !known(actor)) || (target && !known(target))) return skip('both fetuses must be implanted, known to the character and not inside a host fetus.');
+  if (actor && target && actor === target) return skip('a fetus cannot interact with itself.');
+  if (!actor && target) [actor, target] = [target, null];
+  if (actor && target) {
+    if (!getSpatialNeighbors(fetuses, actor).includes(target)) return skip('the two fetuses are not next to each other.');
+  } else if (actor) {
+    const neighbors = getSpatialNeighbors(fetuses, actor).filter(known);
+    if (neighbors.length === 0) return skip('that fetus has no known neighbor to interact with.');
+    target = neighbors[randomInt(0, neighbors.length - 1)];
+  } else {
+    const pairs = [];
+    for (const fetus of fetuses.filter(known)) {
+      for (const other of getSpatialNeighbors(fetuses, fetus)) {
+        if (known(other) && fetuses.indexOf(fetus) < fetuses.indexOf(other)) pairs.push([fetus, other]);
+      }
     }
+    if (pairs.length === 0) return skip('there is no pair of neighboring fetuses known to the character.');
+    const pair = pairs[randomInt(0, pairs.length - 1)];
+    [actor, target] = Math.random() < 0.5 ? pair : [pair[1], pair[0]];
   }
-  if (pairs.length === 0) return skip('there is no pair of neighboring fetuses known to the character.');
-  const pair = pairs[randomInt(0, pairs.length - 1)];
-  const [actor, target] = Math.random() < 0.5 ? pair : [pair[1], pair[0]];
   const visible = fetuses.filter(isFetusKnownToCharacter);
   const name = (fetus) => `第${visible.indexOf(fetus) + 1}胎`;
   let summary;
-  if (change === 'slight_decrease') {
+  if (interaction === 'kick') {
     if (canMoveFreely(target, fetuses)) {
       const before = wrapAngle(clampNumber(target.tendencyAngle, 0, 360, 0));
       target.tendencyAngle = wrapAngle(before + (randomInt(10, 20) * (Math.random() < 0.5 ? -1 : 1)));
@@ -9018,7 +9230,7 @@ function applySiblingInteraction(chatState, next, female, change) {
     } else {
       summary = `${female}腹中${name(actor)}踢了${name(target)}一脚，${name(target)}已经入盆，没有被踢动`;
     }
-  } else if (change === 'significant_decrease') {
+  } else if (interaction === 'shove') {
     const before = fetuses.indexOf(actor) < fetuses.indexOf(target);
     const [actorName, targetName] = [name(actor), name(target)]; // 换位前的编号，与上一轮看到的一致
     const movers = fetuses.filter((fetus) => canMoveFreely(fetus, fetuses));
@@ -9032,13 +9244,13 @@ function applySiblingInteraction(chatState, next, female, change) {
       ? `${female}腹中${actorName}和${targetName}推挤起来，两胎换了左右位置`
       : `${female}腹中${actorName}和${targetName}推挤了一阵，但都挤不动，位置没变`;
   } else {
-    summary = `${female}腹中${name(actor)}和${name(target)}${change === 'significant_increase' ? '紧紧依偎在一起' : '挨在一起'}，胎动平静了下来`;
+    summary = `${female}腹中${name(actor)}和${name(target)}依偎在一起，胎动平静了下来`;
   }
   pregnant.fetuses = fetuses;
   profile.pregnant = pregnant;
-  profile.cooldown = { ...(profile.cooldown || {}), maternalFetalInteractionUsed: true };
+  profile.cooldown = { ...(profile.cooldown || {}), siblingInteractionUsed: true };
   profile.notify = { ...(profile.notify || {}), secondly: summary };
   next.profile = profile;
   chatState.characters[female] = next;
-  return { applied: true, message: `bsMaternalFetalInteraction applied to ${female}: sibling interaction. ${summary}` };
+  return { applied: true, message: `bsAssistFetalPosition sibling applied to ${female}. ${summary}` };
 }

@@ -16,7 +16,8 @@ import {
   getSpermDoseDifficultyBonus,
 } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, MENSTRUAL_STAGE_DAYS } from './stage_config.js';
-import { CONCEPTION_WEIGHT_LOG_SD, getConceptionStageWeight, resolveConceptionWeightRatio } from './body_size.js';
+import { CONCEPTION_WEIGHT_LOG_SD, resolveConceptionWeightRatio } from './body_size.js';
+import { getConceptionTimingFactor } from './fetal_health.js';
 
 export const SPERM_DECAY_PER_DAY = 10;
 export const CROSS_RACE_DIFFICULTY_MULTIPLIER = 1.5;
@@ -286,7 +287,8 @@ export function calculateOffspringPreview({
   }, null);
   // 与引擎同一套：双方种族都有数值体型时看体型差，否则退回承载耐受（见 body_size.js）；计算机只有种族，用种族平均体型
   const { ratio: breedWeightRatio, basis: weightRatioBasis } = resolveConceptionWeightRatio({ race: eggRace }, { race: spermRace });
-  const stageWeight = getConceptionStageWeight(conceptionStage);
+  // 1.2.5 起受孕时机与天生变异乘在胎儿健康的上限上，初始胎重只看性别与体型
+  const healthTimingFactor = getConceptionTimingFactor(conceptionStage);
   const genderRatio = Object.prototype.hasOwnProperty.call(profile, 'genderRatio') ? profile.genderRatio : undefined;
   const sexMultipliers = genderRatio === null || Number(genderRatio) === -1
     ? [1]
@@ -295,15 +297,17 @@ export function calculateOffspringPreview({
       : Number(genderRatio) >= 100
         ? [1.05]
         : [1 / 1.05, 1.05];
-  const weightCandidates = sexMultipliers.flatMap((sexMultiplier) => [
-    // 胎重波动是对数常态分布（见 body_size.js 的 CONCEPTION_WEIGHT_LOG_SD），这里给约 95% 会落在的范围（±2 个标准差）
-    stageWeight * Math.exp(-2 * CONCEPTION_WEIGHT_LOG_SD) * sexMultiplier * breedWeightRatio,
-    stageWeight * Math.exp(2 * CONCEPTION_WEIGHT_LOG_SD) * sexMultiplier * breedWeightRatio,
-  ]).map((value) => clampNumber(value, 0.33, 3, 1));
+  const weightCandidates = sexMultipliers.map((sexMultiplier) => clampNumber(sexMultiplier * breedWeightRatio, 0.33, 3, 1));
   const fetalWeightRange = {
     min: Math.min(...weightCandidates),
-    typical: clampNumber(stageWeight * breedWeightRatio, 0.33, 3, 1),
+    typical: clampNumber(breedWeightRatio, 0.33, 3, 1),
     max: Math.max(...weightCandidates),
+  };
+  // 健康上限的范围：品质 1 的精子，天生变异约 95% 落在 ±2 个标准差
+  const healthMaxRange = {
+    min: 100 * healthTimingFactor * Math.exp(-2 * CONCEPTION_WEIGHT_LOG_SD),
+    typical: 100 * healthTimingFactor,
+    max: 100 * healthTimingFactor * Math.exp(2 * CONCEPTION_WEIGHT_LOG_SD),
   };
   return {
     eggRace,
@@ -317,6 +321,8 @@ export function calculateOffspringPreview({
     embryoType,
     embryoTypeSource: embryoTypeSource?.race || fetusRace,
     gestationSpeciesSpeed,
+    healthTimingFactor,
+    healthMaxRange,
     gestationDays: 280 / gestationSpeciesSpeed,
     genderRatio,
     implantationDays: calculateRaceImplantationDays(eggRace),

@@ -1,4 +1,6 @@
 // Shared reproductive data contracts. Beliefs never overwrite physiological facts.
+import { RECORD_LIMIT_DEFAULTS, normalizeRecordLimits, compactCognitionRecords } from './fetal_health.js';
+
 export const COGNITION_METHODS = Object.freeze(['perception', 'guess', 'informed', 'test', 'prenatal']);
 export const EXPERIENCE_ACTIONS = Object.freeze(['cognition', 'date', 'breakup', 'marry', 'divorce', 'child', 'claim']);
 export const REPRODUCTIVE_DEFAULTS = Object.freeze({
@@ -14,6 +16,8 @@ export const REPRODUCTIVE_DEFAULTS = Object.freeze({
   intimacyHalfLifeDays: 90, intimacyBaseline: 3, intimacyDedupeHours: 6,
   // 精方存量（1.2.4）：射精后存量回复的半衰期（人类，再乘物种经期倍率）、每次射精耗掉的比例
   sireReserveHalfLifeHours: 12, sireReserveDrain: 0.4,
+  // 纪录堆（1.2.5）：胎儿事件与认知纪录的保存上限、每轮送出几条、钉选上限；角色多的卡调小
+  ...RECORD_LIMIT_DEFAULTS,
 });
 
 export function normalizeReproductiveSettings(value = {}) {
@@ -30,6 +34,7 @@ export function normalizeReproductiveSettings(value = {}) {
   result.intimacyDedupeHours = Math.max(0, result.intimacyDedupeHours);
   result.sireReserveHalfLifeHours = Math.max(0.1, result.sireReserveHalfLifeHours);
   result.sireReserveDrain = Math.max(0, Math.min(1, result.sireReserveDrain));
+  Object.assign(result, normalizeRecordLimits(result));
   result.noticeMinDays = Math.max(0, result.noticeMinDays);
   result.noticeMaxDays = Math.max(result.noticeMinDays, result.noticeMaxDays);
   result.noticeBaseDays = Math.max(result.noticeMinDays, Math.min(result.noticeMaxDays, result.noticeBaseDays));
@@ -89,6 +94,7 @@ export function psychologySide(stage) {
 
 export function refreshCognition(profile) {
   profile.cognitionRecords = [];
+  delete profile.cognitionSummary;
   profile.cognitionCycle = (Number(profile.cognitionCycle) || 0) + 1;
   profile.reproductiveOperations = (profile.reproductiveOperations || []).filter((x) => x.action !== 'cognition');
 }
@@ -127,13 +133,14 @@ export function recordExperience(chatState, args, source = '', { resolveFetus = 
   if (!character) return fail('未知角色。');
   const { action, time } = args;
   if (!EXPERIENCE_ACTIONS.includes(action) || typeof time !== 'string' || !time.trim()) return fail('action 或 time 无效。');
-  const fields = action === 'cognition' ? ['method', 'content']
+  const fields = action === 'cognition' ? ['method', 'content', 'pin']
     : action === 'child' ? ['childIndex', 'name']
       : action === 'claim' ? ['fetusIndex', 'childIndex', 'content', 'selectedFather'] : ['partner'];
   const allowed = new Set(['female', 'action', 'time', ...fields]);
   if (Object.keys(args).some((x) => !allowed.has(x))) return fail('含不属于该 action 的参数。');
   const nonempty = (x) => typeof x === 'string' && x.trim().length > 0;
   if (action === 'cognition' && (!COGNITION_METHODS.includes(args.method) || !nonempty(args.content))) return fail('method 或 content 无效。');
+  if (action === 'cognition' && Object.hasOwn(args, 'pin') && typeof args.pin !== 'boolean') return fail('pin 须为布尔值。');
   if (!['cognition', 'child', 'claim'].includes(action) && !nonempty(args.partner)) return fail('partner 必填。');
   if (action === 'child') {
     if (!Number.isInteger(args.childIndex) || !character.profile?.children?.[args.childIndex] || args.childIndex < 0) return fail('childIndex 无效。');
@@ -157,7 +164,9 @@ export function recordExperience(chatState, args, source = '', { resolveFetus = 
     if (source && profile.cognitionRecords.some((x) => x.source === source)) return { applied: false, unchanged: true, message: '认知来源已记录。' };
     const sequence = (profile.cognitionRecords.at(-1)?.sequence || 0) + 1;
     profile.cognitionRecords.push({ id: `${profile.cognitionCycle || 0}:${sequence}`, sequence, source: source || 'manual',
-      time: time.trim(), method: args.method, content: args.content.trim(), minutesPassed, storyDayIndex: Math.floor(minutesPassed / 1440) });
+      time: time.trim(), method: args.method, content: args.content.trim(), minutesPassed, storyDayIndex: Math.floor(minutesPassed / 1440),
+      ...(args.pin === true ? { pin: true } : {}) });
+    compactCognitionRecords(profile, chatState.reproductiveSettings);
     const psy = profile.psychology;
     const side = psychologySide(profile.base?.stage);
     if (psy?.enabled && side && Object.values(psy[side] || {}).some((x) => x === null)) {

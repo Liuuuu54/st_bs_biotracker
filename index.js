@@ -109,6 +109,7 @@ import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './script
 import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
+import { FETAL_EVENT_KINDS, describeFetalEventChange, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, getFetalHealthRatio, getFetalHealthTier, normalizeFetalEventList } from './scripts/fetal_health.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
 import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue } from './scripts/race_prompt_context.js';
@@ -1316,6 +1317,7 @@ function syncRegisterChildSourceFields(ctx) {
       Number.isFinite(Number(child.birthWeightRatio)) ? `出生胎重倍率 ${formatFixedDisplay(child.birthWeightRatio, 2)}` : '',
       Number(child.birthCompanionEggCount) > 0 ? `出生伴生卵 ${Math.round(Number(child.birthCompanionEggCount))}枚` : '',
       Number.isFinite(Number(child.birthAffinity)) ? `出生亲和 ${formatIntegerDisplay(child.birthAffinity)}` : '',
+      child.prenatalSummary ? `孕期：${describePrenatalSummary(child.prenatalSummary)}` : '',
     ].filter(Boolean);
     summary.textContent = `${source.motherName}的孩子 ${source.childIndex + 1}；${[...birthInfo, `天赋：${talentNames.join('、') || '无'}`].join('；')}`;
   }
@@ -1704,6 +1706,11 @@ const REPRODUCTIVE_EDITOR_FIELDS = Object.freeze([
   ['intimacyDedupeHours', '同一场插入的去重间隔（小时）', false],
   ['sireReserveHalfLifeHours', '精方存量回复半衰期（小时，人类；再乘物种经期倍率）', false],
   ['sireReserveDrain', '每次射精耗掉的存量（0～1）', true],
+  ['fetalEventCap', '胎儿事件：每次妊娠最多保存（10～200，超过时最旧、没钉选的并进摘要）', false],
+  ['fetalEventWindow', '胎儿事件：每轮送出最近几条（0～30，0 只送钉选与摘要）', false],
+  ['cognitionCap', '认知纪录：每个周期最多保存（10～200）', false],
+  ['cognitionWindow', '认知纪录：每轮送出最近几条（0～30）', false],
+  ['recordPinCap', '钉选上限（两堆各自，0～10，超过时保留最新的）', false],
 ]);
 
 function renderReproductiveControls(settings) {
@@ -4578,6 +4585,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
         talents: (Array.isArray(fetus?.talents) ? fetus.talents : []).map(enrichTalent),
       })) : [],
       pregnantBlocks: parseDescriptionBlocks(descriptions.pregnantDescription, minutesPassed),
+      fetalEvents: buildFetalEventTimelineView(pregnant),
       womb: computeUterusLayout(profile, {
         libidoCap: getLibidoCap(stage, profile),
         pressureCap: getUterinePressureCap(stage, profile),
@@ -5112,17 +5120,92 @@ function renderFetusDerivedInheritanceLine(view) {
       ? `已越线，照目前方向${outcomeLabel(view.direction)}`
       : `照目前速度约 ${view.wholeDaysToInherit} 天越线（${outcomeLabel(view.direction)}）`;
   const title = [
+    `衍生遗传：${label}（左为父方「${view.fatherDerivedType || '无'}」，右为母方「${view.motherDerivedType || '无'}」）`,
+    ...(flipping ? [`↺ 正被拉向${toward}`] : []),
     `母方拉力 ${formatFixedDisplay(view.maternalPull, 2)}（亲密度 ${view.affinity}）`,
     `父方拉力 ${formatFixedDisplay(view.paternalPull, 2)}（${view.father || '胎父'}契合度 ${Math.round((view.paternalFit || 0) * 100)}%）`,
     ...(view.uncontestedPull > 0 ? [`含无竞争底力 ${formatFixedDisplay(view.uncontestedPull, 2)}`] : []),
     daysText,
   ].join('\n');
-  // 条以中间为 0：左边父方、右边母方，判定线 ±75 画成刻度
+  // 一行：「衍生」＋双向条＋短结论，完整文字在提示。条以中间为 0：左边父方、右边母方，判定线 ±75 画成刻度
   const fillLeft = progress < 0 ? 50 + (progress / 2) : 50;
   const fillWidth = Math.abs(progress) / 2;
-  return `<span class="bs-bt-womb-card-line bs-bt-derived-line" title="${escapeHtml(title)}">衍生遗传：${escapeHtml(label)}${flipping ? `<span class="bs-bt-derived-flip">↺ 正被拉向${toward}</span>` : ''}
-      <span class="bs-bt-derived-bar" aria-hidden="true"><span class="bs-bt-derived-fill" style="left:${fillLeft}%;width:${fillWidth}%"></span><span class="bs-bt-derived-mark" style="left:${50 - threshold / 2}%"></span><span class="bs-bt-derived-mark is-center" style="left:50%"></span><span class="bs-bt-derived-mark" style="left:${50 + threshold / 2}%"></span></span>
-    </span>`;
+  // 条两端写双方的衍生类型（左父右母，没有就写「无」），结论只留数字，越线打勾；正被拉回另一方时条画成斜纹
+  const brief = progress === 0 ? '未定' : Math.abs(progress) > threshold ? '✓' : String(Math.round(amount));
+  return `<span class="bs-bt-womb-card-line bs-bt-derived-line" title="${escapeHtml(title)}" aria-label="${escapeHtml(`衍生遗传：${label}`)}"><span class="bs-bt-derived-label">衍生</span><span class="bs-bt-derived-end" aria-hidden="true" title="父方衍生">${escapeHtml(view.fatherDerivedType || '无')}</span><span class="bs-bt-derived-bar${flipping ? ' is-flipping' : ''}" aria-hidden="true"><span class="bs-bt-derived-fill" style="left:${fillLeft}%;width:${fillWidth}%"></span><span class="bs-bt-derived-mark" style="left:${50 - threshold / 2}%"></span><span class="bs-bt-derived-mark is-center" style="left:50%"></span><span class="bs-bt-derived-mark" style="left:${50 + threshold / 2}%"></span></span><span class="bs-bt-derived-end" aria-hidden="true" title="母方衍生">${escapeHtml(view.motherDerivedType || '无')}</span><span class="bs-bt-derived-brief">${escapeHtml(brief)}</span></span>`;
+}
+
+/**
+ * 追踪页的胎儿事件时间轴：整堆事件（角色还不知道的那一胎不点名），已并进摘要的部分只给一行。
+ * 编号用这次可见胎儿的顺序；已不在的胎儿（吸收、减胎）照写。
+ */
+function buildFetalEventTimelineView(pregnant) {
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  const visible = fetuses.filter(isFetusKnownToCharacter);
+  const events = normalizeFetalEventList(pregnant?.fetalEvents).map((event) => {
+    const ids = Array.isArray(event.embryoIds) ? event.embryoIds : [];
+    const target = event.scope === 'all'
+      ? '全部'
+      : ids.map((id) => visible.findIndex((fetus) => fetus?.embryoId === id)).map((index) => (index >= 0 ? `胎儿${index + 1}` : '已不在')).join('、');
+    const effects = Object.values(event.effects || {});
+    const health = effects.map((effect) => Number(effect?.health) || 0).filter((value) => value !== 0);
+    const affinity = effects.map((effect) => Number(effect?.affinity) || 0).filter((value) => value !== 0);
+    const signed = (value) => `${value > 0 ? '+' : ''}${formatFixedDisplay(value, 1)}`;
+    const effectText = [
+      health.length ? `健康 ${health.map(signed).join('／')}` : '',
+      affinity.length ? `亲和 ${affinity.map(signed).join('／')}` : '',
+      Number(event.pressure) > 0 ? `宫压 +${formatFixedDisplay(event.pressure, 0)}` : '',
+      event.failed ? '安抚失败' : '',
+    ].filter(Boolean).join('，');
+    return {
+      key: `${event.sequence ?? ''}:${event.time}:${event.kind}`,
+      time: event.time,
+      kind: event.kind,
+      group: FETAL_EVENT_KINDS[event.kind]?.group || 'harm',
+      label: describeFetalEventKind(event.kind),
+      change: event.kind === 'soothe' && !event.failed ? `亲密度${describeFetalEventChange(event.change)}` : '',
+      target: target || '胎儿',
+      content: event.content,
+      pin: event.pin === true,
+      counted: event.counted !== false,
+      effectText,
+    };
+  });
+  return { events, earlier: describeFetalEventSummary(pregnant?.fetalEventSummary) };
+}
+
+function renderFetalEventTimeline(view) {
+  const events = Array.isArray(view?.events) ? view.events : [];
+  if (events.length === 0 && !view?.earlier) return '';
+  const groupLabels = { harm: '伤害', care: '照料', affinity: '亲和' };
+  return `<div class="bs-bt-track-section"><div class="bs-bt-track-section-title">胎儿事件</div>
+    ${view.earlier ? `<div class="bs-bt-track-description-empty">${escapeHtml(view.earlier)}</div>` : ''}
+    <div class="bs-bt-cognition-timeline" tabindex="0" role="region" aria-label="胎儿事件时间轴">
+      <ol class="bs-bt-cognition-timeline-list">
+        ${events.map((item) => `<li class="bs-bt-cognition-timeline-stop bs-bt-fetal-event is-${escapeHtml(item.group)}${item.counted ? '' : ' is-uncounted'}">
+          <details class="bs-bt-track-card bs-bt-cognition-entry">
+            <summary class="bs-bt-track-card-title"><span>${item.pin ? '📌 ' : ''}${escapeHtml(item.time)} · ${escapeHtml(item.label)}${item.change ? `（${escapeHtml(item.change)}）` : ''} · ${escapeHtml(item.target)}</span></summary>
+            <div class="bs-bt-track-card-note">${escapeHtml(item.content)}</div>
+            <div class="bs-bt-track-card-note bs-bt-fetal-event-effect">${item.counted ? escapeHtml(item.effectText || groupLabels[item.group] || '') : `${escapeHtml(groupLabels[item.group] || '')}：当天同类已计，只留纪录`}</div>
+          </details>
+        </li>`).join('')}
+      </ol>
+    </div>
+  </div>`;
+}
+
+/** 缩图下方的健康小条：常驻在标题列，刻度与数值放在提示里；危急警告中加虚线外框 */
+function renderFetusHealthMeter(item) {
+  if (item?.pendingImplantation) return '';
+  const ratio = getFetalHealthRatio(item);
+  const tier = getFetalHealthTier(item);
+  const max = Number(item?.healthMax) || 100;
+  const title = [
+    `健康：${tier.label}${item?.healthWarned ? '（危急警告中：下次周结算仍见底就会中断妊娠）' : ''}`,
+    `${formatFixedDisplay(Number(item?.health) || 0, 1)}／${formatFixedDisplay(max, 1)}（先天上限）`,
+    '需求照料与胎儿事件会增减；没人照料也没人疏忽时慢慢回到一半',
+  ].join('\n');
+  return `<span class="bs-bt-fetal-health is-${escapeHtml(tier.key)}${item?.healthWarned ? ' is-warned' : ''}" role="img" title="${escapeHtml(title)}" aria-label="${escapeHtml(`健康：${tier.label}`)}"><span class="bs-bt-fetal-health-fill" style="width:${Math.round(ratio * 100)}%"></span></span>`;
 }
 
 /** 每胎一个可折叠的段落：标题列（缩图、胎重、编号、性别、胎位）常驻，其余展开才看；胎教再折一层。先露胎的缩图换上醒目外框 */
@@ -5142,6 +5225,7 @@ function renderWombFetusCard(item, index, data) {
         <span class="bs-bt-womb-thumb-col">
           <canvas class="bs-bt-womb-thumb${item?.isPresenting ? ' is-presenting' : ''}" width="32" height="32" data-sprite-type="${escapeHtml(sprite.type)}" data-sprite-stage="${sprite.stage}"${sprite.mirror ? ' data-sprite-mirror' : ''}${sprite.posterior ? ' data-sprite-posterior' : ''} data-angle="${Number(item?.tendencyAngle) || 0}" data-affinity="${Number(item?.affinity) || 0}" role="button" tabindex="0" aria-label="${escapeHtml(`看胎儿 ${index + 1}${item?.isPresenting ? '（先露）' : ''}的亲和`)}"${item?.isPresenting ? ' title="先露"' : ''}></canvas>
           <span class="bs-bt-womb-weight" title="胎重倍率">${escapeHtml(formatFixedDisplay(item?.weight, 2))}×</span>
+          ${renderFetusHealthMeter(item)}
         </span>
         <strong class="bs-bt-womb-card-title">胎儿${index + 1}<canvas class="bs-bt-womb-gender" width="8" height="8" data-womb-gender="${escapeHtml(gender)}" role="img" aria-label="${escapeHtml(`性别：${gender}`)}"></canvas>${escapeHtml(getPresentationWord(item?.tendencyAngle))}</strong>
       </summary>
@@ -5376,6 +5460,7 @@ function renderTrackPregnancy(viewModel) {
       ? `          ${renderDescriptionGroup('孕态描述', data.pregnantBlocks, pregnantDescriptionOptions)}`
       : ''
     }
+    ${data.showPregnantFields ? renderFetalEventTimeline(data.fetalEvents) : ''}
   `;
 }
 
@@ -5651,6 +5736,7 @@ function lineageDetailRows(node) {
   if (Array.isArray(node.extraSources) && node.extraSources.length > 0) {
     rows.push(['其他来源', `${node.extraSources.join('、')}（嵌合体，仅首位连线）`]);
   }
+  if (node.prenatalSummary) rows.push(['孕期', describePrenatalSummary(node.prenatalSummary)]);
   return rows
     .map(([label, value]) => `<div class="bs-bt-lineage__detail-row"><span class="bs-bt-lineage__detail-label">${escapeHtml(label)}</span><span class="bs-bt-lineage__detail-value">${escapeHtml(String(value))}</span></div>`)
     .join('');

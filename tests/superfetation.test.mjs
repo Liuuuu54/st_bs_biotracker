@@ -40,7 +40,7 @@ function one(baseOver = {}, pregnantOver = {}) {
         fetalEnergyDrain: 0.1, amnionDurability: 100, fetuses: [fetus()],
         ...pregnantOver,
       },
-      experience: {}, immune: {}, metabolism: {},
+      experience: {}, immune: { metabolism: true }, metabolism: {},
       skills: [], talents: [], children: [], notify: {},
     },
   };
@@ -75,13 +75,13 @@ test('胎重按落后进度打折，且乘在既有的种族混血偏移之上',
   armSperm(chatState);
   step(chatState);
   const late = lateOf(chatState);
-  // Math.random=0 时 getConceptionWeight 的常态抽样撞到截断上限 +3 个标准差，波动为 e^(0.13×3)；
+  // 1.2.5 起受精胎重只剩性别与体型系数（时机与天生变异移到健康上限）：
   // 性别为男 ×1.05，同族的 weightRatio 为 1.0；再乘上异期折扣 (1 − 落后/280)²
   const penalty = (1 - (late.conceivedAtDays / 280)) ** 2;
-  const expected = Math.exp(0.13 * 3) * 1.05 * penalty;
+  const expected = 1.05 * penalty;
   assert.ok(Math.abs(late.weight - expected) < 0.01,
     `应为 ${expected.toFixed(3)}，实际 ${late.weight.toFixed(3)}`);
-  assert.ok(late.weight < Math.exp(0.13 * 3) * 1.05, '落后的胎应比同样波动、没打折的胎轻');
+  assert.ok(late.weight < 1.05, '落后的胎应比没打折的胎轻');
 });
 
 test('孕中期以后不再受精，即使机率全中', () => {
@@ -231,8 +231,8 @@ test('母胎互动不会挑到待著床的胚胎', () => {
     fetuses: [lateFetus({ conceivedAtDays: 10, pendingImplantation: true, revealed: undefined })],
   });
   const result = applyToolCall(chatState, {
-    name: 'bsMaternalFetalInteraction',
-    arguments: { female: 'A', direction: 'fetal', change: '亲近' },
+    name: 'bsFetalEvent',
+    arguments: { female: 'A', time: '当天', kind: 'fetal_reaction', change: 'slight_increase', content: '胎动' },
   });
   assert.equal(result.applied, false, '没有已著床的胎儿时不该生效');
 });

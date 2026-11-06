@@ -34,7 +34,7 @@ function pregnantWith(count) {
         pregnantDays: 100, effectivePregnantDays: 100, fetusesCount: count,
         fetalEnergyDrain: 0.3, fetuses,
       },
-      experience: {}, immune: {}, metabolism: {},
+      experience: {}, immune: { metabolism: true }, metabolism: {},
       skills: [], talents: [], children: [], notify: {},
     },
   };

@@ -20,9 +20,9 @@
 | 血族 | 飢餓、排泄 | 咒縛 | 泌乳、陪伴 |
 | 星際 | 睡眠、陪伴 | | |
 
-在場角色可產生被動需求；整日自然恢復會減少排泄、飢餓、睡眠等數值，每週例行又處理氣味與陪伴。孕期每整小時增加額外負擔，細節見[妊娠機制](pregnancy-and-labor.md#供養力與胎重)。角色不在場會跳過部分被動增長，並非停止所有需求更新。[被動累積](../../scripts/tools.js#L3057)、[自然恢復](../../scripts/tools.js#L3332)、[每週例行](../../scripts/tools.js#L3375)。
+在場角色可產生被動需求；整日自然恢復會減少排泄、飢餓、睡眠等數值，每週例行又處理氣味與陪伴。孕期每整小時增加額外負擔，細節見[妊娠機制](pregnancy-and-labor.md#胎兒健康與胎重)。角色不在場會跳過部分被動增長，並非停止所有需求更新。[被動累積](../../scripts/tools.js#L3057)、[自然恢復](../../scripts/tools.js#L3332)、[每週例行](../../scripts/tools.js#L3375)。
 
-需求偏高時，系統提醒（`notify.thirdly`）在追蹤模型那邊寫成工具建議，例如「應優先使用 `bsExcreteMetabolism`」。送給寫劇情的主模型時改寫成中性的身體狀態，例如「泄意爆：可自然體現身體狀態，不要求本輪處理」，並刪掉供養力的獎懲與照料建議；破水禁令等限制照常保留。三欄通知裡指示呼叫工具的句子或分句（例如破水的「必须先调用 bsAssistFetalPosition」、難產警示的「或使用 bsChildbirth」）也一併拿掉，只留狀態與禁令。何時處理需求由劇情決定。
+需求偏高時，系統提醒（`notify.thirdly`）在追蹤模型那邊寫成工具建議，例如「應優先使用 `bsExcreteMetabolism`」。送給寫劇情的主模型時改寫成中性的身體狀態，例如「泄意爆：可自然體現身體狀態，不要求本輪處理」，並刪掉胎兒健康的獎懲與照料建議；破水禁令等限制照常保留。三欄通知裡指示呼叫工具的句子或分句（例如破水的「必须先调用 bsAssistFetalPosition」、難產警示的「或使用 bsChildbirth」）也一併拿掉，只留狀態與禁令。何時處理需求由劇情決定。
 
 `bsExcreteMetabolism` 有兩種用法：不帶 `options` 時，普通角色預設減少排泄 30、飢餓 40、睡眠 40、泌乳 30；指定 `options` 時只對指定項目給直接減量。衍生類型未帶選項時預設釋放 `flux`。堵塞可使一次處理只生效一部分；處理飢餓會回加部分排泄和睡眠，處理睡眠會回加部分飢餓，排泄／泌乳會增加氣味，加速症狀則可能反彈。[工具實作](../../scripts/tools.js#L3667)。
 
@@ -32,7 +32,7 @@
 
 心理只在使用者啟用推演後存在。月經側為掌控／欲望／自主，妊娠側為母職信心／接納與聯結／社會展現；四個旧旗標及认知數值軸已撤除。只初始化当前侧三軸与六階段角色解释，转侧重新推演，產後恢復暫停；未知值為 null，不補成 0 或接受 delta。`bsUpdatePsychology` 仍受每故事小時一次的冷卻。[欄位定義](../../scripts/registry_psy_config.js)、[生命週期与紀錄](reproductive-tracking.md)。
 
-`bsMaternalFetalInteraction` 處理母胎互動與多胎之間的互踢、推擠、依偎（`direction=sibling`，只改角度或左右位置），三者共用每故事小時一次的限制；胎兒的親近度限制在 -50 至 50，母方結果受情壓影響。[互動實作](../../scripts/tools.js#L6206)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L505)。
+`bsFetalEvent` 記母體安撫、胎兒親近或排斥（改親近度，限制在 -50 至 50，安撫受情壓影響），以及傷害與照料（改胎兒健康），以故事日防刷，見[胎兒事件](pregnancy-and-labor.md#胎兒事件)。多胎之間的互踢、推擠、依偎改由 `bsAssistFetalPosition`（`action=sibling`）處理，只改角度或左右位置，每故事小時一次。[事件實作](../../scripts/tools.js#L6648)、[兩胎互動](../../scripts/tools.js#L9188)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L505)。
 
 `experience` 保存初次／近期性伴、獨立的交往与婚姻名單及後臺懷孕／生產／損失次數。`bsRecordExperience` 以必填 `female/action/time` 定位角色与分支；認知追加至 `profile.cognitionRecords`，關係與子女更新长期資料。胎兒與子女的 `selectedFather` 是角色自己心裡認定的父親，對外說法寫在白描紀錄裡（`action=claim` 記錄並追加），`fathers` 仍是實際遺傳来源。[工具參考](tool-reference.md)、[詳細機制](reproductive-tracking.md)。
 

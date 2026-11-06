@@ -36,7 +36,7 @@ function mother({ race = '人类', stage = '孕中期', days = 100, fetusCount =
         pregnantDays: days, effectivePregnantDays: days, fetusesCount: fetusCount,
         fetalEnergyDrain: 0.3, fetuses,
       },
-      experience: { ...experience }, immune: {}, metabolism: {},
+      experience: { ...experience }, immune: { metabolism: true }, metabolism: {},
       skills: [], talents: [], children: [], notify: {},
     },
   };
@@ -169,7 +169,7 @@ test('v1 存档迁移：只换掉没自订过的旧内置耐受，并保留进�
 
   const migrated = state.getChatState(ctx, settings);
   const bio = (name) => migrated.characters[name].profile.bio;
-  assert.equal(migrated.schemaVersion, 12);
+  assert.equal(migrated.schemaVersion, 13);
   assert.equal(bio('旧龙').breedTolerance, 2, '旧内置值 10 → 新内置值 2');
   assert.equal(bio('旧龙').recoveryDays, computePostpartumRecoveryDays({ recoveryCoefficient: getRacePhysiologyProfile('西方龙').recoveryCoefficient }));
   assert.equal(bio('自订龙').breedTolerance, 5, '自订过的耐受不动');
@@ -194,7 +194,7 @@ test('v1 存档迁移：只换掉没自订过的旧内置耐受，并保留进�
 });
 
 test('新聊天直接是最新存档版本', () => {
-  assert.equal(state.createEmptyChatState().schemaVersion, 12);
+  assert.equal(state.createEmptyChatState().schemaVersion, 13);
 });
 
 test('孕期回溯楼层后，分娩还原的承载耐受仍是孕前原值', () => {

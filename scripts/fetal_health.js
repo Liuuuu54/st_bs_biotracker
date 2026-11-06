@@ -1,0 +1,445 @@
+// 胎儿健康（1.2.5）：每胎一条量表与胎儿事件堆。
+//
+// 量表：上限 = 100 × 精子品质^0.25 × 受孕时机系数 × 天生变异，受精时为上限的一半。
+// 当前值吃两个来源：母体需求照料的加减分（tools.js 按孕龄与位置分给各胎）与胎儿事件（bsFetalEvent）。
+// 每跨一个周结算：先按当下健康换算胎重、检查见底，再往上限的一半拉回两成（周回归），
+// 所以长时间没人照料也没人疏忽，会收敛到「平稳」，不会饿死。
+//
+// 事件堆比照认知纪录：每次妊娠保存上限条，超过时最旧、没钉选的并进摘要；送给追踪模型的只有窗口。
+import { CONCEPTION_WEIGHT_LOG_SD, getConceptionStageWeight } from './body_size.js';
+
+export const FETAL_HEALTH_BASE = 100;
+export const FETAL_HEALTH_INITIAL_RATIO = 0.5;
+/** 每个孕周往上限一半拉回的比例 */
+export const FETAL_HEALTH_REVERSION = 0.2;
+/** 胎重换算：每周 Δ = (健康比例 − 0.5) × 斜率 × 孕速，封顶 ±上限 × 孕速 */
+export const FETAL_HEALTH_WEIGHT_SLOPE = 0.06;
+export const FETAL_HEALTH_WEEKLY_WEIGHT_CAP = 0.03;
+/** 见底门槛：周结算时 ≤ 上限的 10% 先警告，下一次周结算仍见底才中断 */
+export const FETAL_HEALTH_BOTTOM_RATIO = 0.1;
+/** 流产免疫或无法中断的阶段：见底也只停在 1% */
+export const FETAL_HEALTH_FLOOR_RATIO = 0.01;
+/**
+ * 需求照料点数换成健康的比例（再乘孕速）。用真实引擎校准：
+ * 照料良好一周约 +10 点，换算后单胎足月胎重与 1.2.4 相近；
+ * 完全不管一周约 −24 点，约 4 个孕周见底。扣分比加分重，是「疏于照料会出事」的设计。
+ */
+export const FETAL_CARE_GAIN_SCALE = 0.18;
+export const FETAL_CARE_LOSS_SCALE = 0.9;
+/** 单次时间推进里，停在「爆」的扣分最多算 7 天份：长时间跳过代表镜头外照常生活 */
+export const FETAL_BURST_MAX_DAYS_PER_PASS = 7;
+
+const MAX_SD_LIMIT = 3;
+const MINUTES_PER_DAY = 1440;
+
+function clamp(value, min, max, fallback) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(min, Math.min(max, num));
+}
+
+function round(value, digits = 2) {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+/** 与 tools.js 的抽样同一写法：测试常把 Math.random 固定成 0，不能用重抽的回圈 */
+function standardNormal(random) {
+  const u = Math.max(Number.EPSILON, random());
+  const v = Math.max(Number.EPSILON, random());
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+/** 受孕时机系数：0.5 ＋ 0.5 × 旧的胎重阶段系数（乏情 0.8、月经 0.875、卵泡 0.95、排卵 1、黄体 1.05） */
+export function getConceptionTimingFactor(stage) {
+  return round(0.5 + 0.5 * getConceptionStageWeight(stage), 4);
+}
+
+/** 受精时抽健康上限；quality 是射精当下的精子品质快照 */
+export function sampleFetalHealthMax({ quality = 1, stage = '排卵期', random = Math.random } = {}) {
+  const q = clamp(quality, 0.25, 4, 1);
+  const z = Math.max(-MAX_SD_LIMIT, Math.min(MAX_SD_LIMIT, standardNormal(random)));
+  return round(FETAL_HEALTH_BASE * q ** 0.25 * getConceptionTimingFactor(stage) * Math.exp(CONCEPTION_WEIGHT_LOG_SD * z), 1);
+}
+
+/** 新胎儿的量表栏位 */
+export function createFetalHealthFields(max) {
+  const healthMax = clamp(max, 1, 1000, FETAL_HEALTH_BASE);
+  return { healthMax, health: round(healthMax * FETAL_HEALTH_INITIAL_RATIO, 2) };
+}
+
+/**
+ * 补齐与正规化量表栏位（就地修改）。旧胎儿（1.2.4 以前）的 nutrition 是本周供养池：
+ * 上限 100、当前值 = 50 ＋ 池 × 照料换算比例。
+ */
+export function normalizeFetalHealthFields(fetus) {
+  if (!fetus || typeof fetus !== 'object') return fetus;
+  const max = clamp(fetus.healthMax, 1, 1000, FETAL_HEALTH_BASE);
+  fetus.healthMax = max;
+  if (!Number.isFinite(Number(fetus.health))) {
+    const pool = Number(fetus.nutrition) || 0;
+    const scale = pool >= 0 ? FETAL_CARE_GAIN_SCALE : FETAL_CARE_LOSS_SCALE;
+    fetus.health = round(max * FETAL_HEALTH_INITIAL_RATIO + pool * scale, 2);
+  }
+  fetus.health = round(clamp(fetus.health, 0, max, max * FETAL_HEALTH_INITIAL_RATIO), 2);
+  delete fetus.nutrition;
+  if (fetus.healthWarned !== true) delete fetus.healthWarned;
+  if (fetus.healthCollapsed !== true) delete fetus.healthCollapsed;
+  return fetus;
+}
+
+export function getFetalHealthRatio(fetus) {
+  const max = clamp(fetus?.healthMax, 1, 1000, FETAL_HEALTH_BASE);
+  return clamp(Number(fetus?.health) / max, 0, 1, FETAL_HEALTH_INITIAL_RATIO);
+}
+
+export const FETAL_HEALTH_TIERS = Object.freeze([
+  { key: 'strong', label: '健壮', min: 0.75 },
+  { key: 'stable', label: '平稳', min: 0.4 },
+  { key: 'weak', label: '虚弱', min: FETAL_HEALTH_BOTTOM_RATIO + 1e-9 },
+  { key: 'critical', label: '危急', min: -Infinity },
+]);
+
+export function getFetalHealthTier(fetus) {
+  const ratio = getFetalHealthRatio(fetus);
+  return FETAL_HEALTH_TIERS.find((tier) => ratio >= tier.min) || FETAL_HEALTH_TIERS.at(-1);
+}
+
+/** 把照料点数加到一胎；扣到 0 为止、加到上限为止（过补留到第二期） */
+export function addFetalHealth(fetus, amount) {
+  const max = clamp(fetus?.healthMax, 1, 1000, FETAL_HEALTH_BASE);
+  const before = clamp(fetus?.health, 0, max, max * FETAL_HEALTH_INITIAL_RATIO);
+  fetus.health = round(clamp(before + amount, 0, max, before), 4);
+  return fetus.health - before;
+}
+
+/**
+ * 一次周结算（一个日历周 × 孕速）。顺序：按这一周累积的健康换算胎重 → 见底检查 → 周回归。
+ * 回传 'warned'（刚见底）、'collapsed'（连续两次见底，待中断）或 ''。
+ */
+export function settleFetalHealthWeek(fetus, speed = 1) {
+  const max = clamp(fetus?.healthMax, 1, 1000, FETAL_HEALTH_BASE);
+  const health = clamp(fetus?.health, 0, max, max * FETAL_HEALTH_INITIAL_RATIO);
+  const pace = Math.max(0, Number(speed) || 0);
+  const cap = FETAL_HEALTH_WEEKLY_WEIGHT_CAP * pace;
+  const delta = clamp((health / max - 0.5) * FETAL_HEALTH_WEIGHT_SLOPE * pace, -cap, cap, 0);
+  // 以指数换算：亏空再深也只会逐步变小，不会跌穿成负值
+  fetus.weight = clamp((Number(fetus.weight) || 1) * Math.exp(delta), 0.33, 3.0, 1);
+  let outcome = '';
+  if (health <= max * FETAL_HEALTH_BOTTOM_RATIO) {
+    if (fetus.healthWarned) {
+      fetus.healthCollapsed = true;
+      outcome = 'collapsed';
+    } else {
+      fetus.healthWarned = true;
+      outcome = 'warned';
+    }
+  } else {
+    delete fetus.healthWarned;
+    delete fetus.healthCollapsed;
+  }
+  const pull = 1 - (1 - FETAL_HEALTH_REVERSION) ** pace;
+  fetus.health = round(health + (max * FETAL_HEALTH_INITIAL_RATIO - health) * pull, 4);
+  return outcome;
+}
+
+// ───────────────────────── 胎儿事件 ─────────────────────────
+
+export const FETAL_EVENT_KINDS = Object.freeze({
+  soothe: { group: 'affinity', label: '母体安抚' },
+  fetal_reaction: { group: 'affinity', label: '胎儿亲近或排斥' },
+  substance: { group: 'harm', label: '有害物质', sensitivity: 'toxic' },
+  trauma: { group: 'harm', label: '腹部外伤', sensitivity: 'physical', pressure: true },
+  overexertion: { group: 'harm', label: '过劳或剧烈运动', sensitivity: 'physical', pressure: true },
+  illness: { group: 'harm', label: '生病发烧', sensitivity: 'toxic' },
+  curse: { group: 'harm', label: '诅咒或腐化', sensitivity: 'toxic' },
+  other_harm: { group: 'harm', label: '其他伤害' },
+  medicine: { group: 'care', label: '安胎药或补品' },
+  checkup: { group: 'care', label: '产检治疗' },
+  rest: { group: 'care', label: '充分休养' },
+  blessing: { group: 'care', label: '祝福或治疗魔法' },
+  other_care: { group: 'care', label: '其他照料' },
+});
+
+export const FETAL_EVENT_CHANGES = Object.freeze([
+  'slight_increase', 'significant_increase', 'severe_increase',
+  'slight_decrease', 'significant_decrease', 'severe_decrease',
+]);
+
+const CHANGE_LABELS = Object.freeze({
+  slight_increase: '轻微增加', significant_increase: '明显增加', severe_increase: '大幅增加',
+  slight_decrease: '轻微减少', significant_decrease: '明显减少', severe_decrease: '大幅减少',
+});
+const MAGNITUDE_LABELS = Object.freeze({ slight: '轻微', significant: '明显', severe: '严重' });
+
+/** 健康变化（以上限 100 计，按该胎上限等比）；严重一次约等于疏于照料一周 */
+export const FETAL_EVENT_HEALTH = Object.freeze({ slight: 3, significant: 8, severe: 18 });
+export const FETAL_EVENT_AFFINITY = Object.freeze({ slight: 0.5, significant: 1, severe: 2 });
+/** 外伤、过劳另加宫压 */
+export const FETAL_EVENT_PRESSURE = Object.freeze({ slight: 3, significant: 8, severe: 15 });
+/** 每胎每个故事日的上限 */
+export const FETAL_EVENT_DAILY_AFFINITY_CAP = 2;
+export const FETAL_EVENT_DAILY_CARE_CAP = 10;
+/** 亲和与正面健康事件：同一 kind 在最近 7 天内的第 n 次 × 1/(1+n) */
+export const FETAL_EVENT_DECAY_DAYS = 7;
+/** 孕中孕被包着的那一胎，健康事件减半 */
+export const FETAL_EVENT_NESTED_FACTOR = 0.5;
+
+const SENSITIVITY = Object.freeze({
+  toxic: { early: 1.5, mid: 1, late: 0.7 },
+  physical: { early: 0.7, mid: 1, late: 1.3 },
+});
+
+export function getChangeMagnitude(change) {
+  const key = String(change || '').split('_')[0];
+  return Object.hasOwn(FETAL_EVENT_HEALTH, key) ? key : '';
+}
+
+export function getChangeSign(change) {
+  return String(change || '').endsWith('_decrease') ? -1 : 1;
+}
+
+export function describeFetalEventChange(change) {
+  return CHANGE_LABELS[change] || '';
+}
+
+export function describeFetalEventMagnitude(change) {
+  return MAGNITUDE_LABELS[getChangeMagnitude(change)] || '';
+}
+
+/** 孕期分段：孕早期最敏感于毒物，孕晚期起（含产兆前驱、产程、延产期）最怕外伤 */
+export function getFetalEventPhase(stage) {
+  const text = String(stage || '');
+  if (text === '孕早期') return 'early';
+  if (text === '孕中期' || text === '回归期') return 'mid';
+  return 'late';
+}
+
+export function getFetalEventSensitivity(kind, stage) {
+  const table = SENSITIVITY[FETAL_EVENT_KINDS[kind]?.sensitivity];
+  return table ? table[getFetalEventPhase(stage)] : 1;
+}
+
+export function getStoryDayIndex(minutesPassed) {
+  return Math.floor(Math.max(0, Number(minutesPassed) || 0) / MINUTES_PER_DAY);
+}
+
+// ───────────────────────── 纪录堆：上限、钉选、窗口 ─────────────────────────
+
+export const RECORD_LIMIT_DEFAULTS = Object.freeze({
+  fetalEventCap: 30,
+  fetalEventWindow: 5,
+  cognitionCap: 40,
+  cognitionWindow: 8,
+  recordPinCap: 5,
+});
+
+export const RECORD_LIMIT_RANGES = Object.freeze({
+  fetalEventCap: [10, 200],
+  fetalEventWindow: [0, 30],
+  cognitionCap: [10, 200],
+  cognitionWindow: [0, 30],
+  recordPinCap: [0, 10],
+});
+
+export function normalizeRecordLimits(value = {}) {
+  const result = {};
+  for (const [key, fallback] of Object.entries(RECORD_LIMIT_DEFAULTS)) {
+    const [min, max] = RECORD_LIMIT_RANGES[key];
+    result[key] = Math.round(clamp(value?.[key], min, max, fallback));
+  }
+  return result;
+}
+
+/**
+ * 压缩纪录堆（就地修改 list，回传更新后的摘要）：
+ * 钉选超过上限时保留最新的；超过保存上限时最旧、没钉选的并进摘要（全都钉选时并最旧的）。
+ */
+export function compactRecordPile(list, summary, { cap, pinCap }, fold) {
+  if (!Array.isArray(list)) return summary || null;
+  const pinned = list.filter((item) => item?.pin === true);
+  for (const item of pinned.slice(0, Math.max(0, pinned.length - pinCap))) delete item.pin;
+  let next = summary || null;
+  while (list.length > cap) {
+    let index = list.findIndex((item) => item?.pin !== true);
+    if (index < 0) index = 0;
+    const [removed] = list.splice(index, 1);
+    next = fold(next, removed);
+  }
+  return next;
+}
+
+/** 窗口：最近 recent 条，加上所有钉选，按时间先后；其余（含已并进摘要的）只在摘要行出现 */
+export function selectRecordWindow(list, recent) {
+  const items = Array.isArray(list) ? list : [];
+  const tail = new Set(recent > 0 ? items.slice(-recent) : []);
+  const shown = items.filter((item) => tail.has(item) || item?.pin === true);
+  const hidden = items.filter((item) => !shown.includes(item));
+  return { shown, hidden };
+}
+
+function spanText(from, to) {
+  if (!from && !to) return '';
+  return from === to || !to ? `（${from}）` : `（${from}～${to}）`;
+}
+
+function countText(counts, labelOf) {
+  return Object.entries(counts || {})
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, count]) => `${labelOf(key)}${count}`)
+    .join('、');
+}
+
+// ───────────────────────── 胎儿事件堆 ─────────────────────────
+
+export function normalizeFetalEventList(value) {
+  return (Array.isArray(value) ? value : []).filter((item) => item && typeof item === 'object'
+    && Object.hasOwn(FETAL_EVENT_KINDS, item.kind) && typeof item.time === 'string' && item.time.trim()
+    && typeof item.content === 'string' && item.content.trim());
+}
+
+function emptyEventSummary() {
+  return { count: 0, kinds: {}, from: '', to: '', byEmbryo: {} };
+}
+
+/** 一条事件对某胎的效果；没有效果（被防洗分挡下）的不算次数 */
+function eventEffectOn(event, embryoId) {
+  return event?.effects?.[embryoId] || null;
+}
+
+function foldEmbryoTally(tally, event, embryoId) {
+  const effect = eventEffectOn(event, embryoId);
+  if (!effect || event.counted === false) return tally;
+  const group = FETAL_EVENT_KINDS[event.kind]?.group;
+  const next = { harm: 0, care: 0, ...(tally || {}) };
+  if (group === 'harm' && Number(effect.health) < 0) {
+    next.harm += 1;
+    if (!next.worst || Number(effect.health) < Number(next.worst.health)) {
+      next.worst = { kind: event.kind, content: event.content, health: Number(effect.health) };
+    }
+  }
+  if (group === 'care' && Number(effect.health) > 0) next.care += 1;
+  return next;
+}
+
+export function foldFetalEventIntoSummary(summary, event) {
+  const next = summary && typeof summary === 'object' ? { ...emptyEventSummary(), ...summary } : emptyEventSummary();
+  next.count += 1;
+  next.kinds = { ...next.kinds, [event.kind]: (Number(next.kinds?.[event.kind]) || 0) + 1 };
+  if (!next.from) next.from = event.time;
+  next.to = event.time;
+  next.byEmbryo = { ...next.byEmbryo };
+  for (const id of Object.keys(event?.effects || {})) next.byEmbryo[id] = foldEmbryoTally(next.byEmbryo[id], event, id);
+  return next;
+}
+
+export function compactFetalEvents(pregnant, limits) {
+  const { fetalEventCap, recordPinCap } = normalizeRecordLimits(limits);
+  pregnant.fetalEvents = normalizeFetalEventList(pregnant.fetalEvents);
+  pregnant.fetalEventSummary = compactRecordPile(pregnant.fetalEvents, pregnant.fetalEventSummary || null,
+    { cap: fetalEventCap, pinCap: recordPinCap }, foldFetalEventIntoSummary);
+  if (!pregnant.fetalEventSummary) delete pregnant.fetalEventSummary;
+}
+
+/** 出生时孩子身上只留摘要：伤害几次、照料几次、最严重的一件、出生时的健康比例（压缩过的部分也算进去） */
+export function buildPrenatalSummary(pregnant, fetus) {
+  const id = String(fetus?.embryoId ?? '');
+  let tally = pregnant?.fetalEventSummary?.byEmbryo?.[id] || null;
+  for (const event of normalizeFetalEventList(pregnant?.fetalEvents)) tally = foldEmbryoTally(tally, event, id);
+  return {
+    harm: Number(tally?.harm) || 0,
+    care: Number(tally?.care) || 0,
+    worst: tally?.worst ? { kind: tally.worst.kind, content: tally.worst.content } : null,
+    birthHealthRatio: round(getFetalHealthRatio(fetus), 2),
+  };
+}
+
+export function describeFetalEventKind(kind) {
+  return FETAL_EVENT_KINDS[kind]?.label || kind;
+}
+
+/**
+ * 送给追踪模型的事件窗口。labelFetuses(event) 回传「第1胎」「全部」之类的对象文字（只用角色已知的编号）。
+ * 回传 { events, earlier, countedToday } 或 null（没有任何事件）。
+ */
+export function buildFetalEventWindow(pregnant, limits, { minutesPassed = 0, labelFetuses = () => '' } = {}) {
+  const { fetalEventWindow } = normalizeRecordLimits(limits);
+  const list = normalizeFetalEventList(pregnant?.fetalEvents);
+  const summary = pregnant?.fetalEventSummary;
+  if (list.length === 0 && !(summary?.count > 0)) return null;
+  const { shown, hidden } = selectRecordWindow(list, fetalEventWindow);
+  const events = shown.map((event) => ({
+    time: event.time,
+    kind: event.kind,
+    ...(event.change ? { change: event.change } : {}),
+    target: labelFetuses(event),
+    content: event.content,
+    ...(event.pin ? { pin: true } : {}),
+    ...(event.counted === false ? { counted: false } : {}),
+  }));
+  let earlier = summary && summary.count > 0 ? { ...summary } : null;
+  for (const event of hidden) earlier = foldFetalEventIntoSummary(earlier, event);
+  const today = getStoryDayIndex(minutesPassed);
+  const countedToday = [...new Set(list
+    .filter((event) => event.counted !== false && Number(event.storyDayIndex) === today)
+    .map((event) => event.kind))];
+  return {
+    events,
+    ...(earlier ? { earlier: `更早 ${earlier.count} 条：${countText(earlier.kinds, describeFetalEventKind)}${spanText(earlier.from, earlier.to)}` } : {}),
+    ...(countedToday.length ? { countedToday } : {}),
+  };
+}
+
+// ───────────────────────── 认知纪录 ─────────────────────────
+
+export const COGNITION_METHOD_LABELS = Object.freeze({
+  perception: '亲历／自觉', guess: '猜测／自算', informed: '被告知', test: '检测', prenatal: '诊察',
+});
+
+export function foldCognitionIntoSummary(summary, record) {
+  const next = summary && typeof summary === 'object' ? { count: 0, methods: {}, from: '', to: '', ...summary } : { count: 0, methods: {}, from: '', to: '' };
+  next.count += 1;
+  next.methods = { ...next.methods, [record.method]: (Number(next.methods?.[record.method]) || 0) + 1 };
+  if (!next.from) next.from = record.time;
+  next.to = record.time;
+  return next;
+}
+
+/** 认知纪录堆压缩（profile 就地修改） */
+export function compactCognitionRecords(profile, limits) {
+  const { cognitionCap, recordPinCap } = normalizeRecordLimits(limits);
+  if (!Array.isArray(profile.cognitionRecords)) profile.cognitionRecords = [];
+  profile.cognitionSummary = compactRecordPile(profile.cognitionRecords, profile.cognitionSummary || null,
+    { cap: cognitionCap, pinCap: recordPinCap }, foldCognitionIntoSummary);
+  if (!profile.cognitionSummary) delete profile.cognitionSummary;
+}
+
+/** 送出窗口：最近几条加钉选；更早的只给一行摘要（只记次数与日期，不合并内容，免得改写角色的误解） */
+export function buildCognitionWindow(records, summary, limits) {
+  const { cognitionWindow } = normalizeRecordLimits(limits);
+  const { shown, hidden } = selectRecordWindow(Array.isArray(records) ? records : [], cognitionWindow);
+  let earlier = summary && summary.count > 0 ? { ...summary } : null;
+  for (const record of hidden) earlier = foldCognitionIntoSummary(earlier, record);
+  return {
+    records: shown,
+    earlier: earlier
+      ? `更早 ${earlier.count} 条：${countText(earlier.methods, (key) => COGNITION_METHOD_LABELS[key] || key)}${spanText(earlier.from, earlier.to)}`
+      : '',
+  };
+}
+
+/** 事件堆摘要（已并进摘要的部分）的一行文字；没有就回空字串 */
+export function describeFetalEventSummary(summary) {
+  if (!summary || !(summary.count > 0)) return '';
+  return `更早 ${summary.count} 条：${countText(summary.kinds, describeFetalEventKind)}${spanText(summary.from, summary.to)}`;
+}
+
+/** 孩子身上的孕期摘要，给族谱与注册页看 */
+export function describePrenatalSummary(summary) {
+  if (!summary || typeof summary !== 'object') return '';
+  const parts = [`受伤害 ${Number(summary.harm) || 0} 次`, `受照料 ${Number(summary.care) || 0} 次`];
+  if (summary.worst?.kind) parts.push(`最重的一次：${describeFetalEventKind(summary.worst.kind)}${summary.worst.content ? `（${summary.worst.content}）` : ''}`);
+  if (Number.isFinite(Number(summary.birthHealthRatio))) parts.push(`出生时健康 ${Math.round(Number(summary.birthHealthRatio) * 100)}%`);
+  return parts.join('，');
+}

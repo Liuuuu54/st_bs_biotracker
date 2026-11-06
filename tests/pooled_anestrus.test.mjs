@@ -157,7 +157,7 @@ function fetusRandom(seed, eggId) {
 
 for (const pooled of [false, true]) {
   const mode = pooled ? '混合池' : '默认';
-  test(`${mode}仍处乏情期时受精，初重使用0.6阶段系数而不是改成排卵期`, () => {
+  test(`${mode}仍处乏情期时受精：初重不看阶段，乏情期的时机系数 0.8 乘在健康上限上`, () => {
     const chat = setup(pooled, { race: '精灵', eggs: 1, seed: '乏情初重固定通道' });
     deposit(chat, '精灵父方', '精灵', 20);
     if (pooled) for (const egg of base(chat).spermPool.eggs) egg.threshold = egg.remainingHazard = 1e-6;
@@ -165,17 +165,16 @@ for (const pooled of [false, true]) {
     assert.equal(base(chat).stage, '乏情期');
     const embryo = profile(chat).pregnant.fetuses[0];
     assert.ok(embryo, '乏情期已有卵与可受精材料时真实工具应创建胚胎');
-    let random = () => 0;
     if (pooled) {
-      random = fetusRandom(base(chat).spermPool.seed, embryo.pooledConception.eggId);
-      const gender = random() < 0.45 ? '男' : '女';
-      assert.equal(embryo.gender, gender);
+      const random = fetusRandom(base(chat).spermPool.seed, embryo.pooledConception.eggId);
+      assert.equal(embryo.gender, random() < 0.45 ? '男' : '女');
     }
-    const expected = getConceptionWeight('乏情期', embryo.gender, 1, random);
+    const expected = getConceptionWeight(embryo.gender, 1);
     near(pooled ? embryo.pooledConception.initialWeight : embryo.weight, expected);
-    const ovulationRandom = pooled ? fetusRandom(base(chat).spermPool.seed, embryo.pooledConception.eggId) : () => 0;
-    if (pooled) ovulationRandom();
-    near(expected / getConceptionWeight('排卵期', embryo.gender, 1, ovulationRandom), 0.6);
+    // 健康上限 = 100 × 品质^0.25 × 0.8 × 天生变异（截在 ±3 个标准差）
+    const ratio = embryo.healthMax / 80;
+    assert.ok(ratio >= Math.exp(-0.39) - 1e-3 && ratio <= Math.exp(0.39) + 1e-3, `上限 ${embryo.healthMax}`);
+    assert.equal(embryo.health, embryo.healthMax / 2);
   });
 
   test(`${mode}天使着床只等待活动周期的9日，322日乏情不计入产科偏移`, () => {

@@ -153,10 +153,10 @@ test('子宫乏力：宫压与性欲上限下降，产后恢复变长，恢复�
   assert.equal(P(chatState).base.uterineAtony, 0, '产后恢复结束才清除乏力');
 });
 
-test('延产期母胎互动的亲和波动加倍', () => {
+test('延产期胎儿亲和的波动加倍', () => {
   const chatState = overdue();
   extend(chatState);
-  call(chatState, 'bsMaternalFetalInteraction', { direction: 'fetal', change: 'significant_increase' });
+  call(chatState, 'bsFetalEvent', { time: '延产第一天', kind: 'fetal_reaction', change: 'significant_increase', content: '胎儿贴着她的手蹭' });
   assert.equal(P(chatState).pregnant.fetuses[0].affinity, 2);
 });
 
@@ -229,7 +229,7 @@ test('存档 v2 → v3：补上延产与乏力栏位', () => {
   chatState.schemaVersion = 2;
   settings.chatStates['migration-v3'] = chatState;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 12);
+  assert.equal(migrated.schemaVersion, 13);
   assert.equal(migrated.characters.A.profile.pregnant.extensionCount, 0);
   assert.equal(migrated.characters.A.profile.pregnant.extensionUntilDays, null);
   assert.equal(migrated.characters.A.profile.base.uterineAtony, 0);

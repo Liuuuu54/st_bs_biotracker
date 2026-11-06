@@ -42,7 +42,7 @@ function one({ effectiveDays = 60, sperm = 150, hosts = [fetus({ weight: 1.6 })]
         fetusesCount: hosts.length, fetalEnergyDrain: 0.2,
         fetuses: hosts,
       },
-      experience: {}, immune: {}, metabolism: {},
+      experience: {}, immune: { metabolism: true }, metabolism: {},
       skills: [], talents: [], children: [], notify: {},
     },
   };

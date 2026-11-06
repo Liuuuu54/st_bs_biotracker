@@ -1,3 +1,4 @@
+import { normalizeFetalHealthFields } from './fetal_health.js';
 import { normalizeExperience, psychologySide } from './reproductive.js';
 import { DESCRIPTION_FIELDS, normalizeDescriptionList } from './descriptions.js';
 import {
@@ -16,7 +17,7 @@ import { MENSTRUAL_STAGE_DAYS } from './stage_config.js';
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 12;
+export const CHAT_STATE_SCHEMA_VERSION = 13;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -276,6 +277,21 @@ function migrateCharacterV10ToV11(character) {
   bio.seasonCycles = nextSeasonCycles;
 }
 
+/**
+ * v12 → v13（1.2.5 胎儿健康）：每周归零的供养池换成持续的健康量表（上限 100、当前值 = 50 ＋ 池换算），
+ * 胎儿事件堆从空开始，母胎互动的冷却丢掉。
+ */
+function migrateCharacterV12ToV13(character) {
+  const profile = character?.profile;
+  if (!profile || typeof profile !== 'object') return;
+  const pregnant = profile.pregnant;
+  if (pregnant && typeof pregnant === 'object') {
+    for (const fetus of Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []) normalizeFetalHealthFields(fetus);
+    if (!Array.isArray(pregnant.fetalEvents)) pregnant.fetalEvents = [];
+  }
+  if (profile.cooldown && typeof profile.cooldown === 'object') delete profile.cooldown.maternalFetalInteractionUsed;
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
   2: migrateCharacterV2ToV3,
@@ -285,6 +301,7 @@ const CHARACTER_MIGRATIONS = Object.freeze({
   7: migrateCharacterV7ToV8,
   9: migrateCharacterV6ToV7,
   10: migrateCharacterV10ToV11,
+  12: migrateCharacterV12ToV13,
 });
 
 export function getChatStateSchemaVersion(chatState) {

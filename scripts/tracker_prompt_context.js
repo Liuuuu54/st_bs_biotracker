@@ -80,7 +80,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- 每个角色结构为 name / initialized / profile。',
   '- profile 主要包含 base、pregnant、experience、psychology、skills、talents、children、metabolism、descriptions、diary、notify，必要时也会附带部分 bio 字段。',
   '- bio 与 immune 大多属于内部运行参数，tracker 默认不会完整发给你；但与剧情表达直接相关的少数 bio 字段可以发送。',
-  '- 若角色带有 immune.metabolism=true，则 metabolism、pregnant.nutrition 与 blockage/acceleration/expansion 都不会发给你，本人的衍生需求说明也不发，因为该角色不受代谢累积影响；不要为她调用 bsExcreteMetabolism。',
+  '- 若角色带有 immune.metabolism=true，则 metabolism 与 blockage/acceleration/expansion 都不会发给你，需求照料也不影响胎儿健康，本人的衍生需求说明也不发，因为该角色不受代谢累积影响；不要为她调用 bsExcreteMetabolism。',
   '- 若角色带有 offscreen=true，表示该角色当前不在场，existing_state 只提供精简状态，不代表角色不存在。',
   '- 值为 null、空字串、空列表或空物件的字段一律省略，省略即代表「无」（例如没有 sperms、没有 children、derivedType 不存在）；outfit.mainItemId=null 表示衣着未记录；认知与心理的省略/null 表示未知，不等于未孕或 0。',
   '',
@@ -128,8 +128,9 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- laborPain: 当前分娩疼痛程度，范围 0-10。描写疼痛反应不得明显超过此等级；刚进入第一产程时不应写成已达到极限痛苦。',
   '- laborEffort / pushFatigue（产程中）：推或休，以及用力疲劳 0-100。推的时候疲劳累积（胎越大越快），60 以上越推越没效果；休的时候疲劳消退，越冷静消退越快。疲劳不随换阶段归零。各阶段效果不同：第二产程的胎体下降与娩出要产妇自己用力，休的时候产程几乎不前进；第三产程娩出胎盘时用力快一倍，不用力也会照常娩出；第一产程宫口还没开全、间歇期下一胎还没开始下降，用力是白费力气，只会累积疲劳，只有剧情写到她提早用力（例如不懂怎么生）才给 push，不要为了加快产程而 push。进入第一产程、间歇期与第三产程时预设休，胎体下降开始时预设推。剧情写到产妇停下来喘气、歇一下时用 bsAssistFetalPosition 给 action=rest，用力时给 action=push；用力消耗的体力照剧情自己扣 vitality，系统不代扣。切换要先于这段时间的 bsPassedTime。',
   '- amnionDurability: 羊膜耐性（0-100）；过低代表接近或已经破水。每一胎有各自的羊膜（同卵共用一个胎囊）：全部胎囊相同时只给这一个数值；不同时不给这个数值，改在对应胎儿上标 fetuses[*].amnion＝膜薄／膜危／已破，没标的就是完整。',
-  '- nutrition: 妊娠供养力盈余/赤字，由需求照料累积：任一需求在「高」时用 bsExcreteMetabolism 彻底处理到「无」约 +1，只处理一半不算；拖到「爆」约 -1，停在爆每满 24 小时再扣一次；「满」不增不减。点数会按种族与妊娠负担折算，所以常见小数。正值代表供养充足，负值代表供养亏空。这是全部胎儿的合计：系统每次计分当下就按各胎孕龄与位置拆给每一胎，每周各自换算成胎重后归零。',
-  '- 胎位操作、胎儿自主活动、母胎互动与插入推顶的规则写在各工具说明里（bsAssistFetalPosition、bsMaternalFetalInteraction、bsAddSperm），依工具回传描写。',
+  '- fetuses[*].health: 胎儿健康的文字刻度：健壮／平稳／虚弱／危急。来源有二：需求照料（任一需求在「高」时用 bsExcreteMetabolism 彻底处理到「无」会让胎儿更健康，只处理一半不算；拖到「爆」会伤到胎儿，停在爆越久伤得越多；「满」不增不减），与 bsFetalEvent 记下的伤害、照料。没人照料也没人疏忽时会慢慢回到平稳。健康影响胎儿长得多大；周结算时到危急会先警告，下一周仍危急就会流产（多胎时只有那一胎被吸收）、孕晚期起早产。描写胎儿状况须与刻度一致，但不要写出刻度本身。',
+  '- pregnant.fetalEvents: 这次妊娠的胎儿事件纪录（bsFetalEvent），只送最近几条与钉选的条目：events 每条有 time、kind、change、target（第几胎／全部）、content，pin=true 为钉选，counted=false 表示当天同类已结算、这条只留纪录；earlier 是更早事件的摘要；countedToday 列出今天已结算过的 kind，同一胎同一天再记同类不会有效果。不要为了已有的事件重复调用。',
+  '- 胎位操作、胎儿自主活动、两胎互动（bsAssistFetalPosition action=sibling）与插入推顶的规则写在各工具说明里（bsAssistFetalPosition、bsAddSperm），胎儿伤害、照料、母体安抚与胎儿亲近或排斥用 bsFetalEvent，依工具回传描写。',
   '- blockage / acceleration / expansion: 当日妊娠症状，格式为 {key, severity}，含义见 [metabolism]。',
   '- fetuses: 胎儿列表。',
   '- fetuses[*].fathers: 实际遗传父方（系统真相）。',
@@ -155,7 +156,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].positionText: 这一胎在子宫里的深度，由系统的胎动与产程自动结算：顶到宫顶／宫内自由／子宫低位／入盆／进入产道／着冠／先露部已出；卡住时会写明（如 与另一胎在入口互锁、肩部卡住、在宿主胎儿体内）。描写胎儿位置、腹部下沉、入盆时须与它一致，不要自行改写。',
   '- fetuses[*].backSideText: 胎背朝母体哪一侧（左前／右前／左后／右后；横位时写成朝上或朝下、偏前或偏后）。与胎位角度互相独立，由系统的胎动与产程结算；胎背朝后（枕后位）时胎儿的脸朝母体腹侧，真实分娩模式下产程较慢、较痛。描写胎动方向、胎背贴着哪一侧肚皮时须与它一致。卵生、胎转卵生出生时是蛋，没有这一项，也没有枕后位。',
   '- fetuses 的排列顺序是子宫里由左至右的相对位置，不代表出生顺序；正在下降或娩出的那一胎带 presenting=true。',
-  '- fetuses[*].affinity: 母胎之間的親密度，也会参与 derivedType 进展。',
+  '- fetuses[*].affinity: 母胎之間的親密度（-50～50），由 bsFetalEvent 的 soothe、fetal_reaction 改变，也会参与 derivedType 进展。',
   '- fetuses[*].maternalDerivedTypeProgress: 与母体(正)/父源(負)衍生同化的进度，范围 -100 到 100；系统按母胎亲密度（往母方）与母亲对胎父的身体熟悉度（往父方）拉锯推进，不要直接改。',
   '- fetuses[*].talents: 胎儿承接的天赋，只含 skillId、带正负号的 level 与 exp；只能由孕体角色的 bsTrainSkill 在允许阶段自动改变。',
   '',
@@ -173,6 +174,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- 身体对各性伴的熟悉度，前三名与「身体最熟悉谁」；由系统依 bsAddSperm 的插入次数、体型相容（含经产扩张）、精子品质与时间衰减算出。只读，没有工具能改；只描述身体记忆，不代表感情。',
   '',
   '[cognitionRecords]',
+  '- 纪录较多时只送最近几条与钉选（pin=true）的条目，更早的并成 cognitionEarlier 一行摘要（只有各方式次数与日期）；摘要里的旧认知仍然成立，只是不再逐条列出。重要的认知记得钉选。',
   '- 每名角色独立的当前周期认知纪录；只有 bsRecordExperience(action=cognition) 追加，缺少纪录不等于相信未孕。允许猜错孕程、胎数与胎父；不改客观事实。实际进入月经才刷新，长期 experience 与 children 保留。',
   '- 最新改口不删除旧笔；按先后与来源解读。系统受孕、胎父或工具成功不代表角色知情。未知身份不能用系统姓名补真相。',
   '- hasCondom 与事后避孕在工具执行时结算，结果下一次回复承接，不预测或强制改写当轮正文；未结算的亲历结果不得预写。',
@@ -607,9 +609,9 @@ function buildMainFlowFieldNotes(existingState = {}) {
   }
   if (profiles.some((profile) => profile.pregnant)) {
     lines.push(
-      '- pregnant：pregnantDays 孕龄天数；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；nutrition 供养盈亏，正为充足、负为亏空；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
+      '- pregnant：pregnantDays 孕龄天数；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
       '- pregnant.laborEffort / pushFatigue（产程中）：push 表示产妇正在用力、rest 表示停下来喘口气；第一产程用力是白费力气；pushFatigue 用力疲劳 0-100，60 以上已经力竭、越推越没效果，描写可体现喘息与脱力。',
-      '- fetuses 按子宫里由左到右排列，不代表出生顺序；presenting=true 是正在下降或娩出的那一胎。weight 胎重系数，1.0 为标准；affinity 母胎亲密度 -50～50，负值为排斥；positionText、backSideText、tendencyAngleText 是胎位现况，描写须一致。',
+      '- fetuses 按子宫里由左到右排列，不代表出生顺序；presenting=true 是正在下降或娩出的那一胎。weight 胎重系数，1.0 为标准；affinity 母胎亲密度 -50～50，负值为排斥；health 胎儿健康（健壮／平稳／虚弱／危急），描写胎儿状况须一致，不写出刻度本身；positionText、backSideText、tendencyAngleText 是胎位现况，描写须一致。',
     );
   }
   if (profiles.some((profile) => profile.base?.stage === '延产期' || Number(profile.pregnant?.extensionCount) > 0)) {
@@ -705,6 +707,11 @@ export function projectNarrativeState(existingState = {}, recentResults = []) {
     if (!emergencyFresh.has(name)) delete profile.lastEmergencyResult;
     // 还在经期阶段就已经有胎儿，是受精卵尚未着床：旁白看不到，等着床进入孕早期才出现
     if (profile.pregnant && MENSTRUAL_STAGES.includes(String(profile.base?.stage || ''))) delete profile.pregnant;
+    // 胎儿事件纪录是给追踪模型防重复的，主线只看各胎的健康刻度
+    if (profile.pregnant?.fetalEvents) {
+      const { fetalEvents: _fetalEvents, ...pregnant } = profile.pregnant;
+      profile.pregnant = pregnant;
+    }
     if (profile.notify) {
       // 难产警示、阶段通知同样可能写着「可用某工具」，三栏一起改写
       const notify = Object.fromEntries(Object.entries(profile.notify)

@@ -25,7 +25,7 @@ function carrier({ days = 252, weights = [1], readiness = 1, breedTolerance = 1,
           embryoId: index + 1, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight, tendencyAngle: 0, affinity: 0, ...fetusOver,
         })),
       },
-      experience: {}, immune, metabolism: {}, skills: [], talents: [], children: [], notify: {},
+      experience: {}, immune: { metabolism: true, ...immune }, metabolism: {}, skills: [], talents: [], children: [], notify: {},
     },
   };
   return chatState;

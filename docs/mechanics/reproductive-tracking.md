@@ -8,11 +8,13 @@
 
 | action | 額外參數 | 寫入內容 |
 |---|---|---|
-| `cognition` | `method`、`content` | 追加該角色的 `profile.cognitionRecords` |
+| `cognition` | `method`、`content`，選填 `pin` | 追加該角色的 `profile.cognitionRecords` |
 | `date/breakup` | `partner` | 交往名單 `emotionalMates` 增／減一人 |
 | `marry/divorce` | `partner` | 婚姻名單 `marriageMates` 增／減一人 |
 | `child` | `childIndex`、`name` | 已出生孩子的名字 |
 | `claim` | `fetusIndex` 或 `childIndex`（二擇一）、`content`，選填 `selectedFather` | 胎兒或孩子的胎父認定：更新認定的父親，並追加一筆紀錄 `paternityClaims` |
+
+認知紀錄有保存上限（每個認知週期預設 40 條），超過時最舊、沒釘選的併進一筆摘要 `cognitionSummary`，只記各方法次數與起訖日期，不合併內容（認知本來就允許錯誤與矛盾，合併會改寫角色的誤解）。追蹤提示只送窗口：最近 8 條、`pin=true` 釘選的條目（預設最多 5 條，超過時保留最新的）與一行 `cognitionEarlier` 摘要。條數在生殖世界基準調整，可綁卡（見[世界基準](settings-and-encyclopedia.md#世界基準與提示詞名錄)）。
 
 認知方法為 `perception`（亲歷／自覺）、`guess`（猜測／自算）、`informed`（被告知）、`test`（檢測）、`prenatal`（診察）。檢測與診察不限現代醫療：只用世界觀裡已有的手段，例如驗孕棒、藥草、占卜、魔法，或醫師、產婆、祭司；工具說明明令追蹤模型不得引入世界觀沒有的器具。工具只記錄角色如何理解資訊，不執行檢查，也不驗證猜測是否吻合客觀孕程、胎數或父方。改口追加新筆，保留先後資訊。關係分支與子女分支不混入認知 log，婚姻與交往也不自動連動。
 

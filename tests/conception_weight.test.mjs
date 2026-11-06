@@ -1,9 +1,11 @@
-// 胎重天生的变异：对数常态分布，标准差 0.13（人类新生儿体重的实际变异），所有种族共用，截在 ±3 个标准差。
+// 1.2.5 起受孕时机与天生变异（对数常态、标准差 0.13，截在 ±3 个标准差）从初始胎重移到胎儿健康的上限，
+// 初始胎重只剩性别与体型系数；大小差异在孕期随健康长出来。
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
 import { calculateOffspringPreview } from '../scripts/calculator.js';
 import { CONCEPTION_STAGE_WEIGHTS, CONCEPTION_WEIGHT_LOG_SD } from '../scripts/body_size.js';
+import { getConceptionTimingFactor, sampleFetalHealthMax } from '../scripts/fetal_health.js';
 import { getConceptionWeight } from '../scripts/tools.js';
 
 const REAL_RANDOM = Math.random;
@@ -20,41 +22,38 @@ function seeded(seed) {
   };
 }
 
-test('受孕胎重的波动接近人类新生儿：对数标准差约 0.13，重 20% 以上约 8%', () => {
-  Math.random = seeded(20261020);
-  const logs = Array.from({ length: 6000 }, () => Math.log(getConceptionWeight('排卵期', '无', 1)));
+test('初始胎重只看性别与体型：没有阶段系数，也不再抽天生变异', () => {
+  assert.equal(getConceptionWeight('无', 1), 1);
+  assert.ok(Math.abs(getConceptionWeight('男', 1) - 1.05) < 1e-9);
+  assert.ok(Math.abs(getConceptionWeight('女', 1.22) - 1.22 / 1.05) < 1e-9);
+});
+
+test('健康上限的天生变异接近人类新生儿：对数标准差约 0.13，截在 ±3 个标准差', () => {
+  const random = seeded(20261020);
+  const logs = Array.from({ length: 6000 }, () => Math.log(sampleFetalHealthMax({ stage: '排卵期', random }) / 100));
   const mean = logs.reduce((sum, x) => sum + x, 0) / logs.length;
   const sd = Math.sqrt(logs.reduce((sum, x) => sum + (x - mean) ** 2, 0) / logs.length);
   assert.equal(CONCEPTION_WEIGHT_LOG_SD, 0.13);
   assert.ok(Math.abs(mean) < 0.01, `平均 ${mean}`);
   assert.ok(Math.abs(sd - 0.13) < 0.008, `标准差 ${sd}`);
-  const heavy = logs.filter((x) => x >= Math.log(1.2)).length / logs.length;
-  assert.ok(heavy > 0.06 && heavy < 0.10, `重 20% 以上占 ${heavy}`);
+  assert.ok(Math.abs(sampleFetalHealthMax({ stage: '排卵期', random: () => 0 }) - Math.round(1000 * Math.exp(0.13 * 3)) / 10) < 0.06, '撞到截断上限');
 });
 
-test('截在 ±3 个标准差，不会抽出极端值；体型系数照常乘上去', () => {
-  Math.random = () => 0;
-  assert.ok(Math.abs(getConceptionWeight('排卵期', '无', 1) - Math.exp(0.13 * 3)) < 1e-9);
-  assert.ok(Math.abs(getConceptionWeight('排卵期', '无', 1.22) - Math.exp(0.13 * 3) * 1.22) < 1e-9);
-});
-
-test('计算器的初始胎重范围是约 95% 会落在的 ±2 个标准差', () => {
-  const human = calculateOffspringPreview({ eggRace: '人类', spermRace: '人类', conceptionStage: '排卵期' });
-  const { min, max, typical } = human.fetalWeightRange;
-  assert.ok(Math.abs(Math.log(max / typical) - (2 * 0.13 + Math.log(1.05))) < 1e-6, `max ${max}`);
-  assert.ok(Math.abs(Math.log(typical / min) - (2 * 0.13 + Math.log(1.05))) < 1e-6, `min ${min}`);
-});
-
-test('受精阶段系数以排卵期为基准 1.0：自然受孕几乎都在排卵期，正常妊娠的胎重平均回到 1.0；产后恢复不会受孕，不列', () => {
+test('受孕时机系数 = 0.5 ＋ 0.5 × 旧阶段系数；精子品质乘 品质^0.25', () => {
   assert.deepEqual({ ...CONCEPTION_STAGE_WEIGHTS }, { 乏情期: 0.6, 月经期: 0.75, 卵泡期: 0.9, 排卵期: 1.0, 黄体期: 1.1 });
-  Math.random = seeded(7);
-  const logs = Array.from({ length: 4000 }, () => Math.log(getConceptionWeight('排卵期', '无', 1)));
-  const mean = Math.exp(logs.reduce((sum, x) => sum + x, 0) / logs.length);
-  assert.ok(Math.abs(mean - 1) < 0.01, `排卵期受孕的几何平均 ${mean}`);
-  Math.random = () => 0.5;
-  assert.ok(Math.abs(getConceptionWeight('产后恢复', '无', 1) / getConceptionWeight('排卵期', '无', 1) - 1) < 1e-9, '表外阶段按 1.0');
-  const preview = calculateOffspringPreview({ eggRace: '人类', spermRace: '人类', conceptionStage: '黄体期' });
-  assert.ok(Math.abs(preview.fetalWeightRange.typical - 1.1) < 1e-9, '计算机与引擎共用同一张表');
+  assert.deepEqual(['乏情期', '月经期', '卵泡期', '排卵期', '黄体期', '产后恢复'].map(getConceptionTimingFactor), [0.8, 0.875, 0.95, 1, 1.05, 1]);
+  const at = (quality, stage) => sampleFetalHealthMax({ quality, stage, random: () => 0.5 });
+  assert.ok(Math.abs(at(4, '排卵期') / at(1, '排卵期') - Math.SQRT2) < 0.01);
+  assert.ok(Math.abs(at(1, '乏情期') / at(1, '排卵期') - 0.8) < 0.01);
+});
+
+test('计算器：初始胎重只看性别与体型；另列健康上限的范围与受孕时机系数', () => {
+  const human = calculateOffspringPreview({ eggRace: '人类', spermRace: '人类', conceptionStage: '黄体期' });
+  const { min, max, typical } = human.fetalWeightRange;
+  assert.equal(typical, 1);
+  assert.ok(Math.abs(max - 1.05) < 1e-9 && Math.abs(min - 1 / 1.05) < 1e-9);
+  assert.equal(human.healthTimingFactor, 1.05);
+  assert.ok(Math.abs(Math.log(human.healthMaxRange.max / human.healthMaxRange.typical) - 0.26) < 1e-9);
 });
 
 test('计算机的胎重系数与引擎同一套：双方都有体型看体型差，有一方体型可变就退回承载耐受', async () => {
@@ -73,5 +72,5 @@ test('计算机的胎重系数与引擎同一套：双方都有体型看体型�
   const f = getMergedRacePhysiologyProfile('史萊姆').breedTolerance;
   const expected = Math.max(0.5, Math.min(2, 2 ** ((f - m) / (f + m))));
   assert.ok(Math.abs(slime.breedWeightRatio - expected) < 1e-9);
-  assert.ok(Math.abs(slime.fetalWeightRange.typical - expected) < 1e-9, '排卵期基准 1.0，中心值就是系数');
+  assert.ok(Math.abs(slime.fetalWeightRange.typical - expected) < 1e-9, '中心值就是体型系数');
 });

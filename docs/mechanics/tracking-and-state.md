@@ -35,7 +35,7 @@
 | 類別 | 工具 |
 | --- | --- |
 | 時間與身體 | `bsPassedTime`、`bsUpdateCharacterStatus`、`bsExcreteMetabolism`、`bsSetMenstrualPhases`、`bsSetCharacterPresence` |
-| 生殖與分娩 | `bsAddSperm`、`bsDrainSperm`、`bsImplantEmbryo`、`bsAbortion`、`bsChildbirth`、`bsAssistFetalPosition`、`bsMaternalFetalInteraction`、`bsWombReturn` |
+| 生殖與分娩 | `bsAddSperm`、`bsDrainSperm`、`bsImplantEmbryo`、`bsAbortion`、`bsChildbirth`、`bsAssistFetalPosition`、`bsFetalEvent`、`bsWombReturn` |
 | 記錄與描述 | `bsWriteDiary`、`bsRecordExperience`、`bsSetDescription`、`bsUpdatePsychology` |
 | 技能與衣物 | `bsRegisterSkillDefinition`、`bsTrainSkill`、`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` |
 | 測試／診斷 | `bsDebugInjectPregnancy`、`bsDebugClearContainers`、`bsDebugSetGestationModifier`、`bsDebugFetalActivity`、`bsDebugSetProdromal`、`bsDebugSetFetalPosition` |

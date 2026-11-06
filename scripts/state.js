@@ -16,6 +16,7 @@ import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, nor
 import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines, renameStoredRaces } from './state_migration.js';
 import { createEmptySires, normalizeSires, pruneFutaSireRecord } from './sires.js';
 import { assignMissingSireSeasonOrigins, startMissingSireReserveClocks } from './season_phase.js';
+import { normalizeFetalEventList, normalizeFetalHealthFields } from './fetal_health.js';
 import { announceSavedRevisions, claimChatRevision, clearHostSettingsPendingUpTo, markHostSettingsPending, queueRevisionAnnouncement, readLatestChatRevision } from './save_sync.js';
 import {
   createDefaultWardrobeItem,
@@ -115,7 +116,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '月经阶段、排卵期、假孕期切换用 bsSetMenstrualPhases；不要用它覆盖正在进行的受精、真妊娠或产程。',
   '剧情以特殊手段让逾期的妊娠延后不生用 bsExtendPregnancy（action=extend），结束延产用 action=induce；延产期间不能用 bsAbortion 或 bsChildbirth。',
   '流产用 bsAbortion；立即结束分娩用 bsChildbirth；角色在场状态变化用 bsSetCharacterPresence，参数必须为 female 和 isPresent（布尔值 true/false，不要使用 isHere）。角色明确回到当前场景、重新同行或参与当前互动时应设为 true；明确离开、失联或转为幕外时才设为 false。',
-  '母胎互动用 bsMaternalFetalInteraction；每名角色在每个新小时内仅允许一次成功的母胎互动变化，重复调用会被跳过。direction=fetal 时须传 change，表示胎儿对母体的亲近或排斥并改变 affinity。direction=maternal 时不传 change，表示母体安抚胎儿，系统随机判定 affinity 变化。母胎互动不影响营养，也不改变胎位或产程。剧情明确出现人工胎位操作（转位、托高延后分娩、推送），或胎儿有意识地自己转身、缩回、往下钻时用 bsAssistFetalPosition（后者加 actor=fetus）。',
+  '腹中胎儿受到伤害（喝酒、外伤、过劳、生病、诅咒）、得到照料（安胎药、产检、休养、祝福），或母体安抚、胎儿亲近或排斥时，用 bsFetalEvent 记一件事；吃睡排泄等需求照料系统已自动计入胎儿健康，不要重复记。腹中两胎互踢、推挤、依偎用 bsAssistFetalPosition（action=sibling）。剧情明确出现人工胎位操作（转位、托高延后分娩、推送），或胎儿有意识地自己转身、缩回、往下钻时用 bsAssistFetalPosition（后者加 actor=fetus）。',
   '不要编造怀孕天数、胎数、流产、分娩或其他高影响事件。',
 ].join('\n');
 
@@ -446,7 +447,15 @@ export function normalizeCharacterPsychologyState(characterState) {
     characterState.profile.children = characterState.profile.children.map((child) => ({ ...child, talents: normalizeTalentList(child?.talents) }));
   }
   if (Array.isArray(characterState.profile.pregnant?.fetuses)) {
-    characterState.profile.pregnant.fetuses = characterState.profile.pregnant.fetuses.map((fetus) => ({ ...fetus, talents: normalizeTalentList(fetus?.talents) }));
+    characterState.profile.pregnant.fetuses = characterState.profile.pregnant.fetuses
+      .map((fetus) => normalizeFetalHealthFields({ ...fetus, talents: normalizeTalentList(fetus?.talents) }));
+  }
+  if (characterState.profile.pregnant && typeof characterState.profile.pregnant === 'object') {
+    characterState.profile.pregnant.fetalEvents = normalizeFetalEventList(characterState.profile.pregnant.fetalEvents);
+  }
+  // 1.2.5 起母胎互动工具移除，它的每小时冷却也不再使用；两胎互动改用 siblingInteractionUsed
+  if (characterState.profile.cooldown && typeof characterState.profile.cooldown === 'object') {
+    delete characterState.profile.cooldown.maternalFetalInteractionUsed;
   }
   characterState.profile.wardrobe = normalizeWardrobeState(characterState.profile.wardrobe);
   characterState.profile.outfit = normalizeOutfitState(characterState.profile.outfit, characterState.profile.wardrobe);
@@ -766,7 +775,7 @@ export function createDefaultFemaleState(name = '') {
         naturalOvulationUsed: false,
         pregnancyPressureWarning: false,
         psychologyUpdateUsed: false,
-        maternalFetalInteractionUsed: false,
+        siblingInteractionUsed: false,
       },
       base: {
         isHere: true,
@@ -2090,7 +2099,7 @@ function createSnapshotCharacterBaseline(name = '') {
         naturalOvulationUsed: false,
         pregnancyPressureWarning: false,
         psychologyUpdateUsed: false,
-        maternalFetalInteractionUsed: false,
+        siblingInteractionUsed: false,
       },
       base: {
         isHere: true,

@@ -1,5 +1,5 @@
-// v1.1.1 多胎胎间：大幅转向会被相邻胎儿挡住或带动；direction=sibling 的互踢、推挤、依偎。
-// 不存新资料，只改角度与左右顺序，与母胎互动共用每小时一次的冷却。
+// v1.1.1 多胎胎间：大幅转向会被相邻胎儿挡住或带动；两胎互踢、推挤、依偎（1.2.5 起是 bsAssistFetalPosition action=sibling）。
+// 不存新资料，只改角度与左右顺序，每个故事小时一次。
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
@@ -38,8 +38,8 @@ const F = (chatState) => P(chatState).pregnant.fetuses;
 const rotate = (chatState, fetusIndex, targetAngle) => applyToolCall(chatState, {
   name: 'bsAssistFetalPosition', arguments: { female: 'A', action: 'rotate', fetusIndex, targetAngle },
 });
-const sibling = (chatState, change) => applyToolCall(chatState, {
-  name: 'bsMaternalFetalInteraction', arguments: { female: 'A', direction: 'sibling', change },
+const sibling = (chatState, interaction, extra = {}) => applyToolCall(chatState, {
+  name: 'bsAssistFetalPosition', arguments: { female: 'A', action: 'sibling', interaction, ...extra },
 });
 
 test('crowded twins: a big turn can be blocked by the neighbor and then nothing changes', () => {
@@ -110,7 +110,7 @@ test('engaged or still-hidden neighbors take space but are never dragged or name
 test('sibling kick turns the other twin a little and leaves affinity alone', () => {
   const chatState = setup([fetus(1, { affinity: 5 }), fetus(2, { tendencyAngle: 100, affinity: -3 })]);
   rolls(0, 0, 0.5, 0.2);
-  const result = sibling(chatState, 'slight_decrease');
+  const result = sibling(chatState, 'kick');
   assert.equal(result.applied, true, result.message);
   assert.equal(F(chatState)[1].tendencyAngle, 85, '被踢的第 2 胎偏转 15°');
   assert.deepEqual(F(chatState).map((f) => f.affinity), [5, -3], '不碰母胎亲和');
@@ -120,30 +120,57 @@ test('sibling kick turns the other twin a little and leaves affinity alone', () 
 test('sibling shoving can swap sides; snuggling changes nothing but the notice', () => {
   let chatState = setup([fetus(1), fetus(2)]);
   rolls(0, 0.9);
-  assert.equal(sibling(chatState, 'significant_decrease').applied, true);
+  assert.equal(sibling(chatState, 'shove').applied, true);
   assert.deepEqual(F(chatState).map((f) => f.embryoId), [2, 1], '换了左右');
   assert.match(P(chatState).notify.secondly, /第2胎和第1胎推挤起来，两胎换了左右位置/, '用换位前的编号（第 2 胎是推的一方）');
 
   chatState = setup([fetus(1, { descentStage: 0 }), fetus(2)]);
   rolls(0, 0.9);
-  assert.equal(sibling(chatState, 'significant_decrease').applied, true);
+  assert.equal(sibling(chatState, 'shove').applied, true);
   assert.deepEqual(F(chatState).map((f) => f.embryoId), [1, 2], '已入盆就挤不动');
   assert.match(P(chatState).notify.secondly, /位置没变/);
 
   chatState = setup([fetus(1, { tendencyAngle: 30 }), fetus(2, { tendencyAngle: 200 })]);
   const before = JSON.stringify(F(chatState));
-  assert.equal(sibling(chatState, 'significant_increase').applied, true);
+  assert.equal(sibling(chatState, 'cuddle').applied, true);
   assert.equal(JSON.stringify(F(chatState)), before);
-  assert.match(P(chatState).notify.secondly, /紧紧依偎/);
+  assert.match(P(chatState).notify.secondly, /依偎在一起/);
 });
 
-test('sibling interaction shares the hourly cooldown and needs two known neighbors', () => {
-  let chatState = setup([fetus(1), fetus(2)]);
-  assert.equal(sibling(chatState, 'slight_increase').applied, true);
-  assert.equal(sibling(chatState, 'slight_increase').applied, false, '同一小时不能再互动');
-  assert.equal(applyToolCall(chatState, { name: 'bsMaternalFetalInteraction', arguments: { female: 'A', direction: 'maternal' } }).applied, false, '与母胎互动共用冷却');
+test('sibling: fetusIndex picks the actor, otherFetusIndex the target; they must be neighbors', () => {
+  const chatState = setup([fetus(1), fetus(2, { tendencyAngle: 100 }), fetus(3, { tendencyAngle: 200 })]);
+  rolls(0, 0.2);
+  const result = sibling(chatState, 'kick', { fetusIndex: 2, otherFetusIndex: 1 });
+  assert.equal(result.applied, true, result.message);
+  assert.match(P(chatState).notify.secondly, /第3胎踢了第2胎一脚/);
+  assert.equal(F(chatState)[2].tendencyAngle, 200, '动手的一胎不动');
 
-  assert.equal(sibling(setup([fetus(1)]), 'slight_increase').applied, false, '单胎没有对象');
-  assert.equal(sibling(setup([fetus(1), fetus(2, { conceivedAtDays: 20, revealed: false })]), 'slight_increase').applied, false, '未揭晓的胎儿不被选中');
-  assert.match(sibling(setup([fetus(1), fetus(2)]), 'bogus').message, /requires a valid change/);
+  const far = setup([fetus(1), fetus(2), fetus(3)]);
+  const rejected = sibling(far, 'kick', { fetusIndex: 0, otherFetusIndex: 2 });
+  assert.equal(rejected.applied, false);
+  assert.match(rejected.message, /not next to each other/);
+
+  const self = sibling(setup([fetus(1), fetus(2)]), 'cuddle', { fetusIndex: 0, otherFetusIndex: 0 });
+  assert.equal(self.applied, false);
+
+  // 只给动手的一胎：对象取它旁边的一胎
+  const one = setup([fetus(1), fetus(2)]);
+  assert.equal(sibling(one, 'cuddle', { fetusIndex: 1 }).applied, true);
+  assert.match(P(one).notify.secondly, /第2胎和第1胎依偎/);
+});
+
+test('sibling interaction is once per story hour and needs two known neighbors', () => {
+  const chatState = setup([fetus(1), fetus(2)]);
+  assert.equal(sibling(chatState, 'cuddle').applied, true);
+  assert.equal(sibling(chatState, 'cuddle').applied, false, '同一小时不能再互动');
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } });
+  assert.equal(sibling(chatState, 'cuddle').applied, true, '推进满一小时后重置');
+  assert.equal(applyToolCall(chatState, { name: 'bsFetalEvent', arguments: { female: 'A', time: '当天', kind: 'soothe', content: '轻抚肚子' } }).applied, true,
+    '不占胎儿事件的额度');
+
+  assert.equal(sibling(setup([fetus(1)]), 'cuddle').applied, false, '单胎没有对象');
+  assert.equal(sibling(setup([fetus(1), fetus(2, { conceivedAtDays: 20, revealed: false })]), 'cuddle').applied, false, '未揭晓的胎儿不被选中');
+  assert.match(sibling(setup([fetus(1), fetus(2)]), 'bogus').message, /interaction=kick, shove or cuddle/);
+  assert.match(applyToolCall(setup([fetus(1), fetus(2)]), { name: 'bsMaternalFetalInteraction', arguments: { female: 'A', direction: 'sibling', change: 'slight_increase' } }).message,
+    /Unsupported tool/, '旧工具已移除');
 });

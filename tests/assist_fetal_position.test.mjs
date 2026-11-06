@@ -164,7 +164,7 @@ test('肩难产：不给角度直接转动肩部即可解开，不向已归零�
 test('母胎互动在产兆前驱不再兼任分娩抵抗：不改剩余时间', () => {
   Math.random = () => 0;
   const chatState = setup('产兆前驱', [fetus(1)], { pregnant: { prodromalRemainingHours: 30, prodromalLeadEmbryoId: 1 } });
-  applyToolCall(chatState, { name: 'bsMaternalFetalInteraction', arguments: { female: 'A', direction: 'maternal' } });
+  applyToolCall(chatState, { name: 'bsFetalEvent', arguments: { female: 'A', time: '当天', kind: 'soothe', content: '她抚着肚子哼歌' } });
   assert.equal(P(chatState).pregnant.prodromalRemainingHours, 30);
 });
 

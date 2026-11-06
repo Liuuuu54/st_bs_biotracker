@@ -234,7 +234,7 @@ test('母体安抚失败不改任何一胎的胎位', () => {
   });
   touch(chatState);
   P(chatState).base.psyStress = 400;
-  const result = applyToolCall(chatState, { name: 'bsMaternalFetalInteraction', arguments: { female: 'A', direction: 'maternal' } });
+  const result = applyToolCall(chatState, { name: 'bsFetalEvent', arguments: { female: 'A', time: '当天', kind: 'soothe', content: '她抚着肚子哼歌' } });
   assert.equal(result.applied, true, result.message);
   assert.deepEqual(P(chatState).pregnant.fetuses.map((f) => f.tendencyAngle), [0, 0]);
   assert.match(String(P(chatState).notify.secondly), /没有回应/);

@@ -126,6 +126,7 @@ export function buildLineageGraph(chatState) {
       // 「这个角色是在故事里被生下来的」判定 kind === 'character' 且有 childId 即可。
       const childNode = nodes.get(childNodeId);
       childNode.childId = child.id ?? null;
+      if (child.prenatalSummary && typeof child.prenatalSummary === 'object') childNode.prenatalSummary = child.prenatalSummary;
 
       // 孕中孕：母亲是同胎次的另一个孩子（宿主胎儿），承载者只是承载。
       // 这条边不能走名字——胎儿没有名字，靠出生时解析出来的 nestedInChildId 指过去。

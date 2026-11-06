@@ -27,7 +27,7 @@ function setup(stage, fetuses = [], pregnant = {}) {
       },
       bio: { birthDifficulty: 1, breedTolerance: 1, gestationSpeciesSpeed: 1 },
       pregnant: { pregnantDays: 140, effectivePregnantDays: 140, fetusesCount: fetuses.length, fetuses, ...pregnant },
-      experience: {}, immune: {}, metabolism: {}, skills: [], talents: [], children: [], notify: {},
+      experience: {}, immune: { metabolism: true }, metabolism: {}, skills: [], talents: [], children: [], notify: {},
     },
   };
   return chatState;
@@ -143,7 +143,7 @@ function labor({ backSide, realistic = true }) {
   const chatState = setup('第一产程', [fetus(1, { backSide, descentStage: 0 })], {
     pregnantDays: 280, effectivePregnantDays: 280, laborPhase: '活跃期', presentingEmbryoId: 1, effectiveLaborHours: 0, laborHours: 0,
   });
-  P(chatState).immune = { realisticLabor: realistic };
+  P(chatState).immune = { metabolism: true, realisticLabor: realistic };
   P(chatState).base.uterinePressure = 60;
   return chatState;
 }
