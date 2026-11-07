@@ -6514,3 +6514,70 @@
 .bs-bt-lineage__cluster-cards:not(.has-link) {
   padding-top: 10px;
 }
+
+
+/* ---- 主题对话泡：取代浏览器白框（index.js installThemedTooltips），颜色与字型从最近的主题元素复制 ---- */
+.bs-bt-tip {
+  position: fixed;
+  z-index: 2147483000;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 7px 9px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: var(--bsbt-lcd-bg, #87a96b);
+  color: var(--bsbt-lcd-text, #212526);
+  box-shadow: 3px 3px 0 color-mix(in srgb, currentColor 32%, transparent);
+  font-family: var(--bsbt-font-main, sans-serif);
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.bs-bt-tip[hidden] {
+  display: none;
+}
+
+/* ---- 日记：一页一篇，像翻日记本；颜色全取主题变数 ---- */
+#bs-biotracker-settings .bs-bt-diary-page {
+  padding: 12px 14px 10px;
+  border-left: 3px solid color-mix(in srgb, var(--bsbt-lcd-text) 45%, transparent);
+  border-radius: 2px 6px 6px 2px;
+  background: color-mix(in srgb, var(--bsbt-lcd-text) 6%, transparent);
+  color: var(--bsbt-lcd-text);
+}
+
+#bs-biotracker-settings .bs-bt-diary-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--bsbt-lcd-text) 40%, transparent);
+}
+
+#bs-biotracker-settings .bs-bt-diary-date {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+#bs-biotracker-settings .bs-bt-diary-folio {
+  flex-shrink: 0;
+  font-size: 0.8em;
+  opacity: 0.75;
+}
+
+#bs-biotracker-settings .bs-bt-diary-body p {
+  margin: 0 0 0.75em;
+  text-indent: 2em;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+#bs-biotracker-settings .bs-bt-diary-body p:last-child {
+  margin-bottom: 0;
+}

@@ -6120,6 +6120,18 @@ function renderCognitionTimeline(records) {
   </div>`;
 }
 
+/** 日记一页：日期当标题、右上页码；内文照原本的分行分段，每段首行缩排，便于阅读 */
+function renderDiaryPage(item, index, total) {
+  const paragraphs = String(item?.content || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return `<article class="bs-bt-diary-page">
+    <header class="bs-bt-diary-head">
+      <span class="bs-bt-diary-date">${escapeHtml(item?.time || `日记 ${index + 1}`)}</span>
+      ${total > 1 ? `<span class="bs-bt-diary-folio">${index + 1} / ${total}</span>` : ''}
+    </header>
+    <div class="bs-bt-diary-body">${paragraphs.map((line) => `<p>${escapeHtml(line)}</p>`).join('') || '<p></p>'}</div>
+  </article>`;
+}
+
 function renderTrackDiary(viewModel) {
   const diaryEnabled = viewModel.diary?.enabled !== false;
   const entries = Array.isArray(viewModel.diary?.entries) ? viewModel.diary.entries : [];
@@ -6131,10 +6143,7 @@ function renderTrackDiary(viewModel) {
     ${diaryEnabled ? renderCardCarouselSection(
       '日记',
       entries,
-      (item, index) => `<div class="bs-bt-track-card">
-        <div class="bs-bt-track-card-title">${escapeHtml(item?.time || `日记 ${index + 1}`)}</div>
-        <div class="bs-bt-track-card-note">${escapeHtml(item?.content || '')}</div>
-      </div>`,
+      (item, index) => renderDiaryPage(item, index, entries.length),
       '当前无日记记录',
       'diary',
     ) : ''}
@@ -11665,11 +11674,112 @@ function installSaveGuards(ctx) {
   });
 }
 
+// ---- 主题对话泡 ----
+// 插件介面里的 title 原本是浏览器的白框，与主题格格不入。滑鼠移到（或键盘聚焦、触控点一下）
+// 带 title 的元素时，把 title 收进 data-bs-tip，改用跟着主题配色的泡泡显示；重绘后的新元素照样处理。
+const THEMED_TIP_INSTALLED_KEY = '__bs_biotracker_themed_tip_installed__';
+const THEMED_TIP_ROOTS = '#bs-biotracker-settings, .bs-bt-floating-sphere, .bs-bt-lineage';
+const THEMED_TIP_VARS = ['--bsbt-lcd-bg', '--bsbt-lcd-text', '--bsbt-font-main'];
+const THEMED_TIP_INTERACTIVE = 'button, a, input, select, textarea, summary, label, [role="button"], [data-card-nav], [contenteditable="true"]';
+
+function installThemedTooltips() {
+  if (globalThis[THEMED_TIP_INSTALLED_KEY] || typeof document === 'undefined') return;
+  globalThis[THEMED_TIP_INSTALLED_KEY] = true;
+  const tip = document.createElement('div');
+  tip.id = 'bs-bt-themed-tip';
+  tip.className = 'bs-bt-tip';
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  document.body.appendChild(tip);
+  let current = null;
+  let lastPointerWasTouch = false;
+
+  const targetOf = (node) => {
+    const el = node?.closest?.('[title], [data-bs-tip]');
+    if (!el) return null;
+    const root = el.closest(THEMED_TIP_ROOTS);
+    return root ? { el, root } : null;
+  };
+  // 每次都重读 title：程式之后改了 title 时以新的为准
+  const textOf = (el) => {
+    if (el.hasAttribute('title')) {
+      const title = el.getAttribute('title') || '';
+      el.removeAttribute('title');
+      if (title) el.dataset.bsTip = title;
+      else delete el.dataset.bsTip;
+    }
+    return el.dataset.bsTip || '';
+  };
+  const hide = () => {
+    if (current) current.removeAttribute('aria-describedby');
+    current = null;
+    tip.hidden = true;
+  };
+  const place = (el) => {
+    const rect = el.getBoundingClientRect();
+    const gap = 8;
+    tip.style.left = '0px';
+    tip.style.top = '0px';
+    const box = tip.getBoundingClientRect();
+    const left = Math.min(Math.max(8, rect.left + rect.width / 2 - box.width / 2), window.innerWidth - box.width - 8);
+    const below = rect.bottom + gap;
+    const top = below + box.height <= window.innerHeight - 8 ? below : Math.max(8, rect.top - gap - box.height);
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.top = `${Math.round(top)}px`;
+  };
+  const show = (el, root) => {
+    const text = textOf(el);
+    if (!text) return hide();
+    const style = getComputedStyle(root);
+    for (const name of THEMED_TIP_VARS) tip.style.setProperty(name, style.getPropertyValue(name));
+    tip.style.fontSize = `${Math.max(11, Math.round(parseFloat(style.fontSize || '14') * 0.82))}px`;
+    tip.textContent = text;
+    tip.hidden = false;
+    if (current && current !== el) current.removeAttribute('aria-describedby');
+    current = el;
+    el.setAttribute('aria-describedby', tip.id);
+    place(el);
+  };
+
+  document.addEventListener('pointerdown', (event) => { lastPointerWasTouch = event.pointerType === 'touch'; }, true);
+  document.addEventListener('pointerover', (event) => {
+    if (event.pointerType === 'touch') return;
+    const target = targetOf(event.target);
+    if (!target) return;
+    if (target.el !== current) show(target.el, target.root);
+  });
+  document.addEventListener('pointerout', (event) => {
+    if (!current || event.pointerType === 'touch') return;
+    if (event.relatedTarget && current.contains(event.relatedTarget)) return;
+    hide();
+  });
+  document.addEventListener('focusin', (event) => {
+    const target = targetOf(event.target);
+    if (target && target.el === event.target) show(target.el, target.root);
+  });
+  document.addEventListener('focusout', () => hide());
+  // 触控没有悬停：点一下非按钮的元素显示，再点一次或点别处收起；按钮照常执行，不弹泡泡
+  document.addEventListener('click', (event) => {
+    if (!lastPointerWasTouch) return;
+    const target = targetOf(event.target);
+    if (!target || target.el.matches(THEMED_TIP_INTERACTIVE) || target.el.closest(THEMED_TIP_INTERACTIVE)) {
+      hide();
+      return;
+    }
+    if (current === target.el) hide();
+    else show(target.el, target.root);
+  });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') hide(); });
+  document.addEventListener('scroll', () => hide(), true);
+  window.addEventListener('blur', () => hide());
+}
+
 async function bootstrap() {
   const ctx = getContextSafe();
   if (!ctx) return;
   if (globalThis[BOOTSTRAP_RUNTIME_KEY]) return;
   globalThis[BOOTSTRAP_RUNTIME_KEY] = true;
+  installThemedTooltips();
   try {
     // 载入当下记忆体里的各聊天都视为与宿主同步，之后的改动才算这个分页的新改动
     markChatStatesSynced(ctx);
