@@ -1128,7 +1128,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
         const {
           embryoId: _embryoId, contactIds: _contactIds, contactMinutes: _contactMinutes, contactEmbryos: _contactEmbryos, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion,
           // 健康只送文字刻度，数值与见底旗标不外露
-          health: _health, healthMax: _healthMax, healthWarned: _healthWarned, healthCollapsed: _healthCollapsed, spermQuality: _spermQuality,
+          health: _health, healthMax: _healthMax, healthWarned: _healthWarned, healthWarnedAt: _healthWarnedAt, healthCollapsed: _healthCollapsed, spermQuality: _spermQuality,
           // 位置只送紧凑的文字摘要（positionText）；数值、解绑与阻塞旗标不外露
           descentStage: _descentStage, nestedReleased: _nestedReleased, backSide: _backSide,
           inletIntruder: _inletIntruder, shoulderDystocia: _shoulderDystocia, shoulderRelieved: _shoulderRelieved, ...visibleFetus

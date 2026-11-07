@@ -432,6 +432,10 @@ test('受孕时记下精子品质快照；追踪视角只在明显偏离时送�
   assert.equal(profile.pregnant.fetuses[0].resilience, '顽强');
   assert.equal('resilience' in profile.pregnant.fetuses[1], false, '7 级 × 品质 0.25 是 ×0.75，一般不送');
   assert.equal('spermQuality' in profile.pregnant.fetuses[0], false, '数值不外露');
+  const warned = setup({ fetuses: [fetus(1, { health: 5, healthWarned: true, healthWarnedAt: 118 })] });
+  const warnedView = trackerProfile(warned).pregnant.fetuses[0];
+  assert.equal(warnedView.health, '危急');
+  assert.equal('healthWarnedAt' in warnedView, false, '警告时刻也不外露');
   const weak = trackerProfile(setup({ base: { vitalityLevel: 1 }, fetuses: [fetus(1)] }));
   assert.equal(weak.pregnant.fetuses[0].resilience, '脆弱');
 });
