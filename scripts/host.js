@@ -500,15 +500,30 @@ function getStCurrentChatId(runtime) {
   return runtime?.chatId !== undefined && runtime?.chatId !== null && String(runtime.chatId) ? String(runtime.chatId) : '';
 }
 
-function loadStMetadataChatState() {
+/** 聊天档 metadata 里的那份（三个宿主都写）；没有或格式不对回 null */
+function readMetadataChatStateCopy() {
+  const stored = getHostContext()?.chatMetadata?.[ST_METADATA_KEY];
+  return stored?.version === 1 && stored.chatState && typeof stored.chatState === 'object' ? cloneHostValue(stored.chatState) : null;
+}
+
+/** 写进聊天档 metadata；metaChatId 是排程当下的聊天，写入时已换聊天就不写 */
+function writeMetadataChatStateCopy(metaChatId, payload) {
   const runtime = getHostContext();
-  const chatId = getStCurrentChatId(runtime);
+  if (!metaChatId || getStCurrentChatId(runtime) !== metaChatId) return;
+  const metadata = runtime?.chatMetadata;
+  if (!metadata || typeof metadata !== 'object' || typeof runtime.saveMetadataDebounced !== 'function') return;
+  metadata[ST_METADATA_KEY] = payload;
+  runtime.saveMetadataDebounced();
+}
+
+function loadStMetadataChatState() {
+  const chatId = getStCurrentChatId(getHostContext());
   if (!chatId) return null;
-  const stored = runtime?.chatMetadata?.[ST_METADATA_KEY];
+  const stored = readMetadataChatStateCopy();
   TAURI_STATE_HYDRATED_IDS.add(chatId);
-  if (stored?.version === 1 && stored.chatState && typeof stored.chatState === 'object') {
+  if (stored) {
     TAURI_STATE_KNOWN_MISSING_IDS.delete(chatId);
-    return cloneHostValue(stored.chatState);
+    return stored;
   }
   TAURI_STATE_KNOWN_MISSING_IDS.add(chatId);
   return null;
@@ -529,6 +544,12 @@ export async function loadHostChatState(ctx = null) {
         TAURI_STATE_KNOWN_MISSING_IDS.delete(lukerChatId);
         return cloneHostValue(stored.chatState);
       }
+      // 聊天旁没有：汇入的聊天只带着聊天档，从它的 metadata 接回
+      const copy = readMetadataChatStateCopy();
+      if (copy) {
+        TAURI_STATE_KNOWN_MISSING_IDS.delete(lukerChatId);
+        return copy;
+      }
       TAURI_STATE_KNOWN_MISSING_IDS.add(lukerChatId);
     } catch (error) {
       // 读取失败＝内容未知，保持未确认状态，避免拿空的覆盖掉
@@ -545,9 +566,15 @@ export async function loadHostChatState(ctx = null) {
   // TT surfaces every backend store miss as an error toast, so remember chats
   // without stored state and skip repeat probes until our own save creates one.
   const chatId = await resolveHostChatId(ctx);
+  // 聊天旁没有存档时（汇入的聊天拿到新的稳定 ID）从聊天档 metadata 接回
+  const fallbackToMetadata = () => {
+    const copy = readMetadataChatStateCopy();
+    if (copy) TAURI_STATE_KNOWN_MISSING_IDS.delete(chatId);
+    return copy;
+  };
   if (TAURI_STATE_KNOWN_MISSING_IDS.has(chatId)) {
     TAURI_STATE_HYDRATED_IDS.add(chatId);
-    return null;
+    return fallbackToMetadata();
   }
   const inflight = TAURI_STATE_LOAD_INFLIGHT.get(chatId);
   if (inflight) return inflight;
@@ -557,7 +584,7 @@ export async function loadHostChatState(ctx = null) {
     if (exists === false) {
       TAURI_STATE_KNOWN_MISSING_IDS.add(chatId);
       TAURI_STATE_HYDRATED_IDS.add(chatId);
-      return null;
+      return fallbackToMetadata();
     }
     try {
       const stored = await handle.store.getJson({ namespace: TAURI_STATE_NAMESPACE, key: TAURI_STATE_KEY });
@@ -566,11 +593,13 @@ export async function loadHostChatState(ctx = null) {
       if (stored?.version === 1 && stored.chatState && typeof stored.chatState === 'object') {
         return cloneHostValue(stored.chatState);
       }
+      return fallbackToMetadata();
     } catch (error) {
       if (/not found/i.test(String(error?.message || error))) {
         // 确认这个聊天没有存档，写空无害
         TAURI_STATE_KNOWN_MISSING_IDS.add(chatId);
         TAURI_STATE_HYDRATED_IDS.add(chatId);
+        return fallbackToMetadata();
       } else {
         // 其它错误＝内容未知（store 未就绪、宿主报错等），保持未确认，避免拿空的覆盖掉
         console.warn('[BS BioTracker] unable to load TauriTavern chat state', error);
@@ -607,19 +636,8 @@ function prepareHostChatStateSave(ctx, chatState) {
     if (shouldSkipBlankHostChatStateSave(chatId, chatState)) return null;
     TAURI_STATE_KNOWN_MISSING_IDS.delete(chatId);
     const payload = { version: 1, chatState: cloneHostValue(chatState) };
-    return {
-      chatId,
-      hostKind,
-      write: async () => {
-        const runtime = getHostContext();
-        // 排程到写入之间换了聊天：不能把上一个聊天的状态写进这个聊天
-        if (getStCurrentChatId(runtime) !== chatId) return;
-        const metadata = runtime?.chatMetadata;
-        if (!metadata || typeof metadata !== 'object' || typeof runtime.saveMetadataDebounced !== 'function') return;
-        metadata[ST_METADATA_KEY] = payload;
-        runtime.saveMetadataDebounced();
-      },
-    };
+    // 排程到写入之间换了聊天：不能把上一个聊天的状态写进这个聊天
+    return { chatId, hostKind, write: async () => writeMetadataChatStateCopy(chatId, payload) };
   }
   if (hostKind === 'luker') {
     if (typeof ctx?.updateChatState !== 'function') return null;
@@ -627,10 +645,15 @@ function prepareHostChatStateSave(ctx, chatState) {
     if (shouldSkipBlankHostChatStateSave(chatId, chatState)) return null;
     TAURI_STATE_KNOWN_MISSING_IDS.delete(chatId);
     const payload = { version: 1, chatState: cloneHostValue(chatState) };
+    // Luker 汇出聊天不带 getChatState 的资料：另写一份进聊天档 metadata，汇出汇入才接得回来
+    const metaChatId = getStCurrentChatId(ctx || getHostContext());
     return {
       chatId,
       hostKind,
-      write: async () => { unwrapLukerStateResult(await ctx.updateChatState(TAURI_STATE_NAMESPACE, () => payload)); },
+      write: async () => {
+        unwrapLukerStateResult(await ctx.updateChatState(TAURI_STATE_NAMESPACE, () => payload));
+        writeMetadataChatStateCopy(metaChatId, payload);
+      },
     };
   }
   if (hostKind !== 'tauritavern') return null;
@@ -640,14 +663,15 @@ function prepareHostChatStateSave(ctx, chatState) {
   if (shouldSkipBlankHostChatStateSave(chatId, chatState)) return null;
   TAURI_STATE_KNOWN_MISSING_IDS.delete(chatId);
   const payload = { version: 1, chatState: cloneHostValue(chatState) };
+  // TT 的聊天旁档案按稳定 ID 存，汇出的聊天档不带：另写一份进聊天档 metadata
+  const metaChatId = getStCurrentChatId(ctx || getHostContext());
   return {
     chatId,
     hostKind,
-    write: () => handle.store.setJson({
-      namespace: TAURI_STATE_NAMESPACE,
-      key: TAURI_STATE_KEY,
-      value: payload,
-    }),
+    write: async () => {
+      await handle.store.setJson({ namespace: TAURI_STATE_NAMESPACE, key: TAURI_STATE_KEY, value: payload });
+      writeMetadataChatStateCopy(metaChatId, payload);
+    },
   };
 }
 
