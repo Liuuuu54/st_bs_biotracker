@@ -691,7 +691,7 @@ function deriveFetusEmbryoType(race) {
   return getEmbryoTypeByRace(race);
 }
 
-function deriveFetusGender(race, bloodline = null, random = Math.random) {
+export function deriveFetusGender(race, bloodline = null, random = Math.random) {
   const profile = getMergedRacePhysiologyProfile(race, bloodline);
   if (profile?.genderRatio === -1) return '无';
   if (profile?.genderRatio === null) return '双';
@@ -8546,6 +8546,57 @@ function remapBatchFetusIndex(chatState, batchOrder, call) {
   }
 }
 
+/**
+ * 同一轮追踪的事件提醒（notify.firstly／secondly）只有一格：推进时间会整个重设，
+ * 其他工具也直接覆写，先发生的事（例如一胎被吸收）就被后面的宫压提醒盖掉，旁白看不到。
+ * 这里记下每次调用前后的分句：被「换成别的内容」或被推进时间洗掉的，留到这一轮结束时补回前面；
+ * 只删不加的（例如难产解除时拿掉阻塞提醒）是刻意清掉，不补。advisory（thirdly）每轮重算，不管。
+ * 本轮开始前就在的旧提醒不补，免得上一轮的事一直留着。
+ */
+const NOTIFY_RUN_SLOTS = ['firstly', 'secondly'];
+
+function splitNotify(text) {
+  return String(text || '').split('；').map((part) => part.trim()).filter(Boolean);
+}
+
+function readNotifyParts(chatState) {
+  const parts = {};
+  for (const [name, character] of Object.entries(chatState?.characters || {})) {
+    parts[name] = Object.fromEntries(NOTIFY_RUN_SLOTS.map((slot) => [slot, splitNotify(character?.profile?.notify?.[slot])]));
+  }
+  return parts;
+}
+
+function trackNotifyLoss(baseline, previous, current, lost, resets) {
+  for (const [name, slots] of Object.entries(current)) {
+    for (const slot of NOTIFY_RUN_SLOTS) {
+      const before = previous[name]?.[slot] || [];
+      const after = slots[slot];
+      const vanished = before.filter((part) => !after.includes(part));
+      const added = after.some((part) => !before.includes(part));
+      if (vanished.length === 0 || (!added && !resets)) continue;
+      const keep = (lost[name] ||= { firstly: [], secondly: [] })[slot];
+      for (const part of vanished) {
+        if (!(baseline[name]?.[slot] || []).includes(part) && !keep.includes(part)) keep.push(part);
+      }
+    }
+  }
+}
+
+function restoreLostNotify(chatState, lost) {
+  for (const [name, slots] of Object.entries(lost)) {
+    const profile = chatState.characters?.[name]?.profile;
+    if (!profile) continue;
+    const notify = profile.notify || {};
+    for (const slot of NOTIFY_RUN_SLOTS) {
+      const current = splitNotify(notify[slot]);
+      const restored = slots[slot].filter((part) => !current.includes(part));
+      if (restored.length > 0) notify[slot] = [...restored, ...current].join('；');
+    }
+    profile.notify = notify;
+  }
+}
+
 export function applyToolCallsResult(ctx, result, sourceId = '') {
   const settings = syncCardSettings(ctx, getSettings(ctx));
   const chatState = getChatState(ctx, settings);
@@ -8553,6 +8604,9 @@ export function applyToolCallsResult(ctx, result, sourceId = '') {
   const logs = [];
   chatState.reproductiveSettings = normalizeReproductiveSettings(settings.reproductiveSettings);
   const batchFetusOrder = captureVisibleFetusOrder(chatState);
+  const notifyBaseline = readNotifyParts(chatState);
+  let notifyPrevious = notifyBaseline;
+  const notifyLost = {};
   for (const [callIndex, call] of toolCalls.entries()) {
     const normalizedCall = {
       name: String(call?.name || '').trim(),
@@ -8565,12 +8619,16 @@ export function applyToolCallsResult(ctx, result, sourceId = '') {
       ? { applied: false, message: disabledMessage }
       : applyToolCall(chatState, normalizedCall);
     if (appliedResult?.notify?.text) globalThis.toastr?.info?.(appliedResult.notify.text, '[BS BioTracker]');
+    const notifyCurrent = readNotifyParts(chatState);
+    trackNotifyLoss(notifyBaseline, notifyPrevious, notifyCurrent, notifyLost, normalizedCall.name === 'bsPassedTime');
+    notifyPrevious = notifyCurrent;
     logs.push({
       ...appliedResult,
       name: normalizedCall.name,
       arguments: cloneValue(normalizedCall.arguments),
     });
   }
+  restoreLostNotify(chatState, notifyLost);
   if (result?.scene_summary !== undefined) chatState.sceneSummary = String(result.scene_summary || '');
   chatState.lastRawResult = summarizeRawResult(result);
   chatState.lastOperationLogs = summarizeOperationLogs(logs);

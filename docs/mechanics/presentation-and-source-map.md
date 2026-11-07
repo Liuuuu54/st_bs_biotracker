@@ -4,7 +4,7 @@
 
 ## 畫面讀到甚麼
 
-PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化。追蹤器另產生 `existing_state` 的精簡投影給非同步模型，[buildTrackerPayload](../../scripts/tracker.js#L1348)；主流程提示使用[buildMainFlowStatePrompt](../../scripts/prompts/rules.js#L682)將狀態轉成給聊天模型看的文字。兩者並非完整存檔，也不保證顯示每個內部欄位。種族與胚胎的背景提示分別由[種族設定](../../scripts/prompts/rules.js#L809)及[胚胎型態設定](../../scripts/prompts/rules.js#L1627)組成；所有送給模型的提示文字都集中在 [prompts/rules.js](../../scripts/prompts/rules.js)，工具說明在 [prompts/tool_definitions.js](../../scripts/prompts/tool_definitions.js)。
+PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化。追蹤器另產生 `existing_state` 的精簡投影給非同步模型，[buildTrackerPayload](../../scripts/tracker.js#L1349)；主流程提示使用[buildMainFlowStatePrompt](../../scripts/prompts/rules.js#L682)將狀態轉成給聊天模型看的文字。兩者並非完整存檔，也不保證顯示每個內部欄位。種族與胚胎的背景提示分別由[種族設定](../../scripts/prompts/rules.js#L809)及[胚胎型態設定](../../scripts/prompts/rules.js#L1627)組成；所有送給模型的提示文字都集中在 [prompts/rules.js](../../scripts/prompts/rules.js)，工具說明在 [prompts/tool_definitions.js](../../scripts/prompts/tool_definitions.js)。
 
 像素子宮畫板先由 [computeUterusLayout](../../scripts/uterus_layout.js#L94)根據已知且可顯示的胎兒、胎位、宮壓等計算位置；同屏最多繪製五胎。接著 [fetus_sprite.js](../../scripts/fetus_sprite.js#L308)產生胎兒格點，[uterus_render.js](../../scripts/uterus_render.js#L520)負責色盤、像素、動態及親近表情。畫板是狀態的視圖，繪圖本身不會推進妊娠。宮腔裡的精液液面按「目前量 ÷ 容量」畫，容量以人類未孕排卵期為 100，再乘女方子宮容積倍率（每級體型翻倍），所以同樣的量在小體型身上更滿。追蹤頁精液來源圖環的中央顯示「目前量／容量」；引擎也用同一個容量讓超出的精液流出。[精液容量](../../scripts/semen_capacity.js#L47)。
 
@@ -29,6 +29,7 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 | [variable_isolation.js](../../scripts/variable_isolation.js) | 與卡片的變數系統隔離：MVU 額外解析時拿掉插件狀態段、追蹤前去掉變數更新區塊。 |
 | [worldinfo_resolve.js](../../scripts/worldinfo_resolve.js) | 主流模式的世界書：宿主試算、排除名單、快照補漏與刪除排除條目。 |
 | [worldbook_match.js](../../scripts/worldbook_match.js) | 宿主無法試算時的關鍵字後備比對。 |
+| [character_library.js](../../scripts/character_library.js) | 全域角色庫：卵方與精方基礎資料的存入、帶入與刪除。 |
 | [record_notes.js](../../scripts/record_notes.js) | 胎兒事件堆與認知紀錄壓縮後，追蹤結束時整理要點的請求。 |
 | [registry.js](../../scripts/registry.js) | 角色初始化及心理、衣櫃、日記、技能相關推論的請求與結果套用。 |
 | [registry_psy_config.js](../../scripts/registry_psy_config.js) | 心理欄位、階段及解釋。 |
@@ -53,4 +54,4 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 
 ## 查一個數值時的路線
 
-先從 [state.js](../../scripts/state.js#L658)確認欄位預設值，再到 [tools.js](../../scripts/tools.js#L7651)找哪個工具會改它；若涉及時間，從 [applyTimeToCharacter](../../scripts/tools.js#L5999)追到該階段分支。機率與預覽看 [calculator.js](../../scripts/calculator.js)，種族係數看 [race_config.js](../../scripts/race_config.js)，畫面解釋則看 `index.js` 及對應的 render 模組。最後檢查 [tracker.js](../../scripts/tracker.js#L1275)是否把該欄位提供給模型；有些內部數值只參與程式計算。
+先從 [state.js](../../scripts/state.js#L660)確認欄位預設值，再到 [tools.js](../../scripts/tools.js#L7651)找哪個工具會改它；若涉及時間，從 [applyTimeToCharacter](../../scripts/tools.js#L5999)追到該階段分支。機率與預覽看 [calculator.js](../../scripts/calculator.js)，種族係數看 [race_config.js](../../scripts/race_config.js)，畫面解釋則看 `index.js` 及對應的 render 模組。最後檢查 [tracker.js](../../scripts/tracker.js#L1276)是否把該欄位提供給模型；有些內部數值只參與程式計算。

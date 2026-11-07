@@ -214,6 +214,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   registryDescriptionGuides: DEFAULT_REGISTRY_DESCRIPTION_GUIDES,
   racePhysiologyOverrides: {},
   derivedTypeOverrides: {},
+  // 全域角色库：卵方与精方的基础资料，新聊天手动带入（见 character_library.js）
+  characterLibrary: {},
   chatStates: {},
 });
 
@@ -1174,9 +1176,16 @@ function getStoredChatStates(ctx) {
   return chatStates && typeof chatStates === 'object' ? chatStates : null;
 }
 
-/** 内容杂凑，不含版本号本身 */
+/**
+ * 内容杂凑，不含版本号本身，也不含轮询自己记的暂存栏位：闲着的分页只是等 AI 正文稳定，
+ * 不能因此被当成「这个分页刚改过」，拿手上的旧副本强制盖掉别的分页的追踪结果。
+ */
+const VOLATILE_CHAT_STATE_KEYS = Object.freeze(['saveRevision', 'pendingAssistantSignature', 'pendingAssistantUpdatedAt']);
+
 function hashChatState(chatState) {
-  const text = JSON.stringify(chatState ? { ...chatState, saveRevision: undefined } : null) || '';
+  const stable = chatState ? { ...chatState } : null;
+  if (stable) for (const key of VOLATILE_CHAT_STATE_KEYS) stable[key] = undefined;
+  const text = JSON.stringify(stable) || '';
   let hash = 2166136261;
   for (let index = 0; index < text.length; index += 1) {
     hash ^= text.charCodeAt(index);
@@ -1263,6 +1272,13 @@ export async function refreshChatStatesFromHost(ctx, keys) {
     globalThis.dispatchEvent(new CustomEvent('bs-biotracker:chat-states-refreshed', { detail: { keys: refreshed } }));
   }
   return refreshed;
+}
+
+/** 当前聊天被别的分页存过更新的版本、这个分页又没改过：先读回再用，不拿旧副本去追踪 */
+export async function refreshCurrentChatIfStale(ctx) {
+  const chatKey = getChatKey(ctx);
+  if (!findStaleChatKeys(ctx).includes(chatKey)) return false;
+  return (await refreshChatStatesFromHost(ctx, [chatKey])).includes(chatKey);
 }
 
 /** 过期又没改过的聊天先读回；多次读回仍过期（对方还没写完）时以宿主内容为准放行，以免永远存不了档 */
@@ -1375,9 +1391,13 @@ export async function hydrateChatStateFromHost(ctx, settings) {
   if (!settings?.chatStates || typeof settings.chatStates !== 'object') return false;
   const initialKey = await resolveHostChatId(ctx);
   const localState = settings.chatStates[initialKey];
-  if (localState && !isChatStateEffectivelyEmpty(localState)) return false;
+  const localEmpty = !localState || isChatStateEffectivelyEmpty(localState);
+  // ST 的聊天 metadata 是可携副本：本地有资料时，只有它的版本较新（别台电脑存过、汇入覆盖）才采用；
+  // TT／Luker 的聊天旁档案本来就是唯一真源，本地有资料就不再读
+  if (!localEmpty && getHostKind() !== 'sillytavern') return false;
   const storedState = await loadHostChatState(ctx);
   if (!storedState) return false;
+  if (!localEmpty && !((Number(storedState.saveRevision) || 0) > (Number(localState.saveRevision) || 0))) return false;
   // 载入过程本身可能才等到宿主句柄就绪，这时稳定 id 才算得出来。
   // 必须用最终的 key 落盘：否则资料会留在 fallback key 下，
   // 而面板之后是用稳定 id 去读的，等于载入了却还是显示「没有注册角色」。

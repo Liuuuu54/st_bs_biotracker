@@ -104,3 +104,42 @@ test('过期但这个分页刚有改动：以这个分页为准，不读回', as
   assert.equal(settings.chatStates['同步-冲突'].sceneSummary, '这个分页刚写的');
   assert.ok(readLatestChatRevision('同步-冲突') > 5000, '领到比别人都新的版本');
 });
+
+test('过期但只动了轮询的暂存栏位：不算改动，存档前照样读回，不拿旧副本覆盖', async () => {
+  const ctx = makeCtx('同步-暂存');
+  const settings = state.getSettings(ctx);
+  state.getChatState(ctx, settings);
+  state.markChatStatesSynced(ctx);
+  globalThis.localStorage.setItem('bs_biotracker:chat_revision:同步-暂存', '5000');
+  // 闲着的分页只是在等 AI 正文稳定
+  settings.chatStates['同步-暂存'].pendingAssistantSignature = 'sig';
+  settings.chatStates['同步-暂存'].pendingAssistantUpdatedAt = 123;
+  const onDisk = { ...structuredClone(settings.chatStates['同步-暂存']), sceneSummary: '另一个分页的追踪结果', saveRevision: 5000 };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ settings: JSON.stringify({ extension_settings: { bs_biotracker: { chatStates: { '同步-暂存': onDisk } } } }) }) });
+  try {
+    await state.saveSettingsNow(ctx);
+    assert.equal(settings.chatStates['同步-暂存'].sceneSummary, '另一个分页的追踪结果');
+    assert.equal(readLatestChatRevision('同步-暂存'), 5000, '没有抢新版本号');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('追踪开始前：当前聊天过期又没改过就先读回', async () => {
+  const ctx = makeCtx('同步-追踪前');
+  const settings = state.getSettings(ctx);
+  state.getChatState(ctx, settings);
+  state.markChatStatesSynced(ctx);
+  globalThis.localStorage.setItem('bs_biotracker:chat_revision:同步-追踪前', '5000');
+  const onDisk = { ...structuredClone(settings.chatStates['同步-追踪前']), sceneSummary: '较新的', saveRevision: 5000 };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ settings: JSON.stringify({ extension_settings: { bs_biotracker: { chatStates: { '同步-追踪前': onDisk } } } }) }) });
+  try {
+    assert.equal(await state.refreshCurrentChatIfStale(ctx), true);
+    assert.equal(settings.chatStates['同步-追踪前'].sceneSummary, '较新的');
+    assert.equal(await state.refreshCurrentChatIfStale(ctx), false, '读回后就不再过期');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

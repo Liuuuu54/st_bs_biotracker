@@ -217,7 +217,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         content: { type: 'string', minLength: 1 }, partner: { type: 'string', minLength: 1 },
         childIndex: { type: 'integer', minimum: 0 }, fetusIndex: { type: 'integer', minimum: 0 }, name: { type: 'string', minLength: 1 },
         selectedFather: { type: ['string', 'null'], minLength: 1 },
-        pin: { type: 'boolean', description: '只用于 cognition：这条认知重要、之后每轮都该看到时传 true（例如确认怀孕、得知胎父）。钉选有上限，超过时保留最新的。' },
+        pin: { type: 'boolean', description: '只用于 cognition：这条认知重要、之后每轮都该看到时传 true：确认或否认怀孕、得知胎数、胎儿性别、胎父、预产期、诊断与医嘱，或推翻她先前的重要信念。钉选有上限，超过时保留最新的。' },
       },
       required: ['female', 'action', 'time'], additionalProperties: false,
     },

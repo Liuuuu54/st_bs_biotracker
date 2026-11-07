@@ -72,7 +72,7 @@ import {
   resolveSkillDefinition,
 } from './skill_config.js';
 import { resolveWardrobeItemRef, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCall, TOOL_DEFINITIONS, BACK_SIDES, calculateDerivedInheritanceProgress, canHostNestedPregnancy, ensureNaturalNoticeSample, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
+import { applyToolCall, TOOL_DEFINITIONS, BACK_SIDES, calculateDerivedInheritanceProgress, canHostNestedPregnancy, deriveFetusGender, ensureNaturalNoticeSample, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
 import { EXTENSION_MONTH_DAYS, FIRST_EXTENSION_UNTIL_DAYS, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, MENSTRUAL_STAGES, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS } from './stage_config.js';
 export { QUICKENING_RULE, buildBreedingInferenceSystemPrompt, WARDROBE_FIT_CONSISTENCY_RULE, buildWardrobePrepSystemPrompt, buildStartingOutfitSystemPrompt, buildSireExtractionSystemPrompt, buildRegistrySystemPrompt, SPECIAL_FETUS_HINTS, buildSpecialFetusNotes, buildRegistrySkillSystemPrompt, buildRegistryBundlePrompt };
 
@@ -1183,6 +1183,27 @@ function normalizeRegisteredFetusTags(pregnant) {
   for (const fetus of fetuses) if (fetus.tags.length === 0) delete fetus.tags;
 }
 
+const FETUS_GENDERS = Object.freeze(['男', '女', '双', '无']);
+
+/**
+ * 模型没给胎儿性别时按胎儿种族的性别比补上：性别是生理事实，角色知不知道另记在认知里；
+ * 没补的话孩子出生后性别一直是「未知」。同卵的几胎共用一个（已有性别的成员优先）。
+ */
+function fillRegisteredFetusGenders(fetuses) {
+  const byGroup = new Map();
+  const groupOf = (fetus) => (fetus?.identicalGroup === undefined || fetus?.identicalGroup === null ? null : String(fetus.identicalGroup));
+  for (const fetus of fetuses) {
+    const group = groupOf(fetus);
+    if (group !== null && FETUS_GENDERS.includes(fetus.gender) && !byGroup.has(group)) byGroup.set(group, fetus.gender);
+  }
+  for (const fetus of fetuses) {
+    if (FETUS_GENDERS.includes(fetus.gender)) continue;
+    const group = groupOf(fetus);
+    fetus.gender = group !== null && byGroup.has(group) ? byGroup.get(group) : deriveFetusGender(fetus.race, fetus.bloodline);
+    if (group !== null && !byGroup.has(group)) byGroup.set(group, fetus.gender);
+  }
+}
+
 function normalizeRegisteredPregnancy(profile, chatState) {
   const pregnant = profile.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((item) => ({ ...item })) : [];
@@ -1299,6 +1320,7 @@ function normalizeRegisteredPregnancy(profile, chatState) {
   // 必须排在 effectivePregnantDays 算出来之后：受精点要夹进这次妊娠的范围，
   // 揭晓与否也要拿它跟门槛比
   normalizeRegisteredFetusTags(pregnant);
+  fillRegisteredFetusGenders(pregnant.fetuses);
 
   const bio = profile.bio || {};
   const motherBreedTolerance = clampNumber(bio.breedTolerance, 0.1, 100, 1.0);

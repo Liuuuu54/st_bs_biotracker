@@ -107,6 +107,7 @@ import {
 } from './scripts/tools.js';
 import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
 import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
+import { deleteLibraryEntry, importLibraryEntry, listLibraryEntries, saveEggToLibrary, saveSireToLibrary } from './scripts/character_library.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue, getEmbryoTypeReferenceText } from './scripts/prompts/rules.js';
 import { FETAL_EVENT_KINDS, describeFetalEventChange, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, normalizeFetalEventList } from './scripts/fetal_health.js';
@@ -1322,7 +1323,75 @@ function syncRegisterChildSourceFields(ctx) {
   }
 }
 
+/** 注册页的角色库下拉：每笔标出有卵方、精方与各自的种族 */
+function renderLibraryOptions(ctx) {
+  const select = document.getElementById('bs-bt-library-select');
+  if (!select) return;
+  const previous = select.value;
+  const entries = listLibraryEntries(getSettings(ctx));
+  select.innerHTML = entries.length === 0
+    ? '<option value="">（角色库是空的）</option>'
+    : entries.map((entry) => {
+      const parts = [entry.egg ? `卵方·${entry.egg.race}` : '', entry.sire ? `精方·${entry.sire.race}` : ''].filter(Boolean).join('，');
+      return `<option value="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}（${escapeHtml(parts)}）</option>`;
+    }).join('');
+  if (entries.some((entry) => entry.name === previous)) select.value = previous;
+  const empty = entries.length === 0;
+  for (const id of ['bs-bt-library-import', 'bs-bt-library-delete']) {
+    const button = document.getElementById(id);
+    if (button) button.disabled = empty;
+  }
+}
+
+function setLibraryStatus(message, isError = false) {
+  const node = document.getElementById('bs-bt-library-status');
+  if (!node) return;
+  node.textContent = String(message || '');
+  node.dataset.state = isError ? 'error' : 'normal';
+}
+
+function importFromLibrary(ctx) {
+  const name = String(document.getElementById('bs-bt-library-select')?.value || '').trim();
+  if (!name) return setLibraryStatus('角色库是空的。', true);
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const result = importLibraryEntry(chatState, settings, name);
+  if (result.egg || result.sire) {
+    saveSettings(ctx);
+    renderStatusPanel(ctx);
+    renderRegisterChildSourceOptions(ctx);
+    updateMainFlowPrompt(ctx);
+    globalThis.toastr?.success?.(result.message, '[BS BioTracker]');
+  }
+  setLibraryStatus(result.message, !(result.egg || result.sire));
+}
+
+function deleteFromLibrary(ctx) {
+  const name = String(document.getElementById('bs-bt-library-select')?.value || '').trim();
+  if (!name) return;
+  if (!globalThis.confirm?.(`从角色库删除 ${name}？已经带进各聊天的角色不受影响。`)) return;
+  const settings = getSettings(ctx);
+  if (deleteLibraryEntry(settings, name)) saveSettings(ctx);
+  renderLibraryOptions(ctx);
+  setLibraryStatus(`已从角色库删除 ${name}。`);
+}
+
+/** 追踪页「存入角色库」：卵方或精方各自存，同名的另一部分保留 */
+function saveToLibraryFromTrack(ctx, kind, name) {
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const result = kind === 'sire' ? saveSireToLibrary(settings, chatState, name) : saveEggToLibrary(settings, chatState, name);
+  if (result.saved) {
+    saveSettings(ctx);
+    renderLibraryOptions(ctx);
+    globalThis.toastr?.success?.(result.message, '[BS BioTracker]');
+  } else {
+    globalThis.toastr?.warning?.(result.message, '[BS BioTracker]');
+  }
+}
+
 function renderRegisterChildSourceOptions(ctx) {
+  renderLibraryOptions(ctx);
   const select = document.getElementById('bs-bt-register-source');
   if (!select) return;
   const chatState = getChatState(ctx, getSettings(ctx));
@@ -5707,6 +5776,7 @@ function renderTrackLineageEntry(viewModel) {
       <div class="bs-bt-track-meta">
         <div class="bs-bt-track-meta-row bs-bt-track-lineage-row">
           <span class="bs-bt-track-meta-label">${escapeHtml(summary)}</span>
+          <button type="button" class="menu_button bs-bt-library-save" data-library-kind="egg" data-library-name="${escapeHtml(name)}" title="把这名卵方的基础资料存进全域角色库，别的聊天可在注册页带入">存入角色库</button>
           <button type="button" class="menu_button bs-bt-lineage-open" data-lineage-center="${escapeHtml(name)}">族谱</button>
         </div>
       </div>
@@ -7553,6 +7623,7 @@ function renderTrackSirePage(chatState) {
       <div class="bs-bt-track-meta">
         <div class="bs-bt-track-meta-row bs-bt-track-lineage-row">
           <span class="bs-bt-track-meta-label">${escapeHtml(lineage.childCount > 0 ? `共 ${lineage.childCount} 名子女` : '暂无子女记录')}</span>
+          <button type="button" class="menu_button bs-bt-library-save" data-library-kind="sire" data-library-name="${escapeHtml(name)}" title="把这名精方的基础资料存进全域角色库，别的聊天可在注册页带入">存入角色库</button>
           <button type="button" class="menu_button bs-bt-lineage-open" data-lineage-center="${escapeHtml(name)}">族谱</button>
         </div>
         ${lineage.fetuses.length > 0 ? `<details class="bs-bt-track-sire-fetuses"${sireFetusesOpen ? ' open' : ''}>
@@ -10357,6 +10428,14 @@ async function ensureModal(ctx) {
     event.preventDefault();
     docViewer.show(doc.path, doc.anchor);
   });
+  // 追踪页会整段重绘，存入角色库按钮也用委派监听
+  document.addEventListener('click', (event) => {
+    const trigger = event.target?.closest?.('.bs-bt-library-save');
+    if (!trigger) return;
+    event.preventDefault();
+    const name = String(trigger.dataset.libraryName || '').trim();
+    if (name) saveToLibraryFromTrack(ctx, trigger.dataset.libraryKind === 'sire' ? 'sire' : 'egg', name);
+  });
   // 追踪页会整段重绘，族谱按钮用委派监听
   document.addEventListener('click', (event) => {
     const trigger = event.target?.closest?.('.bs-bt-lineage-open');
@@ -11033,6 +11112,8 @@ async function ensureModal(ctx) {
     setSireStatus('');
   });
   document.getElementById('bs-bt-sire-register')?.addEventListener('click', () => registerSireFromForm(ctx));
+  document.getElementById('bs-bt-library-import')?.addEventListener('click', () => importFromLibrary(ctx));
+  document.getElementById('bs-bt-library-delete')?.addEventListener('click', () => deleteFromLibrary(ctx));
   // 名字改成已注册卵方时马上锁住精方栏位；只在精方分页作用，卵方注册不受影响
   document.getElementById('bs-bt-register-name')?.addEventListener('input', () => {
     if (!document.querySelector('[data-register-page="sire"]')?.hidden) {

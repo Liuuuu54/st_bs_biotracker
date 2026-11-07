@@ -19,6 +19,7 @@ import {
   buildRecentMessages,
   buildSignature,
   cloneValue,
+  refreshCurrentChatIfStale,
   DEFAULT_SETTINGS,
   DEFAULT_SYSTEM_PROMPT,
   getCharacterCard,
@@ -2039,6 +2040,8 @@ export function recordPollSkip(ctx, deps, reason, message, opts = {}) {
 export async function runTracker(ctx, deps, reason = 'manual') {
   const settings = getSettings(ctx);
   await hydrateChatStateFromHost(ctx, settings);
+  // 别的分页存过更新的版本：先读回，免得在旧副本上追踪、存档时又把它盖回去
+  await refreshCurrentChatIfStale(ctx);
   await refreshHostChatView(ctx, {
     resumeIndexes: getTrackerResumeIndexes(ctx, settings),
     contextSize: settings.contextSize,

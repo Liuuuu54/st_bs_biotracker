@@ -43,9 +43,9 @@ flowchart LR
 | `pregnant.laborHours` / `effectiveLaborHours` | 實際產程時間與經宮壓等因素換算後的有效進度。 |
 | `chatState.minutesPassed` | 這個聊天經 `bsPassedTime` 累積的故事分鐘數。 |
 | `runtime.*CarryMinutes` | 每角色的時、日、週零頭；避免多次短時間推進漏掉整點。 |
-| `profile.notify` | 最新一次運算產生的三層提示，會隨後續操作更新。 |
+| `profile.notify` | 最新一次運算產生的三層提示，會隨後續操作更新。同一輪追蹤裡，事件提醒（`firstly`、`secondly`）被後面的工具改寫或被推進時間洗掉時，這一輪結束會把先發生的補回前面（例如一胎被吸收後又跳宮壓提醒，兩句都留著）；只刪不加的刻意清除不補，本輪之前的舊提醒也不補。[補回](../../scripts/tools.js#L8586)。 |
 
-資料結構見 [state.js](../../scripts/state.js#L635)，時間運算見 [tools.js](../../scripts/tools.js#L5847)。
+資料結構見 [state.js](../../scripts/state.js#L637)，時間運算見 [tools.js](../../scripts/tools.js#L5847)。
 
 ## 說明邊界
 

@@ -11,7 +11,7 @@ import { getRaceSeasonShape, getSireSeasonPhase, hashPhase, hasSeasonOrigin, res
 import { DORMANCY_STAGE } from './stage_config.js';
 import { getTalentLabel, normalizeTalentList, resolveSkillDefinition } from './skill_config.js';
 
-export const SIRE_SOURCES = Object.freeze(['manual', 'card', 'father']);
+export const SIRE_SOURCES = Object.freeze(['manual', 'card', 'father', 'library']);
 export const SPERM_QUALITY_MIN = 0.25;
 export const SPERM_QUALITY_MAX = 4;
 

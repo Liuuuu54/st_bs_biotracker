@@ -485,8 +485,38 @@ function unwrapLukerStateResult(result) {
   return result.state;
 }
 
+/**
+ * SillyTavern：聊天状态另存一份在聊天档的 metadata（chat_metadata.bs_biotracker），汇出、汇入、
+ * 改名与分支都带着走；settings.json 那份照旧是跨分页同步与日常读写的依据（见 state.js 的 hydrateChatStateFromHost）。
+ * 一律重新取宿主内容：ST 换聊天时 chat_metadata 会换成另一个物件，手上的旧 ctx 指的是上一个聊天。
+ */
+const ST_METADATA_KEY = 'bs_biotracker';
+
+function getStCurrentChatId(runtime) {
+  try {
+    const id = runtime?.getCurrentChatId?.();
+    if (id !== undefined && id !== null && String(id)) return String(id);
+  } catch {}
+  return runtime?.chatId !== undefined && runtime?.chatId !== null && String(runtime.chatId) ? String(runtime.chatId) : '';
+}
+
+function loadStMetadataChatState() {
+  const runtime = getHostContext();
+  const chatId = getStCurrentChatId(runtime);
+  if (!chatId) return null;
+  const stored = runtime?.chatMetadata?.[ST_METADATA_KEY];
+  TAURI_STATE_HYDRATED_IDS.add(chatId);
+  if (stored?.version === 1 && stored.chatState && typeof stored.chatState === 'object') {
+    TAURI_STATE_KNOWN_MISSING_IDS.delete(chatId);
+    return cloneHostValue(stored.chatState);
+  }
+  TAURI_STATE_KNOWN_MISSING_IDS.add(chatId);
+  return null;
+}
+
 export async function loadHostChatState(ctx = null) {
   const hostKind = getHostKind();
+  if (hostKind === 'sillytavern') return loadStMetadataChatState();
   if (hostKind === 'luker') {
     const runtime = ctx || getHostContext();
     if (typeof runtime?.getChatState !== 'function') return null;
@@ -570,6 +600,27 @@ function enqueueHostChatStateWrite(chatId, write) {
 function prepareHostChatStateSave(ctx, chatState) {
   const hostKind = getHostKind();
   if (!chatState || typeof chatState !== 'object') return null;
+  if (hostKind === 'sillytavern') {
+    const chatId = getStCurrentChatId(ctx || getHostContext());
+    if (!chatId || typeof (ctx || getHostContext())?.saveMetadataDebounced !== 'function') return null;
+    // 还没读过这个聊天的 metadata 时不拿空状态去盖（汇入的聊天第一次打开，本地还是空的）
+    if (shouldSkipBlankHostChatStateSave(chatId, chatState)) return null;
+    TAURI_STATE_KNOWN_MISSING_IDS.delete(chatId);
+    const payload = { version: 1, chatState: cloneHostValue(chatState) };
+    return {
+      chatId,
+      hostKind,
+      write: async () => {
+        const runtime = getHostContext();
+        // 排程到写入之间换了聊天：不能把上一个聊天的状态写进这个聊天
+        if (getStCurrentChatId(runtime) !== chatId) return;
+        const metadata = runtime?.chatMetadata;
+        if (!metadata || typeof metadata !== 'object' || typeof runtime.saveMetadataDebounced !== 'function') return;
+        metadata[ST_METADATA_KEY] = payload;
+        runtime.saveMetadataDebounced();
+      },
+    };
+  }
   if (hostKind === 'luker') {
     if (typeof ctx?.updateChatState !== 'function') return null;
     const chatId = getHostChatId(ctx);
@@ -601,7 +652,7 @@ function prepareHostChatStateSave(ctx, chatState) {
 }
 
 function warnHostChatStateSaveFailure(entry, error) {
-  const hostName = entry?.hostKind === 'luker' ? 'Luker' : 'TauriTavern';
+  const hostName = entry?.hostKind === 'luker' ? 'Luker' : entry?.hostKind === 'sillytavern' ? 'SillyTavern chat metadata' : 'TauriTavern';
   console.warn(`[BS BioTracker] unable to save ${hostName} chat state`, error);
 }
 
