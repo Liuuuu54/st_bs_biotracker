@@ -16,8 +16,7 @@ import {
   setRacePhysiologyOverrides,
 } from '../scripts/race_config.js';
 import { applyToolCall } from '../scripts/tools.js';
-import { buildRacePhysiologyPrompt } from '../scripts/race_prompt_context.js';
-import { TRACKER_VARIABLE_GUIDE_PROMPT } from '../scripts/tracker_prompt_context.js';
+import { buildRacePhysiologyPrompt, TRACKER_VARIABLE_GUIDE_PROMPT } from '../scripts/prompts/rules.js';
 
 const REAL_RANDOM = Math.random;
 afterEach(() => {
@@ -197,7 +196,7 @@ test('胎儿份量倍率：百科填了就覆写，留空回到自动，改额�
 });
 
 test('胎儿份量写进物种提示词与百科即时换算', async () => {
-  const { buildSingleRacePhysiologyText, describeRaceFieldValue } = await import('../scripts/race_prompt_context.js');
+  const { buildSingleRacePhysiologyText, describeRaceFieldValue } = await import('../scripts/prompts/rules.js');
   assert.match(buildSingleRacePhysiologyText('月兔'), /- 胎儿份量: 每胎约标准胎的 0\.68，一窝幼崽个头小，孕肚比同胎数的人类小/);
   assert.match(buildSingleRacePhysiologyText('人类'), /- 胎儿份量: 每胎与人类标准胎相当/);
   assert.match(describeRaceFieldValue('fetalBulkRatio', ''), /^自动/);

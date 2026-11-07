@@ -6,7 +6,7 @@ import * as state from '../scripts/state.js';
 import { deriveFetusAncestry, getFetusInheritanceTag } from '../scripts/race_config.js';
 import { pickIconRace } from '../scripts/race_icons.js';
 import { buildLineageView } from '../scripts/lineage_view.js';
-import { buildRacePhysiologyPrompt } from '../scripts/race_prompt_context.js';
+import { buildRacePhysiologyPrompt } from '../scripts/prompts/rules.js';
 import { buildTrackerPayload } from '../scripts/tracker.js';
 import { applyToolCall } from '../scripts/tools.js';
 import { calculateFertilizationPreview } from '../scripts/calculator.js';

@@ -8,7 +8,7 @@ import test, { afterEach } from 'node:test';
 import * as state from '../scripts/state.js';
 import { applyToolCall } from '../scripts/tools.js';
 import { FETAL_CARE_GAIN_SCALE as G, FETAL_CARE_LOSS_SCALE as L } from '../scripts/fetal_health.js';
-import { buildRacePhysiologyPrompt } from '../scripts/race_prompt_context.js';
+import { buildRacePhysiologyPrompt } from '../scripts/prompts/rules.js';
 
 const REAL_RANDOM = Math.random;
 afterEach(() => { Math.random = REAL_RANDOM; });

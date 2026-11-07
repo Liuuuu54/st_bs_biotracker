@@ -492,7 +492,7 @@ test('mainflow 快照绑定当前聊天：跨聊天/无绑定一律拒绝', () =
 });
 
 test('mainflow 状态 JSON 转义闭合标签与换行（安全审查 P1 注入防线）', async () => {
-  const { buildMainFlowStatePrompt } = await import('../scripts/tracker_prompt_context.js');
+  const { buildMainFlowStatePrompt } = await import('../scripts/prompts/rules.js');
   const prompt = buildMainFlowStatePrompt({
     existing_state: {
       角色: {

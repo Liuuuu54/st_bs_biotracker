@@ -8,7 +8,7 @@ import {
   normalizeRaceCatalogSelection,
   setRacePhysiologyOverrides,
 } from '../scripts/race_config.js';
-import { buildRacePhysiologyPrompt, buildRegistryRacePhysiologyPrompt } from '../scripts/race_prompt_context.js';
+import { buildRacePhysiologyPrompt, buildRegistryRacePhysiologyPrompt } from '../scripts/prompts/rules.js';
 import { sanitizeCardSettings } from '../scripts/card_settings.js';
 
 const payloadWith = (race, selection) => ({

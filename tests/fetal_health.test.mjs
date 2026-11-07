@@ -5,7 +5,7 @@ import test, { afterEach } from 'node:test';
 import * as state from '../scripts/state.js';
 import { applyToolCall, TOOL_DEFINITIONS } from '../scripts/tools.js';
 import { buildTrackerPayload } from '../scripts/tracker.js';
-import { projectNarrativeState } from '../scripts/tracker_prompt_context.js';
+import { projectNarrativeState } from '../scripts/prompts/rules.js';
 import { normalizeReproductiveSettings } from '../scripts/reproductive.js';
 import { CARD_REPRODUCTIVE_FIELDS } from '../scripts/card_settings.js';
 import {

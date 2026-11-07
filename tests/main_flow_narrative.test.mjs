@@ -5,7 +5,7 @@ import test from 'node:test';
 import * as state from '../scripts/state.js';
 import { applyToolCall } from '../scripts/tools.js';
 import { buildMainFlowPrompt, buildTrackerPayload } from '../scripts/tracker.js';
-import { narrativeReminders } from '../scripts/tracker_prompt_context.js';
+import { narrativeReminders } from '../scripts/prompts/rules.js';
 
 function setup(characters) {
   const ctx = { chatId: 'narrative', chat: [{ is_user: false, name: 'N', mes: '旅途中。' }], characters: [], name1: 'U', name2: 'N', extensionSettings: {}, saveSettingsDebounced() {} };

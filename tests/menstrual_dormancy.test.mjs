@@ -7,7 +7,7 @@ import { getMergedRacePhysiologyProfile, getRacePhysiologyProfile } from '../scr
 import { applyToolCall, canDormancyOvulate, getForeignSemenShare, getStageLimit } from '../scripts/tools.js';
 import { getConceptionStageWeight } from '../scripts/body_size.js';
 import { calculateRaceImplantationDays } from '../scripts/calculator.js';
-import { buildSingleRacePhysiologyText, describeRaceFieldValue } from '../scripts/race_prompt_context.js';
+import { buildSingleRacePhysiologyText, describeRaceFieldValue } from '../scripts/prompts/rules.js';
 import { migrateCharacters } from '../scripts/state_migration.js';
 
 function setup(race, stage = '月经期', days = 0) {

@@ -108,11 +108,10 @@ import {
 import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
 import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
-import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
+import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue, getEmbryoTypeReferenceText } from './scripts/prompts/rules.js';
 import { FETAL_EVENT_KINDS, describeFetalEventChange, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, normalizeFetalEventList } from './scripts/fetal_health.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
-import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue } from './scripts/race_prompt_context.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
 import { appendSkillHistory, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
 import {

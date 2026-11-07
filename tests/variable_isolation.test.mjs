@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import * as state from '../scripts/state.js';
 import { stripBioTrackerInjection, stripVariableUpdateBlocks } from '../scripts/variable_isolation.js';
-import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/prompts/rules.js';
 
 test('MVU 额外解析的请求拿掉插件状态段；整则只剩空白就移除，其余内容保留', () => {
   const messages = [

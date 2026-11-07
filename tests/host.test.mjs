@@ -6,7 +6,7 @@ import * as state from '../scripts/state.js';
 import * as raceConfig from '../scripts/race_config.js';
 import * as skillConfig from '../scripts/skill_config.js';
 import { getTrackerToolDefinitions, isFailedAutoRetryBlocked } from '../scripts/tracker.js';
-import { buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildTrackerSystemPrompt } from '../scripts/prompts/rules.js';
 import { applyToolCall } from '../scripts/tools.js';
 import { applyInitialSkillTalentConfig, applyRegistryChildInheritance, applyRegistrySkillSetup, buildRegistrySkillSystemPrompt, buildRegistrySystemPrompt, buildWardrobePrepSystemPrompt, normalizeBreedingInferenceResult, resolveRegistryChildSource } from '../scripts/registry.js';
 

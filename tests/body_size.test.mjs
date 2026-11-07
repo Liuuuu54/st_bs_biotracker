@@ -11,7 +11,7 @@ import {
   sanitizeRacePhysiologyProfilePatch,
   setRacePhysiologyOverrides,
 } from '../scripts/race_config.js';
-import { buildSingleRacePhysiologyText } from '../scripts/race_prompt_context.js';
+import { buildSingleRacePhysiologyText } from '../scripts/prompts/rules.js';
 
 test('110 个内置物种都有体型资料，值在合法范围内', () => {
   assert.equal(ALL_BUILTIN_RACES.length, 110);

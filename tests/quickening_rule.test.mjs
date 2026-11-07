@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildBreedingInferenceSystemPrompt, buildRegistrySystemPrompt, QUICKENING_RULE } from '../scripts/registry.js';
-import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/prompts/rules.js';
 
 test('注册提示带胎动感知界线', () => {
   assert.ok(buildRegistrySystemPrompt({}, {}).includes(QUICKENING_RULE));

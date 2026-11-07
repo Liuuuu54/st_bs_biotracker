@@ -8,9 +8,8 @@ import { syncCardSettings } from './card_settings.js';
 import { contraceptionLevels, naturalNoticeDays, psychologySide } from './reproductive.js';
 import { buildSirePromptEntries } from './sires.js';
 import { formatIntimacyPromptLine, getIntimacyRanking } from './intimacy.js';
-import { DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './registry_config.js';
+import { buildMainFlowStatePrompt, buildTrackerSystemPrompt, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, NATURAL_PREGNANCY_CUE } from './prompts/rules.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
-import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_prompt_context.js';
 import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
 import { applyToolCallsResult, describeBackSide, describeFetalPosition, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
@@ -1230,7 +1229,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
     // Existing gestational clocks include the LMP offset; natural cues use post-conception age.
     const age = Math.max(0, Number(pregnant.effectivePregnantDays) - (pregnant.noticeSample.obstetricOffsetDays ?? 14));
     const count = (pregnant.fetuses || []).filter((x) => !x.nestedInEmbryoId && !x.pendingImplantation).length;
-    if (age >= naturalNoticeDays(pregnant.noticeSample, count)) profile.naturalPregnancyCue = '现在较容易注意到妊娠相关自然线索；是否察觉、误解或拒信依剧情，不自动确认怀孕。';
+    if (age >= naturalNoticeDays(pregnant.noticeSample, count)) profile.naturalPregnancyCue = NATURAL_PREGNANCY_CUE;
   }
   delete profile.pregnant?.noticeSample;
   delete profile.pregnant?.experienceBeforePregnancy;

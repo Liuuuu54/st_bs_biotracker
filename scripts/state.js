@@ -1,7 +1,7 @@
 import { normalizeExperience, normalizeCognitionRecords, normalizePaternityClaims, normalizeReproductiveSettings } from './reproductive.js';
 import { stripVariableUpdateBlocks } from './variable_isolation.js';
 import { syncCardSettings, importCardSkillSeed } from './card_settings.js';
-import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, LEGACY_NORMAL_DESCRIPTION_GUIDE, LEGACY_PREGNANT_DESCRIPTION_GUIDE, LEGACY_SIRE_DESCRIPTION_GUIDE } from './registry_config.js';
+import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, DEFAULT_SYSTEM_PROMPT, DEFAULT_WARDROBE_PREP_PROMPT, LEGACY_NORMAL_DESCRIPTION_GUIDE, LEGACY_PREGNANT_DESCRIPTION_GUIDE, LEGACY_SIRE_DESCRIPTION_GUIDE } from './prompts/rules.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -47,6 +47,7 @@ import {
   flushHostChatStateSave,
   scheduleHostChatStateSave,
 } from './host.js';
+export { DEFAULT_SYSTEM_PROMPT, DEFAULT_WARDROBE_PREP_PROMPT };
 
 export const MODULE_NAME = 'bs_biotracker';
 const MAX_CHAT_STATE_SNAPSHOTS = 24;
@@ -76,49 +77,6 @@ export const THEME_CONFIG = {
   constructivism: {},
   iphone: {},
 };
-
-export const DEFAULT_WARDROBE_PREP_PROMPT = [
-  '请根据角色卡、世界书、最近对话与已注册状态，为指定角色补充少量可重复使用的衣柜项目 JSON。不要重建整个衣柜。',
-  'main 是一套完整的基础衣着，同时只有一套；可用 parts 列出上衣、下装等组成。accessory 是可叠加配件。',
-  'main 使用 fitProfile：masking 只能为 very_low/low/medium/high，support 只能为 none/normal/strong，capacity 只能为 tight/fitted/stretch/loose，convenience 只能为 inconvenient/normal/convenient。',
-  'accessory 使用 category：underwear/outerwear/footwear/headwear/ornament/support/other；effects 最多两项，可选 masking/support/capacity/convenience 后缀 _up 或 _down。',
-  'note 只写稳定外观与来源，不写当前穿着反应、怀孕变化或感受。返回 items 数组，不需要手填数值分数。',
-].join('\n');
-
-
-export const DEFAULT_SYSTEM_PROMPT = [
-  '你是 AIRP 角色生理状态追踪器的工具调度器。',
-  '工具参数中的 female 指「孕育者」——被追踪的承载方，不限定性别；扶她、孕夫、雄性孕育系（如海马族）同样使用该字段。',
-  '你要根据角色卡、最近对话、已有状态，决定这次应调用哪些工具更新状态。',
-  '只输出 JSON，不要输出额外解释。',
-  'JSON 结构必须是：',
-  '{',
-  '  "tool_calls": [',
-  '    {',
-  '      "name": "string",',
-  '      "arguments": {}',
-  '    }',
-  '  ],',
-  '  "character_checks": [',
-  '    { "female": "string", "status": "no_change|updated|present|offscreen" }',
-  '  ]',
-  '}',
-  'character_checks 是逐角色检查清单：必须对 tracked_females 中每名角色恰好输出一笔；只写本轮检查结论，不直接改变状态。真正更新仍必须用 tool_calls。',
-  '可用工具会通过 available_tools 传入。只能调用其中存在的工具，参数名必须完全匹配。',
-  '没有足够依据时，tool_calls 返回空数组。',
-  '如果对话明确发生了时间流逝，优先调用 bsPassedTime。',
-  '如果只是活力、情压、性欲、宫压波动，使用 bsUpdateCharacterStatus。',
-  '如果只是心理数值变化，使用 bsUpdatePsychology；其数值参数一律表示变化量(delta)而不是目标值，例如当前为 78 时传 2 会变成 80。应优先做单一心理项的小幅调整，单次建议只动一个字段，幅度尽量控制在 ±1 到 ±3，±5 已属于偏大变化。每名角色在每个新小时内仅允许一次成功的 bsUpdatePsychology 变化，重复调用会被跳过。如果只是经验或关系记录变化，使用 bsRecordExperience（必填 female、action、time；认知用 cognition，关系用 date/breakup/marry/divorce，孩子用 child）。',
-  '如果只是描述文字变化，使用 bsSetDescription。',
-  '剧情中出现穿上、脱下、更衣、借穿、被脱除、淋湿更换、洗浴后重新着装等衣着变化时，必须用 bsChangeOutfit 同步当前穿着；只更新衣着描述文字而不换装是错误的。角色获得新长期衣物用 bsAddWardrobeItem，永久失去衣物用 bsRemoveWardrobeItem。',
-  '可受孕生殖道的插入／精液沉积／拔出用 bsAddSperm 状态机；排出既有残留精液用 bsDrainSperm；缓解生理需求用 bsExcreteMetabolism。',
-  '跨日、重大事件或 notify 提醒时，可用 bsWriteDiary 为角色追加主观日记。',
-  '月经阶段、排卵期、假孕期切换用 bsSetMenstrualPhases；不要用它覆盖正在进行的受精、真妊娠或产程。',
-  '剧情以特殊手段让逾期的妊娠延后不生用 bsExtendPregnancy（action=extend），结束延产用 action=induce；延产期间不能用 bsAbortion 或 bsChildbirth。',
-  '流产用 bsAbortion；立即结束分娩用 bsChildbirth；角色在场状态变化用 bsSetCharacterPresence，参数必须为 female 和 isPresent（布尔值 true/false，不要使用 isHere）。角色明确回到当前场景、重新同行或参与当前互动时应设为 true；明确离开、失联或转为幕外时才设为 false。',
-  '腹中胎儿受到伤害（喝酒、外伤、过劳、生病、诅咒）、得到照料（安胎药、产检、休养、祝福），或母体安抚、胎儿亲近或排斥时，用 bsFetalEvent 记一件事；吃睡排泄等需求照料系统已自动计入胎儿健康，不要重复记。腹中两胎互踢、推挤、依偎用 bsAssistFetalPosition（action=sibling）。剧情明确出现人工胎位操作（转位、托高延后分娩、推送），或胎儿有意识地自己转身、缩回、往下钻时用 bsAssistFetalPosition（后者加 actor=fetus）。',
-  '不要编造怀孕天数、胎数、流产、分娩或其他高影响事件。',
-].join('\n');
 
 export const API_FORMATS = Object.freeze({
   OPENAI_COMPAT: 'openai_compat',
@@ -1088,7 +1046,7 @@ export function getSettings(ctx) {
     delete settings.triggerTiming;
     shouldSave = true;
   }
-  // 描述完整更新已改为固定规则（见 tracker_prompt_context.js），旧开关不再有作用
+  // 描述完整更新已改为固定规则（见 prompts/rules.js），旧开关不再有作用
   if (Object.prototype.hasOwnProperty.call(settings, 'requireFullDescriptionUpdates')) {
     delete settings.requireFullDescriptionUpdates;
     shouldSave = true;

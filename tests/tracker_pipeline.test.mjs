@@ -5,7 +5,7 @@ import test from 'node:test';
 
 import * as state from '../scripts/state.js';
 import { buildTrackerPayload } from '../scripts/tracker.js';
-import { buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildTrackerSystemPrompt } from '../scripts/prompts/rules.js';
 import { applyToolCallsResult } from '../scripts/tools.js';
 
 const CHAT_KEY = 'pipeline-chat';

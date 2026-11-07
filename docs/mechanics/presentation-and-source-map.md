@@ -4,7 +4,7 @@
 
 ## 畫面讀到甚麼
 
-PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化。追蹤器另產生 `existing_state` 的精簡投影給非同步模型，[buildTrackerPayload](../../scripts/tracker.js#L1349)；主流程提示使用[buildMainFlowStatePrompt](../../scripts/tracker_prompt_context.js#L505)將狀態轉成給聊天模型看的文字。兩者並非完整存檔，也不保證顯示每個內部欄位。種族與胚胎的背景提示分別由 [race_prompt_context.js](../../scripts/race_prompt_context.js#L612)及 [embryo_prompt_context.js](../../scripts/embryo_prompt_context.js#L80)組成。
+PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化。追蹤器另產生 `existing_state` 的精簡投影給非同步模型，[buildTrackerPayload](../../scripts/tracker.js#L1348)；主流程提示使用[buildMainFlowStatePrompt](../../scripts/prompts/rules.js#L682)將狀態轉成給聊天模型看的文字。兩者並非完整存檔，也不保證顯示每個內部欄位。種族與胚胎的背景提示分別由[種族設定](../../scripts/prompts/rules.js#L809)及[胚胎型態設定](../../scripts/prompts/rules.js#L1627)組成；所有送給模型的提示文字都集中在 [prompts/rules.js](../../scripts/prompts/rules.js)，工具說明在 [prompts/tool_definitions.js](../../scripts/prompts/tool_definitions.js)。
 
 像素子宮畫板先由 [computeUterusLayout](../../scripts/uterus_layout.js#L94)根據已知且可顯示的胎兒、胎位、宮壓等計算位置；同屏最多繪製五胎。接著 [fetus_sprite.js](../../scripts/fetus_sprite.js#L308)產生胎兒格點，[uterus_render.js](../../scripts/uterus_render.js#L520)負責色盤、像素、動態及親近表情。畫板是狀態的視圖，繪圖本身不會推進妊娠。宮腔裡的精液液面按「目前量 ÷ 容量」畫，容量以人類未孕排卵期為 100，再乘女方子宮容積倍率（每級體型翻倍），所以同樣的量在小體型身上更滿。追蹤頁精液來源圖環的中央顯示「目前量／容量」；引擎也用同一個容量讓超出的精液流出。[精液容量](../../scripts/semen_capacity.js#L47)。
 
@@ -29,18 +29,16 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 | [variable_isolation.js](../../scripts/variable_isolation.js) | 與卡片的變數系統隔離：MVU 額外解析時拿掉插件狀態段、追蹤前去掉變數更新區塊。 |
 | [worldinfo_resolve.js](../../scripts/worldinfo_resolve.js) | 主流模式的世界書：宿主試算、排除名單、快照補漏與刪除排除條目。 |
 | [worldbook_match.js](../../scripts/worldbook_match.js) | 宿主無法試算時的關鍵字後備比對。 |
-| [registry.js](../../scripts/registry.js) | 角色初始化及心理、衣櫃、日記、技能相關推論。 |
-| [registry_config.js](../../scripts/registry_config.js) | 初始化欄位與提示設定。 |
+| [registry.js](../../scripts/registry.js) | 角色初始化及心理、衣櫃、日記、技能相關推論的請求與結果套用。 |
 | [registry_psy_config.js](../../scripts/registry_psy_config.js) | 心理欄位、階段及解釋。 |
-| [tools.js](../../scripts/tools.js) | 工具定義與分派，生理、時間、代謝及分娩狀態轉換。 |
+| [tools.js](../../scripts/tools.js) | 工具分派，生理、時間、代謝及分娩狀態轉換。 |
 | [calculator.js](../../scripts/calculator.js) | 精源暴露、受精／著床預覽、後代及衍生類型計算。 |
 | [stage_config.js](../../scripts/stage_config.js) | 月經、孕期、產程基準常數。 |
 | [race_config.js](../../scripts/race_config.js) | 種族生理合成、遺傳、胚胎型態與伴生卵。 |
 | [skill_config.js](../../scripts/skill_config.js) | 技能定義、等級、經驗、天賦與歷史。 |
 | [wardrobe_config.js](../../scripts/wardrobe_config.js) | 衣物欄位、尺寸、配件與正規化。 |
-| [tracker_prompt_context.js](../../scripts/tracker_prompt_context.js) | 追蹤提示與主流程狀態提示。 |
-| [race_prompt_context.js](../../scripts/race_prompt_context.js) | 種族提示文字。 |
-| [embryo_prompt_context.js](../../scripts/embryo_prompt_context.js) | 胚胎型態提示文字。 |
+| [prompts/rules.js](../../scripts/prompts/rules.js) | 送給模型的寫作規則與提示文字：追蹤系統提示與變量說明、主流程狀態提示、種族與胚胎設定、註冊與心情推演、衣櫃、描述範本與日記寫作預設。 |
+| [prompts/tool_definitions.js](../../scripts/prompts/tool_definitions.js) | 送給模型的工具說明：追蹤工具，以及原生工具呼叫的檢查清單、備裝與起始著衣提交工具。 |
 | [fetus_tags.js](../../scripts/fetus_tags.js) | 胎兒特殊標記與標籤。 |
 | [fetus_sprite.js](../../scripts/fetus_sprite.js) | 胎兒像素格點。 |
 | [uterus_layout.js](../../scripts/uterus_layout.js) | 子宮畫板的位置與比例。 |
@@ -54,4 +52,4 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 
 ## 查一個數值時的路線
 
-先從 [state.js](../../scripts/state.js#L700)確認欄位預設值，再到 [tools.js](../../scripts/tools.js#L8187)找哪個工具會改它；若涉及時間，從 [applyTimeToCharacter](../../scripts/tools.js#L6535)追到該階段分支。機率與預覽看 [calculator.js](../../scripts/calculator.js)，種族係數看 [race_config.js](../../scripts/race_config.js)，畫面解釋則看 `index.js` 及對應的 render 模組。最後檢查 [tracker.js](../../scripts/tracker.js#L1276)是否把該欄位提供給模型；有些內部數值只參與程式計算。
+先從 [state.js](../../scripts/state.js#L658)確認欄位預設值，再到 [tools.js](../../scripts/tools.js#L7651)找哪個工具會改它；若涉及時間，從 [applyTimeToCharacter](../../scripts/tools.js#L5999)追到該階段分支。機率與預覽看 [calculator.js](../../scripts/calculator.js)，種族係數看 [race_config.js](../../scripts/race_config.js)，畫面解釋則看 `index.js` 及對應的 render 模組。最後檢查 [tracker.js](../../scripts/tracker.js#L1275)是否把該欄位提供給模型；有些內部數值只參與程式計算。

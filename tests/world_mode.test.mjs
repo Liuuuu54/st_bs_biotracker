@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/prompts/rules.js';
 import { getTrackerToolDefinitions } from '../scripts/tracker.js';
 import { buildRegistrySystemPrompt } from '../scripts/registry.js';
 import { getEffectiveSettings, sanitizeCardSettings } from '../scripts/card_settings.js';

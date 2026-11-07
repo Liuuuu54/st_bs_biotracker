@@ -113,8 +113,8 @@ test('numerals are auto-fitted to the tile after render', () => {
 
 test('talent range is narrowed to +/-5 everywhere', async () => {
   const skillConfig = await readFile(new URL('../scripts/skill_config.js', import.meta.url), 'utf8');
-  const registry = await readFile(new URL('../scripts/registry.js', import.meta.url), 'utf8');
-  const trackerPrompt = await readFile(new URL('../scripts/tracker_prompt_context.js', import.meta.url), 'utf8');
+  // 追踪与注册的提示词都在 prompts/rules.js
+  const trackerPrompt = await readFile(new URL('../scripts/prompts/rules.js', import.meta.url), 'utf8');
 
   assert.match(skillConfig, /export const TALENT_MAX_LEVEL = 5;/);
   // 技能仍是 10 级，只收窄天赋
@@ -122,7 +122,7 @@ test('talent range is narrowed to +/-5 everywhere', async () => {
 
   // 提示词与注册说明必须同步，否则 LLM 会继续按 +/-10 输出
   assert.match(trackerPrompt, /最高 ±Lv5/);
-  assert.match(registry, /天赋 level 为 -5 到 5/);
+  assert.match(trackerPrompt, /天赋 level 为 -5 到 5/);
 
   // UI 与校验不能再硬编码 10
   assert.doesNotMatch(controller, /level < -10 \|\| level > 10/);

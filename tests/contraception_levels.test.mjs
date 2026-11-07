@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { contraceptionLevels } from '../scripts/reproductive.js';
-import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/prompts/rules.js';
 
 const payloadWith = (reproductiveSettings) => ({
   existing_state: { A: { name: 'A', profile: {} } },

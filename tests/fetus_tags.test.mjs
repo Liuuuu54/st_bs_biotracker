@@ -213,7 +213,7 @@ test('分娩时标签跟着孩子记录一起留下来', () => {
 });
 
 // ── 说明要送到写故事的主模型，不能只送给追踪器 ──────────────────
-import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/prompts/rules.js';
 
 const payloadWith = (fetuses) => ({
   existing_state: { A: { name: 'A', profile: { pregnant: { fetuses } } } },

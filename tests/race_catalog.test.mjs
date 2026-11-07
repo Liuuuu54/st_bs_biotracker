@@ -2,9 +2,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildRaceCatalogBlock, buildWorldBaselineBlock } from '../scripts/race_prompt_context.js';
+import { buildMainFlowStatePrompt, buildRaceCatalogBlock, buildTrackerSystemPrompt, buildWorldBaselineBlock } from '../scripts/prompts/rules.js';
 import { getDerivedTypeIntroductionLine, getRaceIntroductionLine } from '../scripts/race_config.js';
-import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
 import { buildBreedingInferenceSystemPrompt, buildRegistrySystemPrompt } from '../scripts/registry.js';
 
 test('名录涵盖全部内建种族与衍生类型', () => {
@@ -257,7 +256,7 @@ test('卓尔沿用精灵数值，只是较易受精、较难分娩，且地底�
 });
 
 test('承载耐受进入提示词，且偏移不再被胎儿种族放大', async () => {
-  const { buildRacePhysiologyPrompt } = await import('../scripts/race_prompt_context.js');
+  const { buildRacePhysiologyPrompt } = await import('../scripts/prompts/rules.js');
   const { setRacePhysiologyOverrides } = await import('../scripts/race_config.js');
   // 文字档位只看数值，用覆写钉住，不跟着内置表的数值调整变动
   setRacePhysiologyOverrides({ 西方龙: { breedTolerance: 10 }, 天使: { breedTolerance: 7 } });

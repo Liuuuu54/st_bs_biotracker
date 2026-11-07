@@ -6,7 +6,7 @@ import test, { afterEach } from 'node:test';
 import * as state from '../scripts/state.js';
 import { applyToolCall, getUterinePressureCap } from '../scripts/tools.js';
 import { buildTrackerPayload, getTrackerToolDefinitions } from '../scripts/tracker.js';
-import { buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildTrackerSystemPrompt } from '../scripts/prompts/rules.js';
 
 const REAL_RANDOM = Math.random;
 afterEach(() => { Math.random = REAL_RANDOM; });

@@ -9,6 +9,7 @@ import {
   getHostPreset,
   getHostPresetManager,
 } from './host.js';
+import { buildFormattedOutputV4Instruction, buildJsonRetryInstruction } from './prompts/rules.js';
 
 const DEBUG_LAST_EFFECTIVE_REQUEST_KEY = '__bs_biotracker_debug_last_effective_request__';
 const DEBUG_LAST_API_RESPONSE_KEY = '__bs_biotracker_debug_last_api_response__';
@@ -83,18 +84,6 @@ function rememberInSession(set, key) {
 /** 是否注入 v4 结构指令：选了格式化输出且模型是 DeepSeek 系才注入。 */
 export function shouldInjectV4Instruction(settings, model) {
   return shouldUseResponseFormat(settings) && isDeepSeekFamilyModel(model);
-}
-
-/** v4 兼容模式的输出结构指令，与 response_format 双重约束降低掉格式概率。 */
-function buildFormattedOutputV4Instruction() {
-  return [
-    '【输出格式（强制）】',
-    '你处于格式化输出模式：不要输出 Markdown、不要输出代码块、不要输出解释文字或任何对象之外的字符。',
-    '只输出一个可直接 JSON.parse 的 JSON 对象，结构为：',
-    '{"tool_calls": [{"name": "工具名", "arguments": {"参数名": "值"}}], "character_checks": [{"female": "角色名", "status": "no_change|updated|present|offscreen"}]}',
-    'arguments 必须是一个对象；工具名与参数必须来自 available_tools 与变量语义说明。',
-    'character_checks 必须对每名已追踪角色恰好输出一笔（即使无变化 status 也写 no_change）；无工具操作时输出 {"tool_calls": []}，但 character_checks 仍须完整。',
-  ].join('\n');
 }
 
 export function getApiBase(settings) {
@@ -642,14 +631,6 @@ async function requestHostProxyChatCompletion(apiBase, settings, requestBody, ru
     externalSignal: runContext.signal || null,
     deadlineMs: runContext.deadlineMs || 0,
   });
-}
-
-function buildJsonRetryInstruction() {
-  return [
-    '你上一条回复不是合法 JSON。',
-    '现在请重新作答，并且只输出一个可直接 JSON.parse 的 JSON 对象。',
-    '不要输出 Markdown，不要输出 ```json，不要输出解释文字，不要输出对象之外的任何字符。',
-  ].join('\n');
 }
 
 function summarizeModelText(text) {

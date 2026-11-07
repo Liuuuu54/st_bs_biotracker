@@ -19,7 +19,7 @@ import {
   validateCustomRaceName,
 } from '../scripts/race_config.js';
 import { CARD_SETTINGS_VERSION, sanitizeCardSettings } from '../scripts/card_settings.js';
-import { buildRaceCatalogBlock } from '../scripts/race_prompt_context.js';
+import { buildRaceCatalogBlock } from '../scripts/prompts/rules.js';
 import { pickIconRace, raceIconSvg } from '../scripts/race_icons.js';
 
 afterEach(() => setRacePhysiologyOverrides({}));

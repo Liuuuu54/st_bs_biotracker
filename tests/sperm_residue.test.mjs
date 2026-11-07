@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { TOOL_DEFINITIONS, applyToolCall } from '../scripts/tools.js';
-import { buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildTrackerSystemPrompt } from '../scripts/prompts/rules.js';
 
 const DECLARED_DECAY_PER_DAY = 10;
 

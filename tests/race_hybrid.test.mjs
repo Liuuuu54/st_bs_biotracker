@@ -33,7 +33,7 @@ test('同基种族 subtype 混血不重复加权', () => {
 });
 
 test('bs_race 块内的种族/精子字段注入被消毒', async () => {
-  const { buildRacePhysiologyPrompt } = await import('../scripts/race_prompt_context.js');
+  const { buildRacePhysiologyPrompt } = await import('../scripts/prompts/rules.js');
   const prompt = buildRacePhysiologyPrompt({
     existing_state: {
       恶意角色: {
@@ -57,7 +57,7 @@ test('bs_race 块内的种族/精子字段注入被消毒', async () => {
 });
 
 test('妊娠偏移块正常生成且恶意胎儿字段不泄漏', async () => {
-  const { buildRacePhysiologyPrompt } = await import('../scripts/race_prompt_context.js');
+  const { buildRacePhysiologyPrompt } = await import('../scripts/prompts/rules.js');
   const prompt = buildRacePhysiologyPrompt({
     existing_state: {
       孕妇: {
@@ -79,7 +79,7 @@ test('妊娠偏移块正常生成且恶意胎儿字段不泄漏', async () => {
 });
 
 test('妊娠偏移的妊娠速度与分娩难度由胎儿族决定，不叠乘母体 base', async () => {
-  const { buildRacePhysiologyPrompt } = await import('../scripts/race_prompt_context.js');
+  const { buildRacePhysiologyPrompt } = await import('../scripts/prompts/rules.js');
   // 精灵母体 gestationSpeciesSpeed=0.5：若把母体 base 乘进去，人类胎儿的妊娠长度会被算成两倍
   const prompt = buildRacePhysiologyPrompt({
     existing_state: {

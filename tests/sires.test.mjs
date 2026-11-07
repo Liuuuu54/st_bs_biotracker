@@ -127,8 +127,7 @@ test('bsSetDescription 查不到卵方时更新精方的 normalDescription；精
 
 // ── 提示词：只送这一轮用得到的精方 ──────────────────────
 import { buildSirePromptEntries } from '../scripts/sires.js';
-import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
-import { DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from '../scripts/registry_config.js';
+import { buildMainFlowStatePrompt, buildTrackerSystemPrompt, DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from '../scripts/prompts/rules.js';
 import { parseDescriptionGuideFields, stripDescriptionGuideStars } from '../scripts/descriptions.js';
 
 const GUIDE = DEFAULT_REGISTRY_DESCRIPTION_GUIDES.sireDescription;
@@ -274,7 +273,7 @@ test('即时字段：描述还空着的在场角色不列，免得违反不新�
 });
 
 test('设定里存的是没改过的旧卵方预设就换成新的；改过的不动', async () => {
-  const { LEGACY_NORMAL_DESCRIPTION_GUIDE } = await import('../scripts/registry_config.js');
+  const { LEGACY_NORMAL_DESCRIPTION_GUIDE } = await import('../scripts/prompts/rules.js');
   const fresh = (guide) => {
     const ctx = { chatId: `guide-${Math.random()}`, chat: [], characters: [], extensionSettings: { bs_biotracker: { registryDescriptionGuides: { normalDescription: guide } } }, saveSettingsDebounced() {} };
     return state.getSettings(ctx).registryDescriptionGuides.normalDescription;
@@ -298,7 +297,7 @@ test('孕态预设改成五栏，动作、反应带 *；初始化规范与即时
 });
 
 test('没改过的旧孕态预设换成新的五栏', async () => {
-  const { LEGACY_PREGNANT_DESCRIPTION_GUIDE } = await import('../scripts/registry_config.js');
+  const { LEGACY_PREGNANT_DESCRIPTION_GUIDE } = await import('../scripts/prompts/rules.js');
   const ctx = { chatId: 'guide-preg', chat: [], characters: [], extensionSettings: { bs_biotracker: { registryDescriptionGuides: { pregnantDescription: LEGACY_PREGNANT_DESCRIPTION_GUIDE } } }, saveSettingsDebounced() {} };
   assert.equal(state.getSettings(ctx).registryDescriptionGuides.pregnantDescription, DEFAULT_REGISTRY_DESCRIPTION_GUIDES.pregnantDescription);
 });

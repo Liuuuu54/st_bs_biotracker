@@ -93,7 +93,7 @@ test('注册孕中孕按宿主胎儿的血脉计算，阵列顺序与承载者�
 });
 
 test('the race prompt sends one weighted block per race and share, listing every owner', async () => {
-  const { buildRacePhysiologyPrompt } = await import('../scripts/race_prompt_context.js');
+  const { buildRacePhysiologyPrompt } = await import('../scripts/prompts/rules.js');
   const quarter = { race: '精灵x人类', bloodline: { 精灵: 0.25, 人类: 0.75 }, bloodlineSource: 'inherited' };
   const prompt = buildRacePhysiologyPrompt({ existing_state: {
     甲: { profile: { base: { ...quarter }, pregnant: { fetuses: [{ ...quarter }, { ...quarter }, { ...quarter }] } } },

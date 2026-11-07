@@ -26,6 +26,8 @@
 - 腹中兩胎互踢、推擠、依偎改由 `bsAssistFetalPosition`（`action=sibling`）處理：可指定動手與被動的胎兒（`fetusIndex`、`otherFetusIndex`），`interaction` 為 `kick`、`shove`、`cuddle`。只改胎位，每故事小時一次，不佔胎兒事件的額度。
 - 受孕時機與胎重的天生變異從初始胎重移到胎兒健康的上限；初始胎重只看性別與體型，大小差異在孕期中隨健康長出來。計算器的後代預測改列初始胎重（只看性別與體型）與胎兒健康上限的範圍。
 
+- 送給模型的寫作規則與提示文字集中到 `scripts/prompts/rules.js`，工具說明集中到 `scripts/prompts/tool_definitions.js`，方便檢閱；內容逐字不變。
+
 ### 存檔
 
 - 存檔自動升到 v13，不用重開聊天：既有胎兒的上限為 100、當前值 ＝ 50 ＋ 舊供養池換算，事件堆從空開始；母胎互動的冷卻欄位丟棄。樓層快照一併遷移。

@@ -6,7 +6,7 @@ import test from 'node:test';
 import * as state from '../scripts/state.js';
 import { applyToolCall, applyToolCallsResult } from '../scripts/tools.js';
 import { getTrackerToolDefinitions } from '../scripts/tracker.js';
-import { buildTrackerSystemPrompt } from '../scripts/tracker_prompt_context.js';
+import { buildTrackerSystemPrompt } from '../scripts/prompts/rules.js';
 
 function setup(timeFlowEnabled) {
   const ctx = { chatId: 'time-freeze', chat: [], extensionSettings: {}, saveSettingsDebounced() {} };
