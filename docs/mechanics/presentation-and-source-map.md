@@ -29,6 +29,7 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 | [variable_isolation.js](../../scripts/variable_isolation.js) | 與卡片的變數系統隔離：MVU 額外解析時拿掉插件狀態段、追蹤前去掉變數更新區塊。 |
 | [worldinfo_resolve.js](../../scripts/worldinfo_resolve.js) | 主流模式的世界書：宿主試算、排除名單、快照補漏與刪除排除條目。 |
 | [worldbook_match.js](../../scripts/worldbook_match.js) | 宿主無法試算時的關鍵字後備比對。 |
+| [record_notes.js](../../scripts/record_notes.js) | 胎兒事件堆與認知紀錄壓縮後，追蹤結束時整理要點的請求。 |
 | [registry.js](../../scripts/registry.js) | 角色初始化及心理、衣櫃、日記、技能相關推論的請求與結果套用。 |
 | [registry_psy_config.js](../../scripts/registry_psy_config.js) | 心理欄位、階段及解釋。 |
 | [tools.js](../../scripts/tools.js) | 工具分派，生理、時間、代謝及分娩狀態轉換。 |
@@ -37,7 +38,7 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 | [race_config.js](../../scripts/race_config.js) | 種族生理合成、遺傳、胚胎型態與伴生卵。 |
 | [skill_config.js](../../scripts/skill_config.js) | 技能定義、等級、經驗、天賦與歷史。 |
 | [wardrobe_config.js](../../scripts/wardrobe_config.js) | 衣物欄位、尺寸、配件與正規化。 |
-| [prompts/rules.js](../../scripts/prompts/rules.js) | 送給模型的寫作規則與提示文字：追蹤系統提示與變量說明、主流程狀態提示、種族與胚胎設定、註冊與心情推演、衣櫃、描述範本與日記寫作預設。 |
+| [prompts/rules.js](../../scripts/prompts/rules.js) | 送給模型的寫作規則與提示文字：追蹤系統提示與變量說明、主流程狀態提示、種族與胚胎設定、註冊與心情推演、衣櫃、描述範本與日記寫作預設、紀錄摘要整理。 |
 | [prompts/tool_definitions.js](../../scripts/prompts/tool_definitions.js) | 送給模型的工具說明：追蹤工具，以及原生工具呼叫的檢查清單、備裝與起始著衣提交工具。 |
 | [fetus_tags.js](../../scripts/fetus_tags.js) | 胎兒特殊標記與標籤。 |
 | [fetus_sprite.js](../../scripts/fetus_sprite.js) | 胎兒像素格點。 |

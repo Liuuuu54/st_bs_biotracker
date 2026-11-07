@@ -285,6 +285,8 @@ export function normalizeSireRecord(raw, minutesPassed = 0) {
       : Math.max(0, Number(value.createdAt) || 0),
     // 作弊：当下品质恒等于档案品质，不受季节、精力周期、存量与禁欲影响；只有使用者在注册页能开。要改品质到变量页改档案
     alwaysPeak: value.alwaysPeak === true,
+    // 作弊：胎儿守护。这位精方在场时，他的胎儿健康慢慢回到平稳（见 isSireGuarding）；只有使用者在注册页能开
+    fetalGuard: value.fetalGuard === true,
     // 季节时钟起点（分钟）；没有季节的种族与扶她为 null
     seasonOrigin: hasSeasonOrigin(value) ? Math.round(Number(value.seasonOrigin)) : null,
     // 精方只有天赋（资质），没有技能：技能要靠追踪锻炼，精方不追踪
@@ -372,6 +374,7 @@ export function pruneFutaSireRecord(chatState, name) {
     spermQuality: sire.spermQuality,
     swordOffset: sire.swordOffset,
     alwaysPeak: sire.alwaysPeak,
+    fetalGuard: sire.fetalGuard,
     reserve: sire.reserve,
     reserveAt: sire.reserveAt,
     source: sire.source,
@@ -394,6 +397,25 @@ export function getParentTalents(chatState, name) {
 function formatSireRace(record) {
   const race = String(record?.race || '人类');
   return record?.derivedType ? `[${record.derivedType}]${race}` : race;
+}
+
+/** 胎儿守护（作弊）：这位精方开了守护且在场；扶她看卵方本人在不在场 */
+export function isSireGuarding(chatState, name) {
+  const sire = getSireRecord(chatState, name);
+  if (sire?.fetalGuard !== true) return false;
+  return resolveSireBase(chatState, name)?.base?.isHere !== false;
+}
+
+/** 胎儿的遗传父方：嵌合胎取全部来源，其余拆 fathers（「甲×乙」） */
+export function getFetusFatherNames(fetus) {
+  const sources = Array.isArray(fetus?.chimera?.fatherSources) ? fetus.chimera.fatherSources : [];
+  const names = sources.length > 0 ? sources : String(fetus?.fathers || '').split('×');
+  return [...new Set(names.map((name) => String(name || '').trim()).filter(Boolean))];
+}
+
+/** 正在守护这一胎的父方名字（嵌合胎有一位在场就算）；没有回空字串 */
+export function getGuardingSire(chatState, fetus) {
+  return getFetusFatherNames(fetus).find((name) => isSireGuarding(chatState, name)) || '';
 }
 
 /** 当前胎儿的遗传父方与认定父亲：嵌合胎的「A × B」拆开 */
@@ -480,6 +502,7 @@ export function upsertSireRecord(chatState, name, fields = {}, { source = 'manua
     ...(fields.spermQuality !== undefined && fields.spermQuality !== null ? { spermQuality: fields.spermQuality } : {}),
     ...(fields.swordOffset !== undefined && fields.swordOffset !== null ? { swordOffset: fields.swordOffset } : {}),
     ...(typeof fields.alwaysPeak === 'boolean' ? { alwaysPeak: fields.alwaysPeak } : {}),
+    ...(typeof fields.fetalGuard === 'boolean' ? { fetalGuard: fields.fetalGuard } : {}),
     ...(isFuta ? {} : {
       race: fields.race || previous?.race || '人类',
       bloodline: fields.race ? null : previous?.bloodline,

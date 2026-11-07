@@ -150,6 +150,21 @@ export function getFetalHarmFactor(profile, fetus) {
   return getFetalHarmBreakdown(profile, fetus).factor;
 }
 
+/**
+ * 胎儿守护（精方作弊）：父方在场时每小时回复上限的 2%，只回到一半（平稳）为止。
+ * 只保命、不加速长大：健康一半时胎重照标准曲线长。高于一半时不动。
+ */
+export const FETAL_GUARD_REGEN_PER_HOUR = 0.02;
+
+export function applyFetalGuardRegen(fetus, hours) {
+  const max = clamp(fetus?.healthMax, 1, 1000, FETAL_HEALTH_BASE);
+  const half = max * FETAL_HEALTH_INITIAL_RATIO;
+  const health = clamp(fetus?.health, 0, max, half);
+  if (!(Number(hours) > 0) || health >= half) return 0;
+  fetus.health = round(Math.min(half, health + max * FETAL_GUARD_REGEN_PER_HOUR * Number(hours)), 4);
+  return fetus.health - health;
+}
+
 /** 给模型看的文字：只在明显偏离时给（顽强／脆弱），一般不送 */
 export function describeFetalResilience(factor) {
   if (factor <= 0.6) return '顽强';
@@ -329,19 +344,54 @@ export function normalizeRecordLimits(value = {}) {
 /**
  * 压缩纪录堆（就地修改 list，回传更新后的摘要）：
  * 钉选超过上限时保留最新的；超过保存上限时最旧、没钉选的并进摘要（全都钉选时并最旧的）。
+ * keep(item) 为真的不并：胎儿事件的防洗分（同日一次、7 天递减、每日上限）要看原始纪录，
+ * 近 7 天的一律留着，记得太密时暂时超过上限。
+ * window 与 batch：送出窗口外（不在最近 window 条、没钉选、不必保留）的条目累积到 batch 条，就整批并进摘要，
+ * 模型看不到内容、只剩次数的条目最多 batch − 1 条。保存上限照样是硬上限。
  */
-export function compactRecordPile(list, summary, { cap, pinCap }, fold) {
+export function compactRecordPile(list, summary, { cap, pinCap, keep = () => false, window = null, batch = 0 }, fold) {
   if (!Array.isArray(list)) return summary || null;
   const pinned = list.filter((item) => item?.pin === true);
   for (const item of pinned.slice(0, Math.max(0, pinned.length - pinCap))) delete item.pin;
   let next = summary || null;
+  if (window !== null && batch > 0) {
+    const tail = new Set(window > 0 ? list.slice(-window) : []);
+    const outside = list.filter((item) => !tail.has(item) && item?.pin !== true && !keep(item));
+    if (outside.length >= batch) {
+      for (const item of outside) {
+        list.splice(list.indexOf(item), 1);
+        next = fold(next, item);
+      }
+    }
+  }
   while (list.length > cap) {
-    let index = list.findIndex((item) => item?.pin !== true);
-    if (index < 0) index = 0;
+    let index = list.findIndex((item) => item?.pin !== true && !keep(item));
+    if (index < 0) index = list.findIndex((item) => !keep(item));
+    if (index < 0) break;
     const [removed] = list.splice(index, 1);
     next = fold(next, removed);
   }
   return next;
+}
+
+/**
+ * 并进摘要的纪录先排进 pending，追踪结束时由整理请求（record_notes.js）连同旧的 notes 改写成新的 notes。
+ * 整理失败就留着下次再送；一直失败时只留最新的这么多条（次数统计照样完整）。
+ */
+export const RECORD_NOTES_PENDING_CAP = 40;
+/** 窗口外累积到这么多条就整批并进摘要、整理一次要点 */
+export const RECORD_NOTES_BATCH = 5;
+/** 整理出来的要点字数上限（超过的截断） */
+export const RECORD_NOTES_MAX_CHARS = 300;
+
+function appendPending(summary, item) {
+  return [...(Array.isArray(summary?.pending) ? summary.pending : []), item].slice(-RECORD_NOTES_PENDING_CAP);
+}
+
+/** 要点接在机械摘要后面；没整理过就只有次数与日期 */
+function withNotes(line, notes) {
+  const text = typeof notes === 'string' ? notes.trim() : '';
+  return text ? `${line}。要点：${text}` : line;
 }
 
 /** 窗口：最近 recent 条，加上所有钉选，按时间先后；其余（含已并进摘要的）只在摘要行出现 */
@@ -406,15 +456,32 @@ export function foldFetalEventIntoSummary(summary, event) {
   next.to = event.time;
   next.byEmbryo = { ...next.byEmbryo };
   for (const id of Object.keys(event?.effects || {})) next.byEmbryo[id] = foldEmbryoTally(next.byEmbryo[id], event, id);
+  next.pending = appendPending(next, {
+    time: event.time, kind: event.kind, ...(event.change ? { change: event.change } : {}),
+    scope: event.scope, embryoIds: Array.isArray(event.embryoIds) ? event.embryoIds : [], content: event.content,
+  });
   return next;
 }
 
-export function compactFetalEvents(pregnant, limits) {
-  const { fetalEventCap, recordPinCap } = normalizeRecordLimits(limits);
+/** minutesPassed：当下的聊天分钟数；近 7 天（递减窗口）的事件不并进摘要 */
+export function compactFetalEvents(pregnant, limits, minutesPassed = null) {
+  const { fetalEventCap, fetalEventWindow, recordPinCap } = normalizeRecordLimits(limits);
   pregnant.fetalEvents = normalizeFetalEventList(pregnant.fetalEvents);
+  const since = minutesPassed !== null && Number.isFinite(Number(minutesPassed))
+    ? Number(minutesPassed) - FETAL_EVENT_DECAY_DAYS * 1440 : null;
+  const keep = since === null ? () => false : (event) => Number(event?.minutesPassed) > since;
   pregnant.fetalEventSummary = compactRecordPile(pregnant.fetalEvents, pregnant.fetalEventSummary || null,
-    { cap: fetalEventCap, pinCap: recordPinCap }, foldFetalEventIntoSummary);
+    { cap: fetalEventCap, pinCap: recordPinCap, keep, window: fetalEventWindow, batch: RECORD_NOTES_BATCH }, foldFetalEventIntoSummary);
   if (!pregnant.fetalEventSummary) delete pregnant.fetalEventSummary;
+}
+
+/** 事件的对象文字：全部胎儿写「全部」，其余按角色已知的编号（visibleFetuses 是已知的胎儿，依阵列顺序） */
+export function labelFetalEventTarget(event, visibleFetuses = []) {
+  if (event?.scope === 'all') return '全部';
+  const ids = Array.isArray(event?.embryoIds) ? event.embryoIds : [];
+  const labels = ids.map((id) => visibleFetuses.findIndex((fetus) => fetus?.embryoId === id))
+    .map((index) => (index >= 0 ? `第${index + 1}胎` : '已不在的胎儿'));
+  return labels.join('、') || '胎儿';
 }
 
 /** 出生时孩子身上只留摘要：伤害几次、照料几次、最严重的一件、出生时的健康比例（压缩过的部分也算进去） */
@@ -461,7 +528,7 @@ export function buildFetalEventWindow(pregnant, limits, { minutesPassed = 0, lab
     .map((event) => event.kind))];
   return {
     events,
-    ...(earlier ? { earlier: `更早 ${earlier.count} 条：${countText(earlier.kinds, describeFetalEventKind)}${spanText(earlier.from, earlier.to)}` } : {}),
+    ...(earlier ? { earlier: withNotes(`更早 ${earlier.count} 条：${countText(earlier.kinds, describeFetalEventKind)}${spanText(earlier.from, earlier.to)}`, summary?.notes) } : {}),
     ...(countedToday.length ? { countedToday } : {}),
   };
 }
@@ -478,19 +545,20 @@ export function foldCognitionIntoSummary(summary, record) {
   next.methods = { ...next.methods, [record.method]: (Number(next.methods?.[record.method]) || 0) + 1 };
   if (!next.from) next.from = record.time;
   next.to = record.time;
+  next.pending = appendPending(next, { time: record.time, method: record.method, content: record.content });
   return next;
 }
 
 /** 认知纪录堆压缩（profile 就地修改） */
 export function compactCognitionRecords(profile, limits) {
-  const { cognitionCap, recordPinCap } = normalizeRecordLimits(limits);
+  const { cognitionCap, cognitionWindow, recordPinCap } = normalizeRecordLimits(limits);
   if (!Array.isArray(profile.cognitionRecords)) profile.cognitionRecords = [];
   profile.cognitionSummary = compactRecordPile(profile.cognitionRecords, profile.cognitionSummary || null,
-    { cap: cognitionCap, pinCap: recordPinCap }, foldCognitionIntoSummary);
+    { cap: cognitionCap, pinCap: recordPinCap, window: cognitionWindow, batch: RECORD_NOTES_BATCH }, foldCognitionIntoSummary);
   if (!profile.cognitionSummary) delete profile.cognitionSummary;
 }
 
-/** 送出窗口：最近几条加钉选；更早的只给一行摘要（只记次数与日期，不合并内容，免得改写角色的误解） */
+/** 送出窗口：最近几条加钉选；更早的给一行摘要：次数与日期，整理过的再附要点（照角色的理解写，不更正成事实） */
 export function buildCognitionWindow(records, summary, limits) {
   const { cognitionWindow } = normalizeRecordLimits(limits);
   const { shown, hidden } = selectRecordWindow(Array.isArray(records) ? records : [], cognitionWindow);
@@ -499,7 +567,7 @@ export function buildCognitionWindow(records, summary, limits) {
   return {
     records: shown,
     earlier: earlier
-      ? `更早 ${earlier.count} 条：${countText(earlier.methods, (key) => COGNITION_METHOD_LABELS[key] || key)}${spanText(earlier.from, earlier.to)}`
+      ? withNotes(`更早 ${earlier.count} 条：${countText(earlier.methods, (key) => COGNITION_METHOD_LABELS[key] || key)}${spanText(earlier.from, earlier.to)}`, summary?.notes)
       : '',
   };
 }
@@ -507,7 +575,7 @@ export function buildCognitionWindow(records, summary, limits) {
 /** 事件堆摘要（已并进摘要的部分）的一行文字；没有就回空字串 */
 export function describeFetalEventSummary(summary) {
   if (!summary || !(summary.count > 0)) return '';
-  return `更早 ${summary.count} 条：${countText(summary.kinds, describeFetalEventKind)}${spanText(summary.from, summary.to)}`;
+  return withNotes(`更早 ${summary.count} 条：${countText(summary.kinds, describeFetalEventKind)}${spanText(summary.from, summary.to)}`, summary.notes);
 }
 
 /** 孩子身上的孕期摘要，给族谱与注册页看 */

@@ -6,14 +6,15 @@ import { getWorldbookEntryActivationMode, worldbookEntryKeywordsMatch } from './
 import { getDisabledSpecialToolNames, isRealisticWorld } from './world_mode.js';
 import { syncCardSettings } from './card_settings.js';
 import { contraceptionLevels, naturalNoticeDays, psychologySide } from './reproductive.js';
-import { buildSirePromptEntries } from './sires.js';
+import { buildSirePromptEntries, getGuardingSire } from './sires.js';
 import { formatIntimacyPromptLine, getIntimacyRanking } from './intimacy.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, NATURAL_PREGNANCY_CUE } from './prompts/rules.js';
+import { summarizePendingRecords } from './record_notes.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
 import { applyToolCallsResult, describeBackSide, describeFetalPosition, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
-import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getFetalHarmFactor, getFetalHealthTier } from './fetal_health.js';
+import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getFetalHarmFactor, getFetalHealthTier, labelFetalEventTarget } from './fetal_health.js';
 import {
   buildRecentMessages,
   buildSignature,
@@ -1068,7 +1069,7 @@ function buildNarrativeWardrobeItem(entry) {
   };
 }
 
-function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true, minutesPassed = 0, reproductiveSettings = null) {
+function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true, minutesPassed = 0, reproductiveSettings = null, guardingSireOf = () => '') {
   const next = cloneValue(item);
   const profile = next?.profile || {};
   const base = profile.base || {};
@@ -1113,13 +1114,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
     // 事件只用角色已知的编号指认；全部胎儿的事件写「全部」，不透露还没揭晓的那一胎
     const fetalEventWindow = buildFetalEventWindow(pregnant, reproductiveSettings, {
       minutesPassed,
-      labelFetuses: (event) => {
-        if (event.scope === 'all') return '全部';
-        const ids = Array.isArray(event.embryoIds) ? event.embryoIds : [];
-        const labels = ids.map((id) => visibleFetuses.findIndex((fetus) => fetus?.embryoId === id))
-          .map((index) => (index >= 0 ? `第${index + 1}胎` : '已不在的胎儿'));
-        return labels.join('、') || '胎儿';
-      },
+      labelFetuses: (event) => labelFetalEventTarget(event, visibleFetuses),
     });
     profile.pregnant = {
       pregnantDays: Number.isFinite(Number(pregnant.pregnantDays)) ? Number(pregnant.pregnantDays) : 0,
@@ -1145,6 +1140,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
           ...(fetus.pendingImplantation ? {} : { health: getFetalHealthTier(fetus).label }),
           // 耐受只在明显偏离时送：顽强（强壮母体、高品质精子、强韧的胎儿族、雄核孽种）或脆弱
           ...(fetus.pendingImplantation || !describeFetalResilience(getFetalHarmFactor(profile, fetus)) ? {} : { resilience: describeFetalResilience(getFetalHarmFactor(profile, fetus)) }),
+          // 胎儿守护（精方作弊）：父方在场时健康会慢慢回到平稳
+          ...(!fetus.pendingImplantation && guardingSireOf(fetus) ? { guarded: `父方${guardingSireOf(fetus)}在场庇护` } : {}),
           ...(describeBackSide(fetus) ? { backSideText: describeBackSide(fetus) } : {}),
           // 没有伴生卵就不送，省 token 也免得模型以为要描写 0 枚卵
           companionEggCount: Number(fetus?.companionEggCount) > 0 ? Number(fetus.companionEggCount) : undefined,
@@ -1394,7 +1391,7 @@ function trimPaternityClaims(view) {
   return view;
 }
 
-function buildTrackerStateView(existingState, settings = null, minutesPassed = 0, reproductiveSettings = null) {
+function buildTrackerStateView(existingState, settings = null, minutesPassed = 0, reproductiveSettings = null, guardingSireOf = () => '') {
   const characterCount = Object.keys(existingState || {}).length;
   const diaryLimit = getDiaryRecentLimit(settings, characterCount);
   const wardrobeOn = isWardrobeSystemEnabled(settings);
@@ -1403,7 +1400,7 @@ function buildTrackerStateView(existingState, settings = null, minutesPassed = 0
     Object.entries(existingState).map(([name, item]) => {
       const view = item?.profile?.base?.isHere === false
         ? buildOffscreenCharacterState(item, diaryLimit, wardrobeOn)
-        : buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn, minutesPassed, reproductiveSettings);
+        : buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn, minutesPassed, reproductiveSettings, guardingSireOf);
       return [name, pruneEmptyFields(trimPaternityClaims(skillOn ? view : stripSkillFields(view)))];
     }),
   );
@@ -1615,7 +1612,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
       skill_baseline_prompt: String(chatState.skillBaselinePrompt || '').trim(),
       skill_catalog: Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [],
     } : {}),
-    existing_state: buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings),
+    existing_state: buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus)),
     available_tools: getTrackerToolDefinitions(settings, existingState),
     diary_enabled: diaryEnabled,
     race_catalog_selection: settings?.raceCatalogSelection || null,
@@ -1986,6 +1983,8 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
   chatState.lastProcessedSignature = acceptedSignature;
   if (Object.values(chatState.characters || {}).some((item) => item.profile?.psychology?.pendingSide && item.profile?.base?.isHere !== false)) recordChatStateSnapshot(ctx, chatState, { messageCount: messageIndex + 1, reason: 'tracker_pending_psychology', ...getFloorAnchorFields(getHostChat(ctx)[messageIndex]) });
   await inferPendingPsychology(ctx, settings, chatState, () => getChatKey(ctx) === branchKey && buildSignature(ctx, messageIndex + 1) === acceptedSignature);
+  // 纪录堆这一轮有条目并进摘要时，另发一次请求整理要点；要在记快照之前，结果才会跟着快照走
+  await summarizePendingRecords(settings, chatState, () => getChatKey(ctx) === branchKey && buildSignature(ctx, messageIndex + 1) === acceptedSignature);
   if (getChatKey(ctx) !== branchKey || buildSignature(ctx, messageIndex + 1) !== acceptedSignature) return { discarded: true, triggered: true };
   chatState.lastProcessedSignature = silentReplacementDuringRun ? postCallSignature : attemptedSignature;
   chatState.lastFailedChatSignature = '';

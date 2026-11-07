@@ -185,9 +185,10 @@ test('设定：五个条数夹在范围内，可以绑卡', () => {
 });
 
 test('改小上限不会立刻删纪录，下一次写入才压缩', () => {
-  const chatState = setup();
+  // 窗口开到 30：全部都在窗口里，只看保存上限（按批并进摘要另有测试）
+  const chatState = setup({ settings: { fetalEventWindow: 30 } });
   for (let day = 0; day < 15; day += 1) { event(chatState, { kind: 'rest', change: 'slight_increase' }); nextDay(chatState); }
-  chatState.reproductiveSettings = normalizeReproductiveSettings({ fetalEventCap: 10 });
+  chatState.reproductiveSettings = normalizeReproductiveSettings({ fetalEventCap: 10, fetalEventWindow: 30 });
   assert.equal(P(chatState).pregnant.fetalEvents.length, 15);
   event(chatState, { kind: 'rest', change: 'slight_increase' });
   assert.equal(P(chatState).pregnant.fetalEvents.length, 10);
@@ -347,8 +348,9 @@ test('认知纪录：pin、保存上限与送出窗口；进月经刷新时摘�
   });
   for (let i = 0; i < 12; i += 1) record(i, i === 3);
   const profile = P(chatState);
-  assert.equal(profile.cognitionRecords.length, 10);
-  assert.equal(profile.cognitionSummary.count, 2);
+  // 窗口外累积到 5 条（第0、1、2、4、5日）时整批并进摘要
+  assert.deepEqual(profile.cognitionRecords.map((item) => item.time), ['第3日', '第6日', '第7日', '第8日', '第9日', '第10日', '第11日']);
+  assert.equal(profile.cognitionSummary.count, 5);
   const window = buildCognitionWindow(profile.cognitionRecords, profile.cognitionSummary, chatState.reproductiveSettings);
   assert.deepEqual(window.records.map((item) => item.time), ['第3日', '第10日', '第11日']);
   assert.match(window.earlier, /^更早 9 条：/);
@@ -462,4 +464,62 @@ test('搶救缓冲：快孕物种见底警告后要过满 1 个日历天，下�
   hold();
   applyToolCall(bird, { name: 'bsPassedTime', arguments: { hour: 16 } });
   assert.equal(P(bird).base.stage, '产后恢复', '过满一天后仍见底就流产');
+});
+
+// ── 胎儿守护（精方作弊）─────────────────────────────────────────
+
+test('胎儿守护：父方在场、母体在场时每小时回复 2%，只回到一半；高于一半不动', async () => {
+  const { normalizeSireRecord } = await import('../scripts/sires.js');
+  const chatState = setup({ fetuses: [fetus(1, { health: 10 }), fetus(2, { health: 80 }), fetus(3, { health: 10, fathers: '乙' })] });
+  chatState.sires.甲 = normalizeSireRecord({ race: '人类', fetalGuard: true, isHere: true });
+  // 胎动会调换阵列里的左右顺序，按 embryoId 取
+  const byId = (id) => F(chatState).find((item) => item.embryoId === id);
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 10 } });
+  near(byId(1).health, 30, '10 小时 +20');
+  near(byId(2).health, 80, '高于一半不动');
+  near(byId(3).health, 10, '别人的胎不受影响');
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 20 } });
+  near(byId(1).health, 50, '回到一半为止');
+});
+
+test('胎儿守护的条件：没勾、父方离场、母体离场都不回复；嵌合胎有一位父方在场就算', async () => {
+  const { normalizeSireRecord, upsertSireRecord } = await import('../scripts/sires.js');
+  const run = (sire, base = {}, over = {}) => {
+    const chatState = setup({ base, fetuses: [fetus(1, { health: 10, ...over })] });
+    if (sire) chatState.sires.甲 = normalizeSireRecord({ race: '人类', ...sire });
+    applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 5 } });
+    return F(chatState)[0].health;
+  };
+  near(run({ fetalGuard: false, isHere: true }), 10, '没勾');
+  near(run({ fetalGuard: true, isHere: false }), 10, '父方离场');
+  near(run({ fetalGuard: true, isHere: true }, { isHere: false }), 10, '母体离场');
+  near(run({ fetalGuard: true, isHere: true }, {}, { fathers: '乙×甲', chimera: { sourceCount: 2, fatherSources: ['乙', '甲'] } }), 20, '嵌合胎');
+  // 使用者勾的开关跟着档案走；模型的整理结果带不进来
+  const chatState = setup();
+  upsertSireRecord(chatState, '甲', { race: '人类', fetalGuard: true });
+  assert.equal(chatState.sires.甲.fetalGuard, true);
+  upsertSireRecord(chatState, '甲', { race: '人类' });
+  assert.equal(chatState.sires.甲.fetalGuard, true, '没给就保留');
+  const { sanitizeSireExtractionResult } = await import('../scripts/registry.js');
+  assert.equal(sanitizeSireExtractionResult({ fetalGuard: true }).fetalGuard, undefined);
+});
+
+test('胎儿守护挡得住见底：警告中的胎儿在场回复后，下一次周结算解除警告、不流产', async () => {
+  const { normalizeSireRecord } = await import('../scripts/sires.js');
+  const chatState = setup({ days: 125, fetuses: [fetus(1, { health: 0, healthWarned: true, healthWarnedAt: 118 })] });
+  P(chatState).pregnant.healthSettledWeek = 17;
+  chatState.sires.甲 = normalizeSireRecord({ race: '人类', fetalGuard: true, isHere: true });
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 2 } });
+  assert.equal(P(chatState).base.stage, '孕中期');
+  assert.equal(F(chatState)[0].healthWarned, undefined);
+  assert.ok(F(chatState)[0].health > 10);
+});
+
+test('追踪视角：守护中的胎儿带 guarded，离场就不带', async () => {
+  const { normalizeSireRecord } = await import('../scripts/sires.js');
+  const chatState = setup();
+  chatState.sires.甲 = normalizeSireRecord({ race: '人类', fetalGuard: true, isHere: true });
+  assert.equal(trackerProfile(chatState).pregnant.fetuses[0].guarded, '父方甲在场庇护');
+  chatState.sires.甲.isHere = false;
+  assert.equal('guarded' in trackerProfile(chatState).pregnant.fetuses[0], false);
 });

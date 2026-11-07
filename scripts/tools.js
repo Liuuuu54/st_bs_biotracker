@@ -12,12 +12,12 @@ import {
   FETAL_EVENT_DAILY_AFFINITY_CAP, FETAL_EVENT_DAILY_CARE_CAP, FETAL_EVENT_DECAY_DAYS, FETAL_EVENT_HEALTH, FETAL_EVENT_KINDS,
   FETAL_EVENT_NESTED_FACTOR, FETAL_EVENT_PRESSURE, FETAL_HEALTH_FLOOR_RATIO, addFetalHealth, buildPrenatalSummary, compactFetalEvents,
   createFetalHealthFields, describeFetalEventChange, describeFetalEventKind, describeFetalEventMagnitude, getChangeMagnitude, getChangeSign,
-  getFetalEventSensitivity, getFetalHarmFactor, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalHealthMax,
+  applyFetalGuardRegen, getFetalEventSensitivity, getFetalHarmFactor, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalHealthMax,
   settleFetalHealthWeek,
 } from './fetal_health.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
-import { consumeSireReserve, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
+import { consumeSireReserve, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
 import { clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
@@ -6244,7 +6244,7 @@ function applyFetalEvent(chatState, args, source = '') {
     counted,
   });
   pregnant.fetalEvents = events;
-  compactFetalEvents(pregnant, chatState.reproductiveSettings);
+  compactFetalEvents(pregnant, chatState.reproductiveSettings, minutesPassed);
   profile.base = base;
   profile.pregnant = pregnant;
 
@@ -6589,6 +6589,17 @@ function applyPooledPregnancyBatch(profile, tick, plan, runtime, isHere, name, n
   inFrame((stage) => stage === '延产期', (part) => regenerateExtensionAmnion(profile, part));
 }
 
+/** 胎儿守护：母体在场、父方开了守护且在场的胎儿，按经过的小时回复健康（只回到平稳） */
+function applyFetalGuard(profile, tick) {
+  const guardOf = tick?.guardingSireOf;
+  if (typeof guardOf !== 'function' || !(tick.passedHours > 0)) return;
+  for (const fetus of Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : []) {
+    if (!isImplantedFetus(fetus) || !guardOf(fetus)) continue;
+    normalizeFetalHealthFields(fetus);
+    applyFetalGuardRegen(fetus, tick.passedHours);
+  }
+}
+
 function applyTimeToCharacter(character, tick) {
   const next = cloneValue(character);
   snapshotOriginalPregnancyBio(next);
@@ -6632,6 +6643,8 @@ function applyTimeToCharacter(character, tick) {
   if (Array.isArray(pregnant.fetuses) && pregnant.fetuses.length > 0 && isPregnancyStage(stage)) {
     applyPregnancyPhysiology(profile, next.runtime || {});
   }
+  // 在周结算之前回复，这一段时间里的守护才挡得住这次结算的见底检查
+  if (isHere && (isPregnancyStage(stage) || stage === '产兆前驱' || LABOR_STAGES.includes(stage))) applyFetalGuard(profile, tick);
   if (pooledPlan) {
     if (stage === '产兆前驱') {
       pregnant.pregnantDays = clampNumber(pregnant.pregnantDays, 0, 9999, 0) + laborTick.deltaDays;
@@ -6984,6 +6997,7 @@ function applyPassedTime(chatState, args) {
     tick.nowMinutes = Math.max(0, Number(chatState.minutesPassed) || 0) + totalMinutes;
     tick.reproductiveSettings = chatState.reproductiveSettings;
     tick.parentTalentsOf = (male) => getParentTalents(chatState, male);
+    tick.guardingSireOf = (fetus) => getGuardingSire(chatState, fetus);
     tick.pooledEvents = pooledEvents;
     chatState.characters[name] = applyTimeToCharacter(subject, tick).character;
   }

@@ -107,7 +107,7 @@ import {
 } from './scripts/tools.js';
 import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
 import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
-import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
+import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue, getEmbryoTypeReferenceText } from './scripts/prompts/rules.js';
 import { FETAL_EVENT_KINDS, describeFetalEventChange, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, normalizeFetalEventList } from './scripts/fetal_health.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
@@ -1408,6 +1408,8 @@ function applySireRecordToControls(record) {
   setOverrideSlider('bs-bt-sire-sword', record && record.swordOffset ? record.swordOffset : null);
   const alwaysPeak = document.getElementById('bs-bt-sire-always-peak');
   if (alwaysPeak) alwaysPeak.checked = record?.alwaysPeak === true;
+  const fetalGuard = document.getElementById('bs-bt-sire-fetal-guard');
+  if (fetalGuard) fetalGuard.checked = record?.fetalGuard === true;
 }
 
 /** 精方分页的名字栏被改：换成另一个名字就照那人的档案（没有就交给模型）重设拉杆 */
@@ -1536,12 +1538,14 @@ async function registerSireFromForm(ctx) {
   const typedSword = readOverrideSlider('bs-bt-sire-sword');
   // 作弊开关只看使用者勾选，不交给模型
   const alwaysPeak = document.getElementById('bs-bt-sire-always-peak')?.checked === true;
+  const fetalGuard = document.getElementById('bs-bt-sire-fetal-guard')?.checked === true;
   const previous = getSireRecord(chatState, name);
   if (Object.prototype.hasOwnProperty.call(chatState.characters || {}, name)) {
     const result = upsertSireRecord(chatState, name, {
       spermQuality: typedQuality ?? previous?.spermQuality ?? 1,
       swordOffset: typedSword ?? previous?.swordOffset ?? 0,
       alwaysPeak,
+      fetalGuard,
     });
     if (!result.applied) return setSireStatus(result.message, true);
     finishSireRegistration(ctx, chatState, name, result);
@@ -1565,6 +1569,7 @@ async function registerSireFromForm(ctx) {
       spermQuality: typedQuality ?? extracted.spermQuality ?? current?.spermQuality ?? 1,
       swordOffset: typedSword ?? extracted.swordOffset ?? current?.swordOffset ?? 0,
       alwaysPeak,
+      fetalGuard,
       isHere: extracted.isHere,
       // 天赋：技能系统关着时模型不判断（null），保留原本的
       ...(extracted.talents !== null ? { talents: extracted.talents } : {}),
@@ -4442,7 +4447,7 @@ function buildFetusDerivedInheritanceView(profile, fetus, intimacyRanking = []) 
   return { ...preview, motherDerivedType, fatherDerivedType, father, paternalFit, affinity: Number(fetus?.affinity) || 0 };
 }
 
-function buildTrackCharacterViewModel(character, minutesPassed = null) {
+function buildTrackCharacterViewModel(character, minutesPassed = null, chatState = null) {
   const runtimeCtx = getContextSafe();
   const runtimeSettings = runtimeCtx ? getSettings(runtimeCtx) : null;
   const runtimeChatState = runtimeCtx && runtimeSettings ? getChatState(runtimeCtx, runtimeSettings) : null;
@@ -4578,6 +4583,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
         ...fetus,
         derivedInheritance: buildFetusDerivedInheritanceView(profile, fetus, intimacyRanking),
         harmBreakdown: getFetalHarmBreakdown(profile, fetus),
+        guardedBy: chatState ? getGuardingSire(chatState, fetus) : '',
         // 标签在这里解析：推导需要承载者名字，渲染层拿不到
         tagLabels: getFetusTagLabels(deriveFetusTags(fetus, { carrierName: character?.name || '' })),
         positionText: describeFetalPosition(pregnant, fetus),
@@ -5213,6 +5219,7 @@ function renderFetusHealthMeter(item) {
     `${formatFixedDisplay(Number(item?.health) || 0, 1)}／${formatFixedDisplay(max, 1)}（先天上限）`,
     '需求照料与胎儿事件会增减；没人照料也没人疏忽时慢慢回到一半',
     describeFetalHarmBreakdown(item?.harmBreakdown),
+    item?.guardedBy ? `胎儿守护：父方${item.guardedBy}在场，健康每小时回复 2%，回到平稳为止` : '',
   ].filter(Boolean).join('\n');
   return `<span class="bs-bt-fetal-health is-${escapeHtml(tier.key)}${item?.healthWarned ? ' is-warned' : ''}" role="img" title="${escapeHtml(title)}" aria-label="${escapeHtml(`健康：${tier.label}`)}"><span class="bs-bt-fetal-health-fill" style="width:${Math.round(ratio * 100)}%"></span></span>`;
 }
@@ -7528,6 +7535,7 @@ function renderTrackSirePage(chatState) {
         : [metaRow('体型', formatCharacterBodySizeLabel(base || {}))]),
       ...(formatAltFormBodySizeLabel(base || {}) ? [metaRow('变化态体型', formatAltFormBodySizeLabel(base || {}))] : []),
       ...renderSireQualityRows(chatState, name, record, metaRow),
+      ...(record.fetalGuard ? [metaRow('胎儿守护', '作弊开启', '在场（母体也在场）时，他的胎儿健康每小时回复 2%，回到平稳为止。到注册页的精方分页取消勾选即可关闭')] : []),
       // 天赋：会有 25% 先天遗传给孩子；扶她读卵方
       metaRow('天赋', (isFuta ? normalizeTalentList(chatState.characters[name]?.profile?.talents) : (record.talents || []))
         .filter((talent) => talent.level !== 0)
@@ -7752,7 +7760,7 @@ function renderStatusPanel(ctx) {
   }
 
   const current = characters.find((item) => item.name === selectedTrackName);
-  const viewModel = buildTrackCharacterViewModel(current, Number(chatState.minutesPassed) || 0);
+  const viewModel = buildTrackCharacterViewModel(current, Number(chatState.minutesPassed) || 0, chatState);
   const owner = JSON.stringify([getChatKey(ctx), selectedTrackName]);
   const viewKey = JSON.stringify([owner, selectedTrackSubpage]);
   const markup = renderTrackCharacterContent(viewModel);
