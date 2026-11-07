@@ -12,7 +12,7 @@ import {
   FETAL_EVENT_DAILY_AFFINITY_CAP, FETAL_EVENT_DAILY_CARE_CAP, FETAL_EVENT_DECAY_DAYS, FETAL_EVENT_HEALTH, FETAL_EVENT_KINDS,
   FETAL_EVENT_NESTED_FACTOR, FETAL_EVENT_PRESSURE, FETAL_HEALTH_FLOOR_RATIO, addFetalHealth, buildPrenatalSummary, compactFetalEvents,
   createFetalHealthFields, describeFetalEventChange, describeFetalEventKind, describeFetalEventMagnitude, getChangeMagnitude, getChangeSign,
-  getFetalEventSensitivity, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalHealthMax,
+  getFetalEventSensitivity, getFetalHarmFactor, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalHealthMax,
   settleFetalHealthWeek,
 } from './fetal_health.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
@@ -634,6 +634,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + '伤害，胎儿健康减少：substance 有害物质（酒、药物、毒）、trauma 腹部外伤、overexertion 过劳或剧烈运动、illness 生病发烧、curse 诅咒或腐化、other_harm 其他伤害；'
       + '照料，胎儿健康增加、不超过先天上限：medicine 安胎药或补品、checkup 产检治疗、rest 充分休养、blessing 祝福或治疗魔法、other_care 其他照料。'
       + 'change 只看程度 slight／significant／severe（伤害一律减、照料一律加，increase 或 decrease 都可）。毒物、生病、诅咒在孕早期伤得最重，外伤、过劳在孕晚期伤得最重，且另加宫压，可能引来流产或早产的风险警告。'
+      + '程度按这对母胎的种族特性与世界设定判断实际伤害，不按人类常识：对该族无害的不记（矮人照常豪饮、火系胎儿不怕高温、亡灵不怕寒冷），对该族格外致命的提高程度（魔族遇圣水、狼人遇银）；经母体传给胎儿的（毒物、药物、疾病）两边的种族都要看。'
       + 'fetusIndex 按目前可见的 fetuses 顺序从 0 起算；省略时伤害与照料作用于全部已着床的胎儿，亲和作用于随机一胎。角色不知道自己怀孕也照样结算，叙事照认知规则。'
       + '防刷：同一天同一 kind 只结算一次，第二次只留纪录；亲和与照料在 7 天内重复会递减；每胎每天亲和最多 ±2（延产期 ±4）、照料最多 +10；伤害不递减。'
       + 'time 为故事日期，写法同认知纪录；content 一句白描，例如「她不知道自己怀孕，在酒馆喝了半夜」。pin=true 表示这件事重要、之后每轮都该看到（例如中了诅咒、确诊重病），钉选有上限，超过时保留最新的。'
@@ -1676,6 +1677,7 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId, rand
     companionEggCount: getCompanionEggCount(fetusA) + getCompanionEggCount(fetusB),
     weight: (clampNumber(fetusA?.weight, 0.33, 3, 1) + clampNumber(fetusB?.weight, 0.33, 3, 1)) / 2,
     // 嵌合取平均
+    spermQuality: (clampNumber(fetusA?.spermQuality, 0.25, 4, 1) + clampNumber(fetusB?.spermQuality, 0.25, 4, 1)) / 2,
     healthMax: (normalizeFetalHealthFields({ ...fetusA }).healthMax + normalizeFetalHealthFields({ ...fetusB }).healthMax) / 2,
     health: (normalizeFetalHealthFields({ ...fetusA }).health + normalizeFetalHealthFields({ ...fetusB }).health) / 2,
     tendencyAngle: randomInt(0, 360, random),
@@ -1919,6 +1921,8 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     // 精液量按承载者的子宫容积换算成人类尺度，同体型的一对与人类一样
     companionEggCount: rollCompanionEggCount(fetusRace, random, Number.isFinite(Number(sperm?.value)) ? Number(sperm.value) / getUterusVolumeFactor(profile?.base) : undefined, ancestry.bloodline, tieBloodline),
     weight: getConceptionWeight(gender, weightRatio),
+    // 受孕时的精子品质快照：决定健康上限与胎儿顽强度（耐疏忽与伤害）
+    spermQuality: Math.round(clampNumber(sperm?.quality, 0.25, 4, 1) * 100) / 100,
     // 健康上限：精子品质（射精当下的快照）× 受孕时机 × 天生变异；受精时是上限的一半
     ...createFetalHealthFields(sampleFetalHealthMax({ quality: sperm?.quality, stage: cycleStage, random })),
     tendencyAngle: randomInt(0, 360, random),
@@ -3438,7 +3442,7 @@ function getNutritionDemand(fetus, fetuses, effectivePregnantDays, surplus) {
 
 /**
  * 按计分当下的需求把照料点数拆给各胎、加进健康；一胎都接不上供养（全在待着床）时点数作废。
- * 点数先换成健康：加分 × 0.18、扣分 × 0.57，再乘孕速（夹在 0.25～4），
+ * 点数先换成健康：加分 × 0.18、扣分 × 0.9，再乘孕速，
  * 让不同孕期长度的物种在「每个孕周」上的照料效果相近。
  */
 function addNutrition(profile, amount) {
@@ -3448,38 +3452,47 @@ function addNutrition(profile, amount) {
   const demands = fetuses.map((fetus) => getNutritionDemand(fetus, fetuses, effectivePregnantDays, amount > 0));
   const totalDemand = demands.reduce((sum, value) => sum + value, 0);
   if (!amount || totalDemand <= 0) return 0;
-  const speed = clampNumber(getGestationEffectiveSpeed(profile), 0.25, 4, 1);
+  // 乘孕速、不夹值：需求按日历时间涨落，孕速越快一个孕周里的照料机会越少，乘回来才是每孕周等量
+  const speed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
   const health = amount * (amount > 0 ? FETAL_CARE_GAIN_SCALE : FETAL_CARE_LOSS_SCALE) * speed;
   for (let i = 0; i < fetuses.length; i += 1) {
     if (demands[i] <= 0) continue;
     normalizeFetalHealthFields(fetuses[i]);
-    // 上限各胎不同：按上限等比，同样的照料对每胎是同样的比例
-    addFetalHealth(fetuses[i], health * (demands[i] / totalDemand) * (fetuses[i].healthMax / 100));
+    // 上限各胎不同：按上限等比，同样的照料对每胎是同样的比例；
+    // 扣分另乘耐受系数（母体体质 × 胎儿顽强度），强壮的母体、高品质精子受孕的胎儿较耐疏忽
+    const resilience = amount < 0 ? getFetalHarmFactor(profile, fetuses[i]) : 1;
+    addFetalHealth(fetuses[i], health * (demands[i] / totalDemand) * (fetuses[i].healthMax / 100) * resilience);
   }
   return amount;
 }
 
-/** 两个孕日之间跨了几个周结算点 */
-function countCrossedWeeks(fromDays, toDays) {
-  return Math.max(0, Math.floor(Number(toDays) / 7) - Math.floor(Number(fromDays) / 7));
-}
-
 /**
- * 周结算（每个日历周一次，跨几周就结几次）：按健康换算胎重、见底检查、周回归，都乘孕速。
- * 见底第一次只警告；连续第二次标记 healthCollapsed，由 applyFetalHealthCrisis 在阶段推进后执行。
+ * 周结算按孕周：有效孕日每跨过一个 7 的倍数结算一次（跨几个就结几次），所有物种同一把尺——
+ * 孕速 20 的怪鸟一个日历周结算约 20 次，孕速 0.25 的龙约 4 周一次。
+ * pregnant.healthSettledWeek 记已结算到第几孕周，重复呼叫不会重算；缺这个栏位时从 startWeek 起算。
+ * 每次结算的时刻（妊娠日历天数）按孕速往回推，给见底的搶救缓冲用。
+ * 不在场时只往前推进度、不结算（离场没有照料也没有疏忽，回场时不追算）。
  */
-function applyWeeklyFetalHealth(profile, weeks = 1, female = '') {
-  const pregnant = profile?.pregnant || {};
+function syncFetalHealthWeeks(profile, isHere, startWeek = null) {
+  const pregnant = profile?.pregnant;
+  if (!pregnant || typeof pregnant !== 'object') return;
+  const eff = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
+  const week = Math.floor(eff / 7);
+  const stored = Number(pregnant.healthSettledWeek);
+  const from = Number.isInteger(stored) ? stored : Number.isInteger(startWeek) ? Math.min(startWeek, week) : week;
+  pregnant.healthSettledWeek = week;
+  if (!isHere || week <= from) return;
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  const gestationSpeed = clampNumber(getGestationEffectiveSpeed(profile), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1);
-  for (let week = 0; week < weeks; week += 1) {
+  const speed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
+  const days = clampNumber(pregnant.pregnantDays, 0, 99999, 0);
+  for (let k = from + 1; k <= week; k += 1) {
+    const at = speed > 0 ? Math.max(0, days - (eff - k * 7) / speed) : days;
     for (const fetus of fetuses) {
       if (!isImplantedFetus(fetus)) continue;
       normalizeFetalHealthFields(fetus);
-      settleFetalHealthWeek(fetus, gestationSpeed);
+      settleFetalHealthWeek(fetus, { at });
     }
   }
-  return fetuses.length > 0;
 }
 
 /** 见底警告中的提醒（每轮由 updateAdvisoryNotify 重算，回升后自动消失）；角色还不知道的那一胎不点名 */
@@ -4117,6 +4130,7 @@ function clearPregnancyState(profile) {
   pregnant.fetalEnergyDrain = 0;
   pregnant.fetalEvents = [];
   delete pregnant.fetalEventSummary;
+  delete pregnant.healthSettledWeek;
   pregnant.blockage = null;
   pregnant.acceleration = null;
   pregnant.expansion = null;
@@ -6725,7 +6739,8 @@ function applyFetalEvent(chatState, args, source = '') {
       const nested = getEnclosingHost(fetus, fetuses) ? FETAL_EVENT_NESTED_FACTOR : 1;
       let amount = FETAL_EVENT_HEALTH[magnitude] * scale * nested * decay;
       if (meta.group === 'harm') {
-        amount = -amount * getFetalEventSensitivity(kind, stage);
+        // 伤害另乘耐受系数：母体体质与胎儿顽强度（受孕时的精子品质）
+        amount = -amount * getFetalEventSensitivity(kind, stage) * getFetalHarmFactor(profile, fetus);
       } else {
         const room = Math.max(0, FETAL_EVENT_DAILY_CARE_CAP * scale - sumTodayFetalEffect(events, id, today, 'health', 'care'));
         amount = Math.min(amount, room);
@@ -7083,17 +7098,11 @@ function pooledSpanTick(tick, spans, runtime, predicate) {
 }
 
 /** 共有孕期副作用一次消费真实跨度，不因终点刚换阶段而吞掉前段。 */
-function applyPooledPregnancyBatch(profile, tick, plan, runtime, isHere, name, notify) {
+function applyPooledPregnancyBatch(profile, tick, plan, runtime, isHere, name, notify, healthStartWeek = null) {
   const pregnancy = (stage) => PREGNANCY_STAGES.includes(stage) || stage === '产兆前驱' || LABOR_STAGES.includes(stage);
   const active = pooledSpanTick(tick, plan.spans, runtime, pregnancy);
   if (active.deltaMinutes <= 0) return;
-  const crossedWeek = plan.spans.some((span) => pregnancy(span.stage)
-    && Math.floor((span.pregnantDaysEnd + (span.pregnantDaysEnd === span.pregnantDaysStart
-      ? (span.toMinute - span.fromMinute) / 1440 : 0)) / 7) > Math.floor(span.pregnantDaysStart / 7));
-  const crossedWeeks = plan.spans.filter((span) => pregnancy(span.stage)).reduce((sum, span) => sum
-    + countCrossedWeeks(span.pregnantDaysStart, span.pregnantDaysEnd + (span.pregnantDaysEnd === span.pregnantDaysStart
-      ? (span.toMinute - span.fromMinute) / 1440 : 0)), 0);
-  if (crossedWeek && isHere) applyWeeklyFetalHealth(profile, Math.max(1, crossedWeeks), name);
+  syncFetalHealthWeeks(profile, isHere, healthStartWeek);
   updateFetalEnergyDrain(profile);
   updateDerivedTypeProgress(profile, active);
   revealSuperfetationFetuses(profile, name, notify);
@@ -7144,6 +7153,9 @@ function applyTimeToCharacter(character, tick) {
   if (deltaDays <= 0) return { character: next, stageChanged: false, oldStage, newStage: stage };
   decayAssistPainBoost(profile, tick.deltaMinutes);
 
+  // 胎儿健康的周结算起点：这一刻已在妊娠中才有意义；这一步才著床的从著床当下起算
+  const healthStartWeek = isPregnancyStage(stage) || stage === '产兆前驱'
+    ? Math.floor(clampNumber(profile.pregnant?.effectivePregnantDays, 0, 9999, 0) / 7) : null;
   const pooledPlan = processSimpleConception(profile, tick, notify, next.name) || null;
   stage = String(base.stage || stage);
   const pregnancyTick = pooledPlan ? pooledSpanTick(tick, pooledPlan.spans, next.runtime || {},
@@ -7162,7 +7174,7 @@ function applyTimeToCharacter(character, tick) {
       pregnant.effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0)
         + laborTick.deltaDays * clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
     }
-    applyPooledPregnancyBatch(profile, tick, pooledPlan, next.runtime || {}, isHere, next.name, notify);
+    applyPooledPregnancyBatch(profile, tick, pooledPlan, next.runtime || {}, isHere, next.name, notify, healthStartWeek);
   }
 
   if (MENSTRUAL_STAGES.includes(stage)) {
@@ -7187,12 +7199,8 @@ function applyTimeToCharacter(character, tick) {
     const pregnancyDeltaDays = pooledPlan || implantedThisTick ? 0 : deltaDays;
     pregnant.pregnantDays = oldPregnantDays + pregnancyDeltaDays;
     pregnant.effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) + (pregnancyDeltaDays * clampNumber(getGestationEffectiveSpeed({ ...profile, bio }), 0, GESTATION_SPEED_MAX, 1));
-    const oldWeek = Math.floor(oldPregnantDays / 7);
-    const newWeek = Math.floor(pregnant.pregnantDays / 7);
-    const crossedWeek = pooledPlan ? pooledPlan.spans.some((span) => PREGNANCY_STAGES.includes(span.stage)
-      && Math.floor(span.pregnantDaysEnd / 7) > Math.floor(span.pregnantDaysStart / 7)) : newWeek > oldWeek;
     if (!pooledPlan) {
-      if (crossedWeek && isHere) applyWeeklyFetalHealth(profile, countCrossedWeeks(oldPregnantDays, pregnant.pregnantDays), next.name);
+      syncFetalHealthWeeks(profile, isHere, healthStartWeek);
       updateDerivedTypeProgress(profile, pregnancyTick);
       revealSuperfetationFetuses(profile, next.name, notify);
     }
@@ -7225,6 +7233,7 @@ function applyTimeToCharacter(character, tick) {
       days = clampNumber(base.days, 0, 9999, 0);
       stageChanged = true;
     }
+    syncFetalHealthWeeks(profile, isHere, healthStartWeek);
     const healthCrisis = isHere && PREGNANCY_STAGES.includes(stage)
       ? applyFetalHealthCrisis(profile, next.runtime || {}, next.name)
       : { changed: false };
@@ -7297,7 +7306,7 @@ function applyTimeToCharacter(character, tick) {
     if (!pooledPlan) {
       pregnant.pregnantDays = oldPregnantDays + laborTick.deltaDays;
       pregnant.effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0) + (laborTick.deltaDays * clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1));
-      if (countCrossedWeeks(oldPregnantDays, pregnant.pregnantDays) > 0 && isHere) applyWeeklyFetalHealth(profile, countCrossedWeeks(oldPregnantDays, pregnant.pregnantDays), next.name);
+      syncFetalHealthWeeks(profile, isHere, healthStartWeek);
       if (isHere) applyHourlyPregnancyMetabolism(profile, laborTick);
       updateDerivedTypeProgress(profile, laborTick);
     }

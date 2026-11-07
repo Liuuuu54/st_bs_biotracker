@@ -28,6 +28,8 @@ function pregnantHuman(modifier) {
   character.profile.pregnant.effectivePregnantDays = 20;
   character.profile.pregnant.fetuses = [{ embryoId: 1, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight: 1, tendencyAngle: 0, backSide: 'left_anterior', affinity: 0, amnionDurability: 100 }];
   character.profile.pregnant.fetusesCount = 1;
+  // 这组测试不照料需求：设需求免疫，免得胎儿健康见底改走流产（1.2.5）
+  character.profile.immune = { ...(character.profile.immune || {}), metabolism: true };
   chatState.characters.A = character;
   return chatState;
 }

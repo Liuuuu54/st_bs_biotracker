@@ -44,6 +44,7 @@ const event = (chatState, args, sourceId = '') => applyToolCall(chatState, {
   name: 'bsFetalEvent', sourceId, arguments: { female: 'A', time: '王历三年霜月七日', content: '一句白描', ...args },
 });
 const nextDay = (chatState) => { chatState.minutesPassed += 1440; };
+const round4 = (value) => Math.round(value * 1e4) / 1e4;
 const near = (actual, expected, label = '') => assert.ok(Math.abs(actual - expected) < 1e-6, `${label} ${actual} ≠ ${expected}`);
 
 // ── 事件效果 ─────────────────────────────────────────
@@ -357,4 +358,108 @@ test('认知纪录：pin、保存上限与送出窗口；进月经刷新时摘�
   assert.match(view.cognitionEarlier, /更早 9 条/);
   assert.equal('cognitionSummary' in view, false);
   assert.match(applyToolCall(chatState, { name: 'bsRecordExperience', arguments: { female: 'A', action: 'cognition', time: 'x', method: 'guess', content: 'y', pin: 'yes' } }).message, /pin 须为布尔值/);
+});
+
+// ── 耐受：母体体质 × 胎儿顽强度 ─────────────────────────────────────────
+
+test('耐受系数：母体活力等级 7 ×0.5、1 ×1.5；精子品质^−0.5 夹在 0.5～1.5', async () => {
+  const { getMaternalResilience, getFetusQualityTenacity, getFetalHarmFactor, describeFetalResilience } = await import('../scripts/fetal_health.js');
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map(getMaternalResilience), [1.5, 1.3, 1.15, 1, 0.85, 0.7, 0.5]);
+  assert.equal(getMaternalResilience(undefined), 1);
+  assert.deepEqual([0.25, 1, 4, undefined].map((q) => getFetusQualityTenacity({ spermQuality: q })), [1.5, 1, 0.5, 1]);
+  assert.equal(getFetalHarmFactor({ base: { vitalityLevel: 7 } }, { spermQuality: 4 }), 0.25);
+  assert.deepEqual([0.25, 0.6, 1, 1.29, 1.3, 2.25].map(describeFetalResilience), ['顽强', '顽强', '', '', '脆弱', '脆弱']);
+});
+
+test('胎儿顽强度另看胎儿族的繁育耐受^−0.3（夹 0.6～1.4）与核型：雄核 ×0.75、雌核 ×1.33', async () => {
+  const { getFetalHarmBreakdown, getFetusSpeciesTenacity, getFetusNucleusTenacity } = await import('../scripts/fetal_health.js');
+  const mother = { base: { vitalityLevel: 4 } };
+  near(getFetusSpeciesTenacity({ race: '人类' }), 1, '人类');
+  near(getFetusSpeciesTenacity({ race: '人类x米诺陶族' }), round4(3 ** -0.3), '混血取平均耐受 3');
+  near(getFetusSpeciesTenacity({ race: '袋兽族' }), 1.4, '夹到 1.4');
+  near(getFetusSpeciesTenacity({}), 1, '没有种族当 1');
+  assert.equal(getFetusNucleusTenacity({ tags: ['androgenesis'] }), 0.75);
+  assert.equal(getFetusNucleusTenacity({ tags: ['gynogenesis', 'identical'] }), 1.33);
+  assert.equal(getFetusNucleusTenacity({ tags: ['identical'] }), 1);
+  assert.deepEqual(getFetalHarmBreakdown(mother, { race: '哥布林', tags: ['androgenesis'], spermQuality: 1 }), { maternal: 1, quality: 1, species: 1, nucleus: 0.75, factor: 0.75 });
+  assert.equal(getFetalHarmBreakdown(mother, { race: '人类', tags: ['gynogenesis'] }).factor, 1.33);
+  // 总值夹在 0.2～2.5
+  assert.equal(getFetalHarmBreakdown({ base: { vitalityLevel: 7 } }, { race: '米诺陶族', tags: ['androgenesis'], spermQuality: 4 }).factor, 0.2);
+  assert.equal(getFetalHarmBreakdown({ base: { vitalityLevel: 1 } }, { race: '袋兽族', tags: ['gynogenesis'], spermQuality: 0.25 }).factor, 2.5);
+});
+
+test('雄核孽种：真实受孕的哥布林胎带 androgenesis，喝酒扣得比人类胎少（×0.75）', () => {
+  Math.random = () => 0.5;
+  const goblin = setup({ stage: '卵泡期', days: 0, fetuses: [] });
+  assert.equal(applyToolCall(goblin, { name: 'bsDebugInjectPregnancy', arguments: { female: 'A', mode: 'normal', father: '哥布林甲', race: '哥布林' } }).applied, true);
+  assert.equal(F(goblin)[0].race, '哥布林');
+  assert.ok(F(goblin)[0].tags.includes('androgenesis'));
+  Object.assign(F(goblin)[0], { health: 50, healthMax: 100, spermQuality: 1 });
+  P(goblin).base.stage = '孕中期';
+  const human = setup({ fetuses: [fetus(1)] });
+  event(goblin, { kind: 'substance', change: 'significant_decrease' });
+  event(human, { kind: 'substance', change: 'significant_decrease' });
+  near(50 - F(goblin)[0].health, (50 - F(human)[0].health) * 0.75);
+  const view = trackerProfile(setup({ base: { vitalityLevel: 6 }, fetuses: [fetus(1, { race: '哥布林', tags: ['androgenesis'] })] }));
+  assert.equal(view.pregnant.fetuses[0].resilience, '顽强', '6 级 ×0.7 × 雄核 0.75 = 0.525');
+  const gyno = trackerProfile(setup({ base: { vitalityLevel: 3 }, fetuses: [fetus(1, { tags: ['gynogenesis'] })] }));
+  assert.equal(gyno.pregnant.fetuses[0].resilience, '脆弱', '3 级 ×1.15 × 雌核 1.33 = 1.53');
+});
+
+test('伤害事件与疏忽扣分乘耐受系数，照料加分不乘', () => {
+  const strong = setup({ base: { vitalityLevel: 7 }, fetuses: [fetus(1, { spermQuality: 4 })] });
+  event(strong, { kind: 'substance', change: 'significant_decrease' });
+  near(F(strong)[0].health, 50 - 8 * 0.25);
+  nextDay(strong);
+  event(strong, { kind: 'rest', change: 'significant_increase' });
+  near(F(strong)[0].health, 50 - 2 + 8, '照料照常');
+
+  const weak = setup({ base: { vitalityLevel: 1 }, fetuses: [fetus(1, { spermQuality: 0.25 })], immune: {} });
+  P(weak).metabolism = { excretion: 0, hunger: 0, sleep: 140, milk: 0, odor: 0, companionship: 0 };
+  P(weak).pregnant.nutritionBurst = {};
+  applyToolCall(weak, { name: 'bsSetCharacterPresence', arguments: { female: 'A', isPresent: true } });
+  const strongNeglect = setup({ base: { vitalityLevel: 7 }, fetuses: [fetus(1, { spermQuality: 4 })], immune: {} });
+  P(strongNeglect).metabolism = { excretion: 0, hunger: 0, sleep: 140, milk: 0, odor: 0, companionship: 0 };
+  applyToolCall(strongNeglect, { name: 'bsSetCharacterPresence', arguments: { female: 'A', isPresent: true } });
+  near((50 - F(weak)[0].health) / (50 - F(strongNeglect)[0].health), 2.25 / 0.25, '疏忽扣分按耐受系数比例');
+});
+
+test('受孕时记下精子品质快照；追踪视角只在明显偏离时送顽强／脆弱', () => {
+  const chatState = setup({ base: { vitalityLevel: 7 }, fetuses: [fetus(1, { spermQuality: 4 }), fetus(2, { spermQuality: 0.25 })] });
+  const profile = trackerProfile(chatState);
+  assert.equal(profile.pregnant.fetuses[0].resilience, '顽强');
+  assert.equal('resilience' in profile.pregnant.fetuses[1], false, '7 级 × 品质 0.25 是 ×0.75，一般不送');
+  assert.equal('spermQuality' in profile.pregnant.fetuses[0], false, '数值不外露');
+  const weak = trackerProfile(setup({ base: { vitalityLevel: 1 }, fetuses: [fetus(1)] }));
+  assert.equal(weak.pregnant.fetuses[0].resilience, '脆弱');
+});
+
+// ── 按孕周结算与搶救缓冲 ─────────────────────────────────────────
+
+test('周结算按孕周：孕速 20 的物种一个日历天就结算约 3 次，胎重成长与人类每孕周相同', () => {
+  Math.random = () => 0.99;
+  const bird = setup({ base: { race: '怪鸟类' }, days: 140, fetuses: [fetus(1, { race: '怪鸟类', health: 90 })] });
+  P(bird).bio.gestationSpeciesSpeed = 20;
+  applyToolCall(bird, { name: 'bsPassedTime', arguments: { hour: 24 } });
+  const weeks = P(bird).pregnant.healthSettledWeek - 20;
+  assert.ok(weeks >= 2 && weeks <= 3, `结算 ${weeks} 次`);
+  near(F(bird)[0].weight, Math.exp(0.024 + 0.0192 + (weeks === 3 ? 0.01536 : 0)), '每孕周 Δ =（比例 − 0.5）× 0.06');
+});
+
+test('搶救缓冲：快孕物种见底警告后要过满 1 个日历天，下一次结算仍见底才中断', () => {
+  Math.random = () => 0.99;
+  const bird = setup({ base: { race: '怪鸟类' }, days: 140, fetuses: [fetus(1, { race: '怪鸟类', health: 0 })] });
+  P(bird).bio.gestationSpeciesSpeed = 20;
+  const hold = () => { F(bird)[0].health = 0; };
+  applyToolCall(bird, { name: 'bsPassedTime', arguments: { hour: 12 } });
+  assert.equal(P(bird).base.stage, '孕中期');
+  assert.equal(F(bird)[0].healthWarned, true);
+  const warnedAt = F(bird)[0].healthWarnedAt;
+  hold();
+  applyToolCall(bird, { name: 'bsPassedTime', arguments: { hour: 10 } });
+  assert.equal(P(bird).base.stage, '孕中期', '警告后还不到一天，不中断');
+  assert.equal(F(bird)[0].healthWarnedAt, warnedAt);
+  hold();
+  applyToolCall(bird, { name: 'bsPassedTime', arguments: { hour: 16 } });
+  assert.equal(P(bird).base.stage, '产后恢复', '过满一天后仍见底就流产');
 });

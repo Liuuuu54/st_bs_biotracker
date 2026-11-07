@@ -7,6 +7,7 @@
 //
 // 事件堆比照认知纪录：每次妊娠保存上限条，超过时最旧、没钉选的并进摘要；送给追踪模型的只有窗口。
 import { CONCEPTION_WEIGHT_LOG_SD, getConceptionStageWeight } from './body_size.js';
+import { getMergedRacePhysiologyProfile } from './race_config.js';
 
 export const FETAL_HEALTH_BASE = 100;
 export const FETAL_HEALTH_INITIAL_RATIO = 0.5;
@@ -17,6 +18,8 @@ export const FETAL_HEALTH_WEIGHT_SLOPE = 0.06;
 export const FETAL_HEALTH_WEEKLY_WEIGHT_CAP = 0.03;
 /** 见底门槛：周结算时 ≤ 上限的 10% 先警告，下一次周结算仍见底才中断 */
 export const FETAL_HEALTH_BOTTOM_RATIO = 0.1;
+/** 搶救缓冲：警告之后至少过这么多日历天，见底才会中断（快孕物种一个孕周只有几小时，剧情要来得及救） */
+export const FETAL_HEALTH_RESCUE_DAYS = 1;
 /** 流产免疫或无法中断的阶段：见底也只停在 1% */
 export const FETAL_HEALTH_FLOOR_RATIO = 0.01;
 /**
@@ -83,9 +86,75 @@ export function normalizeFetalHealthFields(fetus) {
   }
   fetus.health = round(clamp(fetus.health, 0, max, max * FETAL_HEALTH_INITIAL_RATIO), 2);
   delete fetus.nutrition;
-  if (fetus.healthWarned !== true) delete fetus.healthWarned;
+  if (fetus.healthWarned !== true) {
+    delete fetus.healthWarned;
+    delete fetus.healthWarnedAt;
+  }
   if (fetus.healthCollapsed !== true) delete fetus.healthCollapsed;
   return fetus;
+}
+
+/**
+ * 耐受系数：乘在疏忽扣分与伤害事件上（照料加分不乘），越小越耐，总值夹在 0.2～2.5。
+ * = 母体体质（活力等级 1～7）× 胎儿顽强度（精子品质 × 胎儿族繁育耐受 × 核型）。
+ * 挺着肚子冒险的强壮母体、打不掉的魔丸与孽种。7 级 × 品质 4 的人类胎是 ×0.25：
+ * 完全不处理需求也只停在三成左右，不会见底。
+ * 母体自己的繁育耐受不进这里：它已经管胎儿负担（需求涨多快），再乘一次就是重复计算；
+ * 胎儿那一族的耐受只管这一胎本身强不强。
+ */
+export const MATERNAL_RESILIENCE_BY_VITALITY_LEVEL = Object.freeze({ 1: 1.5, 2: 1.3, 3: 1.15, 4: 1, 5: 0.85, 6: 0.7, 7: 0.5 });
+
+export function getMaternalResilience(vitalityLevel) {
+  return MATERNAL_RESILIENCE_BY_VITALITY_LEVEL[Math.round(clamp(vitalityLevel, 1, 7, 4))];
+}
+
+export const FETAL_HARM_FACTOR_MIN = 0.2;
+export const FETAL_HARM_FACTOR_MAX = 2.5;
+/** 核型：雄核发生（孽种，父方核型压过母体）较顽强，雌核发生（只承母系）较脆弱 */
+export const FETAL_NUCLEUS_TENACITY = Object.freeze({ androgenesis: 0.75, gynogenesis: 1.33 });
+
+/** 精子品质：受孕时的快照（fetus.spermQuality，没有就当 1）^−0.5，夹在 0.5～1.5 */
+export function getFetusQualityTenacity(fetus) {
+  return clamp(clamp(fetus?.spermQuality, 0.25, 4, 1) ** -0.5, 0.5, 1.5, 1);
+}
+
+/** 胎儿族：按胎儿自己的种族与血脉（核型已决定它随谁、混血取平均）的繁育耐受^−0.3，夹在 0.6～1.4 */
+export function getFetusSpeciesTenacity(fetus) {
+  const tolerance = getMergedRacePhysiologyProfile(String(fetus?.race || ''), fetus?.bloodline ?? null)?.breedTolerance;
+  return round(clamp(clamp(tolerance, 0.01, 100, 1) ** -0.3, 0.6, 1.4, 1), 4);
+}
+
+export function getFetusNucleusTenacity(fetus) {
+  const tags = Array.isArray(fetus?.tags) ? fetus.tags : [];
+  if (tags.includes('androgenesis')) return FETAL_NUCLEUS_TENACITY.androgenesis;
+  if (tags.includes('gynogenesis')) return FETAL_NUCLEUS_TENACITY.gynogenesis;
+  return 1;
+}
+
+/** 胎儿顽强度 = 精子品质 × 胎儿族 × 核型 */
+export function getFetusTenacity(fetus) {
+  return getFetusQualityTenacity(fetus) * getFetusSpeciesTenacity(fetus) * getFetusNucleusTenacity(fetus);
+}
+
+/** 分项（追踪页提示用）：maternal、quality、species、nucleus 与夹值后的 factor */
+export function getFetalHarmBreakdown(profile, fetus) {
+  const maternal = getMaternalResilience(profile?.base?.vitalityLevel);
+  const quality = getFetusQualityTenacity(fetus);
+  const species = getFetusSpeciesTenacity(fetus);
+  const nucleus = getFetusNucleusTenacity(fetus);
+  const factor = round(clamp(maternal * quality * species * nucleus, FETAL_HARM_FACTOR_MIN, FETAL_HARM_FACTOR_MAX, 1), 4);
+  return { maternal, quality: round(quality, 4), species, nucleus, factor };
+}
+
+export function getFetalHarmFactor(profile, fetus) {
+  return getFetalHarmBreakdown(profile, fetus).factor;
+}
+
+/** 给模型看的文字：只在明显偏离时给（顽强／脆弱），一般不送 */
+export function describeFetalResilience(factor) {
+  if (factor <= 0.6) return '顽强';
+  if (factor >= 1.3) return '脆弱';
+  return '';
 }
 
 export function getFetalHealthRatio(fetus) {
@@ -114,32 +183,38 @@ export function addFetalHealth(fetus, amount) {
 }
 
 /**
- * 一次周结算（一个日历周 × 孕速）。顺序：按这一周累积的健康换算胎重 → 见底检查 → 周回归。
- * 回传 'warned'（刚见底）、'collapsed'（连续两次见底，待中断）或 ''。
+ * 一次周结算（一个孕周，所有物种同一把尺）。顺序：按这一周累积的健康换算胎重 → 见底检查 → 周回归。
+ * at 是这次结算当下的妊娠日历天数（pregnantDays），用来量搶救缓冲：警告之后要过满 1 个日历天，
+ * 下一次结算仍见底才中断。回传 'warned'（刚见底）、'collapsed'（待中断）或 ''。
  */
-export function settleFetalHealthWeek(fetus, speed = 1) {
+export function settleFetalHealthWeek(fetus, { at = null } = {}) {
   const max = clamp(fetus?.healthMax, 1, 1000, FETAL_HEALTH_BASE);
   const health = clamp(fetus?.health, 0, max, max * FETAL_HEALTH_INITIAL_RATIO);
-  const pace = Math.max(0, Number(speed) || 0);
-  const cap = FETAL_HEALTH_WEEKLY_WEIGHT_CAP * pace;
-  const delta = clamp((health / max - 0.5) * FETAL_HEALTH_WEIGHT_SLOPE * pace, -cap, cap, 0);
+  const cap = FETAL_HEALTH_WEEKLY_WEIGHT_CAP;
+  const delta = clamp((health / max - 0.5) * FETAL_HEALTH_WEIGHT_SLOPE, -cap, cap, 0);
   // 以指数换算：亏空再深也只会逐步变小，不会跌穿成负值
   fetus.weight = clamp((Number(fetus.weight) || 1) * Math.exp(delta), 0.33, 3.0, 1);
+  const now = Number.isFinite(Number(at)) && at !== null ? Number(at) : null;
   let outcome = '';
   if (health <= max * FETAL_HEALTH_BOTTOM_RATIO) {
     if (fetus.healthWarned) {
-      fetus.healthCollapsed = true;
-      outcome = 'collapsed';
+      const since = Number(fetus.healthWarnedAt);
+      // 旧资料没有警告时刻、或拿不到时刻时不卡缓冲
+      if (now === null || !Number.isFinite(since) || now - since >= FETAL_HEALTH_RESCUE_DAYS - 1e-9) {
+        fetus.healthCollapsed = true;
+        outcome = 'collapsed';
+      }
     } else {
       fetus.healthWarned = true;
+      if (now !== null) fetus.healthWarnedAt = round(now, 4);
       outcome = 'warned';
     }
   } else {
     delete fetus.healthWarned;
+    delete fetus.healthWarnedAt;
     delete fetus.healthCollapsed;
   }
-  const pull = 1 - (1 - FETAL_HEALTH_REVERSION) ** pace;
-  fetus.health = round(health + (max * FETAL_HEALTH_INITIAL_RATIO - health) * pull, 4);
+  fetus.health = round(health + (max * FETAL_HEALTH_INITIAL_RATIO - health) * FETAL_HEALTH_REVERSION, 4);
   return outcome;
 }
 

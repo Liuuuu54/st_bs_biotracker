@@ -175,6 +175,7 @@ for (const pooled of [false, true]) {
     const ratio = embryo.healthMax / 80;
     assert.ok(ratio >= Math.exp(-0.39) - 1e-3 && ratio <= Math.exp(0.39) + 1e-3, `上限 ${embryo.healthMax}`);
     assert.equal(embryo.health, embryo.healthMax / 2);
+    assert.ok(embryo.spermQuality >= 0.25 && embryo.spermQuality <= 4, `受孕时记下精子品质快照 ${embryo.spermQuality}`);
   });
 
   test(`${mode}天使着床只等待活动周期的9日，322日乏情不计入产科偏移`, () => {

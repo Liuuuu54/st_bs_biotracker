@@ -14,7 +14,7 @@ import { buildMainFlowStatePrompt, buildTrackerSystemPrompt } from './tracker_pr
 import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
 import { applyToolCallsResult, describeBackSide, describeFetalPosition, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
-import { buildCognitionWindow, buildFetalEventWindow, getFetalHealthTier } from './fetal_health.js';
+import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getFetalHarmFactor, getFetalHealthTier } from './fetal_health.js';
 import {
   buildRecentMessages,
   buildSignature,
@@ -1134,7 +1134,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
         const {
           embryoId: _embryoId, contactIds: _contactIds, contactMinutes: _contactMinutes, contactEmbryos: _contactEmbryos, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion,
           // 健康只送文字刻度，数值与见底旗标不外露
-          health: _health, healthMax: _healthMax, healthWarned: _healthWarned, healthCollapsed: _healthCollapsed,
+          health: _health, healthMax: _healthMax, healthWarned: _healthWarned, healthCollapsed: _healthCollapsed, spermQuality: _spermQuality,
           // 位置只送紧凑的文字摘要（positionText）；数值、解绑与阻塞旗标不外露
           descentStage: _descentStage, nestedReleased: _nestedReleased, backSide: _backSide,
           inletIntruder: _inletIntruder, shoulderDystocia: _shoulderDystocia, shoulderRelieved: _shoulderRelieved, ...visibleFetus
@@ -1144,6 +1144,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
           ...(LABOR_STAGES.includes(String(base.stage || '')) && fetus.embryoId === pregnant.presentingEmbryoId ? { presenting: true } : {}),
           positionText: describeFetalPosition(pregnant, fetus),
           ...(fetus.pendingImplantation ? {} : { health: getFetalHealthTier(fetus).label }),
+          // 耐受只在明显偏离时送：顽强（强壮母体、高品质精子、强韧的胎儿族、雄核孽种）或脆弱
+          ...(fetus.pendingImplantation || !describeFetalResilience(getFetalHarmFactor(profile, fetus)) ? {} : { resilience: describeFetalResilience(getFetalHarmFactor(profile, fetus)) }),
           ...(describeBackSide(fetus) ? { backSideText: describeBackSide(fetus) } : {}),
           // 没有伴生卵就不送，省 token 也免得模型以为要描写 0 枚卵
           companionEggCount: Number(fetus?.companionEggCount) > 0 ? Number(fetus.companionEggCount) : undefined,

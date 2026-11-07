@@ -109,7 +109,7 @@ import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './script
 import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { getEmbryoTypeReferenceText } from './scripts/embryo_prompt_context.js';
-import { FETAL_EVENT_KINDS, describeFetalEventChange, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, getFetalHealthRatio, getFetalHealthTier, normalizeFetalEventList } from './scripts/fetal_health.js';
+import { FETAL_EVENT_KINDS, describeFetalEventChange, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, normalizeFetalEventList } from './scripts/fetal_health.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
 import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue } from './scripts/race_prompt_context.js';
@@ -4578,6 +4578,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null) {
       fetuses: Array.isArray(pregnant.fetuses) ? pregnant.fetuses.filter(isFetusKnownToCharacter).map((fetus) => ({
         ...fetus,
         derivedInheritance: buildFetusDerivedInheritanceView(profile, fetus, intimacyRanking),
+        harmBreakdown: getFetalHarmBreakdown(profile, fetus),
         // 标签在这里解析：推导需要承载者名字，渲染层拿不到
         tagLabels: getFetusTagLabels(deriveFetusTags(fetus, { carrierName: character?.name || '' })),
         positionText: describeFetalPosition(pregnant, fetus),
@@ -5194,6 +5195,14 @@ function renderFetalEventTimeline(view) {
   </div>`;
 }
 
+/** 耐受提示：总值与四个分项（越小越耐疏忽与伤害） */
+function describeFetalHarmBreakdown(breakdown) {
+  if (!Number.isFinite(breakdown?.factor)) return '';
+  const fmt = (value) => `×${formatFixedDisplay(value, 2)}`;
+  const nucleus = breakdown.nucleus < 1 ? '雄核' : breakdown.nucleus > 1 ? '雌核' : '一般';
+  return `耐受：${describeFetalResilience(breakdown.factor) || '一般'}（疏忽与伤害 ${fmt(breakdown.factor)}＝体质 ${fmt(breakdown.maternal)}・精子品质 ${fmt(breakdown.quality)}・胎儿族 ${fmt(breakdown.species)}・核型${nucleus} ${fmt(breakdown.nucleus)}）`;
+}
+
 /** 缩图下方的健康小条：常驻在标题列，刻度与数值放在提示里；危急警告中加虚线外框 */
 function renderFetusHealthMeter(item) {
   if (item?.pendingImplantation) return '';
@@ -5204,7 +5213,8 @@ function renderFetusHealthMeter(item) {
     `健康：${tier.label}${item?.healthWarned ? '（危急警告中：下次周结算仍见底就会中断妊娠）' : ''}`,
     `${formatFixedDisplay(Number(item?.health) || 0, 1)}／${formatFixedDisplay(max, 1)}（先天上限）`,
     '需求照料与胎儿事件会增减；没人照料也没人疏忽时慢慢回到一半',
-  ].join('\n');
+    describeFetalHarmBreakdown(item?.harmBreakdown),
+  ].filter(Boolean).join('\n');
   return `<span class="bs-bt-fetal-health is-${escapeHtml(tier.key)}${item?.healthWarned ? ' is-warned' : ''}" role="img" title="${escapeHtml(title)}" aria-label="${escapeHtml(`健康：${tier.label}`)}"><span class="bs-bt-fetal-health-fill" style="width:${Math.round(ratio * 100)}%"></span></span>`;
 }
 
