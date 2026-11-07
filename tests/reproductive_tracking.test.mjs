@@ -167,7 +167,7 @@ test('migration counts old losses as miscarriages, preserves evidence and neutra
   assert.equal(p.experience.miscarriageExperience, 3);
   assert.deepEqual(p.experience.emotionalMates, ['B']);
   assert.equal(p.psychology.preg.confidence_value, 50);
-  assert.equal(p.psychology.preg.bonding_value, 50);
+  assert.equal(p.psychology.preg.acceptance_value, 50, 'v3 补的 bonding 经 v14 改名为 acceptance');
   assert.equal(p.reproductiveMigration.original.psychology.preg.knowsFatherSource, true);
   assert.equal(p.cognitionRecords.length, 0);
   p.psychology.preg.confidence_value = 70;
@@ -211,7 +211,8 @@ test('only present characters inject cognition, independently of psychology and 
 test('unknown psychology never accumulates delta; crossing sides schedules once', () => {
   const s = setup();
   s.characters.A.profile.psychology = { enabled: true, activeSide: 'mens', stageProfiles: { mens: {} }, mens: { mastery_value: null } };
-  assert.equal(call(s, 'bsUpdatePsychology', { female: 'A', options: { mens: { mastery: 2 } } }).applied, false);
+  assert.match(call(s, 'bsRecordExperience', { female: 'A', action: 'cognition', time: '一日', method: 'perception', content: '她摸清了自己的周期', psychology: { mastery: 'slight_increase' } }).message, /还是未知/);
+  assert.equal(s.characters.A.profile.psychology.mens.mastery_value, null);
   call(s, 'bsSetMenstrualPhases', { female: 'A', stage: '假孕期' });
   const psy = s.characters.A.profile.psychology;
   assert.equal(psy.pendingSide, 'preg');
@@ -259,7 +260,7 @@ test('late natural cue can wait until the 280-day conception-age postterm bounda
 });
 
 function stageProfiles(side) {
-  return { [side]: Object.fromEntries((side === 'mens' ? ['mastery', 'desire', 'autonomy'] : ['confidence', 'bonding', 'stance']).map((axis) => [axis,
+  return { [side]: Object.fromEntries((side === 'mens' ? ['mastery', 'desire', 'autonomy'] : ['confidence', 'acceptance', 'stance']).map((axis) => [axis,
     Object.fromEntries(['0', '1_25', '26_50', '51_75', '76_100', '100_plus'].map((stage) => [stage, `此角色在 ${axis} ${stage} 的专属表现`]))])) };
 }
 

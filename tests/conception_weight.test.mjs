@@ -1,11 +1,11 @@
-// 1.2.5 起受孕时机与天生变异（对数常态、标准差 0.13，截在 ±3 个标准差）从初始胎重移到胎儿健康的上限，
+// 1.3.0 起受孕时机与天生变异（对数常态、标准差 0.13，截在 ±3 个标准差）从初始胎重移到胎儿健康的上限，
 // 初始胎重只剩性别与体型系数；大小差异在孕期随健康长出来。
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
 import { calculateOffspringPreview } from '../scripts/calculator.js';
 import { CONCEPTION_STAGE_WEIGHTS, CONCEPTION_WEIGHT_LOG_SD } from '../scripts/body_size.js';
-import { getConceptionTimingFactor, sampleFetalHealthMax } from '../scripts/fetal_health.js';
+import { getConceptionTimingFactor, sampleFetalInitialHealth } from '../scripts/fetal_health.js';
 import { getConceptionWeight } from '../scripts/tools.js';
 
 const REAL_RANDOM = Math.random;
@@ -28,32 +28,36 @@ test('初始胎重只看性别与体型：没有阶段系数，也不再抽天�
   assert.ok(Math.abs(getConceptionWeight('女', 1.22) - 1.22 / 1.05) < 1e-9);
 });
 
-test('健康上限的天生变异接近人类新生儿：对数标准差约 0.13，截在 ±3 个标准差', () => {
+test('初始健康的天生变异接近人类新生儿：对数标准差约 0.13，夹在 35～70', () => {
   const random = seeded(20261020);
-  const logs = Array.from({ length: 6000 }, () => Math.log(sampleFetalHealthMax({ stage: '排卵期', random }) / 100));
+  const logs = Array.from({ length: 6000 }, () => Math.log(sampleFetalInitialHealth({ stage: '排卵期', random }) / 50));
   const mean = logs.reduce((sum, x) => sum + x, 0) / logs.length;
   const sd = Math.sqrt(logs.reduce((sum, x) => sum + (x - mean) ** 2, 0) / logs.length);
   assert.equal(CONCEPTION_WEIGHT_LOG_SD, 0.13);
   assert.ok(Math.abs(mean) < 0.01, `平均 ${mean}`);
   assert.ok(Math.abs(sd - 0.13) < 0.008, `标准差 ${sd}`);
-  assert.ok(Math.abs(sampleFetalHealthMax({ stage: '排卵期', random: () => 0 }) - Math.round(1000 * Math.exp(0.13 * 3)) / 10) < 0.06, '撞到截断上限');
+  assert.equal(sampleFetalInitialHealth({ stage: '排卵期', random: () => 0 }), 70, '+3 个标准差夹到 70');
+  assert.equal(sampleFetalInitialHealth({ quality: 4, stage: '黄体期', random: () => 0 }), 70, '高品质也只到 70，一律从平稳起步');
+  assert.equal(sampleFetalInitialHealth({ quality: 0.25, stage: '乏情期', random: () => 0.5 }), 35, '低品质夹到 35');
 });
 
 test('受孕时机系数 = 0.5 ＋ 0.5 × 旧阶段系数；精子品质乘 品质^0.25', () => {
   assert.deepEqual({ ...CONCEPTION_STAGE_WEIGHTS }, { 乏情期: 0.6, 月经期: 0.75, 卵泡期: 0.9, 排卵期: 1.0, 黄体期: 1.1 });
   assert.deepEqual(['乏情期', '月经期', '卵泡期', '排卵期', '黄体期', '产后恢复'].map(getConceptionTimingFactor), [0.8, 0.875, 0.95, 1, 1.05, 1]);
-  const at = (quality, stage) => sampleFetalHealthMax({ quality, stage, random: () => 0.5 });
-  assert.ok(Math.abs(at(4, '排卵期') / at(1, '排卵期') - Math.SQRT2) < 0.01);
-  assert.ok(Math.abs(at(1, '乏情期') / at(1, '排卵期') - 0.8) < 0.01);
+  const at = (quality, stage) => sampleFetalInitialHealth({ quality, stage, random: () => 0.5 });
+  assert.ok(Math.abs(at(2, '排卵期') / at(1, '排卵期') - 2 ** 0.25) < 0.01);
+  assert.ok(Math.abs(at(2, '乏情期') / at(2, '排卵期') - 0.8) < 0.01);
 });
 
-test('计算器：初始胎重只看性别与体型；另列健康上限的范围与受孕时机系数', () => {
+test('计算器：初始胎重只看性别与体型；另列初始健康的范围与受孕时机系数', () => {
   const human = calculateOffspringPreview({ eggRace: '人类', spermRace: '人类', conceptionStage: '黄体期' });
   const { min, max, typical } = human.fetalWeightRange;
   assert.equal(typical, 1);
   assert.ok(Math.abs(max - 1.05) < 1e-9 && Math.abs(min - 1 / 1.05) < 1e-9);
   assert.equal(human.healthTimingFactor, 1.05);
-  assert.ok(Math.abs(Math.log(human.healthMaxRange.max / human.healthMaxRange.typical) - 0.26) < 1e-9);
+  assert.ok(Math.abs(human.healthInitialRange.typical - 52.5) < 1e-9);
+  assert.ok(Math.abs(Math.log(human.healthInitialRange.max / human.healthInitialRange.typical) - 0.26) < 1e-9);
+  assert.equal(calculateOffspringPreview({ eggRace: '人类', spermRace: '人类', conceptionStage: '乏情期' }).healthInitialRange.min, 35, '夹到 35');
 });
 
 test('计算机的胎重系数与引擎同一套：双方都有体型看体型差，有一方体型可变就退回承载耐受', async () => {

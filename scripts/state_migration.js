@@ -17,7 +17,7 @@ import { MENSTRUAL_STAGE_DAYS } from './stage_config.js';
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 13;
+export const CHAT_STATE_SCHEMA_VERSION = 14;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -278,7 +278,7 @@ function migrateCharacterV10ToV11(character) {
 }
 
 /**
- * v12 → v13（1.2.5 胎儿健康）：每周归零的供养池换成持续的健康量表（上限 100、当前值 = 50 ＋ 池换算），
+ * v12 → v13（1.3.0 胎儿健康）：每周归零的供养池换成持续的健康量表（上限 100、当前值 = 50 ＋ 池换算），
  * 胎儿事件堆从空开始，母胎互动的冷却丢掉。
  */
 function migrateCharacterV12ToV13(character) {
@@ -292,6 +292,30 @@ function migrateCharacterV12ToV13(character) {
   if (profile.cooldown && typeof profile.cooldown === 'object') delete profile.cooldown.maternalFetalInteractionUsed;
 }
 
+/**
+ * v13 → v14：妊娠侧心理「接纳与联结」（bonding）改成「接受度」（acceptance）：只看想不想要这次怀孕，
+ * 和胎儿之间的感情交给胎儿亲和度；改名也免得和胎儿事件的 bonding（母胎亲近）撞名。
+ * 数值、解释与这个角色专属的阶段解释照搬，认知纪录上记的心理变化一并改名；旧心理工具的冷却丢掉。
+ */
+function migrateCharacterV13ToV14(character) {
+  const profile = character?.profile;
+  const psy = profile?.psychology;
+  // 楼层快照存的是相对预设角色的差异，还原时以新版预设为底：新的键已经是空值（null 或 ''），旧值仍要搬过去
+  const rename = (group, from, to) => {
+    if (!group || typeof group !== 'object' || !Object.hasOwn(group, from)) return;
+    if (group[to] === undefined || group[to] === null || group[to] === '') group[to] = group[from];
+    delete group[from];
+  };
+  if (psy && typeof psy === 'object') {
+    rename(psy.preg, 'bonding_value', 'acceptance_value');
+    rename(psy.preg, 'bonding_interpret', 'acceptance_interpret');
+    rename(psy.stageProfiles?.preg, 'bonding', 'acceptance');
+  }
+  for (const record of Array.isArray(profile?.cognitionRecords) ? profile.cognitionRecords : []) rename(record?.psychology, 'bonding', 'acceptance');
+  // 心理改随认知纪录变化，旧心理工具的每故事小时冷却不再使用
+  if (profile?.cooldown && typeof profile.cooldown === 'object') delete profile.cooldown.psychologyUpdateUsed;
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
   2: migrateCharacterV2ToV3,
@@ -302,6 +326,7 @@ const CHARACTER_MIGRATIONS = Object.freeze({
   9: migrateCharacterV6ToV7,
   10: migrateCharacterV10ToV11,
   12: migrateCharacterV12ToV13,
+  13: migrateCharacterV13ToV14,
 });
 
 export function getChatStateSchemaVersion(chatState) {

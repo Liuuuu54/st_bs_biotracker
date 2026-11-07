@@ -108,6 +108,12 @@ export const PSY_MENS_FIELDS = Object.freeze({
 
 export const PSY_MENS_BOOL_FIELDS = Object.freeze({});
 
+/** 六轴的短名：追踪页雷达、认知纪录的心理变化与工具回传共用 */
+export const PSY_AXIS_LABELS = Object.freeze({
+  mastery: '掌控', desire: '欲望', autonomy: '自主',
+  confidence: '信心', acceptance: '接受', stance: '展现',
+});
+
 export const PSY_PREG_FIELDS = Object.freeze({
   confidence: {
     definition: '对承担母职与养育孩子的信心，不代表产科知识、信息准确度或是否想再生。',
@@ -121,16 +127,16 @@ export const PSY_PREG_FIELDS = Object.freeze({
       '100_plus': { meaning: '超常笃定', performance: '对养育使命有强烈笃定，具体表现依角色，不赋予诊断能力。' }
     },
   },
-  bonding: {
-    definition: '对本次妊娠的接纳与腹中生命的情感联结；接受、爱胎儿与享受孕态可不一致。',
-    preview: '抗拒与疏离 -> 矛盾疏离 -> 责任式接纳 -> 建立联结 -> 珍惜与期待 -> 强烈投入',
+  acceptance: {
+    definition: '对这次怀孕本身的接受程度：想不想要它，从抗拒、犹豫到接受、期待。不是她和胎儿之间的感情（那是 fetuses[*].affinity），也不是享不享受孕态。',
+    preview: '坚决抗拒 -> 抗拒 -> 犹豫 -> 接受 -> 接纳期待 -> 全心接纳',
     stages: {
-      '0': { meaning: '抗拒与疏离', performance: '对本次妊娠抗拒或疏离，不因此推定未知怀孕、伤害胎儿或已决定终止。' },
-      '1_25': { meaning: '矛盾疏离', performance: '情感投入较少或心情矛盾，原因与行为需有角色及事件依据。' },
-      '26_50': { meaning: '责任式接纳', performance: '可以出于责任接纳，情感仍在形成；不自动等于决定留下孩子。' },
-      '51_75': { meaning: '建立联结', performance: '逐渐建立情感联结，也可对孕态或父方保持复杂态度。' },
-      '76_100': { meaning: '珍惜与期待', performance: '珍惜腹中生命并期待未来，不强制恋孕、延产或自我牺牲。' },
-      '100_plus': { meaning: '强烈投入', performance: '投入非常强烈；具体表达与选择依剧情，不默认希望永远怀孕。' }
+      '0': { meaning: '坚决抗拒', performance: '不接受这次怀孕，想结束它；会不会真的去做、怎么做，看剧情与处境，不能自行推定。' },
+      '1_25': { meaning: '抗拒', performance: '排斥这次怀孕，不对它表现保护；开始犹豫是不是真要结束。' },
+      '26_50': { meaning: '犹豫', performance: '在留下与结束之间摇摆，还没完全接受怀孕的事实，也还没做最终决定。' },
+      '51_75': { meaning: '接受', performance: '接受怀孕的事实，愿意留下并保护它；还谈不上期待结果。' },
+      '76_100': { meaning: '接纳期待', performance: '完全接受并期待这次怀孕，主动为生产与孩子做准备。' },
+      '100_plus': { meaning: '全心接纳', performance: '把这次怀孕当成眼下最重要的事；不默认恋孕、想延产或自我牺牲。' }
     },
   },
   stance: {

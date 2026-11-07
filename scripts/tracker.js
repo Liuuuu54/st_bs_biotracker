@@ -14,7 +14,7 @@ import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, reso
 import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
 import { applyToolCallsResult, describeBackSide, describeFetalPosition, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
-import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getFetalHarmFactor, getFetalHealthTier, labelFetalEventTarget } from './fetal_health.js';
+import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getPrenatalCareKey, PRENATAL_CARE_LEVELS, getFetalHarmFactor, getFetalHealthTier, labelFetalEventTarget } from './fetal_health.js';
 import {
   buildRecentMessages,
   buildSignature,
@@ -894,7 +894,6 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
   const psychologyEnabled = hasBreedingPsychology(existingState);
   const hiddenTools = new Set();
   if (!diaryEnabled) hiddenTools.add('bsWriteDiary');
-  if (!psychologyEnabled) hiddenTools.add('bsUpdatePsychology');
   // 胎位操作只对体内有胎儿的角色有意义；第三产程胎儿都生完了，仍要靠它推／休
   if (!hasAnyFetus(existingState) && !hasLaborEffortCharacter(existingState)) hiddenTools.add('bsAssistFetalPosition');
   if (!hasAnyFetus(existingState)) hiddenTools.add('bsFetalEvent');
@@ -1125,11 +1124,13 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
       ...(amnion.uniform === null ? {} : { amnionDurability: amnion.uniform }),
       ...(immune.metabolism ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
       ...(fetalEventWindow ? { fetalEvents: fetalEventWindow } : {}),
+      // 产前护理：设定过才送（文字），没设定就是一般
+      ...(pregnant.prenatalCare && getPrenatalCareKey(pregnant) === pregnant.prenatalCare ? { prenatalCare: PRENATAL_CARE_LEVELS[pregnant.prenatalCare].label } : {}),
       fetuses: visibleFetuses.map((fetus) => {
         const {
           embryoId: _embryoId, contactIds: _contactIds, contactMinutes: _contactMinutes, contactEmbryos: _contactEmbryos, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion,
           // 健康只送文字刻度，数值与见底旗标不外露
-          health: _health, healthMax: _healthMax, healthWarned: _healthWarned, healthWarnedAt: _healthWarnedAt, healthCollapsed: _healthCollapsed, spermQuality: _spermQuality,
+          health: _health, healthWarned: _healthWarned, healthWarnedAt: _healthWarnedAt, healthCollapsed: _healthCollapsed, spermQuality: _spermQuality,
           // 位置只送紧凑的文字摘要（positionText）；数值、解绑与阻塞旗标不外露
           descentStage: _descentStage, nestedReleased: _nestedReleased, backSide: _backSide,
           inletIntruder: _inletIntruder, shoulderDystocia: _shoulderDystocia, shoulderRelieved: _shoulderRelieved, ...visibleFetus

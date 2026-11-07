@@ -6291,6 +6291,92 @@
   font-size: 0.92em;
 }
 
+/* 钉选标记（胎儿事件与认知纪录共用）：文字符号，配色跟着主题走 */
+#bs-biotracker-settings .bs-bt-pin-mark {
+  margin-right: 0.3em;
+  font-variant-emoji: text;
+}
+
+/*
+ * 时间轴节点的形状：主题配色各异，不靠颜色区分。节点（li::after）与图例（.bs-bt-timeline-key）共用。
+ * 胎儿事件：伤害▲、照料●、亲近◆、疏离◇；认知纪录：感知●、猜测虚线○、告知□、检测■、诊察◆。
+ */
+#bs-biotracker-settings .bs-bt-timeline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 4px 0 6px;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+#bs-biotracker-settings .bs-bt-timeline-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-timeline-key {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: var(--bsbt-lcd-bg);
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-care::after,
+#bs-biotracker-settings .bs-bt-timeline-key.is-care,
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-method-perception::after,
+#bs-biotracker-settings .bs-bt-timeline-key.is-method-perception {
+  background: currentColor;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-harm::after,
+#bs-biotracker-settings .bs-bt-timeline-key.is-harm {
+  border: none;
+  border-radius: 0;
+  background: currentColor;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-harm::after {
+  width: 14px;
+  height: 14px;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-bonding::after,
+#bs-biotracker-settings .bs-bt-timeline-key.is-bonding,
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-method-prenatal::after,
+#bs-biotracker-settings .bs-bt-timeline-key.is-method-prenatal {
+  border-radius: 0;
+  background: currentColor;
+  transform: rotate(45deg) scale(0.85);
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-estrangement::after,
+#bs-biotracker-settings .bs-bt-timeline-key.is-estrangement {
+  border-radius: 0;
+  transform: rotate(45deg) scale(0.85);
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-method-guess::after,
+#bs-biotracker-settings .bs-bt-timeline-key.is-method-guess {
+  border-style: dashed;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-method-informed::after,
+#bs-biotracker-settings .bs-bt-timeline-key.is-method-informed {
+  border-radius: 0;
+}
+
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-method-test::after,
+#bs-biotracker-settings .bs-bt-timeline-key.is-method-test {
+  border-radius: 0;
+  background: currentColor;
+}
+
 /* 正被拉回另一方：进度那段画成斜纹 */
 #bs-biotracker-settings .bs-bt-derived-bar.is-flipping .bs-bt-derived-fill {
   background: repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 4px);

@@ -110,7 +110,8 @@ import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './script
 import { deleteLibraryEntry, importLibraryEntry, listLibraryEntries, saveEggToLibrary, saveSireToLibrary } from './scripts/character_library.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue, getEmbryoTypeReferenceText } from './scripts/prompts/rules.js';
-import { FETAL_EVENT_KINDS, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, normalizeFetalEventList } from './scripts/fetal_health.js';
+import { FETAL_EVENT_KINDS, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, describeCognitionSummary, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, getPrenatalCareKey, normalizeFetalEventList, PRENATAL_CARE_LEVELS } from './scripts/fetal_health.js';
+import { PSY_AXIS_LABELS } from './scripts/registry_psy_config.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
@@ -1468,17 +1469,13 @@ function loadSireIntoForm(ctx, name, prefill = null) {
   syncSireFutaLock(ctx);
 }
 
-// 拉杆与作弊勾选目前对应哪个名字：名字栏改成别人时要换掉，免得上一位的手动值套到新精方
+// 拉杆目前对应哪个名字：名字栏改成别人时要换掉，免得上一位的手动值套到新精方
 let sireControlsName = '';
 
-/** 精子品质、剑偏移拉杆与作弊勾选：已有档案且不是预设值时带出档案值，其余交给模型 */
+/** 精子品质、剑偏移拉杆：已有档案且不是预设值时带出档案值，其余交给模型。作弊开关在变量页的调试分页 */
 function applySireRecordToControls(record) {
   setOverrideSlider('bs-bt-sire-quality', record && record.spermQuality !== 1 ? record.spermQuality : null);
   setOverrideSlider('bs-bt-sire-sword', record && record.swordOffset ? record.swordOffset : null);
-  const alwaysPeak = document.getElementById('bs-bt-sire-always-peak');
-  if (alwaysPeak) alwaysPeak.checked = record?.alwaysPeak === true;
-  const fetalGuard = document.getElementById('bs-bt-sire-fetal-guard');
-  if (fetalGuard) fetalGuard.checked = record?.fetalGuard === true;
 }
 
 /** 精方分页的名字栏被改：换成另一个名字就照那人的档案（没有就交给模型）重设拉杆 */
@@ -1605,16 +1602,12 @@ async function registerSireFromForm(ctx) {
   const race = String(document.getElementById('bs-bt-register-race')?.value || '').trim() || '人类';
   const typedQuality = readOverrideSlider('bs-bt-sire-quality');
   const typedSword = readOverrideSlider('bs-bt-sire-sword');
-  // 作弊开关只看使用者勾选，不交给模型
-  const alwaysPeak = document.getElementById('bs-bt-sire-always-peak')?.checked === true;
-  const fetalGuard = document.getElementById('bs-bt-sire-fetal-guard')?.checked === true;
+  // 作弊开关不在注册页：重新注册保留档案原本的开关，到变量页的调试分页切换
   const previous = getSireRecord(chatState, name);
   if (Object.prototype.hasOwnProperty.call(chatState.characters || {}, name)) {
     const result = upsertSireRecord(chatState, name, {
       spermQuality: typedQuality ?? previous?.spermQuality ?? 1,
       swordOffset: typedSword ?? previous?.swordOffset ?? 0,
-      alwaysPeak,
-      fetalGuard,
     });
     if (!result.applied) return setSireStatus(result.message, true);
     finishSireRegistration(ctx, chatState, name, result);
@@ -1637,8 +1630,6 @@ async function registerSireFromForm(ctx) {
       bodySize: extracted.bodySize ?? current?.bodySize ?? prefill?.bodySize ?? null,
       spermQuality: typedQuality ?? extracted.spermQuality ?? current?.spermQuality ?? 1,
       swordOffset: typedSword ?? extracted.swordOffset ?? current?.swordOffset ?? 0,
-      alwaysPeak,
-      fetalGuard,
       isHere: extracted.isHere,
       // 天赋：技能系统关着时模型不判断（null），保留原本的
       ...(extracted.talents !== null ? { talents: extracted.talents } : {}),
@@ -4032,7 +4023,7 @@ function getPsychologyView(profile = {}) {
       title: '繁育心理',
       items: [
         { label: '信心', value: preg.confidence_value, prompt: preg.confidence_interpret || '未知／待推演' },
-        { label: '接纳联结', value: preg.bonding_value, prompt: preg.bonding_interpret || '' },
+        { label: '接受', value: preg.acceptance_value, prompt: preg.acceptance_interpret || '' },
         { label: '展现', value: preg.stance_value, prompt: preg.stance_interpret || '' },
       ],
       flags: [
@@ -4618,6 +4609,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
     description: {
       normalBlocks: parseDescriptionBlocks(descriptions.normalDescription, minutesPassed),
       cognitionRecords: profile.cognitionRecords || [],
+      cognitionEarlier: describeCognitionSummary(profile.cognitionSummary),
       psychology: hasBreedingPsychologyProfile(profile) ? getPsychologyView(profile) : null,
     },
     pregnancy: {
@@ -4653,6 +4645,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
         derivedInheritance: buildFetusDerivedInheritanceView(profile, fetus, intimacyRanking),
         harmBreakdown: getFetalHarmBreakdown(profile, fetus),
         guardedBy: chatState ? getGuardingSire(chatState, fetus) : '',
+        prenatalCare: getPrenatalCareKey(pregnant),
         // 标签在这里解析：推导需要承载者名字，渲染层拿不到
         tagLabels: getFetusTagLabels(deriveFetusTags(fetus, { carrierName: character?.name || '' })),
         positionText: describeFetalPosition(pregnant, fetus),
@@ -5230,7 +5223,6 @@ function buildFetalEventTimelineView(pregnant) {
       health.length ? `健康 ${health.map(signed).join('／')}` : '',
       affinity.length ? `亲和 ${affinity.map(signed).join('／')}` : '',
       Number(event.pressure) > 0 ? `宫压 +${formatFixedDisplay(event.pressure, 0)}` : '',
-      event.failed ? '安抚失败' : '',
     ].filter(Boolean).join('，');
     return {
       key: `${event.sequence ?? ''}:${event.time}:${event.kind}`,
@@ -5248,17 +5240,29 @@ function buildFetalEventTimelineView(pregnant) {
   return { events, earlier: describeFetalEventSummary(pregnant?.fetalEventSummary) };
 }
 
+/** 钉选标记：文字符号 ★（加 U+FE0E 固定文字呈现，不画成 emoji），颜色跟着主题走 */
+const PIN_BADGE_HTML = '<span class="bs-bt-pin-mark" title="钉选：每轮都送给追踪模型" aria-label="钉选">★︎</span>';
+
+/** 时间轴节点的图例：形状与 style.css 的 .bs-bt-timeline-key 同一套，不靠颜色区分 */
+function renderTimelineLegend(keys) {
+  return `<div class="bs-bt-timeline-legend" aria-hidden="true">${keys.map(([key, label]) => `<span class="bs-bt-timeline-legend-item"><span class="bs-bt-timeline-key ${key}"></span>${escapeHtml(label)}</span>`).join('')}</div>`;
+}
+
+const FETAL_EVENT_LEGEND = Object.freeze([['is-harm', '伤害'], ['is-care', '照料'], ['is-bonding', '亲近'], ['is-estrangement', '疏离']]);
+const COGNITION_LEGEND = Object.freeze([['is-method-perception', '感知'], ['is-method-guess', '猜测'], ['is-method-informed', '告知'], ['is-method-test', '检测'], ['is-method-prenatal', '诊察']]);
+
 function renderFetalEventTimeline(view) {
   const events = Array.isArray(view?.events) ? view.events : [];
   if (events.length === 0 && !view?.earlier) return '';
   const groupLabels = { harm: '伤害', care: '照料', affinity: '亲和' };
   return `<div class="bs-bt-track-section"><div class="bs-bt-track-section-title">胎儿事件</div>
     ${view.earlier ? `<div class="bs-bt-track-description-empty">${escapeHtml(view.earlier)}</div>` : ''}
+    ${renderTimelineLegend(FETAL_EVENT_LEGEND)}
     <div class="bs-bt-cognition-timeline" tabindex="0" role="region" aria-label="胎儿事件时间轴">
       <ol class="bs-bt-cognition-timeline-list">
-        ${events.map((item) => `<li class="bs-bt-cognition-timeline-stop bs-bt-fetal-event is-${escapeHtml(item.group)}${item.counted ? '' : ' is-uncounted'}">
-          <details class="bs-bt-track-card bs-bt-cognition-entry">
-            <summary class="bs-bt-track-card-title"><span>${item.pin ? '📌 ' : ''}${escapeHtml(item.time)} · ${escapeHtml(item.label)} · ${escapeHtml(item.target)}</span></summary>
+        ${events.map((item) => `<li class="bs-bt-cognition-timeline-stop bs-bt-fetal-event is-${escapeHtml(item.group)}${item.group === 'affinity' ? ` is-${escapeHtml(item.kind)}` : ''}${item.counted ? '' : ' is-uncounted'}">
+          <details class="bs-bt-track-card bs-bt-cognition-entry" data-timeline-entry="${escapeHtml(item.key)}">
+            <summary class="bs-bt-track-card-title"><span>${item.pin ? PIN_BADGE_HTML : ''}${escapeHtml(item.time)} · ${escapeHtml(item.label)} · ${escapeHtml(item.target)}</span></summary>
             <div class="bs-bt-track-card-note">${escapeHtml(item.content)}</div>
             <div class="bs-bt-track-card-note bs-bt-fetal-event-effect">${item.counted ? escapeHtml(item.effectText || groupLabels[item.group] || '') : `${escapeHtml(groupLabels[item.group] || '')}：当天同类已计，只留纪录`}</div>
           </details>
@@ -5281,12 +5285,12 @@ function renderFetusHealthMeter(item) {
   if (item?.pendingImplantation) return '';
   const ratio = getFetalHealthRatio(item);
   const tier = getFetalHealthTier(item);
-  const max = Number(item?.healthMax) || 100;
   const title = [
     `健康：${tier.label}${item?.healthWarned ? '（危急警告中：下次周结算仍见底就会中断妊娠）' : ''}`,
-    `${formatFixedDisplay(Number(item?.health) || 0, 1)}／${formatFixedDisplay(max, 1)}（先天上限）`,
-    '需求照料与胎儿事件会增减；没人照料也没人疏忽时慢慢回到一半',
+    `${formatFixedDisplay(Number(item?.health) || 0, 1)}／100`,
+    '需求照料与胎儿事件会增减；没人照料也没人疏忽时慢慢回到产前护理的目标',
     describeFetalHarmBreakdown(item?.harmBreakdown),
+    `产前护理：${PRENATAL_CARE_LEVELS[item?.prenatalCare]?.label || '一般'}（每周往 ${PRENATAL_CARE_LEVELS[item?.prenatalCare]?.target ?? 50} 拉回两成）`,
     item?.guardedBy ? `胎儿守护：父方${item.guardedBy}在场，健康每小时回复 2%，回到平稳为止` : '',
   ].filter(Boolean).join('\n');
   return `<span class="bs-bt-fetal-health is-${escapeHtml(tier.key)}${item?.healthWarned ? ' is-warned' : ''}" role="img" title="${escapeHtml(title)}" aria-label="${escapeHtml(`健康：${tier.label}`)}"><span class="bs-bt-fetal-health-fill" style="width:${Math.round(ratio * 100)}%"></span></span>`;
@@ -6070,49 +6074,67 @@ function openLineageWindow(ctx, centerName) {
   centerLineageCard(root);
 }
 
+/**
+ * 时间轴（认知纪录与胎儿事件）的卷动位置与展开的条目：追踪页会定时重绘，重绘前记下、重绘后套回，
+ * 读到一半的抽屉才不会自己收回去。同一个角色的几条时间轴按 aria-label 分开记。
+ */
 function rememberCognitionTimeline(content) {
-  const timeline = content?.querySelector('.bs-bt-cognition-timeline');
-  const owner = timeline?.dataset.cognitionOwner;
-  if (!owner || timeline.dataset.cognitionRestorePending || !timeline.getClientRects().length) return;
-  cognitionTimelineViews.set(owner, {
-    scrollTop: timeline.scrollTop,
-    expanded: new Set([...timeline.querySelectorAll('[data-cognition-record]')]
-      .filter((entry) => entry.open).map((entry) => entry.dataset.cognitionRecord)),
-  });
+  const timelines = [...(content?.querySelectorAll('.bs-bt-cognition-timeline') || [])];
+  for (const timeline of timelines) {
+    const owner = timeline.dataset.cognitionOwner;
+    if (!owner || timeline.dataset.cognitionRestorePending || !timeline.getClientRects().length) continue;
+    const views = cognitionTimelineViews.get(owner) || {};
+    views[timeline.getAttribute('aria-label') || ''] = {
+      scrollTop: timeline.scrollTop,
+      expanded: new Set([...timeline.querySelectorAll('[data-timeline-entry]')]
+        .filter((entry) => entry.open).map((entry) => entry.dataset.timelineEntry)),
+    };
+    cognitionTimelineViews.set(owner, views);
+  }
   while (cognitionTimelineViews.size > 50) cognitionTimelineViews.delete(cognitionTimelineViews.keys().next().value);
 }
 
 function restoreCognitionTimeline(content, owner) {
-  const timeline = content.querySelector('.bs-bt-cognition-timeline');
-  if (!timeline) return;
-  timeline.dataset.cognitionOwner = owner;
-  // A hidden page has no scroll range; restore only after setView makes it visible.
-  if (!timeline.getClientRects().length) {
-    timeline.dataset.cognitionRestorePending = 'true';
-    return;
+  for (const timeline of content.querySelectorAll('.bs-bt-cognition-timeline')) {
+    timeline.dataset.cognitionOwner = owner;
+    // A hidden page has no scroll range; restore only after setView makes it visible.
+    if (!timeline.getClientRects().length) {
+      timeline.dataset.cognitionRestorePending = 'true';
+      continue;
+    }
+    delete timeline.dataset.cognitionRestorePending;
+    const state = cognitionTimelineViews.get(owner)?.[timeline.getAttribute('aria-label') || ''];
+    const entries = [...timeline.querySelectorAll('[data-timeline-entry]')];
+    entries.forEach((entry) => { entry.open = state?.expanded.has(entry.dataset.timelineEntry) ?? false; });
+    timeline.scrollTop = state?.scrollTop || 0;
+    timeline.addEventListener('scroll', () => {
+      if (timeline.isConnected) rememberCognitionTimeline(content);
+    }, { passive: true });
+    entries.forEach((entry) => entry.addEventListener('toggle', () => {
+      if (entry.isConnected) rememberCognitionTimeline(content);
+    }));
   }
-  delete timeline.dataset.cognitionRestorePending;
-  const state = cognitionTimelineViews.get(owner);
-  const entries = [...timeline.querySelectorAll('[data-cognition-record]')];
-  entries.forEach((entry) => { entry.open = state?.expanded.has(entry.dataset.cognitionRecord) ?? false; });
-  timeline.scrollTop = state?.scrollTop || 0;
-  timeline.addEventListener('scroll', () => {
-    if (timeline.isConnected) rememberCognitionTimeline(content);
-  }, { passive: true });
-  entries.forEach((entry) => entry.addEventListener('toggle', () => {
-    if (entry.isConnected) rememberCognitionTimeline(content);
-  }));
 }
 
-function renderCognitionTimeline(records) {
-  if (!records.length) return '<div class="bs-bt-track-description-empty">暂无认知纪录；不代表角色相信未孕。</div>';
+/** 认知纪录附带的心理变化：「心理：接纳联结 +5、信心 −2」 */
+function describeCognitionPsychology(effects) {
+  const entries = Object.entries(effects && typeof effects === 'object' ? effects : {}).filter(([, delta]) => Number(delta));
+  if (entries.length === 0) return '';
+  return `心理：${entries.map(([field, delta]) => `${PSY_AXIS_LABELS[field] || field} ${Number(delta) > 0 ? '+' : '−'}${Math.abs(Number(delta))}`).join('、')}`;
+}
+
+function renderCognitionTimeline(records, earlier = '') {
+  if (!records.length && !earlier) return '<div class="bs-bt-track-description-empty">暂无认知纪录；不代表角色相信未孕。</div>';
   const methodLabels = { test: '检测', prenatal: '诊察', perception: '感知', informed: '告知', guess: '猜测' };
-  return `<div class="bs-bt-cognition-timeline" tabindex="0" role="region" aria-label="认知纪录时间轴">
+  return `${earlier ? `<div class="bs-bt-track-description-empty">${escapeHtml(earlier)}</div>` : ''}
+  ${renderTimelineLegend(COGNITION_LEGEND)}
+  <div class="bs-bt-cognition-timeline" tabindex="0" role="region" aria-label="认知纪录时间轴">
     <ol class="bs-bt-cognition-timeline-list">
-      ${records.map((item, index) => `<li class="bs-bt-cognition-timeline-stop">
-        <details class="bs-bt-track-card bs-bt-cognition-entry" data-cognition-record="${escapeHtml(JSON.stringify([item.id ?? null, item.sequence ?? index, item.time, item.method]))}">
-          <summary class="bs-bt-track-card-title"><span>${escapeHtml(item.time)} · ${escapeHtml(methodLabels[item.method] || item.method)}</span></summary>
+      ${records.map((item, index) => `<li class="bs-bt-cognition-timeline-stop is-method-${escapeHtml(item.method)}">
+        <details class="bs-bt-track-card bs-bt-cognition-entry" data-timeline-entry="${escapeHtml(JSON.stringify([item.id ?? null, item.sequence ?? index, item.time, item.method]))}">
+          <summary class="bs-bt-track-card-title"><span>${item.pin ? PIN_BADGE_HTML : ''}${escapeHtml(item.time)} · ${escapeHtml(methodLabels[item.method] || item.method)}</span></summary>
           <div class="bs-bt-track-card-note">${escapeHtml(item.content)}</div>
+          ${describeCognitionPsychology(item.psychology) ? `<div class="bs-bt-track-card-note bs-bt-fetal-event-effect">${escapeHtml(describeCognitionPsychology(item.psychology))}</div>` : ''}
         </details>
       </li>`).join('')}
     </ol>
@@ -6137,7 +6159,7 @@ function renderTrackDiary(viewModel) {
   return `
     ${viewModel.description?.psychology ? renderTrackPsychology(viewModel) : ''}
     <div class="bs-bt-track-section"><div class="bs-bt-track-section-title">认知纪录</div>
-      ${renderCognitionTimeline(viewModel.description?.cognitionRecords || [])}
+      ${renderCognitionTimeline(viewModel.description?.cognitionRecords || [], viewModel.description?.cognitionEarlier || '')}
     </div>
     ${diaryEnabled ? renderCardCarouselSection(
       '日记',
@@ -7613,7 +7635,7 @@ function renderTrackSirePage(chatState) {
         : [metaRow('体型', formatCharacterBodySizeLabel(base || {}))]),
       ...(formatAltFormBodySizeLabel(base || {}) ? [metaRow('变化态体型', formatAltFormBodySizeLabel(base || {}))] : []),
       ...renderSireQualityRows(chatState, name, record, metaRow),
-      ...(record.fetalGuard ? [metaRow('胎儿守护', '作弊开启', '在场（母体也在场）时，他的胎儿健康每小时回复 2%，回到平稳为止。到注册页的精方分页取消勾选即可关闭')] : []),
+      ...(record.fetalGuard ? [metaRow('胎儿守护', '作弊开启', '在场（母体也在场）时，他的胎儿健康每小时回复 2%，回到平稳为止。到变量页这位精方的调试分页关闭')] : []),
       // 天赋：会有 25% 先天遗传给孩子；扶她读卵方
       metaRow('天赋', (isFuta ? normalizeTalentList(chatState.characters[name]?.profile?.talents) : (record.talents || []))
         .filter((talent) => talent.level !== 0)
@@ -7680,7 +7702,7 @@ function renderSireCycleSections(chatState, name) {
     return `
     <div class="bs-bt-track-section bs-bt-track-stage-progress">
       <div class="bs-bt-track-section-title bs-bt-track-section-title--split"><span class="bs-bt-track-title-left">${renderTrackTitle('周期与存量')}</span><span class="bs-bt-track-title-badge">作弊·品质锁定</span></div>
-      <div class="bs-bt-track-description-empty">精子品质恒等于档案值，不受繁殖季、精力周期、存量与禁欲影响。到注册页的精方分页取消勾选即可关闭。</div>
+      <div class="bs-bt-track-description-empty">精子品质恒等于档案值，不受繁殖季、精力周期、存量与禁欲影响。到变量页这位精方的调试分页关闭。</div>
     </div>`;
   }
   const badge = state.inSeason === null ? '全年可育' : state.inSeason ? '繁殖季' : '非繁殖季';
@@ -8085,12 +8107,11 @@ function updateFullStateControls(ctx) {
 
 function updateFullStateSubpage() {
   if (!FULL_STATE_SUBPAGES.includes(selectedFullStateSubpage)) selectedFullStateSubpage = 'variables';
-  const isSire = selectedFullStateKind === 'sire';
-  if (isSire && selectedFullStateSubpage === 'debug') selectedFullStateSubpage = 'variables';
+  // 精方的调试分页只有作弊开关
   const debugTab = document.querySelector('#bs-bt-full-state-tabs [data-full-state-tab="debug"]');
-  if (debugTab) debugTab.hidden = isSire;
+  if (debugTab) debugTab.hidden = false;
   const tabRow = document.getElementById('bs-bt-full-state-tabs');
-  if (tabRow) tabRow.style.gridTemplateColumns = `repeat(${isSire ? 2 : 3}, minmax(0, 1fr))`;
+  if (tabRow) tabRow.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
   const hasSelectedCharacter = Boolean(selectedFullStateName);
   const tabs = document.getElementById('bs-bt-full-state-tabs');
   const varsPanel = document.getElementById('bs-bt-full-state-vars-panel');
@@ -8490,9 +8511,43 @@ function showFullStateSire(ctx, name) {
   }
   selectedFullStateName = name;
   selectedFullStateKind = 'sire';
-  if (selectedFullStateSubpage === 'debug') selectedFullStateSubpage = 'variables';
   renderFullStatePage(ctx);
   setView('full-state');
+}
+
+/** 精方的作弊开关（只有使用者能切，模型不会判断）；与卵方的免疫开关同一种按钮 */
+const SIRE_CHEATS = Object.freeze([
+  { key: 'alwaysPeak', label: '品质锁定', title: '作弊：当下精子品质恒等于档案品质，不受繁殖季、精力周期、存量与禁欲影响。要改品质就到变量分页改档案' },
+  { key: 'fetalGuard', label: '胎儿守护', title: '作弊：这位精方在场（母体也在场）时，他的胎儿健康每小时回复 2%，回到平稳为止；不会让胎儿长得更大。嵌合胎有一位父方在场就算' },
+]);
+
+function renderSireDebug(record) {
+  const buttons = SIRE_CHEATS.map(({ key, label, title }) => `
+        <button type="button" class="bs-bt-track-debug-button${record?.[key] ? ' is-active' : ''}" data-debug-sire-cheat="${key}" title="${escapeHtml(title)}">
+          <span class="bs-bt-track-debug-title">${label}</span>
+          <span class="bs-bt-track-debug-state">${record?.[key] ? 'ON' : 'OFF'}</span>
+        </button>`).join('');
+  return `
+    <div class="bs-bt-track-section">
+      <div class="bs-bt-track-section-title">作弊</div>
+      <div class="bs-bt-track-debug-list">${buttons}
+      </div>
+    </div>`;
+}
+
+function toggleSireCheat(ctx, name, key) {
+  if (!SIRE_CHEATS.some((cheat) => cheat.key === key)) return;
+  const chatState = getChatState(ctx, getSettings(ctx));
+  const record = getSireRecord(chatState, name);
+  if (!record) return;
+  const nextValue = record[key] !== true;
+  chatState.sires[name] = normalizeSireRecord({ ...record, [key]: nextValue }, Number(chatState.minutesPassed) || 0);
+  recordChatStateSnapshot(ctx, chatState, { reason: `debug_sire_${key}` });
+  saveSettings(ctx);
+  renderStatusPanel(ctx);
+  renderFullStatePage(ctx);
+  updateMainFlowPrompt(ctx);
+  globalThis.toastr?.success?.(`[BS BioTracker] ${name} 的${SIRE_CHEATS.find((cheat) => cheat.key === key).label}已${nextValue ? '开启' : '关闭'}`);
 }
 
 function deleteFullStateSire(ctx, name) {
@@ -8780,7 +8835,12 @@ function renderFullStatePage(ctx) {
   if (selectedFullStateKind === 'sire' && selectedFullStateName) {
     output.value = getFullStateEditorText(getSireRecord(chatState, selectedFullStateName));
     setFullStateEditStatus('精方档案：可直接编辑 JSON，应用时会正规化，格式不对的栏位改回预设。');
-    if (debugPanel) debugPanel.innerHTML = '';
+    if (debugPanel) {
+      const sireName = selectedFullStateName;
+      debugPanel.innerHTML = renderSireDebug(getSireRecord(chatState, sireName));
+      debugPanel.querySelectorAll('[data-debug-sire-cheat]').forEach((node) =>
+        node.addEventListener('click', () => toggleSireCheat(ctx, sireName, String(node.dataset.debugSireCheat || ''))));
+    }
   } else if (selectedFullStateName && chatState.characters[selectedFullStateName]) {
     const current = chatState.characters[selectedFullStateName];
     selectedTrackName = selectedFullStateName;
@@ -8952,8 +9012,8 @@ function setView(view) {
   document.querySelectorAll('#bs-biotracker-settings .bs-bt-view').forEach((node) => node.classList.toggle('is-active', node.dataset.view === next));
   if (next === 'track-char') {
     const content = document.getElementById('bs-bt-track-content');
-    const timeline = content?.querySelector('.bs-bt-cognition-timeline');
-    if (timeline?.dataset.cognitionRestorePending) restoreCognitionTimeline(content, timeline.dataset.cognitionOwner);
+    const timeline = content?.querySelector('.bs-bt-cognition-timeline[data-cognition-restore-pending]');
+    if (timeline) restoreCognitionTimeline(content, timeline.dataset.cognitionOwner);
   }
   if (next === 'help') {
     const viewport = document.getElementById('bs-bt-viewport');

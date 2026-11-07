@@ -13,7 +13,7 @@ import { buildRecordNotesSystemPrompt } from '../scripts/prompts/rules.js';
 const REAL_FETCH = globalThis.fetch;
 afterEach(() => { globalThis.fetch = REAL_FETCH; });
 
-const fetus = (embryoId) => ({ embryoId, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight: 1, tendencyAngle: 0, affinity: 0, healthMax: 100, health: 50 });
+const fetus = (embryoId) => ({ embryoId, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight: 1, tendencyAngle: 0, affinity: 0, health: 50 });
 
 function setup(settings = { fetalEventCap: 10, fetalEventWindow: 2, recordPinCap: 2, cognitionCap: 10, cognitionWindow: 2 }) {
   const chatState = state.createEmptyChatState();

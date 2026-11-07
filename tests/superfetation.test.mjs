@@ -75,7 +75,7 @@ test('胎重按落后进度打折，且乘在既有的种族混血偏移之上',
   armSperm(chatState);
   step(chatState);
   const late = lateOf(chatState);
-  // 1.2.5 起受精胎重只剩性别与体型系数（时机与天生变异移到健康上限）：
+  // 1.3.0 起受精胎重只剩性别与体型系数（时机与天生变异移到健康上限）：
   // 性别为男 ×1.05，同族的 weightRatio 为 1.0；再乘上异期折扣 (1 − 落后/280)²
   const penalty = (1 - (late.conceivedAtDays / 280)) ** 2;
   const expected = 1.05 * penalty;

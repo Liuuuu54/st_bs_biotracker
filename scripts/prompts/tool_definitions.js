@@ -206,7 +206,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsRecordExperience',
-    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。cognition 需 method、content：只记角色感知、猜测、被告知或检查解读，允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她自己心里认定的父亲，可以是未注册人物，null 取消，省略保留；认定可以与真相不符。对外说法与心里认定不同时（谎称、隐瞒），selectedFather 仍记心里的认定，对外怎么说写进 content，例如「她心里认定是乙的，却对甲谎称是甲的」；心里认定改变（独自想通、起疑、改认）也用 claim 记，不改用 cognition。不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知纪录较多时只会送你最近几条、钉选的条目与一行更早纪录的摘要；重要的认知（确认怀孕、得知胎父、胎数）记得传 pin=true。认知实际进月经刷新，关系、孩子与胎父认定长期保留。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
+    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。cognition 需 method、content：记角色感知、猜测、被告知或检查解读，也记她对生殖、性与母职的心境转变（附 psychology），允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她自己心里认定的父亲，可以是未注册人物，null 取消，省略保留；认定可以与真相不符。对外说法与心里认定不同时（谎称、隐瞒），selectedFather 仍记心里的认定，对外怎么说写进 content，例如「她心里认定是乙的，却对甲谎称是甲的」；心里认定改变（独自想通、起疑、改认）也用 claim 记，不改用 cognition。不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知纪录较多时只会送你最近几条、钉选的条目与一行更早纪录的摘要。认知实际进月经刷新，关系、孩子与胎父认定长期保留。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
     input_schema: {
       type: 'object',
       properties: {
@@ -217,7 +217,14 @@ export const TOOL_DEFINITIONS = Object.freeze([
         content: { type: 'string', minLength: 1 }, partner: { type: 'string', minLength: 1 },
         childIndex: { type: 'integer', minimum: 0 }, fetusIndex: { type: 'integer', minimum: 0 }, name: { type: 'string', minLength: 1 },
         selectedFather: { type: ['string', 'null'], minLength: 1 },
-        pin: { type: 'boolean', description: '只用于 cognition：这条认知重要、之后每轮都该看到时传 true：确认或否认怀孕、得知胎数、胎儿性别、胎父、预产期、诊断与医嘱，或推翻她先前的重要信念。钉选有上限，超过时保留最新的。' },
+        pin: { type: 'boolean', description: '只用于 cognition：之后每轮都该看到的重要认知传 true：确认或否认怀孕、得知胎数、性别、胎父、预产期、诊断与医嘱，或推翻她先前的重要信念。' },
+        psychology: {
+          type: 'object',
+          description: '只用于 cognition，有繁育心理（psychology）时才给：这件事让她的心理怎么变，每轴给程度 slight／significant／severe 加 _increase／_decrease（约 2／5／10 点）。只能动当前这一侧：未孕 mastery、desire、autonomy，妊娠（含假孕、产兆、产程）confidence、acceptance、stance。acceptance 只看她想不想要这次怀孕；她和胎儿之间的亲近疏离用 bsFetalEvent 记，不是这一轴。同一轴同一个故事日只算一次。没有值得记下的经历就不要动心理，也不要为了调数值硬写认知。',
+          properties: { mastery: { type: 'string', enum: [...FETAL_EVENT_CHANGES] }, desire: { type: 'string', enum: [...FETAL_EVENT_CHANGES] }, autonomy: { type: 'string', enum: [...FETAL_EVENT_CHANGES] }, confidence: { type: 'string', enum: [...FETAL_EVENT_CHANGES] }, acceptance: { type: 'string', enum: [...FETAL_EVENT_CHANGES] }, stance: { type: 'string', enum: [...FETAL_EVENT_CHANGES] } },
+          additionalProperties: false,
+        },
+        prenatalCare: { type: 'string', enum: ['neglect', 'normal', 'attentive'], description: '只用于 cognition，她知道或相信自己怀孕后才给：之后整体怎么养胎（饮食、作息、休养、产检）。attentive 用心；normal 照常过日子；neglect 不在乎、排斥或顾不上（酗酒熬夜、拼命干活、想拿掉）。态度改变时随那条认知给，没变不重复给。镜头内具体的伤害与照料仍用 bsFetalEvent。' },
       },
       required: ['female', 'action', 'time'], additionalProperties: false,
     },
@@ -248,42 +255,6 @@ export const TOOL_DEFINITIONS = Object.freeze([
         reason: { type: 'string' },
       },
       required: ['female', 'skill', 'skillExp', 'reason'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'bsUpdatePsychology',
-    description: '按当前阶段更新单一角色的心理倾向数值。月经阶段使用 mens，妊娠/假孕/产兆前驱/产程使用 preg。系统会自动重算 *_interpret。每名角色在每个新小时内最多成功更新一次；在 bsPassedTime 推进满下一小时之前，重复调用会被跳过。注意：数值字段传入的是“变化量(delta)”而不是目标值，例如当前 stance_value=78，传入 {"preg":{"stance":2}} 会变成 80，而不是设为 2。建议一次只调整一个心理项，且尽量小幅变动；单次以 ±1 到 ±3 为宜，±5 已属于偏大变化。布林字段则是直接设为 true/false。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        female: { type: 'string' },
-        options: {
-          type: 'object',
-          properties: {
-              mens: {
-                type: 'object',
-                properties: {
-                  mastery: { type: 'number' },
-                  desire: { type: 'number' },
-                  autonomy: { type: 'number' },
-                },
-                additionalProperties: false,
-              },
-              preg: {
-                type: 'object',
-                properties: {
-                  confidence: { type: 'number' },
-                  bonding: { type: 'number' },
-                  stance: { type: 'number' },
-                },
-                additionalProperties: false,
-              },
-          },
-          additionalProperties: false,
-        },
-      },
-      required: ['female', 'options'],
       additionalProperties: false,
     },
   },
@@ -516,16 +487,15 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsFetalEvent',
-    description: '记一件影响腹中胎儿的事，一次呼叫记一件。剧情明确写到才用；吃、睡、排泄等需求照料系统已自动计入胎儿健康，不要再记。'
-      + 'kind：亲和，母胎亲密度：bonding 亲近（母体抚摸、哼歌、说话、胎教，胎儿回应、安静下来）、estrangement 疏离（母体排斥、厌恶、拒绝这一胎，胎儿对她排斥、不安乱动）；'
-      + '伤害，胎儿健康减少：substance 有害物质（酒、药物、毒）、trauma 腹部外伤、overexertion 过劳或剧烈运动、illness 生病发烧、curse 诅咒或腐化、other_harm 其他伤害；'
-      + '照料，胎儿健康增加、不超过先天上限：medicine 安胎药或补品、checkup 产检治疗、rest 充分休养、blessing 祝福或治疗魔法、other_care 其他照料。'
-      + 'change 只看程度 slight／significant／severe（亲近、照料一律加，疏离、伤害一律减，increase 或 decrease 都可）。母体心烦意乱、安抚不了时照剧情记疏离或不记。毒物、生病、诅咒在孕早期伤得最重，外伤、过劳在孕晚期伤得最重，且另加宫压，可能引来流产或早产的风险警告。'
-      + '程度按这对母胎的种族特性与世界设定判断实际伤害，不按人类常识：对该族无害的不记（矮人照常豪饮、火系胎儿不怕高温、亡灵不怕寒冷），对该族格外致命的提高程度（魔族遇圣水、狼人遇银）；经母体传给胎儿的（毒物、药物、疾病）两边的种族都要看。'
-      + 'fetusIndex 按目前可见的 fetuses 顺序从 0 起算；省略时伤害与照料作用于全部已着床的胎儿，亲和作用于随机一胎。角色不知道自己怀孕也照样结算，叙事照认知规则。'
-      + '防刷：同一天同一 kind 只结算一次，第二次只留纪录；亲和与照料在 7 天内重复会递减；每胎每天亲和最多 ±2（延产期 ±4）、照料最多 +10；伤害不递减。'
-      + 'time 为故事日期，写法同认知纪录；content 一句白描，例如「她不知道自己怀孕，在酒馆喝了半夜」。pin=true 表示这件事重要、之后每轮都该看到（例如中了诅咒、确诊重病），钉选有上限，超过时保留最新的。'
-      + '健康见底不会立刻流产：周结算先警告，下一周仍见底才流产、多胎时那一胎被吸收，孕晚期起改为早产。',
+    description: '记一件剧情明确写到、影响腹中胎儿的事，一次一件；吃、睡、排泄等需求照料系统已自动计入，不要记。'
+      + 'kind——亲和：bonding 亲近（抚摸、哼歌、说话、胎教，胎儿回应或安静下来）、estrangement 疏离（母体排斥、拒绝这一胎，或胎儿对她排斥、不安乱动；安抚不了照剧情记疏离或不记）；'
+      + '伤害：substance 酒、药物、毒，trauma 腹部外伤，overexertion 过劳或剧烈运动，illness 生病，curse 诅咒或腐化，other_harm 其他；'
+      + '照料：medicine 安胎药或补品，checkup 产检治疗，rest 休养，blessing 祝福或治疗魔法，other_care 其他。'
+      + 'change 只看程度 slight／significant／severe，方向由 kind 决定（increase、decrease 都可）。毒物、生病、诅咒孕早期最重；外伤、过劳孕晚期最重，另加宫压。'
+      + '程度按母胎双方的种族与世界设定判断，不按人类常识：对该族无害的不记（矮人照常豪饮、火系胎儿不怕高温），格外致命的加重（魔族遇圣水、狼人遇银）。'
+      + 'fetusIndex 按可见的 fetuses 从 0 起算；省略时伤害与照料作用于全部胎儿，亲和作用于随机一胎。角色不知道自己怀孕也照样结算。'
+      + '同一天同一 kind 只结算一次；亲和与照料 7 天内重复会递减，每胎每天亲和最多 ±2、照料最多 +10。'
+      + 'time 为故事日期；content 一句白描，例如「她不知道自己怀孕，在酒馆喝了半夜」；pin=true 用于之后每轮都该看到的大事（中了诅咒、确诊重病）。',
     input_schema: {
       type: 'object',
       properties: {
@@ -537,7 +507,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         content: { type: 'string', minLength: 1 },
         pin: { type: 'boolean' },
       },
-      required: ['female', 'time', 'kind', 'content'],
+      required: ['female', 'time', 'kind', 'change', 'content'],
       additionalProperties: false,
     },
   },

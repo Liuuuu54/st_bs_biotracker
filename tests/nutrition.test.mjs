@@ -1,6 +1,6 @@
 // 需求照料的点数：在「高」处理到「无」+1，拖到「爆」−1、停在爆每满 24 小时再 −1，「满」中性。
 // 点数按种族归一化（需求项数、加分再除以 1+fetalEnergyDrain），计分当下按各胎孕龄与位置拆给每胎，
-// 换成胎儿健康（1.2.5）：加分 × FETAL_CARE_GAIN_SCALE、扣分 × FETAL_CARE_LOSS_SCALE，再乘孕速与该胎上限 / 100。
+// 换成胎儿健康（1.3.0）：加分 × FETAL_CARE_GAIN_SCALE、扣分 × FETAL_CARE_LOSS_SCALE，再乘孕速与该胎上限 / 100。
 // 每周按健康换算胎重、再往上限一半回归。旧的妊娠症状扣分与母胎互动已移除；需求免疫时健康冻结。
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';

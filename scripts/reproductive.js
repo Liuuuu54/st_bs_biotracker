@@ -3,6 +3,10 @@ import { RECORD_LIMIT_DEFAULTS, normalizeRecordLimits, compactCognitionRecords }
 
 export const COGNITION_METHODS = Object.freeze(['perception', 'guess', 'informed', 'test', 'prenatal']);
 export const EXPERIENCE_ACTIONS = Object.freeze(['cognition', 'date', 'breakup', 'marry', 'divorce', 'child', 'claim']);
+/** 产前护理三档（数值与说明见 fetal_health.js 的 PRENATAL_CARE_LEVELS） */
+export const PRENATAL_CARE_KEYS = Object.freeze(['neglect', 'normal', 'attentive']);
+/** 认知纪录附带的心理变化：每轴一个程度（与胎儿事件同一套写法） */
+const PSY_SHIFT_PATTERN = /^(slight|significant|severe)_(increase|decrease)$/;
 export const REPRODUCTIVE_DEFAULTS = Object.freeze({
   condomCapacity: 50, condomReliability: 0.95,
   emergencyEffectiveness: 0.8,
@@ -16,7 +20,7 @@ export const REPRODUCTIVE_DEFAULTS = Object.freeze({
   intimacyHalfLifeDays: 90, intimacyBaseline: 3, intimacyDedupeHours: 6,
   // 精方存量（1.2.4）：射精后存量回复的半衰期（人类，再乘物种经期倍率）、每次射精耗掉的比例
   sireReserveHalfLifeHours: 12, sireReserveDrain: 0.4,
-  // 纪录堆（1.2.5）：胎儿事件与认知纪录的保存上限、每轮送出几条、钉选上限；角色多的卡调小
+  // 纪录堆（1.3.0）：胎儿事件与认知纪录的保存上限、每轮送出几条、钉选上限；角色多的卡调小
   ...RECORD_LIMIT_DEFAULTS,
 });
 
@@ -125,7 +129,11 @@ function recordPaternityClaim(target, args, time, source, minutesPassed) {
   return true;
 }
 
-export function recordExperience(chatState, args, source = '', { resolveFetus = (fetuses, index) => fetuses[index] } = {}) {
+/**
+ * shiftPsychology(profile, shifts, today, records) 由工具层提供：在 profile 上套用心理变化，
+ * 回传 { effects: {轴: 实际变化}, notes: [没套用的原因] }。没提供时 psychology 参数一律不套用。
+ */
+export function recordExperience(chatState, args, source = '', { resolveFetus = (fetuses, index) => fetuses[index], shiftPsychology = null } = {}) {
   const fail = (message) => ({ applied: false, message: `bsRecordExperience skipped: ${message}` });
   if (typeof args?.female !== 'string' || !args.female.trim()) return fail('female 必填。');
   const female = args.female.trim();
@@ -133,7 +141,7 @@ export function recordExperience(chatState, args, source = '', { resolveFetus = 
   if (!character) return fail('未知角色。');
   const { action, time } = args;
   if (!EXPERIENCE_ACTIONS.includes(action) || typeof time !== 'string' || !time.trim()) return fail('action 或 time 无效。');
-  const fields = action === 'cognition' ? ['method', 'content', 'pin']
+  const fields = action === 'cognition' ? ['method', 'content', 'pin', 'prenatalCare', 'psychology']
     : action === 'child' ? ['childIndex', 'name']
       : action === 'claim' ? ['fetusIndex', 'childIndex', 'content', 'selectedFather'] : ['partner'];
   const allowed = new Set(['female', 'action', 'time', ...fields]);
@@ -141,6 +149,14 @@ export function recordExperience(chatState, args, source = '', { resolveFetus = 
   const nonempty = (x) => typeof x === 'string' && x.trim().length > 0;
   if (action === 'cognition' && (!COGNITION_METHODS.includes(args.method) || !nonempty(args.content))) return fail('method 或 content 无效。');
   if (action === 'cognition' && Object.hasOwn(args, 'pin') && typeof args.pin !== 'boolean') return fail('pin 须为布尔值。');
+  if (action === 'cognition' && Object.hasOwn(args, 'prenatalCare') && !PRENATAL_CARE_KEYS.includes(args.prenatalCare)) return fail('prenatalCare 须为 neglect、normal 或 attentive。');
+  if (action === 'cognition' && Object.hasOwn(args, 'psychology')) {
+    const shifts = args.psychology;
+    if (!shifts || typeof shifts !== 'object' || Array.isArray(shifts) || Object.keys(shifts).length === 0
+      || Object.values(shifts).some((x) => !PSY_SHIFT_PATTERN.test(String(x)))) {
+      return fail('psychology 须为 {轴: slight/significant/severe 加 _increase/_decrease}。');
+    }
+  }
   if (!['cognition', 'child', 'claim'].includes(action) && !nonempty(args.partner)) return fail('partner 必填。');
   if (action === 'child') {
     if (!Number.isInteger(args.childIndex) || !character.profile?.children?.[args.childIndex] || args.childIndex < 0) return fail('childIndex 无效。');
@@ -159,14 +175,33 @@ export function recordExperience(chatState, args, source = '', { resolveFetus = 
   const next = JSON.parse(JSON.stringify(character));
   const profile = next.profile;
   const minutesPassed = Math.max(0, Number(chatState.minutesPassed) || 0);
+  let careSkipped = false;
+  let psychologyNotes = [];
+  let psychologyEffects = {};
   if (action === 'cognition') {
     profile.cognitionRecords = normalizeCognitionRecords(profile.cognitionRecords);
     if (source && profile.cognitionRecords.some((x) => x.source === source)) return { applied: false, unchanged: true, message: '认知来源已记录。' };
     const sequence = (profile.cognitionRecords.at(-1)?.sequence || 0) + 1;
+    const storyDayIndex = Math.floor(minutesPassed / 1440);
+    // 心理变化随这条认知一起套用：同一轴同一个故事日只算一次，按这一侧的三轴检查
+    if (Object.hasOwn(args, 'psychology')) {
+      const result = typeof shiftPsychology === 'function'
+        ? shiftPsychology(profile, args.psychology, storyDayIndex, profile.cognitionRecords)
+        : { effects: {}, notes: ['心理变化不可用'] };
+      psychologyEffects = result.effects || {};
+      psychologyNotes = result.notes || [];
+    }
     profile.cognitionRecords.push({ id: `${profile.cognitionCycle || 0}:${sequence}`, sequence, source: source || 'manual',
-      time: time.trim(), method: args.method, content: args.content.trim(), minutesPassed, storyDayIndex: Math.floor(minutesPassed / 1440),
-      ...(args.pin === true ? { pin: true } : {}) });
+      time: time.trim(), method: args.method, content: args.content.trim(), minutesPassed, storyDayIndex,
+      ...(args.pin === true ? { pin: true } : {}),
+      ...(Object.keys(psychologyEffects).length > 0 ? { psychology: psychologyEffects } : {}) });
     compactCognitionRecords(profile, chatState.reproductiveSettings);
+    // 产前护理跟着这次妊娠：没有已着床的胎儿（还没着床、误以为怀孕）时只记认知
+    if (Object.hasOwn(args, 'prenatalCare')) {
+      const implanted = (Array.isArray(profile.pregnant?.fetuses) ? profile.pregnant.fetuses : []).some((x) => x && !x.pendingImplantation);
+      if (implanted) profile.pregnant.prenatalCare = args.prenatalCare;
+      else careSkipped = true;
+    }
     const psy = profile.psychology;
     const side = psychologySide(profile.base?.stage);
     if (psy?.enabled && side && Object.values(psy[side] || {}).some((x) => x === null)) {
@@ -192,7 +227,9 @@ export function recordExperience(chatState, args, source = '', { resolveFetus = 
     profile.experience[field] = add ? [...profile.experience[field], partner] : profile.experience[field].filter((x) => x !== partner);
   }
   chatState.characters[female] = next;
-  return { applied: true, message: action === 'cognition' ? '认知已记录；不代表内容客观正确。' : action === 'child' ? '孩子资料已更新。'
+  const psychologyText = Object.keys(psychologyEffects).length > 0
+    ? `心理变化：${Object.entries(psychologyEffects).map(([field, delta]) => `${field} ${delta > 0 ? '+' : ''}${delta}`).join('、')}。` : '';
+  return { applied: true, message: action === 'cognition' ? `认知已记录；不代表内容客观正确。${careSkipped ? '目前没有已着床的胎儿，prenatalCare 没有记下。' : ''}${psychologyText}${psychologyNotes.length > 0 ? `心理没有套用：${psychologyNotes.join('；')}。` : ''}` : action === 'child' ? '孩子资料已更新。'
     : action === 'claim' ? '胎父认定已记录；不改遗传父方，也不代表任何人知道真相。' : '关系已更新。' };
 }
 

@@ -413,7 +413,7 @@ export function normalizeCharacterPsychologyState(characterState) {
   if (characterState.profile.pregnant && typeof characterState.profile.pregnant === 'object') {
     characterState.profile.pregnant.fetalEvents = normalizeFetalEventList(characterState.profile.pregnant.fetalEvents);
   }
-  // 1.2.5 起母胎互动工具移除，它的每小时冷却也不再使用；两胎互动改用 siblingInteractionUsed
+  // 1.3.0 起母胎互动工具移除，它的每小时冷却也不再使用；两胎互动改用 siblingInteractionUsed
   if (characterState.profile.cooldown && typeof characterState.profile.cooldown === 'object') {
     delete characterState.profile.cooldown.maternalFetalInteractionUsed;
   }
@@ -734,7 +734,6 @@ export function createDefaultFemaleState(name = '') {
         orgasmOvulationUsed: false,
         naturalOvulationUsed: false,
         pregnancyPressureWarning: false,
-        psychologyUpdateUsed: false,
         siblingInteractionUsed: false,
       },
       base: {
@@ -2076,7 +2075,6 @@ function createSnapshotCharacterBaseline(name = '') {
         orgasmOvulationUsed: false,
         naturalOvulationUsed: false,
         pregnancyPressureWarning: false,
-        psychologyUpdateUsed: false,
         siblingInteractionUsed: false,
       },
       base: {

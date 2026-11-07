@@ -11,8 +11,8 @@ import {
   FETAL_BURST_MAX_DAYS_PER_PASS, FETAL_CARE_GAIN_SCALE, FETAL_CARE_LOSS_SCALE, FETAL_EVENT_AFFINITY, FETAL_EVENT_CHANGES,
   FETAL_EVENT_DAILY_AFFINITY_CAP, FETAL_EVENT_DAILY_CARE_CAP, FETAL_EVENT_DECAY_DAYS, FETAL_EVENT_HEALTH, FETAL_EVENT_KINDS,
   FETAL_EVENT_NESTED_FACTOR, FETAL_EVENT_PRESSURE, FETAL_HEALTH_FLOOR_RATIO, addFetalHealth, buildPrenatalSummary, compactFetalEvents,
-  createFetalHealthFields, describeFetalEventKind, describeFetalEventMagnitude, getChangeMagnitude,
-  applyFetalGuardRegen, getFetalEventSensitivity, getFetalHarmFactor, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalHealthMax,
+  createFetalHealthFields, describeFetalEventKind, describeFetalEventMagnitude, getChangeMagnitude, getChangeSign,
+  applyFetalGuardRegen, getFetalEventSensitivity, getPrenatalCareTarget, getFetalHarmFactor, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalInitialHealth,
   settleFetalHealthWeek,
 } from './fetal_health.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
@@ -48,6 +48,7 @@ import {
   PSY_MENS_BOOL_FIELDS,
   PSY_PREG_FIELDS,
   PSY_PREG_BOOL_FIELDS,
+  PSY_AXIS_LABELS,
 } from './registry_psy_config.js';
 import {
   DEFAULT_WARDROBE_ITEM,
@@ -334,7 +335,6 @@ const WOMB_FROZEN_BLOCKED_TOOLS = new Set([
   'bsExtendPregnancy',
   'bsFetalEvent',
   'bsExcreteMetabolism',
-  'bsUpdatePsychology',
 ]);
 
 function wombReturnProgress(state) {
@@ -700,7 +700,7 @@ export function deriveFetusGender(race, bloodline = null, random = Math.random) 
 }
 
 /**
- * 受精胎重：只剩性别与体型（承载）系数。受孕时机与天生变异（1.2.5 起）改乘在胎儿健康的上限上，
+ * 受精胎重：只剩性别与体型（承载）系数。受孕时机与天生变异（1.3.0 起）改乘在胎儿健康的上限上，
  * 大小差异在孕期中随照料长出来（fetal_health.js）。
  */
 export function getConceptionWeight(gender, weightRatio = 1.0) {
@@ -1142,7 +1142,6 @@ function createChimeraFetus(profile, carrierName, fetusA, fetusB, embryoId, rand
     weight: (clampNumber(fetusA?.weight, 0.33, 3, 1) + clampNumber(fetusB?.weight, 0.33, 3, 1)) / 2,
     // 嵌合取平均
     spermQuality: (clampNumber(fetusA?.spermQuality, 0.25, 4, 1) + clampNumber(fetusB?.spermQuality, 0.25, 4, 1)) / 2,
-    healthMax: (normalizeFetalHealthFields({ ...fetusA }).healthMax + normalizeFetalHealthFields({ ...fetusB }).healthMax) / 2,
     health: (normalizeFetalHealthFields({ ...fetusA }).health + normalizeFetalHealthFields({ ...fetusB }).health) / 2,
     tendencyAngle: randomInt(0, 360, random),
     backSide: normalizeBackSide(fetusA?.backSide) || randomBackSide(random),
@@ -1385,10 +1384,10 @@ function createSimpleFetus(profile, sperm, cycleStage, options = {}) {
     // 精液量按承载者的子宫容积换算成人类尺度，同体型的一对与人类一样
     companionEggCount: rollCompanionEggCount(fetusRace, random, Number.isFinite(Number(sperm?.value)) ? Number(sperm.value) / getUterusVolumeFactor(profile?.base) : undefined, ancestry.bloodline, tieBloodline),
     weight: getConceptionWeight(gender, weightRatio),
-    // 受孕时的精子品质快照：决定健康上限与胎儿顽强度（耐疏忽与伤害）
+    // 受孕时的精子品质快照：决定初始健康与胎儿顽强度（耐疏忽与伤害）
     spermQuality: Math.round(clampNumber(sperm?.quality, 0.25, 4, 1) * 100) / 100,
-    // 健康上限：精子品质（射精当下的快照）× 受孕时机 × 天生变异；受精时是上限的一半
-    ...createFetalHealthFields(sampleFetalHealthMax({ quality: sperm?.quality, stage: cycleStage, random })),
+    // 健康上限一律 100；初始值 = 50 × 精子品质^0.25（射精当下的快照）× 受孕时机 × 天生变异，夹在 35～70
+    ...createFetalHealthFields(sampleFetalInitialHealth({ quality: sperm?.quality, stage: cycleStage, random })),
     tendencyAngle: randomInt(0, 360, random),
     backSide: randomBackSide(random),
     affinity: derivedSeed.affinity,
@@ -2867,7 +2866,7 @@ function applyHourlyPregnancyMetabolism(profile, tick) {
   applyDerivedMetabolismExemptions(profile);
 }
 
-// 胎儿健康（1.2.5，见 fetal_health.js）：需求照料的点数每次计分当下就按各胎需求拆开、加进各胎的健康，
+// 胎儿健康（1.3.0，见 fetal_health.js）：需求照料的点数每次计分当下就按各胎需求拆开、加进各胎的健康，
 // 胎位在一周内上下移动时，在宫顶待得越久分得越多，而不是只看结算那一刻停在哪。
 // 越靠宫顶供养越好；亏损时取倒数，宫顶胎受保护、低位胎先亏。
 const NUTRITION_POSITION_FACTORS = Object.freeze({ '-3': 1.5, '-2': 1.0, '-1': 0.8, 0: 0.6 });
@@ -2922,10 +2921,9 @@ function addNutrition(profile, amount) {
   for (let i = 0; i < fetuses.length; i += 1) {
     if (demands[i] <= 0) continue;
     normalizeFetalHealthFields(fetuses[i]);
-    // 上限各胎不同：按上限等比，同样的照料对每胎是同样的比例；
     // 扣分另乘耐受系数（母体体质 × 胎儿顽强度），强壮的母体、高品质精子受孕的胎儿较耐疏忽
     const resilience = amount < 0 ? getFetalHarmFactor(profile, fetuses[i]) : 1;
-    addFetalHealth(fetuses[i], health * (demands[i] / totalDemand) * (fetuses[i].healthMax / 100) * resilience);
+    addFetalHealth(fetuses[i], health * (demands[i] / totalDemand) * resilience);
   }
   return amount;
 }
@@ -2949,12 +2947,13 @@ function syncFetalHealthWeeks(profile, isHere, startWeek = null) {
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const speed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
   const days = clampNumber(pregnant.pregnantDays, 0, 99999, 0);
+  const target = getPrenatalCareTarget(pregnant);
   for (let k = from + 1; k <= week; k += 1) {
     const at = speed > 0 ? Math.max(0, days - (eff - k * 7) / speed) : days;
     for (const fetus of fetuses) {
       if (!isImplantedFetus(fetus)) continue;
       normalizeFetalHealthFields(fetus);
-      settleFetalHealthWeek(fetus, { at });
+      settleFetalHealthWeek(fetus, { at, target });
     }
   }
 }
@@ -2991,7 +2990,7 @@ function applyFetalHealthCrisis(profile, runtime, female) {
   const hold = (message) => {
     for (const fetus of collapsed) {
       delete fetus.healthCollapsed;
-      fetus.health = Math.max(Number(fetus.health) || 0, clampNumber(fetus.healthMax, 1, 1000, 100) * FETAL_HEALTH_FLOOR_RATIO);
+      fetus.health = Math.max(Number(fetus.health) || 0, 100 * FETAL_HEALTH_FLOOR_RATIO);
     }
     if (message) profile.notify = { ...notify, secondly: message };
     return { changed: false };
@@ -3595,6 +3594,7 @@ function clearPregnancyState(profile) {
   pregnant.fetalEvents = [];
   delete pregnant.fetalEventSummary;
   delete pregnant.healthSettledWeek;
+  delete pregnant.prenatalCare;
   pregnant.blockage = null;
   pregnant.acceleration = null;
   pregnant.expansion = null;
@@ -6190,14 +6190,13 @@ function applyFetalEvent(chatState, args, source = '') {
       const applied = Math.round((fetus.affinity - before) * 100) / 100;
       if (applied !== 0) effects[id] = { affinity: applied };
     } else {
-      const scale = clampNumber(fetus.healthMax, 1, 1000, 100) / 100;
       const nested = getEnclosingHost(fetus, fetuses) ? FETAL_EVENT_NESTED_FACTOR : 1;
-      let amount = FETAL_EVENT_HEALTH[magnitude] * scale * nested * decay;
+      let amount = FETAL_EVENT_HEALTH[magnitude] * nested * decay;
       if (meta.group === 'harm') {
         // 伤害另乘耐受系数：母体体质与胎儿顽强度（受孕时的精子品质）
         amount = -amount * getFetalEventSensitivity(kind, stage) * getFetalHarmFactor(profile, fetus);
       } else {
-        const room = Math.max(0, FETAL_EVENT_DAILY_CARE_CAP * scale - sumTodayFetalEffect(events, id, today, 'health', 'care'));
+        const room = Math.max(0, FETAL_EVENT_DAILY_CARE_CAP - sumTodayFetalEffect(events, id, today, 'health', 'care'));
         amount = Math.min(amount, room);
       }
       const applied = Math.round(addFetalHealth(fetus, amount) * 100) / 100;
@@ -6868,7 +6867,6 @@ function applyTimeToCharacter(character, tick) {
     ...nextOrgasmOvulationCooldown(stage, finalCooldown),
     naturalOvulationUsed: shouldResetNaturalOvulation(stage) ? false : Boolean((profile.cooldown || cooldown).naturalOvulationUsed),
     pregnancyPressureWarning: shouldKeepPregnancyPressureWarning(profile) ? Boolean((profile.cooldown || cooldown).pregnancyPressureWarning) : false,
-    psychologyUpdateUsed: tick.passedHours > 0 ? false : Boolean(cooldown.psychologyUpdateUsed),
     siblingInteractionUsed: tick.passedHours > 0 ? false : Boolean(cooldown.siblingInteractionUsed),
   };
   accrueNutritionBurst(profile, tick.deltaMinutes);
@@ -7420,93 +7418,56 @@ function applyTrainSkill(chatState, args) {
   };
 }
 
-function applyUpdatePsychology(chatState, args) {
-  const female = String(args?.female || '').trim();
-  const character = chatState.characters?.[female];
-  const options = args?.options && typeof args.options === 'object' ? args.options : null;
-  if (!female || !character) return { applied: false, message: `bsUpdatePsychology skipped: unknown character ${female || '(empty)'}.` };
-  if (!options) return { applied: false, message: 'bsUpdatePsychology skipped: empty options.' };
+/** 认知纪录附带的心理变化：每轴一个程度，轻微 2、明显 5、严重 10 点 */
+const PSY_SHIFT_POINTS = Object.freeze({ slight: 2, significant: 5, severe: 10 });
 
-  const next = cloneValue(character);
-  const profile = next.profile || {};
-  if (!hasBreedingPsychology(profile)) {
-    return { applied: false, message: `bsUpdatePsychology skipped for ${female}: breeding psychology is not inferred.` };
-  }
+/**
+ * 在 profile 上套用一条认知附带的心理变化（recordExperience 的 shiftPsychology）。
+ * 只动当前这一侧的三轴；同一轴同一个故事日只算一次；未推演、推演中或产后恢复不动。
+ * 回归期算妊娠侧：写进 mens 的资料会在转入妊娠满 7 天时被清掉，等于白写。
+ */
+function shiftCognitionPsychology(profile, shifts, today, records) {
+  if (!hasBreedingPsychology(profile)) return { effects: {}, notes: ['还没有推演繁育心理'] };
   const psychology = profile.psychology || {};
-  const base = profile.base || {};
-  const stage = String(base.stage || '');
-  // 回归期算妊娠侧：体感本来就是孕育状态，而且写进 mens 的资料会在转入妊娠满 7 天时
-  // 被 clearPsychologyTransitionState 清空（实测：孕 10 天后 mens.stance 变 undefined），
-  // 等于白写一场。
+  const stage = String(profile.base?.stage || '');
+  if (stage === '产后恢复' || psychology.pendingSide) return { effects: {}, notes: ['这一侧的心理还在推演'] };
   const isPregnancySide = PREGNANCY_STAGES.includes(stage) || stage === '假孕期' || stage === '产兆前驱' || stage === WOMB_RETURN_STAGE || LABOR_STAGES.includes(stage);
-
-  if (stage === '产后恢复' || psychology.pendingSide) return { applied: false, message: '心理侧尚未成立，需单侧推演。' };
-  const targetGroup = isPregnancySide ? 'preg' : 'mens';
-  const sourcePatch = options[targetGroup];
-  if (!sourcePatch || typeof sourcePatch !== 'object') {
-    return { applied: false, message: `bsUpdatePsychology skipped for ${female}: current stage expects ${targetGroup} updates.` };
-  }
-
-  const fieldConfig = targetGroup === 'preg' ? PSY_PREG_FIELDS : PSY_MENS_FIELDS;
-  const boolFieldConfig = targetGroup === 'preg' ? PSY_PREG_BOOL_FIELDS : PSY_MENS_BOOL_FIELDS;
+  const side = isPregnancySide ? 'preg' : 'mens';
+  const fieldConfig = side === 'preg' ? PSY_PREG_FIELDS : PSY_MENS_FIELDS;
+  const boolFieldConfig = side === 'preg' ? PSY_PREG_BOOL_FIELDS : PSY_MENS_BOOL_FIELDS;
   const stageProfiles = normalizePsychologyStageProfiles(psychology.stageProfiles);
-  const target = normalizePsychologyGroup(psychology[targetGroup], fieldConfig, {
-    booleanFields: boolFieldConfig,
-    stageProfiles: stageProfiles[targetGroup],
-  });
-  const allowedFields = Object.keys(fieldConfig);
-  const allowedBoolFields = Object.keys(boolFieldConfig);
-
-  let changed = false;
-  for (const field of allowedFields) {
-    if (sourcePatch[field] === undefined) continue;
+  const target = normalizePsychologyGroup(psychology[side], fieldConfig, { booleanFields: boolFieldConfig, stageProfiles: stageProfiles[side] });
+  const effects = {};
+  const notes = [];
+  for (const [field, change] of Object.entries(shifts || {})) {
+    const label = PSY_AXIS_LABELS[field] || field;
+    if (!Object.hasOwn(fieldConfig, field)) {
+      notes.push(`${label}不属于目前的${side === 'preg' ? '妊娠' : '未孕'}心理（这一侧是 ${Object.keys(fieldConfig).join('、')}）`);
+      continue;
+    }
+    if ((records || []).some((record) => record.storyDayIndex === today && Number(record.psychology?.[field]))) {
+      notes.push(`${label}今天已经变动过`);
+      continue;
+    }
     const valueKey = `${field}_value`;
-    if (target[valueKey] === null || target[valueKey] === undefined || !Number.isFinite(Number(sourcePatch[field]))) continue;
-    const currentValue = clampNumber(target[valueKey], 0, 100, 0);
-    target[valueKey] = clampNumber(currentValue + Number(sourcePatch[field] || 0), 0, 100, currentValue);
-    changed = true;
+    if (target[valueKey] === null || target[valueKey] === undefined) {
+      notes.push(`${label}还是未知`);
+      continue;
+    }
+    const current = clampNumber(target[valueKey], 0, 100, 0);
+    const next = clampNumber(current + getChangeSign(change) * (PSY_SHIFT_POINTS[getChangeMagnitude(change)] || 0), 0, 100, current);
+    if (next === current) continue;
+    target[valueKey] = next;
+    effects[field] = next - current;
   }
-  for (const field of allowedBoolFields) {
-    if (sourcePatch[field] === undefined) continue;
-    target[field] = Boolean(sourcePatch[field]);
-    changed = true;
+  if (Object.keys(effects).length > 0) {
+    // stageProfiles 照原样留着：正规化会丢掉空的分组，「已推演」的判断看它有没有内容
+    profile.psychology = {
+      ...psychology,
+      [side]: normalizePsychologyGroup(target, fieldConfig, { booleanFields: boolFieldConfig, stageProfiles: stageProfiles[side] }),
+    };
   }
-
-  if (!changed) {
-    return { applied: false, message: `bsUpdatePsychology skipped for ${female}: no allowed ${targetGroup} fields.` };
-  }
-  const cooldown = profile.cooldown || {};
-  if (cooldown.psychologyUpdateUsed) {
-    return { applied: false, message: `bsUpdatePsychology skipped for ${female}: already changed during this story hour.` };
-  }
-
-  const normalizedTarget = normalizePsychologyGroup(target, fieldConfig, {
-    booleanFields: boolFieldConfig,
-    stageProfiles: stageProfiles[targetGroup],
-  });
-  profile.psychology = {
-    ...(profile.psychology || {}),
-    stageProfiles,
-    mens: targetGroup === 'mens'
-      ? normalizedTarget
-      : normalizePsychologyGroup(profile.psychology?.mens, PSY_MENS_FIELDS, {
-        booleanFields: PSY_MENS_BOOL_FIELDS,
-        stageProfiles: stageProfiles.mens,
-      }),
-    preg: targetGroup === 'preg'
-      ? normalizedTarget
-      : normalizePsychologyGroup(profile.psychology?.preg, PSY_PREG_FIELDS, {
-        booleanFields: PSY_PREG_BOOL_FIELDS,
-        stageProfiles: stageProfiles.preg,
-      }),
-  };
-  profile.cooldown = {
-    ...cooldown,
-    psychologyUpdateUsed: true,
-  };
-  next.profile = profile;
-  chatState.characters[female] = next;
-  return { applied: true, message: `bsUpdatePsychology applied to ${female}.` };
+  return { effects, notes };
 }
 
 /**
@@ -8469,10 +8430,9 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsChangeOutfit') return applyChangeOutfit(chatState, args);
   if (name === 'bsSetDescription') return applyDescription(chatState, args);
   if (name === 'bsSetCharacterPresence') return applySetCharacterPresence(chatState, args);
-  if (name === 'bsRecordExperience') return recordExperience(chatState, args, call.sourceId || '', { resolveFetus: resolveVisibleFetus });
+  if (name === 'bsRecordExperience') return recordExperience(chatState, args, call.sourceId || '', { resolveFetus: resolveVisibleFetus, shiftPsychology: shiftCognitionPsychology });
   if (name === 'bsRegisterSkillDefinition') return applyRegisterSkillDefinition(chatState, args);
   if (name === 'bsTrainSkill') return applyTrainSkill(chatState, args);
-  if (name === 'bsUpdatePsychology') return applyUpdatePsychology(chatState, args);
   if (name === 'bsAddSperm') return applyAddSperm(chatState, args);
   if (name === 'bsDrainSperm') return applyDrainSperm(chatState, args);
   if (name === 'bsSetMenstrualPhases') return applySetMenstrualPhases(chatState, args);

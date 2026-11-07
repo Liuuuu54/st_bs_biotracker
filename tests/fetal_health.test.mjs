@@ -1,4 +1,4 @@
-// 1.2.5 胎儿健康：量表、bsFetalEvent、事件堆与送出窗口、见底中断、孩子摘要、v13 迁移、认知纪录上限。
+// 1.3.0 胎儿健康：量表、bsFetalEvent、事件堆与送出窗口、见底中断、孩子摘要、v13 迁移、认知纪录上限。
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
@@ -17,7 +17,7 @@ afterEach(() => { Math.random = REAL_RANDOM; });
 
 const fetus = (embryoId, over = {}) => ({
   embryoId, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight: 1, tendencyAngle: 0, affinity: 0,
-  healthMax: 100, health: 50, ...over,
+  health: 50, ...over,
 });
 
 function setup({ stage = '孕中期', days = 120, fetuses = [fetus(1)], base = {}, immune = { metabolism: true }, settings = {}, minutesPassed = 0 } = {}) {
@@ -50,18 +50,18 @@ const near = (actual, expected, label = '') => assert.ok(Math.abs(actual - expec
 // ── 事件效果 ─────────────────────────────────────────
 
 test('伤害作用于全部已着床胎儿，未着床的不受影响；毒物在孕早期 ×1.5', () => {
-  const chatState = setup({ stage: '孕早期', days: 40, fetuses: [fetus(1), fetus(2), fetus(3, { pendingImplantation: true, health: undefined, healthMax: undefined })] });
+  const chatState = setup({ stage: '孕早期', days: 40, fetuses: [fetus(1), fetus(2), fetus(3, { pendingImplantation: true, health: undefined })] });
   const result = event(chatState, { kind: 'substance', change: 'significant_decrease' });
   assert.equal(result.applied, true, result.message);
   assert.deepEqual(F(chatState).map((item) => item.health), [38, 38, undefined]);
   assert.match(P(chatState).notify.secondly, /腹中胎儿受到有害物质影响（明显）/);
 });
 
-test('fetusIndex 只动那一胎；健康按上限等比；increase/decrease 不改伤害与照料的方向', () => {
-  const chatState = setup({ fetuses: [fetus(1), fetus(2, { healthMax: 120, health: 60 })] });
+test('fetusIndex 只动那一胎；每胎上限一律 100；increase/decrease 不改伤害与照料的方向', () => {
+  const chatState = setup({ fetuses: [fetus(1), fetus(2, { health: 60 })] });
   event(chatState, { kind: 'illness', change: 'slight_increase', fetusIndex: 1 });
   assert.equal(F(chatState)[0].health, 50);
-  near(F(chatState)[1].health, 60 - 3 * 1.2, '轻微 −3 × 上限 1.2');
+  near(F(chatState)[1].health, 60 - 3, '轻微 −3');
   event(chatState, { kind: 'rest', change: 'significant_decrease', fetusIndex: 0 });
   assert.equal(F(chatState)[0].health, 58, '照料一律加');
 });
@@ -75,7 +75,7 @@ test('外伤：孕晚期 ×1.3，另加宫压（整个子宫一次）', () => {
   assert.equal(P(chatState).pregnant.fetalEvents[0].pressure, 15);
 });
 
-test('照料不超过先天上限；孕中孕被包着的那一胎伤害减半', () => {
+test('照料不超过 100；孕中孕被包着的那一胎伤害减半', () => {
   const chatState = setup({ fetuses: [fetus(1, { health: 98 }), fetus(2, { nestedInEmbryoId: 1 })] });
   event(chatState, { kind: 'medicine', change: 'significant_increase', fetusIndex: 0 });
   assert.equal(F(chatState)[0].health, 100);
@@ -139,7 +139,7 @@ test('亲近与疏离：方向看类别，change 只看程度；一定要给 cha
   assert.match(event(setup(), { kind: 'bonding' }).message, /change must be/);
 });
 
-test('1.2.5 初版的 soothe／fetal_reaction 读到时按方向换成亲近或疏离', async () => {
+test('1.3.0 开发期间用过的 soothe／fetal_reaction 读到时按方向换成亲近或疏离', async () => {
   const { normalizeFetalEventList } = await import('../scripts/fetal_health.js');
   const base = { time: '一日', content: '一句', effects: {}, counted: true };
   const list = normalizeFetalEventList([
@@ -302,23 +302,30 @@ test('一次跳很多周：每周各结算一次，没有照料也没有疏忽�
 test('v12 → v13：每周供养池换成健康（50 ＋ 池换算），母胎互动冷却丢掉，事件堆从空开始', () => {
   const ctx = { chatId: 'v13', characters: [], extensionSettings: {}, saveSettingsDebounced() {} };
   const settings = state.getSettings(ctx);
-  const old = setup({ fetuses: [fetus(1, { healthMax: undefined, health: undefined, nutrition: 20 }), fetus(2, { healthMax: undefined, health: undefined, nutrition: -10 })] });
+  const old = setup({ fetuses: [fetus(1, { health: undefined, nutrition: 20 }), fetus(2, { health: undefined, nutrition: -10 })] });
   old.schemaVersion = 12;
   P(old).cooldown = { maternalFetalInteractionUsed: true };
   delete P(old).pregnant.fetalEvents;
   state.recordChatStateSnapshot(ctx, old, { messageCount: 1, reason: 'old' });
   settings.chatStates[ctx.chatId] = old;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 13);
+  assert.equal(migrated.schemaVersion, 14);
   const [a, b] = migrated.characters.A.profile.pregnant.fetuses;
-  assert.equal(a.healthMax, 100);
+  assert.equal('healthMax' in a, false);
   near(a.health, 50 + 20 * 0.18);
   near(b.health, 50 - 10 * 0.9);
   assert.equal('nutrition' in a, false);
   assert.deepEqual(migrated.characters.A.profile.pregnant.fetalEvents, []);
   assert.equal('maternalFetalInteractionUsed' in migrated.characters.A.profile.cooldown, false);
   state.restoreChatStateFromSnapshot(migrated, migrated.snapshots[0]);
-  assert.equal(migrated.characters.A.profile.pregnant.fetuses[0].healthMax, 100, '快照一并迁移');
+  near(migrated.characters.A.profile.pregnant.fetuses[0].health, 50 + 20 * 0.18, '快照一并迁移');
+});
+
+test('1.3.0 开发期间各胎上限不同：读到时按比例换成 100 分制，刻度不变', async () => {
+  const { normalizeFetalHealthFields } = await import('../scripts/fetal_health.js');
+  const old = normalizeFetalHealthFields({ healthMax: 120, health: 90 });
+  assert.deepEqual(old, { health: 75 });
+  assert.equal(getFetalHealthTier(old).label, '健壮');
 });
 
 test('工具清单：bsFetalEvent 取代 bsMaternalFetalInteraction', () => {
@@ -353,6 +360,135 @@ test('追踪视角：每胎只送健康刻度，没有数值；事件只送窗�
   const narrative = projectNarrativeState({ A: { name: 'A', profile } });
   assert.equal('fetalEvents' in narrative.A.profile.pregnant, false);
   assert.equal(narrative.A.profile.pregnant.fetuses[0].health, '健壮');
+});
+
+const care = (chatState, prenatalCare, female = 'A') => applyToolCall(chatState, {
+  name: 'bsRecordExperience', arguments: { female, action: 'cognition', time: '一日', method: 'prenatal', content: '产婆确认有孕', prenatalCare },
+});
+
+test('产前护理：随认知设定，跟着这次妊娠；没有已着床胎儿时只记认知；不合法的档位拒绝', () => {
+  const chatState = setup();
+  assert.equal(care(chatState, 'attentive').applied, true);
+  assert.equal(P(chatState).pregnant.prenatalCare, 'attentive');
+  assert.equal(P(chatState).cognitionRecords.length, 1);
+  assert.match(care(chatState, 'diligent').message, /prenatalCare 须为/);
+  const early = setup({ stage: '孕早期', days: 3, fetuses: [fetus(1, { pendingImplantation: true })] });
+  const result = care(early, 'neglect');
+  assert.equal(result.applied, true);
+  assert.match(result.message, /没有记下/);
+  assert.equal('prenatalCare' in P(early).pregnant, false);
+  assert.equal(P(early).cognitionRecords.length, 1);
+  assert.match(applyToolCall(chatState, { name: 'bsRecordExperience', arguments: { female: 'A', action: 'date', time: '一日', partner: '乙', prenatalCare: 'normal' } }).message, /不属于该 action/);
+});
+
+test('产前护理改周回归的目标：用心往 60、疏忽往 35、没设定往 50；妊娠结束时清掉', () => {
+  const run = (level) => {
+    const chatState = setup();
+    if (level) care(chatState, level);
+    applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 84 } });
+    return F(chatState)[0];
+  };
+  const [attentive, neglect, none] = [run('attentive'), run('neglect'), run(null)];
+  assert.ok(Math.abs(attentive.health - 60) < 1.5, `用心 ${attentive.health}`);
+  assert.ok(Math.abs(neglect.health - 35) < 1.5, `疏忽 ${neglect.health}`);
+  assert.ok(Math.abs(none.health - 50) < 1e-6, `没设定 ${none.health}`);
+  assert.ok(attentive.weight > 1 && neglect.weight < 1 && none.weight === 1);
+  const ended = setup({ fetuses: [fetus(1, { health: 2 })] });
+  care(ended, 'neglect');
+  passWeek(ended);
+  F(ended)[0].health = 1;
+  passWeek(ended);
+  assert.equal(P(ended).base.stage, '产后恢复');
+  assert.equal('prenatalCare' in P(ended).pregnant, false);
+});
+
+const withPsychology = (chatState, side, values) => {
+  P(chatState).psychology = { enabled: true, activeSide: side, stageProfiles: { mens: {}, preg: {} }, [side]: values };
+  return chatState;
+};
+const feel = (chatState, psychology, extra = {}) => applyToolCall(chatState, {
+  name: 'bsRecordExperience', arguments: { female: 'A', action: 'cognition', time: '一日', method: 'perception', content: '她对着肚子发了一会儿呆', psychology, ...extra },
+});
+
+test('心理变化挂在认知纪录上：轻微 2、明显 5、严重 10，方向看 increase／decrease，效果记在那一条', () => {
+  const chatState = withPsychology(setup(), 'preg', { confidence_value: 40, acceptance_value: 50, stance_value: 95 });
+  const result = feel(chatState, { acceptance: 'significant_increase', confidence: 'slight_decrease', stance: 'severe_increase' });
+  assert.equal(result.applied, true);
+  const preg = P(chatState).psychology.preg;
+  assert.deepEqual([preg.confidence_value, preg.acceptance_value, preg.stance_value], [38, 55, 100]);
+  assert.match(preg.acceptance_interpret, /\S/);
+  assert.deepEqual(P(chatState).cognitionRecords.at(-1).psychology, { confidence: -2, acceptance: 5, stance: 5 });
+  assert.match(result.message, /心理变化：/);
+});
+
+test('心理变化只动当前这一侧；同一轴同一个故事日只算一次；格式不对整条拒绝', () => {
+  const chatState = withPsychology(setup(), 'preg', { confidence_value: 40, acceptance_value: 50, stance_value: 50 });
+  const wrongSide = feel(chatState, { desire: 'slight_increase' });
+  assert.match(wrongSide.message, /不属于目前的妊娠心理/);
+  assert.equal(P(chatState).cognitionRecords.at(-1).psychology, undefined, '认知照记，心理不动');
+  feel(chatState, { acceptance: 'slight_increase' });
+  const again = feel(chatState, { acceptance: 'severe_increase', confidence: 'slight_increase' });
+  assert.match(again.message, /接受今天已经变动过/);
+  assert.deepEqual([P(chatState).psychology.preg.acceptance_value, P(chatState).psychology.preg.confidence_value], [52, 42]);
+  nextDay(chatState);
+  feel(chatState, { acceptance: 'slight_increase' });
+  assert.equal(P(chatState).psychology.preg.acceptance_value, 54, '隔天照常');
+  const count = P(chatState).cognitionRecords.length;
+  assert.match(feel(chatState, { acceptance: 'up' }).message, /psychology 须为/);
+  assert.match(feel(chatState, {}).message, /psychology 须为/);
+  assert.equal(P(chatState).cognitionRecords.length, count);
+});
+
+test('v13 → v14：妊娠侧的 bonding 改名 acceptance（数值、解释、专属阶段解释、认知上的变化），快照一并迁移', async () => {
+  const { migrateCharacters } = await import('../scripts/state_migration.js');
+  const characters = { A: { name: 'A', profile: {
+    psychology: { enabled: true, activeSide: 'preg', preg: { confidence_value: 40, bonding_value: 66, bonding_interpret: '旧解释', stance_value: 20 }, stageProfiles: { preg: { bonding: { '51_75': '专属' } } } },
+    cognitionRecords: [{ time: '一日', method: 'perception', content: '一句', psychology: { bonding: 2 } }],
+  } } };
+  migrateCharacters(characters, 13);
+  const psy = characters.A.profile.psychology;
+  assert.deepEqual([psy.preg.acceptance_value, psy.preg.acceptance_interpret, 'bonding_value' in psy.preg], [66, '旧解释', false]);
+  assert.deepEqual(psy.stageProfiles.preg, { acceptance: { '51_75': '专属' } });
+  assert.deepEqual(characters.A.profile.cognitionRecords[0].psychology, { acceptance: 2 });
+
+  // 楼层快照是相对新版预设角色的差异：还原后新键先是 null，旧值仍要搬过去（真机上踩过）
+  const ctx = { chatId: 'v14', characters: [], extensionSettings: {}, saveSettingsDebounced() {} };
+  const settings = state.getSettings(ctx);
+  const old = setup();
+  P(old).psychology = { enabled: true, activeSide: 'preg', preg: { confidence_value: 52, bonding_value: 70, stance_value: 35 }, stageProfiles: { preg: { bonding: { '51_75': '专属' } } } };
+  state.recordChatStateSnapshot(ctx, old, { messageCount: 1, reason: 'old' });
+  // 旧版写的快照带着 bonding（新版记录快照时会先正规化掉，这里手动补回旧版的样子）
+  old.snapshots[0].stateSnapshot.characters.A.profile.psychology.preg.bonding_value = 70;
+  old.schemaVersion = 13;
+  settings.chatStates[ctx.chatId] = old;
+  const migrated = state.getChatState(ctx, settings);
+  assert.equal(migrated.characters.A.profile.psychology.preg.acceptance_value, 70);
+  state.restoreChatStateFromSnapshot(migrated, migrated.snapshots[0]);
+  assert.equal(migrated.characters.A.profile.psychology.preg.acceptance_value, 70, '快照还原后仍是 70');
+  assert.equal('bonding_value' in migrated.characters.A.profile.psychology.preg, false);
+});
+
+test('未孕时动 mens 三轴；没有独立的心理工具', () => {
+  const chatState = withPsychology(setup({ stage: '卵泡期', days: 0, fetuses: [] }), 'mens', { mastery_value: 30, desire_value: 30, autonomy_value: 30 });
+  feel(chatState, { desire: 'significant_increase' });
+  assert.equal(P(chatState).psychology.mens.desire_value, 35);
+  assert.equal(TOOL_DEFINITIONS.some((tool) => tool.name === 'bsUpdatePsychology'), false);
+  assert.equal(applyToolCall(chatState, { name: 'bsUpdatePsychology', arguments: { female: 'A', options: { mens: { desire: 2 } } } }).applied, false);
+});
+
+test('追踪页的认知摘要一行：次数、方式、日期与要点；没有摘要回空字串', async () => {
+  const { describeCognitionSummary } = await import('../scripts/fetal_health.js');
+  assert.equal(describeCognitionSummary(null), '');
+  const line = describeCognitionSummary({ count: 3, methods: { prenatal: 2, guess: 1 }, from: '霜月一日', to: '霜月九日', notes: '产婆说胎位正' });
+  assert.match(line, /^更早 3 条：/);
+  assert.match(line, /要点：产婆说胎位正/);
+});
+
+test('追踪视角：设定过产前护理才送文字，没设定不送', () => {
+  const chatState = setup();
+  assert.equal('prenatalCare' in trackerProfile(chatState).pregnant, false);
+  care(chatState, 'neglect');
+  assert.equal(trackerProfile(chatState).pregnant.prenatalCare, '疏忽');
 });
 
 test('认知纪录：pin、保存上限与送出窗口；进月经刷新时摘要一起清掉', () => {
@@ -398,6 +534,7 @@ test('胎儿顽强度另看胎儿族的繁育耐受^−0.3（夹 0.6～1.4）与
   assert.equal(getFetusNucleusTenacity({ tags: ['androgenesis'] }), 0.75);
   assert.equal(getFetusNucleusTenacity({ tags: ['gynogenesis', 'identical'] }), 1.33);
   assert.equal(getFetusNucleusTenacity({ tags: ['identical'] }), 1);
+  assert.equal(getFetusNucleusTenacity({ tags: ['androgenesis', 'gynogenesis'] }), 1, '嵌合胎两种核型都有时抵消');
   assert.deepEqual(getFetalHarmBreakdown(mother, { race: '哥布林', tags: ['androgenesis'], spermQuality: 1 }), { maternal: 1, quality: 1, species: 1, nucleus: 0.75, factor: 0.75 });
   assert.equal(getFetalHarmBreakdown(mother, { race: '人类', tags: ['gynogenesis'] }).factor, 1.33);
   // 总值夹在 0.2～2.5
@@ -411,7 +548,7 @@ test('雄核孽种：真实受孕的哥布林胎带 androgenesis，喝酒扣得�
   assert.equal(applyToolCall(goblin, { name: 'bsDebugInjectPregnancy', arguments: { female: 'A', mode: 'normal', father: '哥布林甲', race: '哥布林' } }).applied, true);
   assert.equal(F(goblin)[0].race, '哥布林');
   assert.ok(F(goblin)[0].tags.includes('androgenesis'));
-  Object.assign(F(goblin)[0], { health: 50, healthMax: 100, spermQuality: 1 });
+  Object.assign(F(goblin)[0], { health: 50, spermQuality: 1 });
   P(goblin).base.stage = '孕中期';
   const human = setup({ fetuses: [fetus(1)] });
   event(goblin, { kind: 'substance', change: 'significant_decrease' });

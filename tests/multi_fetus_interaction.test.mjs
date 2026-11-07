@@ -1,4 +1,4 @@
-// v1.1.1 多胎胎间：大幅转向会被相邻胎儿挡住或带动；两胎互踢、推挤、依偎（1.2.5 起是 bsAssistFetalPosition action=sibling）。
+// v1.1.1 多胎胎间：大幅转向会被相邻胎儿挡住或带动；两胎互踢、推挤、依偎（1.3.0 起是 bsAssistFetalPosition action=sibling）。
 // 不存新资料，只改角度与左右顺序，每个故事小时一次。
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';

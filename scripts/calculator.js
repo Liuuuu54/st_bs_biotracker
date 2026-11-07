@@ -17,7 +17,7 @@ import {
 } from './race_config.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, MENSTRUAL_STAGE_DAYS } from './stage_config.js';
 import { CONCEPTION_WEIGHT_LOG_SD, resolveConceptionWeightRatio } from './body_size.js';
-import { getConceptionTimingFactor } from './fetal_health.js';
+import { FETAL_HEALTH_INITIAL_MAX, FETAL_HEALTH_INITIAL_MIN, getConceptionTimingFactor } from './fetal_health.js';
 
 export const SPERM_DECAY_PER_DAY = 10;
 export const CROSS_RACE_DIFFICULTY_MULTIPLIER = 1.5;
@@ -287,7 +287,7 @@ export function calculateOffspringPreview({
   }, null);
   // 与引擎同一套：双方种族都有数值体型时看体型差，否则退回承载耐受（见 body_size.js）；计算机只有种族，用种族平均体型
   const { ratio: breedWeightRatio, basis: weightRatioBasis } = resolveConceptionWeightRatio({ race: eggRace }, { race: spermRace });
-  // 1.2.5 起受孕时机与天生变异乘在胎儿健康的上限上，初始胎重只看性别与体型
+  // 1.3.0 起受孕时机与天生变异乘在胎儿的初始健康上，初始胎重只看性别与体型
   const healthTimingFactor = getConceptionTimingFactor(conceptionStage);
   const genderRatio = Object.prototype.hasOwnProperty.call(profile, 'genderRatio') ? profile.genderRatio : undefined;
   const sexMultipliers = genderRatio === null || Number(genderRatio) === -1
@@ -303,12 +303,9 @@ export function calculateOffspringPreview({
     typical: clampNumber(breedWeightRatio, 0.33, 3, 1),
     max: Math.max(...weightCandidates),
   };
-  // 健康上限的范围：品质 1 的精子，天生变异约 95% 落在 ±2 个标准差
-  const healthMaxRange = {
-    min: 100 * healthTimingFactor * Math.exp(-2 * CONCEPTION_WEIGHT_LOG_SD),
-    typical: 100 * healthTimingFactor,
-    max: 100 * healthTimingFactor * Math.exp(2 * CONCEPTION_WEIGHT_LOG_SD),
-  };
+  // 初始健康的范围（上限一律 100）：品质 1 的精子，天生变异约 95% 落在 ±2 个标准差，再夹在 35～70
+  const initial = (sd) => clampNumber(50 * healthTimingFactor * Math.exp(sd * CONCEPTION_WEIGHT_LOG_SD), FETAL_HEALTH_INITIAL_MIN, FETAL_HEALTH_INITIAL_MAX, 50);
+  const healthInitialRange = { min: initial(-2), typical: initial(0), max: initial(2) };
   return {
     eggRace,
     spermRace,
@@ -322,7 +319,7 @@ export function calculateOffspringPreview({
     embryoTypeSource: embryoTypeSource?.race || fetusRace,
     gestationSpeciesSpeed,
     healthTimingFactor,
-    healthMaxRange,
+    healthInitialRange,
     gestationDays: 280 / gestationSpeciesSpeed,
     genderRatio,
     implantationDays: calculateRaceImplantationDays(eggRace),

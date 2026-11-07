@@ -127,7 +127,7 @@ for (const pooled of [false, true]) {
 
   test(`${mode}v11原生JSON和完整及差分快照保留季节轮次，恢复后仍按第八轮进入乏情`, () => {
     const chat = setup(pooled, '半人马', '月经期', 3.5, 6);
-    assert.equal(chat.schemaVersion, 13);
+    assert.equal(chat.schemaVersion, 14);
     const ctx = { chatId: `season-v11-${pooled}`, chat: [{ name: '母方', is_user: false, mes: '本季第七轮' }] };
     state.recordChatStateSnapshot(ctx, chat, { messageCount: 1, reason: 'season-before' });
     pass(chat, 0.375);

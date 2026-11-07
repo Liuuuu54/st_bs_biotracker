@@ -460,16 +460,14 @@ test('wardrobe supplement stays small and uses semantic clothing fields', () => 
   assert.equal(prompt.includes('不要输出数值四维'), true);
 });
 
-test('psychology tool is hidden until a character has breeding stage profiles', () => {
+test('psychology has no tool of its own: shifts ride on bsRecordExperience cognition', () => {
   const settings = { diaryRecentLimit: 0 };
-  const hidden = getTrackerToolDefinitions(settings, {
-    Alice: { profile: { psychology: { stageProfiles: {} } } },
-  });
-  assert.equal(hidden.some((tool) => tool.name === 'bsUpdatePsychology'), false);
-  const visible = getTrackerToolDefinitions(settings, {
+  const tools = getTrackerToolDefinitions(settings, {
     Alice: { profile: { psychology: { stageProfiles: { mens: { mastery: { 0: '自定义表现' } } } } } },
   });
-  assert.equal(visible.some((tool) => tool.name === 'bsUpdatePsychology'), true);
+  assert.equal(tools.some((tool) => tool.name === 'bsUpdatePsychology'), false);
+  const record = tools.find((tool) => tool.name === 'bsRecordExperience');
+  assert.ok(record.input_schema.properties.psychology.properties.acceptance);
 });
 
 test('tracker prompt omits psychology guidance when no breeding inference exists', () => {
@@ -489,10 +487,12 @@ test('wardrobe is automatic while psychology still requires inferred stage profi
     name: 'bsAddWardrobeItem',
     arguments: { female: 'Alice', item: { id: 1, name: '外套', note: '黑色外套', slot: 'accessory', category: 'outerwear', effects: ['masking_up'] } },
   }).applied, true);
-  assert.equal(applyToolCall(chatState, {
-    name: 'bsUpdatePsychology',
-    arguments: { female: 'Alice', options: { mens: { mastery: 1 } } },
-  }).applied, false);
+  const result = applyToolCall(chatState, {
+    name: 'bsRecordExperience',
+    arguments: { female: 'Alice', action: 'cognition', time: '一日', method: 'perception', content: '她觉得自己越来越懂身体的节奏', psychology: { mastery: 'slight_increase' } },
+  });
+  assert.match(result.message, /还没有推演繁育心理/);
+  assert.equal(chatState.characters.Alice.profile.cognitionRecords.at(-1).psychology, undefined);
 });
 
 test('the first description update can initialize a blank registered field', () => {

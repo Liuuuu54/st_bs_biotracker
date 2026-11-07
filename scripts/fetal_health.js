@@ -1,8 +1,8 @@
-// 胎儿健康（1.2.5）：每胎一条量表与胎儿事件堆。
+// 胎儿健康（1.3.0）：每胎一条量表与胎儿事件堆。
 //
-// 量表：上限 = 100 × 精子品质^0.25 × 受孕时机系数 × 天生变异，受精时为上限的一半。
+// 量表：每胎上限一律 100。受精时的初始值 = 50 × 精子品质^0.25 × 受孕时机系数 × 天生变异，夹在 35～70（一律从平稳起步）。
 // 当前值吃两个来源：母体需求照料的加减分（tools.js 按孕龄与位置分给各胎）与胎儿事件（bsFetalEvent）。
-// 每跨一个周结算：先按当下健康换算胎重、检查见底，再往上限的一半拉回两成（周回归），
+// 每跨一个周结算：先按当下健康换算胎重、检查见底，再往 50 拉回两成（周回归；产前护理用心或疏忽时改往 60 或 35），
 // 所以长时间没人照料也没人疏忽，会收敛到「平稳」，不会饿死。
 //
 // 事件堆比照认知纪录：每次妊娠保存上限条，超过时最旧、没钉选的并进摘要；送给追踪模型的只有窗口。
@@ -58,32 +58,39 @@ export function getConceptionTimingFactor(stage) {
   return round(0.5 + 0.5 * getConceptionStageWeight(stage), 4);
 }
 
-/** 受精时抽健康上限；quality 是射精当下的精子品质快照 */
-export function sampleFetalHealthMax({ quality = 1, stage = '排卵期', random = Math.random } = {}) {
+/** 初始健康的范围：一律落在平稳，先天底子靠周回归慢慢淡掉，长期的差别交给顽强度 */
+export const FETAL_HEALTH_INITIAL_MIN = 35;
+export const FETAL_HEALTH_INITIAL_MAX = 70;
+
+/** 受精时抽初始健康；quality 是射精当下的精子品质快照 */
+export function sampleFetalInitialHealth({ quality = 1, stage = '排卵期', random = Math.random } = {}) {
   const q = clamp(quality, 0.25, 4, 1);
   const z = Math.max(-MAX_SD_LIMIT, Math.min(MAX_SD_LIMIT, standardNormal(random)));
-  return round(FETAL_HEALTH_BASE * q ** 0.25 * getConceptionTimingFactor(stage) * Math.exp(CONCEPTION_WEIGHT_LOG_SD * z), 1);
+  const value = FETAL_HEALTH_BASE * FETAL_HEALTH_INITIAL_RATIO * q ** 0.25 * getConceptionTimingFactor(stage) * Math.exp(CONCEPTION_WEIGHT_LOG_SD * z);
+  return round(clamp(value, FETAL_HEALTH_INITIAL_MIN, FETAL_HEALTH_INITIAL_MAX, FETAL_HEALTH_BASE * FETAL_HEALTH_INITIAL_RATIO), 1);
 }
 
 /** 新胎儿的量表栏位 */
-export function createFetalHealthFields(max) {
-  const healthMax = clamp(max, 1, 1000, FETAL_HEALTH_BASE);
-  return { healthMax, health: round(healthMax * FETAL_HEALTH_INITIAL_RATIO, 2) };
+export function createFetalHealthFields(initial) {
+  return { health: round(clamp(initial, 0, FETAL_HEALTH_BASE, FETAL_HEALTH_BASE * FETAL_HEALTH_INITIAL_RATIO), 2) };
 }
 
 /**
  * 补齐与正规化量表栏位（就地修改）。旧胎儿（1.2.4 以前）的 nutrition 是本周供养池：
- * 上限 100、当前值 = 50 ＋ 池 × 照料换算比例。
+ * 当前值 = 50 ＋ 池 × 照料换算比例。1.3.0 开发期间各胎上限不同（healthMax），按比例换算成 100 分制。
  */
 export function normalizeFetalHealthFields(fetus) {
   if (!fetus || typeof fetus !== 'object') return fetus;
-  const max = clamp(fetus.healthMax, 1, 1000, FETAL_HEALTH_BASE);
-  fetus.healthMax = max;
+  const max = FETAL_HEALTH_BASE;
   if (!Number.isFinite(Number(fetus.health))) {
     const pool = Number(fetus.nutrition) || 0;
     const scale = pool >= 0 ? FETAL_CARE_GAIN_SCALE : FETAL_CARE_LOSS_SCALE;
     fetus.health = round(max * FETAL_HEALTH_INITIAL_RATIO + pool * scale, 2);
+  } else if ('healthMax' in fetus) {
+    const oldMax = clamp(fetus.healthMax, 1, 1000, max);
+    fetus.health = round(Number(fetus.health) / oldMax * max, 2);
   }
+  delete fetus.healthMax;
   fetus.health = round(clamp(fetus.health, 0, max, max * FETAL_HEALTH_INITIAL_RATIO), 2);
   delete fetus.nutrition;
   if (fetus.healthWarned !== true) {
@@ -126,8 +133,11 @@ export function getFetusSpeciesTenacity(fetus) {
 
 export function getFetusNucleusTenacity(fetus) {
   const tags = Array.isArray(fetus?.tags) ? fetus.tags : [];
-  if (tags.includes('androgenesis')) return FETAL_NUCLEUS_TENACITY.androgenesis;
-  if (tags.includes('gynogenesis')) return FETAL_NUCLEUS_TENACITY.gynogenesis;
+  const andro = tags.includes('androgenesis');
+  const gyno = tags.includes('gynogenesis');
+  // 嵌合胎两种核型都有时互相抵消，当一般
+  if (andro && !gyno) return FETAL_NUCLEUS_TENACITY.androgenesis;
+  if (gyno && !andro) return FETAL_NUCLEUS_TENACITY.gynogenesis;
   return 1;
 }
 
@@ -157,7 +167,7 @@ export function getFetalHarmFactor(profile, fetus) {
 export const FETAL_GUARD_REGEN_PER_HOUR = 0.02;
 
 export function applyFetalGuardRegen(fetus, hours) {
-  const max = clamp(fetus?.healthMax, 1, 1000, FETAL_HEALTH_BASE);
+  const max = FETAL_HEALTH_BASE;
   const half = max * FETAL_HEALTH_INITIAL_RATIO;
   const health = clamp(fetus?.health, 0, max, half);
   if (!(Number(hours) > 0) || health >= half) return 0;
@@ -173,7 +183,7 @@ export function describeFetalResilience(factor) {
 }
 
 export function getFetalHealthRatio(fetus) {
-  const max = clamp(fetus?.healthMax, 1, 1000, FETAL_HEALTH_BASE);
+  const max = FETAL_HEALTH_BASE;
   return clamp(Number(fetus?.health) / max, 0, 1, FETAL_HEALTH_INITIAL_RATIO);
 }
 
@@ -189,21 +199,45 @@ export function getFetalHealthTier(fetus) {
   return FETAL_HEALTH_TIERS.find((tier) => ratio >= tier.min) || FETAL_HEALTH_TIERS.at(-1);
 }
 
-/** 把照料点数加到一胎；扣到 0 为止、加到上限为止（过补留到第二期） */
+/** 把照料点数加到一胎；扣到 0 为止、加到 100 为止 */
 export function addFetalHealth(fetus, amount) {
-  const max = clamp(fetus?.healthMax, 1, 1000, FETAL_HEALTH_BASE);
+  const max = FETAL_HEALTH_BASE;
   const before = clamp(fetus?.health, 0, max, max * FETAL_HEALTH_INITIAL_RATIO);
   fetus.health = round(clamp(before + amount, 0, max, before), 4);
   return fetus.health - before;
 }
 
 /**
+ * 产前护理：角色知道（或相信）自己怀孕后，整体怎么养胎——饮食、作息、休养、产检的日常习惯。
+ * 由模型照剧情用 bsRecordExperience（cognition 附 prenatalCare）设定，跟着这次妊娠，妊娠结束时清掉；
+ * 没设定（包括还不知道怀孕）一律当一般。它只改周回归往哪里拉：镜头外的长时间推进也照这个养，
+ * 单独作用不会让胎儿见底，也没有点数可刷；需求照料与胎儿事件照常叠在上面。
+ * 用真实引擎校准（人类单胎、需求不计分，逐日或一次跳 60 天结果相同）：足月胎重疏忽约 0.77、一般 1、用心约 1.19，
+ * 与「需求拖到满才处理」约 0.8、「一到高就处理」约 1.2 同一个量级。
+ */
+export const PRENATAL_CARE_LEVELS = Object.freeze({
+  neglect: { label: '疏忽', target: 35 },
+  normal: { label: '一般', target: 50 },
+  attentive: { label: '用心', target: 60 },
+});
+
+export function getPrenatalCareKey(pregnant) {
+  const key = pregnant?.prenatalCare;
+  return typeof key === 'string' && Object.hasOwn(PRENATAL_CARE_LEVELS, key) ? key : 'normal';
+}
+
+export function getPrenatalCareTarget(pregnant) {
+  return PRENATAL_CARE_LEVELS[getPrenatalCareKey(pregnant)].target;
+}
+
+/**
  * 一次周结算（一个孕周，所有物种同一把尺）。顺序：按这一周累积的健康换算胎重 → 见底检查 → 周回归。
  * at 是这次结算当下的妊娠日历天数（pregnantDays），用来量搶救缓冲：警告之后要过满 1 个日历天，
- * 下一次结算仍见底才中断。回传 'warned'（刚见底）、'collapsed'（待中断）或 ''。
+ * 下一次结算仍见底才中断。target 是周回归的目标（产前护理决定，一般为 50）。
+ * 回传 'warned'（刚见底）、'collapsed'（待中断）或 ''。
  */
-export function settleFetalHealthWeek(fetus, { at = null } = {}) {
-  const max = clamp(fetus?.healthMax, 1, 1000, FETAL_HEALTH_BASE);
+export function settleFetalHealthWeek(fetus, { at = null, target = FETAL_HEALTH_BASE * FETAL_HEALTH_INITIAL_RATIO } = {}) {
+  const max = FETAL_HEALTH_BASE;
   const health = clamp(fetus?.health, 0, max, max * FETAL_HEALTH_INITIAL_RATIO);
   const cap = FETAL_HEALTH_WEEKLY_WEIGHT_CAP;
   const delta = clamp((health / max - 0.5) * FETAL_HEALTH_WEIGHT_SLOPE, -cap, cap, 0);
@@ -229,7 +263,8 @@ export function settleFetalHealthWeek(fetus, { at = null } = {}) {
     delete fetus.healthWarnedAt;
     delete fetus.healthCollapsed;
   }
-  fetus.health = round(health + (max * FETAL_HEALTH_INITIAL_RATIO - health) * FETAL_HEALTH_REVERSION, 4);
+  const goal = clamp(target, 0, max, max * FETAL_HEALTH_INITIAL_RATIO);
+  fetus.health = round(health + (goal - health) * FETAL_HEALTH_REVERSION, 4);
   return outcome;
 }
 
@@ -263,7 +298,7 @@ const CHANGE_LABELS = Object.freeze({
 });
 const MAGNITUDE_LABELS = Object.freeze({ slight: '轻微', significant: '明显', severe: '严重' });
 
-/** 健康变化（以上限 100 计，按该胎上限等比）；严重一次约等于疏于照料一周 */
+/** 健康变化（上限一律 100）；严重一次约等于疏于照料一周 */
 export const FETAL_EVENT_HEALTH = Object.freeze({ slight: 3, significant: 8, severe: 18 });
 export const FETAL_EVENT_AFFINITY = Object.freeze({ slight: 0.5, significant: 1, severe: 2 });
 /** 外伤、过劳另加宫压 */
@@ -420,7 +455,7 @@ function countText(counts, labelOf) {
 // ───────────────────────── 胎儿事件堆 ─────────────────────────
 
 /**
- * 1.2.5 初版的亲和类别：soothe（母体安抚，系统抽方向）与 fetal_reaction（胎儿亲近或排斥）。
+ * 1.3.0 开发期间用过的亲和类别：soothe（母体安抚，系统抽方向）与 fetal_reaction（胎儿亲近或排斥）。
  * 读到时按方向换成亲近或疏离（没有方向的当亲近），纪录不丢。
  */
 const LEGACY_AFFINITY_KINDS = new Set(['soothe', 'fetal_reaction']);
@@ -583,6 +618,12 @@ export function buildCognitionWindow(records, summary, limits) {
       ? withNotes(`更早 ${earlier.count} 条：${countText(earlier.methods, (key) => COGNITION_METHOD_LABELS[key] || key)}${spanText(earlier.from, earlier.to)}`, summary?.notes)
       : '',
   };
+}
+
+/** 认知纪录摘要（已并进摘要的部分）的一行文字，追踪页用；没有就回空字串 */
+export function describeCognitionSummary(summary) {
+  if (!summary || !(summary.count > 0)) return '';
+  return withNotes(`更早 ${summary.count} 条：${countText(summary.methods, (key) => COGNITION_METHOD_LABELS[key] || key)}${spanText(summary.from, summary.to)}`, summary.notes);
 }
 
 /** 事件堆摘要（已并进摘要的部分）的一行文字；没有就回空字串 */

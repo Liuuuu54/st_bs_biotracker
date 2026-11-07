@@ -21,7 +21,7 @@ function setup(notify = {}) {
         vitalityLevel: 4, psyStressLevel: 4, eggs: 0, sperms: [], fertilizationDays: 0, latestSexDays: -1 },
       bio: { birthDifficulty: 1, breedTolerance: 1, impregnationDifficulty: 1 },
       pregnant: { pregnantDays: 120, effectivePregnantDays: 120, fetusesCount: 1, fetalEnergyDrain: 0, nutritionBurst: {},
-        fetuses: [{ embryoId: 1, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight: 1, tendencyAngle: 0, affinity: 0, healthMax: 100, health: 50 }] },
+        fetuses: [{ embryoId: 1, fathers: '甲', race: '人类', gender: '女', embryoType: '胎生', weight: 1, tendencyAngle: 0, affinity: 0, health: 50 }] },
       experience: {}, immune: { metabolism: true }, metabolism: {}, cooldown: {}, skills: [], talents: [], children: [], notify,
     },
   };

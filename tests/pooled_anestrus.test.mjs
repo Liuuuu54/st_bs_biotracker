@@ -157,7 +157,7 @@ function fetusRandom(seed, eggId) {
 
 for (const pooled of [false, true]) {
   const mode = pooled ? '混合池' : '默认';
-  test(`${mode}仍处乏情期时受精：初重不看阶段，乏情期的时机系数 0.8 乘在健康上限上`, () => {
+  test(`${mode}仍处乏情期时受精：初重不看阶段，乏情期的时机系数 0.8 乘在初始健康上`, () => {
     const chat = setup(pooled, { race: '精灵', eggs: 1, seed: '乏情初重固定通道' });
     deposit(chat, '精灵父方', '精灵', 20);
     if (pooled) for (const egg of base(chat).spermPool.eggs) egg.threshold = egg.remainingHazard = 1e-6;
@@ -171,10 +171,10 @@ for (const pooled of [false, true]) {
     }
     const expected = getConceptionWeight(embryo.gender, 1);
     near(pooled ? embryo.pooledConception.initialWeight : embryo.weight, expected);
-    // 健康上限 = 100 × 品质^0.25 × 0.8 × 天生变异（截在 ±3 个标准差）
-    const ratio = embryo.healthMax / 80;
-    assert.ok(ratio >= Math.exp(-0.39) - 1e-3 && ratio <= Math.exp(0.39) + 1e-3, `上限 ${embryo.healthMax}`);
-    assert.equal(embryo.health, embryo.healthMax / 2);
+    // 初始健康 = 50 × 品质^0.25 × 0.8 × 天生变异，夹在 35～70；上限一律 100
+    const expectedHealth = Math.min(70, Math.max(35, Math.round(40 * embryo.spermQuality ** 0.25 * Math.exp(0.13 * 3) * 10) / 10));
+    assert.ok(embryo.health >= 35 && embryo.health <= expectedHealth + 0.1, `初始健康 ${embryo.health}`);
+    assert.equal('healthMax' in embryo, false);
     assert.ok(embryo.spermQuality >= 0.25 && embryo.spermQuality <= 4, `受孕时记下精子品质快照 ${embryo.spermQuality}`);
   });
 

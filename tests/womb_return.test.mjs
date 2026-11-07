@@ -334,10 +334,10 @@ test('回归期的心理更新走 preg 组', () => {
     },
   });
   call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 10 });
-  // 写 mens 会被拒绝（阶段期待 preg）——写进 mens 的资料会在转入妊娠满 7 天时被清空
-  const result = call(chatState, 'bsUpdatePsychology', { female: '艾拉', options: { mens: { stance: 2 } } });
-  assert.equal(result.applied, false);
-  assert.match(result.message, /单侧推演/);
+  // 回归期算妊娠侧，这一侧还在推演：认知照记，心理不动（写进 mens 的资料会在转入妊娠满 7 天时被清空）
+  const result = call(chatState, 'bsRecordExperience', { female: '艾拉', action: 'cognition', time: '一日', method: 'perception', content: '她觉得肚子里的人在动', psychology: { stance: 'slight_increase' } });
+  assert.equal(result.applied, true);
+  assert.match(result.message, /还在推演/);
   assert.equal(hostOf(chatState).psychology.pendingSide, 'preg');
 });
 
