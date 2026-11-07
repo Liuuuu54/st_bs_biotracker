@@ -11,7 +11,7 @@ import {
   FETAL_BURST_MAX_DAYS_PER_PASS, FETAL_CARE_GAIN_SCALE, FETAL_CARE_LOSS_SCALE, FETAL_EVENT_AFFINITY, FETAL_EVENT_CHANGES,
   FETAL_EVENT_DAILY_AFFINITY_CAP, FETAL_EVENT_DAILY_CARE_CAP, FETAL_EVENT_DECAY_DAYS, FETAL_EVENT_HEALTH, FETAL_EVENT_KINDS,
   FETAL_EVENT_NESTED_FACTOR, FETAL_EVENT_PRESSURE, FETAL_HEALTH_FLOOR_RATIO, addFetalHealth, buildPrenatalSummary, compactFetalEvents,
-  createFetalHealthFields, describeFetalEventChange, describeFetalEventKind, describeFetalEventMagnitude, getChangeMagnitude, getChangeSign,
+  createFetalHealthFields, describeFetalEventKind, describeFetalEventMagnitude, getChangeMagnitude,
   applyFetalGuardRegen, getFetalEventSensitivity, getFetalHarmFactor, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalHealthMax,
   settleFetalHealthWeek,
 } from './fetal_health.js';
@@ -6102,7 +6102,6 @@ function applyAssistFetalPosition(chatState, args) {
   return { applied: true, message: `bsAssistFetalPosition ${action}${bySelf ? ' (by the fetus itself)' : ''} applied to ${female}.` };
 }
 
-const FETAL_EVENT_AFFINITY_CHANGES = Object.freeze(['slight_increase', 'significant_increase', 'slight_decrease', 'significant_decrease']);
 const MINUTES_PER_DAY = 1440;
 
 /** 同一胎、同一 kind 在最近 7 天内已结算过几次（递减用） */
@@ -6135,10 +6134,8 @@ function applyFetalEvent(chatState, args, source = '') {
   const content = typeof args?.content === 'string' ? args.content.trim() : '';
   if (!time || !content) return skip('time and content are required.');
   if (args?.pin !== undefined && typeof args.pin !== 'boolean') return skip('pin must be a boolean.');
-  let change = String(args?.change || '').trim();
-  if (kind === 'soothe') {
-    if (change) return skip('soothe does not take change; the system rolls the result.');
-  } else if (!FETAL_EVENT_CHANGES.includes(change)) {
+  const change = String(args?.change || '').trim();
+  if (!FETAL_EVENT_CHANGES.includes(change)) {
     return skip('change must be one of slight/significant/severe with _increase or _decrease.');
   }
 
@@ -6169,12 +6166,6 @@ function applyFetalEvent(chatState, args, source = '') {
 
   // 延产期的胎儿被关得太久，对母体的情绪更敏感：亲和波动与每日上限加倍
   const extended = stage === '延产期';
-  let failed = false;
-  if (kind === 'soothe') {
-    change = FETAL_EVENT_AFFINITY_CHANGES[randomInt(0, FETAL_EVENT_AFFINITY_CHANGES.length - 1)];
-    const psyStress = clampNumber(base.psyStress, 0, 9999, 0);
-    failed = Math.random() < Math.min(1, psyStress / 200);
-  }
   const magnitude = getChangeMagnitude(change);
   const effects = {};
   const blocked = [];
@@ -6189,10 +6180,10 @@ function applyFetalEvent(chatState, args, source = '') {
     }
     const decay = meta.group === 'harm' ? 1 : 1 / (1 + countRecentFetalEvents(events, id, kind, minutesPassed));
     if (meta.group === 'affinity') {
-      if (failed) continue;
       const cap = FETAL_EVENT_DAILY_AFFINITY_CAP * (extended ? 2 : 1);
       const room = Math.max(0, cap - sumTodayFetalEffect(events, id, today, 'affinity', 'affinity'));
-      const wanted = FETAL_EVENT_AFFINITY[magnitude] * (extended ? 2 : 1) * getChangeSign(change) * decay;
+      // 方向看类别（亲近＋、疏离－），change 只看程度
+      const wanted = FETAL_EVENT_AFFINITY[magnitude] * (extended ? 2 : 1) * meta.sign * decay;
       const amount = Math.sign(wanted) * Math.min(Math.abs(wanted), room);
       const before = clampNumber(fetus.affinity, -50, 50, 0);
       fetus.affinity = clampNumber(before + amount, -50, 50, 0);
@@ -6223,7 +6214,7 @@ function applyFetalEvent(chatState, args, source = '') {
     pressure = Math.round((base.uterinePressure - before) * 100) / 100;
   }
 
-  const counted = Object.keys(effects).length > 0 || (kind === 'soothe' && failed && blocked.length < targets.length);
+  const counted = Object.keys(effects).length > 0;
   const sequence = (events.at(-1)?.sequence || 0) + 1;
   events.push({
     id: `${sequence}`,
@@ -6240,7 +6231,6 @@ function applyFetalEvent(chatState, args, source = '') {
     ...(args.pin === true ? { pin: true } : {}),
     effects,
     ...(pressure > 0 ? { pressure } : {}),
-    ...(kind === 'soothe' && failed ? { failed: true } : {}),
     counted,
   });
   pregnant.fetalEvents = events;
@@ -6254,12 +6244,8 @@ function applyFetalEvent(chatState, args, source = '') {
   let summary = '';
   if (!counted) {
     summary = '';
-  } else if (kind === 'soothe') {
-    summary = failed
-      ? `${female}尝试安抚${targetText}，但因心理压力过大而失败，胎儿没有回应`
-      : `${female}安抚了${targetText}，亲密度${describeFetalEventChange(change)}了`;
-  } else if (kind === 'fetal_reaction') {
-    summary = `${targetText}对${female}的亲密度${describeFetalEventChange(change)}了`;
+  } else if (meta.group === 'affinity') {
+    summary = `${female}与${targetText}${meta.sign > 0 ? '更亲近了' : '疏远了'}（${describeFetalEventMagnitude(change)}）`;
   } else if (meta.group === 'harm') {
     summary = `${targetText}受到${describeFetalEventKind(kind)}影响（${describeFetalEventMagnitude(change)}）${pressure > 0 ? '，宫压随之升高' : ''}`;
   } else {

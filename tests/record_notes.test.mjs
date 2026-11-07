@@ -39,7 +39,7 @@ const day = (chatState, days = 1) => { chatState.minutesPassed += days * 1440; }
 
 test('近 7 天的事件不并进摘要，记得太密时暂时超过上限；过了 7 天窗口外的整批并', () => {
   const chatState = setup();
-  for (let i = 0; i < 13; i += 1) event(chatState, { kind: 'fetal_reaction', change: 'slight_increase' });
+  for (let i = 0; i < 13; i += 1) event(chatState, { kind: 'bonding', change: 'slight_increase' });
   assert.equal(P(chatState).pregnant.fetalEvents.length, 13);
   assert.equal(P(chatState).pregnant.fetalEventSummary, undefined);
   day(chatState, 8);
@@ -53,14 +53,14 @@ test('近 7 天的事件不并进摘要，记得太密时暂时超过上限；�
 test('窗口外累积到 5 条才整批并：不到 5 条时留着；钉选不算', () => {
   const chatState = setup({ fetalEventCap: 30, fetalEventWindow: 2, recordPinCap: 2 });
   for (let i = 0; i < 6; i += 1) {
-    event(chatState, { kind: 'fetal_reaction', change: 'slight_increase', content: `第${i}条`, ...(i === 0 ? { pin: true } : {}) });
+    event(chatState, { kind: 'bonding', change: 'slight_increase', content: `第${i}条`, ...(i === 0 ? { pin: true } : {}) });
     day(chatState, 8);
   }
   // 窗口外：第1～3条（第0条钉选）= 3 条，不到 5 条
   assert.equal(P(chatState).pregnant.fetalEvents.length, 6);
-  event(chatState, { kind: 'fetal_reaction', change: 'slight_increase', content: '第6条' });
+  event(chatState, { kind: 'bonding', change: 'slight_increase', content: '第6条' });
   day(chatState, 8);
-  event(chatState, { kind: 'fetal_reaction', change: 'slight_increase', content: '第7条' });
+  event(chatState, { kind: 'bonding', change: 'slight_increase', content: '第7条' });
   // 窗口外：第1～5条 = 5 条，整批并
   assert.deepEqual(P(chatState).pregnant.fetalEvents.map((item) => item.content), ['第0条', '第6条', '第7条']);
   assert.equal(P(chatState).pregnant.fetalEventSummary.count, 5);
@@ -71,7 +71,7 @@ test('压缩不再让递减与同日一次失效：被挤出去的照料仍在 7
   event(chatState, { kind: 'medicine', change: 'significant_increase' });
   day(chatState);
   event(chatState, { kind: 'medicine', change: 'significant_increase' });
-  for (let i = 0; i < 12; i += 1) event(chatState, { kind: 'fetal_reaction', change: 'slight_increase' });
+  for (let i = 0; i < 12; i += 1) event(chatState, { kind: 'bonding', change: 'slight_increase' });
   day(chatState);
   const before = P(chatState).pregnant.fetuses[0].health;
   event(chatState, { kind: 'medicine', change: 'significant_increase' });
@@ -95,7 +95,7 @@ test('全部钉选或全部在 7 天内时：先并最旧的非保留条目，�
 test('pending 只留最新的上限条', () => {
   const chatState = setup({ fetalEventCap: 10, fetalEventWindow: 2, recordPinCap: 0 });
   for (let i = 0; i < RECORD_NOTES_PENDING_CAP + 15; i += 1) {
-    event(chatState, { kind: 'fetal_reaction', change: 'slight_increase', content: `第${i}条` });
+    event(chatState, { kind: 'bonding', change: 'slight_increase', content: `第${i}条` });
     day(chatState, 8);
   }
   const pending = P(chatState).pregnant.fetalEventSummary.pending;
@@ -109,7 +109,7 @@ function overflow(chatState) {
   event(chatState, { kind: 'checkup', change: 'slight_increase', fetusIndex: 0, content: '产婆说第1胎胎盘偏低，不可提重物' });
   for (let i = 0; i < 10; i += 1) {
     day(chatState, 8);
-    event(chatState, { kind: 'fetal_reaction', change: 'slight_increase' });
+    event(chatState, { kind: 'bonding', change: 'slight_increase' });
   }
   for (let i = 0; i < 12; i += 1) {
     applyToolCall(chatState, { name: 'bsRecordExperience', sourceId: `c${i}`, arguments: { female: 'A', action: 'cognition', time: `第${i}日`, method: i === 0 ? 'test' : 'guess', content: i === 0 ? '验孕棒两道线，确定怀孕了' : `第${i}个想法` } });

@@ -110,7 +110,7 @@ import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './script
 import { deleteLibraryEntry, importLibraryEntry, listLibraryEntries, saveEggToLibrary, saveSireToLibrary } from './scripts/character_library.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue, getEmbryoTypeReferenceText } from './scripts/prompts/rules.js';
-import { FETAL_EVENT_KINDS, describeFetalEventChange, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, normalizeFetalEventList } from './scripts/fetal_health.js';
+import { FETAL_EVENT_KINDS, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, normalizeFetalEventList } from './scripts/fetal_health.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
@@ -5238,7 +5238,6 @@ function buildFetalEventTimelineView(pregnant) {
       kind: event.kind,
       group: FETAL_EVENT_KINDS[event.kind]?.group || 'harm',
       label: describeFetalEventKind(event.kind),
-      change: event.kind === 'soothe' && !event.failed ? `亲密度${describeFetalEventChange(event.change)}` : '',
       target: target || '胎儿',
       content: event.content,
       pin: event.pin === true,
@@ -5259,7 +5258,7 @@ function renderFetalEventTimeline(view) {
       <ol class="bs-bt-cognition-timeline-list">
         ${events.map((item) => `<li class="bs-bt-cognition-timeline-stop bs-bt-fetal-event is-${escapeHtml(item.group)}${item.counted ? '' : ' is-uncounted'}">
           <details class="bs-bt-track-card bs-bt-cognition-entry">
-            <summary class="bs-bt-track-card-title"><span>${item.pin ? '📌 ' : ''}${escapeHtml(item.time)} · ${escapeHtml(item.label)}${item.change ? `（${escapeHtml(item.change)}）` : ''} · ${escapeHtml(item.target)}</span></summary>
+            <summary class="bs-bt-track-card-title"><span>${item.pin ? '📌 ' : ''}${escapeHtml(item.time)} · ${escapeHtml(item.label)} · ${escapeHtml(item.target)}</span></summary>
             <div class="bs-bt-track-card-note">${escapeHtml(item.content)}</div>
             <div class="bs-bt-track-card-note bs-bt-fetal-event-effect">${item.counted ? escapeHtml(item.effectText || groupLabels[item.group] || '') : `${escapeHtml(groupLabels[item.group] || '')}：当天同类已计，只留纪录`}</div>
           </details>

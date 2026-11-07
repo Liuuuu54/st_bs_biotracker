@@ -165,7 +165,7 @@ test('sibling interaction is once per story hour and needs two known neighbors',
   assert.equal(sibling(chatState, 'cuddle').applied, false, '同一小时不能再互动');
   applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 1 } });
   assert.equal(sibling(chatState, 'cuddle').applied, true, '推进满一小时后重置');
-  assert.equal(applyToolCall(chatState, { name: 'bsFetalEvent', arguments: { female: 'A', time: '当天', kind: 'soothe', content: '轻抚肚子' } }).applied, true,
+  assert.equal(applyToolCall(chatState, { name: 'bsFetalEvent', arguments: { female: 'A', time: '当天', kind: 'bonding', change: 'slight_increase', content: '轻抚肚子' } }).applied, true,
     '不占胎儿事件的额度');
 
   assert.equal(sibling(setup([fetus(1)]), 'cuddle').applied, false, '单胎没有对象');

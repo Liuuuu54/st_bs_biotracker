@@ -156,7 +156,7 @@ test('子宫乏力：宫压与性欲上限下降，产后恢复变长，恢复�
 test('延产期胎儿亲和的波动加倍', () => {
   const chatState = overdue();
   extend(chatState);
-  call(chatState, 'bsFetalEvent', { time: '延产第一天', kind: 'fetal_reaction', change: 'significant_increase', content: '胎儿贴着她的手蹭' });
+  call(chatState, 'bsFetalEvent', { time: '延产第一天', kind: 'bonding', change: 'significant_increase', content: '胎儿贴着她的手蹭' });
   assert.equal(P(chatState).pregnant.fetuses[0].affinity, 2);
 });
 

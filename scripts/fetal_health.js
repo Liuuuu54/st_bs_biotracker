@@ -235,9 +235,10 @@ export function settleFetalHealthWeek(fetus, { at = null } = {}) {
 
 // ───────────────────────── 胎儿事件 ─────────────────────────
 
+// 亲和与健康同一个做法：类别决定方向（亲近＋、疏离－；伤害－、照料＋），change 只看程度
 export const FETAL_EVENT_KINDS = Object.freeze({
-  soothe: { group: 'affinity', label: '母体安抚' },
-  fetal_reaction: { group: 'affinity', label: '胎儿亲近或排斥' },
+  bonding: { group: 'affinity', label: '母胎亲近', sign: 1 },
+  estrangement: { group: 'affinity', label: '母胎疏离', sign: -1 },
   substance: { group: 'harm', label: '有害物质', sensitivity: 'toxic' },
   trauma: { group: 'harm', label: '腹部外伤', sensitivity: 'physical', pressure: true },
   overexertion: { group: 'harm', label: '过劳或剧烈运动', sensitivity: 'physical', pressure: true },
@@ -418,8 +419,20 @@ function countText(counts, labelOf) {
 
 // ───────────────────────── 胎儿事件堆 ─────────────────────────
 
+/**
+ * 1.2.5 初版的亲和类别：soothe（母体安抚，系统抽方向）与 fetal_reaction（胎儿亲近或排斥）。
+ * 读到时按方向换成亲近或疏离（没有方向的当亲近），纪录不丢。
+ */
+const LEGACY_AFFINITY_KINDS = new Set(['soothe', 'fetal_reaction']);
+
+function migrateLegacyAffinityEvent(item) {
+  if (!item || typeof item !== 'object' || !LEGACY_AFFINITY_KINDS.has(item.kind)) return item;
+  const { failed: _failed, ...rest } = item;
+  return { ...rest, kind: String(item.change || '').endsWith('_decrease') ? 'estrangement' : 'bonding' };
+}
+
 export function normalizeFetalEventList(value) {
-  return (Array.isArray(value) ? value : []).filter((item) => item && typeof item === 'object'
+  return (Array.isArray(value) ? value : []).map(migrateLegacyAffinityEvent).filter((item) => item && typeof item === 'object'
     && Object.hasOwn(FETAL_EVENT_KINDS, item.kind) && typeof item.time === 'string' && item.time.trim()
     && typeof item.content === 'string' && item.content.trim());
 }

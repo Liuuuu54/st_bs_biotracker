@@ -117,24 +117,39 @@ test('照料 7 天内重复递减 1/(1+n)，每天最多 +10', () => {
 
 test('亲和：每天最多 ±2，延产期 ±4；同一 kind 递减', () => {
   const chatState = setup();
-  event(chatState, { kind: 'fetal_reaction', change: 'severe_increase' });
+  event(chatState, { kind: 'bonding', change: 'severe_increase' });
   assert.equal(F(chatState)[0].affinity, 2);
   nextDay(chatState);
-  event(chatState, { kind: 'fetal_reaction', change: 'severe_decrease' });
-  assert.equal(F(chatState)[0].affinity, 1, '第二次 ×1/2');
+  event(chatState, { kind: 'bonding', change: 'severe_increase' });
+  assert.equal(F(chatState)[0].affinity, 3, '第二次 ×1/2');
   const extended = setup({ stage: '延产期', days: 300 });
-  event(extended, { kind: 'fetal_reaction', change: 'severe_increase' });
+  event(extended, { kind: 'bonding', change: 'severe_increase' });
   assert.equal(F(extended)[0].affinity, 4);
 });
 
-test('母体安抚：不收 change，系统抽方向；心理压力高时失败、亲和不变', () => {
-  assert.match(event(setup(), { kind: 'soothe', change: 'slight_increase' }).message, /does not take change/);
-  Math.random = () => 0;
+test('亲近与疏离：方向看类别，change 只看程度；一定要给 change；情压不影响结果', () => {
   const chatState = setup({ base: { psyStress: 400 } });
-  event(chatState, { kind: 'soothe' });
-  assert.equal(F(chatState)[0].affinity, 0);
-  assert.match(P(chatState).notify.secondly, /没有回应/);
-  assert.equal(P(chatState).pregnant.fetalEvents[0].failed, true);
+  event(chatState, { kind: 'bonding', change: 'significant_decrease' });
+  assert.equal(F(chatState)[0].affinity, 1, '亲近一律加');
+  assert.match(P(chatState).notify.secondly, /更亲近了（明显）/);
+  const cold = setup();
+  event(cold, { kind: 'estrangement', change: 'significant_increase' });
+  assert.equal(F(cold)[0].affinity, -1, '疏离一律减');
+  assert.match(P(cold).notify.secondly, /疏远了/);
+  assert.match(event(setup(), { kind: 'bonding' }).message, /change must be/);
+});
+
+test('1.2.5 初版的 soothe／fetal_reaction 读到时按方向换成亲近或疏离', async () => {
+  const { normalizeFetalEventList } = await import('../scripts/fetal_health.js');
+  const base = { time: '一日', content: '一句', effects: {}, counted: true };
+  const list = normalizeFetalEventList([
+    { ...base, kind: 'soothe', change: 'slight_increase' },
+    { ...base, kind: 'soothe', change: 'significant_decrease', failed: true },
+    { ...base, kind: 'fetal_reaction', change: 'slight_decrease' },
+    { ...base, kind: 'fetal_reaction' },
+  ]);
+  assert.deepEqual(list.map((item) => item.kind), ['bonding', 'estrangement', 'estrangement', 'bonding']);
+  assert.equal('failed' in list[1], false);
 });
 
 test('同一来源（同一则讯息重新追踪）只记一次；没有已着床胎儿时拒绝', () => {

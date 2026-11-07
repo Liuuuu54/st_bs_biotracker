@@ -232,7 +232,7 @@ test('母胎互动不会挑到待著床的胚胎', () => {
   });
   const result = applyToolCall(chatState, {
     name: 'bsFetalEvent',
-    arguments: { female: 'A', time: '当天', kind: 'fetal_reaction', change: 'slight_increase', content: '胎动' },
+    arguments: { female: 'A', time: '当天', kind: 'bonding', change: 'slight_increase', content: '胎动' },
   });
   assert.equal(result.applied, false, '没有已著床的胎儿时不该生效');
 });

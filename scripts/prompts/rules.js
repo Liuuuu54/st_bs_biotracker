@@ -52,7 +52,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '月经阶段、排卵期、假孕期切换用 bsSetMenstrualPhases；不要用它覆盖正在进行的受精、真妊娠或产程。',
   '剧情以特殊手段让逾期的妊娠延后不生用 bsExtendPregnancy（action=extend），结束延产用 action=induce；延产期间不能用 bsAbortion 或 bsChildbirth。',
   '流产用 bsAbortion；立即结束分娩用 bsChildbirth；角色在场状态变化用 bsSetCharacterPresence，参数必须为 female 和 isPresent（布尔值 true/false，不要使用 isHere）。角色明确回到当前场景、重新同行或参与当前互动时应设为 true；明确离开、失联或转为幕外时才设为 false。',
-  '腹中胎儿受到伤害（喝酒、外伤、过劳、生病、诅咒）、得到照料（安胎药、产检、休养、祝福），或母体安抚、胎儿亲近或排斥时，用 bsFetalEvent 记一件事；吃睡排泄等需求照料系统已自动计入胎儿健康，不要重复记。腹中两胎互踢、推挤、依偎用 bsAssistFetalPosition（action=sibling）。剧情明确出现人工胎位操作（转位、托高延后分娩、推送），或胎儿有意识地自己转身、缩回、往下钻时用 bsAssistFetalPosition（后者加 actor=fetus）。',
+  '腹中胎儿受到伤害（喝酒、外伤、过劳、生病、诅咒）、得到照料（安胎药、产检、休养、祝福），或母胎之间亲近、疏离（母体安抚、胎教，胎儿回应或排斥）时，用 bsFetalEvent 记一件事；吃睡排泄等需求照料系统已自动计入胎儿健康，不要重复记。腹中两胎互踢、推挤、依偎用 bsAssistFetalPosition（action=sibling）。剧情明确出现人工胎位操作（转位、托高延后分娩、推送），或胎儿有意识地自己转身、缩回、往下钻时用 bsAssistFetalPosition（后者加 actor=fetus）。',
   '不要编造怀孕天数、胎数、流产、分娩或其他高影响事件。',
 ].join('\n');
 
@@ -206,7 +206,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].positionText: 这一胎在子宫里的深度，由系统的胎动与产程自动结算：顶到宫顶／宫内自由／子宫低位／入盆／进入产道／着冠／先露部已出；卡住时会写明（如 与另一胎在入口互锁、肩部卡住、在宿主胎儿体内）。描写胎儿位置、腹部下沉、入盆时须与它一致，不要自行改写。',
   '- fetuses[*].backSideText: 胎背朝母体哪一侧（左前／右前／左后／右后；横位时写成朝上或朝下、偏前或偏后）。与胎位角度互相独立，由系统的胎动与产程结算；胎背朝后（枕后位）时胎儿的脸朝母体腹侧，真实分娩模式下产程较慢、较痛。描写胎动方向、胎背贴着哪一侧肚皮时须与它一致。卵生、胎转卵生出生时是蛋，没有这一项，也没有枕后位。',
   '- fetuses 的排列顺序是子宫里由左至右的相对位置，不代表出生顺序；正在下降或娩出的那一胎带 presenting=true。',
-  '- fetuses[*].affinity: 母胎之間的親密度（-50～50），由 bsFetalEvent 的 soothe、fetal_reaction 改变，也会参与 derivedType 进展。',
+  '- fetuses[*].affinity: 母胎之間的親密度（-50～50），由 bsFetalEvent 的 bonding（亲近）、estrangement（疏离）改变，也会参与 derivedType 进展。',
   '- fetuses[*].maternalDerivedTypeProgress: 与母体(正)/父源(負)衍生同化的进度，范围 -100 到 100；系统按母胎亲密度（往母方）与母亲对胎父的身体熟悉度（往父方）拉锯推进，不要直接改。',
   '- fetuses[*].talents: 胎儿承接的天赋，只含 skillId、带正负号的 level 与 exp；只能由孕体角色的 bsTrainSkill 在允许阶段自动改变。',
   '',

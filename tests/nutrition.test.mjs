@@ -164,7 +164,7 @@ test('非妊娠阶段不计分', () => {
 test('母体安抚只改亲和，不改健康', () => {
   Math.random = () => 0.99;
   const chatState = one();
-  applyToolCall(chatState, { name: 'bsFetalEvent', arguments: { female: 'A', time: '当天', kind: 'soothe', content: '轻抚' } });
+  applyToolCall(chatState, { name: 'bsFetalEvent', arguments: { female: 'A', time: '当天', kind: 'bonding', change: 'slight_increase', content: '轻抚' } });
   near0(total(chatState), 0);
 });
 

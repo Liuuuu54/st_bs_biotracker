@@ -32,19 +32,19 @@
 
 心理只在使用者啟用推演後存在。月經側為掌控／欲望／自主，妊娠側為母職信心／接納與聯結／社會展現；四個旧旗標及认知數值軸已撤除。只初始化当前侧三軸与六階段角色解释，转侧重新推演，產後恢復暫停；未知值為 null，不補成 0 或接受 delta。`bsUpdatePsychology` 仍受每故事小時一次的冷卻。[欄位定義](../../scripts/registry_psy_config.js)、[生命週期与紀錄](reproductive-tracking.md)。
 
-`bsFetalEvent` 記母體安撫、胎兒親近或排斥（改親近度，限制在 -50 至 50，安撫受情壓影響），以及傷害與照料（改胎兒健康），以故事日防刷，見[胎兒事件](pregnancy-and-labor.md#胎兒事件)。多胎之間的互踢、推擠、依偎改由 `bsAssistFetalPosition`（`action=sibling`）處理，只改角度或左右位置，每故事小時一次。[事件實作](../../scripts/tools.js#L6112)、[兩胎互動](../../scripts/tools.js#L8710)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L505)。
+`bsFetalEvent` 記母胎親近、疏離（改親近度，限制在 -50 至 50），以及傷害與照料（改胎兒健康），以故事日防刷，見[胎兒事件](pregnancy-and-labor.md#胎兒事件)。多胎之間的互踢、推擠、依偎改由 `bsAssistFetalPosition`（`action=sibling`）處理，只改角度或左右位置，每故事小時一次。[事件實作](../../scripts/tools.js#L6111)、[兩胎互動](../../scripts/tools.js#L8696)。畫面上的親近詞是這個數值的呈現映射。[呈現函式](../../scripts/uterus_render.js#L505)。
 
 `experience` 保存初次／近期性伴、獨立的交往与婚姻名單及後臺懷孕／生產／損失次數。`bsRecordExperience` 以必填 `female/action/time` 定位角色与分支；認知追加至 `profile.cognitionRecords`，關係與子女更新长期資料。胎兒與子女的 `selectedFather` 是角色自己心裡認定的父親，對外說法寫在白描紀錄裡（`action=claim` 記錄並追加），`fathers` 仍是實際遺傳来源。[工具參考](tool-reference.md)、[詳細機制](reproductive-tracking.md)。
 
-`bsWriteDiary` 追加角色主觀日記；工具定義要求同一角色每故事日最多一篇，日期標題需是故事日期而非時刻。日記是模型產生的敘述記錄，不參與時間或生理公式。[定義](../../scripts/prompts/tool_definitions.js#L11)、[實作](../../scripts/tools.js#L6199)。
+`bsWriteDiary` 追加角色主觀日記；工具定義要求同一角色每故事日最多一篇，日期標題需是故事日期而非時刻。日記是模型產生的敘述記錄，不參與時間或生理公式。[定義](../../scripts/prompts/tool_definitions.js#L11)、[實作](../../scripts/tools.js#L6190)。
 
 ## 技能與天賦
 
-技能目錄是聊天共用的定義，角色各自保存技能、天賦與歷史。技能最高 10 級、天賦最高 5 級，歷史最多保留 100 筆；技能經驗門檻及升級由 [skill_config.js](../../scripts/skill_config.js#L1)計算。`bsRegisterSkillDefinition` 建立／重用定義；`bsTrainSkill` 須有原因和整數技能經驗，尚未覺醒的技能還須 `awaken=true`。LLM 工具不能直接修改角色天賦。孕中期至部分產程階段，訓練可依隨機選中的已著床胎兒親近度，將正或負的經驗傳至其天賦。[定義工具](../../scripts/tools.js#L6619)、[訓練工具](../../scripts/tools.js#L6634)。初始化時也可由角色卡推論初始技能與天賦，[註冊子流程](../../scripts/registry.js#L1569)。
+技能目錄是聊天共用的定義，角色各自保存技能、天賦與歷史。技能最高 10 級、天賦最高 5 級，歷史最多保留 100 筆；技能經驗門檻及升級由 [skill_config.js](../../scripts/skill_config.js#L1)計算。`bsRegisterSkillDefinition` 建立／重用定義；`bsTrainSkill` 須有原因和整數技能經驗，尚未覺醒的技能還須 `awaken=true`。LLM 工具不能直接修改角色天賦。孕中期至部分產程階段，訓練可依隨機選中的已著床胎兒親近度，將正或負的經驗傳至其天賦。[定義工具](../../scripts/tools.js#L6605)、[訓練工具](../../scripts/tools.js#L6620)。初始化時也可由角色卡推論初始技能與天賦，[註冊子流程](../../scripts/registry.js#L1569)。
 
 ## 衣櫃、服裝和描述
 
-衣櫃保存長期物件；`outfit` 保存目前主服、配件、臨時衣物及穿著狀態。衣物有遮蔽、支撐、容納、方便四維度，主服與配件另有各自的欄位規則。[欄位及正規化](../../scripts/wardrobe_config.js#L1)。`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` 改變資料；懷孕和產後穿著壓力依身體狀態與衣物尺寸計算，供 PDA 顯示。[衣物工具](../../scripts/tools.js#L6387)、[穿著壓力](../../scripts/tools.js#L217)。
+衣櫃保存長期物件；`outfit` 保存目前主服、配件、臨時衣物及穿著狀態。衣物有遮蔽、支撐、容納、方便四維度，主服與配件另有各自的欄位規則。[欄位及正規化](../../scripts/wardrobe_config.js#L1)。`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` 改變資料；懷孕和產後穿著壓力依身體狀態與衣物尺寸計算，供 PDA 顯示。[衣物工具](../../scripts/tools.js#L6373)、[穿著壓力](../../scripts/tools.js#L217)。
 
 `descriptions.normalDescription` 與 `pregnantDescription` 是角色狀態文字，各自存成有序陣列 `[{ name, value, updatedAt }]`：陣列順序即欄位順序，`updatedAt` 是該欄最後更新或確認時的系統時鐘（`minutesPassed`）。送給模型時轉成以欄位名為鍵的物件 `{ "欄位名": "內容" }`，不帶時間戳；超過一天（遊戲時間）沒更新的欄位另列在 `staleDescriptionFields`，追蹤提示的「descriptions 待確認」段逐人點名，主線看不到這份點名。描述規則裡欄位名前加 `*` 的是即時狀態（預設卵方「状态」「表情」「行动」，孕態「动作」「反应」，精方「行动」）：每輪追蹤提示的「即时字段」段列出在場角色各自有的 `*` 欄位，提醒新訊息裡有變化就更新、沒變不必照抄；給註冊模型看的規則會拿掉 `*`。1.2.0 以前沒改過的卵方預設規則會自動換成帶 `*` 的新預設，改過的不動。追蹤頁滑鼠停在描述欄位上會顯示該欄多久前（遊戲時間）更新，超過一天的另註明會被點名。描述本身不是生理數值的計算來源。[合併與過期](../../scripts/descriptions.js#L84)、[追蹤狀態投影](../../scripts/tracker.js#L1276)。1.1.4 以前的「欄名|內容;;」字串在載入時遷移成陣列，切不出欄位名的段落整段收進「未分類」，時間戳記為遷移當下，不會一升級就全部被點名。[存檔遷移](../../scripts/state_migration.js#L213)。
 

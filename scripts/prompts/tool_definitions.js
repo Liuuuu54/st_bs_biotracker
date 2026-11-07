@@ -517,10 +517,10 @@ export const TOOL_DEFINITIONS = Object.freeze([
   {
     name: 'bsFetalEvent',
     description: '记一件影响腹中胎儿的事，一次呼叫记一件。剧情明确写到才用；吃、睡、排泄等需求照料系统已自动计入胎儿健康，不要再记。'
-      + 'kind：soothe 母体安抚（不传 change，系统随机判定亲和变化，心理压力高时容易失败）；fetal_reaction 胎儿对母体的亲近或排斥（change 为 increase 亲近、decrease 排斥）；'
+      + 'kind：亲和，母胎亲密度：bonding 亲近（母体抚摸、哼歌、说话、胎教，胎儿回应、安静下来）、estrangement 疏离（母体排斥、厌恶、拒绝这一胎，胎儿对她排斥、不安乱动）；'
       + '伤害，胎儿健康减少：substance 有害物质（酒、药物、毒）、trauma 腹部外伤、overexertion 过劳或剧烈运动、illness 生病发烧、curse 诅咒或腐化、other_harm 其他伤害；'
       + '照料，胎儿健康增加、不超过先天上限：medicine 安胎药或补品、checkup 产检治疗、rest 充分休养、blessing 祝福或治疗魔法、other_care 其他照料。'
-      + 'change 只看程度 slight／significant／severe（伤害一律减、照料一律加，increase 或 decrease 都可）。毒物、生病、诅咒在孕早期伤得最重，外伤、过劳在孕晚期伤得最重，且另加宫压，可能引来流产或早产的风险警告。'
+      + 'change 只看程度 slight／significant／severe（亲近、照料一律加，疏离、伤害一律减，increase 或 decrease 都可）。母体心烦意乱、安抚不了时照剧情记疏离或不记。毒物、生病、诅咒在孕早期伤得最重，外伤、过劳在孕晚期伤得最重，且另加宫压，可能引来流产或早产的风险警告。'
       + '程度按这对母胎的种族特性与世界设定判断实际伤害，不按人类常识：对该族无害的不记（矮人照常豪饮、火系胎儿不怕高温、亡灵不怕寒冷），对该族格外致命的提高程度（魔族遇圣水、狼人遇银）；经母体传给胎儿的（毒物、药物、疾病）两边的种族都要看。'
       + 'fetusIndex 按目前可见的 fetuses 顺序从 0 起算；省略时伤害与照料作用于全部已着床的胎儿，亲和作用于随机一胎。角色不知道自己怀孕也照样结算，叙事照认知规则。'
       + '防刷：同一天同一 kind 只结算一次，第二次只留纪录；亲和与照料在 7 天内重复会递减；每胎每天亲和最多 ±2（延产期 ±4）、照料最多 +10；伤害不递减。'
