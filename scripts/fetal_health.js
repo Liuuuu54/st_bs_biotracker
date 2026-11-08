@@ -584,7 +584,7 @@ export function buildFetalEventWindow(pregnant, limits, { minutesPassed = 0, lab
 // ───────────────────────── 认知纪录 ─────────────────────────
 
 export const COGNITION_METHOD_LABELS = Object.freeze({
-  perception: '亲历／自觉', guess: '猜测／自算', informed: '被告知', test: '检测', prenatal: '诊察',
+  perception: '亲历／自觉', guess: '猜测／自算', informed: '被告知', test: '检测', prenatal: '诊察', experience: '经历／心境',
 });
 
 export function foldCognitionIntoSummary(summary, record) {

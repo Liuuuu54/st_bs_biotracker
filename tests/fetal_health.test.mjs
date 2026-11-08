@@ -468,10 +468,14 @@ test('v13 → v14：妊娠侧的 bonding 改名 acceptance（数值、解释、�
   assert.equal('bonding_value' in migrated.characters.A.profile.psychology.preg, false);
 });
 
-test('未孕时动 mens 三轴；没有独立的心理工具', () => {
+test('未孕时动 mens 三轴；不限于怀孕的心境经历用 experience 记；没有独立的心理工具', () => {
   const chatState = withPsychology(setup({ stage: '卵泡期', days: 0, fetuses: [] }), 'mens', { mastery_value: 30, desire_value: 30, autonomy_value: 30 });
   feel(chatState, { desire: 'significant_increase' });
   assert.equal(P(chatState).psychology.mens.desire_value, 35);
+  const result = feel(chatState, { autonomy: 'significant_increase' }, { method: 'experience', content: '那一夜她第一次翻身压住他，自己定了节奏' });
+  assert.equal(result.applied, true, result.message);
+  assert.equal(P(chatState).cognitionRecords.at(-1).method, 'experience');
+  assert.equal(P(chatState).psychology.mens.autonomy_value, 35);
   assert.equal(TOOL_DEFINITIONS.some((tool) => tool.name === 'bsUpdatePsychology'), false);
   assert.equal(applyToolCall(chatState, { name: 'bsUpdatePsychology', arguments: { female: 'A', options: { mens: { desire: 2 } } } }).applied, false);
 });

@@ -236,7 +236,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   ...Object.entries(PSY_MENS_FIELDS).map(([k, v]) => `- [mens] ${k} (0-100+): ${v.definition}`),
   ...Object.entries(PSY_PREG_FIELDS).map(([k, v]) => `- [preg] ${k} (0-100+): ${v.definition}`),
   '- 非怀孕时主要看 psychology.mens；怀孕、假孕、产兆前驱、产程时主要看 psychology.preg。',
-  '- 心理阶段从 0 到 100+。变化挂在认知纪录上：bsRecordExperience（action=cognition）的 psychology 每轴给程度（slight／significant／severe，约 2／5／10 点），只能动当前这一侧的三轴，同一轴同一个故事日只算一次。没有值得记下的经历就不要动心理。',
+  '- 心理阶段从 0 到 100+。变化挂在认知纪录上：bsRecordExperience（action=cognition）的 psychology 每轴给程度（slight／significant／severe，约 2／5／10 点），只能动当前这一侧的三轴，同一轴同一个故事日只算一次。不限于怀孕的心境经历（性爱里的主导或被迫、看到别人的孩子、爱人的话、失去孩子的阴影）用 method=experience 记。没有值得记下的经历就不要动心理。',
   '- 每个心理项由 *_value 和 *_interpret 组成。*_value 是 0-100 数值本体，*_interpret 是系统对应生成的心理解释。',
   '',
   '[skills / talents]',

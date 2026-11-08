@@ -1,7 +1,8 @@
 // Shared reproductive data contracts. Beliefs never overwrite physiological facts.
 import { RECORD_LIMIT_DEFAULTS, normalizeRecordLimits, compactCognitionRecords } from './fetal_health.js';
 
-export const COGNITION_METHODS = Object.freeze(['perception', 'guess', 'informed', 'test', 'prenatal']);
+// experience（1.3.0）：让她心境改变的经历，不限于怀孕（性爱里的主导或被迫、看到别人的孩子、爱人的话、失去孩子的阴影），心理变化多半挂在这里
+export const COGNITION_METHODS = Object.freeze(['perception', 'guess', 'informed', 'test', 'prenatal', 'experience']);
 export const EXPERIENCE_ACTIONS = Object.freeze(['cognition', 'date', 'breakup', 'marry', 'divorce', 'child', 'claim']);
 /** 产前护理三档（数值与说明见 fetal_health.js 的 PRENATAL_CARE_LEVELS） */
 export const PRENATAL_CARE_KEYS = Object.freeze(['neglect', 'normal', 'attentive']);

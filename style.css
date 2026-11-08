@@ -6299,7 +6299,7 @@
 
 /*
  * 时间轴节点的形状：主题配色各异，不靠颜色区分。节点（li::after）与图例（.bs-bt-timeline-key）共用。
- * 胎儿事件：伤害▲、照料●、亲近◆、疏离◇；认知纪录：感知●、猜测虚线○、告知□、检测■、诊察◆。
+ * 胎儿事件：伤害▲、照料●、亲近◆、疏离◇；认知纪录：感知●、猜测虚线○、告知□、检测■、诊察◆、经历◇。
  */
 #bs-biotracker-settings .bs-bt-timeline-legend {
   display: flex;
@@ -6356,7 +6356,9 @@
 }
 
 #bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-estrangement::after,
-#bs-biotracker-settings .bs-bt-timeline-key.is-estrangement {
+#bs-biotracker-settings .bs-bt-timeline-key.is-estrangement,
+#bs-biotracker-settings .bs-bt-cognition-timeline-stop.is-method-experience::after,
+#bs-biotracker-settings .bs-bt-timeline-key.is-method-experience {
   border-radius: 0;
   transform: rotate(45deg) scale(0.85);
 }

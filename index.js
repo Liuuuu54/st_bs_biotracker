@@ -1741,7 +1741,7 @@ function addInitialCognitionRow() {
   const row = document.createElement('div');
   row.className = 'bs-bt-cognition-row settings_section';
   row.innerHTML = `<label>故事日期<input class="text_pole" data-cognition-time placeholder="例如：旅途第六日" /></label>
-    <label>认知方式<select class="text_pole" data-cognition-method>${['亲历／自觉','猜测／自算','被告知','检测','诊察'].map((label,i) => `<option value="${COGNITION_METHODS[i]}">${label}</option>`).join('')}</select></label>
+    <label>认知方式<select class="text_pole" data-cognition-method>${['亲历／自觉','猜测／自算','被告知','检测','诊察','经历／心境'].map((label,i) => `<option value="${COGNITION_METHODS[i]}">${label}</option>`).join('')}</select></label>
     <label>认知内容<textarea class="text_pole bs-bt-textarea" rows="2" data-cognition-content placeholder="她从什么线索得知了什么、如何相信或误解"></textarea></label>
     <button type="button" class="menu_button" data-cognition-remove>移除此笔</button>`;
   row.querySelector('[data-cognition-remove]').addEventListener('click', () => row.remove());
@@ -5249,7 +5249,7 @@ function renderTimelineLegend(keys) {
 }
 
 const FETAL_EVENT_LEGEND = Object.freeze([['is-harm', '伤害'], ['is-care', '照料'], ['is-bonding', '亲近'], ['is-estrangement', '疏离']]);
-const COGNITION_LEGEND = Object.freeze([['is-method-perception', '感知'], ['is-method-guess', '猜测'], ['is-method-informed', '告知'], ['is-method-test', '检测'], ['is-method-prenatal', '诊察']]);
+const COGNITION_LEGEND = Object.freeze([['is-method-perception', '感知'], ['is-method-guess', '猜测'], ['is-method-informed', '告知'], ['is-method-test', '检测'], ['is-method-prenatal', '诊察'], ['is-method-experience', '经历']]);
 
 function renderFetalEventTimeline(view) {
   const events = Array.isArray(view?.events) ? view.events : [];
@@ -6125,7 +6125,7 @@ function describeCognitionPsychology(effects) {
 
 function renderCognitionTimeline(records, earlier = '') {
   if (!records.length && !earlier) return '<div class="bs-bt-track-description-empty">暂无认知纪录；不代表角色相信未孕。</div>';
-  const methodLabels = { test: '检测', prenatal: '诊察', perception: '感知', informed: '告知', guess: '猜测' };
+  const methodLabels = { test: '检测', prenatal: '诊察', perception: '感知', informed: '告知', guess: '猜测', experience: '经历' };
   return `${earlier ? `<div class="bs-bt-track-description-empty">${escapeHtml(earlier)}</div>` : ''}
   ${renderTimelineLegend(COGNITION_LEGEND)}
   <div class="bs-bt-cognition-timeline" tabindex="0" role="region" aria-label="认知纪录时间轴">
