@@ -5,7 +5,7 @@ import { RECORD_LIMIT_DEFAULTS, normalizeRecordLimits, compactCognitionRecords }
 export const COGNITION_METHODS = Object.freeze(['perception', 'guess', 'informed', 'test', 'prenatal', 'experience']);
 export const EXPERIENCE_ACTIONS = Object.freeze(['cognition', 'date', 'breakup', 'marry', 'divorce', 'child', 'claim']);
 /** 产前护理三档（数值与说明见 fetal_health.js 的 PRENATAL_CARE_LEVELS） */
-export const PRENATAL_CARE_KEYS = Object.freeze(['neglect', 'normal', 'attentive']);
+export const PRENATAL_CARE_KEYS = Object.freeze(['abusive', 'neglect', 'unaware', 'normal', 'attentive', 'devoted']);
 /** 认知纪录附带的心理变化：每轴一个程度（与胎儿事件同一套写法） */
 const PSY_SHIFT_PATTERN = /^(slight|significant|severe)_(increase|decrease)$/;
 export const REPRODUCTIVE_DEFAULTS = Object.freeze({
@@ -150,7 +150,7 @@ export function recordExperience(chatState, args, source = '', { resolveFetus = 
   const nonempty = (x) => typeof x === 'string' && x.trim().length > 0;
   if (action === 'cognition' && (!COGNITION_METHODS.includes(args.method) || !nonempty(args.content))) return fail('method 或 content 无效。');
   if (action === 'cognition' && Object.hasOwn(args, 'pin') && typeof args.pin !== 'boolean') return fail('pin 须为布尔值。');
-  if (action === 'cognition' && Object.hasOwn(args, 'prenatalCare') && !PRENATAL_CARE_KEYS.includes(args.prenatalCare)) return fail('prenatalCare 须为 neglect、normal 或 attentive。');
+  if (action === 'cognition' && Object.hasOwn(args, 'prenatalCare') && !PRENATAL_CARE_KEYS.includes(args.prenatalCare)) return fail(`prenatalCare 须为 ${PRENATAL_CARE_KEYS.join('、')}。`);
   if (action === 'cognition' && Object.hasOwn(args, 'psychology')) {
     const shifts = args.psychology;
     if (!shifts || typeof shifts !== 'object' || Array.isArray(shifts) || Object.keys(shifts).length === 0

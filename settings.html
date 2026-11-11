@@ -547,6 +547,59 @@
                 <div class="bs-bt-gestation-slider-scale"><span>浅 −1</span><span>0</span><span>深 +1</span></div>
               </div>
 
+              <details class="settings_section bs-bt-register-body">
+                <summary>身材（手动指定）</summary>
+                <p class="bs-bt-hint">不勾就交给模型照角色卡判断；卡上没写的母体倾向与胸臀增长倾向由系统抽样。只影响外观、衣服合身与像素图，胸部大小与奶量无关。</p>
+                <div id="bs-bt-register-build" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="plain" title="体重比例：身上的量，是肉还是肌肉看活力等级">
+                  <div class="bs-bt-gestation-slider-head">
+                    <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定体重比例</label>
+                    <span data-role="value" class="bs-bt-slider-value">交给模型</span>
+                  </div>
+                  <input type="range" data-role="range" min="0" max="100" step="5" value="50" disabled aria-label="手动指定体重比例" />
+                  <div class="bs-bt-gestation-slider-scale"><span>纤瘦 0</span><span>匀称 50</span><span>丰硕 100</span></div>
+                </div>
+                <div id="bs-bt-register-bust" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="plain" title="胸部丰满度：每 10 一个罩杯，0＝AAA、40＝C、100＝I">
+                  <div class="bs-bt-gestation-slider-head">
+                    <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定胸部</label>
+                    <span data-role="value" class="bs-bt-slider-value">交给模型</span>
+                  </div>
+                  <input type="range" data-role="range" min="0" max="100" step="5" value="40" disabled aria-label="手动指定胸部" />
+                  <div class="bs-bt-gestation-slider-scale"><span>AAA</span><span>D</span><span>I</span></div>
+                </div>
+                <div id="bs-bt-register-hip" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="plain" title="臀部饱满度：骨盆加臀部">
+                  <div class="bs-bt-gestation-slider-head">
+                    <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定臀部</label>
+                    <span data-role="value" class="bs-bt-slider-value">交给模型</span>
+                  </div>
+                  <input type="range" data-role="range" min="0" max="100" step="5" value="50" disabled aria-label="手动指定臀部" />
+                  <div class="bs-bt-gestation-slider-scale"><span>窄 0</span><span>适中 50</span><span>宽大 100</span></div>
+                </div>
+                <div id="bs-bt-register-allocation" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="offset" title="母体倾向：怀孕时养分偏给自己还是胎儿。偏养母的人怀孕会丰腴、臀腿变厚；偏养宝的胎儿长得大、母体消瘦">
+                  <div class="bs-bt-gestation-slider-head">
+                    <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定母体倾向</label>
+                    <span data-role="value" class="bs-bt-slider-value">交给模型</span>
+                  </div>
+                  <input type="range" data-role="range" min="-1" max="1" step="0.1" value="0" disabled aria-label="手动指定母体倾向" />
+                  <div class="bs-bt-gestation-slider-scale"><span>偏养母 −1</span><span>平衡</span><span>偏养宝 +1</span></div>
+                </div>
+                <div id="bs-bt-register-bust-gain" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="plain" title="胸部增长倾向：平衡时单胎足月胸部大几个罩杯（荷尔蒙体质，与母体倾向无关）">
+                  <div class="bs-bt-gestation-slider-head">
+                    <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定胸部增长倾向</label>
+                    <span data-role="value" class="bs-bt-slider-value">交给模型</span>
+                  </div>
+                  <input type="range" data-role="range" min="0" max="3" step="0.25" value="1.5" disabled aria-label="手动指定胸部增长倾向" />
+                  <div class="bs-bt-gestation-slider-scale"><span>不变 0</span><span>1.5</span><span>3 个罩杯</span></div>
+                </div>
+                <div id="bs-bt-register-hip-gain" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="plain" title="臀部增长倾向：平衡时单胎足月骨盆与臀部变宽几级（每级 10）">
+                  <div class="bs-bt-gestation-slider-head">
+                    <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定臀部增长倾向</label>
+                    <span data-role="value" class="bs-bt-slider-value">交给模型</span>
+                  </div>
+                  <input type="range" data-role="range" min="0" max="2" step="0.25" value="0.5" disabled aria-label="手动指定臀部增长倾向" />
+                  <div class="bs-bt-gestation-slider-scale"><span>不变 0</span><span>1</span><span>2 级</span></div>
+                </div>
+              </details>
+
               <details class="settings_section">
                 <summary>初始认知纪录（选填）</summary>
                 <p>填写她开局知道、猜测或误解的内容；与真实生理状态分开。留空可正常注册。</p>
@@ -651,6 +704,7 @@
               <div class="settings_section bs-bt-action-row">
                 <button id="bs-bt-register-run" class="menu_button" type="button">注册当前角色</button>
                 <button id="bs-bt-register-run-bundle" class="menu_button" type="button">一次注册（含日记、技能）</button>
+                <button id="bs-bt-register-run-body" class="menu_button" type="button" title="已注册的角色重新照角色卡判断体重、胸、臀、母体倾向与胸臀增长倾向，只改这几项，其他资料不动。身材拉杆勾了的以拉杆为准">只补身材</button>
               </div>
               <small><span id="bs-bt-register-bundle-note"></span> <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/registration.md#註冊頁的幾條路徑" target="_blank" rel="noopener noreferrer" title="一次注册说明" aria-label="一次注册说明">?</a></small>
 

@@ -72,6 +72,20 @@ export function resolveBodySize({ race, bloodline = null, bodySize = null } = {}
 }
 
 /**
+ * 个体体型偏离种族平均几个标准差（σ）。没有个体值、可变或种族没有标准差时为 0。
+ * 显怀系数与像素图用它表现高挑或娇小。
+ */
+export function getBodySizeSigma(base) {
+  const individual = clampIndividualBodySize(base?.bodySize);
+  if (individual === null) return 0;
+  const merged = getMergedRaceBodySize(base?.race || '', base?.bloodline ?? null);
+  const mean = Number(merged?.bodySize);
+  const sd = Number(merged?.bodySizeSd);
+  if (!Number.isFinite(mean) || !(sd > 0)) return 0;
+  return Math.max(-3, Math.min(3, (individual - mean) / sd));
+}
+
+/**
  * 体型的容积倍率：人类 4 级为 1，每差一级翻倍（1 级 0.125 … 7 级 8）。
  * 子宫装得下多少精液、每天排掉多少，以及一次射精的建议量都按它缩放。
  */

@@ -321,7 +321,7 @@ test('v11 存档迁移：精方补季节起点（对齐同族卵方），没有�
   old.schemaVersion = 11;
   settings.chatStates[ctx.chatId] = old;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 14);
+  assert.equal(migrated.schemaVersion, 15);
   const phase = getSireSeasonPhase(migrated.sires['精'], migrated.minutesPassed);
   assert.ok(Math.abs(phase - getCharacterSeasonPhase(migrated.characters['甲'].profile)) < 1e-6);
   assert.equal(migrated.sires['人'].seasonOrigin, null);

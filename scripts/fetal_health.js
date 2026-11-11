@@ -210,20 +210,27 @@ export function addFetalHealth(fetus, amount) {
 /**
  * 产前护理：角色知道（或相信）自己怀孕后，整体怎么养胎——饮食、作息、休养、产检的日常习惯。
  * 由模型照剧情用 bsRecordExperience（cognition 附 prenatalCare）设定，跟着这次妊娠，妊娠结束时清掉；
- * 没设定（包括还不知道怀孕）一律当一般。它只改周回归往哪里拉：镜头外的长时间推进也照这个养，
- * 单独作用不会让胎儿见底，也没有点数可刷；需求照料与胎儿事件照常叠在上面。
+ * 没设定（还不知道怀孕）当「未察觉」，照常过日子、没有特别照顾。它只改周回归往哪里拉：镜头外的长时间推进也照这个养，
+ * 单独作用不会让胎儿见底（虐孕收敛在 20，见底线是 10），也没有点数可刷；需求照料与胎儿事件照常叠在上面。
+ * 悉心安胎 80 跨过健壮门槛 75：养得太好胎儿偏大。
  * 用真实引擎校准（人类单胎、需求不计分，逐日或一次跳 60 天结果相同）：足月胎重疏忽约 0.77、一般 1、用心约 1.19，
  * 与「需求拖到满才处理」约 0.8、「一到高就处理」约 1.2 同一个量级。
  */
 export const PRENATAL_CARE_LEVELS = Object.freeze({
+  abusive: { label: '虐孕', target: 20 },
   neglect: { label: '疏忽', target: 35 },
+  unaware: { label: '未察觉', target: 45 },
   normal: { label: '一般', target: 50 },
   attentive: { label: '用心', target: 60 },
+  devoted: { label: '悉心安胎', target: 80 },
 });
+
+/** 没设定时当「未察觉」：规则只让模型在她知道或相信怀孕后才给，没设定就等于还没认定她知道 */
+export const DEFAULT_PRENATAL_CARE = 'unaware';
 
 export function getPrenatalCareKey(pregnant) {
   const key = pregnant?.prenatalCare;
-  return typeof key === 'string' && Object.hasOwn(PRENATAL_CARE_LEVELS, key) ? key : 'normal';
+  return typeof key === 'string' && Object.hasOwn(PRENATAL_CARE_LEVELS, key) ? key : DEFAULT_PRENATAL_CARE;
 }
 
 export function getPrenatalCareTarget(pregnant) {

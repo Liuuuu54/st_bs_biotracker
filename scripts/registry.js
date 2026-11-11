@@ -6,6 +6,7 @@ import { getEffectiveSettings } from './card_settings.js';
 import { buildBreedingInferenceSystemPrompt, buildDiaryRuleLines, buildRegistryBundlePrompt, buildRegistrySkillSystemPrompt, buildRegistrySystemPrompt, buildSireExtractionSystemPrompt, buildSpecialFetusNotes, buildStartingOutfitSystemPrompt, buildWardrobePrepSystemPrompt, DEFAULT_DIARY_WRITING_PROMPT, QUICKENING_RULE, SPECIAL_FETUS_HINTS, WARDROBE_FIT_CONSISTENCY_RULE } from './prompts/rules.js';
 import { clampIndividualBodySize, getExpectedBodySize, normalizeSheathOffset, normalizeSwordOffset, sampleBodySize } from './body_size.js';
 import { findSeasonReference } from './season_phase.js';
+import { BUST_GAIN_MAX, HIP_GAIN_MAX, sampleBodyTraits } from './maternal_body.js';
 import { descriptionListToObject, normalizeDescriptionList } from './descriptions.js';
 import { getSireRecord, normalizeSpermQuality, pruneFutaSireRecord } from './sires.js';
 import {
@@ -1389,6 +1390,13 @@ function sanitizeRegistryProfile(profile, baseProfile) {
     if (profile.base.sheathOffset !== undefined && profile.base.sheathOffset !== null) {
       nextBase.sheathOffset = normalizeSheathOffset(profile.base.sheathOffset);
     }
+    // 身材（1.3.1）：模型照角色卡填，没写就省略；给了就夹值
+    for (const [key, min, max] of REGISTRY_BODY_FIELDS) {
+      const value = profile.base[key];
+      if (value === undefined || value === null || value === '') continue;
+      const number = Number(value);
+      if (Number.isFinite(number)) nextBase[key] = Math.round(clampNumber(number, min, max, number) * 100) / 100;
+    }
     if (profile.base.libido !== undefined) {
       const libido = sanitizeMeter(profile.base.libido, { min: 0, max: 150 });
       if (libido !== null) nextBase.libido = libido;
@@ -1481,6 +1489,28 @@ function getRegisteredRecoveryDays(profile) {
   });
 }
 
+/** 注册可写的身材栏位与范围（maternal_body.js） */
+const REGISTRY_BODY_FIELDS = Object.freeze([
+  ['build', 0, 100], ['bust', 0, 100], ['hip', 0, 100],
+  ['allocationBias', -1, 1], ['bustGain', 0, BUST_GAIN_MAX], ['hipGain', 0, HIP_GAIN_MAX],
+]);
+const REGISTRY_BODY_TRAITS = Object.freeze(['allocationBias', 'bustGain', 'hipGain']);
+
+/**
+ * 身材的合并：模型给了就用；没给时，已注册过的角色保留原值，第一次注册的角色抽一次倾向
+ * （母体倾向、胸臀增长倾向；体重、胸、臀维持预设）。
+ */
+function resolveRegistryBodyFields(sanitizedBase = {}, currentBase = {}, isFirstRegistration = false, random = Math.random) {
+  const sampled = isFirstRegistration ? sampleBodyTraits(random) : null;
+  const next = {};
+  for (const [key] of REGISTRY_BODY_FIELDS) {
+    if (sanitizedBase[key] !== undefined) next[key] = sanitizedBase[key];
+    else if (sampled && REGISTRY_BODY_TRAITS.includes(key)) next[key] = sampled[key];
+    else if (currentBase[key] !== undefined) next[key] = currentBase[key];
+  }
+  return next;
+}
+
 export function applyRegistryResult(chatState, result, { allowBreedingPsychology = true, useGestationModifier = true, gestationModifierMultiplier = null, initialCognitionRecords = undefined, bodySizeParents = [], random = Math.random } = {}) {
   const name = String(result?.name || '').trim();
   if (!name) throw new Error('注册结果缺少角色名称');
@@ -1556,6 +1586,11 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
         bodySize: sanitizedProfile.base?.bodySize
           ?? (effectiveRace === base.profile.base.race ? clampIndividualBodySize(base.profile.base.bodySize) : null)
           ?? sampleBodySize(getExpectedBodySize(effectiveRace, ancestry.bloodline, bodySizeParents), random),
+        ...resolveRegistryBodyFields(sanitizedProfile.base || {}, base.profile.base || {}, !current?.initialized, random),
+        // 身材上次改变的年龄（bsGrowBody 的门槛）：第一次注册从注册时的年龄起算，重新注册保留
+        bodyChangedAtAge: current?.initialized && Number.isFinite(Number(base.profile.base?.bodyChangedAtAge))
+          ? Number(base.profile.base.bodyChangedAtAge)
+          : Number(sanitizedProfile.base?.age ?? base.profile.base.age) || 0,
         vitality: getVitalityInitByLevel(sanitizedProfile.base?.vitalityLevel ?? base.profile.base.vitalityLevel),
         psyStress: getPsyStressInitByLevel(sanitizedProfile.base?.psyStressLevel ?? base.profile.base.psyStressLevel),
       },
@@ -2162,8 +2197,28 @@ export async function runRegistry(ctx, options = {}) {
       result.profile.base = result.profile.base && typeof result.profile.base === 'object' ? result.profile.base : {};
       result.profile.base.sheathOffset = Number(options.sheathOffset);
     }
+    // 身材拉杆同理：勾了的栏位盖过模型
+    if (options.bodyOverrides && typeof options.bodyOverrides === 'object') {
+      result.profile = result.profile && typeof result.profile === 'object' ? result.profile : {};
+      result.profile.base = result.profile.base && typeof result.profile.base === 'object' ? result.profile.base : {};
+      for (const [key, value] of Object.entries(options.bodyOverrides)) {
+        if (Number.isFinite(Number(value))) result.profile.base[key] = Number(value);
+      }
+    }
     recordRegistryResultDebug(result);
     chatState.reproductiveSettings = normalizeReproductiveSettings(settings.reproductiveSettings);
+    // 只补身材：已注册的角色重新请模型照角色卡判断身材，只套用身材栏位，其他资料一概不动
+    if (options.bodyOnly === true) {
+      const existing = chatState.characters[targetName];
+      if (!existing?.initialized) throw new Error(`「只补身材」需要已注册的角色：${targetName}`);
+      const sanitizedBase = sanitizeRegistryProfile({ base: result?.profile?.base || {} }, existing.profile).base || {};
+      const body = resolveRegistryBodyFields(sanitizedBase, existing.profile.base || {}, false);
+      existing.profile.base = { ...existing.profile.base, ...body };
+      existing.updatedAt = Date.now();
+      recordChatStateSnapshot(ctx, chatState, { reason: 'registry' });
+      saveSettings(ctx);
+      return existing;
+    }
     let character = applyRegistryResult(chatState, result, {
       allowBreedingPsychology: includeBreedingPsychology,
       useGestationModifier: options.useGestationModifier === true,

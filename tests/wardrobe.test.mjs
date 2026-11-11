@@ -530,6 +530,9 @@ test('a maternity item lifts the outfit cap to 15 so stacked gear can hold a bur
   assert.equal(Number(getBellySize(chatState.characters.A.profile).toFixed(2)), 13);
   assert.ok(Object.values(plain.gap).every((gap) => gap < 0), '一般衣物叠再多也卡在 10');
   const special = wear(true);
-  assert.ok(Object.values(special.gap).every((gap) => gap >= 0), `特制品叠够就压得住：${JSON.stringify(special.gap)}`);
+  // 承托另扣胸部孕期增量（五胎胸部长约 3 个罩杯，最多 −3），其余三维叠够就压得住
+  const { support, ...rest } = special.gap;
+  assert.ok(Object.values(rest).every((gap) => gap >= 0), `特制品叠够就压得住：${JSON.stringify(special.gap)}`);
+  assert.ok(support >= -3, `承托只差胸部那份：${support}`);
   assert.equal(chatState.characters.A.profile.wardrobe.items.find((item) => item.name === '孕肚托').maternity, true);
 });

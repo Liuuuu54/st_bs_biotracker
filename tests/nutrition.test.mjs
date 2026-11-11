@@ -220,7 +220,8 @@ function loseOnce(fetuses) {
 /** 孕 139.5 天推进 12 小时，跨过第 20 周触发一次结算 */
 function settle(fetuses) {
   Math.random = () => 0.99;
-  const chatState = one({ pregnant: { pregnantDays: 139.5, effectivePregnantDays: 139.5, fetuses, fetusesCount: fetuses.length } });
+  // 产前护理一般：周回归往 50（1.3.1 起没设定当未察觉，往 45）
+  const chatState = one({ pregnant: { pregnantDays: 139.5, effectivePregnantDays: 139.5, prenatalCare: 'normal', fetuses, fetusesCount: fetuses.length } });
   applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 12 } });
   return P(chatState).pregnant.fetuses;
 }

@@ -1,4 +1,5 @@
 import { normalizeFetalHealthFields } from './fetal_health.js';
+import { ensureBodyBaseFields } from './maternal_body.js';
 import { normalizeExperience, psychologySide } from './reproductive.js';
 import { DESCRIPTION_FIELDS, normalizeDescriptionList } from './descriptions.js';
 import {
@@ -17,7 +18,7 @@ import { MENSTRUAL_STAGE_DAYS } from './stage_config.js';
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 14;
+export const CHAT_STATE_SCHEMA_VERSION = 15;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -316,6 +317,22 @@ function migrateCharacterV13ToV14(character) {
   if (profile?.cooldown && typeof profile.cooldown === 'object') delete profile.cooldown.psychologyUpdateUsed;
 }
 
+/**
+ * v14 → v15（1.3.1 母胎分配与孕期身体）：补身体基准与倾向（体重 50、胸 40、臀 50；母体倾向与胸臀增长倾向
+ * 按名字固定抽样，主档与楼层快照一致）；进行中、已着床但没设产前护理的妊娠补「一般」，
+ * 维持 1.3.0 的行为（1.3.1 起没设定时当「未察觉」）。
+ */
+function migrateCharacterV14ToV15(character) {
+  const profile = character?.profile;
+  if (!profile || typeof profile !== 'object') return;
+  if (profile.base && typeof profile.base === 'object') ensureBodyBaseFields(profile.base, character?.name);
+  const pregnant = profile.pregnant;
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  if (pregnant && typeof pregnant === 'object' && !pregnant.prenatalCare && fetuses.some((fetus) => fetus && !fetus.pendingImplantation)) {
+    pregnant.prenatalCare = 'normal';
+  }
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
   2: migrateCharacterV2ToV3,
@@ -327,6 +344,7 @@ const CHARACTER_MIGRATIONS = Object.freeze({
   10: migrateCharacterV10ToV11,
   12: migrateCharacterV12ToV13,
   13: migrateCharacterV13ToV14,
+  14: migrateCharacterV14ToV15,
 });
 
 export function getChatStateSchemaVersion(chatState) {

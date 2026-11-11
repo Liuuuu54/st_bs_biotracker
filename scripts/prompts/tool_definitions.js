@@ -224,7 +224,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
           properties: { mastery: { type: 'string', enum: [...FETAL_EVENT_CHANGES] }, desire: { type: 'string', enum: [...FETAL_EVENT_CHANGES] }, autonomy: { type: 'string', enum: [...FETAL_EVENT_CHANGES] }, confidence: { type: 'string', enum: [...FETAL_EVENT_CHANGES] }, acceptance: { type: 'string', enum: [...FETAL_EVENT_CHANGES] }, stance: { type: 'string', enum: [...FETAL_EVENT_CHANGES] } },
           additionalProperties: false,
         },
-        prenatalCare: { type: 'string', enum: ['neglect', 'normal', 'attentive'], description: '只用于 cognition，她知道或相信自己怀孕后才给：之后整体怎么养胎（饮食、作息、休养、产检）。attentive 用心；normal 照常过日子；neglect 不在乎、排斥或顾不上（酗酒熬夜、拼命干活、想拿掉）。态度改变时随那条认知给，没变不重复给。镜头内具体的伤害与照料仍用 bsFetalEvent。' },
+        prenatalCare: { type: 'string', enum: ['abusive', 'neglect', 'unaware', 'normal', 'attentive', 'devoted'], description: '只用于 cognition：她镜头外整体怎么养胎（饮食、作息、休养、产检）。她知道或相信自己怀孕的那条认知一定要给（没什么特别就给 normal），没给就一直当 unaware（还不知道怀孕，照平常过日子）。devoted 悉心安胎（卧床静养、专人照料、补品不断）；attentive 用心；normal 照常过日子；unaware 不知道或又认定自己没怀；neglect 不在乎、排斥或顾不上（熬夜、拼命干活）；abusive 刻意伤害胎儿或自己（勒腹束腰、绝食、酗酒用药、故意过劳想打掉）。态度改变时随那条认知给，没变不重复给。镜头内具体的一次伤害与照料仍用 bsFetalEvent。' },
       },
       required: ['female', 'action', 'time'], additionalProperties: false,
     },
@@ -457,7 +457,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAssistFetalPosition',
-    description: '剧情明确出现人工、器械或魔法的胎位操作，或胎儿有意识地自己转身、往上缩、往下钻、踢破胎膜时才调用；自然胎动与下降由 bsPassedTime 自动处理，不要为了「肚子下沉」「胎儿踢了一下」之类的描写调用。'
+    description: '剧情明确出现人工、器械或魔法的胎位操作，或胎儿有意识地自己转身、往上缩、往下钻、踢破胎膜时才调用；自然胎动与下降由 bsPassedTime 自动处理，不要为了「肚子下沉」「胎儿踢了一下」之类的描写调用；剧情写到假宫缩（肚子一阵阵发紧）时用 action=tighten。'
       + 'actor=fetus 表示这一胎自己动（任何胎儿都可以）：不消耗母体活力，但母体一样承受疼痛或心理压力；胎儿不能把自己拉出来（extract），也解不开自己卡住的肩膀。其余限制与外力操作相同：入盆后只能自己小幅转动（30° 以内）、胎背只能前后对调，产程中不能自己缩回、也不能自己往下钻（下降交给宫缩），但仍可踢破胎膜；互锁的那一胎可以自己转开。省略 actor 即为外力操作。'
       + 'fetusIndex 是 fetuses 列表下标（从 0 起算），省略时作用于正在下降／即将娩出的那一胎。每个动作都要通过检查才会生效，被拒绝时状态完全不变，叙事不得写成已成功。'
       + 'rotate：把胎儿转到 targetAngle（0/360 头位、180 臀位、90/270 横位），也可以用 backSide 把胎背转到 左前／右前／左后／右后（两者可同时给，至少给一个）；已入盆的胎儿只能小幅校正角度（与目前角度相差最多 30°，超过会被拒绝），胎背只能前后对调、不能换左右（例如把枕后位的右后转成右前）；卵生、胎转卵生是蛋，没有胎背，只能给 targetAngle；肩难产时可不给角度直接转动肩部解开卡点。'
@@ -468,12 +468,13 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + 'push／rest：产妇自己用力推或停下来喘口气，产程中（第一产程、第二产程、第三产程娩出胎盘时）有效，不必给 fetusIndex，也不能由胎儿代劳。切换后一直维持到下次切换，剧情写到她停下来歇一下时给 rest，用力时给 push，切换要排在这段时间的 bsPassedTime 之前；胎体下降开始时预设推，其余阶段预设休。推的时候累积用力疲劳，胎越大越累得快，疲劳越高越推不动，休息时才会消退，换阶段不归零。第二产程下降与娩出时休息几乎不前进；第三产程用力让胎盘快一倍娩出；第一产程与间歇期用力是白费力气，只累积疲劳，只在剧情写到她提早用力时才给。系统不替她扣活力，用力时照剧情用 bsUpdateCharacterStatus 自己扣 vitality。'
       + 'sibling：腹中两胎互动，只在剧情明确写到时用：fetusIndex 是动手的那一胎，otherFetusIndex 是被动的那一胎（省略时取它旁边的一胎；两个都省略时随机一对相邻的胎儿），'
       + 'interaction=kick 踢一下（对方小幅偏转）、shove 推挤（两胎可能左右换位）、cuddle 依偎（位置不变）。只改胎位，不改亲和与健康，不消耗母体活力；只限角色已知、已着床、彼此相邻的胎儿；每个故事小时最多成功一次，推进满下一小时之前重复调用会被跳过。'
-      + '所有操作都会带来瞬时的疼痛（产程中）或心理压力（孕期），描写不得超过系统给出的疼痛等级。',
+      + 'tighten：假宫缩，剧情写到肚子一阵阵发紧、发硬时调用，不必给 fetusIndex。孕 20 周起到延产期有效，产兆前驱以后的宫缩是真的、会被跳过。只是画面事件：不推产程、不改宫压与健康、不耗活力、没有疼痛与心理压力。假宫缩不规律、不会越来越密越强，休息、喝水、换姿势会缓解；常由活动、膀胱胀、高潮、胎动诱发；真正发动由宫压决定，不由它触发。知道怀孕的人在临产期可能误以为要生了，照剧情写。'
+      + '其余操作都会带来瞬时的疼痛（产程中）或心理压力（孕期），描写不得超过系统给出的疼痛等级。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
-        action: { type: 'string', enum: ['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest', 'sibling'] },
+        action: { type: 'string', enum: ['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest', 'sibling', 'tighten'] },
         fetusIndex: { type: 'integer' },
         otherFetusIndex: { type: 'integer' },
         interaction: { type: 'string', enum: ['kick', 'shove', 'cuddle'] },
@@ -508,6 +509,31 @@ export const TOOL_DEFINITIONS = Object.freeze([
         pin: { type: 'boolean' },
       },
       required: ['female', 'time', 'kind', 'change', 'content'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'bsGrowBody',
+    description: '记下角色这一年身材与体质的长期变化：发育长高、发福或消瘦、长年锻炼、久病体弱、经产后身材没恢复或慢慢恢复。'
+      + '距上次改变至少长了 1 岁才能用（看 base.age 与 base.bodyChangedAtAge），之后剧情什么时候写到变化就什么时候记；用后从当下年龄重新起算，未满一年会被跳过。'
+      + '每项给变化量（+1、-10 这种），不给绝对值，至少给一项；改的是孕前基准，孕期与产后的变化系统照算、叠在上面。'
+      + 'vitalityLevel、psyStressLevel 为 1–7 的等级变化；build 体重比例、bust 胸部（每 10 一个罩杯）、hip 臀部都是 0–100 的变化；bodySize 体型（身高）变化，人类每 0.5 约 15 公分。'
+      + '幅度照该种族与年龄判断，系统不设上限：少年期一年可能长很多，长生种成年后多半几乎不变，成年人类多半只有体重、活力会动。一时的状态（饿瘦几天、累垮）不要记。'
+      + 'reason 一句话写为什么变，会记成一条认知（经历）；time 为故事日期。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        female: { type: 'string' },
+        time: { type: 'string', minLength: 1 },
+        reason: { type: 'string', minLength: 1 },
+        vitalityLevel: { type: 'integer' },
+        psyStressLevel: { type: 'integer' },
+        build: { type: 'number' },
+        bust: { type: 'number' },
+        hip: { type: 'number' },
+        bodySize: { type: 'number' },
+      },
+      required: ['female', 'time', 'reason'],
       additionalProperties: false,
     },
   },

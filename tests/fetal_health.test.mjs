@@ -309,7 +309,7 @@ test('v12 → v13：每周供养池换成健康（50 ＋ 池换算），母胎�
   state.recordChatStateSnapshot(ctx, old, { messageCount: 1, reason: 'old' });
   settings.chatStates[ctx.chatId] = old;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 14);
+  assert.equal(migrated.schemaVersion, 15);
   const [a, b] = migrated.characters.A.profile.pregnant.fetuses;
   assert.equal('healthMax' in a, false);
   near(a.health, 50 + 20 * 0.18);
@@ -381,18 +381,26 @@ test('产前护理：随认知设定，跟着这次妊娠；没有已着床胎�
   assert.match(applyToolCall(chatState, { name: 'bsRecordExperience', arguments: { female: 'A', action: 'date', time: '一日', partner: '乙', prenatalCare: 'normal' } }).message, /不属于该 action/);
 });
 
-test('产前护理改周回归的目标：用心往 60、疏忽往 35、没设定往 50；妊娠结束时清掉', () => {
+test('产前护理六档改周回归的目标：虐孕 20、疏忽 35、未察觉（没设定）45、一般 50、用心 60、悉心安胎 80；妊娠结束时清掉', () => {
   const run = (level) => {
     const chatState = setup();
     if (level) care(chatState, level);
     applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 84 } });
     return F(chatState)[0];
   };
-  const [attentive, neglect, none] = [run('attentive'), run('neglect'), run(null)];
-  assert.ok(Math.abs(attentive.health - 60) < 1.5, `用心 ${attentive.health}`);
-  assert.ok(Math.abs(neglect.health - 35) < 1.5, `疏忽 ${neglect.health}`);
-  assert.ok(Math.abs(none.health - 50) < 1e-6, `没设定 ${none.health}`);
-  assert.ok(attentive.weight > 1 && neglect.weight < 1 && none.weight === 1);
+  // 12 个孕周、每周拉回两成：离目标还剩约 7%
+  const near12 = (fetusState, target, label) => assert.ok(Math.abs(fetusState.health - target) <= Math.abs(50 - target) * 0.08 + 1e-6, `${label} ${fetusState.health}`);
+  const [abusive, neglect, none, normal, attentive, devoted] = [run('abusive'), run('neglect'), run(null), run('normal'), run('attentive'), run('devoted')];
+  near12(abusive, 20, '虐孕');
+  near12(neglect, 35, '疏忽');
+  near12(none, 45, '没设定（未察觉）');
+  assert.ok(Math.abs(normal.health - 50) < 1e-6, `一般 ${normal.health}`);
+  near12(attentive, 60, '用心');
+  near12(devoted, 80, '悉心安胎');
+  assert.ok(abusive.health > 10, '虐孕单独不见底');
+  assert.ok(devoted.health >= 75, '安胎补到健壮');
+  assert.ok(abusive.weight < neglect.weight && neglect.weight < none.weight && none.weight < normal.weight);
+  assert.ok(normal.weight === 1 && attentive.weight > 1 && devoted.weight > attentive.weight);
   const ended = setup({ fetuses: [fetus(1, { health: 2 })] });
   care(ended, 'neglect');
   passWeek(ended);
@@ -488,9 +496,9 @@ test('追踪页的认知摘要一行：次数、方式、日期与要点；没�
   assert.match(line, /要点：产婆说胎位正/);
 });
 
-test('追踪视角：设定过产前护理才送文字，没设定不送', () => {
+test('追踪视角：产前护理一律送文字，没设定时是未察觉', () => {
   const chatState = setup();
-  assert.equal('prenatalCare' in trackerProfile(chatState).pregnant, false);
+  assert.equal(trackerProfile(chatState).pregnant.prenatalCare, '未察觉');
   care(chatState, 'neglect');
   assert.equal(trackerProfile(chatState).pregnant.prenatalCare, '疏忽');
 });
@@ -602,6 +610,7 @@ test('周结算按孕周：孕速 20 的物种一个日历天就结算约 3 次�
   Math.random = () => 0.99;
   const bird = setup({ base: { race: '怪鸟类' }, days: 140, fetuses: [fetus(1, { race: '怪鸟类', health: 90 })] });
   P(bird).bio.gestationSpeciesSpeed = 20;
+  P(bird).pregnant.prenatalCare = 'normal';
   applyToolCall(bird, { name: 'bsPassedTime', arguments: { hour: 24 } });
   const weeks = P(bird).pregnant.healthSettledWeek - 20;
   assert.ok(weeks >= 2 && weeks <= 3, `结算 ${weeks} 次`);

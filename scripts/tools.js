@@ -1,3 +1,8 @@
+import {
+  PSEUDO_PREGNANCY_PROGRESS_CAP, combineBody, computeBodyIncrements, decayPostpartumBody, getAllocationAlpha, getBodyBaseline,
+  getBodyProgress, getBulkDrive, getBustSupportPenalty, getDrainBiasFactor, getEffectiveShowingFactor, getFetalGainAllocationFactor,
+  getFetalLossAllocationFactor, getFetusDemand, getShowingFactor, shiftCareTarget, splitPregnancyEndIncrements,
+} from './maternal_body.js';
 import { recordExperience, normalizePaternityClaims, normalizeReproductiveSettings, refreshCognition, syncPsychologyLifecycle, psychologySide, experienceSnapshot, experienceFactor, naturalNoticeDays } from './reproductive.js';
 import { getEmptyLining, getPressureLevel, getProfileSemenCapacity } from './semen_capacity.js';
 import { drainSpermPool } from './sperm_pool.js';
@@ -12,14 +17,14 @@ import {
   FETAL_EVENT_DAILY_AFFINITY_CAP, FETAL_EVENT_DAILY_CARE_CAP, FETAL_EVENT_DECAY_DAYS, FETAL_EVENT_HEALTH, FETAL_EVENT_KINDS,
   FETAL_EVENT_NESTED_FACTOR, FETAL_EVENT_PRESSURE, FETAL_HEALTH_FLOOR_RATIO, addFetalHealth, buildPrenatalSummary, compactFetalEvents,
   createFetalHealthFields, describeFetalEventKind, describeFetalEventMagnitude, getChangeMagnitude, getChangeSign,
-  applyFetalGuardRegen, getFetalEventSensitivity, getPrenatalCareTarget, getFetalHarmFactor, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalInitialHealth,
+  applyFetalGuardRegen, getFetalEventSensitivity, getPrenatalCareKey, getPrenatalCareTarget, getFetalHarmFactor, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalInitialHealth,
   settleFetalHealthWeek,
 } from './fetal_health.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
 import { consumeSireReserve, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
-import { clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
+import { clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeSigma, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
   cloneValue,
   createChildId,
@@ -607,20 +612,182 @@ export function getBellySize(profile) {
   return calculatePregnantBellySize(profile);
 }
 
-/** 衣服四维余裕：各维总值减去孕肚大小。只在有孕肚的阶段存在 */
+// ---- 身材的长期变化（bsGrowBody，1.3.1）----
+// 门槛：距上次改变（base.bodyChangedAtAge）至少长了 1 岁，之后任何时候都能记，剧情什么时候变就什么时候记。
+// 幅度不设上限，种族之间差太多，交给模型照种族与年龄判断，只夹在栏位本身的范围内。
+
+/** 距上次改变多少岁才能再记 */
+export const GROWTH_MIN_YEARS = 1;
+
+/** 还要等几年（≤ 0 表示现在就能记）；没有锚点时当作刚注册，从现在起算 */
+export function getGrowthWaitYears(base = {}) {
+  const age = Number(base?.age);
+  const anchor = Number(base?.bodyChangedAtAge);
+  if (!Number.isFinite(age)) return GROWTH_MIN_YEARS;
+  if (!Number.isFinite(anchor)) return GROWTH_MIN_YEARS;
+  return GROWTH_MIN_YEARS - (age - anchor);
+}
+
+function applyGrowBody(chatState, args, sourceId = '') {
+  const female = String(args?.female || '').trim();
+  const character = chatState.characters?.[female];
+  const skip = (reason) => ({ applied: false, message: `bsGrowBody skipped for ${female || '(empty)'}: ${reason}` });
+  if (!female || !character) return skip('unknown character.');
+  const reason = String(args?.reason || '').trim();
+  const time = String(args?.time || '').trim();
+  if (!reason || !time) return skip('reason and time are required.');
+  const base = character.profile?.base || {};
+  if (!Number.isFinite(Number(base.bodyChangedAtAge))) base.bodyChangedAtAge = clampNumber(base.age, 0, 99999, 0);
+  const wait = getGrowthWaitYears(base);
+  if (wait > 1e-9) {
+    return skip(`at least ${GROWTH_MIN_YEARS} year of age since the last change (age ${Math.round(Number(base.age) * 100) / 100}, last change at ${Math.round(Number(base.bodyChangedAtAge) * 100) / 100}); about ${Math.ceil(wait * 365)} more days.`);
+  }
+  const delta = (key) => {
+    const value = Number(args?.[key]);
+    return Number.isFinite(value) && value !== 0 ? value : null;
+  };
+  const changes = [];
+  for (const key of ['vitalityLevel', 'psyStressLevel']) {
+    const d = delta(key);
+    if (d === null) continue;
+    const before = Math.round(clampNumber(base[key], 1, 7, 4));
+    base[key] = Math.round(clampNumber(before + d, 1, 7, before));
+    changes.push(`${key} ${before}→${base[key]}`);
+  }
+  const baseline = getBodyBaseline(base);
+  for (const key of ['build', 'bust', 'hip']) {
+    const d = delta(key);
+    if (d === null) continue;
+    base[key] = Math.round(clampNumber(baseline[key] + d, 0, 100, baseline[key]) * 100) / 100;
+    changes.push(`${key} ${baseline[key]}→${base[key]}`);
+  }
+  const sizeDelta = delta('bodySize');
+  if (sizeDelta !== null) {
+    const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
+    if (resolved.kind === 'fixed') {
+      const nextSize = clampIndividualBodySize(resolved.size + sizeDelta);
+      if (nextSize !== null) {
+        base.bodySize = nextSize;
+        changes.push(`bodySize ${resolved.size}→${nextSize}`);
+      }
+    } else changes.push('bodySize skipped (variable or unknown size)');
+  }
+  if (changes.length === 0) return skip('give at least one non-zero change.');
+  base.bodyChangedAtAge = clampNumber(base.age, 0, 99999, 0);
+  character.profile.base = base;
+  refreshOutfitPregFit(character.profile);
+  // 变化留在时间轴上：记成一条「经历」认知，不另开历史栏位
+  recordExperience(chatState, { female, action: 'cognition', time, method: 'experience', content: `身材变化：${reason}` }, sourceId);
+  return { applied: true, message: `bsGrowBody applied for ${female}: ${changes.join(', ')}.` };
+}
+
+// ---- 孕期身体（1.3.1，maternal_body.js）----
+
+/** 身体会随孕程长的阶段：真妊娠、产兆、产程（假孕另算，回归期不长） */
+function hasBodyGrowthStage(stage) {
+  return isTruePregnancyStage(stage) || stage === '产兆前驱' || LABOR_STAGES.includes(stage);
+}
+
+/**
+ * 当下的孕期身体增量（体重、胸、臀）。即时算出、不存。
+ * 产程中已娩出的胎儿仍算进胎量带动，免得多胎一边生一边缩。
+ */
+export function getPregnancyBodyIncrements(profile) {
+  const base = profile?.base || {};
+  const pregnant = profile?.pregnant || {};
+  const stage = String(base.stage || '');
+  const baseline = getBodyBaseline(base);
+  const care = getPrenatalCareKey(pregnant);
+  if (stage === '假孕期') {
+    const limit = getPseudoPregnancyLimit(profile);
+    const progress = PSEUDO_PREGNANCY_PROGRESS_CAP * Math.min(1, clampNumber(base.days, 0, 99999, 0) / limit);
+    return computeBodyIncrements({ progress, bulkDrive: 1, alpha: baseline.allocationBias, care, averageHealthRatio: 0.5, bustGain: baseline.bustGain, hipGain: baseline.hipGain });
+  }
+  if (!hasBodyGrowthStage(stage)) return { build: 0, bust: 0, hip: 0 };
+  const progress = getBodyProgress(pregnant.effectivePregnantDays);
+  const delivered = LABOR_STAGES.includes(stage) ? Math.max(0, Number(pregnant.deliveredCount) || 0) * Math.min(1, progress) : 0;
+  const implanted = getImplantedFetuses(profile);
+  const averageHealthRatio = implanted.length > 0
+    ? implanted.reduce((sum, fetus) => sum + getFetalHealthRatio(fetus), 0) / implanted.length
+    : 0.5;
+  return computeBodyIncrements({
+    progress,
+    bulkDrive: getBulkDrive(getFetalBulk(profile) + delivered, progress),
+    alpha: getAllocationAlpha(profile),
+    care,
+    averageHealthRatio,
+    bustGain: baseline.bustGain,
+    hipGain: baseline.hipGain,
+  });
+}
+
+/** 产后还没回落的那一份（随恢复进度线性归零） */
+function getPostpartumBodyRemainder(profile) {
+  if (String(profile?.base?.stage || '') !== '产后恢复') return { build: 0, bust: 0, hip: 0 };
+  const recoveryDays = getStageLimit(profile, '产后恢复') || 56;
+  const progress = Math.min(1, clampNumber(profile?.base?.days, 0, 9999, 0) / recoveryDays);
+  return decayPostpartumBody(profile?.pregnant?.postpartumBody, progress);
+}
+
+/**
+ * 当下的身体：基准＋孕期增量（或产后待回落的那一份）。
+ * 回传 { build, bust, hip, increments }，increments 是相对基准的变化。
+ */
+export function getCurrentBody(profile) {
+  const baseline = getBodyBaseline(profile?.base || {});
+  const increments = String(profile?.base?.stage || '') === '产后恢复'
+    ? getPostpartumBodyRemainder(profile)
+    : getPregnancyBodyIncrements(profile);
+  return { ...combineBody(baseline, increments), increments };
+}
+
+/**
+ * 妊娠结束（分娩、流产、堕胎、见底中断）当下：增量拆成留存（直接加回基准）与回落（产后递减）。
+ * 只在身体真的长过的阶段做；产后再清一次不会把待回落的那份洗掉。
+ */
+function settleBodyAtPregnancyEnd(profile) {
+  const base = profile?.base;
+  const pregnant = profile?.pregnant;
+  if (!base || !pregnant || !hasBodyGrowthStage(String(base.stage || ''))) return;
+  const { retained, remainder } = splitPregnancyEndIncrements(getPregnancyBodyIncrements(profile));
+  const baseline = getBodyBaseline(base);
+  base.build = Math.round(clampNumber(baseline.build + retained.build, 0, 100, baseline.build) * 100) / 100;
+  base.bust = Math.round(clampNumber(baseline.bust + retained.bust, 0, 100, baseline.bust) * 100) / 100;
+  base.hip = Math.round(clampNumber(baseline.hip + retained.hip, 0, 100, baseline.hip) * 100) / 100;
+  pregnant.postpartumBody = remainder;
+}
+
+/**
+ * 衣服四维余裕：各维总值减去孕肚大小。只在有孕肚的阶段存在。
+ * 遮蔽再乘显怀系数（高挑、结实、丰腴、大胸的人较晚藏不住，经产妇较早；足月前收敛到 1，产后不套）；
+ * 承托再扣胸部孕期增量（胸罩撑不住）。都只改 gap，不改孕肚大小。
+ */
 function refreshOutfitPregFit(profile) {
   if (!profile?.wardrobe?.enabled) return null;
   const outfit = ensureOutfitState(profile);
-  if (outfit.mainItemId === null || !hasBellyStage(String(profile?.base?.stage || ''))) {
+  const stage = String(profile?.base?.stage || '');
+  if (outfit.mainItemId === null || !hasBellyStage(stage)) {
     outfit.pregFit = null;
     return outfit;
   }
   const totals = getOutfitDimensionTotals(profile);
   const bellySize = getBellySize(profile);
+  const body = getCurrentBody(profile);
+  const experience = profile?.experience || {};
+  const showing = hasBodyGrowthStage(stage)
+    ? getEffectiveShowingFactor(getShowingFactor({
+      sigma: getBodySizeSigma(profile?.base),
+      vitalityLevel: profile?.base?.vitalityLevel,
+      build: body.build,
+      bust: body.bust,
+      births: (Number(experience.naturalBirthExperience) || 0) + (Number(experience.surgicalBirthExperience) || 0),
+    }), profile?.pregnant?.effectivePregnantDays)
+    : 1;
+  const supportPenalty = getBustSupportPenalty(body.increments.bust);
   outfit.pregFit = {
     gap: {
-      masking: clampNumber(totals.masking - bellySize, -20, 20, 0),
-      support: clampNumber(totals.support - bellySize, -20, 20, 0),
+      masking: clampNumber(totals.masking - bellySize * showing, -20, 20, 0),
+      support: clampNumber(totals.support - bellySize - supportPenalty, -20, 20, 0),
       capacity: clampNumber(totals.capacity - bellySize, -20, 20, 0),
       convenience: clampNumber(totals.convenience - bellySize, -20, 20, 0),
     },
@@ -1419,12 +1586,14 @@ function getFetusEnergyDrain(profile, fetus) {
   // 既有胎儿没有 conceivedAtDays，算出来就是共用时钟，行为不变。
   const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
   const fetalLoad = (ownAge * weight) / 7 / 40;
-  return fetalLoad / motherBreedTolerance;
+  // 每胎索取（1.3.1）：与母体耐受差距越大、雄核胎越吃力；同族为 1
+  return (fetalLoad / motherBreedTolerance) * getFetusDemand(profile, fetus);
 }
 
+/** 总和再乘母体倾向：偏养宝的母体给得更多，需求涨得更快（maternal_body.js） */
 function updateFetalEnergyDrain(profile) {
   const fetuses = Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : [];
-  profile.pregnant.fetalEnergyDrain = fetuses.reduce((sum, fetus) => sum + getFetusEnergyDrain(profile, fetus), 0);
+  profile.pregnant.fetalEnergyDrain = fetuses.reduce((sum, fetus) => sum + getFetusEnergyDrain(profile, fetus), 0) * getDrainBiasFactor(profile);
 }
 
 function snapshotOriginalPregnancyBio(character) {
@@ -2213,6 +2382,7 @@ function processPooledConception(profile, tick, notify, name) {
         if (from === '假孕期') { p.pregnant.pregnantDays = 0; p.pregnant.effectivePregnantDays = 0; }
         if (from === '产后恢复') {
           p.base.uterineAtony = 0;
+          delete p.pregnant.postpartumBody;
           Object.assign(p.pregnant, { pregnantDays: 0, effectivePregnantDays: 0, laborHours: 0,
             effectiveLaborHours: 0, laborPhase: null, laborBirthNumber: 0, presentingEmbryoId: null, laborPain: 0 });
           clearProdromalState(p.pregnant);
@@ -2930,7 +3100,10 @@ function addNutrition(profile, amount) {
   if (!amount || totalDemand <= 0) return 0;
   // 乘孕速、不夹值：需求按日历时间涨落，孕速越快一个孕周里的照料机会越少，乘回来才是每孕周等量
   const speed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
-  const health = amount * (amount > 0 ? FETAL_CARE_GAIN_SCALE : FETAL_CARE_LOSS_SCALE) * speed;
+  // 母胎分配（1.3.1）：偏养宝时照料多给胎儿、需求爆时母体先扛；偏养母反之
+  const alpha = getAllocationAlpha(profile);
+  const allocation = amount > 0 ? getFetalGainAllocationFactor(alpha) : getFetalLossAllocationFactor(alpha);
+  const health = amount * (amount > 0 ? FETAL_CARE_GAIN_SCALE : FETAL_CARE_LOSS_SCALE) * speed * allocation;
   for (let i = 0; i < fetuses.length; i += 1) {
     if (demands[i] <= 0) continue;
     normalizeFetalHealthFields(fetuses[i]);
@@ -2960,7 +3133,8 @@ function syncFetalHealthWeeks(profile, isHere, startWeek = null) {
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const speed = clampNumber(getGestationEffectiveSpeed(profile), 0, GESTATION_SPEED_MAX, 1);
   const days = clampNumber(pregnant.pregnantDays, 0, 99999, 0);
-  const target = getPrenatalCareTarget(pregnant);
+  // 产前护理的目标再按母胎分配偏 ±8（偏养宝往上）
+  const target = shiftCareTarget(getPrenatalCareTarget(pregnant), getAllocationAlpha(profile));
   for (let k = from + 1; k <= week; k += 1) {
     const at = speed > 0 ? Math.max(0, days - (eff - k * 7) / speed) : days;
     for (const fetus of fetuses) {
@@ -3064,7 +3238,7 @@ function randomStandardNormal(random = Math.random) {
 }
 
 // 长期体质与情绪特质只往早偏移：身体虚弱、长期高压的母体较常提早发动；
-// 强健或平稳不会让人明显晚生。「难产体态／安产体态」管生得顺不顺，不管何时发动
+// 强健或平稳不会让人明显晚生。活力等级管体力（1.3.1 起第 3、5 级叫「体弱易累／健康有余」），不管何时发动
 const VITALITY_LEVEL_READINESS = Object.freeze({ 1: 1.6, 2: 1.3 });
 const PSY_STRESS_LEVEL_READINESS = Object.freeze({ 6: 1.25, 7: 1.5 });
 
@@ -3475,7 +3649,7 @@ function applyAmnionDurabilityFromPressure(profile, finalPressure, female) {
   } else if (stage === '延产期') {
     notify.secondly = `${female}子宫压力升高，但延产手段压住了宫缩，不会因此发动`;
   } else {
-    notify.secondly = `${female}子宫收缩强烈，即将生产`;
+    notify.secondly = `${female}子宫收缩强烈，产程即将开始（她未必意识到）`;
   }
   profile.notify = notify;
 }
@@ -3578,6 +3752,8 @@ function applyExcreteMetabolism(chatState, args) {
 function clearPregnancyState(profile) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
+  // 先结算身体：增量要用清掉前的孕程与胎儿
+  settleBodyAtPregnancyEnd(profile);
   delete pregnant.noticeSample;
   delete pregnant.experienceBeforePregnancy;
   delete pregnant.termReadiness;
@@ -5790,7 +5966,9 @@ function shiftProdromalTime(profile, female, deltaHours) {
 // 通过检查就必定成功；难度完全由检查条件与活力门槛表现。
 // 托高是跟宫缩对抗，要母体撑得住：活力不足就拒绝，状态完全不变。
 const ASSIST_PAIN_BOOST_CAP = 5;
-const ASSIST_ACTIONS = Object.freeze(['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest', 'sibling']);
+const ASSIST_ACTIONS = Object.freeze(['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest', 'sibling', 'tighten']);
+/** 假宫缩最早出现的有效孕龄（20 周） */
+const FALSE_CONTRACTION_MIN_DAYS = 140;
 /** 各动作的瞬时痛感（产程相关阶段）；孕期改为心理压力 × 2 */
 const ASSIST_PAIN = Object.freeze({ lift: 2, descend: 1.5, rotate: 2, extract: 3, rupture: 0.5 });
 /** 活力消耗倍率：托高吃满，顺着宫缩促降与转位减半，外力完成的拉出与破水不扣 */
@@ -5959,6 +6137,19 @@ function resolveAssistTarget(pregnant, fetusIndex) {
     || pickDeepestFetus(free);
 }
 
+/**
+ * 假宫缩（action=tighten）：肚子一阵阵发紧、发硬。只发画面事件给子宫图演出（1.4.0 孕体特写接动画），
+ * 不推产程、不改宫压、不扣健康、不耗活力，没有冷却。孕 20 周起到延产期可用；产兆前驱以后的宫缩是真的，跳过。
+ */
+function applyFalseContraction(character, female, skip) {
+  const profile = character?.profile || {};
+  const stage = String(profile.base?.stage || '');
+  if (!PREGNANCY_STAGES.includes(stage)) return skip(`stage ${stage || '(none)'} has no false contractions; from 产兆前驱 on the contractions are real.`);
+  if (clampNumber(profile.pregnant?.effectivePregnantDays, 0, 99999, 0) < FALSE_CONTRACTION_MIN_DAYS) return skip('false contractions start around week 20.');
+  setVisualCue(profile, 'falseContraction');
+  return { applied: true, message: `${female}: false contraction (irregular tightening that eases with rest); labor, pressure and health unchanged.` };
+}
+
 function applyAssistFetalPosition(chatState, args) {
   const female = String(args?.female || '').trim();
   const action = String(args?.action || '').trim();
@@ -5972,6 +6163,7 @@ function applyAssistFetalPosition(chatState, args) {
   const bySelf = actor === 'fetus';
   if (bySelf && action === 'extract') return skip('a fetus cannot pull itself out; extract needs an assistant.');
   if (action === 'push' || action === 'rest') return applyLaborEffortSwitch(character, female, action, bySelf, skip);
+  if (action === 'tighten') return applyFalseContraction(character, female, skip);
   if (action === 'sibling') {
     const stage = String(character?.profile?.base?.stage || '');
     if (!(PREGNANCY_STAGES.includes(stage) || stage === '产兆前驱' || stage === '第一产程')) return skip(`stage ${stage || '(none)'} has no fetuses that can interact.`);
@@ -6742,6 +6934,8 @@ function applyTimeToCharacter(character, tick) {
       enteredFollicular = advanced.enteredFollicular;
       // 子宫乏力撑过产程，到产后恢复结束才算复旧完成
       base.uterineAtony = 0;
+      // 产后待回落的身体到这里归零（maternal_body.js）
+      delete pregnant.postpartumBody;
       pregnant.pregnantDays = 0;
       pregnant.effectivePregnantDays = 0;
       pregnant.laborHours = 0;
@@ -8443,6 +8637,7 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsChangeOutfit') return applyChangeOutfit(chatState, args);
   if (name === 'bsSetDescription') return applyDescription(chatState, args);
   if (name === 'bsSetCharacterPresence') return applySetCharacterPresence(chatState, args);
+  if (name === 'bsGrowBody') return applyGrowBody(chatState, args, call.sourceId || '');
   if (name === 'bsRecordExperience') return recordExperience(chatState, args, call.sourceId || '', { resolveFetus: resolveVisibleFetus, shiftPsychology: shiftCognitionPsychology });
   if (name === 'bsRegisterSkillDefinition') return applyRegisterSkillDefinition(chatState, args);
   if (name === 'bsTrainSkill') return applyTrainSkill(chatState, args);

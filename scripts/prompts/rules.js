@@ -148,6 +148,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- age: 角色年龄，单位为年。',
   '- bodySize: 角色常态（人态）的个体体型，1–7 级，人类为 4；缺省时按种族平均。变化态体型由系统按种族推算。',
   '- sheath: 鞘（阴道）实际舒适的深度与同体型的人相比（偏浅、很浅、偏深、很深），只读；没有这栏代表适中。',
+  '- figure: 当下的身材（体重与肉或肌肉、罩杯、臀部），孕期与产后已含变化，只读，描写须一致。胸部大小与奶量无关：大胸可能奶少，平胸也可能奶多。每次生产后会留下一部分变化（经产的痕迹：胸、臀、体重都略大），其余在产后恢复期间退去；之后要变回来或长期改变（发育、节食、锻炼、发福），用 bsGrowBody 记下：距上次改变（bodyChangedAtAge，岁）至少长了 1 岁才能用，用后从当下年龄重新起算。',
   '- race: 当前保存的种族字符串，可能带子类或混血，不再带 [derived] 前缀。',
   '- derivedType: 衍生类型字符串，如 不死-僵尸；没有则为 null。',
   '- sperms: 体内残留精液来源列表。残留每天自动衰减 10、归零即消失，通常 1-3 天内自然清空；当下总有效量越高，本次受孕越容易，胜出来源的有效量也会提高高产物种的伴生卵数量。受精成功本身不会扣除或清空残留，不需要每轮重复描写流出。',
@@ -168,6 +169,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- pregnant 只会在已有 fetuses、妊娠阶段、产兆前驱/产程、产后恢复或假孕期发送；幕外角色发送时只保留少量 pregnant 摘要，并用 fetusesCount 表示胎儿数量。',
   '- pregnantDays: 这次妊娠的孕龄天数，等同产科从末次月经/本族等价周期起点计算的孕周天数。',
   '- effectivePregnantDays: 真正计入胎儿发育与阶段推进的有效孕龄天数；当妊娠被冻结时，它可以停在原地而 pregnantDays 继续增加。',
+  '- allocation: 这次怀孕养分偏给谁（平衡、偏养母、偏养宝、极度…），只读：偏养母的人会丰腴、臀腿变厚，胎儿偏小但稳；偏养宝的胎儿长得大，母体容易饿、累、消瘦。',
   '- bellySize: 孕肚大小（0–15），系统按孕程与肚子里装的量算出，只读。足月单胎约 7、双胎约 8.5、三胎约 10；超过 10 是任何衣服都包不住的巨大孕肚。产后恢复期间从约 4 随恢复回缩到 0，胎内回归的回归期从 10 回落。描写孕肚外观以它为准，不要把数值写进叙事。',
   '- laborHours / effectiveLaborHours / laborPhase / laborBirthNumber / laborPain 仅在产兆前驱或正式产程期间发送；产后恢复不再表示分娩疼痛。',
   '- 延产期：逾期后以特殊手段（bsExtendPregnancy）让妊娠拖着不生的妊娠阶段。extensionCount 是本次妊娠已延产几次，extensionUntilDays 是这次延产到期的有效孕日（到期会进入产兆前驱）。延产期间宫压不会自行累积，再高也不会引发流产或产程；羊膜每天回复、不会破水；不能剖腹或终止妊娠，唯一出口是 bsExtendPregnancy（action=induce）引产。',
@@ -180,7 +182,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- laborEffort / pushFatigue（产程中）：推或休，以及用力疲劳 0-100。推的时候疲劳累积（胎越大越快），60 以上越推越没效果；休的时候疲劳消退，越冷静消退越快。疲劳不随换阶段归零。各阶段效果不同：第二产程的胎体下降与娩出要产妇自己用力，休的时候产程几乎不前进；第三产程娩出胎盘时用力快一倍，不用力也会照常娩出；第一产程宫口还没开全、间歇期下一胎还没开始下降，用力是白费力气，只会累积疲劳，只有剧情写到她提早用力（例如不懂怎么生）才给 push，不要为了加快产程而 push。进入第一产程、间歇期与第三产程时预设休，胎体下降开始时预设推。剧情写到产妇停下来喘气、歇一下时用 bsAssistFetalPosition 给 action=rest，用力时给 action=push；用力消耗的体力照剧情自己扣 vitality，系统不代扣。切换要先于这段时间的 bsPassedTime。',
   '- amnionDurability: 羊膜耐性（0-100）；过低代表接近或已经破水。每一胎有各自的羊膜（同卵共用一个胎囊）：全部胎囊相同时只给这一个数值；不同时不给这个数值，改在对应胎儿上标 fetuses[*].amnion＝膜薄／膜危／已破，没标的就是完整。',
   '- fetuses[*].health: 胎儿健康刻度（健壮／平稳／虚弱／危急），描写须一致，不写出刻度本身。来源：需求照料（需求在「高」时用 bsExcreteMetabolism 处理到「无」加分，拖到「爆」扣分、越久越重）与 bsFetalEvent 的伤害、照料；没人照料也没人疏忽时回到平稳。危急时周结算先警告，下一周仍危急就流产（多胎只吸收那一胎），孕晚期起早产。fetuses[*].resilience：顽强＝很耐疏忽与伤害（强壮的母体、异种的魔丸与孽种，母体可挺着肚子照样奔波），脆弱＝稍有闪失就出事，没有就是一般。耐受由系统换算：change 一律照这件事对一般胎儿的影响给，不因顽强省略该记的伤害，也不因顽强或脆弱调轻、调重。fetuses[*].guarded＝父方在场庇护：伤害照常记，系统会让它回到平稳，可写胎儿在父亲身边格外安稳、伤后很快平复。',
-  '- pregnant.prenatalCare: 产前护理（用心／一般／疏忽，没有就是一般），由 bsRecordExperience 的 cognition 附 prenatalCare 设定；它管镜头外的日常养胎，描写她的生活习惯须一致。',
+  '- pregnant.prenatalCare: 镜头外的产前护理（悉心安胎／用心／一般／未察觉／疏忽／虐孕）。还没设定时是「未察觉」：她还不知道自己怀孕，照平常过日子、没有特别照顾。她知道或相信自己怀孕的那条认知（bsRecordExperience 的 cognition）一定要附 prenatalCare，没什么特别就给 normal，否则一直当未察觉；态度改变时再给。它管镜头外的日常养胎，描写她的生活习惯须一致。',
   '- pregnant.fetalEvents: 胎儿事件纪录的窗口。events 每条有 time、kind、change、target（第几胎／全部）、content，pin=true 为钉选，counted=false 表示当天同类已结算、只留纪录；earlier 是更早事件的摘要，「要点」与 events 一样是已发生的事实；countedToday 是今天已结算的 kind，同一胎同一天再记同类无效。不要重复记已有的事件。',
   '- 胎位操作、胎儿自主活动、两胎互动（bsAssistFetalPosition action=sibling）与插入推顶的规则写在各工具说明里（bsAssistFetalPosition、bsAddSperm），胎儿伤害、照料、母胎亲近与疏离用 bsFetalEvent，依工具回传描写。',
   '- blockage / acceleration / expansion: 当日妊娠症状，格式为 {key, severity}，含义见 [metabolism]。',
@@ -231,6 +233,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- 最新改口不删除旧笔；按先后与来源解读。系统受孕、胎父或工具成功不代表角色知情。未知身份不能用系统姓名补真相。',
   '- hasCondom 与事后避孕在工具执行时结算，结果下一次回复承接，不预测或强制改写当轮正文；未结算的亲历结果不得预写。',
   '- 自然妊娠线索只提示较容易注意身体变化，不自动确认怀孕。恢复期禁孕；恢复/假孕结束先进入月经刷新。',
+  '- 察觉分娩同理：产兆前驱、产程是系统结果，不等于她知道自己在生。认出之前，阵痛可能被当成腹痛、经痛、吃坏肚子或便意。何时认出照剧情与状态判断：经产妇（experience 有生产次数）通常一进第一产程就认得出；初产妇常要等到破水或宫缩变得规律密集；第二产程很难不察觉，但仍可能误以为是便意；急产可能来不及反应；连怀孕都不知道的人更难联想到分娩。她认出来时记一条认知（身体自觉 perception、被人点破 informed、产婆或医师判断 prenatal），写明怎么认出来，重要的钉选。直到生下来都没认出也可以，分娩照常结算，事后补记。',
   '',
   '[psychology]',
   '- psychology 分为 mens (常规/生理) 与 preg (妊娠相关) 两大组心理指数。',
@@ -652,10 +655,10 @@ function buildMainFlowFieldNotes(existingState = {}) {
   const lines = [
     '[状态字段速读]',
     '- 值为空的字段一律省略；认知与心理的省略/null 表示未知，不等于未孕或0。',
-    '- cognitionRecords 保存角色信念，可以与事实不同；系统结果、真实胎父与胎数不自动成为角色知识。自然线索到点也不强制知孕。',
+    '- cognitionRecords 保存角色信念，可以与事实不同；系统结果、真实胎父与胎数不自动成为角色知识。自然线索到点也不强制知孕；产程是系统结果，她认出自己在分娩之前不得写成她知道。',
     ...(profiles.some((profile) => profile.bodyFamiliarity) ? ['- bodyFamiliarity 是身体对各性伴的熟悉度（系统按次数、体型相容与时间算出，前三名）：只描述身体的记忆与反应，例如对谁的触碰更快有反应，不代表感情或爱意。'] : []),
     ...(profiles.some((profile) => profile.lastCondomResult || profile.lastEmergencyResult) ? ['- lastCondomResult/lastEmergencyResult 只在结算后的下一次叙事出现：是系统结果，不等于角色察觉；可据此描写合理可见的后果，不要求本轮处理。'] : []),
-    '- base：vitality 活力、psyStress 情压，体质与精神倾向看 *LevelText；libido 性欲；uterinePressure 宫压（上限随孕程提高，越高越接近流产或分娩）；eggs 可受精卵数；sperms 为体内残留精液，value 每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。',
+    '- base：vitality 活力、psyStress 情压，体质与精神倾向看 *LevelText；libido 性欲；figure 当下身材（含孕期变化，胸部大小与奶量无关）；uterinePressure 宫压（上限随孕程提高，越高越接近流产或分娩）；eggs 可受精卵数；sperms 为体内残留精液，value 每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。',
   ];
   if (profiles.some((profile) => profile.metabolism)) {
     lines.push('- metabolism：excretion 泄意、hunger 饿意、sleep 困意、milk 乳意（孕晚期以前是乳房胀痛敏感，孕晚期起才可能溢乳）、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；数值越高越急迫（一般上限 150）。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');
@@ -756,6 +759,11 @@ export function projectNarrativeState(existingState = {}, recentResults = []) {
     const profile = { ...item.profile };
     // 点名过期字段是给追踪模型的，主线不需要
     delete profile.staleDescriptionFields;
+    // 身材上次改变时的年龄只给追踪模型判断能不能用 bsGrowBody
+    if (profile.base?.bodyChangedAtAge !== undefined) {
+      const { bodyChangedAtAge: _bodyChangedAtAge, ...narrativeBase } = profile.base;
+      profile.base = narrativeBase;
+    }
     if (!condomFresh.has(name)) delete profile.lastCondomResult;
     if (!emergencyFresh.has(name)) delete profile.lastEmergencyResult;
     // 还在经期阶段就已经有胎儿，是受精卵尚未着床：旁白看不到，等着床进入孕早期才出现
@@ -1765,7 +1773,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '你只需要填写角色注册时真正需要声明的内容，不需要补充其他无关信息。',
     '不要扩写额外分类，不要发散到注册步骤之外的内容。',
     '你只需要填写以下声明内容：',
-    '1. 角色基础注册：base.age、base.race、base.bodySize、base.sheathOffset、base.vitalityLevel、base.psyStressLevel、base.libido、base.uterinePressure、base.latestSexDays、base.penetrationState、base.penetrationSource、base.sperms、metabolism',
+    '1. 角色基础注册：base.age、base.race、base.bodySize、base.sheathOffset、base.build、base.bust、base.hip、base.allocationBias、base.bustGain、base.hipGain、base.vitalityLevel、base.psyStressLevel、base.libido、base.uterinePressure、base.latestSexDays、base.penetrationState、base.penetrationSource、base.sperms、metabolism',
     '2. 情感与妊娠经验：experience',
     ...(includeBreedingPsychology ? ['3. 繁育心理：psychology.mens 或 psychology.preg（二选一，互斥）'] : []),
     '4. 既有孩子记录：children',
@@ -1778,11 +1786,18 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '参数说明：',
     `- base.race: 纯种/混血/衍生种族/子类物种，保留原始写法，若故事为现代写实，种族统一填人类即可${declaredRace ? `。【重要】用户已明确指定，必须强制填写為：${declaredRace}` : ''}`,
     '- base.bloodline: 原文写明血脉比例时，可把比例直接写进 base.race，或另填 bloodline 对象（键与 race 成分一致，值为0到1、合计1）。其余成分已知就写全，例如祖母是精灵、其余祖辈是人类：race="1/4精灵x3/4人类"（或 race="精灵x人类"、bloodline={"精灵":0.25,"人类":0.75}）。其余成分不详就只写已知那一份，例如「八分之一龙血，其余血统不详」：race="1/8西方龙"，系统会把剩下的87.5%记为未知；不得擅自补成人类。没有比例依据就省略；系统会标为比例推定。衍生类型不占种族血脉份额。',
-    '- base.vitalityLevel: 1-7，默认语义为 一推就倒(1)-身怀病弱(2)-难产体态(3)-均衡活力(4)-安产体态(5)-经过锻炼(6)-无坚不摧(7)',
+    '- base.vitalityLevel: 1-7，默认语义为 一推就倒(1)-身怀病弱(2)-体弱易累(3)-均衡活力(4)-健康有余(5)-经过锻炼(6)-无坚不摧(7)',
     '- base.psyStressLevel: 1-7，默认语义为 情感丧失麻木不仁(1)-内向压抑冷感(2)-情绪平缓理性(3)-情绪均衡稳定(4)-情绪丰富敏感(5)-强烈波动焦躁(6)-极端情绪精神异常(7)',
     '- base.age: 必填，不得省略或填 null。依角色卡、世界书与对话推断实际年龄；长生种只写外表年龄时，按设定推估实际岁数；资料完全没有提到时，按外貌、身分与经历推估一个合理年龄。',
     '- base.bodySize: 常态（人态）的个体体型，1–7 级，人类为 4，可带一位小数。依角色卡写明的身高或身材换算：约 30 cm＝1.5、120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7，锚点之间按比例内插；萝莉体型约 3–3.5，八尺约 5.3。半人马、拉弥亚等大型下半身看整体量体，以种族体型为准再增减。能变形的种族只填常态，变化态由系统按种族推算。未成年角色填当下的体型。卡上没写身材就省略，系统按种族分布抽取；种族体型为依个体时（怪兽类、怪鸟类、怪鱼类、植物族、真菌族、独居虫族、心魇）必须按子项或描述填写；种族体型为可变时省略。',
     '- base.sheathOffset: 鞘（阴道）的个人偏移，−1～+1，步长 0.25，一般为 0。代表实际舒适的插入深度，不只是解剖长度：鞘长与身高只有弱相关，系统已按体型算好平均，这里只写个人差异。角色卡写明很浅、一顶就到底、子宫后倾或子宫颈偏低、深了会痛，往负填（约 −0.5～−1）；写明很深、吞得下特别大的，往正填（约 +0.5～+1）。卡上没写就省略（视为 0），不要凭身材猜；原因写进私处描述。',
+    '- base.build: 体重比例 0–100，50 匀称、20 纤瘦、80 丰满肥硕。只管身上的量；是肉还是肌肉看 vitalityLevel。卡上没写身材就填 50。',
+    '- base.bust: 胸部丰满度 0–100，每 10 一个罩杯：0＝AAA、10＝AA、20＝A、30＝B、40＝C、50＝D、60＝E、70＝F、80＝G、90＝H、100＝I。写明罩杯照换算；只写大小就估（平胸约 15、普通约 40、丰满约 60、巨乳 80 以上）；没写填 40。孕期变化系统自己算，这里填孕前的常态。',
+    '- base.hip: 臀部饱满度 0–100（骨盆加臀），50 适中、25 窄、75 丰满。没写填 50。',
+    '- base.allocationBias: 母体倾向 −1～+1，怀孕时养分偏给自己还是胎儿。卡上写「一怀孕就发福、丰腴、臀腿变厚」往负；写「怀孕反而消瘦、被胎儿榨干、只长肚子」往正。没写就省略，系统抽样。',
+    '- base.bustGain: 胸部增长倾向 0–3，平衡时单胎足月胸部大几个罩杯（荷尔蒙体质，和胖瘦无关）。卡上写「一怀孕胸就涨得很夸张」约 2.5–3，「胸部几乎没变」约 0–0.5；没写就省略，系统抽样（平均 1.5）。',
+    '- base.hipGain: 臀部增长倾向 0–2，平衡时单胎足月骨盆与臀部变宽几级（每级 10）。卡上写「怀孕后屁股变得很大」约 1.5–2；没写就省略，系统抽样（平均 0.5）。',
+    '- 注册孩子时可参考父母的身材与倾向。胸部大小与奶量无关，不要因为胸大就写奶多。',
     '- base.libido: 初始性欲。非妊娠上限100；妊娠後会随孕期提升，临产最后一天上限可达150。若角色开场就在发情、催情、强欲状态，可给较高值。',
     '- base.uterinePressure: 初始宫压。非妊娠上限50；妊娠後会随进度平滑提升，臨產期上限达150。【危险警告】孕早期与孕中期前期上限极低，超过15便极易触发流产警告！除非开局正在临盆或剧烈腹痛，否则强烈建议填 0。',
     '- base.latestSexDays: 距最近一次性行为经过的天数。若 experience.latestSexPartner 有意义，建议一并填写；若已超过最近一月经周期或无从判断，可为 null。',
@@ -1915,6 +1930,9 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '      "race": "string",',
     '      "bodySize": 4,',
     '      "sheathOffset": 0,',
+    '      "build": 50,',
+    '      "bust": 40,',
+    '      "hip": 50,',
     '      "libido": 0,',
     '      "uterinePressure": 0,',
     '      "latestSexDays": 0,',
@@ -2273,7 +2291,7 @@ export function buildRecordNotesSystemPrompt({ maxChars = 300 } = {}) {
     '',
     '[认知纪录 cognition]',
     '- 这是角色本人的认知，也就是她相信什么，可能与事实不同。folded 每条有 time、method（得知方式）、content。',
-    '- 按主题写她目前的信念：知不知道自己怀孕、几胎、孩子的父亲、孕期与预产期、身体状况与医嘱等；同一主题以最新的为准，被推翻的旧想法一句带过（曾以为……，后来……）。',
+    '- 按主题写她目前的信念：知不知道自己怀孕、知不知道自己正在分娩、几胎、孩子的父亲、孕期与预产期、身体状况与医嘱等；同一主题以最新的为准，被推翻的旧想法一句带过（曾以为……，后来……）。',
     '- 照她的理解写，错的也照错的写，不要更正成事实；写明来源（自己察觉、猜测、被告知、检测、诊察）。',
   ].join('\n');
 }

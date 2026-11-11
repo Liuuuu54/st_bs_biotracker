@@ -17,6 +17,7 @@ import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters
 import { createEmptySires, normalizeSires, pruneFutaSireRecord } from './sires.js';
 import { assignMissingSireSeasonOrigins, startMissingSireReserveClocks } from './season_phase.js';
 import { normalizeFetalEventList, normalizeFetalHealthFields } from './fetal_health.js';
+import { createBodyBaseFields } from './maternal_body.js';
 import { announceSavedRevisions, claimChatRevision, clearHostSettingsPendingUpTo, markHostSettingsPending, queueRevisionAnnouncement, readLatestChatRevision } from './save_sync.js';
 import {
   createDefaultWardrobeItem,
@@ -337,7 +338,7 @@ function normalizeOutfitState(value, wardrobe) {
 export const VISUAL_CUE_TYPES = Object.freeze([
   'insert', 'insertCondom', 'ejaculate', 'ejaculateCondom', 'condomBreak', 'condomOverflow', 'ovulation',
   'fertilization', 'surrogacy', 'chimera', 'rebirth',
-  'implantation', 'implantationFailed', 'rupture',
+  'implantation', 'implantationFailed', 'rupture', 'falseContraction',
 ]);
 
 export function setVisualCue(profile, type) {
@@ -758,6 +759,8 @@ export function createDefaultFemaleState(name = '') {
         seasonCycle: 0,
         // 鞘偏移（1.2.4）：实际舒适的深度，−1～+1
         sheathOffset: 0,
+        // 身体基准与倾向（1.3.1，maternal_body.js）：体重、胸、臀、母体倾向、胸臀增长倾向；注册时再按角色卡或抽样填
+        ...createBodyBaseFields(),
       },
       pregnant: {
         pregnantDays: 0,
@@ -2099,6 +2102,8 @@ function createSnapshotCharacterBaseline(name = '') {
         seasonCycle: 0,
         // 鞘偏移（1.2.4）：实际舒适的深度，−1～+1
         sheathOffset: 0,
+        // 身体基准与倾向（1.3.1，maternal_body.js）：体重、胸、臀、母体倾向、胸臀增长倾向；注册时再按角色卡或抽样填
+        ...createBodyBaseFields(),
       },
       pregnant: {
         pregnantDays: 0,

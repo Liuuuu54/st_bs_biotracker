@@ -102,6 +102,7 @@ import {
   getLaborEffort,
   getLaborEffortMode,
   getBellySize,
+  getCurrentBody,
   getPresentingFetus,
   getUterinePressureCap as getProfileUterinePressureCap,
   isFetusKnownToCharacter,
@@ -111,6 +112,7 @@ import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './script
 import { deleteLibraryEntry, importLibraryEntry, listLibraryEntries, saveEggToLibrary, saveSireToLibrary } from './scripts/character_library.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue, getEmbryoTypeReferenceText } from './scripts/prompts/rules.js';
+import { getAllocationAlpha, getAllocationText, getBodyBaseline, getBuildText, getBustGrowthText, getCupLabel, getHipText, shiftCareTarget } from './scripts/maternal_body.js';
 import { FETAL_EVENT_KINDS, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, describeCognitionSummary, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, getPrenatalCareKey, normalizeFetalEventList, PRENATAL_CARE_LEVELS } from './scripts/fetal_health.js';
 import { PSY_AXIS_LABELS } from './scripts/registry_psy_config.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
@@ -1531,9 +1533,29 @@ function syncOverrideSlider(id) {
   // 数字之外附上文字分级，和追踪页、提示词的说法一致
   const word = id === 'bs-bt-sire-quality' ? getSpermQualityTier(value)
     : id === 'bs-bt-sire-sword' ? describeSwordOffset(value, { short: true })
-      : id === 'bs-bt-register-sheath' ? describeSheathOffset(value) : '';
-  const number = parts.node.dataset.scale === 'log2' ? `×${value}` : `${value > 0 ? '+' : ''}${value}`;
+      : id === 'bs-bt-register-sheath' ? describeSheathOffset(value)
+        : (REGISTER_BODY_SLIDERS.find((entry) => entry.id === id)?.word?.(value) || '');
+  const number = parts.node.dataset.scale === 'log2' ? `×${value}`
+    : parts.node.dataset.scale === 'plain' ? `${value}` : `${value > 0 ? '+' : ''}${value}`;
   parts.output.textContent = word ? `${word}（${number}）` : number;
+}
+
+/** 注册页「身材（手动指定）」：拉杆 id、写进 base 的栏位与读数旁的文字 */
+const REGISTER_BODY_SLIDERS = Object.freeze([
+  { id: 'bs-bt-register-build', key: 'build', word: (value) => getBuildText(value, 4) },
+  { id: 'bs-bt-register-bust', key: 'bust', word: (value) => `${getCupLabel(value)} 罩杯` },
+  { id: 'bs-bt-register-hip', key: 'hip', word: (value) => getHipText(value) },
+  { id: 'bs-bt-register-allocation', key: 'allocationBias', word: (value) => getAllocationText(value) },
+  { id: 'bs-bt-register-bust-gain', key: 'bustGain', word: (value) => `平衡时约大 ${value} 个罩杯` },
+  { id: 'bs-bt-register-hip-gain', key: 'hipGain', word: (value) => `约宽 ${value} 级` },
+]);
+
+/** 勾了的拉杆才回传；全部没勾时为 null */
+function readRegisterBodyOverrides() {
+  const entries = REGISTER_BODY_SLIDERS
+    .map((entry) => [entry.key, readOverrideSlider(entry.id)])
+    .filter(([, value]) => value !== null);
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
 }
 
 function readOverrideSlider(id) {
@@ -1799,6 +1821,7 @@ function getRegisterFormValues(ctx = getContextSafe()) {
     useGestationModifier: Boolean(document.getElementById('bs-bt-register-gestation-modifier')?.checked),
     gestationModifierMultiplier: Number(document.getElementById('bs-bt-register-gestation-multiplier')?.value ?? 1),
     sheathOffset: readOverrideSlider('bs-bt-register-sheath'),
+    bodyOverrides: readRegisterBodyOverrides(),
     breedingInferencePrompt: String(document.getElementById('bs-bt-breeding-inference-prompt')?.value || '').trim(),
     skillPrompt: String(document.getElementById('bs-bt-register-skill-prompt')?.value || '').trim(),
     sourceChildKey,
@@ -2725,6 +2748,34 @@ function formatCharacterBodySizeLabel(base = {}) {
   if (resolved.kind === 'unknown') return '未记录（依个体）';
   const own = clampIndividualBodySize(base.bodySize) !== null;
   return `${own ? '' : '约 '}${formatBodySizeLevel(resolved.size)}`;
+}
+
+/**
+ * 身材一行：体重×活力的文字、罩杯、臀部；孕期或产后附上相对孕前的变化。
+ * 滑鼠提示列出基准、增量与倾向的数值。
+ */
+function formatBodyFigureLabel(profile = {}) {
+  const base = profile.base || {};
+  const baseline = getBodyBaseline(base);
+  const body = getCurrentBody(profile);
+  const changed = Object.values(body.increments).some((value) => Math.abs(Number(value) || 0) >= 0.5);
+  const growth = getBustGrowthText(body.increments.bust);
+  const value = [
+    getBuildText(body.build, base.vitalityLevel),
+    `${getCupLabel(body.bust)} 罩杯${growth ? `（${growth}）` : ''}`,
+    `臀${getHipText(body.hip)}`,
+  ].join('·');
+  const fmt = (number) => Math.round(Number(number) * 10) / 10;
+  const delta = (key) => (changed ? `（孕前 ${fmt(baseline[key])}，${body.increments[key] >= 0 ? '+' : ''}${fmt(body.increments[key])}）` : '');
+  const title = [
+    `体重比例 ${fmt(body.build)}${delta('build')}`,
+    `胸部 ${fmt(body.bust)}${delta('bust')}`,
+    `臀部 ${fmt(body.hip)}${delta('hip')}`,
+    `母体倾向 ${formatSignedOffset(baseline.allocationBias)}（${getAllocationText(baseline.allocationBias)}）`,
+    `胸部增长倾向 ${fmt(baseline.bustGain)} 罩杯、臀部增长倾向 ${fmt(baseline.hipGain)} 级`,
+    '只影响外观、衣服合身与像素图；胸部大小与奶量无关',
+  ].join('\n');
+  return { value, title };
 }
 
 function formatSignedOffset(value) {
@@ -4589,6 +4640,9 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       bodySizeLabel: formatCharacterBodySizeLabel(base),
       altFormBodySizeLabel: formatAltFormBodySizeLabel(base),
       sheathLabel: formatSheathLabel(base, profile.experience || {}),
+      bodyFigure: formatBodyFigureLabel(profile),
+      bellySize: getBellySize(profile),
+      allocationText: getAllocationText(getAllocationAlpha(profile)),
       stage,
       stageProgress: getStageProgress(profile),
       stats: [
@@ -4647,6 +4701,9 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
         harmBreakdown: getFetalHarmBreakdown(profile, fetus),
         guardedBy: chatState ? getGuardingSire(chatState, fetus) : '',
         prenatalCare: getPrenatalCareKey(pregnant),
+        prenatalCareSet: Boolean(pregnant.prenatalCare),
+        careTarget: shiftCareTarget(PRENATAL_CARE_LEVELS[getPrenatalCareKey(pregnant)].target, getAllocationAlpha(profile)),
+        allocationText: getAllocationText(getAllocationAlpha(profile)),
         // 标签在这里解析：推导需要承载者名字，渲染层拿不到
         tagLabels: getFetusTagLabels(deriveFetusTags(fetus, { carrierName: character?.name || '' })),
         positionText: describeFetalPosition(pregnant, fetus),
@@ -4908,6 +4965,8 @@ function renderTrackOverview(viewModel) {
         ${viewModel.overview.sheathLabel
     ? `<div class="bs-bt-track-meta-row" title="${escapeHtml(viewModel.overview.sheathLabel.title)}"><span class="bs-bt-track-meta-label">体型／鞘</span><span class="bs-bt-track-meta-value">${escapeHtml(`${viewModel.overview.bodySizeLabel}·鞘${viewModel.overview.sheathLabel.value}`)}</span></div>`
     : `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodySizeLabel)}</span></div>`}
+        <div class="bs-bt-track-meta-row" title="${escapeHtml(viewModel.overview.bodyFigure.title)}"><span class="bs-bt-track-meta-label">身材</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodyFigure.value)}</span></div>
+        ${viewModel.overview.bellySize > 0 ? `<div class="bs-bt-track-meta-row" title="${escapeHtml('孕程与肚子里装的量算出；10 是任何衣服的极限，超过为爆表')}"><span class="bs-bt-track-meta-label">孕肚／分配</span><span class="bs-bt-track-meta-value">${escapeHtml(`${formatFixedDisplay(viewModel.overview.bellySize, 1)}／10·${viewModel.overview.allocationText}`)}</span></div>` : ''}
         ${viewModel.overview.altFormBodySizeLabel ? `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">变化态体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.altFormBodySizeLabel)}</span></div>` : ''}
       </div>
     </div>
@@ -5118,7 +5177,7 @@ function renderWombAlert(data) {
 
 const WOMB_CUE_LABELS = Object.freeze({
   insert: '插入', insertCondom: '戴套插入', ejaculate: '射精', ejaculateCondom: '射在套里', condomBreak: '套子破裂', condomOverflow: '套子撑爆', ovulation: '排卵', fertilization: '受精', surrogacy: '代孕植入',
-  chimera: '嵌合融合', rebirth: '胎内回归', implantation: '着床', implantationFailed: '着床失败', rupture: '破水',
+  chimera: '嵌合融合', rebirth: '胎内回归', implantation: '着床', implantationFailed: '着床失败', rupture: '破水', falseContraction: '假性宫缩',
 });
 
 function getStageProgressRatio(profile) {
@@ -5291,7 +5350,7 @@ function renderFetusHealthMeter(item) {
     `${formatFixedDisplay(Number(item?.health) || 0, 1)}／100`,
     '需求照料与胎儿事件会增减；没人照料也没人疏忽时慢慢回到产前护理的目标',
     describeFetalHarmBreakdown(item?.harmBreakdown),
-    `产前护理：${PRENATAL_CARE_LEVELS[item?.prenatalCare]?.label || '一般'}（每周往 ${PRENATAL_CARE_LEVELS[item?.prenatalCare]?.target ?? 50} 拉回两成）`,
+    `产前护理：${PRENATAL_CARE_LEVELS[item?.prenatalCare]?.label || '未察觉'}${item?.prenatalCareSet ? '' : '（预设：还没认定她知道怀孕）'}；母胎分配：${item?.allocationText || '平衡'}（每周往 ${formatFixedDisplay(Number(item?.careTarget ?? 45), 0)} 拉回两成）`,
     item?.guardedBy ? `胎儿守护：父方${item.guardedBy}在场，健康每小时回复 2%，回到平稳为止` : '',
   ].filter(Boolean).join('\n');
   return `<span class="bs-bt-fetal-health is-${escapeHtml(tier.key)}${item?.healthWarned ? ' is-warned' : ''}" role="img" title="${escapeHtml(title)}" aria-label="${escapeHtml(`健康：${tier.label}`)}"><span class="bs-bt-fetal-health-fill" style="width:${Math.round(ratio * 100)}%"></span></span>`;
@@ -11100,13 +11159,13 @@ async function ensureModal(ctx) {
     if (body) body.hidden = !toggle.checked;
     if (toggle.checked) body?.querySelector('input')?.focus();
   });
-  const registerFromForm = async ({ bundle = false } = {}) => {
+  const registerFromForm = async ({ bundle = false, bodyOnly = false } = {}) => {
     // 注册没有节流会重复发送：小手机关掉再打开时按钮看似可点，实际上上一轮还在跑
     if (isRegistryOperationPending('register') || isRegistryOperationPending('registerBundle')) {
       globalThis.toastr?.info?.('[BS BioTracker] 注册请求正在进行中，请等待完成');
       return;
     }
-    const { targetName, declaredRace, customNotes, initialCognitionRecords, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier, sheathOffset } = getRegisterFormValues();
+    const { targetName, declaredRace, customNotes, initialCognitionRecords, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier, sheathOffset, bodyOverrides } = getRegisterFormValues();
     if (specialFetus?.error) {
       setRegisterStatus(specialFetus.error, true);
       globalThis.toastr?.warning?.(specialFetus.error, '[BS BioTracker]');
@@ -11129,7 +11188,11 @@ async function ensureModal(ctx) {
       globalThis.toastr?.error?.(message, '[BS BioTracker]');
       return;
     }
-    const busyMessage = `${breedingInference ? `正在使用繁育推演注册 ${targetName}` : `正在注册 ${targetName}`}${bundle ? `（含${getRegisterBundleParts().map((part) => part.label).join('、')}）` : ''}...`;
+    if (bodyOnly && !getChatState(ctx, getSettings(ctx))?.characters?.[targetName]?.initialized) {
+      setRegisterStatus(`「只补身材」需要已注册的角色：${targetName}`, true);
+      return;
+    }
+    const busyMessage = bodyOnly ? `正在补 ${targetName} 的身材..` : `${breedingInference ? `正在使用繁育推演注册 ${targetName}` : `正在注册 ${targetName}`}${bundle ? `（含${getRegisterBundleParts().map((part) => part.label).join('、')}）` : ''}...`;
     if (bundle) beginRegistryOperation('registerBundle', busyMessage);
     else beginRegistryOperation('register', busyMessage);
     // 一次注册：着衣页的细则、日记页的写作规则与日期、技能页的额外提示随同这次请求送出
@@ -11142,7 +11205,7 @@ async function ensureModal(ctx) {
     const bundleReport = {};
     try {
       const character = await runRegistry(ctx, {
-        targetName, customNotes, initialCognitionRecords, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier, sheathOffset,
+        targetName, customNotes, initialCognitionRecords, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier, sheathOffset, bodyOverrides, bodyOnly,
         ...(useGestationModifier ? { gestationModifierMultiplier } : {}),
         ...(bundleOptions ? { bundle: bundleOptions, bundleReport } : {}),
       });
@@ -11157,9 +11220,10 @@ async function ensureModal(ctx) {
       const missingSpecial = describeMissingSpecialFetus(specialFetusRequest, character);
       const bundleNote = bundle ? describeRegistryBundle(ctx, character.name, bundleReport) : '';
       setRegisterStatus([
-        breedingInference
-          ? `注册完成：${character.name}（已套用繁育推演）。`
-          : `注册完成：${character.name}。`,
+        bodyOnly ? `身材已更新：${character.name}。`
+          : breedingInference
+            ? `注册完成：${character.name}（已套用繁育推演）。`
+            : `注册完成：${character.name}。`,
         bundleNote || '可继续设定着衣、写日记或配置技能。',
         missingSpecial,
       ].filter(Boolean).join(' '));
@@ -11176,6 +11240,7 @@ async function ensureModal(ctx) {
   };
   document.getElementById('bs-bt-register-run')?.addEventListener('click', () => registerFromForm());
   document.getElementById('bs-bt-register-run-bundle')?.addEventListener('click', () => registerFromForm({ bundle: true }));
+  document.getElementById('bs-bt-register-run-body')?.addEventListener('click', () => registerFromForm({ bodyOnly: true }));
   document.getElementById('bs-bt-sire-select')?.addEventListener('change', (event) => {
     loadSireIntoForm(ctx, String(event.target?.value || ''));
     setSireStatus('');

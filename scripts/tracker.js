@@ -13,7 +13,8 @@ import { summarizePendingRecords } from './record_notes.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCallsResult, describeBackSide, describeFetalPosition, getBellySize, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
+import { getAllocationAlpha, getAllocationText, getBuildText, getBustGrowthText, getCupLabel, getHipText } from './maternal_body.js';
+import { applyToolCallsResult, describeBackSide, describeFetalPosition, getBellySize, getCurrentBody, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getPrenatalCareKey, PRENATAL_CARE_LEVELS, getFetalHarmFactor, getFetalHealthTier, labelFetalEventTarget } from './fetal_health.js';
 import {
   buildRecentMessages,
@@ -830,9 +831,9 @@ function getVitalityLevelText(level) {
   const levels = {
     1: '一推就倒',
     2: '身怀病弱',
-    3: '难产体态',
+    3: '体弱易累',
     4: '均衡活力',
-    5: '安产体态',
+    5: '健康有余',
     6: '经过锻炼',
     7: '无坚不摧',
   };
@@ -1069,6 +1070,17 @@ function buildNarrativeWardrobeItem(entry) {
   };
 }
 
+/** 身材文字：体重×活力、罩杯（孕期附比孕前大几个罩杯）、臀部 */
+function describeFigureForPrompt(sourceProfile) {
+  const body = getCurrentBody(sourceProfile || {});
+  const growth = getBustGrowthText(body.increments.bust);
+  return [
+    getBuildText(body.build, sourceProfile?.base?.vitalityLevel),
+    `${getCupLabel(body.bust)}罩杯${growth ? `（${growth}）` : ''}`,
+    `臀部${getHipText(body.hip)}`,
+  ].join('，');
+}
+
 function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true, minutesPassed = 0, reproductiveSettings = null, guardingSireOf = () => '') {
   const next = cloneValue(item);
   const profile = next?.profile || {};
@@ -1105,6 +1117,9 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   // 鞘偏移只送文字（偏浅、很深…），适中不送；模型看不懂偏移数字
   delete profile.base.sheathOffset;
   if (normalizeSheathOffset(base.sheathOffset) !== 0) profile.base.sheath = describeSheathOffset(base.sheathOffset);
+  // 身材只送文字（1.3.1）：数值、母体倾向与增长倾向不外露
+  for (const key of ['build', 'bust', 'hip', 'allocationBias', 'bustGain', 'hipGain']) delete profile.base[key];
+  profile.base.figure = describeFigureForPrompt(item?.profile);
 
   if (!sendPregnantState) {
     delete profile.pregnant;
@@ -1124,8 +1139,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
       ...(amnion.uniform === null ? {} : { amnionDurability: amnion.uniform }),
       ...(immune.metabolism ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
       ...(fetalEventWindow ? { fetalEvents: fetalEventWindow } : {}),
-      // 产前护理：设定过才送（文字），没设定就是一般
-      ...(pregnant.prenatalCare && getPrenatalCareKey(pregnant) === pregnant.prenatalCare ? { prenatalCare: PRENATAL_CARE_LEVELS[pregnant.prenatalCare].label } : {}),
+      // 产前护理（文字）：没设定时是「未察觉」，有着床的胎儿才送
+      ...(visibleFetuses.some((fetus) => !fetus?.pendingImplantation) ? { prenatalCare: PRENATAL_CARE_LEVELS[getPrenatalCareKey(pregnant)].label } : {}),
       fetuses: visibleFetuses.map((fetus) => {
         const {
           embryoId: _embryoId, contactIds: _contactIds, contactMinutes: _contactMinutes, contactEmbryos: _contactEmbryos, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion,
@@ -1190,6 +1205,10 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   // 读原档：这里的 profile.pregnant 已经换成送给模型的精简版
   const bellySize = getBellySize(item?.profile);
   if (profile.pregnant && bellySize > 0) profile.pregnant.bellySize = Number(bellySize.toFixed(1));
+  // 母胎分配只在有着床胎儿时送文字
+  if (profile.pregnant && (item?.profile?.pregnant?.fetuses || []).some((fetus) => fetus && !fetus.pendingImplantation)) {
+    profile.pregnant.allocation = getAllocationText(getAllocationAlpha(item.profile));
+  }
 
   if (profile.wardrobe?.enabled && profile.outfit && typeof profile.outfit === 'object') {
     profile.outfit.currentWearText = getOutfitCurrentWearText(profile);
