@@ -13,7 +13,7 @@ import { summarizePendingRecords } from './record_notes.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCallsResult, describeBackSide, describeFetalPosition, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
+import { applyToolCallsResult, describeBackSide, describeFetalPosition, getBellySize, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getPrenatalCareKey, PRENATAL_CARE_LEVELS, getFetalHarmFactor, getFetalHealthTier, labelFetalEventTarget } from './fetal_health.js';
 import {
   buildRecentMessages,
@@ -1186,6 +1186,11 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
     };
   }
 
+  // 孕肚大小是身体量，衣柜关着也送；没有孕肚（月经期、假孕）不送
+  // 读原档：这里的 profile.pregnant 已经换成送给模型的精简版
+  const bellySize = getBellySize(item?.profile);
+  if (profile.pregnant && bellySize > 0) profile.pregnant.bellySize = Number(bellySize.toFixed(1));
+
   if (profile.wardrobe?.enabled && profile.outfit && typeof profile.outfit === 'object') {
     profile.outfit.currentWearText = getOutfitCurrentWearText(profile);
     const wardrobeItems = Array.isArray(profile.wardrobe.items) ? profile.wardrobe.items : [];
@@ -1310,6 +1315,7 @@ function buildOffscreenCharacterState(item, diaryLimit = 0, wardrobeOn = true) {
           ...getPromptFacingLaborState(base, pregnant),
           ...getPromptFacingExtensionState(pregnant),
           fetusesCount: hasFetuses ? pregnant.fetuses.filter(isFetusKnownToCharacter).length : 0,
+          ...(getBellySize(profile) > 0 ? { bellySize: Number(getBellySize(profile).toFixed(1)) } : {}),
           ...(metabolismImmune ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
         },
       } : {}),

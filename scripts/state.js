@@ -296,9 +296,8 @@ function normalizePregFitState(value) {
     return Math.max(-20, Math.min(20, next));
   };
   const gapSource = value.gap && typeof value.gap === 'object' ? value.gap : {};
+  // 孕肚大小是身体量（tools.js getBellySize），即时算出不存；旧档的 pregWearPressure 在这里丢弃
   return {
-    // 孕期可爆表到 15（见 tools.js PREG_WEAR_PRESSURE_MAX）；不能在读档时砍回 10
-    pregWearPressure: Math.max(0, Math.min(15, Number(value.pregWearPressure) || 0)),
     gap: {
       masking: normalizeGap(gapSource.masking),
       support: normalizeGap(gapSource.support),

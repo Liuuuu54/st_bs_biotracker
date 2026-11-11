@@ -77,7 +77,7 @@ export const RACE_BODY_PLAN_LABELS = Object.freeze({ humanoid: "人形", hybrid:
  * - genderRatio：后代雄性百分比；null 为雌雄同体或双性，-1 为无性
  * - companionEggsMean：每个有效胚胎平均伴随多少颗不会发育成胎儿卡的背景卵（伴生卵）。
  *   胚型只代表「允许多卵」，不会让卵生／卵胎生／不定型自动高产；胎生与胎转卵生恒无伴生卵
- * - fetalBulkRatio：每胎占肚子的份量倍率（标准胎为 1），只管孕服压、宫压累积与子宫容量，不改胎重。
+ * - fetalBulkRatio：每胎占肚子的份量倍率（标准胎为 1），只管孕肚大小、宫压累积与子宫容量，不改胎重。
  *   内置表不写＝自动，由额外排卵、同卵率与伴生卵推出一窝的大小（见 getAutoFetalBulkRatio）；百科填了才覆写
  * - recoveryCoefficient：产后恢复系数，以人类 56 天为 1，只看母体物种（混血取各成分平均），衍生类型不参与；
  *   实际天数在分娩／流产当下再乘活力、经产与胎数因子，见 computePostpartumRecoveryDays
@@ -2272,7 +2272,7 @@ export function getFetalBulkRatioByRace(race, bloodline = null) {
 /**
  * 一颗伴生卵占肚子的份量，以足月标准胎为 1。典型卵群越大的物种单颗越小：0.15 ÷ (1 ＋ 典型数量 ÷ 8)，
  * 赛壬（1）约 0.13、阿拉克涅（12）0.06、蛙族（35）约 0.03，满窝的总量才不会把小卵物种撑成五胞胎。
- * 典型数量看胎儿自己的族（混血按血统加权）；孕服压的胎量与子宫容量共用。
+ * 典型数量看胎儿自己的族（混血按血统加权）；孕肚大小的胎量与子宫容量共用。
  */
 export function getCompanionEggBulk(race, bloodline = null) {
   return 0.15 / (1 + getCompanionEggsMeanByRace(race, bloodline) / 8);

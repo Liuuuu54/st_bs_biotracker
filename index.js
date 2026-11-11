@@ -101,6 +101,7 @@ import {
   getPresentingAmnionDurability,
   getLaborEffort,
   getLaborEffortMode,
+  getBellySize,
   getPresentingFetus,
   getUterinePressureCap as getProfileUterinePressureCap,
   isFetusKnownToCharacter,
@@ -371,7 +372,7 @@ const RACE_FIELD_DESCRIPTIONS = Object.freeze({
   orgasmOvulationAmount: '高潮时额外排出几颗卵（平时每周期只排 1 颗），人类为 1。越多越容易异卵多胎。',
   identicalProbability: '一颗受精卵分裂成同卵多胎的机率（%），人类为 1。',
   companionEggsMean: '每名后代旁边伴随几颗不会发育的背景卵，也就是一窝的大小，人类为 0。胎生与胎转卵生恒为 0。',
-  fetalBulkRatio: '每一胎占肚子多少，标准胎为 1。只影响孕服压、足月宫压累积与子宫容量，不改胎重。留空自动：一窝越大（额外排卵、同卵率、伴生卵越多）每只越小，月兔约 0.68，多产性不高于人类的为 1。',
+  fetalBulkRatio: '每一胎占肚子多少，标准胎为 1。只影响孕肚大小、足月宫压累积与子宫容量，不改胎重。留空自动：一窝越大（额外排卵、同卵率、伴生卵越多）每只越小，月兔约 0.68，多产性不高于人类的为 1。',
   recoveryCoefficient: '分娩或流产后多久才回到月经周期、能再怀孕，人类为 1（约 56 天）。',
   genderRatio: '后代是雄性的百分比，人类为 50。留空是雌雄同体，-1 是无性。',
   bodySize: '常态（人态）的大小，1–7 级，人类为 4。影响体型契合、子宫容量、射精量与受精胎重。',
@@ -4221,20 +4222,20 @@ function renderWardrobeCharacterList(characters = []) {
 const PREGFIT_DIM_LABELS = { masking: '遮蔽', support: '承托', capacity: '余裕', convenience: '便利' };
 
 /**
- * 孕期衣着压力。量表以 10（衣服的极限）为满格；压力超过 10 是「爆表」，
+ * 衣服合身度：孕肚大小对上这套衣服的四维。量表以 10（衣服的极限）为满格；孕肚超过 10 是「爆表」，
  * 刻线钉在最右、标出爆表徽章，各维的红色缺口也一路画满。
- * 四个维度画成共用同一条压力刻线的小量表：
- * 长条是这套衣服在该维度的总值，刻线是当前孕期压力，条子没顶到刻线就是压不住，
+ * 四个维度画成共用同一条孕肚刻线的小量表：
+ * 长条是这套衣服在该维度的总值，刻线是当前孕肚大小，条子没顶到刻线就是压不住，
  * 差额直接用红色补在缺口上。这样「为什么这一维是负的」是看得出来的，
  * 而不是丢四个各自独立的数字让人自己减。
  *
- * 总值不必另外存：gap = 总值 - 压力（tools.js refreshOutfitPregFit），
- * 总值夹在 0-10（穿特制孕妇用品时 0-15）、压力最多 15，差值落在 -15~15，不会碰到 gap 自己的 -20/20 夹界，
- * 所以 总值 = gap + 压力 可以精确还原。
+ * 总值不必另外存：gap = 总值 - 孕肚大小（tools.js refreshOutfitPregFit），
+ * 总值夹在 0-10（穿特制孕妇用品时 0-15）、孕肚最多 15，差值落在 -15~15，不会碰到 gap 自己的 -20/20 夹界，
+ * 所以 总值 = gap + 孕肚大小 可以精确还原。孕肚大小即时算（getBellySize），与 gap 同一时刻刷新。
  */
-function renderPregFitGauge(pregFit) {
-  const pressure = Number(pregFit?.pregWearPressure);
-  if (!Number.isFinite(pressure)) return '';
+function renderPregFitGauge(pregFit, bellySize) {
+  const pressure = Number(bellySize);
+  if (!pregFit || !Number.isFinite(pressure)) return '';
   const pct = (value) => Math.max(0, Math.min(100, (value / 10) * 100));
   const pressurePct = pct(pressure);
   const burst = pressure > 10;
@@ -4260,11 +4261,11 @@ function renderPregFitGauge(pregFit) {
   return `
     <div class="bs-bt-pregfit${burst ? ' is-burst' : ''}">
       <div class="bs-bt-pregfit__head">
-        <span class="bs-bt-pregfit__label">孕期衣着压力${burst ? '<span class="bs-bt-pregfit__burst">爆表</span>' : ''}</span>
+        <span class="bs-bt-pregfit__label">孕肚大小${burst ? '<span class="bs-bt-pregfit__burst">爆表</span>' : ''}</span>
         <span class="bs-bt-pregfit__value">${escapeHtml(formatFixedDisplay(pressure, 1))}<span class="bs-bt-pregfit__scale">/10</span></span>
       </div>
       <div class="bs-bt-pregfit__dims">${dims}</div>
-      <div class="bs-bt-pregfit__legend">${burst ? '超过 10 即爆表：孕肚已大到任何衣服都包不住' : '竖线为当前压力，条子未及即为该维度压不住'}</div>
+      <div class="bs-bt-pregfit__legend">${burst ? '超过 10 即爆表：孕肚已大到任何衣服都包不住' : '竖线为当前孕肚大小，条子未及即为该维度压不住'}</div>
     </div>
   `;
 }
@@ -4272,7 +4273,7 @@ function renderPregFitGauge(pregFit) {
 function renderWardrobeCharacterPage(character) {
   const profile = character?.profile || {};
   const outfit = buildOutfitView(profile);
-  const pregFitHtml = renderPregFitGauge(outfit?.pregFit);
+  const pregFitHtml = renderPregFitGauge(outfit?.pregFit, getBellySize(profile));
   const currentIds = new Set([outfit.main?.id, ...(outfit.accessories || []).map((item) => item.id)].filter((id) => id !== undefined && id !== null));
   const items = getWardrobeItems(profile).filter((item) => Number(item?.id) !== 0);
   const mainItems = items.filter((item) => item.slot !== 'accessory');

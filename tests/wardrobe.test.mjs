@@ -10,7 +10,7 @@ import {
   resolveWardrobeItemRef,
   sanitizeWearState,
 } from '../scripts/wardrobe_config.js';
-import { applyToolCall, calculatePregWearPressure, getFetalBulk, TOOL_DEFINITIONS } from '../scripts/tools.js';
+import { applyToolCall, calculatePregnantBellySize, getBellySize, getFetalBulk, TOOL_DEFINITIONS } from '../scripts/tools.js';
 import { getFetalBulkRatioByRace } from '../scripts/race_config.js';
 import { createEmptyChatState, normalizeCharacterPsychologyState } from '../scripts/state.js';
 import { applyRegistryResult, applyStartingOutfit, applyWardrobePrepResult } from '../scripts/registry.js';
@@ -395,8 +395,8 @@ function makePregnancyState(stage, days) {
   };
 }
 
-test('pregnancy wear pressure: single term 7, twins 8.5, triplets 10 fill the gauge', () => {
-  const at = (days, weights, extra = {}) => calculatePregWearPressure({
+test('belly size: single term 7, twins 8.5, triplets 10 fill the gauge', () => {
+  const at = (days, weights, extra = {}) => calculatePregnantBellySize({
     pregnant: { effectivePregnantDays: days, fetuses: weights.map((weight) => ({ weight, ...extra })) },
     ...extra.profile,
   });
@@ -411,8 +411,8 @@ test('pregnancy wear pressure: single term 7, twins 8.5, triplets 10 fill the ga
   assert.ok(at(140, [1]) < at(280, [1]));
 });
 
-test('wear pressure follows the belly, not the carrier tolerance, and counts companion eggs', () => {
-  const pressure = (fetuses, breedTolerance = 1) => calculatePregWearPressure({
+test('belly size follows what the womb holds, not the carrier tolerance, and counts companion eggs', () => {
+  const pressure = (fetuses, breedTolerance = 1) => calculatePregnantBellySize({
     bio: { breedTolerance },
     pregnant: { effectivePregnantDays: 280, fetalEnergyDrain: 1 / breedTolerance, fetuses },
   });
@@ -434,16 +434,26 @@ test('wear pressure follows the belly, not the carrier tolerance, and counts com
   assert.equal(getFetalBulk({ pregnant: { effectivePregnantDays: 280, fetuses: [{ weight: 1 }, { weight: 1, conceivedAtDays: 140 }] } }), 1.5);
 });
 
-test('postpartum pregFit pressure declines linearly with recovery progress', () => {
+test('postpartum belly size declines linearly with recovery progress', () => {
   const atDay = (days) => {
     const state = makePregnancyState('产后恢复', days);
     applyToolCall(state, { name: 'bsChangeOutfit', arguments: { female: '艾拉', mainItemId: 1 } });
-    return state.characters['艾拉'].profile.outfit.pregFit;
+    const profile = state.characters['艾拉'].profile;
+    return { belly: getBellySize(profile), pregFit: profile.outfit.pregFit };
   };
-  assert.equal(atDay(0)?.pregWearPressure, 4, 'starts at the postpartum baseline');
-  assert.equal(atDay(28)?.pregWearPressure, 2, 'halfway through recovery');
-  assert.equal(atDay(56)?.pregWearPressure, 0, 'fully recovered');
-  assert.equal(atDay(0)?.gap.masking, 2, 'gap subtracts pressure from outfit totals');
+  assert.equal(atDay(0).belly, 4, 'starts at the postpartum baseline');
+  assert.equal(atDay(28).belly, 2, 'halfway through recovery');
+  assert.equal(atDay(56).belly, 0, 'fully recovered');
+  assert.equal(atDay(0).pregFit?.gap.masking, 2, 'gap subtracts belly size from outfit totals');
+  assert.equal('pregWearPressure' in atDay(0).pregFit, false, 'belly size is not stored on the outfit');
+});
+
+test('belly size is a body quantity: computed without a wardrobe, zero outside belly stages', () => {
+  const profile = (stage, days = 280) => ({ base: { stage }, pregnant: { effectivePregnantDays: days, fetuses: [{ weight: 1 }] } });
+  assert.equal(Number(getBellySize(profile('孕晚期')).toFixed(2)), 7);
+  assert.equal(Number(getBellySize(profile('临产期')).toFixed(2)), 7);
+  assert.equal(getBellySize(profile('卵泡期')), 0);
+  assert.equal(getBellySize(profile('假孕期', 60)), 0);
 });
 
 test('pregFit stays null outside the wear-fit window', () => {
@@ -477,17 +487,17 @@ test('state normalization leaves user description fields untouched', () => {
   assert.equal(plain.profile.descriptions.normalDescription, '外貌|红发;;');
 });
 
-test('burst wear pressure survives normalisation on load', () => {
+test('legacy stored wear pressure is dropped on load, gaps survive', () => {
   const character = {
     profile: {
       wardrobe: { enabled: true, items: [{ id: 1, name: '孕妇裙', slot: 'main' }] },
       outfit: { mainItemId: 1, accessoryItemIds: [], transientItems: [], wearState: '整齐', pregFit: { pregWearPressure: 13, gap: { masking: -9, support: -9, capacity: -9, convenience: -9 } } },
     },
   };
-  normalizeCharacterPsychologyState(JSON.parse(JSON.stringify(character)));
   const restored = JSON.parse(JSON.stringify(character));
   normalizeCharacterPsychologyState(restored);
-  assert.equal(restored.profile.outfit.pregFit.pregWearPressure, 13);
+  assert.equal('pregWearPressure' in restored.profile.outfit.pregFit, false);
+  assert.equal(restored.profile.outfit.pregFit.gap.masking, -9);
 });
 
 test('a maternity item lifts the outfit cap to 15 so stacked gear can hold a burst belly', () => {
@@ -517,7 +527,7 @@ test('a maternity item lifts the outfit cap to 15 so stacked gear can hold a bur
     return chatState.characters.A.profile.outfit.pregFit;
   };
   const plain = wear(false);
-  assert.equal(Number(plain.pregWearPressure.toFixed(2)), 13);
+  assert.equal(Number(getBellySize(chatState.characters.A.profile).toFixed(2)), 13);
   assert.ok(Object.values(plain.gap).every((gap) => gap < 0), '一般衣物叠再多也卡在 10');
   const special = wear(true);
   assert.ok(Object.values(special.gap).every((gap) => gap >= 0), `特制品叠够就压得住：${JSON.stringify(special.gap)}`);

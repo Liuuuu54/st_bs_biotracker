@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as state from '../scripts/state.js';
-import { applyToolCall } from '../scripts/tools.js';
+import { applyToolCall, getBellySize } from '../scripts/tools.js';
 import { deriveFetusTags } from '../scripts/fetus_tags.js';
 
 function makeChar(name, overrides = {}) {
@@ -179,7 +179,7 @@ test('回归期不能被 bsSetMenstrualPhases 覆盖', () => {
   assert.equal(hostOf(chatState).base.stage, '回归期');
 });
 
-test('回归期的衣着压力顶到上限并随时间回落', () => {
+test('回归期的孕肚大小顶到上限并随时间回落', () => {
   const chatState = setup({
     profile: {
       wardrobe: {
@@ -190,12 +190,13 @@ test('回归期的衣着压力顶到上限并随时间回落', () => {
     },
   });
   call(chatState, 'bsWombReturn', { female: '艾拉', returner: '琪拉', hours: 24 });
-  const peak = hostOf(chatState).outfit.pregFit.pregWearPressure;
-  assert.equal(peak, 10, '刚回归时压力应顶到上限');
+  const peak = getBellySize(hostOf(chatState));
+  assert.equal(peak, 10, '刚回归时孕肚应顶到上限');
+  assert.equal(hostOf(chatState).outfit.pregFit.gap.capacity < 0, true, '衣服余裕按孕肚扣减');
 
   call(chatState, 'bsPassedTime', { hour: 12 });
-  const midway = hostOf(chatState).outfit.pregFit.pregWearPressure;
-  assert.ok(midway > 0 && midway < peak, `压力应回落，实际 ${midway}`);
+  const midway = getBellySize(hostOf(chatState));
+  assert.ok(midway > 0 && midway < peak, `孕肚应回落，实际 ${midway}`);
 });
 
 test('生下来是全新个体，孩子带 rebirth 标签与继承来的天赋', () => {

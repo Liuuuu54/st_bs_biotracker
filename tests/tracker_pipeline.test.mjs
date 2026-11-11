@@ -121,8 +121,8 @@ test('tracker payload keeps four dimensions only on current items inside the wea
   const dress = bella.profile.wardrobe.items.find((item) => item.id === 1);
   assert.equal(dress.masking, undefined, 'catalog stays slim even during postpartum');
   assert.equal(bella.profile.outfit.currentItems.find((item) => item.id === 1)?.masking, 6, 'current item keeps derived dimensions');
-  assert.equal(typeof bella.profile.outfit.pregFit?.pregWearPressure, 'number', 'postpartum pregFit is computed');
-  assert.equal(bella.profile.outfit.pregFit.pregWearPressure > 0, true, 'postpartum pressure is non-zero early in recovery');
+  assert.equal(typeof bella.profile.outfit.pregFit?.gap?.masking, 'number', 'postpartum pregFit is computed');
+  assert.equal(bella.profile.pregnant.bellySize > 0, true, 'postpartum belly size is sent and non-zero early in recovery');
 });
 
 test('offscreen characters get a slim wardrobe with outfit summary for re-entry changes', () => {

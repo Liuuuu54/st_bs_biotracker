@@ -205,7 +205,7 @@ function getOutfitDimensionTotals(profile) {
  * 肚子实际装了多少：每胎「自身孕龄 × 胎重 × 份量倍率 / 280」加总，伴生卵按份量随所属那胎一起长大。
  * 份量倍率表达窝仔物种每只较小（getFetalBulkRatioByRace），只管肚子大小，胎重本身不动。
  * 与 fetalEnergyDrain 同源但不除以承载耐受——耐受是「扛不扛得住」，
- * 衣服合不合身只看肚子多大；除下去会让高耐受的龙娘足月像七个月、低耐受的一胎就撑爆
+ * 肚子多大只看装了多少；除下去会让高耐受的龙娘足月像七个月、低耐受的一胎就撑爆
  */
 export function getFetalBulk(profile) {
   const pregnant = profile?.pregnant || {};
@@ -215,41 +215,42 @@ export function getFetalBulk(profile) {
     const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
     const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
     const eggs = Math.max(0, Math.floor(Number(fetus?.companionEggCount) || 0));
-    // 伴生卵只影响衣着压力，不进代谢负担；单颗份量依胎儿族的典型卵群缩小
+    // 伴生卵只影响孕肚大小，不进代谢负担；单颗份量依胎儿族的典型卵群缩小
     const eggBulk = eggs > 0 ? eggs * getCompanionEggBulk(fetus?.race, fetus?.bloodline) : 0;
     return sum + (ownAge / DUE_DATE_DAYS) * (weight * getFetalBulkRatioByRace(fetus?.race, fetus?.bloodline) + eggBulk);
   }, 0);
 }
 
 /**
- * 孕期衣着压力 = 基础 + 身形随孕周改变 + 肚子装的量。锚点：
+ * 孕肚大小 = 基础 + 子宫、羊水、胎盘随孕周长大 + 肚子装的量（胎量）。锚点：
  * 足月单胎 1.0 = 7、双胎 1.0 = 8.5、三胎 1.0 = 10，与母体种族无关。
- * 10 是衣服的极限（量表满格）；之后照样往上算到 15「爆表」：足月五胎约 13，过期再撑到 15 为止，
+ * 它是身体量，不属于衣柜：像素图、外观描述、衣服合身度都读它（getBellySize）。
+ * 10 是任何衣服的极限（衣柜量表满格）；之后照样往上算到 15「爆表」：足月五胎约 13，过期再撑到 15 为止，
  * 免得巨胎或大量伴生卵算出没有意义的大数。产后恢复与胎内回归不是撑大的肚子，仍以 10 为顶。
  */
-export const PREG_WEAR_PRESSURE_FULL = 10;
-export const PREG_WEAR_PRESSURE_MAX = 15;
-export function calculatePregWearPressure(profile) {
+export const BELLY_SIZE_FULL = 10;
+export const BELLY_SIZE_MAX = 15;
+export function calculatePregnantBellySize(profile) {
   const pregnant = profile?.pregnant || {};
   const effectiveDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
   if (effectiveDays <= 0) return 0;
   // 以预产期为准，不用各阶段总长：临产期延到 42 周后总长是 294，会把孕程项整体压低
   const progress = Math.min(1.25, effectiveDays / DUE_DATE_DAYS);
-  const basePressure = 0.5;
-  const progressPressure = Math.pow(progress, 1.35) * 5;
-  const fetalPressure = getFetalBulk(profile) * 1.5;
-  return clampNumber(basePressure + progressPressure + fetalPressure, 0, PREG_WEAR_PRESSURE_MAX, 0);
+  const base = 0.5;
+  const progressSize = Math.pow(progress, 1.35) * 5;
+  const bulkSize = getFetalBulk(profile) * 1.5;
+  return clampNumber(base + progressSize + bulkSize, 0, BELLY_SIZE_MAX, 0);
 }
 
-// 产后恢复的衣着压力：从产后初期的水平随恢复进度线性递减到 0（体型回缩、乳胀消退）。
-const POSTPARTUM_START_WEAR_PRESSURE = 4;
+// 产后的孕肚：从产后初期的大小随恢复进度线性回缩到 0。
+const POSTPARTUM_START_BELLY_SIZE = 4;
 
 /**
  * 胎内回归。一名已注册角色回到另一名角色子宫内成为胎儿，
  * 经过一段过渡后转入正常妊娠，出生时是全新个体（新的 child id）。
  *
  * 之所以需要一个独立阶段而不是直接塞进孕早期：过渡期间胎重是上限 3.0
- * （一个成人体积的东西刚进去），衣着压力顶到上限，两者都要随时间回落。
+ * （一个成人体积的东西刚进去），孕肚大小顶到上限，两者都要随时间回落。
  * 直接进孕早期的话，updateFetalEnergyDrain 会拿 3.0 的胎重去算供养力，
  * 变成一场怪物妊娠。
  */
@@ -306,7 +307,7 @@ function resolvePersonNameArgs(args) {
 const reportedUnknownStages = new Set();
 
 const WOMB_RETURN_STAGE = '回归期';
-const WOMB_RETURN_PEAK_PRESSURE = 10;
+const WOMB_RETURN_PEAK_BELLY_SIZE = 10;
 const WOMB_RETURN_PEAK_WEIGHT = 3.0;
 
 /** 承载者允许被回归的阶段：子宫得是空的（有东西会被净空），且不能正在妊娠或生产 */
@@ -564,52 +565,64 @@ function applyWombReturn(chatState, args) {
 }
 
 
-function calculatePostpartumWearPressure(profile) {
+function calculatePostpartumBellySize(profile) {
   const days = clampNumber(profile?.base?.days, 0, 9999, 0);
   const recoveryDays = getStageLimit(profile, '产后恢复') || 56;
   const progress = Math.min(1, days / recoveryDays);
-  return clampNumber(POSTPARTUM_START_WEAR_PRESSURE * (1 - progress), 0, 10, 0);
+  return clampNumber(POSTPARTUM_START_BELLY_SIZE * (1 - progress), 0, BELLY_SIZE_FULL, 0);
 }
 
 /**
- * 回归期的衣着压力：一个成人体积的东西刚进去，压力直接顶到上限，
- * 再随剩余时间线性回落。不能走 calculatePregWearPressure——那个是从
- * effectivePregnantDays 与 fetalEnergyDrain 推的，回归期两者都是 0，
- * 算出来只有 0.5，与「压力直接爆」完全相反。
+ * 回归期的孕肚：一个成人体积的东西刚进去，直接顶到上限，
+ * 再随剩余时间线性回落。不能走 calculatePregnantBellySize——那个是从
+ * effectivePregnantDays 与胎量推的，回归期两者都是 0，
+ * 算出来只有 0.5，与「肚子直接撑满」完全相反。
  */
-function calculateWombReturnWearPressure(profile) {
+function calculateWombReturnBellySize(profile) {
   const state = profile?.pregnant?.wombReturn;
   const total = clampNumber(state?.totalHours, 0, 99999, 0);
   if (total <= 0) return 0;
   const remaining = clampNumber(state?.remainingHours, 0, 99999, 0);
-  return clampNumber(WOMB_RETURN_PEAK_PRESSURE * (remaining / total), 0, 10, 0);
+  return clampNumber(WOMB_RETURN_PEAK_BELLY_SIZE * (remaining / total), 0, BELLY_SIZE_FULL, 0);
 }
 
+/** 有孕肚的阶段：真妊娠、产兆前驱、产程、产后恢复、回归期；其余为 0 */
+function hasBellyStage(stage) {
+  return stage === '产后恢复'
+    || stage === WOMB_RETURN_STAGE
+    || isTruePregnancyStage(stage)
+    || stage === '产兆前驱'
+    || LABOR_STAGES.includes(stage);
+}
+
+/**
+ * 孕肚大小（0–15，10 为衣服的极限，超过为爆表）。身体量，不看衣柜开没开：
+ * 由当下的孕程、胎量、产后恢复或回归进度即时算出，不存档。
+ */
+export function getBellySize(profile) {
+  const stage = String(profile?.base?.stage || '');
+  if (!hasBellyStage(stage)) return 0;
+  if (stage === WOMB_RETURN_STAGE) return calculateWombReturnBellySize(profile);
+  if (stage === '产后恢复') return calculatePostpartumBellySize(profile);
+  return calculatePregnantBellySize(profile);
+}
+
+/** 衣服四维余裕：各维总值减去孕肚大小。只在有孕肚的阶段存在 */
 function refreshOutfitPregFit(profile) {
   if (!profile?.wardrobe?.enabled) return null;
   const outfit = ensureOutfitState(profile);
-  if (outfit.mainItemId === null) {
-    outfit.pregFit = null;
-    return outfit;
-  }
-  const stage = String(profile?.base?.stage || '');
-  const inPostpartum = stage === '产后恢复';
-  const inWombReturn = stage === WOMB_RETURN_STAGE;
-  if (!inPostpartum && !inWombReturn && !isTruePregnancyStage(stage) && stage !== '产兆前驱' && !LABOR_STAGES.includes(stage)) {
+  if (outfit.mainItemId === null || !hasBellyStage(String(profile?.base?.stage || ''))) {
     outfit.pregFit = null;
     return outfit;
   }
   const totals = getOutfitDimensionTotals(profile);
-  const pregWearPressure = inWombReturn
-    ? calculateWombReturnWearPressure(profile)
-    : (inPostpartum ? calculatePostpartumWearPressure(profile) : calculatePregWearPressure(profile));
+  const bellySize = getBellySize(profile);
   outfit.pregFit = {
-    pregWearPressure,
     gap: {
-      masking: clampNumber(totals.masking - pregWearPressure, -20, 20, 0),
-      support: clampNumber(totals.support - pregWearPressure, -20, 20, 0),
-      capacity: clampNumber(totals.capacity - pregWearPressure, -20, 20, 0),
-      convenience: clampNumber(totals.convenience - pregWearPressure, -20, 20, 0),
+      masking: clampNumber(totals.masking - bellySize, -20, 20, 0),
+      support: clampNumber(totals.support - bellySize, -20, 20, 0),
+      capacity: clampNumber(totals.capacity - bellySize, -20, 20, 0),
+      convenience: clampNumber(totals.convenience - bellySize, -20, 20, 0),
     },
   };
   return outfit;
@@ -3100,7 +3113,7 @@ function getTermReadiness(profile) {
 }
 
 /**
- * 37 周起宫压按肚子实际装的量自行累积（与衣着压力同一个胎量，不除承载耐受，
+ * 37 周起宫压按肚子实际装的量自行累积（与孕肚大小同一个胎量，不除承载耐受，
  * 否则高耐受的龙娘要拖到 46 周），越接近、越超过预产期累积越快
  */
 function applyTermPressure(profile, tick, female) {
@@ -3586,7 +3599,7 @@ function clearPregnancyState(profile) {
   pregnant.prodromalOriginStage = null;
   pregnant.prodromalRemainingHours = 0;
   pregnant.prodromalDelayProgressHours = 0;
-  // 回归期被中断（流产／堕胎）时也要清掉，否则残留的进度会继续驱动孕服压力
+  // 回归期被中断（流产／堕胎）时也要清掉，否则残留的进度会继续撑着孕肚大小
   delete pregnant.wombReturn;
   pregnant.fetuses = [];
   pregnant.fetusesCount = 0;
