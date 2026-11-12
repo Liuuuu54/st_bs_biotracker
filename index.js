@@ -4312,7 +4312,7 @@ function renderPregFitGauge(pregFit, bellySize) {
   return `
     <div class="bs-bt-pregfit${burst ? ' is-burst' : ''}">
       <div class="bs-bt-pregfit__head">
-        <span class="bs-bt-pregfit__label">孕肚大小${burst ? '<span class="bs-bt-pregfit__burst">爆表</span>' : ''}</span>
+        <span class="bs-bt-pregfit__label">衣服合身·孕肚大小${burst ? '<span class="bs-bt-pregfit__burst">爆表</span>' : ''}</span>
         <span class="bs-bt-pregfit__value">${escapeHtml(formatFixedDisplay(pressure, 1))}<span class="bs-bt-pregfit__scale">/10</span></span>
       </div>
       <div class="bs-bt-pregfit__dims">${dims}</div>
@@ -4762,6 +4762,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
     },
     outfit: outfitView,
     debug: {
+      body: { ...getBodyBaseline(base), sheathOffset: normalizeSheathOffset(base.sheathOffset), bodyChangedAtAge: Number(base.bodyChangedAtAge), vitalityLevel: base.vitalityLevel },
       immune: {
         metabolism: Boolean(immune.metabolism),
         miscarriage: Boolean(immune.miscarriage),
@@ -6390,6 +6391,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
       </div>
       <div class="bs-bt-track-debug-hint">淨空胎儿时，若当前已是着床后的妊娠状态，会追加一次流产经验；尚未着床的受精卵不计入。</div>
     </div>
+    ${renderBodyDebugSection(viewModel.debug?.body || {})}
     <div class="bs-bt-track-section" style="margin-top: 10px;">
       <div class="bs-bt-track-section-title">妊娠需求症状调试</div>
       <fieldset class="bs-bt-track-debug-form">
@@ -6632,6 +6634,76 @@ function renderTrackCharacterContent(viewModel) {
   if (selectedTrackSubpage === 'experience') return renderTrackExperience(viewModel);
   if (selectedTrackSubpage === 'diary') return renderTrackDiary(viewModel);
   return renderTrackOverview(viewModel);
+}
+
+/** 变量页的身材拉杆：孕前基准、倾向与鞘偏移；孕期与产后的变化系统照算，不在这里改 */
+const BODY_DEBUG_FIELDS = Object.freeze([
+  { key: 'build', label: '体重比例', min: 0, max: 100, step: 1, word: (value, body) => getBuildText(value, body.vitalityLevel) },
+  { key: 'bust', label: '胸部', min: 0, max: 100, step: 1, word: (value) => `${getCupLabel(value)} 罩杯` },
+  { key: 'hip', label: '臀部', min: 0, max: 100, step: 1, word: (value) => getHipText(value) },
+  { key: 'allocationBias', label: '母体倾向', min: -1, max: 1, step: 0.05, word: (value) => getAllocationText(value) },
+  { key: 'bustGain', label: '胸部增长倾向', min: 0, max: 3, step: 0.05, word: (value) => `平衡时约大 ${value} 个罩杯` },
+  { key: 'hipGain', label: '臀部增长倾向', min: 0, max: 2, step: 0.05, word: (value) => `约宽 ${value} 级` },
+  { key: 'sheathOffset', label: '鞘偏移', min: -1, max: 1, step: 0.25, word: (value) => describeSheathOffset(value) },
+]);
+
+function renderBodyDebugSection(body = {}) {
+  const rows = BODY_DEBUG_FIELDS.map((field) => {
+    const value = Number(body[field.key] ?? 0);
+    return `<div class="bs-bt-track-debug-field">
+        <div class="bs-bt-track-debug-label">${escapeHtml(field.label)}：<span data-body-debug-word="${field.key}">${escapeHtml(`${field.word(value, body)}（${value}）`)}</span></div>
+        <input type="range" data-body-debug="${field.key}" min="${field.min}" max="${field.max}" step="${field.step}" value="${value}" aria-label="${escapeHtml(field.label)}" />
+      </div>`;
+  }).join('');
+  const anchor = Number(body.bodyChangedAtAge);
+  return `
+    <div class="bs-bt-track-section" style="margin-top: 10px;">
+      <div class="bs-bt-track-section-title">身材</div>
+      <fieldset class="bs-bt-track-debug-form" data-body-debug-vitality="${escapeHtml(body.vitalityLevel ?? 4)}">
+        ${rows}
+        <div class="bs-bt-track-inline-action"><button type="button" class="menu_button" data-debug-action="set-body">套用身材</button></div>
+      </fieldset>
+      <div class="bs-bt-track-debug-hint">改的是孕前基准，孕期与产后的变化系统照算、叠在上面；手动修改不受 bsGrowBody 的一年门槛限制，也不更新它的锚点${Number.isFinite(anchor) ? `（上次身材变化在 ${Math.round(anchor * 100) / 100} 岁）` : ''}。</div>
+    </div>`;
+}
+
+/** 身材拉杆：拖动时更新读数，按「套用身材」才写入 */
+function bindBodyDebugControls(ctx, root) {
+  if (!root) return;
+  root.querySelectorAll('[data-body-debug]').forEach((node) =>
+    node.addEventListener('input', () => {
+      const field = BODY_DEBUG_FIELDS.find((item) => item.key === node.dataset.bodyDebug);
+      const word = root.querySelector(`[data-body-debug-word="${node.dataset.bodyDebug}"]`);
+      const vitality = Number(root.querySelector('[data-body-debug-vitality]')?.dataset.bodyDebugVitality) || 4;
+      if (field && word) word.textContent = `${field.word(Number(node.value), { vitalityLevel: vitality })}（${node.value}）`;
+    }),
+  );
+  root.querySelectorAll('[data-debug-action="set-body"]').forEach((node) =>
+    node.addEventListener('click', () => {
+      applySelectedTrackBody(ctx, root);
+    }),
+  );
+}
+
+function applySelectedTrackBody(ctx, root) {
+  if (!selectedTrackName) return;
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const character = chatState.characters?.[selectedTrackName];
+  if (!character?.profile?.base) return;
+  for (const field of BODY_DEBUG_FIELDS) {
+    const input = root.querySelector(`[data-body-debug="${field.key}"]`);
+    const value = Number(input?.value);
+    if (!Number.isFinite(value)) continue;
+    character.profile.base[field.key] = field.key === 'sheathOffset'
+      ? normalizeSheathOffset(value)
+      : Math.round(Math.max(field.min, Math.min(field.max, value)) * 100) / 100;
+  }
+  recordChatStateSnapshot(ctx, chatState, { reason: 'debug_body' });
+  saveSettings(ctx);
+  renderStatusPanel(ctx);
+  renderFullStatePage(ctx);
+  globalThis.toastr?.success?.(`[BS BioTracker] ${selectedTrackName} 的身材已更新`);
 }
 
 function toggleSelectedTrackImmune(ctx, immuneKey) {
@@ -7207,6 +7279,7 @@ function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(c
       toggleSelectedTrackImmune(ctx, String(node.dataset.debugImmune || ''));
     }),
   );
+  bindBodyDebugControls(ctx, root);
   root.querySelectorAll('[data-debug-action="inject-pregnancy"]').forEach((node) =>
     node.addEventListener('click', () => {
       injectSelectedTrackPregnancy(ctx);
@@ -7956,6 +8029,7 @@ function renderStatusPanel(ctx) {
       toggleSelectedTrackImmune(ctx, String(node.dataset.debugImmune || ''));
     }),
   );
+  bindBodyDebugControls(ctx, content);
   content.querySelectorAll('[data-debug-action="inject-pregnancy"]').forEach((node) =>
     node.addEventListener('click', () => {
       injectSelectedTrackPregnancy(ctx);

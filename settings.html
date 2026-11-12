@@ -538,18 +538,17 @@
                   placeholder="仅用于本次角色注册。例如：羊膜绒毛膜为 MCMA、时常泌乳体质、特殊繁殖设定等。"></textarea>
               </div>
 
-              <div id="bs-bt-register-sheath" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="offset" title="鞘的个人偏移，代表实际舒适的深度：子宫后倾、子宫颈偏低、很浅往负，很深往正。不勾就交给模型照角色卡判断（卡上没写为 0）">
-                <div class="bs-bt-gestation-slider-head">
-                  <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定鞘偏移</label>
-                  <span data-role="value" class="bs-bt-slider-value">交给模型</span>
-                </div>
-                <input type="range" data-role="range" min="-1" max="1" step="0.25" value="0" disabled aria-label="手动指定鞘偏移" />
-                <div class="bs-bt-gestation-slider-scale"><span>浅 −1</span><span>0</span><span>深 +1</span></div>
-              </div>
-
               <details class="settings_section bs-bt-register-body">
-                <summary>身材（手动指定）</summary>
+                <summary>身材与鞘（手动指定）</summary>
                 <p class="bs-bt-hint">不勾就交给模型照角色卡判断；卡上没写的母体倾向与胸臀增长倾向由系统抽样。只影响外观、衣服合身与像素图，胸部大小与奶量无关。</p>
+                <div id="bs-bt-register-sheath" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="offset" title="鞘的个人偏移，代表实际舒适的深度：子宫后倾、子宫颈偏低、很浅往负，很深往正。不勾就交给模型照角色卡判断（卡上没写为 0）">
+                  <div class="bs-bt-gestation-slider-head">
+                    <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定鞘偏移</label>
+                    <span data-role="value" class="bs-bt-slider-value">交给模型</span>
+                  </div>
+                  <input type="range" data-role="range" min="-1" max="1" step="0.25" value="0" disabled aria-label="手动指定鞘偏移" />
+                  <div class="bs-bt-gestation-slider-scale"><span>浅 −1</span><span>0</span><span>深 +1</span></div>
+                </div>
                 <div id="bs-bt-register-build" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="plain" title="体重比例：身上的量，是肉还是肌肉看活力等级">
                   <div class="bs-bt-gestation-slider-head">
                     <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定体重比例</label>
@@ -607,23 +606,14 @@
                 <button id="bs-bt-initial-cognition-add" class="menu_button" type="button">新增一笔</button>
               </details>
 
-              <div class="settings_section">
+              <details class="settings_section">
+                <summary>妊娠变速（选填）</summary>
                 <div class="bs-bt-setting-toggle-row">
                   <input id="bs-bt-register-gestation-modifier" type="checkbox" />
                   <label for="bs-bt-register-gestation-modifier">此角色使用妊娠变速</label>
                   <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/registration.md#開局已懷孕與特殊效果" target="_blank" rel="noopener noreferrer" title="妊娠变速说明" aria-label="妊娠变速说明">?</a>
                 </div>
                 <div id="bs-bt-register-gestation-slider" hidden></div>
-              </div>
-
-              <details class="settings_section bs-bt-register-fold">
-                <summary title="注册时 normalDescription 的默认写法规则">基本描述规则 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/character-systems.md" target="_blank" rel="noopener noreferrer" title="描述规则说明（字段名前加 * 是即时状态）" aria-label="描述规则说明">?</a></summary>
-                <textarea id="bs-bt-registry-normal-description" class="text_pole bs-bt-textarea" rows="7" aria-label="注册默认 normalDescription 规则"></textarea>
-              </details>
-
-              <details class="settings_section bs-bt-register-fold">
-                <summary title="注册时 pregnantDescription 的默认写法规则">孕态描述规则</summary>
-                <textarea id="bs-bt-registry-pregnant-description" class="text_pole bs-bt-textarea" rows="8" aria-label="注册默认 pregnantDescription 规则"></textarea>
               </details>
 
               <details class="settings_section bs-bt-special-fetus">
@@ -699,6 +689,16 @@
                     </div>
                   </div>
                 </div>
+              </details>
+
+              <details class="settings_section bs-bt-register-fold">
+                <summary title="注册时 normalDescription 的默认写法规则">基本描述规则 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/character-systems.md" target="_blank" rel="noopener noreferrer" title="描述规则说明（字段名前加 * 是即时状态）" aria-label="描述规则说明">?</a></summary>
+                <textarea id="bs-bt-registry-normal-description" class="text_pole bs-bt-textarea" rows="7" aria-label="注册默认 normalDescription 规则"></textarea>
+              </details>
+
+              <details class="settings_section bs-bt-register-fold">
+                <summary title="注册时 pregnantDescription 的默认写法规则">孕态描述规则</summary>
+                <textarea id="bs-bt-registry-pregnant-description" class="text_pole bs-bt-textarea" rows="8" aria-label="注册默认 pregnantDescription 规则"></textarea>
               </details>
 
               <div class="settings_section bs-bt-action-row">

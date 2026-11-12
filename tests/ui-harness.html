@@ -13,7 +13,7 @@
 <body>
 <div id="harness-info">
   <b>BioTracker UI Harness</b>（mock 宿主，非真实 SillyTavern）<br>
-  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件，精液灌满）、贝拉（产后恢复，七种 bsRecordExperience action＋五种认知方式，pregFit 生效，精液灌满）、琪拉（孕 30 周六胎：五种胚型＋孕中孕，各种胎儿标签，精液浸满）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、芙拉（延产期，乏力 2 级）、茉拉（刚受精）。
+  点击右下角悬浮球打开手机面板。种子角色：艾拉（卵泡期，wearState 敞开，内衣配件，精液灌满）、贝拉（产后恢复，七种 bsRecordExperience action＋五种认知方式，pregFit 生效，精液灌满）、琪拉（孕 30 周六胎：五种胚型＋孕中孕，各种胎儿标签，精液浸满）、妲拉（肩难产）、妮拉（双胎互锁）、莎拉（宫压将流产）、芙拉（延产期，乏力 2 级）、露拉（孕 32 周、假宫缩特写、身材丰满）、茉拉（刚受精）。
 </div>
 <script type="module">
   const CHAT_KEY = 'ui-harness-chat';
@@ -265,6 +265,18 @@
               { sequence: 10, time: '霜月九日', kind: 'bonding', change: 'slight_increase', scope: 'one', embryoIds: [1], content: '睡前又对着肚子说了一会儿话。', effects: {}, counted: false, minutesPassed: 0, storyDayIndex: 0 },
               { sequence: 11, time: '霜月十一日', kind: 'estrangement', change: 'slight_decrease', scope: 'one', embryoIds: [1], content: '和凯吵完架，她对着肚子说要是没有你就好了，胎儿整夜不安地乱动。', effects: { 1: { affinity: -0.5 } }, counted: true, minutesPassed: 0, storyDayIndex: 0 },
             ],
+          },
+        },
+      }),
+      // 子宫图测试：假宫缩（1.3.1，打开妊娠分页会播一次子宫收紧三下，之后可按右下角重播）；身材丰满。
+      // 种子存档是 v4，迁移到 v15 时母体倾向与增长倾向会按名字重抽，这里不指定
+      露拉: makeCharacter('露拉', {
+        base: { stage: '孕晚期', days: 28, age: 24, eggs: 0, uterinePressure: 4, vitalityLevel: 4, build: 70, bust: 70, hip: 70 },
+        profile: {
+          visualCue: { type: 'falseContraction', seq: 1 },
+          pregnant: {
+            pregnantDays: 224, effectivePregnantDays: 224, prenatalCare: 'devoted',
+            fetuses: [{ embryoId: 1, fathers: '凯', fatherRace: '人类', race: '人类', embryoType: '胎生', gender: '女', weight: 1.3, tendencyAngle: 0, affinity: 2, health: 80, descentStage: -1, talents: [] }],
           },
         },
       }),
