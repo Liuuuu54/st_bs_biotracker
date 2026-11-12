@@ -514,16 +514,18 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsGrowBody',
-    description: '记下角色这一年身材与体质的长期变化：发育长高、发福或消瘦、长年锻炼、久病体弱、经产后身材没恢复或慢慢恢复。'
+    description: '记下角色身材与体质的长期变化：发育长高、发福或消瘦、长年锻炼、久病体弱、经产后身材没恢复或慢慢恢复。female（卵方）与 male（已建档的精方）二选一。'
       + '距上次改变至少长了 1 岁才能用（看 base.age 与 base.bodyChangedAtAge），之后剧情什么时候写到变化就什么时候记；用后从当下年龄重新起算，未满一年会被跳过。'
       + '每项给变化量（+1、-10 这种），不给绝对值，至少给一项；改的是孕前基准，孕期与产后的变化系统照算、叠在上面。'
-      + 'vitalityLevel、psyStressLevel 为 1–7 的等级变化；build 体重比例、bust 胸部（每 10 一个罩杯）、hip 臀部都是 0–100 的变化；bodySize 体型（身高）变化，人类每 0.5 约 15 公分。'
+      + '卵方：vitalityLevel、psyStressLevel 为 1–7 的等级变化；build 体重比例、bust 胸部（每 10 一个罩杯）、hip 臀部都是 0–100 的变化；bodySize 体型（身高）变化，人类每 0.5 约 15 公分。'
+      + '精方：bodySize 同上（扶她的体型在卵方那份，用 female 改）；swordOffset 剑偏移变化（范围 −2～+2，步长 0.5：发育、魔法强化、受伤）；spermQuality 档案精子品质变化（范围 0.25～4，1 为一般：年纪大了变差、长期调养或用药变好）。精方的门槛看 registered_sires 里的 age 与 bodyChangedAtAge。'
       + '幅度照该种族与年龄判断，系统不设上限：少年期一年可能长很多，长生种成年后多半几乎不变，成年人类多半只有体重、活力会动。一时的状态（饿瘦几天、累垮）不要记。'
-      + 'reason 一句话写为什么变，会记成一条认知（经历）；time 为故事日期。',
+      + 'reason 一句话写为什么变，卵方会记成一条认知（经历）；time 为故事日期。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
+        male: { type: 'string' },
         time: { type: 'string', minLength: 1 },
         reason: { type: 'string', minLength: 1 },
         vitalityLevel: { type: 'integer' },
@@ -532,8 +534,10 @@ export const TOOL_DEFINITIONS = Object.freeze([
         bust: { type: 'number' },
         hip: { type: 'number' },
         bodySize: { type: 'number' },
+        swordOffset: { type: 'number' },
+        spermQuality: { type: 'number' },
       },
-      required: ['female', 'time', 'reason'],
+      required: ['time', 'reason'],
       additionalProperties: false,
     },
   },

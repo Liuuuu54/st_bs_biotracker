@@ -6,6 +6,7 @@ import * as state from '../scripts/state.js';
 import { applyToolCall, getBellySize, getCurrentBody } from '../scripts/tools.js';
 import { normalizeReproductiveSettings } from '../scripts/reproductive.js';
 import { getMergedRacePhysiologyProfile } from '../scripts/race_config.js';
+import { buildMainFlowStatePrompt } from '../scripts/prompts/rules.js';
 import {
   BUST_GAIN_MAX, HIP_GAIN_MAX, computeBodyIncrements, deterministicBodyTraits, getAllocationAlpha, getAllocationText,
   getBulkDrive, getBustSupportPenalty, getCupLabel, getEffectiveShowingFactor, getFetusDemand, getShowingFactor,
@@ -276,4 +277,47 @@ test('锚点：没有锚点时第一次呼叫只补上锚点；v15 迁移与第�
   delete P(old).base.bodyChangedAtAge;
   settings.chatStates[ctx.chatId] = old;
   assert.equal(state.getChatState(ctx, settings).characters.A.profile.base.bodyChangedAtAge, 27);
+});
+
+// ── 精方的长期变化 ─────────────────────────────────────────
+
+import { normalizeSireRecord } from '../scripts/sires.js';
+
+function withSire(record) {
+  const chatState = setup({ stage: '卵泡期', fetuses: [], base: { age: 20, bodyChangedAtAge: 20 } });
+  chatState.sires['乙'] = normalizeSireRecord({ race: '人类', age: 30, bodySize: 4, spermQuality: 1, ...record });
+  return chatState;
+}
+const growSire = (chatState, extra) => applyToolCall(chatState, { name: 'bsGrowBody', arguments: { male: '乙', time: '某日', reason: '这几年', ...extra } });
+
+test('精方年龄跟着时间走；锚点建档时等于当下年龄，满一年后才能用 male 改体型、剑偏移与档案精子品质', () => {
+  const chatState = withSire({});
+  assert.equal(chatState.sires['乙'].bodyChangedAtAge, 30);
+  assert.equal(growSire(chatState, { spermQuality: -0.3 }).applied, false, '还没满一年');
+  applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 366 } });
+  assert.ok(chatState.sires['乙'].age > 31 && chatState.sires['乙'].age < 31.01, `年龄 ${chatState.sires['乙'].age}`);
+  const result = growSire(chatState, { spermQuality: -0.3, swordOffset: 0.7, bodySize: 0.2 });
+  assert.equal(result.applied, true, result.message);
+  const sire = chatState.sires['乙'];
+  assert.equal(sire.spermQuality, 0.7);
+  assert.equal(sire.swordOffset, 0.5, '剑偏移按 0.5 步长');
+  near(sire.bodySize, 4.2, '体型', 1e-6);
+  near(sire.bodyChangedAtAge, sire.age, '锚点更新', 1e-9);
+  assert.equal(growSire(chatState, { spermQuality: 5 }).applied, false, '刚改过又要等一年');
+});
+
+test('精方：品质夹在 0.25～4、不收卵方栏位；female 与 male 不能同时给；卵方不收精方栏位', () => {
+  const chatState = withSire({ bodyChangedAtAge: 20 });
+  assert.equal(growSire(chatState, { build: 5 }).applied, false);
+  assert.equal(growSire(chatState, { spermQuality: 10 }).applied, true);
+  assert.equal(chatState.sires['乙'].spermQuality, 4);
+  assert.equal(applyToolCall(chatState, { name: 'bsGrowBody', arguments: { female: 'A', male: '乙', time: '某日', reason: 'x', build: 1 } }).applied, false);
+  P(chatState).base.age = 22;
+  assert.equal(applyToolCall(chatState, { name: 'bsGrowBody', arguments: { female: 'A', time: '某日', reason: 'x', swordOffset: 1 } }).applied, false);
+});
+
+test('主线看不到精方的身材锚点', () => {
+  const entry = { name: '乙', isHere: true, age: 31, bodyChangedAtAge: 30 };
+  const prompt = buildMainFlowStatePrompt({ existing_state: { A: { profile: { base: { stage: '卵泡期' } } } }, registered_sires: [entry] });
+  assert.equal(prompt.includes('bodyChangedAtAge'), false);
 });

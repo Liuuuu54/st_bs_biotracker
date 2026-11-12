@@ -690,7 +690,7 @@ export function buildMainFlowStatePrompt(payload = {}) {
   const trackedState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {};
   const presentSires = (Array.isArray(payload?.registered_sires) ? payload.registered_sires : [])
     .filter((sire) => sire?.isHere)
-    .map(({ staleFields: _staleFields, isHere: _isHere, ...sire }) => sire);
+    .map(({ staleFields: _staleFields, isHere: _isHere, bodyChangedAtAge: _bodyChangedAtAge, ...sire }) => sire);
   if (Object.keys(trackedState).length === 0) return '';
   const existingState = projectNarrativeState(trackedState, payload.recent_operation_results);
   const racePhysiologyPrompt = payload?.realistic_world === true ? '' : buildRacePhysiologyPrompt(payload || {});

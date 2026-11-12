@@ -263,12 +263,15 @@ export function normalizeSireRecord(raw, minutesPassed = 0) {
   const race = parsed.race || '人类';
   const ancestry = getBloodlineInfo(race, value.bloodline ?? parsed.bloodline ?? null, value.bloodlineSource || null);
   const age = Number(value.age);
+  const changedAt = Number(value.bodyChangedAtAge);
   return {
     race,
     bloodline: ancestry.bloodline,
     bloodlineSource: ancestry.bloodlineSource,
     derivedType: value.derivedType ? String(value.derivedType).trim() || null : (parsed.derivedType || null),
     age: Number.isFinite(age) && age > 0 ? age : null,
+    // 身材上次改变时的年龄（bsGrowBody 的门槛，1.3.1）；没有时从当下年龄起算
+    bodyChangedAtAge: Number.isFinite(changedAt) && changedAt > 0 ? changedAt : (Number.isFinite(age) && age > 0 ? age : null),
     bodySize: clampIndividualBodySize(value.bodySize),
     isHere: value.isHere !== false,
     descriptions: {
@@ -293,6 +296,16 @@ export function normalizeSireRecord(raw, minutesPassed = 0) {
     talents: normalizeTalentList(value.talents),
     createdAt: Math.max(0, Number(value.createdAt) || 0),
   };
+}
+
+/** 推进时间时精方也跟着长大（1.3.1 起；以前停在建档时的年龄）；没填年龄的维持 null */
+export function advanceSireAges(chatState, days) {
+  const sires = chatState?.sires;
+  if (!sires || typeof sires !== 'object' || !(Number(days) > 0)) return;
+  for (const record of Object.values(sires)) {
+    const age = Number(record?.age);
+    if (Number.isFinite(age) && age > 0) record.age = age + Number(days) / 365;
+  }
 }
 
 export function normalizeSires(raw, minutesPassed = 0) {
@@ -453,7 +466,9 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
     const summary = {
       name,
       race: formatSireRace(record),
-      ...(record.age ? { age: record.age } : {}),
+      ...(record.age ? { age: Math.round(record.age * 100) / 100 } : {}),
+      // 只给追踪模型判断能不能用 bsGrowBody；主线拿掉
+      ...(record.bodyChangedAtAge ? { bodyChangedAtAge: Math.round(record.bodyChangedAtAge * 100) / 100 } : {}),
       ...(record.bodySize ? { bodySize: record.bodySize } : {}),
       ...(virility ? { virility } : {}),
       ...(condition ? { condition } : {}),

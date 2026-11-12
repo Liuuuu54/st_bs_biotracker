@@ -22,9 +22,9 @@ import {
 } from './fetal_health.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
-import { consumeSireReserve, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, resolveSireBase } from './sires.js';
+import { advanceSireAges, consumeSireReserve, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, normalizeSpermQuality, resolveSireBase } from './sires.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
-import { clampIndividualBodySize, describeBodySizeFit, getAltFormBodySize, getBodySizeSigma, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
+import { clampIndividualBodySize, describeBodySizeFit, normalizeSwordOffset, getAltFormBodySize, getBodySizeSigma, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
   cloneValue,
   createChildId,
@@ -628,7 +628,63 @@ export function getGrowthWaitYears(base = {}) {
   return GROWTH_MIN_YEARS - (age - anchor);
 }
 
+/**
+ * 精方的长期变化（male）：体型、剑偏移、档案精子品质。门槛与卵方相同，锚点存在精方档案；
+ * 扶她的体型在卵方那份，要用 female 改。精方没有认知纪录，变化只写在回传里。
+ */
+function applyGrowSire(chatState, args, male) {
+  const skip = (reason) => ({ applied: false, message: `bsGrowBody skipped for ${male}: ${reason}` });
+  const record = getSireRecord(chatState, male);
+  if (!record) return skip('unknown sire; male must be a registered sire.');
+  const resolved = resolveSireBase(chatState, male);
+  const age = Number(resolved?.base?.age);
+  if (!Number.isFinite(age) || age <= 0) return skip('this sire has no recorded age; set it on the variables page first.');
+  if (!Number.isFinite(Number(record.bodyChangedAtAge))) record.bodyChangedAtAge = age;
+  const wait = getGrowthWaitYears({ age, bodyChangedAtAge: record.bodyChangedAtAge });
+  if (wait > 1e-9) return skip(`at least ${GROWTH_MIN_YEARS} year of age since the last change (age ${Math.round(age * 100) / 100}, last change at ${Math.round(Number(record.bodyChangedAtAge) * 100) / 100}); about ${Math.ceil(wait * 365)} more days.`);
+  for (const key of ['vitalityLevel', 'psyStressLevel', 'build', 'bust', 'hip']) {
+    if (args?.[key] !== undefined) return skip(`${key} is a female field; sires take bodySize, swordOffset or spermQuality.`);
+  }
+  const delta = (key) => {
+    const value = Number(args?.[key]);
+    return Number.isFinite(value) && value !== 0 ? value : null;
+  };
+  const changes = [];
+  const sizeDelta = delta('bodySize');
+  if (sizeDelta !== null) {
+    if (resolved.kind === 'character') return skip('a futa keeps her body size on the female record; change it with female.');
+    const size = resolveBodySize({ race: record.race, bloodline: record.bloodline, bodySize: record.bodySize });
+    if (size.kind !== 'fixed') return skip('this sire has a variable or unknown body size.');
+    const nextSize = clampIndividualBodySize(size.size + sizeDelta);
+    if (nextSize !== null) {
+      changes.push(`bodySize ${size.size}→${nextSize}`);
+      record.bodySize = nextSize;
+    }
+  }
+  const swordDelta = delta('swordOffset');
+  if (swordDelta !== null) {
+    const before = normalizeSwordOffset(record.swordOffset);
+    record.swordOffset = normalizeSwordOffset(before + swordDelta);
+    changes.push(`swordOffset ${before}→${record.swordOffset}`);
+  }
+  const qualityDelta = delta('spermQuality');
+  if (qualityDelta !== null) {
+    const before = normalizeSpermQuality(record.spermQuality);
+    record.spermQuality = Math.round(normalizeSpermQuality(before + qualityDelta) * 100) / 100;
+    changes.push(`spermQuality ${before}→${record.spermQuality}`);
+  }
+  if (changes.length === 0) return skip('give at least one non-zero change (bodySize, swordOffset or spermQuality).');
+  record.bodyChangedAtAge = age;
+  return { applied: true, message: `bsGrowBody applied for sire ${male}: ${changes.join(', ')}.` };
+}
+
 function applyGrowBody(chatState, args, sourceId = '') {
+  const male = String(args?.male || '').trim();
+  if (male && String(args?.female || '').trim()) return { applied: false, message: 'bsGrowBody skipped: give female or male, not both.' };
+  if (male) {
+    if (!String(args?.reason || '').trim() || !String(args?.time || '').trim()) return { applied: false, message: `bsGrowBody skipped for ${male}: reason and time are required.` };
+    return applyGrowSire(chatState, args, male);
+  }
   const female = String(args?.female || '').trim();
   const character = chatState.characters?.[female];
   const skip = (reason) => ({ applied: false, message: `bsGrowBody skipped for ${female || '(empty)'}: ${reason}` });
@@ -647,6 +703,9 @@ function applyGrowBody(chatState, args, sourceId = '') {
     return Number.isFinite(value) && value !== 0 ? value : null;
   };
   const changes = [];
+  for (const key of ['swordOffset', 'spermQuality']) {
+    if (args?.[key] !== undefined) return skip(`${key} is a sire field; change it with male.`);
+  }
   for (const key of ['vitalityLevel', 'psyStressLevel']) {
     const d = delta(key);
     if (d === null) continue;
@@ -7193,6 +7252,7 @@ function applyPassedTime(chatState, args) {
     chatState.characters[name] = applyTimeToCharacter(subject, tick).character;
   }
   transferProviderChildren(chatState);
+  advanceSireAges(chatState, totalMinutes / 1440);
   const elapsedMinutes = totalMinutes;
   const previousMinutes = Math.max(0, Number(chatState.minutesPassed) || 0);
   chatState.minutesPassed = previousMinutes + elapsedMinutes;
