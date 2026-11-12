@@ -112,7 +112,7 @@ import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './script
 import { deleteLibraryEntry, importLibraryEntry, listLibraryEntries, saveEggToLibrary, saveSireToLibrary } from './scripts/character_library.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue, getEmbryoTypeReferenceText } from './scripts/prompts/rules.js';
-import { getAllocationAlpha, getAllocationText, getBodyBaseline, getBuildText, getBustGrowthText, getCupLabel, getHipText, shiftCareTarget } from './scripts/maternal_body.js';
+import { getAllocationAlpha, getAllocationText, getBodyBaseline, getBuildText, getCupLabel, getHipText, shiftCareTarget } from './scripts/maternal_body.js';
 import { FETAL_EVENT_KINDS, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, describeCognitionSummary, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, getPrenatalCareKey, normalizeFetalEventList, PRENATAL_CARE_LEVELS } from './scripts/fetal_health.js';
 import { PSY_AXIS_LABELS } from './scripts/registry_psy_config.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
@@ -2758,24 +2758,19 @@ function formatBodyFigureLabel(profile = {}) {
   const base = profile.base || {};
   const baseline = getBodyBaseline(base);
   const body = getCurrentBody(profile);
-  const changed = Object.values(body.increments).some((value) => Math.abs(Number(value) || 0) >= 0.5);
-  const growth = getBustGrowthText(body.increments.bust);
-  const value = [
-    getBuildText(body.build, base.vitalityLevel),
-    `${getCupLabel(body.bust)} 罩杯${growth ? `（${growth}）` : ''}`,
-    `臀${getHipText(body.hip)}`,
-  ].join('·');
-  const fmt = (number) => Math.round(Number(number) * 10) / 10;
-  const delta = (key) => (changed ? `（孕前 ${fmt(baseline[key])}，${body.increments[key] >= 0 ? '+' : ''}${fmt(body.increments[key])}）` : '');
-  const title = [
-    `体重比例 ${fmt(body.build)}${delta('build')}`,
-    `胸部 ${fmt(body.bust)}${delta('bust')}`,
-    `臀部 ${fmt(body.hip)}${delta('hip')}`,
-    `母体倾向 ${formatSignedOffset(baseline.allocationBias)}（${getAllocationText(baseline.allocationBias)}）`,
-    `胸部增长倾向 ${fmt(baseline.bustGain)} 罩杯、臀部增长倾向 ${fmt(baseline.hipGain)} 级`,
-    '只影响外观、衣服合身与像素图；胸部大小与奶量无关',
-  ].join('\n');
-  return { value, title };
+  const figure = (build, bust, hip) => `${getBuildText(build, base.vitalityLevel)}·${getCupLabel(bust)}罩杯·臀${getHipText(hip)}`;
+  // 孕期与产后的变化另起一行，只写方向与幅度；母体倾向、增长倾向是隐藏数值，不上画面
+  const inc = body.increments;
+  const parts = [];
+  const cups = Math.round((Number(inc.bust) || 0) / 5) / 2;
+  if (Math.abs(cups) >= 0.5) parts.push(`胸${cups > 0 ? '+' : ''}${cups}罩杯`);
+  if (Math.abs(Number(inc.build) || 0) >= 1) parts.push(`体重${inc.build > 0 ? '+' : ''}${Math.round(inc.build)}`);
+  if (Math.abs(Number(inc.hip) || 0) >= 1) parts.push(`臀${inc.hip > 0 ? '+' : ''}${Math.round(inc.hip)}`);
+  return {
+    value: figure(body.build, body.bust, body.hip),
+    change: parts.join('、'),
+    before: parts.length > 0 ? figure(baseline.build, baseline.bust, baseline.hip) : '',
+  };
 }
 
 function formatSignedOffset(value) {
@@ -4248,7 +4243,9 @@ function renderWardrobeDescriptionSection(viewModel = {}) {
       ? ['<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">贴身</span><span class="bs-bt-track-meta-value">' + escapeHtml(innerNames.join('、')) + '</span></div>']
       : []),
   ];
-  return '<div class="bs-bt-track-section bs-bt-track-section--wardrobe-description"><div class="bs-bt-track-section-title">衣着</div><div class="bs-bt-track-meta">' + rows.join('') + '</div></div>';
+  // 有孕肚时附上衣服合身的四维量表（与衣柜页同一份）
+  const fitGauge = renderPregFitGauge(outfitView.pregFit, viewModel.overview?.bellySize);
+  return '<div class="bs-bt-track-section bs-bt-track-section--wardrobe-description"><div class="bs-bt-track-section-title">衣着</div><div class="bs-bt-track-meta">' + rows.join('') + '</div>' + fitGauge + '</div>';
 }
 
 function renderWardrobeCharacterList(characters = []) {
@@ -4642,7 +4639,6 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       sheathLabel: formatSheathLabel(base, profile.experience || {}),
       bodyFigure: formatBodyFigureLabel(profile),
       bellySize: getBellySize(profile),
-      allocationText: getAllocationText(getAllocationAlpha(profile)),
       stage,
       stageProgress: getStageProgress(profile),
       stats: [
@@ -4703,7 +4699,6 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
         prenatalCare: getPrenatalCareKey(pregnant),
         prenatalCareSet: Boolean(pregnant.prenatalCare),
         careTarget: shiftCareTarget(PRENATAL_CARE_LEVELS[getPrenatalCareKey(pregnant)].target, getAllocationAlpha(profile)),
-        allocationText: getAllocationText(getAllocationAlpha(profile)),
         // 标签在这里解析：推导需要承载者名字，渲染层拿不到
         tagLabels: getFetusTagLabels(deriveFetusTags(fetus, { carrierName: character?.name || '' })),
         positionText: describeFetalPosition(pregnant, fetus),
@@ -4963,12 +4958,6 @@ function renderTrackOverview(viewModel) {
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">种族</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.raceLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">血脉</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bloodlineLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">年龄</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.age ?? '未知')}</span></div>
-        ${viewModel.overview.sheathLabel
-    ? `<div class="bs-bt-track-meta-row" title="${escapeHtml(viewModel.overview.sheathLabel.title)}"><span class="bs-bt-track-meta-label">体型／鞘</span><span class="bs-bt-track-meta-value">${escapeHtml(`${viewModel.overview.bodySizeLabel}·鞘${viewModel.overview.sheathLabel.value}`)}</span></div>`
-    : `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodySizeLabel)}</span></div>`}
-        <div class="bs-bt-track-meta-row" title="${escapeHtml(viewModel.overview.bodyFigure.title)}"><span class="bs-bt-track-meta-label">身材</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodyFigure.value)}</span></div>
-        ${viewModel.overview.bellySize > 0 ? `<div class="bs-bt-track-meta-row" title="${escapeHtml('孕程与肚子里装的量算出；10 是任何衣服的极限，超过为爆表')}"><span class="bs-bt-track-meta-label">孕肚／分配</span><span class="bs-bt-track-meta-value">${escapeHtml(`${formatFixedDisplay(viewModel.overview.bellySize, 1)}／10·${viewModel.overview.allocationText}`)}</span></div>` : ''}
-        ${viewModel.overview.altFormBodySizeLabel ? `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">变化态体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.altFormBodySizeLabel)}</span></div>` : ''}
       </div>
     </div>
     <div class="bs-bt-track-section bs-bt-track-stage-progress${stageSectionClass}"${stageSectionStyle}>
@@ -4992,9 +4981,27 @@ function renderTrackOverview(viewModel) {
   `;
 }
 
+/** 描述页的「身体」：体型与鞘、身材（孕期另起一行写变化）、孕肚大小；数值与倾向不上画面 */
+function renderBodyDescriptionSection(viewModel) {
+  const overview = viewModel.overview || {};
+  const row = (label, value, title = '') => `<div class="bs-bt-track-meta-row"${title ? ` title="${escapeHtml(title)}"` : ''}><span class="bs-bt-track-meta-label">${escapeHtml(label)}</span><span class="bs-bt-track-meta-value">${escapeHtml(value)}</span></div>`;
+  const figure = overview.bodyFigure || {};
+  const rows = [
+    overview.sheathLabel
+      ? row('体型／鞘', `${overview.bodySizeLabel}·鞘${overview.sheathLabel.value}`, overview.sheathLabel.title)
+      : row('体型', overview.bodySizeLabel),
+    overview.altFormBodySizeLabel ? row('变化态体型', overview.altFormBodySizeLabel) : '',
+    row('身材', figure.value || '', figure.before ? `孕前：${figure.before}` : ''),
+    figure.change ? row('孕期变化', figure.change) : '',
+    overview.bellySize > 0 ? row('孕肚', `${formatFixedDisplay(overview.bellySize, 1)}／10${overview.bellySize > 10 ? '·爆表' : ''}`, '10 是任何衣服的极限，超过为爆表') : '',
+  ].filter(Boolean);
+  return `<div class="bs-bt-track-section"><div class="bs-bt-track-section-title">身体</div><div class="bs-bt-track-meta">${rows.join('')}</div></div>`;
+}
+
 function renderTrackDescription(viewModel) {
   const normalBlocks = Array.isArray(viewModel.description?.normalBlocks) ? viewModel.description.normalBlocks : [];
   return `
+    ${renderBodyDescriptionSection(viewModel)}
     ${renderWardrobeDescriptionSection(viewModel)}
     ${renderDescriptionGroup('基本描述', normalBlocks)}
   `;
@@ -5351,7 +5358,7 @@ function renderFetusHealthMeter(item) {
     `${formatFixedDisplay(Number(item?.health) || 0, 1)}／100`,
     '需求照料与胎儿事件会增减；没人照料也没人疏忽时慢慢回到产前护理的目标',
     describeFetalHarmBreakdown(item?.harmBreakdown),
-    `产前护理：${PRENATAL_CARE_LEVELS[item?.prenatalCare]?.label || '未察觉'}${item?.prenatalCareSet ? '' : '（预设：还没认定她知道怀孕）'}；母胎分配：${item?.allocationText || '平衡'}（每周往 ${formatFixedDisplay(Number(item?.careTarget ?? 45), 0)} 拉回两成）`,
+    `产前护理：${PRENATAL_CARE_LEVELS[item?.prenatalCare]?.label || '未察觉'}${item?.prenatalCareSet ? '' : '（预设：还没认定她知道怀孕）'}（每周往 ${formatFixedDisplay(Number(item?.careTarget ?? 45), 0)} 拉回两成）`,
     item?.guardedBy ? `胎儿守护：父方${item.guardedBy}在场，健康每小时回复 2%，回到平稳为止` : '',
   ].filter(Boolean).join('\n');
   return `<span class="bs-bt-fetal-health is-${escapeHtml(tier.key)}${item?.healthWarned ? ' is-warned' : ''}" role="img" title="${escapeHtml(title)}" aria-label="${escapeHtml(`健康：${tier.label}`)}"><span class="bs-bt-fetal-health-fill" style="width:${Math.round(ratio * 100)}%"></span></span>`;
