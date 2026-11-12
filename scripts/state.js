@@ -298,7 +298,11 @@ function normalizePregFitState(value) {
   };
   const gapSource = value.gap && typeof value.gap === 'object' ? value.gap : {};
   // 孕肚大小是身体量（tools.js getBellySize），即时算出不存；旧档的 pregWearPressure 在这里丢弃
+  const totalsSource = value.totals && typeof value.totals === 'object' ? value.totals : null;
+  const cap = Number(value.cap) === 15 ? 15 : 10;
   return {
+    ...(totalsSource ? { totals: Object.fromEntries(['masking', 'support', 'capacity', 'convenience'].map((key) => [key, Math.max(0, Math.min(15, Number(totalsSource[key]) || 0))])) } : {}),
+    cap,
     gap: {
       masking: normalizeGap(gapSource.masking),
       support: normalizeGap(gapSource.support),

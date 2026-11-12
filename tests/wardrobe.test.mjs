@@ -534,5 +534,10 @@ test('a maternity item lifts the outfit cap to 15 so stacked gear can hold a bur
   const { support, ...rest } = special.gap;
   assert.ok(Object.values(rest).every((gap) => gap >= 0), `特制品叠够就压得住：${JSON.stringify(special.gap)}`);
   assert.ok(support >= -3, `承托只差胸部那份：${support}`);
+  // 画面用：pregFit 带衣服总值与上限，一般 10、特制品 15
+  assert.equal(plain.cap, 10);
+  assert.equal(special.cap, 15);
+  assert.ok(Object.values(special.totals).every((total) => total > 10), JSON.stringify(special.totals));
+  assert.ok(Math.abs((special.totals.capacity - special.gap.capacity) - getBellySize(chatState.characters.A.profile)) < 1e-6, '容身扣的就是孕肚大小');
   assert.equal(chatState.characters.A.profile.wardrobe.items.find((item) => item.name === '孕肚托').maternity, true);
 });

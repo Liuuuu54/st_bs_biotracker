@@ -843,7 +843,11 @@ function refreshOutfitPregFit(profile) {
     }), profile?.pregnant?.effectivePregnantDays)
     : 1;
   const supportPenalty = getBustSupportPenalty(body.increments.bust);
+  const cap = getOutfitItems(profile).some((item) => item?.maternity === true) ? WARDROBE_MATERNITY_CAP : WARDROBE_DIMENSION_CAP;
+  // totals 与 cap 给画面画量表：遮蔽与承托扣的不只是孕肚大小，不能用 gap ＋ 孕肚反推总值
   outfit.pregFit = {
+    totals: { ...totals },
+    cap,
     gap: {
       masking: clampNumber(totals.masking - bellySize * showing, -20, 20, 0),
       support: clampNumber(totals.support - bellySize - supportPenalty, -20, 20, 0),

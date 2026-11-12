@@ -4270,29 +4270,27 @@ function renderWardrobeCharacterList(characters = []) {
 const PREGFIT_DIM_LABELS = { masking: '遮蔽', support: '承托', capacity: '余裕', convenience: '便利' };
 
 /**
- * 衣服合身度：孕肚大小对上这套衣服的四维。量表以 10（衣服的极限）为满格；孕肚超过 10 是「爆表」，
- * 刻线钉在最右、标出爆表徽章，各维的红色缺口也一路画满。
- * 四个维度画成共用同一条孕肚刻线的小量表：
- * 长条是这套衣服在该维度的总值，刻线是当前孕肚大小，条子没顶到刻线就是压不住，
- * 差额直接用红色补在缺口上。这样「为什么这一维是负的」是看得出来的，
- * 而不是丢四个各自独立的数字让人自己减。
- *
- * 总值不必另外存：gap = 总值 - 孕肚大小（tools.js refreshOutfitPregFit），
- * 总值夹在 0-10（穿特制孕妇用品时 0-15）、孕肚最多 15，差值落在 -15~15，不会碰到 gap 自己的 -20/20 夹界，
- * 所以 总值 = gap + 孕肚大小 可以精确还原。孕肚大小即时算（getBellySize），与 gap 同一时刻刷新。
+ * 衣服合身度：这套衣服的四维对上孕肚。量表满格是这套衣服的上限：一般 10，穿着任一件特制孕妇用品时 15。
+ * 长条是该维度的衣物总值，刻线是该维度实际要撑住的量：通常就是孕肚大小，
+ * 遮蔽另乘显怀系数、承托另加胸部长大的那份（1.3.1），所以四条的刻线不一定对齐。
+ * 条子没顶到刻线就是压不住，差额用红色补在缺口上。
+ * 旧存档的 pregFit 没有 totals 时退回「总值 ＝ 余裕 ＋ 孕肚大小」。
  */
 function renderPregFitGauge(pregFit, bellySize) {
-  const pressure = Number(bellySize);
-  if (!pregFit || !Number.isFinite(pressure)) return '';
-  const pct = (value) => Math.max(0, Math.min(100, (value / 10) * 100));
-  const pressurePct = pct(pressure);
-  const burst = pressure > 10;
+  const belly = Number(bellySize);
+  if (!pregFit || !Number.isFinite(belly)) return '';
+  const cap = Number(pregFit.cap) === 15 ? 15 : 10;
+  const pct = (value) => Math.max(0, Math.min(100, (value / cap) * 100));
+  const burst = belly > cap;
   const gap = pregFit?.gap || {};
+  const totals = pregFit?.totals || null;
   const dims = Object.keys(PREGFIT_DIM_LABELS).map((key) => {
     const rawGap = Number(gap[key]);
     const safeGap = Number.isFinite(rawGap) ? rawGap : 0;
-    const total = Math.max(0, Math.min(10, safeGap + pressure));
+    const total = Math.max(0, Math.min(cap, totals && Number.isFinite(Number(totals[key])) ? Number(totals[key]) : safeGap + belly));
+    const load = Math.max(0, total - safeGap);
     const totalPct = pct(total);
+    const loadPct = pct(load);
     const short = safeGap < 0;
     return `<div class="bs-bt-pregfit__dim${short ? ' is-short' : ''}">
       <div class="bs-bt-pregfit__dim-head">
@@ -4301,19 +4299,19 @@ function renderPregFitGauge(pregFit, bellySize) {
       </div>
       <div class="bs-bt-pregfit__track">
         <div class="bs-bt-pregfit__fill" style="width:${totalPct}%"></div>
-        ${short ? `<div class="bs-bt-pregfit__deficit" style="left:${totalPct}%;width:${Math.max(0, pressurePct - totalPct)}%"></div>` : ''}
-        <div class="bs-bt-pregfit__tick${burst ? ' is-burst' : ''}" style="left:${pressurePct}%"></div>
+        ${short ? `<div class="bs-bt-pregfit__deficit" style="left:${totalPct}%;width:${Math.max(0, loadPct - totalPct)}%"></div>` : ''}
+        <div class="bs-bt-pregfit__tick${load > cap ? ' is-burst' : ''}" style="left:${loadPct}%"></div>
       </div>
     </div>`;
   }).join('');
   return `
     <div class="bs-bt-pregfit${burst ? ' is-burst' : ''}">
       <div class="bs-bt-pregfit__head">
-        <span class="bs-bt-pregfit__label">衣服合身·孕肚大小${burst ? '<span class="bs-bt-pregfit__burst">爆表</span>' : ''}</span>
-        <span class="bs-bt-pregfit__value">${escapeHtml(formatFixedDisplay(pressure, 1))}<span class="bs-bt-pregfit__scale">/10</span></span>
+        <span class="bs-bt-pregfit__label">衣服合身${cap === 15 ? '·特制品' : ''}${burst ? '<span class="bs-bt-pregfit__burst">爆表</span>' : ''}</span>
+        <span class="bs-bt-pregfit__value">孕肚 ${escapeHtml(formatFixedDisplay(belly, 1))}<span class="bs-bt-pregfit__scale">/${cap}</span></span>
       </div>
       <div class="bs-bt-pregfit__dims">${dims}</div>
-      <div class="bs-bt-pregfit__legend">${burst ? '超过 10 即爆表：孕肚已大到任何衣服都包不住' : '竖线为当前孕肚大小，条子未及即为该维度压不住'}</div>
+      <div class="bs-bt-pregfit__legend">${burst ? `孕肚超过 ${cap}：这套衣服怎么叠都包不住` : '竖线是该维度要撑住的量，条子未及即为压不住'}</div>
     </div>
   `;
 }
@@ -4981,19 +4979,19 @@ function renderTrackOverview(viewModel) {
   `;
 }
 
-/** 描述页的「身体」：体型与鞘、身材（孕期另起一行写变化）、孕肚大小；数值与倾向不上画面 */
+/** 描述页的「身体」：体型与鞘、身材（孕期变化写在同一格第二行）、孕肚大小；数值与倾向不上画面 */
 function renderBodyDescriptionSection(viewModel) {
   const overview = viewModel.overview || {};
-  const row = (label, value, title = '') => `<div class="bs-bt-track-meta-row"${title ? ` title="${escapeHtml(title)}"` : ''}><span class="bs-bt-track-meta-label">${escapeHtml(label)}</span><span class="bs-bt-track-meta-value">${escapeHtml(value)}</span></div>`;
+  const row = (label, valueHtml, title = '') => `<div class="bs-bt-track-meta-row"${title ? ` title="${escapeHtml(title)}"` : ''}><span class="bs-bt-track-meta-label">${escapeHtml(label)}</span><span class="bs-bt-track-meta-value">${valueHtml}</span></div>`;
   const figure = overview.bodyFigure || {};
+  const belly = Number(overview.bellySize) || 0;
+  // 孕肚满格 15：10 是一般衣服的极限，特制孕妇用品撑得到 15
+  const bellyNote = belly > 10 ? '·一般衣服包不住' : '';
   const rows = [
-    overview.sheathLabel
-      ? row('体型／鞘', `${overview.bodySizeLabel}·鞘${overview.sheathLabel.value}`, overview.sheathLabel.title)
-      : row('体型', overview.bodySizeLabel),
-    overview.altFormBodySizeLabel ? row('变化态体型', overview.altFormBodySizeLabel) : '',
-    row('身材', figure.value || '', figure.before ? `孕前：${figure.before}` : ''),
-    figure.change ? row('孕期变化', figure.change) : '',
-    overview.bellySize > 0 ? row('孕肚', `${formatFixedDisplay(overview.bellySize, 1)}／10${overview.bellySize > 10 ? '·爆表' : ''}`, '10 是任何衣服的极限，超过为爆表') : '',
+    row(overview.sheathLabel ? '体型／鞘' : '体型', escapeHtml(overview.sheathLabel ? `${overview.bodySizeLabel}·鞘${overview.sheathLabel.value}` : overview.bodySizeLabel)),
+    overview.altFormBodySizeLabel ? row('变化态体型', escapeHtml(overview.altFormBodySizeLabel)) : '',
+    row('身材', `${escapeHtml(figure.value || '')}${figure.change ? `<br>（孕期 ${escapeHtml(figure.change)}）` : ''}`, figure.before ? `孕前：${figure.before}` : ''),
+    belly > 0 ? row('孕肚', escapeHtml(`${formatFixedDisplay(belly, 1)}／15${bellyNote}`), '一般衣服撑到 10，特制孕妇用品撑到 15') : '',
   ].filter(Boolean);
   return `<div class="bs-bt-track-section"><div class="bs-bt-track-section-title">身体</div><div class="bs-bt-track-meta">${rows.join('')}</div></div>`;
 }
