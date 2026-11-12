@@ -121,15 +121,17 @@ export function getBodyBaseline(base = {}) {
 }
 
 /** 补齐缺的身体栏位（就地修改）；迁移与注册用。身材上次改变的年龄（bsGrowBody 的门槛）填当下年龄 */
-export function ensureBodyBaseFields(base, name = '') {
+export function ensureBodyBaseFields(base, name = '', { force = false } = {}) {
   if (!base || typeof base !== 'object') return base;
-  if (!Number.isFinite(Number(base.bodyChangedAtAge)) && Number.isFinite(Number(base.age))) base.bodyChangedAtAge = Number(base.age);
+  // force（v14→v15 迁移）：旧档载入时已先和新预设合并，栏位是中性预设值而不是缺栏位，
+  // 所以倾向一律按名字重抽、锚点一律填当下年龄；体重、胸、臀维持预设
+  if ((force || !Number.isFinite(Number(base.bodyChangedAtAge))) && Number.isFinite(Number(base.age))) base.bodyChangedAtAge = Number(base.age);
   const traits = deterministicBodyTraits(name);
   for (const [key, value] of Object.entries(BODY_BASE_DEFAULTS)) {
     if (!Number.isFinite(Number(base[key]))) base[key] = value;
   }
   for (const key of ['allocationBias', 'bustGain', 'hipGain']) {
-    if (!Number.isFinite(Number(base[key]))) base[key] = traits[key];
+    if (force || !Number.isFinite(Number(base[key]))) base[key] = traits[key];
   }
   return base;
 }

@@ -325,7 +325,7 @@ function migrateCharacterV13ToV14(character) {
 function migrateCharacterV14ToV15(character) {
   const profile = character?.profile;
   if (!profile || typeof profile !== 'object') return;
-  if (profile.base && typeof profile.base === 'object') ensureBodyBaseFields(profile.base, character?.name);
+  if (profile.base && typeof profile.base === 'object') ensureBodyBaseFields(profile.base, character?.name, { force: true });
   const pregnant = profile.pregnant;
   const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
   if (pregnant && typeof pregnant === 'object' && !pregnant.prenatalCare && fetuses.some((fetus) => fetus && !fetus.pendingImplantation)) {

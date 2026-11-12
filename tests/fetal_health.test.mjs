@@ -498,7 +498,7 @@ test('追踪页的认知摘要一行：次数、方式、日期与要点；没�
 
 test('追踪视角：产前护理一律送文字，没设定时是未察觉', () => {
   const chatState = setup();
-  assert.equal(trackerProfile(chatState).pregnant.prenatalCare, '未察觉');
+  assert.match(trackerProfile(chatState).pregnant.prenatalCare, /^未察觉（还没设定；.*必须附 prenatalCare）/);
   care(chatState, 'neglect');
   assert.equal(trackerProfile(chatState).pregnant.prenatalCare, '疏忽');
 });

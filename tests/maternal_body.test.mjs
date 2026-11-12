@@ -220,6 +220,21 @@ test('v14 → v15：补身材（按名字固定抽样，主档与快照一致）
   assert.equal(migrated.characters.A.profile.pregnant.prenatalCare, 'normal');
 });
 
+test('v14 → v15：旧档载入时已和新预设合并成中性值，迁移照样按名字重抽倾向、锚点填当下年龄', () => {
+  const ctx = { chatId: 'v15-merged', characters: [], extensionSettings: {}, saveSettingsDebounced() {} };
+  const settings = state.getSettings(ctx);
+  const old = setup({ base: { age: 22.5, allocationBias: 0, bustGain: 1.5, hipGain: 0.5, bodyChangedAtAge: 15 } });
+  old.schemaVersion = 14;
+  state.recordChatStateSnapshot(ctx, old, { messageCount: 1, reason: 'old' });
+  settings.chatStates[ctx.chatId] = old;
+  const migrated = state.getChatState(ctx, settings);
+  const base = migrated.characters.A.profile.base;
+  const traits = deterministicBodyTraits('A');
+  assert.deepEqual([base.allocationBias, base.bustGain, base.hipGain], [traits.allocationBias, traits.bustGain, traits.hipGain]);
+  assert.equal(base.bodyChangedAtAge, 22.5);
+  assert.notDeepEqual([traits.allocationBias, traits.bustGain, traits.hipGain], [0, 1.5, 0.5], '名字 A 抽到的不是中性值，测试才有意义');
+});
+
 test('假宫缩 tighten：孕 20 周起才有，只发画面事件，产程、宫压与健康都不变', () => {
   const early = setup({ days: 100, stage: '孕中期' });
   assert.equal(applyToolCall(early, { name: 'bsAssistFetalPosition', arguments: { female: 'A', action: 'tighten' } }).applied, false);

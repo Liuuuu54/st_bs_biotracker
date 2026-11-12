@@ -1140,7 +1140,10 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
       ...(immune.metabolism ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
       ...(fetalEventWindow ? { fetalEvents: fetalEventWindow } : {}),
       // 产前护理（文字）：没设定时是「未察觉」，有着床的胎儿才送
-      ...(visibleFetuses.some((fetus) => !fetus?.pendingImplantation) ? { prenatalCare: PRENATAL_CARE_LEVELS[getPrenatalCareKey(pregnant)].label } : {}),
+      // 还没设定时写明要做什么：实机验证时模型记了「确认怀孕」的认知却没附护理
+      ...(visibleFetuses.some((fetus) => !fetus?.pendingImplantation)
+        ? { prenatalCare: pregnant.prenatalCare ? PRENATAL_CARE_LEVELS[getPrenatalCareKey(pregnant)].label : '未察觉（还没设定；她一知道或相信自己怀孕，那条 cognition 必须附 prenatalCare）' }
+        : {}),
       fetuses: visibleFetuses.map((fetus) => {
         const {
           embryoId: _embryoId, contactIds: _contactIds, contactMinutes: _contactMinutes, contactEmbryos: _contactEmbryos, fusionCheckedWith: _fusionCheckedWith, nutrition: _nutrition, amnionDurability: _amnion,

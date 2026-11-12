@@ -665,7 +665,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
   }
   if (profiles.some((profile) => profile.pregnant)) {
     lines.push(
-      '- pregnant：pregnantDays 孕龄天数；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
+      '- pregnant：pregnantDays 孕龄天数；bellySize 孕肚大小（0–15，足月单胎约 7，超过 10 是任何衣服都包不住的巨大孕肚；产后从约 4 缩回 0），只用来描写孕肚有多大，不写数字；allocation 这胎养分偏给谁；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
       '- pregnant.laborEffort / pushFatigue（产程中）：push 表示产妇正在用力、rest 表示停下来喘口气；第一产程用力是白费力气；pushFatigue 用力疲劳 0-100，60 以上已经力竭、越推越没效果，描写可体现喘息与脱力。',
       '- fetuses 按子宫里由左到右排列，不代表出生顺序；presenting=true 是正在下降或娩出的那一胎。weight 胎重系数，1.0 为标准；affinity 母胎亲密度 -50～50，负值为排斥；health 胎儿健康（健壮／平稳／虚弱／危急），描写胎儿状况须一致，不写出刻度本身；resilience 顽强（很耐疏忽与伤害，可写母体挺着肚子照样奔波、胎儿稳如磐石）或脆弱（稍有闪失就会出事），没有就是一般；positionText、backSideText、tendencyAngleText 是胎位现况，描写须一致。',
     );
