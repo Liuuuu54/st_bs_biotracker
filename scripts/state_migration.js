@@ -323,6 +323,8 @@ function migrateCharacterV13ToV14(character) {
  * 维持 1.3.0 的行为（1.3.1 起没设定时当「未察觉」）。
  */
 function migrateCharacterV14ToV15(character) {
+  // 海妖改名斯库拉（RACE_RENAMES）：种族字串与血统比例的键一并换新名
+  renameRacesDeep(character);
   const profile = character?.profile;
   if (!profile || typeof profile !== 'object') return;
   if (profile.base && typeof profile.base === 'object') ensureBodyBaseFields(profile.base, character?.name, { force: true });

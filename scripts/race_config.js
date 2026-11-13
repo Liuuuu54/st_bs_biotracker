@@ -50,7 +50,7 @@ export const BODY_SIZE_LEVEL_NAMES = Object.freeze(["掌上", "矮小", "偏小"
  * 体态：给日后的三围与孕肚变化用，目前不接任何机制、也不送提示词。
  * - humanoid 人形：胸、腰、臀三围都能套用，孕肚是人类式的前腹隆起（人鱼、拉弥亚也算）
  * - hybrid 半人形：人类上身接非人下半身。兽躯（半人马、阿拉克涅）的子宫与孕肚在兽躯；
- *   尾身（拉弥亚、人鱼、海妖）没有腿，孕肚在前腹
+ *   尾身（拉弥亚、人鱼、斯库拉）没有腿，孕肚在前腹
  * - beast 非人形：动物或异形体型，三围不适用
  * - any 任意：形体不固定，能变化形体（修格斯化成人形女仆），或同族形态差异大（心魇）
  * 能变形的种族与体型一样记常态（人态）。
@@ -448,7 +448,7 @@ const RACE_DEFINITIONS = Object.freeze({
     menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 5, birthDifficulty: 0.2, breedTolerance: 1.67,
     impregnationDifficulty: 0.25, orgasmOvulationAmount: 9, identicalProbability: 25, genderRatio: -1,
     companionEggsMean: 3, recoveryCoefficient: 0.25,
-    bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
+    bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "beast",
   },
   "夺心魔": {
     embryoType: "卵生",
@@ -484,7 +484,7 @@ const RACE_DEFINITIONS = Object.freeze({
     menstrualLengthRatio: 1.25, dormancyDays: 7, gestationSpeciesSpeed: 1, birthDifficulty: 0.5, breedTolerance: 1.5,
     impregnationDifficulty: 3, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: null,
     companionEggsMean: 4, recoveryCoefficient: 0.3,
-    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "any",
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "beast",
   },
   "海蛞蝓族": {
     embryoType: "卵生",
@@ -621,7 +621,7 @@ const RACE_DEFINITIONS = Object.freeze({
     companionEggsMean: 32, recoveryCoefficient: 0.25,
     bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "beast",
   },
-  "海妖": {
+  "斯库拉": {
     embryoType: "卵胎生",
     introductionLine: "Scylla，章鱼乌贼一类，以触腕替代双足；无须变形即可上陆，亦可借魔法化出人腿。雌核遗传，孩子随母族。",
     inheritanceMode: "maternal",
@@ -1060,7 +1060,7 @@ const RACE_DEFINITIONS = Object.freeze({
     menstrualLengthRatio: 1, gestationSpeciesSpeed: 1.5, birthDifficulty: 1.5, breedTolerance: 1,
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 4, identicalProbability: 15, genderRatio: -1,
     companionEggsMean: 5, recoveryCoefficient: 2,
-    bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
+    bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "beast",
   },
   "伪人": {
     embryoType: "不定型",
@@ -1110,6 +1110,8 @@ export const RACE_RENAMES = Object.freeze({
   鸟人: '鸟族',
   兽人: '欧克',
   半兽人: '欧克',
+  // 1.3.1：赛壬（Siren）入名录后，「海妖」改用介绍里的 Scylla 本名，免得两族同名
+  海妖: '斯库拉',
 });
 
 // 以简体字形为键：模型写繁体、简体或混用都能对上内置名称

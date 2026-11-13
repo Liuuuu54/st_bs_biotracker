@@ -101,7 +101,8 @@ test('体态：四种分类、蝎罗氏为半人形、混血按血统且任意�
     assert.ok(RACE_BODY_PLANS.includes(plan), `${race} bodyPlan ${plan}`);
     counts[plan] = (counts[plan] || 0) + 1;
   }
-  assert.deepEqual(counts, { humanoid: 74, beast: 7, hybrid: 17, any: 12 });
+  // 1.3.1：触手怪、活体铠甲、米戈从任意改为非人形
+  assert.deepEqual(counts, { humanoid: 74, beast: 10, hybrid: 17, any: 9 });
   assert.equal(getRacePhysiologyProfile('蝎罗氏').bodyPlan, 'hybrid');
   assert.equal(getRacePhysiologyProfile('修格斯').bodyPlan, 'any');
   assert.equal(getMergedRaceBodyPlan('史萊姆x人类'), 'humanoid', '任意不参与投票');
@@ -132,11 +133,11 @@ test('半人形可借魔法化出人腿：变化态缩成人身，宝箱怪是�
     return [race, [bodySize, altFormBodySize, bodyPlan]];
   }));
   assert.deepEqual(pairs, { 半人马: [5, 4, 'hybrid'], 阿拉克涅: [5, 4, 'hybrid'], 百足氏: [5, 4, 'hybrid'], 蝎罗氏: [4, 3, 'hybrid'] });
-  const tailed = Object.fromEntries(['人鱼', '蛇人', '梅杜莎', '海妖'].map((race) => {
+  const tailed = Object.fromEntries(['人鱼', '蛇人', '梅杜莎', '斯库拉'].map((race) => {
     const { bodySize, altFormBodySize, bodyPlan } = getRacePhysiologyProfile(race);
     return [race, [bodySize, altFormBodySize, bodyPlan]];
   }));
-  assert.deepEqual(tailed, { 人鱼: [4, null, 'hybrid'], 蛇人: [5, 4, 'hybrid'], 梅杜莎: [5, 4, 'hybrid'], 海妖: [5, 4, 'hybrid'] }, '尾身人形并入半人形');
+  assert.deepEqual(tailed, { 人鱼: [4, null, 'hybrid'], 蛇人: [5, 4, 'hybrid'], 梅杜莎: [5, 4, 'hybrid'], 斯库拉: [5, 4, 'hybrid'] }, '尾身人形并入半人形');
   const sea = Object.fromEntries(['海马族', '水母族', '海蛞蝓族'].map((race) => {
     const { bodySize, altFormBodySize, bodyPlan } = getRacePhysiologyProfile(race);
     return [race, [bodySize, altFormBodySize, bodyPlan]];

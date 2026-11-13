@@ -26,7 +26,7 @@ afterEach(() => {
 
 test('只有明确列出的种族有伴生卵，其余为 0', () => {
   const expected = {
-    触手怪: 3, 宝箱怪: 7, 海妖: 10, 怪鱼类: 32, 狗头人: 1,
+    触手怪: 3, 宝箱怪: 7, 斯库拉: 10, 怪鱼类: 32, 狗头人: 1,
     蛇人: 0, 人鱼: 0, 深潜者: 0, 史萊姆: 3,
   };
   for (const [race, mean] of Object.entries(expected)) {

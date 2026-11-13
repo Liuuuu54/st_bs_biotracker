@@ -348,3 +348,21 @@ test('体态：半人形照人类等效写罩杯与臀，非人形只写胖瘦',
   assert.equal(hasHumanFigure({ race: '怪兽类' }), false);
   assert.equal(hasHumanFigure({ race: '人类' }), true);
 });
+
+test('v14 → v15：海妖改名斯库拉，角色、精方与快照一起换；模型写海妖也对得上', async () => {
+  const { canonicalizeRaceName } = await import('../scripts/race_config.js');
+  assert.equal(canonicalizeRaceName('海妖'), '斯库拉');
+  assert.equal(canonicalizeRaceName('斯庫拉'), '斯库拉');
+  const ctx = { chatId: 'v15-scylla', characters: [], extensionSettings: {}, saveSettingsDebounced() {} };
+  const settings = state.getSettings(ctx);
+  const old = setup({ base: { race: '海妖x人类', bloodline: { 海妖: 0.5, 人类: 0.5 } } });
+  old.schemaVersion = 14;
+  old.sires = { 乙: { race: '海妖', age: 30 } };
+  state.recordChatStateSnapshot(ctx, old, { messageCount: 1, reason: 'old' });
+  settings.chatStates[ctx.chatId] = old;
+  const migrated = state.getChatState(ctx, settings);
+  assert.equal(migrated.characters.A.profile.base.race, '斯库拉x人类');
+  assert.equal(JSON.stringify(migrated.characters.A).includes('海妖'), false, '血统比例的键也换了');
+  assert.equal(migrated.sires['乙'].race, '斯库拉');
+  assert.equal(JSON.stringify(migrated.snapshots).includes('海妖'), false, '快照里也没有旧名');
+});
