@@ -112,7 +112,7 @@ import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './script
 import { deleteLibraryEntry, importLibraryEntry, listLibraryEntries, saveEggToLibrary, saveSireToLibrary } from './scripts/character_library.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue, getEmbryoTypeReferenceText } from './scripts/prompts/rules.js';
-import { getAllocationAlpha, getAllocationText, getBodyBaseline, getBuildText, getCupLabel, getHipText, shiftCareTarget } from './scripts/maternal_body.js';
+import { getAllocationAlpha, getAllocationText, getBodyBaseline, getBuildText, getCupLabel, getHipText, hasHumanFigure, shiftCareTarget } from './scripts/maternal_body.js';
 import { FETAL_EVENT_KINDS, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, describeCognitionSummary, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, getPrenatalCareKey, normalizeFetalEventList, PRENATAL_CARE_LEVELS } from './scripts/fetal_health.js';
 import { PSY_AXIS_LABELS } from './scripts/registry_psy_config.js';
 import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
@@ -2758,14 +2758,16 @@ function formatBodyFigureLabel(profile = {}) {
   const base = profile.base || {};
   const baseline = getBodyBaseline(base);
   const body = getCurrentBody(profile);
-  const figure = (build, bust, hip) => `${getBuildText(build, base.vitalityLevel)}·${getCupLabel(bust)}罩杯·臀${getHipText(hip)}`;
+  // 非人形只看胖瘦；半人形与形体不定照人类等效值写
+  const human = hasHumanFigure(base);
+  const figure = (build, bust, hip) => (human ? `${getBuildText(build, base.vitalityLevel)}·${getCupLabel(bust)}罩杯·臀${getHipText(hip)}` : getBuildText(build, base.vitalityLevel));
   // 孕期与产后的变化另起一行，只写方向与幅度；母体倾向、增长倾向是隐藏数值，不上画面
   const inc = body.increments;
   const parts = [];
   const cups = Math.round((Number(inc.bust) || 0) / 5) / 2;
-  if (Math.abs(cups) >= 0.5) parts.push(`胸${cups > 0 ? '+' : ''}${cups}罩杯`);
+  if (human && Math.abs(cups) >= 0.5) parts.push(`胸${cups > 0 ? '+' : ''}${cups}罩杯`);
   if (Math.abs(Number(inc.build) || 0) >= 1) parts.push(`体重${inc.build > 0 ? '+' : ''}${Math.round(inc.build)}`);
-  if (Math.abs(Number(inc.hip) || 0) >= 1) parts.push(`臀${inc.hip > 0 ? '+' : ''}${Math.round(inc.hip)}`);
+  if (human && Math.abs(Number(inc.hip) || 0) >= 1) parts.push(`臀${inc.hip > 0 ? '+' : ''}${Math.round(inc.hip)}`);
   return {
     value: figure(body.build, body.bust, body.hip),
     change: parts.join('、'),

@@ -336,3 +336,15 @@ test('主线看不到精方的身材锚点', () => {
   const prompt = buildMainFlowStatePrompt({ existing_state: { A: { profile: { base: { stage: '卵泡期' } } } }, registered_sires: [entry] });
   assert.equal(prompt.includes('bodyChangedAtAge'), false);
 });
+
+// ── 体态：半人形、非人形的人类等效身材 ─────────────────────────────
+
+import { getBodyPlan, hasHumanFigure } from '../scripts/maternal_body.js';
+
+test('体态：半人形照人类等效写罩杯与臀，非人形只写胖瘦', () => {
+  assert.equal(getBodyPlan({ race: '半人马' }), 'hybrid');
+  assert.equal(getBodyPlan({ race: '怪兽类' }), 'beast');
+  assert.equal(hasHumanFigure({ race: '半人马' }), true);
+  assert.equal(hasHumanFigure({ race: '怪兽类' }), false);
+  assert.equal(hasHumanFigure({ race: '人类' }), true);
+});

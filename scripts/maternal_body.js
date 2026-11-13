@@ -292,6 +292,21 @@ export function splitPregnancyEndIncrements(increments = {}) {
   return { retained, remainder };
 }
 
+// ---- 体态（半人形、非人形）----
+
+/**
+ * 角色的体态（race_config 的 bodyPlan：humanoid 人形、hybrid 半人形、beast 非人形、any 形体不定），混血按血脉合并。
+ * 身材都是「人类等效值」：半人形指人身上半部（或化人形时），形体不定指平常最常维持的形态；
+ * 非人形没有罩杯与臀可言，只用体重比例。
+ */
+export function getBodyPlan(base = {}) {
+  return getMergedRacePhysiologyProfile(String(base?.race || ''), base?.bloodline ?? null)?.bodyPlan || 'humanoid';
+}
+
+export function hasHumanFigure(base = {}) {
+  return getBodyPlan(base) !== 'beast';
+}
+
 // ---- 文字刻度（不给百分比）----
 
 const CUP_LETTERS = ['AAA', 'AA', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'];

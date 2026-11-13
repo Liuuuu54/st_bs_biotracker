@@ -1500,8 +1500,9 @@ const REGISTRY_BODY_TRAITS = Object.freeze(['allocationBias', 'bustGain', 'hipGa
  * 身材的合并：模型给了就用；没给时，已注册过的角色保留原值，第一次注册的角色抽一次倾向
  * （母体倾向、胸臀增长倾向；体重、胸、臀维持预设）。
  */
-function resolveRegistryBodyFields(sanitizedBase = {}, currentBase = {}, isFirstRegistration = false, random = Math.random) {
-  const sampled = isFirstRegistration ? sampleBodyTraits(random) : null;
+function resolveRegistryBodyFields(sanitizedBase = {}, currentBase = {}, isFirstRegistration = false, random = Math.random, { beast = false } = {}) {
+  // 非人形没有胸臀可言：没给就不长（增长倾向 0），只抽母体倾向
+  const sampled = isFirstRegistration ? { ...sampleBodyTraits(random), ...(beast ? { bustGain: 0, hipGain: 0 } : {}) } : null;
   const next = {};
   for (const [key] of REGISTRY_BODY_FIELDS) {
     if (sanitizedBase[key] !== undefined) next[key] = sanitizedBase[key];
@@ -1586,7 +1587,7 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
         bodySize: sanitizedProfile.base?.bodySize
           ?? (effectiveRace === base.profile.base.race ? clampIndividualBodySize(base.profile.base.bodySize) : null)
           ?? sampleBodySize(getExpectedBodySize(effectiveRace, ancestry.bloodline, bodySizeParents), random),
-        ...resolveRegistryBodyFields(sanitizedProfile.base || {}, base.profile.base || {}, !current?.initialized, random),
+        ...resolveRegistryBodyFields(sanitizedProfile.base || {}, base.profile.base || {}, !current?.initialized, random, { beast: mergedRaceProfile?.bodyPlan === 'beast' }),
         // 身材上次改变的年龄（bsGrowBody 的门槛）：第一次注册从注册时的年龄起算，重新注册保留
         bodyChangedAtAge: current?.initialized && Number.isFinite(Number(base.profile.base?.bodyChangedAtAge))
           ? Number(base.profile.base.bodyChangedAtAge)

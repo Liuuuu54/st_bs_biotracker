@@ -13,7 +13,7 @@ import { summarizePendingRecords } from './record_notes.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
-import { getAllocationAlpha, getAllocationText, getBuildText, getBustGrowthText, getCupLabel, getHipText } from './maternal_body.js';
+import { getAllocationAlpha, getAllocationText, getBuildText, getBustGrowthText, getCupLabel, getHipText, hasHumanFigure } from './maternal_body.js';
 import { applyToolCallsResult, describeBackSide, describeFetalPosition, getBellySize, getCurrentBody, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getPrenatalCareKey, PRENATAL_CARE_LEVELS, getFetalHarmFactor, getFetalHealthTier, labelFetalEventTarget } from './fetal_health.js';
 import {
@@ -1073,6 +1073,8 @@ function buildNarrativeWardrobeItem(entry) {
 /** 身材文字：体重×活力、罩杯（孕期附比孕前大几个罩杯）、臀部 */
 function describeFigureForPrompt(sourceProfile) {
   const body = getCurrentBody(sourceProfile || {});
+  // 非人形没有罩杯与臀可言，只送胖瘦
+  if (!hasHumanFigure(sourceProfile?.base)) return getBuildText(body.build, sourceProfile?.base?.vitalityLevel);
   const growth = getBustGrowthText(body.increments.bust);
   return [
     getBuildText(body.build, sourceProfile?.base?.vitalityLevel),
