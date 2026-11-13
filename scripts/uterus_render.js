@@ -16,9 +16,8 @@ const FRAME_MS = 180;
 const CUE_MS = 2400;
 export const EMOTE_MS = 1400;
 const RUPTURE_MS = 2800;
-/** 假宫缩：子宫壁收紧三下，每下约 1 秒 */
-const FALSE_CONTRACTION_MS = 3000;
-const FALSE_CONTRACTION_PULSE_MS = 1000;
+/** 子宫图不演的画面事件：假宫缩交给 1.4.0 孕体特写（子宫图已随宫压反映收缩） */
+const UTERUS_SILENT_CUES = new Set(['falseContraction']);
 
 function hexToRgb(hex) {
   const value = String(hex || '').trim().replace('#', '');
@@ -1331,37 +1330,13 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     return Math.min(1, (Math.floor(elapsed / 250) + 1) * 250 / total);
   }
 
-  /**
-   * 假宫缩：整个子宫壁往内收紧再放松，三下；收紧时壁变厚、颜色转深，胎儿不动。
-   * 只是画面，1.4.0 孕体特写另有呼吸与腹部发硬的动画。
-   */
-  function drawFalseContraction(elapsed) {
-    const { womb } = layout;
-    const phase = (elapsed % FALSE_CONTRACTION_PULSE_MS) / FALSE_CONTRACTION_PULSE_MS;
-    const strength = Math.sin(Math.PI * phase);
-    const depth = Math.round(2 * strength);
-    if (depth <= 0) return;
-    const color = strength > 0.6 ? P.wallDark : P.wall;
-    for (let y = womb.cy - womb.ry + 1; y < womb.cy + womb.ry; y += 1) {
-      const r = wombRadius(womb, y, 0, 0);
-      if (r <= depth + 1) continue;
-      for (let d = 1; d <= depth; d += 1) {
-        pen.px(womb.cx - r + d, y, 1, 1, color);
-        pen.px(womb.cx + r - d, y, 1, 1, color);
-      }
-    }
-  }
-
   function drawCue(tick) {
     if (!cue) return;
     const elapsed = Math.max(0, tick - cue.start);
-    const limit = cue.type === 'rupture' ? RUPTURE_MS
-      : cue.type === 'falseContraction' ? FALSE_CONTRACTION_MS
-        : (cue.type === 'condomBreak' || cue.type === 'condomOverflow') ? CONDOM_FAIL_MS : CUE_MS;
+    const limit = cue.type === 'rupture' ? RUPTURE_MS : (cue.type === 'condomBreak' || cue.type === 'condomOverflow') ? CONDOM_FAIL_MS : CUE_MS;
     if (elapsed > limit) { cue = null; return; }
     const { womb, tract } = layout;
     if (cue.type === 'rupture') drawRupture(elapsed);
-    else if (cue.type === 'falseContraction') drawFalseContraction(elapsed);
     else if (cue.type === 'insert' || cue.type === 'insertCondom') {
       const phase = Math.floor(elapsed / 180) % 4;
       shaft(tract.canalTop + (phase === 1 || phase === 2 ? 0 : 8), cue.type === 'insertCondom');
@@ -1461,6 +1436,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
      * WebView2（TauriTavern）跟着 Windows 的「动画效果」设定，关掉的人不少，按重播却毫无反应会像坏掉。
      */
     playCue(type, { userRequested = false } = {}) {
+      if (UTERUS_SILENT_CUES.has(type)) return false;
       if (reducedMotion && !userRequested) return false;
       cue = { type, start: performance.now() };
       kick();
