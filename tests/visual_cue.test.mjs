@@ -26,7 +26,8 @@ function setup(stage, over = {}) {
   return chatState;
 }
 const P = (chatState) => chatState.characters.A.profile;
-const cue = (chatState) => P(chatState).visualCue;
+// 事件另带套用当下的时间（at，判断同一轮用），这里只比种类与序号
+const cue = (chatState) => { const value = P(chatState).visualCue; return value ? { type: value.type, seq: value.seq } : value; };
 const call = (chatState, name, args) => applyToolCall(chatState, { name, arguments: { female: 'A', ...args } });
 
 test('插入与射精各记一笔，seq 逐次加一', () => {
@@ -150,4 +151,34 @@ test('戴套插入、射在套里、破裂与撑爆各有自己的特写', () =>
   assert.deepEqual([P(burst).lastCondomResult.condomFailed, P(burst).lastCondomResult.condomFailReason], [true, 'overflow']);
   assert.equal(P(burst).lastCondomResult.enteredAmount, 150);
   assert.deepEqual(cue(burst), { type: 'condomOverflow', seq: 2 });
+});
+
+test('同一轮里顺位低的画面事件不盖掉顺位高的；隔了一轮照样换新', async () => {
+  const { setVisualCue, getVisualCuePriority, VISUAL_CUE_ROUND_MS } = await import('../scripts/state.js');
+  const order = ['falseContraction', 'siblingKick', 'orgasm', 'ovulation', 'insert', 'ejaculate', 'condomBreak', 'rupture'];
+  for (let k = 1; k < order.length; k += 1) assert.ok(getVisualCuePriority(order[k]) > getVisualCuePriority(order[k - 1]), `${order[k]} 应高于 ${order[k - 1]}`);
+  const profile = {};
+  setVisualCue(profile, 'ejaculate', { now: 1000 });
+  setVisualCue(profile, 'orgasm', { now: 1200 });
+  assert.equal(profile.visualCue.type, 'ejaculate', '同一轮：高潮不盖射精');
+  assert.equal(profile.visualCue.seq, 1);
+  setVisualCue(profile, 'rupture', { now: 1300 });
+  // 两胎互动记下是哪两胎；不是两个不同的整数就不记
+  const twins = {};
+  assert.deepEqual(setVisualCue(twins, 'siblingKick', { now: 5, fetuses: [3, 2] }), { type: 'siblingKick', seq: 1, at: 5, fetuses: [3, 2] });
+  assert.equal('fetuses' in setVisualCue({}, 'siblingKick', { now: 5, fetuses: [3, 3] }), false);
+  assert.equal('fetuses' in setVisualCue({}, 'siblingKick', { now: 5, fetuses: [3, undefined] }), false);
+  assert.equal(profile.visualCue.type, 'rupture', '同一轮：顺位高的照盖');
+  assert.equal(profile.visualCue.seq, 2);
+  setVisualCue(profile, 'insert', { now: 1400 });
+  assert.equal(profile.visualCue.type, 'rupture');
+  // 同顺位：后来的盖前面的
+  setVisualCue(profile, 'ovulation', { now: 1300 + VISUAL_CUE_ROUND_MS });
+  assert.equal(profile.visualCue.type, 'ovulation', '隔了一轮：照样换新');
+  setVisualCue(profile, 'fertilization', { now: 1400 + VISUAL_CUE_ROUND_MS });
+  assert.equal(profile.visualCue.type, 'fertilization');
+  // 旧存档的事件没有时间：当成上一轮的
+  const old = { visualCue: { type: 'rupture', seq: 7 } };
+  setVisualCue(old, 'orgasm', { now: 5 });
+  assert.deepEqual(old.visualCue, { type: 'orgasm', seq: 8, at: 5 });
 });

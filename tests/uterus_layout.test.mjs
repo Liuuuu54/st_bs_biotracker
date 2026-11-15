@@ -238,3 +238,45 @@ test('到容量才算满：未孕是灌满（微胀）、怀孕是浸满（不�
   assert.equal(soaked.semenSoaked, true, '怀孕是浸满');
   assert.equal(soaked.womb.rx, pregnantAt(0).womb.rx, '浸满不胀');
 });
+
+// ---- 鞘与剑（1.4.0）----
+test('阴道长度照鞘相对她体型的级数：相称 22，每级 ×2^(1/3)，夹在 14～32', async () => {
+  const { SHEATH_BASE_LENGTH } = await import('../scripts/uterus_layout.js');
+  const state = profile('卵泡期', [], { days: 0 });
+  const length = (relative, loose = false) => computeUterusLayout(state, { sheath: { relative, loose } }).tract;
+  assert.equal(computeUterusLayout(state).tract.canalLength, SHEATH_BASE_LENGTH);
+  assert.equal(length(0).canalLength, 22);
+  assert.equal(length(1).canalLength, 28);
+  assert.equal(length(-1).canalLength, 17);
+  assert.equal(length(-9).canalLength, 14);
+  assert.ok(length(9).canalLength <= 32);
+  assert.equal(length(0).canalBottom - length(0).canalTop, 22);
+  assert.equal(length(0, true).canalLoose, 1);
+  assert.equal(length(0).canalLoose, 0);
+  // 大肚子时产道仍留在画布内
+  const late = computeUterusLayout(profile('孕晚期', [fetus(1)], { days: 270 }), { sheath: { relative: 2 } }).tract;
+  assert.ok(late.canalBottom <= 118 && late.canalLength >= 14, JSON.stringify(late));
+});
+
+test('插入的契合画面：分段、方向与剑宽都从 penetrationFit 读', async () => {
+  const { getPenetrationFitView } = await import('../scripts/uterus_layout.js');
+  assert.equal(getPenetrationFitView(null), null);
+  assert.deepEqual(getPenetrationFitView({ male: '甲', diff: 0.3 }), { tier: 0, direction: 0, swordWidth: 9, swordLength: 22, diff: 0.3 });
+  assert.deepEqual(getPenetrationFitView({ diff: 1 }), { tier: 1, direction: 1, swordWidth: 11, swordLength: 27, diff: 1 });
+  assert.deepEqual(getPenetrationFitView({ diff: -2 }), { tier: 2, direction: -1, swordWidth: 5, swordLength: 12, diff: -2 });
+  assert.equal(getPenetrationFitView({ diff: 3 }).tier, 3);
+  assert.equal(getPenetrationFitView({ diff: 5 }).tier, 4);
+  assert.equal(getPenetrationFitView({ diff: 5 }).swordWidth, 17);
+  assert.equal(getPenetrationFitView({ diff: 3 }).swordWidth, 15);
+  assert.equal(getPenetrationFitView({ diff: -3 }).swordWidth, 3);
+  assert.equal(getPenetrationFitView({ diff: -6 }).swordWidth, 1);
+  assert.equal(getPenetrationFitView({ diff: -6 }).swordLength, 6);
+  assert.equal(getPenetrationFitView({ diff: 5 }).swordLength, 42);
+  assert.equal(getPenetrationFitView({ diff: -3 }).swordLength, 7);
+  // 魔法消弭体型差：恰好相称；旧纪录没有带正负号的差距：照相称画
+  assert.deepEqual(getPenetrationFitView({ diff: 3, sizeBridge: true }), { tier: 0, direction: 0, swordWidth: 9, swordLength: 22, diff: 0 });
+  assert.deepEqual(getPenetrationFitView({ gap: 3, label: '极不相称' }), { tier: 0, direction: 0, swordWidth: 9, swordLength: 22, diff: null });
+  const layout = computeUterusLayout(profile('卵泡期', [], { days: 0, base: { penetrationFit: { male: '甲', diff: 2 } } }));
+  assert.equal(layout.penetrationFit.tier, 2);
+  assert.equal(computeUterusLayout(profile('卵泡期', [], { days: 0 })).penetrationFit, null);
+});

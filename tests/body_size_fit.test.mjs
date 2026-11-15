@@ -229,3 +229,14 @@ test('射精沿用插入时的型态：变化态的套子尺寸与子宫容量�
     Math.random = realRandom;
   }
 });
+
+test('契合结果带正负号的差距：剑大为正、鞘大为负，魔法与可变体型为 0', async () => {
+  const { describeBodySizeFit } = await import('../scripts/body_size.js');
+  const fixed = (size) => ({ kind: 'fixed', size, merged: { bodySize: size } });
+  assert.equal(describeBodySizeFit({ female: fixed(0), male: fixed(2) }).diff, 2);
+  assert.equal(describeBodySizeFit({ female: fixed(0), male: fixed(-3) }).diff, -3);
+  assert.equal(describeBodySizeFit({ female: fixed(0), male: fixed(0.2) }).diff, 0.2);
+  assert.equal(describeBodySizeFit({ female: fixed(0), male: fixed(2), femaleOffset: 1 }).diff, 1);
+  assert.equal(describeBodySizeFit({ female: fixed(0), male: fixed(4), sizeBridge: true }).diff, 0);
+  assert.equal(describeBodySizeFit({ female: { kind: 'variable' }, male: fixed(4) }).diff, 0);
+});

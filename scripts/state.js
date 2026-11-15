@@ -196,6 +196,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   mainflowCopyCharLimit: 400000,
   trackerTokenBudget: 4096,
   wombAnimation: true,
+  // 孕体特写（身体侧面像素画）
+  bellyCloseup: true,
   wardrobeSystemEnabled: true,
   skillSystemEnabled: true,
   lukerMultiAgentManualOnly: true,
@@ -343,18 +345,53 @@ export const VISUAL_CUE_TYPES = Object.freeze([
   'insert', 'insertCondom', 'ejaculate', 'ejaculateCondom', 'condomBreak', 'condomOverflow', 'ovulation',
   'fertilization', 'surrogacy', 'chimera', 'rebirth',
   'implantation', 'implantationFailed', 'rupture', 'falseContraction',
+  // 只在孕体特写上演的（子宫图不演）：高潮、两胎互动
+  'orgasm', 'siblingKick', 'siblingShove', 'siblingCuddle',
 ]);
 
-export function setVisualCue(profile, type) {
+// 一轮追踪可能连发好几个事件，但只留一个：同一轮里顺位低的不盖掉顺位高的（数字大的优先）。
+// 破水 ＞ 套子破裂、撑爆 ＞ 射精 ＞ 插入 ＞ 排卵、受精、着床等 ＞ 高潮 ＞ 两胎互动 ＞ 假宫缩。
+const VISUAL_CUE_PRIORITY = Object.freeze({
+  rupture: 8,
+  condomBreak: 7, condomOverflow: 7,
+  ejaculate: 6, ejaculateCondom: 6,
+  insert: 5, insertCondom: 5,
+  ovulation: 4, fertilization: 4, surrogacy: 4, chimera: 4, rebirth: 4, implantation: 4, implantationFailed: 4,
+  orgasm: 3,
+  siblingKick: 2, siblingShove: 2, siblingCuddle: 2,
+  falseContraction: 1,
+});
+/** 多久以内发的事件算同一轮（一轮追踪的工具呼叫是连着套用的）；事件的 at 是套用当下的时间 */
+export const VISUAL_CUE_ROUND_MS = 10000;
+
+export function getVisualCuePriority(type) {
+  return VISUAL_CUE_PRIORITY[type] || 0;
+}
+
+/** 事件牵涉到的两胎（两胎互动用）：[动手的, 被动的] 的 embryoId；不是两个不同的整数就不记 */
+function normalizeVisualCueFetuses(value) {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const ids = value.map(Number);
+  return ids.every(Number.isInteger) && ids[0] !== ids[1] ? ids : null;
+}
+
+export function setVisualCue(profile, type, { now = Date.now(), fetuses = null } = {}) {
   if (!profile || typeof profile !== 'object' || !VISUAL_CUE_TYPES.includes(type)) return null;
-  const seq = Number.isInteger(profile.visualCue?.seq) ? profile.visualCue.seq + 1 : 1;
-  profile.visualCue = { type, seq };
+  const current = profile.visualCue;
+  // 同一轮里顺位比现有的低：不盖。旧存档的事件没有 at，一律当成上一轮的
+  const sameRound = current && Number.isFinite(current.at) && now - current.at >= 0 && now - current.at < VISUAL_CUE_ROUND_MS;
+  if (sameRound && getVisualCuePriority(type) < getVisualCuePriority(current.type)) return current;
+  const seq = Number.isInteger(current?.seq) ? current.seq + 1 : 1;
+  const pair = normalizeVisualCueFetuses(fetuses);
+  profile.visualCue = { type, seq, at: now, ...(pair ? { fetuses: pair } : {}) };
   return profile.visualCue;
 }
 
 function normalizeVisualCue(value) {
   if (!value || typeof value !== 'object' || !VISUAL_CUE_TYPES.includes(value.type)) return null;
-  return Number.isInteger(value.seq) && value.seq > 0 ? { type: value.type, seq: value.seq } : null;
+  if (!(Number.isInteger(value.seq) && value.seq > 0)) return null;
+  const pair = normalizeVisualCueFetuses(value.fetuses);
+  return { type: value.type, seq: value.seq, ...(Number.isFinite(value.at) ? { at: value.at } : {}), ...(pair ? { fetuses: pair } : {}) };
 }
 
 export function normalizeCharacterPsychologyState(characterState) {

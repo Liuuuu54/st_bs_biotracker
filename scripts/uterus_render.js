@@ -2,7 +2,7 @@
 // 画法沿用 Sol 6 试作。只画、不算版面；动画以每 180 毫秒一帧推进，
 // 只在画面可见时跑，系统设定减少动态效果或关闭动画时只画静态图。
 import { buildFetusGrid, hasFluidSac, membraneLevel } from './fetus_sprite.js';
-import { quantizeAngle, UTERUS_CANVAS, wombRadius } from './uterus_layout.js';
+import { getUterusGaugeColumns, quantizeAngle, UTERUS_CANVAS, wombRadius } from './uterus_layout.js';
 
 const BASE_PALETTE = Object.freeze({
   bg: '#1c1726', void: '#140f1b', frame: '#47283d', wallDark: '#803b58', wall: '#c85f78', wallLight: '#ee9290',
@@ -14,10 +14,12 @@ const BASE_PALETTE = Object.freeze({
 
 const FRAME_MS = 180;
 const CUE_MS = 2400;
+/** 被撑开的产道在拔出（插入演出结束）后缩回原宽的时间 */
+const SHEATH_RECOIL_MS = 2500;
 export const EMOTE_MS = 1400;
 const RUPTURE_MS = 2800;
 /** 子宫图不演的画面事件：假宫缩交给 1.4.0 孕体特写（子宫图已随宫压反映收缩） */
-const UTERUS_SILENT_CUES = new Set(['falseContraction']);
+const UTERUS_SILENT_CUES = new Set(['falseContraction', 'orgasm', 'siblingKick', 'siblingShove', 'siblingCuddle']);
 
 function hexToRgb(hex) {
   const value = String(hex || '').trim().replace('#', '');
@@ -144,12 +146,13 @@ const THEME_WOMB_PALETTES = Object.freeze({
     fetus: ['#faf6ec', '#ffffff', '#ffffff'], egg: ['#f6f0e2', '#8a8d86'],
     membrane: ['#5c6660', '#9aa39c'], sac: '#b9b3a2', blood: '#b23a2e', glow: '#b23a2e', ink: '#1f2522', signal: '#c0392b', brush: true,
   },
-  // 建构：苏联构成主义海报。米色海报底、黑宫腔、红宫壁、米白胎儿，大块平涂
+  // 建构：苏联构成主义海报，单色。米色海报底、黑宫腔、黑灰的宫壁、米白胎儿，大块平涂；红只留给经血与警示
+  // （2026-11-15：原本宫壁是红的，整颗子宫红通通的看起来吓人）
   constructivism: {
     bg: '#e2dccb', void: '#cfc7b2', tick: '#141414',
-    flesh: ['#141414', '#b62525', '#e0584a'], cavity: ['#2a2a2a', '#141414'],
+    flesh: ['#141414', '#4a473f', '#8a8577'], cavity: ['#2a2a2a', '#141414'],
     fetus: ['#ece3cf', '#f7f1e3', '#ffffff'], egg: ['#ece3cf', '#8a8577'],
-    membrane: ['#c9c3b3', '#ffffff'], sac: '#b62525', blood: '#b62525', glow: '#ece3cf', ink: '#141414',
+    membrane: ['#c9c3b3', '#ffffff'], sac: '#8a8577', blood: '#b62525', glow: '#ece3cf', ink: '#141414',
   },
 });
 
@@ -538,10 +541,18 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   let timer = 0;
   const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  const stretch = { amount: 0, endAt: 0 };
+  let lastTick = 0;
   function frame(tick = performance.now()) {
+    lastTick = tick;
     if (!layout) return;
     const { px } = pen;
     px(0, 0, UTERUS_CANVAS.width, UTERUS_CANVAS.height, P.bg);
+    // 明显不合的剑顶到宫颈口时，整个子宫被顶高 1 像素（剑本身不跟着动）
+    drawGauges();
+    const lifted = cervixHit(tick) ? 1 : 0;
+    ctx.save();
+    ctx.translate(0, -lifted);
     drawUterus(tick);
     ctx.save();
     cavityPath();
@@ -554,14 +565,35 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     drawMenstrualFlow(tick);
     drawSemenLeak(tick);
     drawObstruction(tick);
+    ctx.restore();
     drawCue(tick);
     // 刻度与超出显示数
     for (let i = 0; i < 8; i += 1) {
-      px(4, 35 + i * 8, i % 2 ? 2 : 4, 1, P.tick);
+      // (左边那排刻度拿掉了：位置让给精液容量的量尺)
       px(88, 35 + i * 8, i % 2 ? 2 : 4, 1, P.tick);
     }
     if (layout.hiddenCount > 0) pen.glyphs(`+${layout.hiddenCount}`, 80 - String(layout.hiddenCount).length * 4, 112, P.signal);
     if (P.brush) inkBrush(ctx, P);
+  }
+
+  /**
+   * 两支量尺（与孕体特写的体型量尺同款：一条直线、上下两端各一道横杠、中间留空放数字，数字由页面叠上去）：
+   * 子宫左侧那支标子宫的高度（数字是精液容量），产道左侧那支标鞘的长度（数字是鞘的级数）。
+   * 画在子宫之前，子宫大到碰到量尺时由子宫盖过去。
+   */
+  function drawGauges() {
+    const { womb, tract } = layout;
+    const columns = getUterusGaugeColumns(layout);
+    const ruler = (x, top, bottom, gap) => {
+      const middle = Math.round((top + bottom) / 2);
+      for (let y = top; y <= bottom; y += 1) {
+        const cap = y === top || y === bottom;
+        if (!cap && Math.abs(y - middle) <= gap) continue;
+        pen.px(cap ? x - 2 : x, y, cap ? 5 : 1, 1, P.tick);
+      }
+    };
+    ruler(columns.womb, Math.round(womb.top) + 2, Math.round(womb.bottom) - 2, 5);
+    ruler(columns.sheath, tract.canalTop, tract.canalTop + (tract.canalLength ?? 22) - 1, 4);
   }
 
   function liningTone() {
@@ -606,7 +638,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     const { womb, tract, wallInset } = layout;
     ctx.beginPath();
     traceWomb(-wallInset, 4);
-    ctx.rect(womb.cx - 3, womb.bottom - 6, 6, tract.canalBottom - womb.bottom + 6);
+    ctx.rect(womb.cx - 3, womb.bottom - 6, 6 + (tract.canalLoose || 0), tract.canalBottom - womb.bottom + 6);
   }
 
   /**
@@ -669,10 +701,12 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     // 子宫颈（孕晚期变短）与产道
     px(cx - 8, tract.neckTop, 16, tract.neckLength + 1, P.wallDark);
     px(cx - 7, tract.neckTop, 14, tract.neckLength, P.wall);
-    px(cx - 4, tract.canalTop, 8, 22, P.wallDark);
-    px(cx - 3, tract.canalTop, 6, 21, P.cavityDeep);
-    px(cx - 6, tract.canalTop + 4, 2, 13, P.wallLight);
-    px(cx + 4, tract.canalTop + 4, 2, 13, P.wallLight);
+    // 产道：长度照鞘（tract.canalLength），经产松宽的宽 1 像素；被大的剑撑开时（flare）往两侧各让出几像素、壁色转淡
+    const canal = canalShape(tick);
+    px(cx - 4 - canal.flare, tract.canalTop, 8 + canal.loose + 2 * canal.flare, canal.length, canal.flare ? P.wall : P.wallDark);
+    px(cx - 3 - canal.flare, tract.canalTop, 6 + canal.loose + 2 * canal.flare, canal.length - 1, P.cavityDeep);
+    px(cx - 6 - canal.flare, tract.canalTop + 4, 2, Math.max(1, canal.length - 9), P.wallLight);
+    px(cx + 4 + canal.loose + canal.flare, tract.canalTop + 4, 2, Math.max(1, canal.length - 9), P.wallLight);
     // 子宫壁与宫腔
     paintWomb(3, 0, P.frame);
     paintWomb(1, 0, P.wallDark);
@@ -923,6 +957,8 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     const sacOf = new Map();
     for (const sac of layout.sacs) for (const id of sac.embryoIds) sacOf.set(id, sac);
     const drawnSacs = new Map();
+    // 剑顶到宫颈口时，最下面那一胎被顶得往上弹 2 像素
+    const jolted = joltedFetus(tick);
     for (let i = layout.fetuses.length - 1; i >= 0; i -= 1) {
       const fetus = layout.fetuses[i];
       const sac = sacOf.get(fetus.embryoId);
@@ -932,7 +968,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
         const fluid = members.some((item) => hasFluidSac(item.sprite.type, item.sprite.stage));
         drawnSacs.set(sac, fluid ? drawBubble(bubbleGeometry(members, breaths), sac.durability) : null);
       }
-      const y = fetus.y + breaths.get(fetus.embryoId);
+      const y = fetus.y + breaths.get(fetus.embryoId) - (jolted === fetus.embryoId ? 2 : 0);
       const nestedHost = fetus.inner.length > 0;
       drawSprite(fetus.x, y, fetus.size, fetus.sprite, fetus.angle, fetus.squeeze, (sac && drawnSacs.get(sac)) || null, sac ? sac.durability : fetus.amnion, nestedHost);
       // 内胎被宿主身体或蛋壳遮住，只以鼓起的体型和挤眼表情表示孕中孕。
@@ -948,8 +984,9 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     px(womb.cx + 6, tract.neckTop + 1, 2, tract.neckLength - 1, P.wallDark);
     px(womb.cx - 6, tract.neckTop + 1, 1, tract.neckLength - 1, P.wallLight);
     px(womb.cx + 5, tract.neckTop + 1, 1, tract.neckLength - 1, P.wallLight);
-    px(womb.cx - 6, tract.canalTop, 2, 17, P.wallLight);
-    px(womb.cx + 4, tract.canalTop, 2, 17, P.wallLight);
+    const canal = canalShape(lastTick);
+    px(womb.cx - 6 - canal.flare, tract.canalTop, 2, Math.max(1, canal.length - 5), P.wallLight);
+    px(womb.cx + 4 + canal.loose + canal.flare, tract.canalTop, 2, Math.max(1, canal.length - 5), P.wallLight);
   }
 
   // 阻塞：卡住的胎儿外框换警示色闪烁，位置标记依类型不同
@@ -1007,14 +1044,88 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   }
 
   /** condom=true 时外面再包一层膜，前端留储精囊；回传头部 y，供储精囊鼓胀与破口定位 */
-  function shaft(tip, condom = false) {
-    const { womb, tract } = layout;
-    const bottom = Math.min(120, tract.canalBottom);
-    const headY = Math.min(bottom - 5, Math.round(tip));
-    pen.px(womb.cx - 4, headY + 2, 9, bottom - headY - 2, P.wallDark);
-    pen.px(womb.cx - 3, headY + 3, 7, bottom - headY - 3, P.wallLight);
-    pen.ellipse(womb.cx, headY + 2, 4, 3, P.fetusLight);
-    pen.px(womb.cx - 2, headY, 3, 1, P.shine);
+  /**
+   * 产道此刻的形状：长度、经产松宽、被撑开的量。
+   * 剑比鞘大时插入把壁往外撑（明显不合 1 像素、极不相称 2 像素、体型悬殊只撑开入口）；
+   * 拔出后在 2.5 秒内缩回，经产的松宽不回。
+   */
+  function canalShape(tick) {
+    const tract = layout.tract;
+    let flare = 0;
+    if (stretch.amount > 0) {
+      const since = tick - stretch.endAt;
+      flare = since <= 0 ? stretch.amount : Math.round(stretch.amount * Math.max(0, 1 - since / SHEATH_RECOIL_MS));
+      if (since > SHEATH_RECOIL_MS) stretch.amount = 0;
+    }
+    return { length: tract.canalLength ?? 22, loose: tract.canalLoose || 0, flare };
+  }
+  /**
+   * 剑顶到宫颈口的那几格（插入演出中）：相称时每次往里送都顶到；略有落差在入口顿过之后；明显不合在三段挤进去之后。
+   * 极不相称以上、或鞘比剑大时够不到。
+   */
+  function cervixTouch(tick) {
+    if (!cue || (cue.type !== 'insert' && cue.type !== 'insertCondom')) return false;
+    const fit = layout.penetrationFit;
+    const elapsed = tick - cue.start;
+    if (elapsed < 0 || elapsed > CUE_MS) return false;
+    const phase = Math.floor(elapsed / 180) % 4;
+    if (phase !== 1 && phase !== 2) return false;
+    if (!fit || fit.tier === 0) return true;
+    if (fit.direction < 0 || fit.tier >= 3) return false;
+    return elapsed >= (fit.tier === 1 ? 500 : 3 * 420);
+  }
+  /** 被顶到的那一胎：最靠近宫颈口（最下面）的一胎。没有胎儿时回传 null */
+  function joltedFetus(tick) {
+    if (!layout.fetuses.length || !cervixTouch(tick)) return null;
+    return layout.fetuses.reduce((low, fetus) => (fetus.y > low.y ? fetus : low)).embryoId;
+  }
+  /** 明显不合（剑大）的插入，三段挤进去之后每次顶到底的那几格 */
+  function cervixHit(tick) {
+    const fit = layout.penetrationFit;
+    if (!cue || (cue.type !== 'insert' && cue.type !== 'insertCondom') || !fit || fit.direction <= 0 || fit.tier !== 2) return false;
+    const elapsed = tick - cue.start;
+    const phase = Math.floor(elapsed / 180) % 4;
+    return elapsed >= 3 * 420 && elapsed <= CUE_MS && (phase === 1 || phase === 2);
+  }
+  /** 这次插入最深到哪（头部 y）：硬挤时进不到底，松脱时够不到宫颈口 */
+  function reachOf() {
+    const { tract, penetrationFit: fit } = layout;
+    const length = tract.canalLength ?? 22;
+    if (!fit || fit.tier === 0) return tract.canalTop;
+    if (fit.direction > 0) return tract.canalTop + (fit.tier >= 4 ? length - 2 : fit.tier === 3 ? Math.round(length / 2) : 0);
+    // 鞘比剑大：剑根留在入口，头只到它自己的长度够得着的地方
+    return Math.max(tract.canalTop, tract.canalTop + length - fit.swordLength);
+  }
+
+  /** condom=true 时外面再包一层膜，前端留储精囊；回传头部 y，供储精囊鼓胀与破口定位。宽度照契合（剑对鞘的落差） */
+  function shaft(tip, condom = false, sway = 0) {
+    const { womb, tract, penetrationFit: fit } = layout;
+    // 尺寸有落差时剑照它自己的长度画（长度跟着粗细等比例）：大的伸出画布下缘，小的整支都在画面里；相称时照旧只画在产道里
+    const mismatch = Boolean(fit && fit.tier > 0);
+    const headY = Math.min(Math.min(120, tract.canalBottom) - (mismatch ? 2 : 5), Math.round(Math.max(tip, reachOf())));
+    const bottom = mismatch ? Math.min(UTERUS_CANVAS.height, headY + fit.swordLength) : Math.min(120, tract.canalBottom);
+    const width = fit?.swordWidth ?? 9;
+    const half = (width - 1) >> 1;
+    const cx = womb.cx + sway;
+    if (fit && fit.direction < 0 && fit.tier >= 4) {
+      // 体型悬殊（鞘大得多）：像一根细针，碰不到任何一边的壁
+      pen.px(cx, headY + 1, 1, bottom - headY - 1, P.wallLight);
+      pen.px(cx, headY, 1, 1, P.shine);
+      return headY;
+    }
+    pen.px(cx - half, headY + 2, width, bottom - headY - 2, P.wallDark);
+    if (width > 2) pen.px(cx - half + 1, headY + 3, width - 2, bottom - headY - 3, P.wallLight);
+    pen.ellipse(cx, headY + 2, half, Math.max(1, Math.min(3, half)), P.fetusLight);
+    // 头顶的高光置中（宽度一律是奇数，左右对称）
+    if (half >= 2) pen.px(cx - 1, headY, 3, 1, P.shine); else pen.px(cx, headY, 1, 1, P.shine);
+    if (condom && width !== 9) {
+      // 尺寸不相称时套子照剑的宽度贴着画
+      pen.px(cx - half - 1, headY + 3, 1, bottom - headY - 3, condomTones().latex);
+      pen.px(cx + half + 1, headY + 3, 1, bottom - headY - 3, condomTones().latex);
+      pen.ring(cx, headY + 2, half + 1, Math.max(2, Math.min(4, half + 1)), condomTones().latex, [200, 340]);
+      teat(headY, 0);
+      return headY;
+    }
     if (condom) {
       pen.px(womb.cx - 5, headY + 3, 1, bottom - headY - 3, condomTones().latex);
       pen.px(womb.cx + 5, headY + 3, 1, bottom - headY - 3, condomTones().latex);
@@ -1339,11 +1450,57 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     if (cue.type === 'rupture') drawRupture(elapsed);
     else if (cue.type === 'insert' || cue.type === 'insertCondom') {
       const phase = Math.floor(elapsed / 180) % 4;
-      shaft(tract.canalTop + (phase === 1 || phase === 2 ? 0 : 8), cue.type === 'insertCondom');
-      if (phase === 1 || phase === 2) { pen.px(womb.cx - 8, tract.canalTop + 3, 2, 1, P.shine); pen.px(womb.cx + 7, tract.canalTop + 3, 2, 1, P.shine); }
+      const fit = layout.penetrationFit;
+      const condom = cue.type === 'insertCondom';
+      const length = tract.canalLength ?? 22;
+      if (!fit || fit.tier === 0) {
+        shaft(tract.canalTop + (phase === 1 || phase === 2 ? 0 : 8), condom);
+        if (phase === 1 || phase === 2) { pen.px(womb.cx - 8, tract.canalTop + 3, 2, 1, P.shine); pen.px(womb.cx + 7, tract.canalTop + 3, 2, 1, P.shine); }
+      } else if (fit.direction > 0) {
+        // 硬挤：略有落差先在入口顿一下；明显不合分三段挤进去；极不相称只进一半、冒汗；体型悬殊进不去，顶在入口
+        const entrance = tract.canalTop + length - 6;
+        const deepest = reachOf();
+        let tip;
+        if (fit.tier === 1) tip = elapsed < 500 ? entrance : deepest + (phase === 1 || phase === 2 ? 0 : 8);
+        else if (fit.tier >= 4) tip = entrance + (phase === 1 || phase === 2 ? 0 : 2);
+        else { const steps = 3; const step = Math.min(steps, Math.floor(elapsed / 420)); tip = step < steps ? entrance + (deepest - entrance) * step / steps : deepest + (phase === 1 || phase === 2 ? 0 : 3); }
+        shaft(tip, condom);
+        if (fit.tier >= 4) {
+          // 进不去：头顶在入口外，入口被顶得往外翻开（最下面四列的壁一列比一列往外）
+          const mouth = Math.min(119, tract.canalBottom) - 1;
+          const loose = tract.canalLoose || 0;
+          for (let k = 0; k < 4; k += 1) {
+            const y = mouth - 3 + k;
+            const out = k + 1;
+            pen.px(womb.cx - 3 - out, y, 6 + loose + 2 * out, 1, P.cavityDeep);
+            pen.px(womb.cx - 5 - out, y, 2, 1, P.wall);
+            pen.px(womb.cx + 3 + loose + out, y, 2, 1, P.wall);
+            pen.px(womb.cx - 4 - out, y, 1, 1, P.wallLight);
+            pen.px(womb.cx + 3 + loose + out, y, 1, 1, P.wallLight);
+          }
+          shaft(tip, condom);
+        }
+        if (fit.tier >= 3) {
+          // 受压线：剑两侧各三道短横线，一抖一抖
+          const side = ((fit.swordWidth - 1) >> 1) + 3;
+          const y0 = Math.min(UTERUS_CANVAS.height - 9, Math.round(tip) + 3);
+          for (let k = 0; k < 3; k += 1) { pen.px(womb.cx + side + (phase % 2), y0 + k * 3, 2, 1, P.shine); pen.px(womb.cx - side - 1 - (phase % 2), y0 + k * 3, 2, 1, P.shine); }
+        }
+        if (fit.tier === 2 && Math.round(tip) === deepest) pen.px(womb.cx - 2, tract.canalTop - 1, 5, 1, P.shine);   // 顶到宫颈口
+      } else {
+        // 松脱：两侧留缝，够不到宫颈口；明显不合起在里面左右晃；极不相称以上头顶冒问号
+        const sway = fit.tier >= 2 ? (phase === 1 ? -1 : phase === 3 ? 1 : 0) : 0;
+        shaft(reachOf() + (phase === 1 || phase === 2 ? 0 : 6), condom, sway);
+        if (fit.tier >= 3) {
+          const qx = womb.cx + 7;
+          const qy = tract.canalTop + 1;
+          pen.px(qx, qy, 3, 1, P.shine); pen.px(qx + 2, qy + 1, 1, 1, P.shine); pen.px(qx + 1, qy + 2, 1, 1, P.shine); pen.px(qx + 1, qy + 4, 1, 1, P.shine);
+        }
+      }
     } else if (cue.type === 'ejaculate') {
-      shaft(tract.canalTop + 1);
-      spray(tract.canalTop + 2, elapsed);
+      // 射精从头部所在的位置出来：进不到底、够不到宫颈口时，就从停住的地方往上喷
+      const headY = shaft(tract.canalTop + 1);
+      spray(headY + 1, elapsed);
     } else if (cue.type === 'ejaculateCondom') {
       // 一股一股积进储精囊，满了在膜里摊开；宫腔里不出现任何飞沫
       const headY = shaft(tract.canalTop + 4, true);
@@ -1384,7 +1541,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   }
 
   function needsTicking() {
-    return Boolean(cue) || (wantsMotion() && visible);
+    return Boolean(cue) || stretch.amount > 0 || (wantsMotion() && visible);
   }
 
   function loop() {
@@ -1439,6 +1596,13 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       if (UTERUS_SILENT_CUES.has(type)) return false;
       if (reducedMotion && !userRequested) return false;
       cue = { type, start: performance.now() };
+      // 剑比鞘大的插入把产道撑开，演完后慢慢缩回
+      const fit = layout?.penetrationFit;
+      if ((type === 'insert' || type === 'insertCondom') && fit && fit.direction > 0 && fit.tier >= 2) {
+        stretch.amount = fit.tier === 3 ? 2 : 1;
+        if (fit.tier >= 4) stretch.amount = 0;   // 体型悬殊进不去，只有入口被撑开
+        stretch.endAt = cue.start + CUE_MS;
+      }
       kick();
       return true;
     },

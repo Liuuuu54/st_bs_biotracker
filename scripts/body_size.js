@@ -260,9 +260,9 @@ export function getSheathSize(female, { offset = 0, stretch = 0 } = {}) {
  * 回传 null 表示资料不足（依个体又没给体型），不写体型差。
  */
 export function describeBodySizeFit({ female, male, sizeBridge = false, femaleStretch = 0, femaleOffset = 0, maleOffset = 0 } = {}) {
-  if (sizeBridge) return { label: '恰好契合', gap: 0, bridged: true, text: '体型契合：本次以魔法、变形等手段消弭体型差，恰好契合。' };
+  if (sizeBridge) return { label: '恰好契合', gap: 0, diff: 0, bridged: true, text: '体型契合：本次以魔法、变形等手段消弭体型差，恰好契合。' };
   if (female?.kind === 'variable' || male?.kind === 'variable') {
-    return { label: '恰好契合', gap: 0, variable: true, text: '体型契合：可变体型配合对象，恰好契合。' };
+    return { label: '恰好契合', gap: 0, diff: 0, variable: true, text: '体型契合：可变体型配合对象，恰好契合。' };
   }
   if (female?.kind !== 'fixed' || male?.kind !== 'fixed') return null;
   // 经产扩张只加在鞘那一侧（见 intimacy.js 的 getSheathStretch）
@@ -273,6 +273,8 @@ export function describeBodySizeFit({ female, male, sizeBridge = false, femaleSt
   const maleSize = getSwordSize(male, swordOffset);
   const diff = maleSize - femaleSize;
   const gap = Math.round(Math.abs(diff) * 10) / 10;
+  // 带正负号的差距（剑 − 鞘）：正是剑大、负是鞘大；子宫图的插入画面据此分硬挤与松脱
+  const signed = Math.round(diff * 10) / 10;
   const band = BODY_SIZE_FIT_BANDS.find((item) => gap < item.max);
   // 给模型看的是文字：鞘偏浅、剑偏大，不写偏移数字
   const femaleNotes = [
@@ -280,7 +282,7 @@ export function describeBodySizeFit({ female, male, sizeBridge = false, femaleSt
     ...(stretch > 0 ? [`含经产扩张 +${Math.round(stretch * 1000) / 1000}`] : []),
   ];
   const sizes = `卵方 ${formatLevel(femaleSize)}${female.altForm ? '（变化态）' : ''}${femaleNotes.length > 0 ? `，${femaleNotes.join('，')}` : ''}，精方 ${formatLevel(maleSize)}${male.altForm ? '（变化态）' : ''}${swordOffset !== 0 ? `，剑${describeSwordOffset(swordOffset)}` : ''}`;
-  if (!band.maleLarger) return { label: band.label, gap, text: `体型契合：${band.label}（${sizes}）。` };
+  if (!band.maleLarger) return { label: band.label, gap, diff: signed, text: `体型契合：${band.label}（${sizes}）。` };
   const detail = diff > 0 ? `精方较大，${band.maleLarger}` : `卵方较大，${band.femaleLarger}`;
-  return { label: band.label, gap, text: `体型契合：${band.label}，${detail}（${sizes}）。只影响叙述，不限制交合与受孕。` };
+  return { label: band.label, gap, diff: signed, text: `体型契合：${band.label}，${detail}（${sizes}）。只影响叙述，不限制交合与受孕。` };
 }

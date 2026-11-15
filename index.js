@@ -115,8 +115,15 @@ import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldV
 import { getAllocationAlpha, getAllocationText, getBodyBaseline, getBuildText, getCupLabel, getHipText, hasHumanFigure, shiftCareTarget } from './scripts/maternal_body.js';
 import { FETAL_EVENT_KINDS, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, describeCognitionSummary, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, getPrenatalCareKey, normalizeFetalEventList, PRENATAL_CARE_LEVELS } from './scripts/fetal_health.js';
 import { PSY_AXIS_LABELS } from './scripts/registry_psy_config.js';
-import { computeUterusLayout, getFetusSpriteSpec } from './scripts/uterus_layout.js';
-import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand } from './scripts/uterus_render.js';
+import { computeUterusLayout, getFetusSpriteSpec, getUterusGaugeColumns } from './scripts/uterus_layout.js';
+import { getBodySizeSigma } from './scripts/body_size.js';
+import { getFetalBulkRatioByRace } from './scripts/race_config.js';
+import { createBellyAnimator } from './scripts/belly_anim.js';
+import { loadBellyData } from './scripts/belly_data.js';
+import { createBellyLayout } from './scripts/belly_layout.js';
+import { applyBellyInkBrush, createBellyPainter, createBellyThemePalette } from './scripts/belly_render.js';
+import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
+import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
 import { appendSkillHistory, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
 import {
@@ -2784,6 +2791,25 @@ function formatLevelShort(value) {
   return `${Math.round(value * 10) / 10} 级`;
 }
 
+/** 鞘的级数（子宫图量尺旁的数字）；体型可变或未知时回传 null */
+function getSheathLevel(base = {}, experience = {}) {
+  const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
+  if (resolved.kind !== 'fixed') return null;
+  return getSheathSize(resolved, { offset: normalizeSheathOffset(base.sheathOffset), stretch: getSheathStretch(experience) });
+}
+
+/**
+ * 子宫图画阴道用：鞘相对她自己体型的级数（高挑的人相对偏短、娇小的偏长，鞘偏移与经产扩张照加），
+ * 与是否经产松宽。体型可变或未知时照相称画
+ */
+function getSheathShape(base = {}, experience = {}) {
+  const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
+  const stretch = getSheathStretch(experience);
+  if (resolved.kind !== 'fixed') return { relative: 0, loose: stretch > 0 };
+  const sheath = getSheathSize(resolved, { offset: normalizeSheathOffset(base.sheathOffset), stretch });
+  return { relative: sheath - resolved.size, loose: stretch > 0 };
+}
+
 /**
  * 鞘（有效）：种族平均 ＋ 0.25 ×（个体 − 平均）＋ 鞘偏移 ＋ 经产扩张。
  * 回传 { value, title }，value 只写级数，和体型并在同一行；可变或未知回 null
@@ -4708,11 +4734,52 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       pregnantBlocks: parseDescriptionBlocks(descriptions.pregnantDescription, minutesPassed),
       fetalEvents: buildFetalEventTimelineView(pregnant),
       womb: computeUterusLayout(profile, {
+        sheath: getSheathShape(base, experience),
         libidoCap: getLibidoCap(stage, profile),
         pressureCap: getUterinePressureCap(stage, profile),
         stageProgress: getStageProgressRatio(profile),
       }),
       visualCue: profile.visualCue || null,
+      // 鞘的级数标在子宫图旁；插入中另附这次的体型契合
+      sheathLabel: formatSheathLabel(base, experience),
+      sheathValue: getSheathLevel(base, experience),
+      fitLabel: base.penetrationState && base.penetrationState !== 'idle' ? String(base.penetrationFit?.label || '') : '',
+      // 孕体特写的输入：身体量一律用既有函式的结果，换算在 belly_state.js
+      closeup: {
+        drawable: hasHumanFigure(base),
+        // 体型等级（量尺旁的数字）；可变或未知时没有
+        bodySizeValue: (() => { const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize }); return resolved.kind === 'fixed' ? resolved.size : null; })(),
+        sigma: getBodySizeSigma(base),
+        body: getCurrentBody(profile),
+        baseline: getBodyBaseline(base),
+        bellySize: getBellySize(profile),
+        stage,
+        laborPhase: pregnant.laborPhase || null,
+        laborEffort: pregnant.laborEffort || 'rest',
+        pushFatigue: Number(pregnant.pushFatigue) || 0,
+        stageProgress: getStageProgressRatio(profile),
+        effectiveDays: isPregnantStage(stage) || stage === '产兆前驱' || LABOR_STAGES.includes(stage) ? Number(pregnant.effectivePregnantDays) || 0 : 0,
+        births: (Number(experience.naturalBirthExperience) || 0) + (Number(experience.cesareanExperience) || 0),
+        stats: {
+          vitality: { value: Number(base.vitality) || 0, cap: VITALITY_CAPS[Math.max(1, Math.min(7, Math.round(Number(base.vitalityLevel) || 4)))] || 125 },
+          libido: { value: Number(base.libido) || 0, cap: getLibidoCap(stage, profile) },
+          stress: { value: Number(base.psyStress) || 0, cap: PSY_STRESS_CAPS[Math.max(1, Math.min(7, Math.round(Number(base.psyStressLevel) || 4)))] || 110 },
+          uterine: { value: Number(base.uterinePressure) || 0, cap: getUterinePressureCap(stage, profile) },
+        },
+        needs: getBellyNeeds(profile),
+        outfit: outfitView,
+        fetuses: (isPregnantStage(stage) || stage === '产兆前驱' || LABOR_STAGES.includes(stage) ? rawFetuses : [])
+          .filter((fetus) => fetus && !fetus.pendingImplantation && isFetusKnownToCharacter(fetus))
+          .map((fetus) => ({
+            embryoId: fetus.embryoId,
+            ownAge: Math.max(0, (Number(pregnant.effectivePregnantDays) || 0) - (Number(fetus.conceivedAtDays) || 0)),
+            weight: Number(fetus.weight) || 1,
+            bulkRatio: getFetalBulkRatioByRace(fetus.race, fetus.bloodline),
+            healthRatio: getFetalHealthRatio(fetus),
+            // 入盆的胎儿不再自由活动
+            canMove: !(Number(fetus.descentStage) >= 0),
+          })),
+      },
       showPregnantFields: isPregnantStage(stage),
       showLaborFields: LABOR_STAGES.includes(stage),
       showLaborPainBadge: stage === '产兆前驱' || LABOR_STAGES.includes(stage),
@@ -4958,6 +5025,7 @@ function renderTrackOverview(viewModel) {
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">种族</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.raceLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">血脉</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bloodlineLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">年龄</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.age ?? '未知')}</span></div>
+        ${!hasBellyCloseup(viewModel) && viewModel.overview.bodySizeLabel ? `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodySizeLabel)}${viewModel.overview.altFormBodySizeLabel ? `（变化态 ${escapeHtml(viewModel.overview.altFormBodySizeLabel)}）` : ''}</span></div>` : ''}
       </div>
     </div>
     <div class="bs-bt-track-section bs-bt-track-stage-progress${stageSectionClass}"${stageSectionStyle}>
@@ -4981,27 +5049,27 @@ function renderTrackOverview(viewModel) {
   `;
 }
 
-/** 描述页的「身体」：体型与鞘、身材（孕期变化写在同一格第二行）、孕肚大小；数值与倾向不上画面 */
-function renderBodyDescriptionSection(viewModel) {
+/** 这个角色有没有孕体特写可看：人形（或半人形）而且设定没关 */
+function hasBellyCloseup(viewModel) {
+  return bellyCloseupEnabled && viewModel?.pregnancy?.closeup?.drawable !== false;
+}
+
+/** 描述页最上面的孕体特写（身体侧面像素画）。非人形、或设定里关掉时不放 */
+function renderBellyCloseupSection(viewModel) {
+  if (!hasBellyCloseup(viewModel)) return '';
   const overview = viewModel.overview || {};
-  const row = (label, valueHtml, title = '') => `<div class="bs-bt-track-meta-row"${title ? ` title="${escapeHtml(title)}"` : ''}><span class="bs-bt-track-meta-label">${escapeHtml(label)}</span><span class="bs-bt-track-meta-value">${valueHtml}</span></div>`;
-  const figure = overview.bodyFigure || {};
-  const belly = Number(overview.bellySize) || 0;
-  // 孕肚满格 15：10 是一般衣服的极限，特制孕妇用品撑得到 15
-  const bellyNote = belly > 10 ? '·一般衣服包不住' : '';
-  const rows = [
-    row(overview.sheathLabel ? '体型／鞘' : '体型', escapeHtml(overview.sheathLabel ? `${overview.bodySizeLabel}·鞘${overview.sheathLabel.value}` : overview.bodySizeLabel)),
-    overview.altFormBodySizeLabel ? row('变化态体型', escapeHtml(overview.altFormBodySizeLabel)) : '',
-    row('身材', `${escapeHtml(figure.value || '')}${figure.change ? `<br>（孕期 ${escapeHtml(figure.change)}）` : ''}`, figure.before ? `孕前：${figure.before}` : ''),
-    belly > 0 ? row('孕肚', escapeHtml(`${formatFixedDisplay(belly, 1)}／15${bellyNote}`), '一般衣服撑到 10，特制孕妇用品撑到 15') : '',
-  ].filter(Boolean);
-  return `<div class="bs-bt-track-section"><div class="bs-bt-track-section-title">身体</div><div class="bs-bt-track-meta">${rows.join('')}</div></div>`;
+  // 体型标在画面角落；身材、孕期变化、孕肚大小改看像素画（文字只留给模型）
+  // 左侧一支量尺（画在画布里）标出身体的高度，旁边的数字是体型等级；有变化态时提示里写
+  const value = viewModel.pregnancy?.closeup?.bodySizeValue;
+  const hint = [overview.bodySizeLabel ? `体型 ${overview.bodySizeLabel}` : '', overview.altFormBodySizeLabel ? `变化态 ${overview.altFormBodySizeLabel}` : ''].filter(Boolean).join('；');
+  const label = Number.isFinite(value) ? `<span class="bs-bt-belly-label" title="${escapeHtml(hint)}">${escapeHtml(formatFixedDisplay(value, 1))}</span>` : '';
+  return `<div class="bs-bt-track-section bs-bt-belly-section"><div class="bs-bt-belly" data-belly-host><div class="bs-bt-belly-slot" data-belly-slot></div>${label}</div></div>`;
 }
 
 function renderTrackDescription(viewModel) {
   const normalBlocks = Array.isArray(viewModel.description?.normalBlocks) ? viewModel.description.normalBlocks : [];
   return `
-    ${renderBodyDescriptionSection(viewModel)}
+    ${renderBellyCloseupSection(viewModel)}
     ${renderWardrobeDescriptionSection(viewModel)}
     ${renderDescriptionGroup('基本描述', normalBlocks)}
   `;
@@ -5398,6 +5466,22 @@ function renderWombFetusCard(item, index, data) {
     </details>`;
 }
 
+/** 子宫图两支量尺中间的数字：产道那支是鞘的级数，子宫那支是精液容量；插入中另在产道下方写这次的体型契合 */
+function renderSheathGauge(data) {
+  if (!Number.isFinite(data?.sheathValue) || !data?.womb?.tract) return '';
+  const { womb, tract } = data.womb;
+  // 两支量尺都画在画布里（uterus_render.js 的 drawGauges），数字放在量尺中间的空位；画布放大 2 倍
+  const at = (x, y) => `left:calc(50% - 96px + ${Math.round(x * 2)}px);top:${Math.round(y * 2)}px;`;
+  const gauge = getUterusGaugeColumns(data.womb);
+  // 提示只说鞘有多大、偏深偏浅，不写算式
+  const hint = `鞘的大小：${formatFixedDisplay(data.sheathValue, 1)} 级${data.sheathLabel?.value ? `，${data.sheathLabel.value}` : ''}`;
+  const sheath = `<span class="bs-bt-womb-label" title="${escapeHtml(hint)}" style="${at(gauge.sheath + 0.5, tract.canalTop + (tract.canalBottom - tract.canalTop) / 2)}">${escapeHtml(formatFixedDisplay(data.sheathValue, 1))}</span>`;
+  // 上面那支标子宫本身：现在装得下多少精液（随体型、周期与孕程变）
+  const capacity = Number.isFinite(data.womb.semenCapacity) ? `<span class="bs-bt-womb-label" title="精液容量" style="${at(gauge.womb + 0.5, womb.top + (womb.bottom - womb.top) / 2)}">${escapeHtml(String(Math.round(data.womb.semenCapacity)))}</span>` : '';
+  const fit = data.fitLabel ? `<span class="bs-bt-womb-label bs-bt-womb-fit" style="${at(gauge.sheath + 0.5, tract.canalBottom + 4)}">${escapeHtml(data.fitLabel)}</span>` : '';
+  return sheath + capacity + fit;
+}
+
 function renderWombSection(data, badge) {
   const cards = data.showPregnantFields ? data.fetuses : [];
   const cue = data.visualCue;
@@ -5412,7 +5496,7 @@ function renderWombSection(data, badge) {
     : '';
   return `<div class="bs-bt-track-section bs-bt-womb-section">
       ${(Array.isArray(badge) ? badge.length > 0 : Boolean(badge)) ? `<div class="bs-bt-track-section-title">${renderTrackTitle('子宫', badge)}</div>` : ''}
-      <div class="bs-bt-womb" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${toggle}${replay}${panel}</div>
+      <div class="bs-bt-womb" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${renderSheathGauge(data)}${toggle}${replay}${panel}</div>
       ${renderWombAlert(data)}
     </div>`;
 }
@@ -5484,6 +5568,190 @@ function playWombThumbEmote(embryoId, affinity) {
   step();
 }
 
+/** 孕体特写要的各项需求（占上限的比例由 belly_state 换算）；代谢免疫与衍生类型免除的项目给 null */
+function getBellyNeeds(profile = {}) {
+  if (profile?.immune?.metabolism) return { hunger: null, sleep: null, excretion: null, milk: null, odor: null };
+  const exempt = new Set(profile?.base?.derivedType ? getDerivedTypeMetabolismExemptions(profile.base.derivedType) : []);
+  const pregnant = profile?.pregnant || {};
+  const read = (key) => (exempt.has(key) ? null : (({ value, cap }) => ({ value, cap }))(normalizeMetabolismNeed(key, profile.metabolism, pregnant.blockage, pregnant.acceleration, pregnant.expansion)));
+  return { hunger: read('hunger'), sleep: read('sleep'), excretion: read('excretion'), milk: read('milk'), odor: read('odor') };
+}
+
+// ---- 孕体特写 ----
+const BELLY_FRAME_MS = 120;
+/** 设定页的「孕体特写」开关（预设开）；载入与储存设定时更新 */
+let bellyCloseupEnabled = true;
+let bellyCanvas = null;
+let bellyContext = null;
+let bellyEngine = null;        // { layout, painter, animator }，资料载入后才有
+let bellyEnginePromise = null;
+let bellyTimer = 0;
+let bellyState = null;
+// 这次插入的体型契合（子宫图那份）：抽送顶不顶得到宫颈口、会不会惊动胎儿看它
+let bellyFit = null;
+let bellyAnimated = true;
+let bellyPaletteKey = '';
+/**
+ * 量尺数字的颜色：用画布的刻度色；刻度色和画布底色太接近时（对比不到 4.5），
+ * 往白或黑（哪边离底色远就往哪边）调到看得清楚为止。色相仍是刻度那个颜色。
+ */
+function getGaugeLabelColor(tick, background) {
+  const parse = (hex) => (/^#[0-9a-f]{6}$/i.test(String(hex || '')) ? [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)) : null);
+  const fg = parse(tick);
+  const bg = parse(background);
+  if (!fg || !bg) return tick || '';
+  const luminance = (rgb) => rgb.map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+  const contrast = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05);
+  const toward = luminance(bg) < 0.5 ? 255 : 0;
+  let color = fg;
+  for (let step = 1; step <= 10 && contrast(color, bg) < 4.5; step += 1) color = fg.map((v) => Math.round(v + (toward - v) * step / 10));
+  return `#${color.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+let bellyPalette = null;
+// 刻度与背景的颜色（小端 RGBA 的整数，直接和像素比）
+let bellyTick = 0;
+let bellyBackground = 0;
+const hexToPixel = (hex) => (/^#[0-9a-f]{6}$/i.test(String(hex || '')) ? ((255 << 24) | (parseInt(hex.slice(5, 7), 16) << 16) | (parseInt(hex.slice(3, 5), 16) << 8) | parseInt(hex.slice(1, 3), 16)) >>> 0 : 0);
+const bellyReducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+
+/** 第一次要画特写时才抓资料档与手修的修正点（不拖慢插件载入） */
+function loadBellyEngine() {
+  bellyEnginePromise ||= (async () => {
+    const data = await loadBellyData(new URL('./assets/belly/closeup-data.bin', import.meta.url).href);
+    let patches = [];
+    try {
+      const response = await fetch(new URL('./assets/belly/closeup-patches.json', import.meta.url).href);
+      if (response.ok) patches = (await response.json()).patches || [];
+    } catch { /* 没有修正点就不套 */ }
+    const layout = createBellyLayout(data, { patches });
+    const painter = createBellyPainter(layout);
+    bellyEngine = { layout, painter, animator: createBellyAnimator(layout, painter) };
+    return bellyEngine;
+  })().catch((error) => { bellyEnginePromise = null; throw error; });
+  return bellyEnginePromise;
+}
+
+function drawBellyFrame(still) {
+  if (!bellyEngine || !bellyCanvas || !bellyContext) return;
+  const frame = bellyEngine.animator.tick(performance.now(), { still });
+  // 身体贴底、上方是空的：画布只取身体所在的那几列（取景高度），不留上面的空白
+  const rows = Math.max(1, Math.min(frame.height, bellyEngine.animator.scene.layers.view.h));
+  const top = frame.height - rows;
+  if (bellyCanvas.height !== rows || bellyCanvas.width !== frame.width) { bellyCanvas.width = frame.width; bellyCanvas.height = rows; bellyCanvas.style.aspectRatio = `${frame.width} / ${rows}`; }
+  const bytes = new Uint8ClampedArray(frame.pixels.buffer.slice(top * frame.width * 4, frame.height * frame.width * 4));
+  // 右边一排刻度（与子宫图同款：每 8 格一道，长短相间）、左边一支量尺；只画在背景上，身体盖得到的地方不画
+  if (bellyTick) {
+    const view = new Uint32Array(bytes.buffer);
+    const background = view[0] === bellyBackground ? bellyBackground : null;
+    if (background !== null) {
+      // 左侧的量尺：一条直线加上下两端的横杠，中间留一段空给数字
+      const gap = [Math.floor(rows / 2) - 7, Math.floor(rows / 2) + 6];
+      for (let y = 2; y < rows - 2; y += 1) {
+        const cap = y === 2 || y === rows - 3;
+        if (!cap && y >= gap[0] && y <= gap[1]) continue;
+        for (let x = cap ? 2 : 4; x <= (cap ? 6 : 4); x += 1) { const at = y * frame.width + x; if (view[at] === background) view[at] = bellyTick; }
+      }
+      for (let k = 0; k * 8 + 5 < rows; k += 1) {
+        const y = rows - 5 - k * 8;
+        const length = k % 2 ? 2 : 4;
+        for (let d = 0; d < length; d += 1) {
+          const at = y * frame.width + frame.width - 3 - d;
+          if (view[at] === background) view[at] = bellyTick;
+        }
+      }
+    }
+  }
+  // 水墨主题：与子宫图同一套笔触处理
+  if (bellyPalette?.brush) applyBellyInkBrush(bytes, frame.width, rows, bellyPalette.brush);
+  bellyContext.putImageData(new ImageData(bytes, frame.width, rows), 0, 0);
+}
+
+/** 动画排程：画布在页面上、分页看得见、没关动画时每 120 毫秒一格；否则只画静止的一格 */
+function runBellyLoop() {
+  if (bellyTimer) clearTimeout(bellyTimer);
+  bellyTimer = 0;
+  if (!bellyEngine || !bellyCanvas?.isConnected) return;
+  const moving = bellyAnimated && !bellyReducedMotion.matches && document.visibilityState === 'visible';
+  drawBellyFrame(!moving && !bellyEngine.animator.busy());
+  if (moving || bellyEngine.animator.busy()) bellyTimer = setTimeout(runBellyLoop, BELLY_FRAME_MS);
+}
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') runBellyLoop(); });
+
+/** 画面事件（假宫缩、插入…）在特写上要演的动作 */
+function playBellyCue(cue) {
+  const type = cue?.type;
+  const action = getBellyCueAction(type);
+  if (!action || !bellyEngine || !bellyState) return false;
+  const options = { ...(action.options || {}) };
+  if (action.pair) {
+    // 事件记了是哪两胎就照着演（动手的在前）；旧事件没记、或那两胎已经不会动时，从能动的胎里随机挑两胎
+    const named = resolveBellyCuePair(cue, bellyState.fetuses);
+    if (named) Object.assign(options, named);
+    const movable = (bellyState.fetuses || []).map((fetus, index) => (fetus.canMove === false ? -1 : index)).filter((index) => index >= 0);
+    if (!named) {
+      if (movable.length < 2) return false;
+      const first = Math.floor(Math.random() * movable.length);
+      const second = (first + 1 + Math.floor(Math.random() * (movable.length - 1))) % movable.length;
+      [options.actor, options.target] = [movable[first], movable[second]];
+    }
+  }
+  if (action.trigger === 'thrust') options.reach = getBellyThrustReach(bellyFit);
+  const done = bellyEngine.animator.trigger(action.trigger, { ...options, now: performance.now() });
+  runBellyLoop();
+  return done;
+}
+
+/** 追踪页重绘后，把特写画布换进同尺寸占位并套上当下的状态 */
+function mountBellyView(ctx, content, viewModel) {
+  const host = content.querySelector('[data-belly-host]');
+  if (!host) return;
+  const settings = getSettings(ctx);
+  bellyAnimated = settings.wombAnimation !== false;
+  bellyState = buildBellyCloseupState(viewModel.pregnancy?.closeup);
+  bellyFit = viewModel.pregnancy?.womb?.penetrationFit || null;
+  if (!bellyState) return;
+  if (!bellyCanvas) {
+    bellyCanvas = document.createElement('canvas');
+    bellyCanvas.className = 'bs-bt-belly-canvas';
+    bellyCanvas.setAttribute('role', 'img');
+    bellyCanvas.width = 136;
+    bellyCanvas.height = 99;
+    bellyContext = bellyCanvas.getContext('2d');
+    // 按住画面（滑鼠或手指）时浮现孕前的身体，放开就收起来
+    const hold = (shown) => () => { bellyEngine?.animator.showGhost(shown); runBellyLoop(); };
+    bellyCanvas.addEventListener('pointerdown', hold(true));
+    for (const type of ['pointerup', 'pointerleave', 'pointercancel']) bellyCanvas.addEventListener(type, hold(false));
+    bellyCanvas.addEventListener('contextmenu', (event) => event.preventDefault());
+  }
+  bellyCanvas.setAttribute('aria-label', `${viewModel.name}的身体特写`);
+  const slot = host.querySelector('[data-belly-slot]');
+  if (slot) slot.replaceWith(bellyCanvas);
+  else host.prepend(bellyCanvas);
+  // 色表跟着主题：单色、半彩（照子宫图的专属配色）或全彩（写实肤色），分类见 belly_render.js 的 BELLY_THEME_MODES
+  const themeColors = readWombThemeColors(settings.theme);
+  const paletteKey = JSON.stringify(themeColors);
+  if (paletteKey !== bellyPaletteKey) { bellyPaletteKey = paletteKey; const womb = getUterusPalette(themeColors); bellyPalette = createBellyThemePalette(womb, { theme: themeColors.name }); document.getElementById('bs-biotracker-settings')?.style.setProperty('--bsbt-gauge-color', getGaugeLabelColor(womb.tick, womb.bg)); bellyTick = hexToPixel(womb.tick); bellyBackground = hexToPixel(bellyPalette.bg); }
+  const state = bellyState;
+  loadBellyEngine().then((engine) => {
+    if (state !== bellyState) return;   // 等资料的时候页面又重绘过
+    engine.animator.setState(state, bellyPalette);
+    runBellyLoop();
+    // 画面事件：特写在描述页，与子宫图不同页，所以自己记播到第几号；换到描述页时还没演过的才演
+    const cue = viewModel.pregnancy?.visualCue;
+    if (cue?.seq && getBellyCueAction(cue.type)) {
+      const key = `belly::${getChatKey(ctx)}::${viewModel.name}`;
+      if (!(Number(readSeenWombCues()[key]) >= cue.seq)) {
+        markWombCueSeen(key, cue.seq);
+        if (!bellyReducedMotion.matches) playBellyCue(cue);
+      }
+    }
+  }).catch((error) => {
+    console.warn('[BS BioTracker] 孕体特写载入失败', error);
+    host.classList.add('is-failed');
+  });
+}
+
 /** 追踪页重绘后，把子宫画布换进同尺寸占位、画胎儿缩图与性别图标，并在有新事件时播一次特写 */
 function mountWombView(ctx, content, viewModel) {
   const host = content.querySelector('[data-womb-host]');
@@ -5513,6 +5781,8 @@ function mountWombView(ctx, content, viewModel) {
     }
     wombRenderer.setAnimated(animated);
   }
+  // 量尺旁的数字用子宫图的刻度色（各主题的画布底色不同，照介面文字色会看不到）
+  { const womb = getUterusPalette(themeColors); document.getElementById('bs-biotracker-settings')?.style.setProperty('--bsbt-gauge-color', getGaugeLabelColor(womb.tick, womb.bg)); }
   const layout = viewModel.pregnancy.womb;
   wombCanvas.setAttribute('aria-label', layout.summary);
   wombRenderer.setLayout(layout);
@@ -8015,6 +8285,7 @@ function renderStatusPanel(ctx) {
   trackContentRenderCache.set(content, { viewKey, markup });
   restoreCognitionTimeline(content, owner);
   fitSkillNumerals(content);
+  mountBellyView(ctx, content, viewModel);
   mountWombView(ctx, content, viewModel);
   bindDebugPregnancyDraftControls(content, () => renderStatusPanel(ctx));
   content.querySelectorAll('[data-card-nav]').forEach((node) =>
@@ -9253,6 +9524,8 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-tracker-token-budget', settings.trackerTokenBudget);
   setValue('bs-bt-luker-multi-agent-manual-only', settings.lukerMultiAgentManualOnly);
   setValue('bs-bt-womb-animation', settings.wombAnimation !== false);
+  setValue('bs-bt-belly-closeup', settings.bellyCloseup !== false);
+  bellyCloseupEnabled = settings.bellyCloseup !== false;
   setValue('bs-bt-wardrobe-system-enabled', isWardrobeSystemEnabled(settings));
   setValue('bs-bt-skill-system-enabled', isSkillSystemEnabled(settings));
   applyExtensionSystemVisibility(settings);
@@ -9836,6 +10109,8 @@ function readSettingsFromForm(ctx) {
   settings.trackerTokenBudget = Math.max(500, Math.min(100000, Math.floor(Number(getValue('bs-bt-tracker-token-budget')) || 4096)));
   settings.lukerMultiAgentManualOnly = Boolean(document.getElementById('bs-bt-luker-multi-agent-manual-only')?.checked);
   settings.wombAnimation = Boolean(document.getElementById('bs-bt-womb-animation')?.checked);
+  settings.bellyCloseup = document.getElementById('bs-bt-belly-closeup') ? Boolean(document.getElementById('bs-bt-belly-closeup').checked) : settings.bellyCloseup !== false;
+  bellyCloseupEnabled = settings.bellyCloseup !== false;
   settings.wardrobeSystemEnabled = Boolean(document.getElementById('bs-bt-wardrobe-system-enabled')?.checked);
   settings.skillSystemEnabled = Boolean(document.getElementById('bs-bt-skill-system-enabled')?.checked);
   applyExtensionSystemVisibility(settings);

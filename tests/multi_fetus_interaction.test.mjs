@@ -115,6 +115,7 @@ test('sibling kick turns the other twin a little and leaves affinity alone', () 
   assert.equal(F(chatState)[1].tendencyAngle, 85, '被踢的第 2 胎偏转 15°');
   assert.deepEqual(F(chatState).map((f) => f.affinity), [5, -3], '不碰母胎亲和');
   assert.match(P(chatState).notify.secondly, /第1胎踢了第2胎一脚/);
+  assert.deepEqual(P(chatState).visualCue.fetuses, [1, 2], '画面事件记下动手与被动的两胎');
 });
 
 test('sibling shoving can swap sides; snuggling changes nothing but the notice', () => {
@@ -137,7 +138,7 @@ test('sibling shoving can swap sides; snuggling changes nothing but the notice',
   assert.match(P(chatState).notify.secondly, /依偎在一起/);
 });
 
-test('sibling: fetusIndex picks the actor, otherFetusIndex the target; they must be neighbors', () => {
+test('sibling: fetusIndex picks the actor, otherFetusIndex the target; they need not be neighbors', () => {
   const chatState = setup([fetus(1), fetus(2, { tendencyAngle: 100 }), fetus(3, { tendencyAngle: 200 })]);
   rolls(0, 0.2);
   const result = sibling(chatState, 'kick', { fetusIndex: 2, otherFetusIndex: 1 });
@@ -146,14 +147,22 @@ test('sibling: fetusIndex picks the actor, otherFetusIndex the target; they must
   assert.equal(F(chatState)[2].tendencyAngle, 200, '动手的一胎不动');
 
   const far = setup([fetus(1), fetus(2), fetus(3)]);
-  const rejected = sibling(far, 'kick', { fetusIndex: 0, otherFetusIndex: 2 });
-  assert.equal(rejected.applied, false);
-  assert.match(rejected.message, /not next to each other/);
+  // 1.4.0 起不必相邻：三胎的两端也能互动；推挤隔着中间的胎时不换位
+  rolls(0, 0.2);
+  const across = sibling(far, 'kick', { fetusIndex: 0, otherFetusIndex: 2 });
+  assert.equal(across.applied, true, across.message);
+  assert.match(P(far).notify.secondly, /第1胎踢了第3胎一脚/);
+  assert.deepEqual(P(far).visualCue.fetuses, [1, 3]);
+  const shoved = setup([fetus(1), fetus(2), fetus(3)]);
+  rolls(0, 0.9);
+  assert.equal(sibling(shoved, 'shove', { fetusIndex: 0, otherFetusIndex: 2 }).applied, true);
+  assert.deepEqual(F(shoved).map((f) => f.embryoId), [1, 2, 3]);
+  assert.match(P(shoved).notify.secondly, /隔着中间的胎推挤了一阵，位置没变/);
 
   const self = sibling(setup([fetus(1), fetus(2)]), 'cuddle', { fetusIndex: 0, otherFetusIndex: 0 });
   assert.equal(self.applied, false);
 
-  // 只给动手的一胎：对象取它旁边的一胎
+  // 只给动手的一胎：对象从其余的胎里取
   const one = setup([fetus(1), fetus(2)]);
   assert.equal(sibling(one, 'cuddle', { fetusIndex: 1 }).applied, true);
   assert.match(P(one).notify.secondly, /第2胎和第1胎依偎/);

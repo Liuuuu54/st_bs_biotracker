@@ -187,16 +187,16 @@ test('visualCue keeps only the latest event with a rising seq, survives later ro
   });
   assert.equal(first.logs[0].applied, true, first.logs[0].message);
   const profile = () => settings.chatStates[CHAT_KEY].characters['艾拉'].profile;
-  assert.deepEqual(profile().visualCue, { type: 'surrogacy', seq: 1 });
+  assert.deepEqual((({ type, seq }) => ({ type, seq }))(profile().visualCue), { type: 'surrogacy', seq: 1 });
   assert.equal(buildTrackerPayload(ctx, settings).existing_state['艾拉'].profile.visualCue, undefined);
 
   applyToolCallsResult(ctx, { tool_calls: [] });
-  assert.deepEqual(profile().visualCue, { type: 'surrogacy', seq: 1 }, 'kept until the UI plays it');
+  assert.deepEqual((({ type, seq }) => ({ type, seq }))(profile().visualCue), { type: 'surrogacy', seq: 1 }, 'kept until the UI plays it');
 
   state.setVisualCue(profile(), 'fertilization');
-  assert.deepEqual(profile().visualCue, { type: 'fertilization', seq: 2 }, 'a later event replaces it');
+  assert.deepEqual((({ type, seq }) => ({ type, seq }))(profile().visualCue), { type: 'fertilization', seq: 2 }, 'a later event replaces it');
   assert.equal(state.setVisualCue(profile(), 'unknown'), null);
-  assert.deepEqual(profile().visualCue, { type: 'fertilization', seq: 2 });
+  assert.deepEqual((({ type, seq }) => ({ type, seq }))(profile().visualCue), { type: 'fertilization', seq: 2 });
 });
 
 test('empty description patches are a no-op instead of wiping the field', () => {

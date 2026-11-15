@@ -46,6 +46,11 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 | [uterus_layout.js](../../scripts/uterus_layout.js) | 子宮畫板的位置與比例。 |
 | [semen_capacity.js](../../scripts/semen_capacity.js) | 子宮當下的精液容量；子宮圖、精液圖環與引擎的溢出共用。 |
 | [uterus_render.js](../../scripts/uterus_render.js) | 子宮畫板繪製。 |
+| [belly_data.js](../../scripts/belly_data.js) | 孕體特寫的輪廓資料檔（`assets/belly/closeup-data.bin`）的編解碼與載入。資料由 `tools/build-belly-data.mjs` 從作者的輪廓烘出。 |
+| [belly_layout.js](../../scripts/belly_layout.js) | 孕體特寫的取形與成圖：體型、罩杯、孕肚大小之間的混合，修補規則與手修的修正點。 |
+| [belly_render.js](../../scripts/belly_render.js) | 孕體特寫的色表（各主題的單色、半彩、全彩）與上色。 |
+| [belly_anim.js](../../scripts/belly_anim.js) | 孕體特寫的動畫：用位移搬靜止畫面，胎動、宮縮、需求類效果與事件。 |
+| [belly_state.js](../../scripts/belly_state.js) | 追蹤器狀態換成孕體特寫的狀態。 |
 | [lineage.js](../../scripts/lineage.js) | 家系資料圖。 |
 | [lineage_view.js](../../scripts/lineage_view.js) | 家系聚焦視圖與寫實世界的人生階段判定。 |
 | [race_icons.js](../../scripts/race_icons.js) | 種族圖示、衍生外框、混血拼色底，以及寫實世界人生階段圖示的 SVG。 |

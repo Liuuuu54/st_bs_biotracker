@@ -7309,6 +7309,8 @@ function applyCharacterStatus(chatState, args) {
     const before = clampNumber(base.libido, 0, libidoCap, 0);
     base.libido = libidoCap;
     applyMilkFromLibido(profile, libidoCap - before);
+    // 画面事件：孕体特写演高潮（乳摇、孕肚绷紧、会泌乳时喷乳）；同一轮有射精等顺位高的事件时不盖
+    setVisualCue(profile, 'orgasm');
   }
   applyDerivedMetabolismExemptions(profile);
 
@@ -7777,6 +7779,8 @@ function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args, fe
       maleBodySize,
       label: fit?.label ?? null,
       gap: fit?.gap ?? null,
+      // 带正负号的差距（剑 − 鞘），子宫图画硬挤或松脱用；旧纪录没有这一栏
+      diff: fit?.diff ?? null,
       text: fit?.text ?? null,
       femaleAltForm: args?.femaleAltForm === true,
       maleAltForm: args?.maleAltForm === true,
@@ -8942,9 +8946,9 @@ function settleNaturalCrowding(profile, fetuses, fetus, before) {
 }
 
 /**
- * bsAssistFetalPosition action=sibling：腹中两胎互动。fetusIndex 动手、otherFetusIndex 被动（省略取它旁边的一胎），
- * 两个都省略时随机一对。踢让对方小幅偏转、推挤可能左右换位、依偎不改位置；不碰亲和与健康。
- * 只限角色已知、已着床、不在宿主体内且彼此相邻的胎儿；每个故事小时最多成功一次。
+ * bsAssistFetalPosition action=sibling：腹中两胎互动。fetusIndex 动手、otherFetusIndex 被动（省略时从其余的胎里随机取一胎），
+ * 两个都省略时随机一对。踢让对方小幅偏转、推挤可能左右换位（只有挨着的两胎会换）、依偎不改位置；不碰亲和与健康。
+ * 只限角色已知、已着床、不在宿主体内的胎儿，不必相邻；每个故事小时最多成功一次。
  */
 const SIBLING_INTERACTIONS = Object.freeze(['kick', 'shove', 'cuddle']);
 
@@ -8965,20 +8969,18 @@ function applySiblingInteraction(chatState, character, female, args, skip) {
   if ((actor && !known(actor)) || (target && !known(target))) return skip('both fetuses must be implanted, known to the character and not inside a host fetus.');
   if (actor && target && actor === target) return skip('a fetus cannot interact with itself.');
   if (!actor && target) [actor, target] = [target, null];
-  if (actor && target) {
-    if (!getSpatialNeighbors(fetuses, actor).includes(target)) return skip('the two fetuses are not next to each other.');
-  } else if (actor) {
-    const neighbors = getSpatialNeighbors(fetuses, actor).filter(known);
-    if (neighbors.length === 0) return skip('that fetus has no known neighbor to interact with.');
-    target = neighbors[randomInt(0, neighbors.length - 1)];
-  } else {
+  // 1.4.0 起两胎不必相邻：子宫里任何两胎都碰得到（三胎排成三角时两端也挨着）
+  if (actor && !target) {
+    const others = fetuses.filter((other) => other !== actor && known(other));
+    if (others.length === 0) return skip('that fetus has no other known fetus to interact with.');
+    target = others[randomInt(0, others.length - 1)];
+  } else if (!actor) {
+    const candidates = fetuses.filter(known);
     const pairs = [];
-    for (const fetus of fetuses.filter(known)) {
-      for (const other of getSpatialNeighbors(fetuses, fetus)) {
-        if (known(other) && fetuses.indexOf(fetus) < fetuses.indexOf(other)) pairs.push([fetus, other]);
-      }
+    for (let a = 0; a < candidates.length; a += 1) {
+      for (let b = a + 1; b < candidates.length; b += 1) pairs.push([candidates[a], candidates[b]]);
     }
-    if (pairs.length === 0) return skip('there is no pair of neighboring fetuses known to the character.');
+    if (pairs.length === 0) return skip('there is no pair of fetuses known to the character.');
     const pair = pairs[randomInt(0, pairs.length - 1)];
     [actor, target] = Math.random() < 0.5 ? pair : [pair[1], pair[0]];
   }
@@ -9003,9 +9005,13 @@ function applySiblingInteraction(chatState, character, female, args, skip) {
     const indexes = members.map((fetus) => fetuses.indexOf(fetus));
     if (Math.max(...indexes) - Math.min(...indexes) + 1 === members.length) swapLateral(fetuses, actor, target, movers, new Set());
     const swappedNow = (fetuses.indexOf(actor) < fetuses.indexOf(target)) !== before;
+    // 不挨着的两胎（中间隔着别的胎）推挤不换位
+    const apart = !getSpatialNeighbors(fetuses, actor).includes(target);
     summary = swappedNow
       ? `${female}腹中${actorName}和${targetName}推挤起来，两胎换了左右位置`
-      : `${female}腹中${actorName}和${targetName}推挤了一阵，但都挤不动，位置没变`;
+      : apart
+        ? `${female}腹中${actorName}和${targetName}隔着中间的胎推挤了一阵，位置没变`
+        : `${female}腹中${actorName}和${targetName}推挤了一阵，但都挤不动，位置没变`;
   } else {
     summary = `${female}腹中${name(actor)}和${name(target)}依偎在一起，胎动平静了下来`;
   }
@@ -9013,6 +9019,9 @@ function applySiblingInteraction(chatState, character, female, args, skip) {
   profile.pregnant = pregnant;
   profile.cooldown = { ...(profile.cooldown || {}), siblingInteractionUsed: true };
   profile.notify = { ...(profile.notify || {}), secondly: summary };
+  // 画面事件：孕体特写上两胎的位置先后有动静；记下是哪两胎（动手的在前），特写照着演
+  setVisualCue(profile, { kick: 'siblingKick', shove: 'siblingShove', cuddle: 'siblingCuddle' }[interaction],
+    { fetuses: [actor?.embryoId, target?.embryoId] });
   next.profile = profile;
   chatState.characters[female] = next;
   return { applied: true, message: `bsAssistFetalPosition sibling applied to ${female}. ${summary}` };

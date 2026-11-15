@@ -6002,6 +6002,80 @@
   justify-content: center;
 }
 
+/* 孕体特写（描述页最上面）：136×99 的画框放大 2 倍，手机（360）与平板（560）都放得下；再窄就等比缩小 */
+#bs-biotracker-settings .bs-bt-belly {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+/* 占位与画布同尺寸，资料载入前后页面高度不变 */
+#bs-biotracker-settings .bs-bt-belly-slot,
+#bs-biotracker-settings .bs-bt-belly-canvas {
+  display: block;
+  width: 272px;
+  height: 198px;
+  max-width: 100%;
+  box-sizing: content-box;
+  border: 2px solid var(--bsbt-border-color);
+  border-radius: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-belly-canvas {
+  /* 按住看孕前虚影：不要长按选取或拖出图片 */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  image-rendering: pixelated;
+  aspect-ratio: 136 / 99;
+  height: auto;
+}
+
+/* 画面角落的小字：体型（特写左上）、鞘（子宫图左下） */
+#bs-biotracker-settings .bs-bt-belly-label,
+#bs-biotracker-settings .bs-bt-womb-label {
+  position: absolute;
+  padding: 1px 4px;
+  font-size: 0.72em;
+  line-height: 1.25;
+  /* 用画布的刻度色：各主题的画布底色与介面底色不同，照介面文字色会看不到 */
+  color: var(--bsbt-gauge-color, var(--bsbt-lcd-text));
+  background: color-mix(in srgb, var(--bsbt-lcd-bg) 78%, transparent);
+  border-radius: 3px;
+  pointer-events: auto;
+}
+
+/* 量尺中间那段空位里的数字 */
+#bs-biotracker-settings .bs-bt-belly-label {
+  top: 50%;
+  left: 4px;
+  transform: translateY(-50%);
+  background: none;
+  padding: 0 1px;
+}
+
+/* 产道量尺左边的数字：位置由行内样式给（照产道在画布上的位置） */
+#bs-biotracker-settings .bs-bt-womb-label {
+  transform: translate(-50%, -50%);
+  text-align: center;
+  background: none;
+  padding: 0;
+  white-space: nowrap;
+  font-size: 0.66em;
+}
+
+#bs-biotracker-settings .bs-bt-womb-fit {
+  transform: translate(-50%, 0);
+}
+
+#bs-biotracker-settings .bs-bt-belly.is-failed {
+  display: none;
+}
+
 /* 占位与画布同尺寸：追踪页重绘时页面高度不变，捲动位置才不会被拉回 */
 #bs-biotracker-settings .bs-bt-womb-slot,
 #bs-biotracker-settings .bs-bt-womb-canvas {

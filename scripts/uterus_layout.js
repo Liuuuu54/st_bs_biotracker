@@ -20,6 +20,45 @@ export { getSemenCapacity };
 
 export const UTERUS_CANVAS = Object.freeze({ width: 96, height: 120 });
 export const MAX_DRAWN_FETUSES = 5;
+/** 阴道长度（像素）：相称时 22，随鞘相对体型的级数变化 */
+export const SHEATH_BASE_LENGTH = 22;
+export const SHEATH_MIN_LENGTH = 14;
+export const SHEATH_MAX_LENGTH = 32;
+/** 剑的宽度（像素）：相称时 9 */
+export const SWORD_BASE_WIDTH = 9;
+export const SWORD_WIDTH_STEP = 2;
+
+/**
+ * 两支量尺在画布上的栏位：子宫那支在子宫左侧（子宫很大时贴着画布左缘），产道那支在产道左侧。
+ * 绘制（uterus_render.js）与页面上的数字（index.js）共用。
+ */
+export function getUterusGaugeColumns(layout) {
+  const womb = layout?.womb || {};
+  return { womb: Math.max(5, Math.round((womb.cx ?? 48) - (womb.rx ?? 20) - 7)), sheath: Math.round((womb.cx ?? 48) - 13) };
+}
+
+/**
+ * 插入中的契合画面：从 base.penetrationFit（插入时结算、拔出清除）读，不重算。
+ * tier 0–4 对应恰好契合、略有落差、明显不合、极不相称、体型悬殊；direction 正是剑大（硬挤）、负是鞘大（松脱）。
+ * 剑的宽度照分段一段差 2 像素（产道内宽 6、外宽 8），所以每一段在画面上都分得出来。
+ * 魔法消弭体型差、可变体型一律是恰好契合；旧纪录没有带正负号的差距时也当恰好契合画。
+ */
+export function getPenetrationFitView(record) {
+  if (!record || typeof record !== 'object') return null;
+  const diff = record.sizeBridge ? 0 : Number(record.diff);
+  if (!Number.isFinite(diff)) return { tier: 0, direction: 0, swordWidth: SWORD_BASE_WIDTH, swordLength: SHEATH_BASE_LENGTH, diff: null };
+  const gap = Math.abs(diff);
+  const tier = gap < 0.5 ? 0 : gap < 1.5 ? 1 : gap < 2.5 ? 2 : gap < 4 ? 3 : 4;
+  return {
+    tier,
+    direction: tier === 0 ? 0 : Math.sign(diff),
+    // 每一段差 2 像素、一律奇数（左右对称）：剑大 11、13、15、17，鞘大 7、5、3、1（细针）
+    swordWidth: SWORD_BASE_WIDTH + Math.sign(diff) * SWORD_WIDTH_STEP * tier,
+    // 长度跟着粗细等比例（相称时与产道同长 22）：剑大 27、32、37、42，鞘大 17、12、7，细针 6
+    swordLength: Math.max(6, Math.round(SHEATH_BASE_LENGTH * (SWORD_BASE_WIDTH + Math.sign(diff) * SWORD_WIDTH_STEP * tier) / SWORD_BASE_WIDTH)),
+    diff,
+  };
+}
 
 // 胚胎／中期／后期外形与羊膜囊可见，跟孕期曆的孕中期（14 周）、孕晚期（28 周）起点对齐
 const MID_TRIMESTER_DAYS = PREGNANCY_STAGE_DAYS.孕早期;
@@ -158,7 +197,12 @@ export function computeUterusLayout(profile, options = {}) {
 
   const neckLength = getCervicalLength(days);
   const canalTop = womb.bottom + Math.max(0, neckLength - 5);
-  const tract = { neckTop: womb.bottom - 1, neckLength, canalTop, canalBottom: canalTop + 22 };
+  // 阴道（鞘）照她自己的身体比例画：相对值 ＝ 鞘 − 她的体型（高挑的人相对偏短、娇小的偏长，鞘偏移与经产扩张照加），
+  // 每级体积翻倍、长度 ×2^(1/3)。夹在 14～32 像素，并留在画布内；经产松宽的再宽 1 像素。
+  const sheath = options.sheath || {};
+  const canalLength = Math.min(clamp(Math.round(SHEATH_BASE_LENGTH * 2 ** (finite(sheath.relative) / 3)), SHEATH_MIN_LENGTH, SHEATH_MAX_LENGTH),
+    Math.max(SHEATH_MIN_LENGTH, UTERUS_CANVAS.height - 2 - canalTop));
+  const tract = { neckTop: womb.bottom - 1, neckLength, canalTop, canalBottom: canalTop + canalLength, canalLength, canalLoose: sheath.loose ? 1 : 0 };
 
   const libidoCap = Math.max(1, finite(options.libidoCap, 100));
   const libidoHeat = clamp((finite(base.libido) / libidoCap - 0.27) / 0.73, 0, 1);
@@ -293,6 +337,7 @@ export function computeUterusLayout(profile, options = {}) {
     growth,
     womb,
     tract,
+    penetrationFit: getPenetrationFitView(base.penetrationFit),
     wallInset,
     pressureRatio,
     pressureLevel,
