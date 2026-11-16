@@ -117,3 +117,27 @@ test('高潮与两胎互动的画面事件对应到特写的动作', () => {
   assert.equal(resolveBellyCuePair({ fetuses: [9, 5] }, list), null);
   assert.equal(resolveBellyCuePair({ type: 'siblingKick' }, list), null);
 });
+
+test('第 6 胎起排在前面 5 胎的背后；孕中孕的内胎记下宿主、自己没有位置', () => {
+  const ids = [1, 2, 3, 4, 5, 6, 7, 8];
+  const fetuses = ids.map((embryoId) => ({ embryoId, ownAge: 200, weight: 1, bulkRatio: 1, healthRatio: 0.5, canMove: true }));
+  // 第 8 个是第 1 胎体内的内胎
+  fetuses[7] = { ...fetuses[7], nestedInEmbryoId: 1 };
+  const spots = [1, 2, 3, 4, 5].map((embryoId, k) => ({ embryoId, x: 30 + k * 9, y: 25 + k * 11 }));
+  const build = () => buildBellyCloseupState(input({ fetuses, womb: { womb: { cx: 48, top: 20, bottom: 80, rx: 20 }, fetuses: spots } })).fetuses;
+  const list = build();
+  // 第 6、7 胎照第 1、2 胎（k mod 5）的高低，往背侧退
+  for (const [back, ahead] of [[5, 0], [6, 1]]) {
+    assert.equal(list[back].behind, true);
+    assert.ok(Math.abs(list[back].zone.v - list[ahead].zone.v) <= 0.08 + 1e-9, `${back} ${JSON.stringify(list[back].zone)}`);
+    assert.ok(list[back].zone.w >= list[ahead].zone.w + 0.25 - 1e-9);
+  }
+  assert.deepEqual(build()[5].zone, list[5].zone, '重绘不跳');
+  assert.equal(list[7].host, 0);
+  assert.equal(list[7].zone, undefined);
+  assert.equal(list[0].behind, undefined);
+  // 胎囊破了（已被宿主生出来）就是独立的胎
+  fetuses[7] = { ...fetuses[7], nestedReleased: true };
+  assert.equal(build()[7].host, undefined);
+  assert.equal(build()[7].behind, true);
+});

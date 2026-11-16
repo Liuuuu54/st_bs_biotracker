@@ -183,3 +183,26 @@ test('sibling interaction is once per story hour and needs two known neighbors',
   assert.match(applyToolCall(setup([fetus(1), fetus(2)]), { name: 'bsMaternalFetalInteraction', arguments: { female: 'A', direction: 'sibling', change: 'slight_increase' } }).message,
     /Unsupported tool/, '旧工具已移除');
 });
+
+test('sibling: a fetus still inside its host only reaches that host, and nobody moves', () => {
+  const nested = () => setup([fetus(1, { weight: 2 }), fetus(2), fetus(3, { nestedInEmbryoId: 1, conceivedAtDays: 0 })]);
+  const blocked = sibling(nested(), 'kick', { fetusIndex: 2, otherFetusIndex: 1 });
+  assert.equal(blocked.applied, false);
+  assert.match(blocked.message, /only interact with that host/);
+  assert.equal(sibling(nested(), 'kick', { fetusIndex: 1, otherFetusIndex: 2 }).applied, false);
+
+  const chatState = nested();
+  const angles = F(chatState).map((f) => f.tendencyAngle);
+  const result = sibling(chatState, 'kick', { fetusIndex: 2, otherFetusIndex: 0 });
+  assert.equal(result.applied, true);
+  assert.match(result.message, /第3胎在第1胎体内踢了它一脚/);
+  assert.deepEqual(F(chatState).map((f) => f.tendencyAngle), angles, '不改胎位');
+  assert.deepEqual(P(chatState).visualCue.fetuses, [3, 1]);
+
+  // 只给内胎：对象一定是宿主
+  const solo = nested();
+  assert.match(sibling(solo, 'cuddle', { fetusIndex: 2 }).message, /第1胎和体内的第3胎依偎/);
+  // 胎囊破了就是独立的胎，碰得到其他胎
+  const released = setup([fetus(1, { weight: 2 }), fetus(2), fetus(3, { nestedInEmbryoId: 1, nestedReleased: true, conceivedAtDays: 0 })]);
+  assert.equal(sibling(released, 'cuddle', { fetusIndex: 2, otherFetusIndex: 1 }).applied, true);
+});

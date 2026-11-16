@@ -8948,7 +8948,7 @@ function settleNaturalCrowding(profile, fetuses, fetus, before) {
 /**
  * bsAssistFetalPosition action=sibling：腹中两胎互动。fetusIndex 动手、otherFetusIndex 被动（省略时从其余的胎里随机取一胎），
  * 两个都省略时随机一对。踢让对方小幅偏转、推挤可能左右换位（只有挨着的两胎会换）、依偎不改位置；不碰亲和与健康。
- * 只限角色已知、已着床、不在宿主体内的胎儿，不必相邻；每个故事小时最多成功一次。
+ * 只限角色已知、已着床的胎儿，不必相邻；孕中孕还包在宿主体内的内胎只碰得到自己的宿主（不改胎位）。每个故事小时最多成功一次。
  */
 const SIBLING_INTERACTIONS = Object.freeze(['kick', 'shove', 'cuddle']);
 
@@ -8960,25 +8960,33 @@ function applySiblingInteraction(chatState, character, female, args, skip) {
   const profile = next.profile || {};
   const pregnant = profile.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
-  const known = (fetus) => isFetusKnownToCharacter(fetus) && !fetus?.pendingImplantation && !getEnclosingHost(fetus, fetuses);
+  const known = (fetus) => isFetusKnownToCharacter(fetus) && !fetus?.pendingImplantation;
+  // 孕中孕：还包在宿主体内的内胎只碰得到自己的宿主；宿主碰得到其他胎，也碰得到自己体内的内胎
+  const partners = (fetus) => {
+    const host = getEnclosingHost(fetus, fetuses);
+    if (host) return known(host) ? [host] : [];
+    return fetuses.filter((other) => other !== fetus && known(other)
+      && (!getEnclosingHost(other, fetuses) || getEnclosingHost(other, fetuses) === fetus));
+  };
   const pick = (index) => (index === undefined || index === null ? null : resolveVisibleFetus(fetuses, index));
   let actor = pick(args?.fetusIndex);
   let target = pick(args?.otherFetusIndex);
   if ((args?.fetusIndex !== undefined && args?.fetusIndex !== null && !actor)
     || (args?.otherFetusIndex !== undefined && args?.otherFetusIndex !== null && !target)) return skip('invalid fetusIndex or otherFetusIndex.');
-  if ((actor && !known(actor)) || (target && !known(target))) return skip('both fetuses must be implanted, known to the character and not inside a host fetus.');
+  if ((actor && !known(actor)) || (target && !known(target))) return skip('both fetuses must be implanted and known to the character.');
   if (actor && target && actor === target) return skip('a fetus cannot interact with itself.');
+  if (actor && target && !partners(actor).includes(target)) return skip('a fetus still inside its host fetus can only interact with that host.');
   if (!actor && target) [actor, target] = [target, null];
   // 1.4.0 起两胎不必相邻：子宫里任何两胎都碰得到（三胎排成三角时两端也挨着）
   if (actor && !target) {
-    const others = fetuses.filter((other) => other !== actor && known(other));
+    const others = partners(actor);
     if (others.length === 0) return skip('that fetus has no other known fetus to interact with.');
     target = others[randomInt(0, others.length - 1)];
   } else if (!actor) {
     const candidates = fetuses.filter(known);
     const pairs = [];
     for (let a = 0; a < candidates.length; a += 1) {
-      for (let b = a + 1; b < candidates.length; b += 1) pairs.push([candidates[a], candidates[b]]);
+      for (let b = a + 1; b < candidates.length; b += 1) if (partners(candidates[a]).includes(candidates[b])) pairs.push([candidates[a], candidates[b]]);
     }
     if (pairs.length === 0) return skip('there is no pair of fetuses known to the character.');
     const pair = pairs[randomInt(0, pairs.length - 1)];
@@ -8987,7 +8995,19 @@ function applySiblingInteraction(chatState, character, female, args, skip) {
   const visible = fetuses.filter(isFetusKnownToCharacter);
   const name = (fetus) => `第${visible.indexOf(fetus) + 1}胎`;
   let summary;
-  if (interaction === 'kick') {
+  const inner = getEnclosingHost(actor, fetuses) === target ? actor : getEnclosingHost(target, fetuses) === actor ? target : null;
+  if (inner) {
+    // 内胎与宿主：动作都关在宿主体内，力道传不出来，不改任何一胎的胎位
+    const host = inner === actor ? target : actor;
+    const [innerName, hostName] = [name(inner), name(host)];
+    summary = interaction === 'kick'
+      ? (inner === actor
+        ? `${female}腹中${innerName}在${hostName}体内踢了它一脚，力道没有传出来，只见${hostName}缩了一下`
+        : `${female}腹中${hostName}踢了体内的${innerName}一脚，${innerName}在里面回踢了一下`)
+      : interaction === 'shove'
+        ? `${female}腹中${innerName}在${hostName}体内推挤扭动了一阵，${hostName}跟着动了动，位置没变`
+        : `${female}腹中${hostName}和体内的${innerName}依偎在一起，胎动平静了下来`;
+  } else if (interaction === 'kick') {
     if (canMoveFreely(target, fetuses)) {
       const before = wrapAngle(clampNumber(target.tendencyAngle, 0, 360, 0));
       target.tendencyAngle = wrapAngle(before + (randomInt(10, 20) * (Math.random() < 0.5 ? -1 : 1)));

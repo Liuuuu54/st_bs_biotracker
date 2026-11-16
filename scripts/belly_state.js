@@ -46,7 +46,7 @@ export function isBellyNude(outfit) {
  *   stats: { vitality, libido, stress, uterine }（各 { value, cap }）,
  *   needs: { hunger, sleep, excretion, milk, odor }（各 { value, cap }；免除或代谢免疫的给 null）,
  *   outfit（buildOutfitView 的结果）,
- *   fetuses: [{ embryoId, ownAge, weight, bulkRatio, healthRatio（0–1）, canMove }]（角色已知、已着床的）,
+ *   fetuses: [{ embryoId, ownAge, weight, bulkRatio, healthRatio（0–1）, canMove, nestedInEmbryoId, nestedReleased }]（角色已知、已着床的）,
  *   womb: computeUterusLayout 的结果（取每胎在子宫里的位置）,
  * }
  * @returns 特写的状态；不能画时回传 null
@@ -59,12 +59,35 @@ export function buildBellyCloseupState(input) {
   const stats = input.stats || {};
   const womb = input.womb || null;
   const placed = new Map((womb?.fetuses || []).map((fetus) => [fetus.embryoId, fetus]));
-  const fetuses = (input.fetuses || []).map((fetus) => {
+  const list = input.fetuses || [];
+  // 孕中孕：内胎还包在宿主体内（宿主也在这份名单里、胎囊没破）时记下宿主的顺位
+  const hostOf = (fetus) => {
+    const hostId = fetus?.nestedInEmbryoId;
+    if (hostId === undefined || hostId === null || fetus.nestedReleased) return -1;
+    return list.findIndex((other) => other !== fetus && other.embryoId === hostId);
+  };
+  // 子宫图是正面、特写是侧面：上下照子宫里的高低，左右换成前后（只是让不同的胎落在不同的地方）
+  const zoneOfSpot = (spot) => ({
+    v: clamp((spot.y - womb.womb.top) / Math.max(1, womb.womb.bottom - womb.womb.top), 0.05, 0.95),
+    w: clamp(0.5 + (spot.x - womb.womb.cx) / Math.max(1, 2 * womb.womb.rx), 0.1, 0.9),
+  });
+  const front = womb?.womb ? (womb.fetuses || []).filter((spot) => list.some((fetus) => fetus.embryoId === spot.embryoId)).map(zoneOfSpot) : [];
+  let behindCount = 0;
+  const fetuses = list.map((fetus) => {
     const spot = placed.get(fetus.embryoId);
-    // 子宫图是正面、特写是侧面：上下照子宫里的高低，左右换成前后（只是让不同的胎落在不同的地方）
-    const zone = spot && womb?.womb
-      ? { v: clamp((spot.y - womb.womb.top) / Math.max(1, womb.womb.bottom - womb.womb.top), 0.05, 0.95), w: clamp(0.5 + (spot.x - womb.womb.cx) / Math.max(1, 2 * womb.womb.rx), 0.1, 0.9) }
-      : undefined;
+    const host = hostOf(fetus);
+    let zone;
+    let behind = false;
+    if (spot && womb?.womb) zone = zoneOfSpot(spot);
+    else if (host < 0 && front.length > 0) {
+      // 子宫图只画得下 5 胎：第 6 胎起排在前面 5 胎的背后（第 k 个照 k mod 5 那一胎的高低，再往背侧退一段；偏移由 embryoId 固定，重绘不跳）
+      const ahead = front[behindCount % front.length];
+      behindCount += 1;
+      const seed = Number(fetus.embryoId) || behindCount;
+      const jitter = (k) => { const s = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453; return s - Math.floor(s); };
+      zone = { v: clamp(ahead.v + (jitter(1) - 0.5) * 0.16, 0.05, 0.95), w: clamp(ahead.w + 0.25 + 0.1 * jitter(2), 0.1, 0.95) };
+      behind = true;
+    }
     return {
       embryoId: fetus.embryoId,
       size: Math.max(0, Number(fetus.ownAge) || 0) / DUE_DATE_DAYS * (Number(fetus.weight) || 1) * (Number(fetus.bulkRatio) || 1),
@@ -73,6 +96,9 @@ export function buildBellyCloseupState(input) {
       health: clamp((Number.isFinite(Number(fetus.healthRatio)) ? Number(fetus.healthRatio) : 0.5) * 100, 0, 100),
       canMove: fetus.canMove !== false,
       ...(zone ? { zone } : {}),
+      ...(behind ? { behind } : {}),
+      // 内胎：动静算在宿主身上，自己没有位置
+      ...(host >= 0 ? { host } : {}),
     };
   });
   const body = input.body || {};

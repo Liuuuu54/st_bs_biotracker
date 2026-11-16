@@ -228,6 +228,47 @@ test('多胎互动：两胎的位置先后有动静', () => {
   assert.equal(a.trigger('sibling', { actor: 0, target: 1, interaction: 'kick' }), false);
 });
 
+test('孕中孕：内胎的动静算在宿主身上，力道打折、原地不滑；只能和宿主互动', () => {
+  const nest = { ...base, count: 3, fetuses: [{ size: 1, zone: { v: 0.3, w: 0.4 } }, { size: 1, zone: { v: 0.7, w: 0.5 } }, { size: 0.8, host: 0 }] };
+  const a = animator(5);
+  a.setState(nest);
+  a.tick(0);
+  a.motion.nextKick = 1e12;
+  assert.equal(a.trigger('big', { fetus: 2, now: 0 }), true);
+  assert.equal(a.motion.bumps.length, 1);
+  const [bump] = a.motion.bumps;
+  assert.equal(bump.fetus, 0, '凸起在宿主的位置');
+  assert.ok(!bump.crease && bump.drift === 0 && bump.driftW === 0 && a.motion.jiggles.length === 0, '不会用力一踢，也不滑');
+  const host = animator(5);
+  host.setState(nest);
+  host.tick(0);
+  host.trigger('kick', { fetus: 0, now: 0 });
+  assert.ok(bump.amp < host.motion.bumps[0].amp * 0.5, '力道传不出来');
+  // 内胎只碰得到宿主；和宿主互动时孕肚上只有宿主在动
+  for (const interaction of ['kick', 'shove', 'cuddle']) {
+    for (const [actor, target] of [[2, 0], [0, 2]]) {
+      const b = animator(9);
+      b.setState(nest);
+      b.tick(0);
+      b.motion.nextKick = 1e12;
+      assert.equal(b.trigger('sibling', { actor, target, interaction, now: 0 }), true, interaction);
+      const seen = new Set();
+      for (let now = 120; now < 5000; now += 120) for (const k of b.tick(now).bumps) seen.add(k.fetus);
+      assert.deepEqual([...seen], [0], `${interaction} ${actor}→${target}`);
+    }
+  }
+  const c = animator(9);
+  c.setState(nest);
+  assert.equal(c.trigger('sibling', { actor: 2, target: 1, interaction: 'kick', now: 0 }), false);
+  assert.equal(c.trigger('sibling', { actor: 1, target: 2, interaction: 'cuddle', now: 0 }), false);
+  // 抽送顶到宫颈口：内胎与排在背后的胎碰不到
+  const d = animator(3);
+  d.setState({ ...base, fetuses: [{ size: 0.9, zone: { v: 0.4, w: 0.4 } }, { size: 0.9, zone: { v: 0.9, w: 0.8 }, behind: true }, { size: 0.9, host: 0 }] });
+  d.tick(0);
+  d.trigger('thrust', { now: 0, count: 1, reach: true });
+  assert.ok(d.motion.queue.length === 2 && d.motion.queue.every((item) => item.index === 0));
+});
+
 const changedOverTime = (state, ms, seed = 6) => {
   const a = animator(seed);
   a.setState({ ...state, fetuses: quiet, vitality: 100, libido: 0 });

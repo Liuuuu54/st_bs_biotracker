@@ -25,6 +25,8 @@ const MID_PRESSURE = 0.5 + 0.5 ** 1.35 * 5 + 0.5 * 1.5;
 export const BELLY_FETAL_VIGOR = Object.freeze([
   { often: 0.4, hard: 0.7, big: 0 }, { often: 1, hard: 1, big: 0 }, { often: 1.8, hard: 1.25, big: 0 }, { often: 2.5, hard: 1.45, big: 0.35 },
 ]);
+/** 孕中孕的内胎动起来时，宿主在孕肚上那一缩的力道（照宿主自己的胎动打折） */
+export const BELLY_NESTED_SCALE = 0.4;
 /** 宫缩的节奏（画面时间，秒）：间隔、长度、强度；calm 不影响呼吸，push 可用力 */
 export const BELLY_LABOR = Object.freeze({
   braxton: { gap: [25, 70], dur: [6, 9], str: 0.35, calm: true },
@@ -186,20 +188,28 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
     const zone = fetusList()[index]?.zone;
     return { v: zone?.v ?? (index + 0.5) / total, w: zone?.w ?? null };
   }
-  function addBump(index, kind, now, { toward = null, away = false, scale = 1 } = {}) {
+  /** 孕中孕的内胎还在宿主体内时回传宿主的顺位，否则 -1 */
+  const hostIndex = (index) => {
+    const host = fetusList()[index]?.host;
+    return Number.isInteger(host) && host !== index && fetusList()[host] ? host : -1;
+  };
+  function addBump(index, kind, now, { toward = null, away = false, scale = 1, still = false } = {}) {
     const list = fetusList();
     const fetus = list[index];
     if (!fetus) return false;
     const pace = fetalPace(fetus, list.length);
     if (!pace) return false;
+    // 内胎的力道隔着宿主传不出来：看得到的只是宿主在原地轻轻一缩（不会用力一踢、也不往哪里滑）
+    const host = hostIndex(index);
+    if (host >= 0) return addBump(host, kind === 'roll' ? 'roll' : 'kick', now, { scale: scale * BELLY_NESTED_SCALE, still: true });
     const zone = zoneOf(index, list.length);
     const v = zone.v + (random() - 0.5) * 0.3 / list.length;
     const around = (fallback) => (zone.w === null ? fallback : clamp(zone.w + (random() - 0.5) * 0.2, 0, 1));
-    // toward：朝另一胎实际所在的方向滑过去（互动用；上下与前后都算，两胎不必挨着）。away：反过来，被对方挤开
+    // toward：朝另一胎实际所在的方向滑过去（互动用；上下与前后都算，两胎不必挨着）。away：反过来，被对方挤开。still：原地不滑
     const other = toward === null ? null : zoneOf(toward, list.length);
     const side = away ? -1 : 1;
-    const drift = other === null ? (random() < 0.5 ? -1 : 1) * 0.25 / list.length : (other.v - zone.v) * 0.6 * side;
-    const lean = other === null ? null : ((other.w ?? 0.5) - (zone.w ?? 0.5)) * 0.6 * side;
+    const drift = still ? 0 : other === null ? (random() < 0.5 ? -1 : 1) * 0.25 / list.length : (other.v - zone.v) * 0.6 * side;
+    const lean = still ? 0 : other === null ? null : ((other.w ?? 0.5) - (zone.w ?? 0.5)) * 0.6 * side;
     const amp = pace.amp * scale;
     if (kind === 'big') {
       motion.bumps.push({ start: now, dur: 380, v, w: around(random() < 0.4 ? 0 : 0.2 + random() * 0.5), drift: 0, driftW: 0, sigma: 2.3, amp: amp * 1.7, crease: true, fetus: index });
@@ -216,8 +226,27 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
   function sibling(actor, target, interaction, now) {
     const list = fetusList();
     if (actor === target || !list[actor] || !list[target]) return false;
-    if (!fetalPace(list[actor], list.length) || !fetalPace(list[target], list.length)) return false;
     const later = (delay, index, kind, options) => motion.queue.push({ at: now + delay, index, kind, options });
+    // 孕中孕：内胎只碰得到自己的宿主。两胎的动作都关在宿主里面，孕肚上只看得到宿主在原地的反应
+    const innerOf = hostIndex(actor) === target ? actor : hostIndex(target) === actor ? target : -1;
+    if (innerOf < 0 && (hostIndex(actor) >= 0 || hostIndex(target) >= 0)) return false;
+    if (innerOf >= 0) {
+      const host = innerOf === actor ? target : actor;
+      if (!fetalPace(list[host], list.length)) return false;
+      const twitch = (delay, kind, scale) => (delay ? later(delay, host, kind, { scale, still: true }) : addBump(host, kind, now, { scale, still: true }));
+      if (interaction === 'kick') {
+        // 内胎踢宿主：宿主被踢得连缩两下、再扭一扭；宿主踢内胎：先蜷一下，内胎回的那脚只剩一点点
+        if (innerOf === actor) { twitch(0, 'kick', 0.5); twitch(500, 'kick', 0.35); twitch(1100, 'roll', 0.6); }
+        else { twitch(0, 'roll', 0.6); twitch(1300, 'kick', 0.3); }
+      } else if (interaction === 'shove') {
+        twitch(0, 'roll', 0.7);
+        twitch(1200, 'roll', 0.5);
+      } else if (interaction === 'cuddle') {
+        twitch(0, 'roll', 0.35);
+      } else return false;
+      return true;
+    }
+    if (!fetalPace(list[actor], list.length) || !fetalPace(list[target], list.length)) return false;
     if (interaction === 'kick') {
       addBump(actor, 'big', now, { toward: target });
       later(500, target, 'roll', { toward: actor, scale: 0.8 });
@@ -734,7 +763,8 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
       if (reach) {
         const list = fetusList();
         let low = -1;
-        list.forEach((fetus, index) => { if (fetalPace(fetus, list.length) && (low < 0 || zoneOf(index, list.length).v > zoneOf(low, list.length).v)) low = index; });
+        // 只算前排：包在宿主里的内胎与排在背后的胎碰不到
+        list.forEach((fetus, index) => { if (hostIndex(index) < 0 && !fetus.behind && fetalPace(fetus, list.length) && (low < 0 || zoneOf(index, list.length).v > zoneOf(low, list.length).v)) low = index; });
         if (low >= 0) {
           for (let k = 0; k < times; k += 1) motion.queue.push({ at: now + k * 360 + 120, index: low, kind: 'kick', options: { scale: 0.5 } });
           motion.queue.push({ at: now + times * 360 + 500, index: low, kind: 'kick', options: {} });

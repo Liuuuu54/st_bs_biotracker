@@ -4778,6 +4778,9 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
             healthRatio: getFetalHealthRatio(fetus),
             // 入盆的胎儿不再自由活动
             canMove: !(Number(fetus.descentStage) >= 0),
+            // 孕中孕：还包在宿主体内的内胎，动静算在宿主身上
+            nestedInEmbryoId: fetus.nestedInEmbryoId ?? null,
+            nestedReleased: Boolean(fetus.nestedReleased),
           })),
       },
       showPregnantFields: isPregnantStage(stage),
@@ -5688,7 +5691,8 @@ function playBellyCue(cue) {
     // 事件记了是哪两胎就照着演（动手的在前）；旧事件没记、或那两胎已经不会动时，从能动的胎里随机挑两胎
     const named = resolveBellyCuePair(cue, bellyState.fetuses);
     if (named) Object.assign(options, named);
-    const movable = (bellyState.fetuses || []).map((fetus, index) => (fetus.canMove === false ? -1 : index)).filter((index) => index >= 0);
+    // 自己挑的时候不挑孕中孕的内胎（它只碰得到自己的宿主，要事件指名才演）
+    const movable = (bellyState.fetuses || []).map((fetus, index) => (fetus.canMove === false || Number.isInteger(fetus.host) ? -1 : index)).filter((index) => index >= 0);
     if (!named) {
       if (movable.length < 2) return false;
       const first = Math.floor(Math.random() * movable.length);
