@@ -14,14 +14,15 @@
 //
 // 节奏、幅度的数值移植自预览页 PREGNANCY_TRACE_NUDE.html。
 
-import { getFetalKickStrength } from './fetal_growth.js';
+import { getFetalGrowth, getFetalKickStrength } from './fetal_growth.js';
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const NEED_FULL = 100 / 150;
 const NEED_BURST = 125 / 150;
 /** 需求（占上限的百分比）超过某一级多少：该级为 0，上限为 1 */
 const needPast = (value, level) => clamp(((value ?? 0) / 100 - level) / (1 - level), 0, 1);
-const MID_PRESSURE = 0.5 + 0.5 ** 1.35 * 5 + 0.5 * 1.5;
+// 孕中参考（单胎 20 周）的孕肚大小，与 belly_layout.js 同一个值（人类型 20 周份量）
+const MID_PRESSURE = 0.5 + 0.5 ** 1.35 * 5 + getFetalGrowth(140, 'human') * 1.5;
 
 /** 胎儿活力四档：安静、一般、好动、激烈（次数、力道、用力一踢的比例） */
 export const BELLY_FETAL_VIGOR = Object.freeze([

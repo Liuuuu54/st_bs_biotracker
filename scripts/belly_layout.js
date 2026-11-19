@@ -9,6 +9,8 @@
 //   - 各体型的取景范围读烘好的值（要全部 210 张的距离场才算得出来）。
 // 一个画面最多用到 2 体型 × 2 罩杯 × 4 孕况 ＝ 16 张参考。
 
+import { getFetalGrowth } from './fetal_growth.js';
+
 /** 成图里可以个别关掉的修补规则（除错与测试用） */
 export const BELLY_SKIP_FIXES = Object.freeze(['repair', 'backTop', 'breastArc', 'bellyArc', 'cleanup', 'shortsBand', 'waistband', 'strapTop', 'braWedge', 'chestSeam', 'nippleSide', 'manual']);
 /** 预览页没有、插件新加的规则（与预览页逐格对照时要关掉） */
@@ -328,11 +330,12 @@ export function createBellyLayout(data, options = {}) {
   function pressureOf(s){
     if(Number.isFinite(s.pressure))return clamp(s.pressure,0,MAX_PRESSURE);
     const days=clamp(Number(s.days)||0,0,MAX_DAYS);if(!days)return 0;
-    const fetalBulk=s.count*days/280*s.weight;
+    const fetalBulk=s.count*getFetalGrowth(days,'human')*s.weight;
     return clamp(0.5+Math.min(1.25,days/280)**1.35*5+fetalBulk*1.5,0,MAX_PRESSURE);
   }
   // Reference-geometry coordinate only; the visible size control is pregnancy clothing pressure.
-  const MID_PRESSURE=0.5+0.5**1.35*5+0.5*1.5;
+  // 孕中参考（单胎 20 周）的孕肚大小：照插件 1.4.1 起的人类型生长曲线（20 周份量 0.2）算，参考图才落在 20 周
+  const MID_PRESSURE=0.5+0.5**1.35*5+getFetalGrowth(140,'human')*1.5;
   const bulkOf=s=>pchip([0,0.5,MID_PRESSURE,7,8.5,10,13,15],[0,0,0.5,1,2,3,5,BULK_MAX],pressureOf(s));
   function reviewedStageField(anchors,key,bulk){
     const exact=MODEL.bulks.findIndex(value=>Math.abs(value-bulk)<1e-7);
