@@ -214,6 +214,39 @@ export function getFetusGrowthShape(profile, fetus) {
 }
 
 /**
+ * 胎量与胎重：胎重（fetus.weight）是这一胎足月时比同族标准胎大多少（1.0 ＝ 该族理想的足月大小，不跨族比较；
+ *   混血与跨族受孕由体型差换算），受精时就定下、整个孕期不变；
+ * 份量倍率（fetalBulkRatio）是这一族每胎占肚子多少；生长型份量（0 → 足月 1）是现在长到哪里。
+ * 某一刻的胎量 ＝ 生长型份量 × 胎重 × 份量倍率（伴生卵另计）。
+ */
+export function getFetusBulk(profile, fetus) {
+  const effectivePregnantDays = clampNumber(profile?.pregnant?.effectivePregnantDays, 0, 9999, 0);
+  const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
+  return getFetalGrowth(ownAge, getFetusGrowthShape(profile, fetus))
+    * clampNumber(fetus?.weight, 0.33, 3.0, 1.0) * getFetalBulkRatioByRace(fetus?.race, fetus?.bloodline);
+}
+
+/**
+ * 母体感觉得到胎动的胎量门槛：人类型单胎约孕 18–19 周（份量 0.16）；经产妇早一点（×0.75，约 16–17 周）。
+ * 看胎量不看孕龄：早熟型的族早早就感觉得到，晚成型、窝仔小的族要晚得多。
+ */
+export const FETAL_MOVEMENT_PERCEIVE_BULK = 0.16;
+export const FETAL_MOVEMENT_PAROUS_FACTOR = 0.75;
+/** 假宫缩的胎量门槛（整窝合计）：人类型单胎约孕 20 周 */
+export const FALSE_CONTRACTION_MIN_BULK = 0.2;
+
+/** 她现在感觉得到胎动吗：有一胎（能自由动、不在宿主体内）胎量过门槛 */
+export function canFeelFetalMovement(profile) {
+  const stage = String(profile?.base?.stage || '');
+  if (!PREGNANCY_STAGES.includes(stage) && stage !== '产兆前驱' && !LABOR_STAGES.includes(stage)) return false;
+  const fetuses = Array.isArray(profile?.pregnant?.fetuses) ? profile.pregnant.fetuses : [];
+  const births = clampNumber(profile?.experience?.naturalBirthExperience, 0, 999, 0) + clampNumber(profile?.experience?.surgicalBirthExperience, 0, 999, 0);
+  const threshold = FETAL_MOVEMENT_PERCEIVE_BULK * (births > 0 ? FETAL_MOVEMENT_PAROUS_FACTOR : 1);
+  return fetuses.some((fetus) => fetus && !fetus.pendingImplantation && !getEnclosingHost(fetus, fetuses)
+    && getFetusBulk(profile, fetus) >= threshold);
+}
+
+/**
  * 肚子实际装了多少：每胎「生长型份量 × 胎重 × 份量倍率」加总，伴生卵按份量随所属那胎一起长大。
  * 生长型份量足月为 1（fetal_growth.js），各型只差在什么时候长得快。
  * 份量倍率表达窝仔物种每只较小（getFetalBulkRatioByRace），只管肚子大小，胎重本身不动。
@@ -6041,7 +6074,6 @@ function shiftProdromalTime(profile, female, deltaHours) {
 const ASSIST_PAIN_BOOST_CAP = 5;
 const ASSIST_ACTIONS = Object.freeze(['rotate', 'lift', 'descend', 'rupture', 'extract', 'push', 'rest', 'sibling', 'tighten']);
 /** 假宫缩最早出现的有效孕龄（20 周） */
-const FALSE_CONTRACTION_MIN_DAYS = 140;
 /** 各动作的瞬时痛感（产程相关阶段）；孕期改为心理压力 × 2 */
 const ASSIST_PAIN = Object.freeze({ lift: 2, descend: 1.5, rotate: 2, extract: 3, rupture: 0.5 });
 /** 活力消耗倍率：托高吃满，顺着宫缩促降与转位减半，外力完成的拉出与破水不扣 */
@@ -6212,13 +6244,13 @@ function resolveAssistTarget(pregnant, fetusIndex) {
 
 /**
  * 假宫缩（action=tighten）：肚子一阵阵发紧、发硬。只发画面事件给子宫图演出（1.4.0 孕体特写接动画），
- * 不推产程、不改宫压、不扣健康、不耗活力，没有冷却。孕 20 周起到延产期可用；产兆前驱以后的宫缩是真的，跳过。
+ * 不推产程、不改宫压、不扣健康、不耗活力，没有冷却。胎量够大起（人类型约孕 20 周）到延产期可用；产兆前驱以后的宫缩是真的，跳过。
  */
 function applyFalseContraction(character, female, skip) {
   const profile = character?.profile || {};
   const stage = String(profile.base?.stage || '');
   if (!PREGNANCY_STAGES.includes(stage)) return skip(`stage ${stage || '(none)'} has no false contractions; from 产兆前驱 on the contractions are real.`);
-  if (clampNumber(profile.pregnant?.effectivePregnantDays, 0, 99999, 0) < FALSE_CONTRACTION_MIN_DAYS) return skip('false contractions start around week 20.');
+  if (getFetalBulk(profile) < FALSE_CONTRACTION_MIN_BULK) return skip('the womb is not big enough for false contractions yet (around week 20 in a human-type pregnancy).');
   setVisualCue(profile, 'falseContraction');
   return { applied: true, message: `${female}: false contraction (irregular tightening that eases with rest); labor, pressure and health unchanged.` };
 }

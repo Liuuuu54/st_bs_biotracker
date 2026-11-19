@@ -235,7 +235,7 @@ test('v14 → v15：旧档载入时已和新预设合并成中性值，迁移照
   assert.notDeepEqual([traits.allocationBias, traits.bustGain, traits.hipGain], [0, 1.5, 0.5], '名字 A 抽到的不是中性值，测试才有意义');
 });
 
-test('假宫缩 tighten：孕 20 周起才有，只发画面事件，产程、宫压与健康都不变', () => {
+test('假宫缩 tighten：胎量够大（人类型约孕 20 周）才有，只发画面事件，产程、宫压与健康都不变', () => {
   const early = setup({ days: 100, stage: '孕中期' });
   assert.equal(applyToolCall(early, { name: 'bsAssistFetalPosition', arguments: { female: 'A', action: 'tighten' } }).applied, false);
   const late = setup({ days: 230, stage: '孕晚期', base: { uterinePressure: 12 } });
@@ -247,6 +247,11 @@ test('假宫缩 tighten：孕 20 周起才有，只发画面事件，产程、�
   assert.equal(P(late).base.vitality, 100, '不耗活力');
   assert.deepEqual(P(late).pregnant.fetuses.map(({ health, weight }) => [health, weight]), [[50, 1]]);
   assert.equal(P(late).pregnant.effectivePregnantDays, 230);
+  // 看胎量不看孕龄：同样孕 120 天，早熟型的鸟族已经够大，人类型还不够
+  assert.equal(applyToolCall(setup({ days: 120, stage: '孕中期' }), { name: 'bsAssistFetalPosition', arguments: { female: 'A', action: 'tighten' } }).applied, false);
+  const bird = setup({ days: 120, stage: '孕中期' });
+  P(bird).pregnant.fetuses.forEach((fetus) => { fetus.race = '鸟族'; });
+  assert.equal(applyToolCall(bird, { name: 'bsAssistFetalPosition', arguments: { female: 'A', action: 'tighten' } }).applied, true);
   const prodromal = setup({ days: 275, stage: '产兆前驱' });
   assert.equal(applyToolCall(prodromal, { name: 'bsAssistFetalPosition', arguments: { female: 'A', action: 'tighten' } }).applied, false);
 });

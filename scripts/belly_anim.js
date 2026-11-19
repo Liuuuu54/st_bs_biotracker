@@ -156,7 +156,7 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
   }
 
   // ---- 胎儿 ----
-  /** 每一胎：{ size 份量, maturity 成熟度（孕龄 ÷ 280 × 胎重，没给照份量）, weight 胎重, vigor 活力档 0–3, health 健康 0–100, canMove, zone: {v,w} 在孕肚上的位置 } */
+  /** 每一胎：{ size 胎量（生长型份量 × 胎重 × 份量倍率）, weight 胎重, vigor 活力档 0–3, health 健康 0–100, canMove, zone: {v,w} 在孕肚上的位置 } */
   function fetusList() {
     if (Array.isArray(state.fetuses)) return state.fetuses;
     const count = Math.max(1, Number(state.count) || 1);
@@ -167,8 +167,8 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
   function fetalPace(fetus, total) {
     if (afterBirth() || fetus.canMove === false) return null;
     const size = fetus.size ?? 0;
-    // 什么时候开始动看成熟度（孕龄）；动得多用力看份量（生长型）
-    const quick = clamp(((fetus.maturity ?? size) - 0.42) / 0.28, 0, 1);
+    // 胎量照人类型校准：0.12（约孕 17 周）开始看得到，0.47（约 28 周）动满
+    const quick = clamp((size - 0.12) / 0.35, 0, 1);
     if (quick <= 0) return null;
     const crowd = clamp((scene.rest.fig.bulk - 0.5) / 2.5, 0, 1);
     const eased = quick * quick * (3 - 2 * quick);
@@ -179,7 +179,8 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
     const hard = clamp(0.6 + 0.4 * health, 0.5, 1.2);
     // 预览页的「× 胎数^0.6」是整窝的次数：平均摊给每一胎
     const perMinute = 8 * eased * (1 - 0.55 * crowd) * total ** 0.6 / total * (1 + 0.3 * state.stress / 100) * vigor.often * often;
-    const grown = clamp((size - 0.5) / 0.6, 0, 1);
+    // 力道：胎量 0.2（约孕 20 周）起变大，足月后再长一点到顶
+    const grown = clamp((size - 0.2) / 0.97, 0, 1);
     const weight = fetus.weight ?? state.weight ?? 1;
     const amp = Math.min(2.2, (0.35 + 1.4 * grown) * weight ** 0.3 * (1 + 0.25 * state.uterine / 100)) * vigor.hard * hard;
     return { perMinute, amp, big: vigor.big };

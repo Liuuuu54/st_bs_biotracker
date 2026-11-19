@@ -124,3 +124,19 @@ test('种族提示词：生长型的说明只出一次，各种族块只写型�
   assert.match(prompt, /- 胎儿生长型: 人类型\n/);
   assert.match(buildSingleRacePhysiologyText('鸟族'), /胎儿生长型: 早熟型，一开始就长得快/);
 });
+
+test('胎动感知看胎量：人类型约孕 18–19 周，经产妇早一点；早熟型的蛋更早，份量小的熊人族更晚', async () => {
+  const { canFeelFetalMovement, getFetusBulk } = await import('../scripts/tools.js');
+  const mother = (days, race = '人类', extra = {}) => ({
+    base: { stage: days < 98 ? '孕早期' : days < 196 ? '孕中期' : '孕晚期', race: '人类' },
+    experience: extra.experience || {},
+    pregnant: { effectivePregnantDays: days, fetuses: [{ embryoId: 1, race, weight: 1 }] },
+  });
+  assert.equal(canFeelFetalMovement(mother(7 * 17)), false);
+  assert.equal(canFeelFetalMovement(mother(7 * 19)), true);
+  assert.equal(canFeelFetalMovement(mother(7 * 17, '人类', { experience: { naturalBirthExperience: 1 } })), true, '经产妇早一点');
+  assert.equal(canFeelFetalMovement(mother(7 * 10, '鸟族')), true, '早熟型 10 周就够大');
+  assert.equal(canFeelFetalMovement(mother(7 * 24, '熊人族')), false, '幼崽极小、晚成型');
+  const profile = mother(140);
+  assert.ok(Math.abs(getFetusBulk(profile, profile.pregnant.fetuses[0]) - 0.2) < 1e-9, '胎量 ＝ 份量 × 胎重 × 份量倍率');
+});

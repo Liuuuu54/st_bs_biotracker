@@ -14,7 +14,7 @@ import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, reso
 import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
 import { getAllocationAlpha, getAllocationText, getBuildText, getBustGrowthText, getCupLabel, getHipText, hasHumanFigure } from './maternal_body.js';
-import { applyToolCallsResult, describeBackSide, describeFetalPosition, getBellySize, getCurrentBody, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
+import { applyToolCallsResult, canFeelFetalMovement, describeBackSide, describeFetalPosition, getBellySize, getCurrentBody, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getPrenatalCareKey, PRENATAL_CARE_LEVELS, getFetalHarmFactor, getFetalHealthTier, labelFetalEventTarget } from './fetal_health.js';
 import {
   buildRecentMessages,
@@ -1210,6 +1210,10 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   // 读原档：这里的 profile.pregnant 已经换成送给模型的精简版
   const bellySize = getBellySize(item?.profile);
   if (profile.pregnant && bellySize > 0) profile.pregnant.bellySize = Number(bellySize.toFixed(1));
+  // 胎动感知看胎量（tools.js canFeelFetalMovement），有着床胎儿才送
+  if (profile.pregnant && (item?.profile?.pregnant?.fetuses || []).some((fetus) => fetus && !fetus.pendingImplantation)) {
+    profile.pregnant.fetalMovementFelt = canFeelFetalMovement(item.profile);
+  }
   // 母胎分配只在有着床胎儿时送文字
   if (profile.pregnant && (item?.profile?.pregnant?.fetuses || []).some((fetus) => fetus && !fetus.pendingImplantation)) {
     profile.pregnant.allocation = getAllocationText(getAllocationAlpha(item.profile));

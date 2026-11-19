@@ -90,10 +90,9 @@ export function buildBellyCloseupState(input) {
     }
     return {
       embryoId: fetus.embryoId,
-      // 份量照生长型（没给 growth 的旧呼叫照孕龄直线）；成熟度只看孕龄，决定胎动从什么时候开始
+      // 胎量：生长型份量 × 胎重 × 份量倍率（没给 growth 的旧呼叫照孕龄直线）；胎动什么时候开始、多用力都看它
       size: (Number.isFinite(Number(fetus.growth)) ? Math.max(0, Number(fetus.growth)) : Math.max(0, Number(fetus.ownAge) || 0) / DUE_DATE_DAYS)
         * (Number(fetus.weight) || 1) * (Number(fetus.bulkRatio) || 1),
-      maturity: Math.max(0, Number(fetus.ownAge) || 0) / DUE_DATE_DAYS * (Number(fetus.weight) || 1),
       weight: Number(fetus.weight) || 1,
       // 健康比例 0–1（0.5 是平常）→ 0–100
       health: clamp((Number.isFinite(Number(fetus.healthRatio)) ? Number(fetus.healthRatio) : 0.5) * 100, 0, 100),

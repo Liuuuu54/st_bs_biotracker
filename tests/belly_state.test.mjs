@@ -142,12 +142,12 @@ test('第 6 胎起排在前面 5 胎的背后；孕中孕的内胎记下宿主�
   assert.equal(build()[7].behind, true);
 });
 
-test('1.4.1：特写的胎儿份量照生长型，胎动从什么时候开始仍照孕龄', () => {
-  const fetuses = [{ embryoId: 'a', ownAge: 140, growth: 0.2, weight: 1, bulkRatio: 1, healthRatio: 0.5, canMove: true }];
+test('1.4.1：特写的胎量照生长型（份量 × 胎重 × 份量倍率），胎动开始与力道都看它', () => {
+  const fetuses = [{ embryoId: 'a', ownAge: 140, growth: 0.2, weight: 1.5, bulkRatio: 0.5, healthRatio: 0.5, canMove: true }];
   const [fetus] = buildBellyCloseupState(input({ fetuses, womb: null })).fetuses;
-  assert.ok(Math.abs(fetus.size - 0.2) < 1e-9, '份量照生长型');
-  assert.ok(Math.abs(fetus.maturity - 0.5) < 1e-9, '成熟度照孕龄');
+  assert.ok(Math.abs(fetus.size - 0.15) < 1e-9, '份量 0.2 × 胎重 1.5 × 份量倍率 0.5');
+  assert.equal(fetus.maturity, undefined, '不再另算孕龄成熟度');
   // 旧呼叫没给 growth：照孕龄直线
-  const [legacy] = buildBellyCloseupState(input({ fetuses: [{ ...fetuses[0], growth: undefined }], womb: null })).fetuses;
+  const [legacy] = buildBellyCloseupState(input({ fetuses: [{ ...fetuses[0], growth: undefined, weight: 1, bulkRatio: 1 }], womb: null })).fetuses;
   assert.ok(Math.abs(legacy.size - 0.5) < 1e-9);
 });
