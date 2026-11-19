@@ -300,7 +300,8 @@ export function computeUterusLayout(profile, options = {}) {
     host.inner.push({
       embryoId: fetus.embryoId,
       index: visible.indexOf(fetus),
-      size: Math.max(2, Math.round(host.size * 0.45)),
+      // 照内胎自己的生长型长大（与母体格位的胎儿同一条公式），最多画到宿主的六成，免得挤出宿主
+      size: Math.max(2, Math.min(Math.round(host.size * 0.6), Math.round((1.5 + 20.5 * clamp(getFetalGrowth(ownAge, getFetusGrowthShape(profile, fetus)), 0, 1)) * Math.sqrt(clamp(finite(fetus.weight, 1), 0.33, 3))))),
       sprite: getFetusSpriteSpec(fetus, ownAge),
       angle: quantizeAngle(fetus.tendencyAngle),
     });

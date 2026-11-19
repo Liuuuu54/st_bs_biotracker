@@ -122,6 +122,17 @@ test('孕中孕的内胎挂在宿主身上，不占格位', () => {
   assert.deepEqual(layout.fetuses[0].inner.map((inner) => inner.embryoId), [2]);
 });
 
+test('孕中孕的内胎照自己的生长型长大，最多画到宿主的六成', () => {
+  const innerAt = (conceivedAtDays) => computeUterusLayout(profile('孕晚期', [
+    fetus(1, { weight: 2 }),
+    fetus(2, { nestedInEmbryoId: 1, conceivedAtDays, revealed: true, tags: ['superfetation', 'nested'] }),
+  ], { days: 250 })).fetuses[0];
+  const young = innerAt(200);
+  const older = innerAt(80);
+  assert.ok(young.inner[0].size < older.inner[0].size, `刚嵌进去的内胎比较小：${young.inner[0].size} vs ${older.inner[0].size}`);
+  assert.ok(older.inner[0].size <= Math.round(older.size * 0.6), '不超过宿主六成');
+});
+
 test('胎位角量化成 8 个方向', () => {
   assert.deepEqual([0, 20, 23, 170, 359, -30, 720].map(quantizeAngle), [0, 0, 45, 180, 0, 315, 0]);
 });
