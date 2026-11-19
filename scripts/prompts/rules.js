@@ -13,8 +13,9 @@
 //   - 手动改楼后的重追判断（edit_gate.js）：给决策接口的选项说明，按改动内容组句
 //   - 追踪视角里数值换成的文字刻度（健康、亲密度等），在 tracker.js 的视角投影
 import { PSY_MENS_BOOL_FIELDS, PSY_MENS_FIELDS, PSY_PREG_BOOL_FIELDS, PSY_PREG_FIELDS, PSY_STAGE_KEYS } from '../registry_psy_config.js';
-import { BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, computePostpartumRecoveryDays, DERIVED_TYPE_RACES, deriveFetusAncestry, formatBloodline, getAllRaces, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getFetalBulkRatioByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection, RACE_BODY_PLAN_LABELS } from '../race_config.js';
+import { BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, computePostpartumRecoveryDays, DERIVED_TYPE_RACES, deriveFetusAncestry, formatBloodline, getAllRaces, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getFetalBulkRatioByRace, getFetalGrowthShapeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection, RACE_BODY_PLAN_LABELS } from '../race_config.js';
 import { deriveFetusTags, describeFetusTags } from '../fetus_tags.js';
+import { FETAL_GROWTH_SHAPE_HINTS, FETAL_GROWTH_SHAPE_LABELS, normalizeFetalGrowthShape } from '../fetal_growth.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGES } from '../stage_config.js';
 import { parseDescriptionGuideFields, stripDescriptionGuideStars } from '../descriptions.js';
 import { CROSS_RACE_DIFFICULTY_MULTIPLIER, EMBRYO_TYPE_MISMATCH_MULTIPLIER, calculateImplantationDays } from '../calculator.js';
@@ -1109,6 +1110,33 @@ function getIdenticalText(value) {
  * 百科编辑器的即时换算：把一个栏位的数值翻成白话（孕期几天、产后几天、负担多重…），
  * 与资料页、提示词同一套句子。value 为空字串或无效时回空字串
  */
+/**
+ * 胎儿生长型的定义：<bs_race> 里出现过的型各说明一次（同胚型的说明也只出一次，道理相同），
+ * 各种族块只写型名。races 是这次送出的种族字串（可为混血），bloodlines 对应混血比例。
+ */
+function buildFetalGrowthDefinitionPrompt(entries) {
+  const shapes = [];
+  for (const { race, bloodline = null } of entries) {
+    for (const part of [race, ...getRaceComponents(race)]) {
+      const shape = getFetalGrowthShapeByRace(part, part === race ? bloodline : null);
+      if (shape && !shapes.includes(shape)) shapes.push(shape);
+    }
+  }
+  if (shapes.length === 0) return '';
+  return [
+    '[胎儿生长型定义]',
+    '- 只管胎量（孕肚）在孕期的哪一段变大；各型足月一样大，系统的孕肚大小已照它计算，描写孕肚时依系统数值。',
+    '- 母体负担跟成长速度走：长得快的那段最吃力。魔力、灵魂之类其他方面的成长不受生长型限制，照物种短敘述与剧情。',
+    ...shapes.map((shape) => `- ${FETAL_GROWTH_SHAPE_LABELS[shape]}：${FETAL_GROWTH_SHAPE_HINTS[shape]}。`),
+  ].join('\n');
+}
+
+/** 胎儿生长型的白话：只讲胎量（孕肚）什么时候长，足月一律一样大 */
+export function getFetalGrowthShapeText(shape) {
+  const key = normalizeFetalGrowthShape(shape) || 'human';
+  return `${FETAL_GROWTH_SHAPE_LABELS[key]}，${FETAL_GROWTH_SHAPE_HINTS[key]}（只管孕肚什么时候变大，足月一样大；其他方面的成长照短敘述）`;
+}
+
 export function describeRaceFieldValue(field, value, { autoFetalBulkRatio = null } = {}) {
   const empty = value === '' || value === undefined;
   const num = Number(value);
@@ -1117,6 +1145,7 @@ export function describeRaceFieldValue(field, value, { autoFetalBulkRatio = null
     case 'dormancyDays': return empty ? '' : num > 0 ? `每季结束后进入乏情期约 ${Math.round(num)} 天，这段时间不排卵、不受孕。` : '没有乏情期：月经结束就进入下一轮。';
     case 'seasonCycles': return empty || !(num >= 1) ? '' : Math.round(num) <= 1 ? '一季只有一轮：每次月经后就进入乏情期（乏情天数为 0 时不影响）。' : `繁殖季内连续 ${Math.round(num)} 轮周期，跑满才进入乏情期（乏情天数为 0 时不影响）。`;
     case 'gestationSpeciesSpeed': return empty || !(num > 0) ? '' : `足月${formatGestation(num)}。`;
+    case 'fetalGrowthShape': return normalizeFetalGrowthShape(value) ? `${FETAL_GROWTH_SHAPE_HINTS[normalizeFetalGrowthShape(value)]}。` : '';
     case 'recoveryCoefficient': return empty || !(num > 0) ? '' : `产后${formatRecoveryDays(computePostpartumRecoveryDays({ recoveryCoefficient: num }))}才回到月经周期（实际再依活力、经产与胎数调整）。`;
     case 'birthDifficulty': return empty ? '' : getBirthDifficultyText(num);
     case 'breedTolerance': return empty ? '' : getBreedToleranceText(num);
@@ -1197,7 +1226,7 @@ function describeShift(nextValue, baseValue, formatter = (value) => String(value
   return `${formatter(next)}（相较基准 ${direction} ${formatNumber(Math.abs(delta))}）`;
 }
 
-function buildSingleRacePhysiologyBlock(race) {
+function buildSingleRacePhysiologyBlock(race, { growthDetail = false } = {}) {
   const profile = getRacePhysiologyProfile(race);
   if (!profile) return '';
   const introductionLine = getRaceIntroductionLine(race);
@@ -1213,6 +1242,8 @@ function buildSingleRacePhysiologyBlock(race) {
     `- 遗传核型: ${getInheritanceModeText(race)}`,
     `- 典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race))}（每名有效后代伴随的背景卵；自然受精会依有效精液量调整后再作约 ±10% 波动；均值 0 恒为 0）`,
     `- 胎儿份量: ${getFetalBulkText(getFetalBulkRatioByRace(race))}（只影响孕肚大小，胎重照常）`,
+    // 同一型的说明在 <bs_race> 里只出一次（buildFetalGrowthDefinitionPrompt），这里只写型名；百科单页才写全
+    `- 胎儿生长型: ${growthDetail ? getFetalGrowthShapeText(getFetalGrowthShapeByRace(race)) : FETAL_GROWTH_SHAPE_LABELS[getFetalGrowthShapeByRace(race)]}`,
     `- 多产性: ${getProlificacyText(profile.orgasmOvulationAmount, profile.identicalProbability)}；额外排卵倾向 ${formatNumber(profile.orgasmOvulationAmount)}（高潮时按当下活力占比排出，每周期黄体期前、黄体期各一次），同卵多胎概率 ${formatNumber(profile.identicalProbability)}%`,
     `- 性别比: ${getGenderRatioText(profile.genderRatio)}`,
     `- 体型: ${getBodySizeText(profile)}`,
@@ -1220,8 +1251,99 @@ function buildSingleRacePhysiologyBlock(race) {
   ].filter(Boolean).join('\n');
 }
 
+/**
+ * 百科物种页（给人看）：把同一套数值整理成标题、标签与四组「栏名／数值／一行白话」，
+ * 不直接倒提示词。句子与提示词共用同一批白话函式。
+ */
+/** 百科体型栏的白话：数值已在栏位里，这里只讲大概多高、族内差多少、变化态多大 */
+function describeBodySizeNote({ bodySize, bodySizeSd, altFormBodySize } = {}) {
+  if (bodySize === null || bodySize === undefined || bodySize === BODY_SIZE_INDIVIDUAL) return getBodySizeText({ bodySize });
+  const level = (value) => {
+    const index = Math.max(0, Math.min(BODY_SIZE_LEVEL_NAMES.length - 1, Math.round(Number(value)) - 1));
+    return `${BODY_SIZE_LEVEL_NAMES[index]}，${BODY_SIZE_HEIGHT_REFERENCES[index]}`;
+  };
+  const parts = [level(bodySize)];
+  const sd = Number(bodySizeSd);
+  if (Number.isFinite(sd) && sd > 0) parts.push(`族内差异约 ±${formatNumber(sd)} 级`);
+  if (typeof altFormBodySize === 'number') parts.push(`变化态${level(altFormBodySize)}`);
+  return `${parts.join('；')}。人类为 4 级。`;
+}
+
+export function buildRaceEncyclopediaView(race) {
+  const profile = getRacePhysiologyProfile(race);
+  if (!profile) return null;
+  const embryoType = getEmbryoTypeByRace(race);
+  const growthShape = getFetalGrowthShapeByRace(race);
+  const inheritance = getRaceInheritanceMode(race);
+  const times = (value) => `×${formatNumber(value)}`;
+  const firstSentence = (text) => String(text || '').split('。')[0];
+  const active = Math.round(28 * Number(profile.menstrualLengthRatio || 1));
+  const dormancy = Math.round(Math.max(0, Number(profile.dormancyDays) || 0));
+  const cycles = Math.max(1, Math.round(Number(profile.seasonCycles) || 1));
+  const cycleNote = dormancy <= 0 ? '没有乏情期：月经结束就进入下一轮。'
+    : cycles <= 1 ? `月经后乏情约 ${dormancy} 天，约 ${active + dormancy} 天才有一次受孕机会。`
+      : `繁殖季连续约 ${cycles} 轮，之后乏情约 ${dormancy} 天，约 ${active * cycles + dormancy} 天一季。`;
+  const gender = profile.genderRatio === null ? '雌雄同体' : profile.genderRatio === -1 ? '无性'
+    : Number(profile.genderRatio) === 0 ? '全雌' : Number(profile.genderRatio) === 100 ? '全雄' : `雄 ${Math.round(Number(profile.genderRatio))}%`;
+  const prolific = getProlificacyText(profile.orgasmOvulationAmount, profile.identicalProbability);
+  const bulk = getFetalBulkRatioByRace(race);
+  const explicitBulk = profile.fetalBulkRatio !== null && profile.fetalBulkRatio !== undefined && Number.isFinite(Number(profile.fetalBulkRatio));
+  const inheritanceLabel = inheritance === 'paternal' ? '雄核' : inheritance === 'maternal' ? '雌核' : '一般';
+  const inheritanceNote = inheritance === 'paternal' ? '只有一方带核型时，孩子随精方种族。'
+    : inheritance === 'maternal' ? '只有一方带核型时，孩子随卵方种族。' : '双方都一般时混血。';
+  const eggs = getCompanionEggsMeanByRace(race);
+  const recoveryDays = computePostpartumRecoveryDays({ recoveryCoefficient: Number(profile.recoveryCoefficient) > 0 ? Number(profile.recoveryCoefficient) : 1 });
+  const sizeValue = profile.bodySize === null || profile.bodySize === undefined ? '可变'
+    : profile.bodySize === BODY_SIZE_INDIVIDUAL ? '依个体'
+      : `${profile.bodySize} 级${typeof profile.altFormBodySize === 'number' ? ` → ${profile.altFormBodySize} 级` : ''}`;
+  return {
+    race,
+    introduction: getRaceIntroductionLine(race),
+    // 标签只放一眼要知道的：胚型、生长型，核型特殊时才标
+    tags: [embryoType, FETAL_GROWTH_SHAPE_LABELS[growthShape], ...(inheritance === 'normal' ? [] : [inheritanceLabel])],
+    growthShape,
+    sections: [
+      {
+        title: '周期与受孕',
+        rows: [
+          { label: '经期', value: `约 ${active} 天`, note: cycleNote },
+          { label: '受精难度', value: times(profile.impregnationDifficulty), note: getImpregnationDifficultyText(profile.impregnationDifficulty) },
+          { label: '多产性', value: firstSentence(prolific), note: `高潮额外排卵 ${formatNumber(profile.orgasmOvulationAmount)} 颗，同卵分裂 ${formatNumber(profile.identicalProbability)}%。${prolific.split('。')[1] || ''}。`.replace('。。', '。') },
+          { label: '性别比', value: gender, note: getGenderRatioText(profile.genderRatio) },
+          { label: '遗传核型', value: inheritanceLabel, note: inheritanceNote },
+        ],
+      },
+      {
+        title: '妊娠',
+        rows: [
+          { label: '孕期', value: `约 ${Math.round(280 / (Number(profile.gestationSpeciesSpeed) > 0 ? Number(profile.gestationSpeciesSpeed) : 1))} 天`, note: `${(formatGestation(profile.gestationSpeciesSpeed).match(/（(.+)）/) || [])[1] || ''}；孕速 ${times(profile.gestationSpeciesSpeed)}，人类为 ×1。`.replace(/^；/, '') },
+          { label: '生长型', value: FETAL_GROWTH_SHAPE_LABELS[growthShape], note: `${FETAL_GROWTH_SHAPE_HINTS[growthShape]}；足月一样大，只差过程。`, chart: 'growth' },
+          { label: '胎儿份量', value: `${times(bulk)}${explicitBulk ? '' : '（自动）'}`, note: `${getFetalBulkText(bulk)}。` },
+          { label: '伴生卵', value: eggs > 0 ? `约 ${formatNumber(eggs)} 颗` : '无', note: eggs > 0 ? '每名后代旁伴随的背景卵，不会发育成孩子。' : '一胎就是一个孩子。' },
+          { label: '承载耐受', value: times(profile.breedTolerance), note: getBreedToleranceText(profile.breedTolerance) },
+        ],
+      },
+      {
+        title: '分娩与恢复',
+        rows: [
+          { label: '分娩难度', value: times(profile.birthDifficulty), note: getBirthDifficultyText(profile.birthDifficulty) },
+          { label: '产后恢复', value: `约 ${recoveryDays} 天`, note: `恢复系数 ${times(profile.recoveryCoefficient)}；实际再依活力、经产次数与胎数调整。` },
+        ],
+      },
+      {
+        title: '体型',
+        rows: [
+          { label: '体型', value: sizeValue, note: describeBodySizeNote(profile) },
+          ...(profile.bodyPlan ? [{ label: '体态', value: RACE_BODY_PLAN_LABELS[profile.bodyPlan] || profile.bodyPlan, note: `${BODY_PLAN_DESCRIPTIONS[profile.bodyPlan] || ''}。` }] : []),
+        ],
+      },
+    ],
+    embryoType,
+  };
+}
+
 export function buildSingleRacePhysiologyText(race) {
-  return buildSingleRacePhysiologyBlock(race);
+  return buildSingleRacePhysiologyBlock(race, { growthDetail: true });
 }
 
 function buildHybridAverageBlock(race, bloodline = null) {
@@ -1240,6 +1362,7 @@ function buildHybridAverageBlock(race, bloodline = null) {
     `- 平均受精难度: ${getImpregnationDifficultyText(merged.impregnationDifficulty)}`,
     `- 混血典型伴生卵数量: ${formatNumber(getCompanionEggsMeanByRace(race, bloodline))}（先由血脉占比最高的成分决定胚型（平手取孕期较长者，再平手取母系）；胎生／胎转卵生恒为 0，其余按血脉比例对整群规模做加权几何平均）`,
     `- 胎儿份量参考: ${getFetalBulkText(getFetalBulkRatioByRace(race, bloodline))}（按血脉比例加权，只影响孕肚大小）`,
+    `- 胎儿生长型: ${FETAL_GROWTH_SHAPE_LABELS[getFetalGrowthShapeByRace(race, bloodline)]}（取血脉占比最大那一族，平手随母）`,
     `- 平均多产性参考: ${getProlificacyText(merged.orgasmOvulationAmount, merged.identicalProbability)}；额外排卵倾向 ${formatNumber(merged.orgasmOvulationAmount)}（高潮时按当下活力占比排出，每周期黄体期前、黄体期各一次），同卵多胎概率 ${formatNumber(merged.identicalProbability)}%`,
     `- 平均性别比参考: ${getGenderRatioText(merged.genderRatio)}`,
     `- 平均体型参考: ${getBodySizeText(merged)}`,
@@ -1528,11 +1651,15 @@ export function buildRacePhysiologyPrompt(payload = {}, { includeAllRelevant = t
     ? Object.values(payload.existing_state).map((item) => buildPregnancyShiftBlock(item)).filter(Boolean)
     : [];
   if (blocks.length === 0 && derivedBlocks.length === 0 && spermBlocks.length === 0 && pregnancyBlocks.length === 0) return '';
+  const growthDefinition = blocks.length + weightedBlocks.length > 0
+    ? buildFetalGrowthDefinitionPrompt([...(includeAllRelevant ? races : races.slice(0, 1)).map((race) => ({ race })), ...[...weighted.values()].map(({ record }) => ({ race: record.race, bloodline: record.bloodline }))])
+    : '';
   return [
     '<bs_race>',
     '以下文本是项目内定义的种族生理设定，请视为高优先级规则。',
     '这些设定用于帮助你理解角色的经期长度、妊娠长度、恢复时间、分娩难度、受精难度、多产性与性别比。',
     COMPANION_EGGS_DEFINITION_PROMPT,
+    growthDefinition,
     ...blocks,
     ...weightedBlocks,
     ...derivedBlocks,
@@ -1553,6 +1680,7 @@ export function buildRegistryRacePhysiologyPrompt(payload = {}, { selection = nu
     '以下文本是本次注册目标角色专用的种族生理设定，请视为高优先级规则。',
     '注册时只参考当前目标角色相关种族，不要混入其他已注册角色的种族设定。',
     COMPANION_EGGS_DEFINITION_PROMPT,
+    blocks.length > 0 ? buildFetalGrowthDefinitionPrompt(races.map((race) => ({ race }))) : '',
     ...blocks,
     ...derivedBlocks,
     '</bs_race>',

@@ -46,7 +46,7 @@ export function isBellyNude(outfit) {
  *   stats: { vitality, libido, stress, uterine }（各 { value, cap }）,
  *   needs: { hunger, sleep, excretion, milk, odor }（各 { value, cap }；免除或代谢免疫的给 null）,
  *   outfit（buildOutfitView 的结果）,
- *   fetuses: [{ embryoId, ownAge, weight, bulkRatio, healthRatio（0–1）, canMove, nestedInEmbryoId, nestedReleased }]（角色已知、已着床的）,
+ *   fetuses: [{ embryoId, ownAge, growth（生长型份量，足月 1）, weight, bulkRatio, healthRatio（0–1）, canMove, nestedInEmbryoId, nestedReleased }]（角色已知、已着床的）,
  *   womb: computeUterusLayout 的结果（取每胎在子宫里的位置）,
  * }
  * @returns 特写的状态；不能画时回传 null
@@ -90,7 +90,10 @@ export function buildBellyCloseupState(input) {
     }
     return {
       embryoId: fetus.embryoId,
-      size: Math.max(0, Number(fetus.ownAge) || 0) / DUE_DATE_DAYS * (Number(fetus.weight) || 1) * (Number(fetus.bulkRatio) || 1),
+      // 份量照生长型（没给 growth 的旧呼叫照孕龄直线）；成熟度只看孕龄，决定胎动从什么时候开始
+      size: (Number.isFinite(Number(fetus.growth)) ? Math.max(0, Number(fetus.growth)) : Math.max(0, Number(fetus.ownAge) || 0) / DUE_DATE_DAYS)
+        * (Number(fetus.weight) || 1) * (Number(fetus.bulkRatio) || 1),
+      maturity: Math.max(0, Number(fetus.ownAge) || 0) / DUE_DATE_DAYS * (Number(fetus.weight) || 1),
       weight: Number(fetus.weight) || 1,
       // 健康比例 0–1（0.5 是平常）→ 0–100
       health: clamp((Number.isFinite(Number(fetus.healthRatio)) ? Number(fetus.healthRatio) : 0.5) * 100, 0, 100),

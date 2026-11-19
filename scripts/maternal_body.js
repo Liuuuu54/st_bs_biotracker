@@ -4,7 +4,8 @@
 //   母体倾向 ＋ 每胎索取 → 本胎 α（只决定母体留多少）→ 体重（脂肪储备）→ 外溢到臀与胸
 //   胸部增长倾向 → 胸（荷尔蒙），臀部增长倾向 → 臀（骨盆变宽）：个人体质，与 α 无关
 // 每胎索取、本胎 α、孕期增量都即时算出、不存；只存基准、倾向，与产后待回落的那一份。
-import { getMergedRacePhysiologyProfile } from './race_config.js';
+import { getFetalGrowthShapeByRace, getMergedRacePhysiologyProfile } from './race_config.js';
+import { getFetalGrowth } from './fetal_growth.js';
 import { DUE_DATE_DAYS } from './stage_config.js';
 
 export const BODY_BASE_DEFAULTS = Object.freeze({ build: 50, bust: 40, hip: 50 });
@@ -171,7 +172,7 @@ function getFetusOwnAge(profile, fetus) {
 }
 
 /**
- * 本胎 α：−1 偏养母 ～ +1 偏养宝。母体倾向加上各胎索取（按自身孕龄 × 胎重加权）偏离 1 的部分。
+ * 本胎 α：−1 偏养母 ～ +1 偏养宝。母体倾向加上各胎索取（按生长型份量 × 胎重加权）偏离 1 的部分。
  * 没有着床的胎儿（假孕、未孕）时就是母体倾向。
  */
 export function getAllocationAlpha(profile) {
@@ -182,7 +183,8 @@ export function getAllocationAlpha(profile) {
   let weightSum = 0;
   let demandSum = 0;
   for (const fetus of fetuses) {
-    const weight = getFetusOwnAge(profile, fetus) * clamp(fetus?.weight, 0.33, 3, 1);
+    const shape = getFetalGrowthShapeByRace(fetus?.race, fetus?.bloodline, profile?.base?.race || null, profile?.base?.bloodline || null);
+    const weight = getFetalGrowth(getFetusOwnAge(profile, fetus), shape) * clamp(fetus?.weight, 0.33, 3, 1);
     weightSum += weight;
     demandSum += weight * getFetusDemand(profile, fetus);
   }

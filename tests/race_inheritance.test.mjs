@@ -26,10 +26,21 @@ function makeHost(name, race) {
   };
 }
 
-test('内建名录共 110 个物种，新增种族进入正确胚胎分组', () => {
-  assert.equal(ALL_BUILTIN_RACES.length, 110);
-  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 109);
+test('内建名录共 121 个物种，新增种族进入正确胚胎分组', () => {
+  assert.equal(ALL_BUILTIN_RACES.length, 121);
+  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 120);
   const expected = {
+    卡玛佐兹: '胎生',
+    熊人族: '胎生',
+    夢貘: '胎生',
+    玛坦戈: '卵生',
+    雷鸟: '卵生',
+    双生螳螂: '卵胎生',
+    棘皮族: '卵胎生',
+    圣甲虫: '胎转卵生',
+    帝江: '胎转卵生',
+    灰人: '不定型',
+    宁芙: '不定型',
     卓尔: '胎生',
     米诺陶族: '胎生',
     魔族: '胎生',
@@ -111,9 +122,9 @@ test('内建名录共 110 个物种，新增种族进入正确胚胎分组', () 
   assert.equal(getRacePhysiologyProfile('白泽').breedTolerance, 0.4, '白泽承载耐受应提升至 0.4');
 });
 
-test('十四个雄核与十四个雌核种族配置完整', () => {
-  const paternal = ['哥布林', '深潜者', '海马族', '怪兽类', '怪鸟类', '怪鱼类', '拜亚基', '月兔族', '鸡蛇族', '沙虫族', '巨魔', '怪虫类', '怪爬虫类', '夺心魔'];
-  const maternal = ['媚魔', '夢魔', '心魇', '星繭族', '群居虫人', '梅杜莎', '华根蕴桃', '核焰族', '爱那温', '赛壬', '炉蚜', '阿拉克涅', '斯库拉', '鬣狗族'];
+test('十五个雄核与十五个雌核种族配置完整', () => {
+  const paternal = ['哥布林', '深潜者', '海马族', '怪兽类', '怪鸟类', '怪鱼类', '拜亚基', '月兔族', '鸡蛇族', '沙虫族', '巨魔', '怪虫类', '怪爬虫类', '夺心魔', '玛坦戈'];
+  const maternal = ['媚魔', '夢魔', '心魇', '星繭族', '群居虫人', '梅杜莎', '华根蕴桃', '核焰族', '爱那温', '赛壬', '炉蚜', '阿拉克涅', '斯库拉', '鬣狗族', '宁芙'];
   for (const race of paternal) {
     assert.equal(getRaceInheritanceMode(race), RACE_INHERITANCE_MODES.PATERNAL, race);
   }
@@ -122,11 +133,11 @@ test('十四个雄核与十四个雌核种族配置完整', () => {
   }
   assert.equal(
     ALL_BUILTIN_RACES.filter((race) => getRaceInheritanceMode(race) === RACE_INHERITANCE_MODES.PATERNAL).length,
-    14,
+    15,
   );
   assert.equal(
     ALL_BUILTIN_RACES.filter((race) => getRaceInheritanceMode(race) === RACE_INHERITANCE_MODES.MATERNAL).length,
-    14,
+    15,
   );
 });
 

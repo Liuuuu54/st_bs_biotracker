@@ -29,6 +29,7 @@ import {
   DERIVED_TYPE_INTRODUCTION_LINES,
   EMBRYO_TYPES,
   RACE_EMBRYO_TYPE_FIELD,
+  RACE_GROWTH_SHAPE_FIELD,
   RACE_INHERITANCE_FIELD,
   RACE_INHERITANCE_MODES,
   RACE_INTRODUCTION_FIELD,
@@ -106,18 +107,22 @@ import {
   getPresentingFetus,
   getUterinePressureCap as getProfileUterinePressureCap,
   isFetusKnownToCharacter,
+  getFetusGrowthShape,
 } from './scripts/tools.js';
 import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
 import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
 import { deleteLibraryEntry, importLibraryEntry, listLibraryEntries, saveEggToLibrary, saveSireToLibrary } from './scripts/character_library.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
-import { buildRaceCatalogHint, buildSingleRacePhysiologyText, describeRaceFieldValue, getEmbryoTypeReferenceText } from './scripts/prompts/rules.js';
+import { buildRaceCatalogHint, describeRaceFieldValue } from './scripts/prompts/rules.js';
 import { getAllocationAlpha, getAllocationText, getBodyBaseline, getBuildText, getCupLabel, getHipText, hasHumanFigure, shiftCareTarget } from './scripts/maternal_body.js';
 import { FETAL_EVENT_KINDS, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, describeCognitionSummary, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, getPrenatalCareKey, normalizeFetalEventList, PRENATAL_CARE_LEVELS } from './scripts/fetal_health.js';
 import { PSY_AXIS_LABELS } from './scripts/registry_psy_config.js';
 import { computeUterusLayout, getFetusSpriteSpec, getUterusGaugeColumns } from './scripts/uterus_layout.js';
 import { getBodySizeSigma } from './scripts/body_size.js';
 import { getFetalBulkRatioByRace } from './scripts/race_config.js';
+import { FETAL_GROWTH_SHAPES, FETAL_GROWTH_SHAPE_LABELS, getDefaultFetalGrowthShape, getFetalGrowth, normalizeFetalGrowthShape } from './scripts/fetal_growth.js';
+import { buildGrowthThumbSvg } from './scripts/growth_chart.js';
+import { renderRaceSheetHtml, renderSheetHtml } from './scripts/encyclopedia_sheet.js';
 import { createBellyAnimator } from './scripts/belly_anim.js';
 import { loadBellyData } from './scripts/belly_data.js';
 import { createBellyLayout } from './scripts/belly_layout.js';
@@ -371,6 +376,7 @@ const RACE_PHYSIOLOGY_FIELD_LABELS = Object.freeze({
 const RACE_FIELD_DESCRIPTIONS = Object.freeze({
   inheritanceMode: '只有一方带核型时孩子归哪边：雄核随父方种族、雌核随母方种族；双方都一般或都带核型时混血。人类为一般。',
   embryoType: '胎儿在体内的样子：胎生、卵生（孕晚结壳）、卵胎生（体内孵卵）、胎转卵生（孕晚转成卵）、不定型。只影响之后的受孕。',
+  fetalGrowthShape: '胎量（孕肚）在孕期的哪一段长得快；足月一律一样大，只差过程。负担跟着成长速度走：长得快的那段母体最吃力。没改过时照胚型：胎生人类型、卵生早熟型、卵胎生与不定型均匀型、胎转卵生两段型。只管孕肚，魔力之类的成长写在短敘述。',
   menstrualLengthRatio: '活动周期（卵泡、排卵、黄体、月经）的长度，人类为 1（约 28 天）。越大每一期都越长，受精到着床也越久；只想让一年才有一次机会，改乏情天数。',
   dormancyDays: '繁殖季结束后的乏情天数，人类为 0。季节性繁殖与长寿低产的物种用它表达「很久才有一次机会」；乏情期不排卵、不受孕、高潮也不排卵，排卵窗口与着床前不受影响。',
   seasonCycles: '繁殖季内连续几轮周期才进入乏情期，人类为 1。马、鹿、猫、鸟在发情季反复发情；一年只发情一次的狐、海豹为 1。没有乏情天数时不影响。',
@@ -391,6 +397,11 @@ const RACE_FIELD_DESCRIPTIONS = Object.freeze({
 });
 
 /** 编辑器栏位底下的说明与即时换算：改数值就跟着更新 */
+/** 编辑器底稿的生长型：写明的照写明，没写的照胚型给预设 */
+function getEditorBaseGrowthShape(profile) {
+  return normalizeFetalGrowthShape(profile?.[RACE_GROWTH_SHAPE_FIELD]) || getDefaultFetalGrowthShape(profile?.[RACE_EMBRYO_TYPE_FIELD]);
+}
+
 function appendRaceFieldHelp(label, field, control, read = () => control.value, { context = () => ({}), watch = [] } = {}) {
   label.classList.add('bs-bt-race-editor-field-wide');
   const help = document.createElement('small');
@@ -2677,6 +2688,56 @@ function renderRacePhysiologyEditor(race) {
   appendRaceFieldHelp(embryoLabel, RACE_EMBRYO_TYPE_FIELD, embryoSelect);
   editorNode.appendChild(embryoLabel);
 
+  const growthLabel = document.createElement('label');
+  growthLabel.className = 'bs-bt-race-editor-field';
+  growthLabel.setAttribute('for', 'bs-bt-race-growth-shape');
+  const growthText = document.createElement('span');
+  growthText.textContent = '胎儿生长型';
+  growthLabel.appendChild(growthText);
+  const growthSelect = document.createElement('select');
+  growthSelect.id = 'bs-bt-race-growth-shape';
+  growthSelect.className = 'text_pole';
+  growthSelect.dataset.raceGrowthField = RACE_GROWTH_SHAPE_FIELD;
+  for (const shape of FETAL_GROWTH_SHAPES) {
+    const option = document.createElement('option');
+    option.value = shape;
+    option.textContent = FETAL_GROWTH_SHAPE_LABELS[shape];
+    growthSelect.appendChild(option);
+  }
+  growthSelect.value = normalizeFetalGrowthShape(override && override[RACE_GROWTH_SHAPE_FIELD])
+    || getEditorBaseGrowthShape(builtin);
+  growthLabel.appendChild(growthSelect);
+  {
+    const badge = document.createElement('span');
+    badge.className = 'bs-bt-race-editor-badge';
+    badge.textContent = getEditorFieldSource('racePhysiologyOverrides', race, RACE_GROWTH_SHAPE_FIELD);
+    growthLabel.appendChild(badge);
+  }
+  appendRaceFieldHelp(growthLabel, RACE_GROWTH_SHAPE_FIELD, growthSelect);
+  // 六型缩图：点一张就选那一型，选中的那张亮起来
+  const growthThumbs = document.createElement('div');
+  growthThumbs.className = 'bs-bt-growth-thumbs';
+  for (const shape of FETAL_GROWTH_SHAPES) {
+    const thumb = document.createElement('button');
+    thumb.type = 'button';
+    thumb.className = 'bs-bt-growth-thumb';
+    thumb.dataset.growthShape = shape;
+    thumb.title = FETAL_GROWTH_SHAPE_LABELS[shape];
+    thumb.innerHTML = `${buildGrowthThumbSvg(shape)}<span>${escapeHtml(FETAL_GROWTH_SHAPE_LABELS[shape])}</span>`;
+    thumb.addEventListener('click', () => {
+      growthSelect.value = shape;
+      growthSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    growthThumbs.appendChild(thumb);
+  }
+  const markThumb = () => {
+    for (const thumb of growthThumbs.children) thumb.classList.toggle('is-active', thumb.dataset.growthShape === growthSelect.value);
+  };
+  growthSelect.addEventListener('change', markThumb);
+  markThumb();
+  growthLabel.appendChild(growthThumbs);
+  editorNode.appendChild(growthLabel);
+
   for (const field of EDITABLE_RACE_PHYSIOLOGY_FIELDS) {
     const label = document.createElement('label');
     label.className = 'bs-bt-race-editor-field';
@@ -2979,6 +3040,11 @@ function collectRacePhysiologyEditorProfile(race, { onlyDiff = false } = {}) {
     const value = String(embryoSelect.value || builtin[RACE_EMBRYO_TYPE_FIELD]);
     if (!onlyDiff || value !== builtin[RACE_EMBRYO_TYPE_FIELD]) result[RACE_EMBRYO_TYPE_FIELD] = value;
   }
+  const growthSelect = document.querySelector(`[data-race-growth-field="${RACE_GROWTH_SHAPE_FIELD}"]`);
+  if (growthSelect instanceof HTMLSelectElement) {
+    const value = normalizeFetalGrowthShape(growthSelect.value);
+    if (value && (!onlyDiff || value !== getEditorBaseGrowthShape(builtin))) result[RACE_GROWTH_SHAPE_FIELD] = value;
+  }
   for (const field of EDITABLE_RACE_PHYSIOLOGY_FIELDS) {
     const input = document.querySelector(`[data-race-physiology-field="${field}"]`);
     if (!(input instanceof HTMLInputElement)) continue;
@@ -3171,6 +3237,8 @@ function copyHumanPhysiologyToEditor() {
   }
   const embryoSelect = document.querySelector(`[data-race-embryo-field="${RACE_EMBRYO_TYPE_FIELD}"]`);
   if (embryoSelect instanceof HTMLSelectElement) embryoSelect.value = human[RACE_EMBRYO_TYPE_FIELD] || '胎生';
+  const growthSelect = document.querySelector(`[data-race-growth-field="${RACE_GROWTH_SHAPE_FIELD}"]`);
+  if (growthSelect instanceof HTMLSelectElement) growthSelect.value = getEditorBaseGrowthShape(human);
   for (const field of EDITABLE_RACE_PHYSIOLOGY_FIELDS) {
     const input = document.querySelector(`[data-race-physiology-field="${field}"]`);
     if (!(input instanceof HTMLInputElement)) continue;
@@ -3414,10 +3482,7 @@ function renderRaceEncyclopediaPage(ctx = null) {
     if (iconRow) iconRow.hidden = !custom;
     if (custom) fillCustomRaceIconSelect(document.getElementById('bs-bt-race-custom-icon'), getCustomRaceIconRace(selectedRaceEncyclopedia) || '人类');
     if (racePhysiologyEditorOpen) renderRacePhysiologyEditor(selectedRaceEncyclopedia);
-    const embryoType = getEmbryoTypeByRace(selectedRaceEncyclopedia);
-    const embryoText = getEmbryoTypeReferenceText(embryoType);
-    const physiologyText = buildSingleRacePhysiologyText(selectedRaceEncyclopedia);
-    outputNode.textContent = [physiologyText, embryoText].filter(Boolean).join('\n\n');
+    outputNode.innerHTML = renderRaceSheetHtml(selectedRaceEncyclopedia);
   }
 
   if (!selectedDerivedEncyclopedia) {
@@ -3447,16 +3512,22 @@ function renderRaceEncyclopediaPage(ctx = null) {
     : sireCycle.sireCyclePeakDays > 0
       ? `每轮约 ${sireCycle.sireCyclePeakDays} 天冲高，最高 ×${(1 + sireCycle.sireCycleAmplitude).toFixed(2)}`
       : `平滑起伏 ±${Math.round(sireCycle.sireCycleAmplitude * 100)}%`;
-  derivedOutputNode.textContent = [
-    `【${selectedDerivedEncyclopedia}】`,
-    ...(introductionLine ? [introductionLine] : []),
-    `- Flux: ${fluxName}`,
-    `- 代谢抵免: ${exemptions.length > 0 ? exemptions.join(' / ') : '无'}`,
-    `- 遗传速度: ${Number.isFinite(inheritanceSpeed) ? inheritanceSpeed : '未知'}x`,
-    `- 精方精力周期: ${sireCycleLine}${sireCycle.sireCyclePrompt && sireCycle.sireCycleAmplitude > 0 ? `；高峰时：${sireCycle.sireCyclePrompt}` : ''}`,
-    fluxDefinition || '- 暂无额外说明。',
-  ].join('\n\n');
+  derivedOutputNode.innerHTML = renderSheetHtml({
+    title: selectedDerivedEncyclopedia,
+    tags: [`Flux：${fluxName}`],
+    introduction: introductionLine,
+    sections: [{
+      title: '衍生参数',
+      rows: [
+        { label: 'Flux', value: fluxName, note: fluxDefinition || '暂无额外说明。' },
+        { label: '代谢抵免', value: exemptions.length > 0 ? exemptions.join('、') : '无', note: exemptions.length > 0 ? '这些需求不会累积。' : '需求照原种族累积。' },
+        { label: '遗传速度', value: Number.isFinite(inheritanceSpeed) ? `×${inheritanceSpeed}` : '未知', note: '孕期中衍生特征往孩子身上推进的快慢。' },
+        { label: '精方精力周期', value: sireCycle.sireCycleAmplitude > 0 ? (sireCycle.sireCyclePeakDays > 0 ? `每 ${sireCycle.sireCyclePeakDays} 天冲高` : '平滑起伏') : '无', note: `${sireCycleLine}${sireCycle.sireCyclePrompt && sireCycle.sireCycleAmplitude > 0 ? `；高峰时：${sireCycle.sireCyclePrompt}` : ''}` },
+      ],
+    }],
+  });
 }
+
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -4773,6 +4844,8 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
           .map((fetus) => ({
             embryoId: fetus.embryoId,
             ownAge: Math.max(0, (Number(pregnant.effectivePregnantDays) || 0) - (Number(fetus.conceivedAtDays) || 0)),
+            // 生长型份量（足月为 1）：特写的胎儿份量照它，胎动的开始时机仍照孕龄
+            growth: getFetalGrowth(Math.max(0, (Number(pregnant.effectivePregnantDays) || 0) - (Number(fetus.conceivedAtDays) || 0)), getFetusGrowthShape(profile, fetus)),
             weight: Number(fetus.weight) || 1,
             bulkRatio: getFetalBulkRatioByRace(fetus.race, fetus.bloodline),
             healthRatio: getFetalHealthRatio(fetus),

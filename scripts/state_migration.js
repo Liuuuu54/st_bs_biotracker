@@ -18,7 +18,7 @@ import { MENSTRUAL_STAGE_DAYS } from './stage_config.js';
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 15;
+export const CHAT_STATE_SCHEMA_VERSION = 16;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -335,6 +335,11 @@ function migrateCharacterV14ToV15(character) {
   }
 }
 
+/** v15 → v16（1.4.1）：怪菌类改名怪蕈类（RACE_RENAMES），种族字串与血统比例的键一并换新名 */
+function migrateCharacterV15ToV16(character) {
+  renameRacesDeep(character);
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
   2: migrateCharacterV2ToV3,
@@ -347,6 +352,7 @@ const CHARACTER_MIGRATIONS = Object.freeze({
   12: migrateCharacterV12ToV13,
   13: migrateCharacterV13ToV14,
   14: migrateCharacterV14ToV15,
+  15: migrateCharacterV15ToV16,
 });
 
 export function getChatStateSchemaVersion(chatState) {

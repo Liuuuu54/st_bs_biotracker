@@ -309,7 +309,7 @@ test('v12 → v13：每周供养池换成健康（50 ＋ 池换算），母胎�
   state.recordChatStateSnapshot(ctx, old, { messageCount: 1, reason: 'old' });
   settings.chatStates[ctx.chatId] = old;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 15);
+  assert.equal(migrated.schemaVersion, 16);
   const [a, b] = migrated.characters.A.profile.pregnant.fetuses;
   assert.equal('healthMax' in a, false);
   near(a.health, 50 + 20 * 0.18);

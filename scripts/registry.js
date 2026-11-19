@@ -22,6 +22,7 @@ import {
 import {
   computePostpartumRecoveryDays,
   getEmbryoTypeByRace,
+  getFetalGrowthShapeByRace,
   getMergedRacePhysiologyProfile,
   getBloodlineInfo,
   deriveFetusAncestry,
@@ -31,6 +32,7 @@ import {
   parseRaceDescriptor,
   rollCompanionEggCount,
 } from './race_config.js';
+import { getFetalLoadFactor } from './fetal_growth.js';
 import {
   DEFAULT_WARDROBE_PREP_PROMPT,
   buildRecentMessages,
@@ -1329,9 +1331,9 @@ function normalizeRegisteredPregnancy(profile, chatState) {
     const weight = clampNumber(fetus?.weight, 0.33, 3.0, 1.0);
     // 与运行期一致：异期胎用自己的孕龄，不按先来者的进度算负担
     const ownAge = Math.max(0, pregnant.effectivePregnantDays - (Number(fetus?.conceivedAtDays) || 0));
-    const ageInDays = ownAge * weight;
-    const fetalAgeWeeks = ageInDays / 7;
-    const fetalLoad = fetalAgeWeeks / 40;
+    // 跟成长速度走（与 tools.js getFetusEnergyDrain 一致）
+    const shape = getFetalGrowthShapeByRace(fetus?.race, fetus?.bloodline, profile.base?.race || null, profile.base?.bloodline || null);
+    const fetalLoad = getFetalLoadFactor(ownAge, shape) * weight;
     return sum + (fetalLoad / motherBreedTolerance);
   }, 0);
 

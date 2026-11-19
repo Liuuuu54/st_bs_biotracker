@@ -1179,6 +1179,227 @@
   word-break: break-word;
 }
 
+/* 百科资料卡（物种与衍生）：标题列、短敘述、分组的「栏名／数值／一行白话」 */
+#bs-biotracker-settings .bs-bt-sheet {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-icon {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 10px;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-heading {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-title {
+  font-size: 1.2em;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-tag {
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 999px;
+  font-size: 0.82em;
+  line-height: 1.6;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-intro {
+  margin: 0;
+  line-height: 1.6;
+  opacity: 0.9;
+  overflow-wrap: anywhere;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-section {
+  display: grid;
+  gap: 0;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-row {
+  display: grid;
+  grid-template-columns: minmax(64px, auto) 1fr;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-row:last-child {
+  border-bottom: 0;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-label {
+  opacity: 0.75;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-value {
+  text-align: right;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-note {
+  grid-column: 1 / -1;
+  opacity: 0.7;
+  font-size: 0.85em;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-chart {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+/* 每一组都是折叠段落，预设收起，点标题展开 */
+#bs-biotracker-settings .bs-bt-sheet-fold > summary {
+  cursor: pointer;
+  margin-bottom: 0;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-fold > summary::after {
+  content: '▸';
+  opacity: 0.6;
+  transition: transform 0.15s ease;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-fold[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+#bs-biotracker-settings .bs-bt-sheet-fold[open] > summary {
+  margin-bottom: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-sheet-lore p {
+  margin: 0 0 6px;
+  font-size: 0.9em;
+  line-height: 1.6;
+  opacity: 0.85;
+}
+
+/* 胎量曲线：只用 currentColor，跟着主题文字色 */
+#bs-biotracker-settings .bs-bt-growth-chart {
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  display: block;
+}
+
+#bs-biotracker-settings .bs-bt-growth-chart text {
+  fill: currentColor;
+  opacity: 0.65;
+  font-size: 10px;
+}
+
+#bs-biotracker-settings .bs-bt-growth-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+#bs-biotracker-settings .bs-bt-growth-ref {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+  opacity: 0.45;
+}
+
+#bs-biotracker-settings .bs-bt-growth-axis {
+  stroke: currentColor;
+  opacity: 0.4;
+}
+
+#bs-biotracker-settings .bs-bt-growth-grid {
+  stroke: currentColor;
+  opacity: 0.15;
+}
+
+#bs-biotracker-settings .bs-bt-growth-term {
+  stroke: currentColor;
+  opacity: 0.35;
+  stroke-dasharray: 2 2;
+}
+
+#bs-biotracker-settings .bs-bt-growth-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+#bs-biotracker-settings .bs-bt-growth-thumb {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+#bs-biotracker-settings .bs-bt-growth-thumb.is-active {
+  opacity: 1;
+  border-color: currentColor;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+#bs-biotracker-settings .bs-bt-growth-thumb-svg {
+  width: 64px;
+  height: 34px;
+}
+
 #bs-biotracker-settings .bs-bt-debug-json {
   margin: 0;
   white-space: pre-wrap;

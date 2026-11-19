@@ -104,9 +104,11 @@ import {
   rollCompanionEggCount,
   getCompanionEggBulk,
   getFetalBulkRatioByRace,
+  getFetalGrowthShapeByRace,
   parseRaceDescriptor,
   getRaceDescriptorComponents,
 } from './race_config.js';
+import { getFetalGrowth, getFetalGrowthRate, getFetalLoadFactor } from './fetal_growth.js';
 import {
   calculateDerivedInheritanceProgress,
   calculateFertilizationPreview,
@@ -206,8 +208,14 @@ function getOutfitDimensionTotals(profile) {
   return totals;
 }
 
+/** 这一胎的生长型：看胎儿自己的族与血统，占比相同随母（race_config.js getFetalGrowthShapeByRace） */
+export function getFetusGrowthShape(profile, fetus) {
+  return getFetalGrowthShapeByRace(fetus?.race, fetus?.bloodline, profile?.base?.race || null, profile?.base?.bloodline || null);
+}
+
 /**
- * 肚子实际装了多少：每胎「自身孕龄 × 胎重 × 份量倍率 / 280」加总，伴生卵按份量随所属那胎一起长大。
+ * 肚子实际装了多少：每胎「生长型份量 × 胎重 × 份量倍率」加总，伴生卵按份量随所属那胎一起长大。
+ * 生长型份量足月为 1（fetal_growth.js），各型只差在什么时候长得快。
  * 份量倍率表达窝仔物种每只较小（getFetalBulkRatioByRace），只管肚子大小，胎重本身不动。
  * 与 fetalEnergyDrain 同源但不除以承载耐受——耐受是「扛不扛得住」，
  * 肚子多大只看装了多少；除下去会让高耐受的龙娘足月像七个月、低耐受的一胎就撑爆
@@ -222,7 +230,7 @@ export function getFetalBulk(profile) {
     const eggs = Math.max(0, Math.floor(Number(fetus?.companionEggCount) || 0));
     // 伴生卵只影响孕肚大小，不进代谢负担；单颗份量依胎儿族的典型卵群缩小
     const eggBulk = eggs > 0 ? eggs * getCompanionEggBulk(fetus?.race, fetus?.bloodline) : 0;
-    return sum + (ownAge / DUE_DATE_DAYS) * (weight * getFetalBulkRatioByRace(fetus?.race, fetus?.bloodline) + eggBulk);
+    return sum + getFetalGrowth(ownAge, getFetusGrowthShape(profile, fetus)) * (weight * getFetalBulkRatioByRace(fetus?.race, fetus?.bloodline) + eggBulk);
   }, 0);
 }
 
@@ -1648,7 +1656,8 @@ function getFetusEnergyDrain(profile, fetus) {
   // 每胎用自己的孕龄：异期复孕时晚到那胎不该按先来者的进度计算负担。
   // 既有胎儿没有 conceivedAtDays，算出来就是共用时钟，行为不变。
   const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
-  const fetalLoad = (ownAge * weight) / 7 / 40;
+  // 1.4.1 起跟成长速度走：长得快的那段最吃母体，整个孕期的总负担与旧的直线相同
+  const fetalLoad = getFetalLoadFactor(ownAge, getFetusGrowthShape(profile, fetus)) * weight;
   // 每胎索取（1.3.1）：与母体耐受差距越大、雄核胎越吃力；同族为 1
   return (fetalLoad / motherBreedTolerance) * getFetusDemand(profile, fetus);
 }
@@ -3140,13 +3149,14 @@ function getNutritionPositionFactor(fetus, fetuses, surplus) {
 }
 
 /**
- * 分配权重 = 自己的孕龄 × 位置。不乘胎重（大胎会越分越多、把既有大小差不断放大），
+ * 分配权重 = 自己的成长速度 × 位置（1.4.1 起；原本是孕龄）。不乘胎重（大胎会越分越多、把既有大小差不断放大），
  * 不乘种族承载差（跨种族负担在受精时已换算进胎重）。待着床的胚胎还没接上供养。
  */
-function getNutritionDemand(fetus, fetuses, effectivePregnantDays, surplus) {
+function getNutritionDemand(profile, fetus, fetuses, effectivePregnantDays, surplus) {
   if (fetus?.pendingImplantation) return 0;
   const ownAge = Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 9999, 0));
-  return ownAge * getNutritionPositionFactor(fetus, fetuses, surplus);
+  if (ownAge <= 0) return 0;
+  return getFetalGrowthRate(ownAge, getFetusGrowthShape(profile, fetus)) * getNutritionPositionFactor(fetus, fetuses, surplus);
 }
 
 /**
@@ -3158,7 +3168,7 @@ function addNutrition(profile, amount) {
   const pregnant = profile?.pregnant || {};
   const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
   const effectivePregnantDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
-  const demands = fetuses.map((fetus) => getNutritionDemand(fetus, fetuses, effectivePregnantDays, amount > 0));
+  const demands = fetuses.map((fetus) => getNutritionDemand(profile, fetus, fetuses, effectivePregnantDays, amount > 0));
   const totalDemand = demands.reduce((sum, value) => sum + value, 0);
   if (!amount || totalDemand <= 0) return 0;
   // 乘孕速、不夹值：需求按日历时间涨落，孕速越快一个孕周里的照料机会越少，乘回来才是每孕周等量

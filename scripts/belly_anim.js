@@ -156,7 +156,7 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
   }
 
   // ---- 胎儿 ----
-  /** 每一胎：{ size 份量, weight 胎重, vigor 活力档 0–3, health 健康 0–100, canMove, zone: {v,w} 在孕肚上的位置 } */
+  /** 每一胎：{ size 份量, maturity 成熟度（孕龄 ÷ 280 × 胎重，没给照份量）, weight 胎重, vigor 活力档 0–3, health 健康 0–100, canMove, zone: {v,w} 在孕肚上的位置 } */
   function fetusList() {
     if (Array.isArray(state.fetuses)) return state.fetuses;
     const count = Math.max(1, Number(state.count) || 1);
@@ -167,7 +167,8 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
   function fetalPace(fetus, total) {
     if (afterBirth() || fetus.canMove === false) return null;
     const size = fetus.size ?? 0;
-    const quick = clamp((size - 0.42) / 0.28, 0, 1);
+    // 什么时候开始动看成熟度（孕龄）；动得多用力看份量（生长型）
+    const quick = clamp(((fetus.maturity ?? size) - 0.42) / 0.28, 0, 1);
     if (quick <= 0) return null;
     const crowd = clamp((scene.rest.fig.bulk - 0.5) / 2.5, 0, 1);
     const eased = quick * quick * (3 - 2 * quick);

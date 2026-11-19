@@ -5,6 +5,7 @@ import * as state from '../scripts/state.js';
 import { applyToolCall } from '../scripts/tools.js';
 import { enablePooledConception } from '../scripts/pooled_reproduction.js';
 import { normalizeSireRecord } from '../scripts/sires.js';
+import { getFetalLoadFactor } from '../scripts/fetal_growth.js';
 
 // 全部生殖行为经过真实公开分发器；只有完整角色入口计数使用无逻辑替换的内存插桩。
 const copy = (value) => JSON.parse(JSON.stringify(value));
@@ -227,11 +228,12 @@ test('普通孕期每次批量推进刷新当前胎儿负担，不冻结在50除
       near(p.pregnant.effectivePregnantDays, 50 + week * 7);
       const actual = p.pregnant.fetalEnergyDrain;
       const weight = p.pregnant.fetuses[0].weight;
-      if (pooled) near(actual, p.pregnant.effectivePregnantDays * weight / 280 / p.bio.breedTolerance);
+      // 1.4.1 起负担跟成长速度走（人类型）
+      if (pooled) near(actual, getFetalLoadFactor(p.pregnant.effectivePregnantDays, 'human') * weight / p.bio.breedTolerance);
       else if (week > 1) assert.ok(actual > previous, '旧默认最多延迟一个tick，但后续仍须刷新');
       previous = actual;
     }
-    assert.ok(profile(chat).pregnant.fetalEnergyDrain > 50 / 280);
+    assert.notEqual(profile(chat).pregnant.fetalEnergyDrain, 50 / 280, '有刷新，不冻结在旧值');
   }
 });
 

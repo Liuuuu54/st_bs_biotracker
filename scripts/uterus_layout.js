@@ -3,7 +3,8 @@
 // 几何沿用 Sol 6 试作：子宫在画框中央随孕程从小长到大，胎儿按左右顺序排格、
 // 按下降位置分高度，再做有轮数上限的推挤。
 import { LABOR_STAGES, PREGNANCY_STAGE_DAYS } from './stage_config.js';
-import { describeFetalPosition, getLaborObstruction, getPregnancyPressureRisk, isFetusKnownToCharacter } from './tools.js';
+import { describeFetalPosition, getFetusGrowthShape, getLaborObstruction, getPregnancyPressureRisk, isFetusKnownToCharacter } from './tools.js';
+import { getFetalGrowth } from './fetal_growth.js';
 import {
   EMPTY_STAGES,
   FULL_TERM_DAYS,
@@ -224,9 +225,10 @@ export function computeUterusLayout(profile, options = {}) {
   const topStep = Math.max(5, Math.round(innerRy * 0.6));
   const items = drawn.map((fetus, i) => {
     const ownAge = Math.max(0, effectiveDays - Math.max(0, finite(fetus.conceivedAtDays)));
-    const t = clamp(ownAge / FULL_TERM_DAYS, 0, 1);
+    // 图块大小照生长型份量（足月为 1；画布有限，逾期不再放大）
+    const grown = clamp(getFetalGrowth(ownAge, getFetusGrowthShape(profile, fetus)), 0, 1);
     const weight = clamp(finite(fetus.weight, 1), 0.33, 3);
-    const size = Math.max(2, Math.round((1.5 + 20.5 * t ** 1.55) * Math.sqrt(weight)));
+    const size = Math.max(2, Math.round((1.5 + 20.5 * grown) * Math.sqrt(weight)));
     const descent = clamp(Math.round(finite(fetus.descentStage, -2)), -3, 3);
     const stagger = n === 1 ? 0 : n >= 3 ? (i % 2 ? 7 : -7) : i % 2 ? 3 : -3;
     const y = descent === -3 ? freeY - topStep + stagger

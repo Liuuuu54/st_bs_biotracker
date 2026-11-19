@@ -9,6 +9,7 @@ import * as state from '../scripts/state.js';
 import { applyToolCall } from '../scripts/tools.js';
 import { FETAL_CARE_GAIN_SCALE as G, FETAL_CARE_LOSS_SCALE as L } from '../scripts/fetal_health.js';
 import { buildRacePhysiologyPrompt } from '../scripts/prompts/rules.js';
+import { getFetalGrowthRate } from '../scripts/fetal_growth.js';
 
 const REAL_RANDOM = Math.random;
 afterEach(() => { Math.random = REAL_RANDOM; });
@@ -226,11 +227,14 @@ function settle(fetuses) {
   return P(chatState).pregnant.fetuses;
 }
 
-test('分池：计分当下按孕龄拆给各胎，异期胎分得较少', () => {
+test('分池：计分当下按成长速度拆给各胎（1.4.1 起，原本按孕龄）', () => {
   const chatState = gainOnce([fetusAt({ embryoId: 1 }), fetusAt({ embryoId: 2, conceivedAtDays: 70, tags: ['superfetation'], revealed: true })]);
   const [first, late] = P(chatState).pregnant.fetuses;
-  near(got(first), G * 2 / 3, '孕龄 140');
-  near(got(late), G / 3, '孕龄 70');
+  // 人类型孕龄 140 天正在加速，70 天还几乎不长
+  const [fast, slow] = [getFetalGrowthRate(140, 'human'), getFetalGrowthRate(70, 'human')];
+  near(got(first), G * fast / (fast + slow), '孕龄 140');
+  near(got(late), G * slow / (fast + slow), '孕龄 70');
+  assert.ok(got(late) < got(first), '异期胎分得较少');
   assert.equal('nutrition' in P(chatState).pregnant, false, '母体层不保存');
   assert.equal('nutrition' in first, false, '旧的每周供养池已换成健康');
 });

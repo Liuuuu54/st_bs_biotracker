@@ -404,7 +404,8 @@ test('belly size: single term 7, twins 8.5, triplets 10 fill the gauge', () => {
   assert.equal(Number(at(280, [1]).toFixed(2)), 7);
   assert.equal(Number(at(280, [1, 1]).toFixed(2)), 8.5);
   assert.equal(Number(at(280, [1, 1, 1]).toFixed(2)), 10);
-  assert.ok(at(294, [1.3, 1.3]) < 10, '重双胎逾期两周接近但不顶满');
+  // 人类型逾期初段沿用足月的成长速度，再缓下来：重双胎逾期两周刚好碰到满格
+  assert.ok(at(294, [1.3, 1.3]) > 9.8 && at(294, [1.3, 1.3]) < 10.1, '重双胎逾期两周约到满格');
   // 超过 10 照样往上算（爆表）：足月五胎 13，再大也停在 15
   assert.equal(Number(at(280, [1, 1, 1, 1, 1]).toFixed(2)), 13);
   assert.equal(at(300, [3, 3, 3, 3, 3]), 15);
@@ -431,7 +432,8 @@ test('belly size follows what the womb holds, not the carrier tolerance, and cou
   assert.equal(Number(getFetalBulk({ pregnant: { effectivePregnantDays: 280, fetuses: rabbits } }).toFixed(2)), 2.71);
   assert.ok(rabbits.every((fetus) => fetus.weight === 1));
   // 异期复孕晚到的那胎按自己的孕龄算
-  assert.equal(getFetalBulk({ pregnant: { effectivePregnantDays: 280, fetuses: [{ weight: 1 }, { weight: 1, conceivedAtDays: 140 }] } }), 1.5);
+  // 人类型孕龄 140 天份量约 0.2
+  assert.equal(Number(getFetalBulk({ pregnant: { effectivePregnantDays: 280, fetuses: [{ weight: 1 }, { weight: 1, conceivedAtDays: 140 }] } }).toFixed(4)), 1.2);
 });
 
 test('postpartum belly size declines linearly with recovery progress', () => {

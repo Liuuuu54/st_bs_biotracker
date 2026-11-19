@@ -1562,6 +1562,8 @@ function migrateChatStateSchema(chatState) {
   if (fromVersion < 10) renameStoredRaces(chatState.sires);
   // v14 → v15（1.3.1）：海妖改名斯库拉，精方档案一起换
   if (fromVersion < 15) renameStoredRaces(chatState.sires);
+  // v15 → v16（1.4.1）：怪菌类改名怪蕈类
+  if (fromVersion < 16) renameStoredRaces(chatState.sires);
   // v11 → v12（1.2.4 精方周期）：剑偏移、存量由正规化补预设；季节起点对齐同族已注册者，没有就用名字杂凑
   if (fromVersion < 12) {
     startMissingSireReserveClocks(chatState.sires, chatState.minutesPassed);
@@ -1579,6 +1581,7 @@ function migrateChatStateSchema(chatState) {
       if (fromVersion < 6) payload.cardSkillSeedApplied = true;
       if (fromVersion < 10 && payload.sires) renameStoredRaces(payload.sires);
       if (fromVersion < 15 && payload.sires) renameStoredRaces(payload.sires);
+      if (fromVersion < 16 && payload.sires) renameStoredRaces(payload.sires);
       const characters = unpackSnapshotCharacters(payload.characters, false, true);
       if (fromVersion < 12 && payload.sires) {
         startMissingSireReserveClocks(payload.sires, payload.minutesPassed);
