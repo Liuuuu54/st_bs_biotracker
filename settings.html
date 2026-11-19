@@ -365,6 +365,24 @@
               </select>
             </div>
 
+            <details class="settings_section bs-bt-decision-api">
+              <summary>决策模型接口（选填）</summary>
+              <small>决策模型只回答预设选项并附上概率、不生成文字，单次花费很少，适合做「是／否」一类的判断。接口格式是 /v1/systemone，与上面的聊天接口不同，要另外填，不跟连接配置组走。目前用在追踪页的「修改后重追判断」。</small>
+              <div id="bs-bt-decision-api-status" class="bs-bt-inline-status" hidden></div>
+              <label for="bs-bt-edit-gate-url">决策接口地址</label>
+              <input id="bs-bt-edit-gate-url" class="text_pole" type="text" placeholder="https://example.com/v1/systemone" />
+              <small>填完整地址，并且要允许网页直接访问（跨域）。</small>
+              <label for="bs-bt-edit-gate-key">API Key</label>
+              <input id="bs-bt-edit-gate-key" class="text_pole" type="password" placeholder="sk-..." />
+              <label for="bs-bt-edit-gate-model">模型名</label>
+              <input id="bs-bt-edit-gate-model" class="text_pole" type="text" placeholder="决策模型的名称" />
+              <div class="bs-bt-action-row">
+                <button id="bs-bt-edit-gate-test" class="menu_button" type="button">测试决策接口</button>
+              </div>
+              <small>发一段示例改动（「射在体内」改成「射在小腹上」），看接口能不能用、能不能判断出要重新追踪。</small>
+              <div id="bs-bt-edit-gate-test-status" class="bs-bt-inline-status"></div>
+            </details>
+
             <div class="settings_section">
               <label for="bs-bt-mainflow-copy-char-limit">主线复制字数上限</label>
               <input id="bs-bt-mainflow-copy-char-limit" class="text_pole" type="number" min="0" step="10000" />
@@ -901,19 +919,10 @@
             </div>
 
             <div class="settings_section">
-              <label for="bs-bt-edit-gate-url">决策接口地址</label>
-              <input id="bs-bt-edit-gate-url" class="text_pole" type="text" placeholder="https://example.com/v1/systemone" />
-              <small>填完整地址。要用 /v1/systemone 格式的决策模型接口（只回答选项与概率、不生成文字），并且允许网页直接访问（跨域）。</small>
-            </div>
-
-            <div class="settings_section">
-              <label for="bs-bt-edit-gate-key">API Key</label>
-              <input id="bs-bt-edit-gate-key" class="text_pole" type="password" placeholder="sk-..." />
-            </div>
-
-            <div class="settings_section">
-              <label for="bs-bt-edit-gate-model">模型名</label>
-              <input id="bs-bt-edit-gate-model" class="text_pole" type="text" placeholder="决策模型的名称" />
+              <small>决策接口（地址、Key、模型名）在系统页设定，所有用到决策模型的功能共用。</small>
+              <div class="bs-bt-action-row">
+                <button class="menu_button" type="button" data-nav-view="system">到系统页设定决策接口</button>
+              </div>
             </div>
 
             <div class="settings_section">
@@ -926,11 +935,6 @@
               <small>任意一项「改变了」的概率达到这个值就重新追踪（1–99，默认 60）。调低更容易重新追踪，调高更容易沿用上次的结果。</small>
             </div>
 
-            <div class="settings_section bs-bt-action-row">
-              <button id="bs-bt-edit-gate-test" class="menu_button" type="button">测试判断</button>
-              <small>发一段示例改动（「射在体内」改成「射在小腹上」），看接口能不能用、能不能判断出要重新追踪。</small>
-              <div id="bs-bt-edit-gate-test-status" class="bs-bt-inline-status"></div>
-            </div>
           </div>
         </section>
 

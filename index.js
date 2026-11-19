@@ -9512,19 +9512,22 @@ function setView(view) {
   if (title) title.textContent = next === 'help' ? 'HELP' : next === 'theme' ? 'THEME' : next === 'system' ? 'SYSTEM' : next === 'register' ? 'REGISTRY' : next === 'worldbook-filter' ? 'WORLDBOOK' : next === 'track-list' ? 'TRACK LIST' : next === 'track-char' ? 'TRACK CHAR' : next === 'track-sire' ? 'TRACK SIRE' : next === 'full-state' ? 'FULL STATE' : next === 'race-encyclopedia' ? 'RACE DATA' : next === 'tracker-preset' ? 'PRESET' : next === 'wardrobe' ? 'WARDROBE' : next === 'skill-catalog' ? 'SKILLS' : next === 'edit-gate' ? 'EDIT CHECK' : 'HOME';
 }
 
-/** 追踪页的修改后重追判断：勾上才显示设置入口；设置页的状态行提示接口填好没有 */
+/** 追踪页的修改后重追判断：勾上才显示设置入口；重追判断页与系统页的状态行提示决策接口填好没有 */
 function renderEditGateStatus(settings) {
   const entry = document.getElementById('bs-bt-edit-gate-entry');
   if (entry) entry.hidden = settings?.editGateEnabled !== true;
-  const node = document.getElementById('bs-bt-edit-gate-status');
-  if (!node) return;
   let problem = describeEditGateUrlProblem(settings?.editGateApiUrl);
   if (!problem && settings?.editGateEnabled === true && !isEditGateConfigured(settings)) {
-    problem = '还没填好接口地址、API Key 或模型名：改了楼层会照常重新追踪。';
+    problem = '系统页的决策接口还没填好（地址、API Key 或模型名）：改了楼层会照常重新追踪。';
   }
-  node.dataset.kind = problem ? 'error' : '';
-  node.textContent = problem;
-  node.hidden = !problem;
+  // 重追判断页与系统页的决策接口区各有一行状态，内容相同
+  for (const id of ['bs-bt-edit-gate-status', 'bs-bt-decision-api-status']) {
+    const node = document.getElementById(id);
+    if (!node) continue;
+    node.dataset.kind = problem ? 'error' : '';
+    node.textContent = problem;
+    node.hidden = !problem;
+  }
 }
 
 function getLastPagerView() {
