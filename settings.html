@@ -142,13 +142,18 @@
                 <div class="bs-bt-skill-preset-grid">
                   <article class="bs-bt-skill-card">
                     <div class="bs-bt-skill-card__title">部位开发（6）</div>
-                    <div class="bs-bt-skill-card__description">口腔、胸部、性器、子宫、后庭、尿道</div>
+                    <div class="bs-bt-skill-card__description">口腔、胸部、性器、子宫、后庭、尿道（性器、子宫为卵方专属）</div>
                     <button id="bs-bt-skill-preset-development" class="menu_button" type="button">导入部位开发</button>
                   </article>
                   <article class="bs-bt-skill-card">
                     <div class="bs-bt-skill-card__title">行为与倾向（9）</div>
-                    <div class="bs-bt-skill-card__description">前戏、侍奉、自慰、露出、拘束、M/S倾向、情趣玩具、多人行为</div>
+                    <div class="bs-bt-skill-card__description">前戏、侍奉、自慰、露出、拘束、M/S倾向、情趣玩具、多人行为（两方通用）</div>
                     <button id="bs-bt-skill-preset-behavior" class="menu_button" type="button">导入行为与倾向</button>
+                  </article>
+                  <article class="bs-bt-skill-card">
+                    <div class="bs-bt-skill-card__title">精方专属（1）</div>
+                    <div class="bs-bt-skill-card__description">阴茎开发（要有阴茎：精方与扶她）</div>
+                    <button id="bs-bt-skill-preset-sword" class="menu_button" type="button">导入精方专属</button>
                   </article>
                 </div>
               </div>
@@ -177,6 +182,13 @@
                 <div id="bs-bt-skill-detail-title" class="bs-bt-section-title"></div>
                 <label for="bs-bt-skill-detail-name">技能名称</label>
                 <input id="bs-bt-skill-detail-name" class="text_pole" type="text" />
+                <label for="bs-bt-skill-detail-body">适用身体</label>
+                <select id="bs-bt-skill-detail-body" class="text_pole">
+                  <option value="any">通用</option>
+                  <option value="womb">卵方专属（要有阴道、子宫）</option>
+                  <option value="sword">精方专属（要有阴茎）</option>
+                </select>
+                <small>扶她两边都能有；天赋不分身体。</small>
                 <label for="bs-bt-skill-detail-description">技能描述 Prompt <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/wardrobe-and-skills.md#技能目錄角色技能與天賦" target="_blank" rel="noopener noreferrer" title="技能描述说明" aria-label="技能描述说明">?</a></label>
                 <textarea id="bs-bt-skill-detail-description" class="text_pole bs-bt-textarea bs-bt-compact-textarea" rows="3"></textarea>
                 <button id="bs-bt-skill-detail-save" class="menu_button" type="button">保存技能定义</button>

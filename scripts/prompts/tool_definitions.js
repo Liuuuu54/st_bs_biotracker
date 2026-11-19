@@ -237,6 +237,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       properties: {
         name: { type: 'string' },
         description: { type: 'string' },
+        body: { type: 'string', enum: ['any', 'womb', 'sword'], description: '适用身体：womb 卵方专属（要有阴道、子宫，如子宫开发）、sword 精方专属（要有阴茎，如阴茎开发）、any 通用。省略为 any。' },
       },
       required: ['name', 'description'],
       additionalProperties: false,
@@ -244,7 +245,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsTrainSkill',
-    description: '依最近剧情让单一角色觉醒或锻炼一个已登记技能。skillExp 只能非负，技能只会进步、不会降级；技能不存在时必须明确传 awaken=true 才会从 Lv1 觉醒。角色自己的 talents 对所有 LLM 工具均为只读，只能作为判断 skillExp 的参考，绝不可直接修改；角色天赋仅能由用户在外部界面调整。若角色处于孕中期、孕晚期、临产期、逾期、产兆前驱或第一产程，系统每次只随机选择一胎，把本次 skillExp 按该胎 affinity/50 转为正负胎儿天赋经验；第二、第三产程不会传递。',
+    description: '依最近剧情让单一角色觉醒或锻炼一个已登记技能。技能图鉴的 body 为 sword（精方专属，要有阴茎）的，只有扶她（同名也是精方）能练。skillExp 只能非负，技能只会进步、不会降级；技能不存在时必须明确传 awaken=true 才会从 Lv1 觉醒。角色自己的 talents 对所有 LLM 工具均为只读，只能作为判断 skillExp 的参考，绝不可直接修改；角色天赋仅能由用户在外部界面调整。若角色处于孕中期、孕晚期、临产期、逾期、产兆前驱或第一产程，系统每次只随机选择一胎，把本次 skillExp 按该胎 affinity/50 转为正负胎儿天赋经验；第二、第三产程不会传递。',
     input_schema: {
       type: 'object',
       properties: {

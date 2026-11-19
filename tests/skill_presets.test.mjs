@@ -19,7 +19,7 @@ test('skill presets contain the intended independent 6 + 9 groups', () => {
 });
 
 test('skill preset import reuses the catalog IDs and preserves custom skills', () => {
-  const custom = [{ id: 4, name: '自定义技能', description: '保留。' }];
+  const custom = [{ id: 4, name: '自定义技能', description: '保留。', body: 'any' }];
   const development = importSkillPresetGroup(custom, 9, 'development');
 
   assert.equal(development.created, 6);
@@ -58,6 +58,7 @@ test('skill definitions can edit their prompt without changing the stable ID', (
     id: 3,
     name: '前戏技巧',
     description: '依剧情中的爱抚与亲吻表现累积经验。',
+    body: 'any',
   });
   assert.equal(result.catalog[0].id, 3);
   assert.equal(result.catalog[1].id, 8);
@@ -86,4 +87,31 @@ test('有技能基准时，一次注册与技能页都把它当最高优先规�
   ]) {
     assert.match(prompt, /严格遵守 payload\.skill_baseline_prompt/);
   }
+});
+
+test('1.4.2 技能分适用身体：预设照部位分类，新增「精方专属」一组；纯卵方练不了精方专属，扶她可以', async () => {
+  const { canBodyHaveSkill, getPresetSkillBody, SKILL_PRESET_GROUPS } = await import('../scripts/skill_config.js');
+  assert.equal(getPresetSkillBody('子宫开发'), 'womb');
+  assert.equal(getPresetSkillBody('性器开发'), 'womb');
+  assert.equal(getPresetSkillBody('胸部开发'), 'any');
+  assert.equal(getPresetSkillBody('前戏'), 'any');
+  assert.equal(getPresetSkillBody('阴茎开发'), 'sword');
+  assert.deepEqual(SKILL_PRESET_GROUPS.sword.entries.map((entry) => entry.name), ['阴茎开发']);
+  const sword = { body: 'sword' };
+  const womb = { body: 'womb' };
+  assert.equal(canBodyHaveSkill(sword, { hasWomb: true, hasSword: false }), false, '纯卵方');
+  assert.equal(canBodyHaveSkill(sword, { hasWomb: true, hasSword: true }), true, '扶她');
+  assert.equal(canBodyHaveSkill(womb, { hasWomb: false, hasSword: true }), false, '纯精方');
+  assert.equal(canBodyHaveSkill({}, { hasWomb: false, hasSword: true }), true, '没写就是通用');
+
+  const { applyToolCall } = await import('../scripts/tools.js');
+  const state = await import('../scripts/state.js');
+  const chatState = state.createEmptyChatState();
+  chatState.characters.A = state.createDefaultFemaleState('A');
+  chatState.characters.A.initialized = true;
+  chatState.skillCatalog = importSkillPresetGroup([], 1, 'sword').catalog;
+  const train = () => applyToolCall(chatState, { name: 'bsTrainSkill', arguments: { female: 'A', skill: '阴茎开发', skillExp: 50, reason: '练习', awaken: true } });
+  assert.equal(train().applied, false);
+  chatState.sires = { A: { race: '人类' } };
+  assert.equal(train().applied, true, '同名也是精方：扶她');
 });

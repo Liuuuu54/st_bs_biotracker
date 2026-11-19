@@ -532,11 +532,11 @@ test('skill and talent curves use square requirements and stop at level 10', () 
   assert.deepEqual(skillConfig.addTalentExperience({ skillId: 1, level: 1, exp: 50 }, -200), { skillId: 1, level: 0, exp: -50 });
   assert.deepEqual(skillConfig.addTalentExperience({ skillId: 1, level: 0, exp: -50 }, 150), { skillId: 1, level: 1, exp: 0 });
   const removed = skillConfig.removeSkillDefinition([
-    { id: 1, name: '剑术', description: '剑的运用。' },
-    { id: 2, name: '弓术', description: '弓的运用。' },
+    { id: 1, name: '剑术', description: '剑的运用。', body: 'any' },
+    { id: 2, name: '弓术', description: '弓的运用。', body: 'any' },
   ], '剑术');
   assert.equal(removed.ok, true);
-  assert.deepEqual(removed.catalog, [{ id: 2, name: '弓术', description: '弓的运用。' }]);
+  assert.deepEqual(removed.catalog, [{ id: 2, name: '弓术', description: '弓的运用。', body: 'any' }]);
   let history = [];
   for (let index = 0; index < 105; index += 1) {
     history = skillConfig.appendSkillHistory(history, {
@@ -567,7 +567,7 @@ test('LLM must register a described global skill before awakening and training i
     },
   });
   assert.equal(result.applied, true, result.message);
-  assert.deepEqual(chatState.skillCatalog, [{ id: 1, name: '剑术', description: '以长剑攻防的实战技巧。' }]);
+  assert.deepEqual(chatState.skillCatalog, [{ id: 1, name: '剑术', description: '以长剑攻防的实战技巧。', body: 'any' }]);
   assert.deepEqual(chatState.characters.Alice.profile.skills[0], { skillId: 1, level: 3, exp: 0 });
   assert.deepEqual(result.notify, {
     type: 'skill_awakened', female: 'Alice', skillId: 1, skillName: '剑术', fromLevel: 0, toLevel: 3,

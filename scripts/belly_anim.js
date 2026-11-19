@@ -14,6 +14,8 @@
 //
 // 节奏、幅度的数值移植自预览页 PREGNANCY_TRACE_NUDE.html。
 
+import { getFetalKickStrength } from './fetal_growth.js';
+
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const NEED_FULL = 100 / 150;
 const NEED_BURST = 125 / 150;
@@ -176,13 +178,10 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
     // 胎儿健康（0–100，50 是平常）：虚弱的胎动得少而轻，健壮的多而有力
     const health = clamp((fetus.health ?? 50) / 50, 0, 2);
     const often = clamp(health, 0.3, 1.3);
-    const hard = clamp(0.6 + 0.4 * health, 0.5, 1.2);
     // 预览页的「× 胎数^0.6」是整窝的次数：平均摊给每一胎
     const perMinute = 8 * eased * (1 - 0.55 * crowd) * total ** 0.6 / total * (1 + 0.3 * state.stress / 100) * vigor.often * often;
-    // 力道：胎量 0.2（约孕 20 周）起变大，足月后再长一点到顶
-    const grown = clamp((size - 0.2) / 0.97, 0, 1);
-    const weight = fetus.weight ?? state.weight ?? 1;
-    const amp = Math.min(2.2, (0.35 + 1.4 * grown) * weight ** 0.3 * (1 + 0.25 * state.uterine / 100)) * vigor.hard * hard;
+    // 力道与生殖疼痛共用同一条公式（fetal_growth.js getFetalKickStrength）
+    const amp = getFetalKickStrength({ size, weight: fetus.weight ?? state.weight ?? 1, healthPct: fetus.health ?? 50, uterinePct: state.uterine, vigorHard: vigor.hard });
     return { perMinute, amp, big: vigor.big };
   }
   /** 某一胎在孕肚正面的位置：v 由上到下 0–1，w 由前缘往背侧 0–1。没指定时依顺序由上到下分段 */

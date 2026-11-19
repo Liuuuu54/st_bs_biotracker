@@ -9,7 +9,7 @@ import { getBloodlineInfo, getDerivedTypeSireCycleProfile, getMergedRacePhysiolo
 import { normalizeReproductiveSettings } from './reproductive.js';
 import { getRaceSeasonShape, getSireSeasonPhase, hashPhase, hasSeasonOrigin, resolveSireSeasonOrigin } from './season_phase.js';
 import { DORMANCY_STAGE } from './stage_config.js';
-import { getTalentLabel, normalizeTalentList, resolveSkillDefinition } from './skill_config.js';
+import { canBodyHaveSkill, getTalentLabel, normalizeSkillList, normalizeTalentList, resolveSkillDefinition } from './skill_config.js';
 
 export const SIRE_SOURCES = Object.freeze(['manual', 'card', 'father', 'library']);
 export const SPERM_QUALITY_MIN = 0.25;
@@ -292,8 +292,14 @@ export function normalizeSireRecord(raw, minutesPassed = 0) {
     fetalGuard: value.fetalGuard === true,
     // 季节时钟起点（分钟）；没有季节的种族与扶她为 null
     seasonOrigin: hasSeasonOrigin(value) ? Math.round(Number(value.seasonOrigin)) : null,
-    // 精方只有天赋（资质），没有技能：技能要靠追踪锻炼，精方不追踪
     talents: normalizeTalentList(value.talents),
+    // 技能（1.4.2）：精方不追踪，不会自己练，只在注册时由模型判断或在变量页手动改；只能有通用与精方专属的技能
+    skills: normalizeSkillList(value.skills),
+    // 由孩子注册来的（1.4.2）：哪位母亲的第几个孩子
+    ...(value.childSource && typeof value.childSource === 'object' && String(value.childSource.motherName || '').trim()
+      && Number.isInteger(Number(value.childSource.childIndex))
+      ? { childSource: { motherName: String(value.childSource.motherName).trim(), childIndex: Number(value.childSource.childIndex) } }
+      : {}),
     createdAt: Math.max(0, Number(value.createdAt) || 0),
   };
 }
@@ -477,16 +483,23 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
     };
     if (record.isHere !== false) {
       const list = record.descriptions?.normalDescription || [];
-      // 天赋给模型看名字与方向，不给经验数字
+      // 天赋给模型看名字与方向，不给经验数字；对应部位精方身体没有的（卵方专属）标成隐性
       const talents = (record.talents || [])
         .filter((talent) => talent.level !== 0)
-        .map((talent) => `${resolveSkillDefinition(chatState?.skillCatalog, talent.skillId)?.name || `技能 #${talent.skillId}`}（${getTalentLabel(talent)}）`);
+        .map((talent) => {
+          const definition = resolveSkillDefinition(chatState?.skillCatalog, talent.skillId);
+          const latent = definition && !canBodyHaveSkill(definition, { hasWomb: false, hasSword: true });
+          return `${definition?.name || `技能 #${talent.skillId}`}（${getTalentLabel(talent)}${latent ? '，隐性' : ''}）`;
+        });
+      const skills = (record.skills || [])
+        .map((skill) => `${resolveSkillDefinition(chatState?.skillCatalog, skill.skillId)?.name || `技能 #${skill.skillId}`} Lv${skill.level}`);
       const stale = getStaleDescriptionFields(list, now).filter((field) => starred.has(field));
       entries.push({
         ...summary,
         isHere: true,
         descriptions: descriptionListToObject(list),
         ...(talents.length > 0 ? { talents } : {}),
+        ...(skills.length > 0 ? { skills } : {}),
         ...(stale.length > 0 ? { staleFields: stale } : {}),
       });
     } else if (fathers.has(name) || (name && text.includes(name))) {
@@ -527,6 +540,7 @@ export function upsertSireRecord(chatState, name, fields = {}, { source = 'manua
       bodySize: fields.bodySize,
       isHere: fields.isHere,
       ...(fields.talents !== undefined ? { talents: fields.talents } : {}),
+      ...(fields.skills !== undefined ? { skills: fields.skills } : {}),
     }),
     descriptions: { normalDescription: nextList },
     source: previous?.source || source,

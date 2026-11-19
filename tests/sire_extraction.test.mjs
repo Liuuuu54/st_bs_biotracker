@@ -57,7 +57,7 @@ test('抽取只回传表单值，不建档；请求带上目标名字与旧档�
     };
   };
   const result = await runRegistrySireExtraction(ctx, { targetName: '凯', declaredRace: '人类' });
-  assert.deepEqual(result, { age: 28, bodySize: 4.7, swordOffset: null, spermQuality: null, isHere: true, descriptions: [{ name: '外貌', value: '银发骑士' }], talents: null, skippedTalents: [] }, '图鉴是空的就不问天赋');
+  assert.deepEqual(result, { age: 28, bodySize: 4.7, swordOffset: null, spermQuality: null, isHere: true, descriptions: [{ name: '外貌', value: '银发骑士' }], talents: null, skills: null, skippedTalents: [] }, '图鉴是空的就不问天赋与技能');
   assert.ok(JSON.stringify(sent).includes('target_character'), '请求要带目标名字');
   assert.deepEqual(Object.keys(state.getChatState(ctx, settings).sires), [], '抽取不建档');
 });

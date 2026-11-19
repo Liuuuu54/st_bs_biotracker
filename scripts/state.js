@@ -13,7 +13,7 @@ import {
 } from './registry_psy_config.js';
 import { DORMANCY_STAGE, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, MENSTRUAL_STAGE_DAYS, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS, PREGNANCY_STAGES } from './stage_config.js';
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeSkillHistory, normalizeSkillList, normalizeTalentList } from './skill_config.js';
-import { CHAT_STATE_SCHEMA_VERSION, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines, renameStoredRaces } from './state_migration.js';
+import { CHAT_STATE_SCHEMA_VERSION, assignPresetSkillBodies, getChatStateSchemaVersion, migrateCharacters, normalizeCharacterBloodlines, renameStoredRaces } from './state_migration.js';
 import { createEmptySires, normalizeSires, pruneFutaSireRecord } from './sires.js';
 import { assignMissingSireSeasonOrigins, startMissingSireReserveClocks } from './season_phase.js';
 import { normalizeFetalEventList, normalizeFetalHealthFields } from './fetal_health.js';
@@ -897,6 +897,8 @@ export function createDefaultFemaleState(name = '') {
         miscarriage: false,
         realisticLabor: false,
         crossSpecies: false,
+        // 痛即为爽（1.4.2）：天生把分娩、妊娠、月经的痛感受为快感，只改描写
+        painPleasure: false,
       },
     },
   };
@@ -1564,6 +1566,8 @@ function migrateChatStateSchema(chatState) {
   if (fromVersion < 15) renameStoredRaces(chatState.sires);
   // v15 → v16（1.4.1）：怪菌类改名怪蕈类
   if (fromVersion < 16) renameStoredRaces(chatState.sires);
+  // v16 → v17（1.4.2）：技能图鉴的内置预设补上适用身体
+  if (fromVersion < 17) assignPresetSkillBodies(chatState.skillCatalog);
   // v11 → v12（1.2.4 精方周期）：剑偏移、存量由正规化补预设；季节起点对齐同族已注册者，没有就用名字杂凑
   if (fromVersion < 12) {
     startMissingSireReserveClocks(chatState.sires, chatState.minutesPassed);
@@ -1582,6 +1586,7 @@ function migrateChatStateSchema(chatState) {
       if (fromVersion < 10 && payload.sires) renameStoredRaces(payload.sires);
       if (fromVersion < 15 && payload.sires) renameStoredRaces(payload.sires);
       if (fromVersion < 16 && payload.sires) renameStoredRaces(payload.sires);
+      if (fromVersion < 17) assignPresetSkillBodies(payload.skillCatalog);
       const characters = unpackSnapshotCharacters(payload.characters, false, true);
       if (fromVersion < 12 && payload.sires) {
         startMissingSireReserveClocks(payload.sires, payload.minutesPassed);
@@ -2246,6 +2251,8 @@ function createSnapshotCharacterBaseline(name = '') {
         miscarriage: false,
         realisticLabor: false,
         crossSpecies: false,
+        // 痛即为爽（1.4.2）：天生把分娩、妊娠、月经的痛感受为快感，只改描写
+        painPleasure: false,
       },
     },
   };

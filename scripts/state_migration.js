@@ -1,3 +1,4 @@
+import { getPresetSkillBody } from './skill_config.js';
 import { normalizeFetalHealthFields } from './fetal_health.js';
 import { ensureBodyBaseFields } from './maternal_body.js';
 import { normalizeExperience, psychologySide } from './reproductive.js';
@@ -18,7 +19,7 @@ import { MENSTRUAL_STAGE_DAYS } from './stage_config.js';
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 16;
+export const CHAT_STATE_SCHEMA_VERSION = 17;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -340,6 +341,28 @@ function migrateCharacterV15ToV16(character) {
   renameRacesDeep(character);
 }
 
+/**
+ * v16 → v17（1.4.2 出生纪录）：旧孩子没有 birth，从孕期摘要补得到的出生健康；其余（生产方式、孕周、并发症）当作没有纪录。
+ * 孕期 log、精方技能、痛即为爽都是新栏位，缺了照预设，不必补。
+ */
+function migrateCharacterV16ToV17(character) {
+  for (const child of Array.isArray(character?.profile?.children) ? character.profile.children : []) {
+    if (!child || typeof child !== 'object' || child.birth) continue;
+    const ratio = Number(child.prenatalSummary?.birthHealthRatio);
+    if (Number.isFinite(ratio)) child.birth = { healthRatio: ratio };
+  }
+}
+
+/** v16 → v17：技能图鉴里照名字对到内置预设的，补上适用身体（性器、子宫开发为卵方专属） */
+export function assignPresetSkillBodies(catalog) {
+  if (!Array.isArray(catalog)) return;
+  for (const definition of catalog) {
+    if (!definition || typeof definition !== 'object') continue;
+    const preset = getPresetSkillBody(definition.name);
+    if (preset && (!definition.body || definition.body === 'any')) definition.body = preset;
+  }
+}
+
 const CHARACTER_MIGRATIONS = Object.freeze({
   1: migrateCharacterV1ToV2,
   2: migrateCharacterV2ToV3,
@@ -353,6 +376,7 @@ const CHARACTER_MIGRATIONS = Object.freeze({
   13: migrateCharacterV13ToV14,
   14: migrateCharacterV14ToV15,
   15: migrateCharacterV15ToV16,
+  16: migrateCharacterV16ToV17,
 });
 
 export function getChatStateSchemaVersion(chatState) {

@@ -18,7 +18,12 @@ export function buildRecordNotesPayload(name, profile) {
   const cognitionSummary = profile?.cognitionSummary;
   const events = pendingOf(eventSummary);
   const records = pendingOf(cognitionSummary);
-  if (events.length === 0 && records.length === 0) return null;
+  // 刚出生、孕期 log 还是固定格式的孩子
+  const birthLogs = (Array.isArray(profile?.children) ? profile.children : [])
+    .map((child, index) => ({ child, index }))
+    .filter(({ child }) => child?.prenatalLogPending && String(child.prenatalLog || '').trim())
+    .map(({ child, index }) => ({ child_index: index, name: child.name || null, draft: String(child.prenatalLog) }));
+  if (events.length === 0 && records.length === 0 && birthLogs.length === 0) return null;
   const visibleFetuses = (Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []).filter(isFetusKnownToCharacter);
   return {
     target_character: name,
@@ -40,6 +45,7 @@ export function buildRecordNotesPayload(name, profile) {
         folded: records.map((record) => ({ time: record.time, method: COGNITION_METHOD_LABELS[record.method] || record.method, content: record.content })),
       },
     } : {}),
+    ...(birthLogs.length > 0 ? { birth_logs: birthLogs } : {}),
   };
 }
 
@@ -64,6 +70,17 @@ export function applyRecordNotesResult(profile, payload, result) {
   };
   settle(profile?.pregnant?.fetalEventSummary, payload?.fetal_events?.folded?.length || 0, cleanNotes(result?.fetal_event_notes), 'fetal_events');
   settle(profile?.cognitionSummary, payload?.cognition?.folded?.length || 0, cleanNotes(result?.cognition_notes), 'cognition');
+  // 孩子的孕期 log：只换掉这次送出去、模型也回了的那几个；没回的维持固定格式，下次再送
+  const rewrites = Array.isArray(result?.birth_logs) ? result.birth_logs : [];
+  for (const sent of Array.isArray(payload?.birth_logs) ? payload.birth_logs : []) {
+    const child = profile?.children?.[sent.child_index];
+    const rewrite = rewrites.find((item) => Number(item?.child_index) === sent.child_index);
+    const log = cleanNotes(rewrite?.log);
+    if (!child || !log || String(child.prenatalLog || '') !== sent.draft) continue;
+    child.prenatalLog = log;
+    delete child.prenatalLogPending;
+    applied.push(`birth_log:${sent.child_index}`);
+  }
   return applied;
 }
 

@@ -552,6 +552,24 @@ export function buildPrenatalSummary(pregnant, fetus) {
   };
 }
 
+/** 孕期 log 的上限字数（与纪录摘要同级） */
+export const PRENATAL_LOG_MAX_CHARS = 300;
+
+/**
+ * 孕期 log（1.4.2）：分娩当下先拼固定格式，下一轮追踪后由纪录摘要整理改写成通顺的一段。
+ * 来源：这次妊娠的摘要要点（notes，分胎前的共同经历）＋事件堆里还留着、跟这一胎有关的事件＋出生纪录文字。
+ */
+export function buildPrenatalLogDraft(pregnant, fetus, birthText = '') {
+  const id = String(fetus?.embryoId ?? '');
+  const notes = String(pregnant?.fetalEventSummary?.notes || '').trim();
+  const events = normalizeFetalEventList(pregnant?.fetalEvents)
+    .filter((event) => event.scope === 'all' || (Array.isArray(event.embryoIds) && event.embryoIds.map(String).includes(id)))
+    .map((event) => `${event.time}：${describeFetalEventKind(event.kind)}${event.content ? `（${event.content}）` : ''}`);
+  const parts = [notes, events.join('；'), birthText ? `分娩：${birthText}` : ''].filter(Boolean);
+  const text = parts.join('。').replace(/。。/g, '。');
+  return text.length > PRENATAL_LOG_MAX_CHARS ? `${text.slice(0, PRENATAL_LOG_MAX_CHARS - 1)}…` : text;
+}
+
 export function describeFetalEventKind(kind) {
   return FETAL_EVENT_KINDS[kind]?.label || kind;
 }

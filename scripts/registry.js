@@ -67,7 +67,11 @@ import {
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { canLoadHostWorldInfo, getHostChat, getHostWorldBook, loadHostWorldInfo } from './host.js';
 import {
+  SKILL_BODY_LABELS,
+  canBodyHaveSkill,
+  getTalentLabel,
   normalizeNextSkillId,
+  normalizeSkillBody,
   normalizeSkillCatalog,
   normalizeSkillList,
   normalizeTalentList,
@@ -75,7 +79,7 @@ import {
   resolveSkillDefinition,
 } from './skill_config.js';
 import { resolveWardrobeItemRef, sanitizeWearState } from './wardrobe_config.js';
-import { applyToolCall, TOOL_DEFINITIONS, BACK_SIDES, calculateDerivedInheritanceProgress, canHostNestedPregnancy, deriveFetusGender, ensureNaturalNoticeSample, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
+import { applyToolCall, TOOL_DEFINITIONS, BACK_SIDES, describeBirthRecord, calculateDerivedInheritanceProgress, canHostNestedPregnancy, deriveFetusGender, ensureNaturalNoticeSample, isFetusKnownToCharacter, writeDiaryEntry } from './tools.js';
 import { EXTENSION_MONTH_DAYS, FIRST_EXTENSION_UNTIL_DAYS, GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, MENSTRUAL_STAGES, POSTTERM_START_DAYS, PREGNANCY_STAGE_DAYS } from './stage_config.js';
 export { QUICKENING_RULE, buildBreedingInferenceSystemPrompt, WARDROBE_FIT_CONSISTENCY_RULE, buildWardrobePrepSystemPrompt, buildStartingOutfitSystemPrompt, buildSireExtractionSystemPrompt, buildRegistrySystemPrompt, SPECIAL_FETUS_HINTS, buildSpecialFetusNotes, buildRegistrySkillSystemPrompt, buildRegistryBundlePrompt };
 
@@ -540,6 +544,11 @@ async function buildRegistryPayload(ctx, settings, chatState, options = {}) {
       birthWeightRatio: options.sourceChildContext.child?.birthWeightRatio ?? null,
       birthCompanionEggCount: options.sourceChildContext.child?.birthCompanionEggCount ?? null,
       birthAffinity: options.sourceChildContext.child?.birthAffinity ?? null,
+      // 1.4.2：出生纪录与孕期 log，让出生背景能写进角色设定
+      birth: options.sourceChildContext.child?.birth ? describeBirthRecord(options.sourceChildContext.child.birth) : null,
+      prenatalLog: options.sourceChildContext.child?.prenatalLog ?? null,
+      // 父母：注册时一律参考，不管在不在场
+      parents: buildSourceChildParents(chatState, options.sourceChildContext),
       talents: normalizeTalentList(options.sourceChildContext.child?.talents).map((talent) => {
         const definition = resolveSkillDefinition(chatState.skillCatalog, talent.skillId);
         return {
@@ -632,12 +641,15 @@ export async function runRegistrySireExtraction(ctx, options = {}) {
   if (!targetName) throw new Error('精方抽取需要 targetName');
   const declaredRace = String(options.declaredRace || '').trim() || '人类';
   const userInstruction = String(options.userInstruction || '').trim();
+  // 注册来源是孩子时，附上孩子的出生资料，让模型把出生背景写进精方设定
+  const sourceChildContext = options.sourceChild ? resolveRegistryChildSource(chatState, options.sourceChild) : null;
   const payload = await buildRegistryPayload(ctx, settings, chatState, {
     targetName,
     reason: 'sire_extraction',
     customNotes: '',
     declaredRace,
     userInstruction,
+    ...(sourceChildContext ? { sourceChildContext } : {}),
   });
   // 卵方状态与精方无关；有旧档案时附上，让模型在原有描述上补
   payload.existing_state = null;
@@ -650,14 +662,17 @@ export async function runRegistrySireExtraction(ctx, options = {}) {
   } : null;
   // 天赋只能用这个聊天的技能图鉴；技能系统关着就不问
   const withTalents = isSkillSystemEnabled(settings) && Array.isArray(chatState.skillCatalog) && chatState.skillCatalog.length > 0;
-  if (withTalents) payload.skill_catalog = chatState.skillCatalog.map((skill) => ({ name: skill.name, description: skill.description }));
+  if (withTalents) payload.skill_catalog = chatState.skillCatalog.map((skill) => ({ name: skill.name, description: skill.description, body: skill.body || 'any' }));
   const systemPrompt = buildSireExtractionSystemPrompt(settings, { declaredRace, userInstruction, withTalents });
   const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'sire' });
   const sanitized = sanitizeSireExtractionResult(result);
-  // 天赋按名字对到图鉴，对不上的略过；没问天赋时回 null，注册时保留原本的
-  if (!withTalents) return { ...sanitized, talents: null, skippedTalents: [] };
-  const resolved = normalizeInitialSkillTalentConfig({ talents: Array.isArray(result?.talents) ? result.talents : [] }, chatState.skillCatalog);
-  return { ...sanitized, talents: resolved.talents, skippedTalents: resolved.skipped };
+  // 天赋与技能按名字对到图鉴，对不上的略过；没问时回 null，注册时保留原本的。精方只能有通用与精方专属的技能
+  if (!withTalents) return { ...sanitized, talents: null, skills: null, skippedTalents: [] };
+  const resolved = normalizeInitialSkillTalentConfig({
+    talents: Array.isArray(result?.talents) ? result.talents : [],
+    skills: Array.isArray(result?.skills) ? result.skills : [],
+  }, chatState.skillCatalog, { hasWomb: false, hasSword: true });
+  return { ...sanitized, talents: resolved.talents, skills: resolved.skills, skippedTalents: resolved.skipped };
 }
 
 export async function runRegistryDiaryInference(ctx, options = {}) {
@@ -1789,7 +1804,11 @@ export async function runRegistrySkillInference(ctx, options = {}) {
  *
  * 跳过的条目会收集在 skipped 里，交由呼叫端提示，不静默吞掉。
  */
-export function normalizeInitialSkillTalentConfig(config, catalog) {
+/**
+ * body：{ hasWomb, hasSword } 时只收这个身体能有的技能（1.4.2 技能分适用身体），不合的列进 skipped；
+ * 天赋不分身体。没给 body 时全收。
+ */
+export function normalizeInitialSkillTalentConfig(config, catalog, body = null) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) return { skills: [], talents: [], skipped: [] };
   const skipped = [];
   const resolveId = (entry) => {
@@ -1804,16 +1823,28 @@ export function normalizeInitialSkillTalentConfig(config, catalog) {
   const mapEntries = (list) => (Array.isArray(list) ? list : [])
     .map((entry) => ({ skillId: resolveId(entry), level: entry?.level, exp: entry?.exp }))
     .filter((entry) => entry.skillId !== null);
-  const skills = normalizeSkillList(mapEntries(config.skills));
+  const fits = (entry) => {
+    if (!body) return true;
+    const definition = resolveSkillDefinition(catalog, entry.skillId);
+    if (canBodyHaveSkill(definition, body)) return true;
+    skipped.push(`${definition?.name || entry.skillId}（${SKILL_BODY_LABELS[normalizeSkillBody(definition?.body)]}）`);
+    return false;
+  };
+  const skills = normalizeSkillList(mapEntries(config.skills).filter(fits));
   const talents = normalizeTalentList(mapEntries(config.talents));
   return { skills, talents, skipped };
+}
+
+/** 卵方角色的身体：都有子宫；同名也是精方（扶她）才有阴茎 */
+function getCharacterSkillBody(chatState, name) {
+  return { hasWomb: true, hasSword: Boolean(chatState?.sires && Object.prototype.hasOwnProperty.call(chatState.sires, String(name || '').trim())) };
 }
 
 export function applyInitialSkillTalentConfig(chatState, targetName, config, report = null) {
   const name = String(targetName || '').trim();
   const current = chatState.characters?.[name];
   if (!name || !current) throw new Error(`找不到已注册角色：${name || '(空白)'}`);
-  const normalized = normalizeInitialSkillTalentConfig(config, chatState.skillCatalog);
+  const normalized = normalizeInitialSkillTalentConfig(config, chatState.skillCatalog, getCharacterSkillBody(chatState, name));
   // 解析不到的条目已被跳过，交给呼叫端提示使用者
   if (report && typeof report === 'object') report.skipped = normalized.skipped || [];
   const next = {
@@ -1959,6 +1990,76 @@ export function resolveRegistryChildSource(chatState, source = {}) {
   const children = Array.isArray(mother?.profile?.children) ? mother.profile.children : [];
   const child = children[childIndex];
   return child && typeof child === 'object' ? { motherName, childIndex, mother, child } : null;
+}
+
+/**
+ * 孩子注册成精方（1.4.2）：精方档案的种族、血统、衍生、天赋照孩子，孩子记下「已注册为」。
+ * 体型、品质、剑这些成年后的资料由注册模型与表单决定，不从孩子带。回传精方档案或 null。
+ */
+/** 一位亲属给注册模型看的摘要：种族、年龄、外貌描述、天赋名 */
+function describeRegistryRelative(chatState, name, { race = null, bloodline = null, bodySize = null } = {}) {
+  const key = String(name || '').trim();
+  const character = key ? chatState?.characters?.[key] : null;
+  const sire = key ? getSireRecord(chatState, key) : null;
+  const talentNames = (list) => normalizeTalentList(list).filter((talent) => talent.level !== 0)
+    .map((talent) => `${resolveSkillDefinition(chatState?.skillCatalog, talent.skillId)?.name || `技能 #${talent.skillId}`}（${getTalentLabel(talent)}）`);
+  const descriptions = (list) => Object.fromEntries((Array.isArray(list) ? list : []).filter((entry) => entry?.name && entry?.value).map((entry) => [entry.name, entry.value]));
+  if (character?.profile) {
+    const base = character.profile.base || {};
+    return {
+      name: key,
+      registered: 'egg',
+      race: base.race || null,
+      ...(base.derivedType ? { derivedType: base.derivedType } : {}),
+      age: Number.isFinite(Number(base.age)) ? Math.round(Number(base.age)) : null,
+      ...(base.bodySize ? { bodySize: base.bodySize } : {}),
+      isHere: base.isHere !== false,
+      descriptions: descriptions(character.profile.descriptions?.normalDescription),
+      talents: talentNames(character.profile.talents),
+    };
+  }
+  if (sire) {
+    return {
+      name: key,
+      registered: 'sire',
+      race: sire.race || null,
+      ...(sire.derivedType ? { derivedType: sire.derivedType } : {}),
+      age: Number.isFinite(Number(sire.age)) ? Math.round(Number(sire.age)) : null,
+      ...(sire.bodySize ? { bodySize: sire.bodySize } : {}),
+      isHere: sire.isHere !== false,
+      descriptions: descriptions(sire.descriptions?.normalDescription),
+      talents: talentNames(sire.talents),
+    };
+  }
+  // 没注册过的父亲：只有孩子记录里留下的快照
+  return key ? { name: key, registered: null, race, ...(bloodline ? { bloodline } : {}), ...(bodySize ? { bodySize } : {}) } : null;
+}
+
+/** 孩子注册时的父母：母亲是生下她的那位，父亲照孩子记录的胎父（有认定父亲时以认定为准） */
+export function buildSourceChildParents(chatState, context) {
+  const child = context?.child || {};
+  const fatherName = String(child.selectedFather || child.fathers || '').split('×')[0].trim();
+  return {
+    mother: describeRegistryRelative(chatState, context?.motherName),
+    father: fatherName && fatherName !== '未知'
+      ? describeRegistryRelative(chatState, fatherName, { race: child.fatherRace || null, bloodline: child.fatherBloodline || null, bodySize: child.fatherBodySize || null })
+      : null,
+  };
+}
+
+export function applyRegistryChildToSire(chatState, sireName, source = {}) {
+  const resolved = resolveRegistryChildSource(chatState, source);
+  const name = String(sireName || '').trim();
+  const record = chatState?.sires?.[name];
+  if (!resolved || !record) return null;
+  const child = resolved.child;
+  record.race = String(child.race || record.race || '未知');
+  Object.assign(record, getBloodlineInfo(record.race, child.bloodline, child.bloodlineSource));
+  record.derivedType = child.derivedType ? String(child.derivedType) : null;
+  record.talents = normalizeTalentList(child.talents);
+  record.childSource = { motherName: resolved.motherName, childIndex: resolved.childIndex };
+  child.registeredAs = name;
+  return record;
 }
 
 export function applyRegistryChildInheritance(chatState, targetName, source = {}) {

@@ -129,6 +129,20 @@ export function getFetalGrowthRate(ownAge, shape) {
 }
 
 /**
+ * 一胎踢起来有多用力（孕体特写的动画与生殖疼痛共用，画面与数值才一致）：
+ * size 胎量（份量 × 胎重 × 份量倍率）、weight 胎重、healthPct 健康 0–100（50 平常）、uterinePct 宫压占上限 0–100、
+ * vigorHard 活力档的力道倍率（活力档还没有资料，一律是「一般」的 1）。回传 0 到约 2.6。
+ */
+export function getFetalKickStrength({ size = 0, weight = 1, healthPct = 50, uterinePct = 0, vigorHard = 1 } = {}) {
+  const clamp01 = (value) => Math.max(0, Math.min(1, value));
+  // 力道：胎量 0.2（约孕 20 周）起变大，足月后再长一点到顶
+  const grown = clamp01((Number(size) - 0.2) / 0.97);
+  const health = Math.max(0, Math.min(2, Number(healthPct) / 50));
+  const hard = Math.max(0.5, Math.min(1.2, 0.6 + 0.4 * health));
+  return Math.min(2.2, (0.35 + 1.4 * grown) * Math.max(0.1, Number(weight) || 1) ** 0.3 * (1 + 0.25 * (Number(uterinePct) || 0) / 100)) * vigorHard * hard;
+}
+
+/**
  * 母体负担的孕龄项：0.5 × 成长速度。原本是直线的 t（整个孕期累积 0.5），
  * 任何生长型的成长速度积分都是 1，乘 0.5 后整个孕期的总负担不变，只是挪到长得快的那段。
  */

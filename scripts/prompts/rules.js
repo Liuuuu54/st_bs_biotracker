@@ -206,6 +206,8 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].embryoType: 胚胎型态，如 胎生、卵生、卵胎生、胎转卵生、不定型。',
   '- fetuses[*].companionEggCount: 这一胎伴随的背景卵数量（伴生卵），为 0 时不出现。出生时会随这一胎一起排出，可描写成产下整群卵，但只有这一胎会写入族谱；绝不能按伴生卵自行增加 fetusesCount、胎儿卡或孩子。',
   '- fetuses[*].weight: 胎重系数，標準1.0，范围0.33~3.0：这一胎足月时比同族的标准胎大多少（1.0 就是该族理想的足月大小，不跨族比较），受精时定下、孕期不变；孕期中照物种的胎儿生长型长到这个大小。各族孕肚大小的差别看胎量与 bellySize，不看胎重。影响妊娠负担、分娩难度与恢复期。',
+  '- fetuses[*].labor: 这一胎在产程中遇到的事（难产类型、产程延长、急产、产伤）。产伤不指定部位与症状：依这一族的身体构造与这次分娩的整体情况（卡住多久、多急、是不是助产拉出）推想合理的伤，不要直接套人类的医学名词。',
+  '- pain: 生殖疼痛 0-10 与来源（分娩、月经、胎动、假宫缩、产后宫缩），有痛才出现；描写这些痛不得明显超过这个等级。标了「痛即为爽」时，她天生把这些分娩、妊娠、月经的痛感受为快感：照等级写出痛，但她的感受是爽；这不会让性欲自动上升，也和技能 M 倾向（从被施加的疼痛、被支配中得到快感）是两回事。',
   '- pregnant.fetalMovementFelt: 系统按胎量判定她现在感觉不感觉得到胎动（人类型约孕 18–20 周起，物种生长型早熟的更早、晚成或胎儿份量小的更晚）；false 时剧情不写她感到胎动、踢动。',
   '- fetuses[*].tendencyAngle: 胎位角度，0/360=头位，180=臀位，90或270=横位，禁止反写；影响第二产程的难度。若 notify 发出难产警示，应优先考虑 bsChildbirth 手术产。',
   '- fetuses[*].tendencyAngleText: 系统额外附带的胎位文字说明，如 头位(头朝下)/臀位(臀部朝下)/横位/斜位。',
@@ -256,6 +258,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- 新技能必须先调用 bsRegisterSkillDefinition，以 name+description 登记到 skill_catalog；先检查既有定义，禁止制造同义重复。随后才能用精确名称调用 bsTrainSkill，并在剧情确实触发觉醒时传 awaken=true。',
   '- 孕中期、孕晚期、临产期、逾期、延产期、产兆前驱、第一产程调用 bsTrainSkill 时，系统每次只随机选择一胎，将本次 skillExp 依该胎 affinity 自动传为天赋经验：skillExp*abs(affinity)/50，正亲和为擅长、负亲和为苦手、0 不传。第二与第三产程禁止传递。',
   '- 胎儿与孩子只有 talents，没有 skills。分娩时 talents 原样进入 children；日后注册孩子角色时，由用户在注册第五子页参考并载入，不会只凭同名自动继承。',
+  '- 天赋不分身体，会隔代遗传：儿子可能带着子宫开发的天赋，女儿可能带着阴茎开发的天赋。天赋对应的部位本人身体没有时（skill_catalog 里 body 为 womb 而本人没有子宫，或 body 为 sword 而本人不是扶她），这项天赋是隐性的，标成 latent：本人无从表现，剧情不写他（她）在这方面擅长或苦手，只是带着、会遗传给孩子。',
   '',
   '[children]',
   '- 已出生孩子列表。代孕／寄生所生的孩子会转交给 provider 指向的角色；该角色尚未注册时，孩子留在承载者名下并保留 children[*].provider 标记。',
@@ -667,7 +670,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
   }
   if (profiles.some((profile) => profile.pregnant)) {
     lines.push(
-      '- pregnant：pregnantDays 孕龄天数；bellySize 孕肚大小（0–15，足月单胎约 7，超过 10 是任何衣服都包不住的巨大孕肚；产后从约 4 缩回 0），只用来描写孕肚有多大，不写数字；allocation 这胎养分偏给谁；fetalMovementFelt 她现在感觉不感觉得到胎动（看胎量，不看孕龄），false 时不写她感到胎动；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
+      '- pregnant：pregnantDays 孕龄天数；bellySize 孕肚大小（0–15，足月单胎约 7，超过 10 是任何衣服都包不住的巨大孕肚；产后从约 4 缩回 0），只用来描写孕肚有多大，不写数字；allocation 这胎养分偏给谁；pain（在角色层）生殖疼痛与来源，标了痛即为爽时她把这些痛感受为快感（不因此加性欲）；fetalMovementFelt 她现在感觉不感觉得到胎动（看胎量，不看孕龄），false 时不写她感到胎动；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
       '- pregnant.laborEffort / pushFatigue（产程中）：push 表示产妇正在用力、rest 表示停下来喘口气；第一产程用力是白费力气；pushFatigue 用力疲劳 0-100，60 以上已经力竭、越推越没效果，描写可体现喘息与脱力。',
       '- fetuses 按子宫里由左到右排列，不代表出生顺序；presenting=true 是正在下降或娩出的那一胎。weight 胎重系数，1.0 为标准；affinity 母胎亲密度 -50～50，负值为排斥；health 胎儿健康（健壮／平稳／虚弱／危急），描写胎儿状况须一致，不写出刻度本身；resilience 顽强（很耐疏忽与伤害，可写母体挺着肚子照样奔波、胎儿稳如磐石）或脆弱（稍有闪失就会出事），没有就是一般；positionText、backSideText、tendencyAngleText 是胎位现况，描写须一致。',
     );
@@ -1796,6 +1799,20 @@ export function getEmbryoTypeReferenceText(embryoType) {
  */
 export const QUICKENING_RULE = '胎动感知（硬性）：看胎量（肚子里的胎儿长到多大）而不是孕龄。状态里有 pregnant.fetalMovementFelt 时以它为准：true 才感觉得到。没有这一栏时按人类产科孕周换算：人类型的胎儿母体通常要到孕 18–20 周（经产妇约 16–18 周，多胎大致相同）才感觉得到胎动；物种胎儿生长型为早熟型的更早、晚成型或胎儿份量小的更晚。在此之前胎儿虽会动，母体察觉不到，只有产检、超声或世界观里的诊察手段（魔法、占卜等）看得到；描述、心情与认知都不得写母体感到胎动、踢动或腹中有东西在动。过了这个时间点，感觉得到不等于认得出：角色还不知道自己怀孕（cognitionRecords 没有知孕纪录）或拒绝承认时，只会以为是胀气、肠胃蠕动、抽筋之类。描述可以写客观的胎儿活动，但写到母体的感受，以及心情与认知，都照她的理解写，不得写成她认出那是胎动。';
 
+/**
+ * 孩子长大后注册（卵方或精方）：年龄照故事里实际经过的时间，出生纪录与孕期 log 当成长背景，
+ * 天赋对应的部位身体没有时是隐性的。
+ */
+export const CHILD_SOURCE_BACKGROUND_RULE = '孩子来源的背景（硬性）：'
+  + 'source_child.age 是故事里实际经过的年数，年龄以它为准，除非角色卡明确写了别的；描述照这个年纪写，不要写成刚出生。'
+  + 'source_child.birth（出生纪录：第几胎、孕周与早产／过期、生产方式、难产、产伤、出生健康）与 source_child.prenatalLog（在母腹中的经历）是成长背景：'
+  + '可以影响幼年的体质与性格（例如早产或难产生下的孩子小时候较弱、被诅咒过的胎儿留下痕迹），产伤依这一族的身体与经过的年数判断已经痊愈还是留下痕迹；'
+  + '不要把它们写成现在的病，也不要凭空加上纪录里没有的出生经历。'
+  + '天赋对应的部位本人身体没有时（儿子带着子宫开发、女儿带着阴茎开发），那项天赋是隐性的：本人无从表现，只会遗传给下一代。'
+  + '技能是长大后练成的，照本人的身体给（精方没有子宫、卵方不是扶她就没有阴茎），没有依据就不给。'
+  + 'source_child.parents 是这个孩子的父母（母亲、父亲），不管他们现在在不在场都要参考：外貌、体型、种族特征可以像父母；'
+  + '家庭背景、与父母的关系照角色卡与剧情，卡上没写时可以从父母的设定合理推想，但不要替父母编新的经历。';
+
 export function buildBreedingInferenceSystemPrompt(settings, options = {}) {
   const side = options.psychologySide || null;
   return [
@@ -1836,15 +1853,17 @@ export function buildSireExtractionSystemPrompt(settings, options = {}) {
     '- age: 实际年龄（岁）。长生种只写外表年龄时按设定推估；完全没有线索填 null。',
     '- bodySize: 常态（人态）的个体体型，1–7 级，人类为 4，可带一位小数。依写明的身高或身材换算：约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7，锚点之间按比例内插。能变形的种族只填常态。卡上没写身材填 null，系统用种族平均。',
     '- isHere: 最近对话里此人是否在场；看不出来填 true。',
-    ...(options.withTalents ? ['- talents: 此人的天赋（资质），阵列 [{"skill":"技能名","level":整数}]，level 为 -5～5，正为擅长、负为苦手；技能名只能用 payload.skill_catalog 里的。天赋是与生俱来的资质，会有一部分遗传给孩子；只写设定里明确的长处或短处，没有就给空阵列。'] : []),
+    ...(options.withTalents ? ['- talents: 此人的天赋（资质），阵列 [{"skill":"技能名","level":整数}]，level 为 -5～5，正为擅长、负为苦手；技能名只能用 payload.skill_catalog 里的。天赋是与生俱来的资质，会有一部分遗传给孩子；只写设定里明确的长处或短处，没有就给空阵列。',
+      '- skills: 此人后天练成的技能，阵列 [{"skill":"技能名","level":1～10}]；只能用 payload.skill_catalog 里 body 为 any 或 sword 的（精方没有子宫，body 为 womb 的不能有）。只写设定里明确练过、熟练的，没有就给空阵列；精方之后不会自动成长，只能手动改。'] : []),
     '- payload.father_snapshot 若有，是这人当年在子女或胎儿记录里留下的父方资料（种族、血脉、体型），可作体型参考，以角色卡与设定为准。',
+    '- payload.source_child 若有，这个精方是由已有角色的孩子长大后注册的：种族、血脉、衍生与天赋由系统照孩子继承，不必再判断 talents（给空阵列即可）。' + CHILD_SOURCE_BACKGROUND_RULE,
     '- swordOffset: 剑（阳物）的个人偏移，−2～+2，步长 0.5，一般为 0。剑的大小 ＝ 体型 ＋ 偏移，体型已由 bodySize 决定，这里只写比同体型的人大或小多少：设定写明阳物特别粗大（小个子巨根）约 +1～+2，偏小约 −0.5～−1。设定没有着墨填 null。要与描述里性器的写法一致。',
     '- spermQuality: 精子品质倍率 0.25–4，一般人为 1。依设定里对精力、精液浓度、繁殖力的描写推估：精力衰退、不易使人受孕约 0.25–0.5；一般 1；精力旺盛、精液浓稠约 2；精力极旺、传说级的繁殖力或种马设定约 3–4。只看体能与繁殖力，不看阳物大小（那是 swordOffset）、身分、性格或受欢迎程度；设定没有着墨填 null。',
     '- descriptions: 以字段名为键的物件，字段名照下方规则每行「字段名|写作指引」的字段名；没有资料的字段省略。每栏一到三句白描，写当下状态，不写剧情摘要。',
     '[描述规则]',
     guide,
     ...(instruction ? ['[使用者补充]', sanitizePromptText(instruction)] : []),
-    `只输出 JSON：{"age":数字或null,"bodySize":数字或null,"swordOffset":数字或null,"spermQuality":数字或null,"isHere":true,${options.withTalents ? '"talents":[],' : ''}"descriptions":{"字段名":"内容"}}`,
+    `只输出 JSON：{"age":数字或null,"bodySize":数字或null,"swordOffset":数字或null,"spermQuality":数字或null,"isHere":true,${options.withTalents ? '"talents":[],"skills":[],' : ''}"descriptions":{"字段名":"内容"}}`,
   ].join('\n');
 }
 
@@ -1901,6 +1920,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '只在用户明确要求注册指定角色时工作，不得擅自新增其他角色。',
     '根据角色卡、用户要求、已有资料，输出角色初始化 JSON。',
     sourceChild ? '本次注册来源为已有角色的孩子。payload.source_child 是固定事实：base.race 必须沿用其 race／derivedType；其 talents 会由系统确定性继承。你只能参考这些天赋塑造初始化内容，不得删除、改名、换向或重算天赋。' : '',
+    sourceChild ? CHILD_SOURCE_BACKGROUND_RULE : '',
     includeBreedingPsychology
       ? 'payload.breeding_inference 是已确认的繁育推演。必须优先把它当作繁育心理初稿，再结合角色资料校正，不要无故忽略。'
       : '本次未启用繁育心理推演：不要输出、补全或推断任何繁育阶段人格字段，保留角色卡原有的阶段人设与表现。',
@@ -2211,7 +2231,8 @@ function buildSkillRuleLines(options = {}) {
       : '先查阅 payload.skill_catalog。语义适合的技能必须复用其精确 name 或 id，不得用近义词建立重复技能。',
     emptyCatalog
       ? '每个新定义必须同时提供 name 与明确说明技能范围的 description，缺一不可。'
-      : '只有现有图鉴确实无法表达所需技能时，才能放入 skillDefinitions；每个新定义必须同时提供 name 与明确说明技能范围的 description。',
+      : '只有现有图鉴确实无法表达所需技能时，才能放入 skillDefinitions；每个新定义必须同时提供 name 与明确说明技能范围的 description。可另给 body：womb 卵方专属（要有阴道、子宫）、sword 精方专属（要有阴茎）、any 通用（省略即 any）。',
+    '角色的身体决定能有哪些技能：卵方都有子宫；只有扶她（同名也是精方）才能有 body 为 sword 的技能，其余会被丢弃。天赋不分身体。',
     'initialSkills 与 initialTalents 的 skill 必须使用图鉴中的精确 name/id，或本次 skillDefinitions 中的新技能精确 name。',
     '【天赋同样需要技能作为载体】天赋不是独立的性格标签，而是「对某个技能的先天擅长／苦手」。'
       + '因此 initialTalents 引用的技能若不在 payload.skill_catalog 中，必须先在本次 skillDefinitions 里定义它，否则该天赋会被丢弃。'
@@ -2415,7 +2436,7 @@ export const DEFAULT_DIARY_WRITING_PROMPT = `
 export function buildRecordNotesSystemPrompt({ maxChars = 300 } = {}) {
   return [
     '你是 AIRP 角色纪录整理器。payload.target_character 的纪录超过保存上限，最旧的几条要并进摘要：把 previous_notes（先前的要点）与 folded（这次并进去的条目）整理成一段新的要点，之后追踪只看得到这段要点与次数统计，看不到原文。',
-    '只输出 JSON：{"fetal_event_notes":"…","cognition_notes":"…"}；payload 里没有的那一项省略。',
+    '只输出 JSON：{"fetal_event_notes":"…","cognition_notes":"…","birth_logs":[{"child_index":0,"log":"…"}]}；payload 里没有的那一项省略。',
     '以 previous_notes 为底改写：其中仍然有效的内容不要丢；新条目推翻旧内容时以新的为准。只用 payload 里有的内容，不补充、不推测。',
     `每一项不超过 ${maxChars} 字，用简短的陈述句，不分点、不加标题。`,
     '',
@@ -2428,5 +2449,10 @@ export function buildRecordNotesSystemPrompt({ maxChars = 300 } = {}) {
     '- 这是角色本人的认知，也就是她相信什么，可能与事实不同。folded 每条有 time、method（得知方式）、content。',
     '- 按主题写她目前的信念：知不知道自己怀孕、知不知道自己正在分娩、几胎、孩子的父亲、孕期与预产期、身体状况与医嘱等；同一主题以最新的为准，被推翻的旧想法一句带过（曾以为……，后来……）。',
     '- 照她的理解写，错的也照错的写，不要更正成事实；写明来源（自己察觉、猜测、被告知、检测、诊察）。',
+    '',
+    '[孩子的孕期经历 birth_logs]',
+    '- 每项是一个刚出生的孩子，draft 是系统拼出的固定格式（妊娠要点、跟这一胎有关的事件、分娩经过）。',
+    '- 改写成一段通顺的孕期经历，照时间顺序，从这个孩子的角度看（例如「在母亲腹中时……」），保留最重要的几件事与分娩经过；只用 draft 里有的内容，不补充、不推测，不写健康以外的数值。',
+    '- 回传 child_index 与 log，child_index 照 payload 原样。',
   ].join('\n');
 }

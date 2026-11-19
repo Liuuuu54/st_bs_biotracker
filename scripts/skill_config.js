@@ -2,6 +2,26 @@ export const SKILL_MAX_LEVEL = 10;
 export const TALENT_MAX_LEVEL = 5;
 export const SKILL_HISTORY_LIMIT = 100;
 
+/**
+ * 技能的适用身体（1.4.2）：技能要靠身体去练，所以分卵方专属（要有阴道、子宫）、精方专属（要有阴茎）与通用。
+ * 看身体不看身分：扶她同时有两边，两边的技能都能有。天赋不分，因为会隔代遗传。
+ */
+export const SKILL_BODIES = Object.freeze(['any', 'womb', 'sword']);
+export const SKILL_BODY_LABELS = Object.freeze({ any: '通用', womb: '卵方专属', sword: '精方专属' });
+
+export function normalizeSkillBody(value) {
+  const body = String(value || '').trim();
+  return SKILL_BODIES.includes(body) ? body : 'any';
+}
+
+/** 这个身体能不能有这项技能；hasWomb、hasSword 由呼叫端依卵方／精方／扶她判断 */
+export function canBodyHaveSkill(definition, { hasWomb = false, hasSword = false } = {}) {
+  const body = normalizeSkillBody(definition?.body);
+  if (body === 'womb') return hasWomb;
+  if (body === 'sword') return hasSword;
+  return true;
+}
+
 const MAX_NAME_LENGTH = 80;
 const MAX_DESCRIPTION_LENGTH = 800;
 const MAX_EXP_INPUT = 1000000;
@@ -12,8 +32,8 @@ export const SKILL_PRESET_GROUPS = Object.freeze({
     entries: Object.freeze([
       { name: '口腔开发', description: '口腔、舌与咽喉对相关刺激的经验与身体熟悉度。' },
       { name: '胸部开发', description: '胸部与乳首对相关刺激的经验与身体熟悉度。' },
-      { name: '性器开发', description: '外阴、阴蒂与阴道对相关刺激的经验与身体熟悉度。' },
-      { name: '子宫开发', description: '子宫与宫颈深处对相关刺激的经验与身体熟悉度。' },
+      { name: '性器开发', description: '外阴、阴蒂与阴道对相关刺激的经验与身体熟悉度。', body: 'womb' },
+      { name: '子宫开发', description: '子宫与宫颈深处对相关刺激的经验与身体熟悉度。', body: 'womb' },
       { name: '后庭开发', description: '后庭对相关刺激的经验与身体熟悉度。' },
       { name: '尿道开发', description: '尿道对相关刺激的经验与身体熟悉度。' },
     ]),
@@ -32,7 +52,23 @@ export const SKILL_PRESET_GROUPS = Object.freeze({
       { name: '多人行为', description: '同一情境中有三人或以上参与的性互动经验。' },
     ]),
   }),
+  sword: Object.freeze({
+    label: '精方专属',
+    entries: Object.freeze([
+      { name: '阴茎开发', description: '阴茎与龟头对相关刺激的经验与身体熟悉度。', body: 'sword' },
+    ]),
+  }),
 });
+
+/** 内置预设的适用身体（照名字对）：迁移旧图鉴时补上 */
+export function getPresetSkillBody(name) {
+  const key = String(name || '').trim();
+  for (const group of Object.values(SKILL_PRESET_GROUPS)) {
+    const entry = group.entries.find((item) => item.name === key);
+    if (entry) return normalizeSkillBody(entry.body);
+  }
+  return null;
+}
 
 function cleanText(value, maxLength) {
   const text = String(value ?? '').trim();
@@ -60,7 +96,7 @@ export function normalizeSkillDefinition(value) {
   const name = cleanText(value.name, MAX_NAME_LENGTH);
   const description = cleanText(value.description, MAX_DESCRIPTION_LENGTH);
   if (!id || !name || !description) return null;
-  return { id, name, description };
+  return { id, name, description, body: normalizeSkillBody(value.body) };
 }
 
 export function normalizeSkillCatalog(value) {
@@ -103,7 +139,7 @@ export function registerSkillDefinition(catalogValue, input = {}, nextSkillIdVal
   if (!description) return { ok: false, catalog, nextSkillId, message: '新增技能时必须填写定义描述。' };
   const existing = resolveSkillDefinition(catalog, name);
   if (existing) return { ok: true, catalog, nextSkillId, definition: existing, created: false };
-  const definition = { id: nextSkillId, name, description };
+  const definition = { id: nextSkillId, name, description, body: normalizeSkillBody(input.body) };
   catalog.push(definition);
   return { ok: true, catalog, nextSkillId: nextSkillId + 1, definition, created: true };
 }
@@ -118,7 +154,7 @@ export function updateSkillDefinition(catalogValue, reference, input = {}) {
   if (!description) return { ok: false, catalog, message: '技能描述 Prompt 不能为空。' };
   const duplicate = catalog.find((item) => item.id !== definition.id && normalizeLookupText(item.name) === normalizeLookupText(name));
   if (duplicate) return { ok: false, catalog, message: `技能名称「${name}」已存在。` };
-  const updated = { id: definition.id, name, description };
+  const updated = { id: definition.id, name, description, body: input.body === undefined ? normalizeSkillBody(definition.body) : normalizeSkillBody(input.body) };
   return {
     ok: true,
     catalog: catalog.map((item) => item.id === definition.id ? updated : item),

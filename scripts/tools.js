@@ -15,7 +15,7 @@ import { syncCardSettings } from './card_settings.js';
 import {
   FETAL_BURST_MAX_DAYS_PER_PASS, FETAL_CARE_GAIN_SCALE, FETAL_CARE_LOSS_SCALE, FETAL_EVENT_AFFINITY, FETAL_EVENT_CHANGES,
   FETAL_EVENT_DAILY_AFFINITY_CAP, FETAL_EVENT_DAILY_CARE_CAP, FETAL_EVENT_DECAY_DAYS, FETAL_EVENT_HEALTH, FETAL_EVENT_KINDS,
-  FETAL_EVENT_NESTED_FACTOR, FETAL_EVENT_PRESSURE, FETAL_HEALTH_FLOOR_RATIO, addFetalHealth, buildPrenatalSummary, compactFetalEvents,
+  FETAL_EVENT_NESTED_FACTOR, FETAL_EVENT_PRESSURE, FETAL_HEALTH_BASE, FETAL_HEALTH_FLOOR_RATIO, addFetalHealth, buildPrenatalLogDraft, buildPrenatalSummary, compactFetalEvents,
   createFetalHealthFields, describeFetalEventKind, describeFetalEventMagnitude, getChangeMagnitude, getChangeSign,
   applyFetalGuardRegen, getFetalEventSensitivity, getPrenatalCareKey, getPrenatalCareTarget, getFetalHarmFactor, getFetalHealthRatio, getStoryDayIndex, normalizeFetalEventList, normalizeFetalHealthFields, sampleFetalInitialHealth,
   settleFetalHealthWeek,
@@ -108,7 +108,7 @@ import {
   parseRaceDescriptor,
   getRaceDescriptorComponents,
 } from './race_config.js';
-import { getFetalGrowth, getFetalGrowthRate, getFetalLoadFactor } from './fetal_growth.js';
+import { getFetalGrowth, getFetalGrowthRate, getFetalKickStrength, getFetalLoadFactor } from './fetal_growth.js';
 import {
   calculateDerivedInheritanceProgress,
   calculateFertilizationPreview,
@@ -124,7 +124,7 @@ export {
   DERIVED_INHERITANCE_BASELINE_DAYS,
   DERIVED_INHERITANCE_THRESHOLD,
 } from './calculator.js';
-import { addSkillExperience, addTalentExperience, appendSkillHistory, normalizeSkillList, normalizeTalentList, registerSkillDefinition, requiredExp, resolveSkillDefinition, seedInnateTalents } from './skill_config.js';
+import { addSkillExperience, addTalentExperience, appendSkillHistory, canBodyHaveSkill, normalizeSkillList, normalizeTalentList, registerSkillDefinition, requiredExp, resolveSkillDefinition, seedInnateTalents } from './skill_config.js';
 import { TOOL_DEFINITIONS } from './prompts/tool_definitions.js';
 export { TOOL_DEFINITIONS };
 
@@ -3872,6 +3872,7 @@ function clearPregnancyState(profile) {
   pregnant.laborPhase = null;
   pregnant.laborBirthNumber = 0;
   pregnant.deliveredCount = 0;
+  delete pregnant.deliveredBulk;
   pregnant.extensionCount = 0;
   pregnant.extensionUntilDays = null;
   pregnant.presentingEmbryoId = null;
@@ -3897,8 +3898,9 @@ function clearPregnancyState(profile) {
   profile.pregnant = pregnant;
 }
 
-function appendChildrenFromFetuses(profile, fetuses) {
+function appendChildrenFromFetuses(profile, fetuses, { mode = 'natural', firstOrder = null, total = null } = {}) {
   const children = Array.isArray(profile.children) ? profile.children.map((item) => ({ ...item })) : [];
+  let birthIndex = 0;
   const base = profile.base || {};
   const motherDerivedType = base.derivedType ? String(base.derivedType) : null;
   for (const fetus of fetuses) {
@@ -3955,8 +3957,19 @@ function appendChildrenFromFetuses(profile, fetuses) {
       birthAffinity: clampNumber(fetus?.affinity, -50, 50, 0),
       // 胎儿事件堆在妊娠结束时清掉，孩子身上只留摘要（只是纪录，不影响孩子本身）
       prenatalSummary: buildPrenatalSummary(profile.pregnant, fetus),
+      ...(() => {
+        const birth = buildBirthRecord(profile, fetus, {
+          mode,
+          order: Number.isInteger(firstOrder) ? firstOrder + birthIndex : null,
+          of: Number.isInteger(total) ? total : null,
+        });
+        const prenatalLog = buildPrenatalLogDraft(profile.pregnant, fetus, describeBirthRecord(birth));
+        // 固定格式先存着，下一轮追踪后由纪录摘要整理改写（prenatalLogPending）
+        return { birth, ...(prenatalLog ? { prenatalLog, prenatalLogPending: true } : {}) };
+      })(),
       talents: normalizeTalentList(fetus?.talents),
     });
+    birthIndex += 1;
   }
   profile.children = children;
   linkNestedChildren(profile);
@@ -4036,7 +4049,15 @@ function applyChildbirthInternal(profile, female, isNatural) {
   const remainingFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((item) => ({ ...item })) : [];
   const companionEggs = remainingFetuses.reduce((sum, fetus) => sum + getCompanionEggCount(fetus), 0);
   const companionNote = companionEggs > 0 ? `，并排出${companionEggs}枚伴生卵` : '';
-  if (remainingFetuses.length > 0) appendChildrenFromFetuses(profile, remainingFetuses);
+  if (remainingFetuses.length > 0) {
+    recordDeliveredBulk(profile, remainingFetuses);
+    const deliveredBefore = clampNumber(pregnant.deliveredCount, 0, 99, 0);
+    appendChildrenFromFetuses(profile, remainingFetuses, {
+      mode: isNatural ? 'natural' : 'surgical',
+      firstOrder: deliveredBefore + 1,
+      total: deliveredBefore + remainingFetuses.length,
+    });
+  }
   const recoveryDays = settlePostpartumRecoveryDays(profile);
   clearPregnancyState(profile);
   if (runtime) restorePregnancyPhysiology(profile, runtime);
@@ -4107,6 +4128,146 @@ const INLET_INTRUSION_WEIGHT_RATIO = 0.85;
 const INLET_INTRUSION_PRESSURE_RATIO = 0.66;
 /** 构型成立时，第二胎每次往下挤真的卡进入口形成互锁的机率 */
 const INLET_INTRUSION_CHANCE = 0.2;
+
+
+// ── 产程伤胎与出生纪录（1.4.2）─────────────────────────
+// 难产卡住、第二产程拖长、肩难产助产、急产会伤到胎儿；扣的是健康上限（100）的比例，
+// 产程中不会因此流产，最低停在 1%。生蛋的不会缺氧，改记蛋壳受损；不定型照魔法要害规则减半。
+// 每一胎的经过记在 fetus.laborRecord，出生时整理进孩子的 birth。
+export const LABOR_FETAL_HARM = Object.freeze({
+  obstructedPerHour: 0.02,
+  obstructedLatePerHour: 0.04,
+  obstructedLateAfterHours: 2,
+  prolongedPerHour: 0.01,
+  prolongedFactor: 2,
+  shoulderExtract: 0.025,
+  shoulderInjuryChance: 0.15,
+  precipitous: 0.015,
+  precipitousInjuryChance: 0.1,
+});
+/** 早产、过期的界线（自身有效孕龄，人类换算） */
+export const BIRTH_PRETERM_BEFORE_DAYS = 259;
+export const BIRTH_POSTTERM_AFTER_DAYS = 294;
+
+function getLaborRecord(fetus) {
+  if (!fetus.laborRecord || typeof fetus.laborRecord !== 'object') fetus.laborRecord = { complications: [], injuries: [] };
+  if (!Array.isArray(fetus.laborRecord.complications)) fetus.laborRecord.complications = [];
+  if (!Array.isArray(fetus.laborRecord.injuries)) fetus.laborRecord.injuries = [];
+  return fetus.laborRecord;
+}
+
+function noteLaborComplication(fetus, code) {
+  const record = getLaborRecord(fetus);
+  if (code && !record.complications.includes(code)) record.complications.push(code);
+}
+
+function noteLaborInjury(fetus, code) {
+  const record = getLaborRecord(fetus);
+  if (code && !record.injuries.includes(code)) record.injuries.push(code);
+}
+
+/** 扣胎儿健康（上限的比例）；生蛋的改记蛋壳受损 */
+function harmLaborFetus(fetus, ratio) {
+  if (!fetus || !(ratio > 0)) return 0;
+  if (isShelledAtBirth(fetus)) {
+    noteLaborComplication(fetus, 'shell_damaged');
+    return 0;
+  }
+  const scale = String(fetus.embryoType || '胎生') === '不定型' ? 0.5 : 1;
+  const floor = FETAL_HEALTH_BASE * FETAL_HEALTH_FLOOR_RATIO;
+  const before = clampNumber(fetus.health, 0, FETAL_HEALTH_BASE, FETAL_HEALTH_BASE * 0.5);
+  const after = Math.max(Math.min(before, floor), before - FETAL_HEALTH_BASE * ratio * scale);
+  return addFetalHealth(fetus, after - before);
+}
+
+/** 卡住的这段时间：前 2 小时每小时 2%，之后 4%（缺氧加重） */
+function harmObstructedFetuses(pregnant, obstruction, hours) {
+  if (!obstruction || !(hours > 0)) return;
+  const fetuses = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : [];
+  for (const id of obstruction.embryoIds || []) {
+    const fetus = fetuses.find((item) => item.embryoId === id);
+    if (!fetus) continue;
+    const record = getLaborRecord(fetus);
+    const before = clampNumber(record.obstructedHours, 0, 9999, 0);
+    const after = before + hours;
+    const limit = LABOR_FETAL_HARM.obstructedLateAfterHours;
+    const early = Math.max(0, Math.min(after, limit) - before);
+    const late = Math.max(0, after - Math.max(before, limit));
+    record.obstructedHours = Math.round(after * 100) / 100;
+    noteLaborComplication(fetus, obstruction.type);
+    harmLaborFetus(fetus, early * LABOR_FETAL_HARM.obstructedPerHour + late * LABOR_FETAL_HARM.obstructedLatePerHour);
+  }
+}
+
+/** 胎体下降拖过这一族预期时数的 2 倍：超出的每小时 1% */
+function harmProlongedDescent(fetus, hours, expectedHours) {
+  if (!fetus || !(hours > 0) || !(expectedHours > 0)) return;
+  const record = getLaborRecord(fetus);
+  const before = clampNumber(record.descentHours, 0, 9999, 0);
+  const after = before + hours;
+  record.descentHours = Math.round(after * 100) / 100;
+  const limit = expectedHours * LABOR_FETAL_HARM.prolongedFactor;
+  const excess = Math.max(0, after - limit) - Math.max(0, before - limit);
+  if (excess <= 0) return;
+  noteLaborComplication(fetus, 'prolonged_second_stage');
+  harmLaborFetus(fetus, excess * LABOR_FETAL_HARM.prolongedPerHour);
+}
+
+export const LABOR_COMPLICATION_LABELS = Object.freeze({
+  shoulder_dystocia: '肩难产',
+  twin_lock: '双胎互锁',
+  transverse: '横位难产',
+  prolonged_second_stage: '第二产程延长',
+  precipitous: '急产',
+  shell_damaged: '蛋壳受损',
+});
+// 产伤不写具体部位与症状：121 族的身体各不相同（史莱姆没有神经、蛋没有头皮），交给模型照这一族的身体描写
+export const LABOR_INJURY_LABELS = Object.freeze({ stuck: '卡住时留下的产伤', rushed: '急产留下的产伤' });
+export const BIRTH_MODE_LABELS = Object.freeze({ natural: '自然产', assisted: '助产', surgical: '手术产' });
+export const BIRTH_TERM_LABELS = Object.freeze({ preterm: '早产', term: '足月', postterm: '过期' });
+
+/** 产程中这一胎遇到的事（文字），没有就回空字串 */
+export function describeLaborRecord(record) {
+  if (!record || typeof record !== 'object') return '';
+  // 卡住的时数一并写出：产伤怎么描写，要看这次分娩的整体情况（卡了多久、多急）
+  const stuckHours = clampNumber(record.obstructedHours, 0, 9999, 0);
+  return [
+    ...(Array.isArray(record.complications) ? record.complications.map((code) => {
+      const label = LABOR_COMPLICATION_LABELS[code] || code;
+      return stuckHours >= 0.5 && ['shoulder_dystocia', 'twin_lock', 'transverse'].includes(code) ? `${label}（卡住约 ${Math.round(stuckHours)} 小时）` : label;
+    }) : []),
+    ...(Array.isArray(record.injuries) ? record.injuries.map((code) => LABOR_INJURY_LABELS[code] || code) : []),
+  ].join('、');
+}
+
+/** 孩子的出生纪录文字：「第 2 胎（共 3 胎），孕 38 周早产，自然产，肩难产，出生健康 72%」 */
+export function describeBirthRecord(birth) {
+  if (!birth || typeof birth !== 'object') return '';
+  const order = Number.isInteger(birth.order) && Number.isInteger(birth.of) && birth.of > 1 ? `第 ${birth.order} 胎（共 ${birth.of} 胎）` : '';
+  const weeks = Number.isFinite(Number(birth.gestationDays)) ? `孕 ${Math.round(Number(birth.gestationDays) / 7)} 周${BIRTH_TERM_LABELS[birth.term] || ''}` : '';
+  const labor = describeLaborRecord(birth);
+  const health = Number.isFinite(Number(birth.healthRatio)) ? `出生健康 ${Math.round(Number(birth.healthRatio) * 100)}%` : '';
+  return [order, weeks, BIRTH_MODE_LABELS[birth.mode] || '', labor, health].filter(Boolean).join('，');
+}
+
+/** 出生纪录：生产方式、出生孕龄与早产／过期、第几个出生、并发症、产伤、出生健康 */
+function buildBirthRecord(profile, fetus, { mode = 'natural', order = null, of = null } = {}) {
+  const effectivePregnantDays = clampNumber(profile?.pregnant?.effectivePregnantDays, 0, 99999, 0);
+  const gestationDays = Math.round(Math.max(0, effectivePregnantDays - clampNumber(fetus?.conceivedAtDays, 0, 99999, 0)));
+  const record = fetus?.laborRecord && typeof fetus.laborRecord === 'object' ? fetus.laborRecord : {};
+  return {
+    mode: record.mode === 'assisted' && mode === 'natural' ? 'assisted' : mode,
+    gestationDays,
+    term: gestationDays < BIRTH_PRETERM_BEFORE_DAYS ? 'preterm' : gestationDays > BIRTH_POSTTERM_AFTER_DAYS ? 'postterm' : 'term',
+    ...(Number.isInteger(order) && order > 0 ? { order } : {}),
+    ...(Number.isInteger(of) && of > 0 ? { of } : {}),
+    complications: Array.isArray(record.complications) ? [...record.complications] : [],
+    injuries: Array.isArray(record.injuries) ? [...record.injuries] : [],
+    // 卡住的时数一并留着：出生纪录的文字要写出卡了多久
+    ...(clampNumber(record.obstructedHours, 0, 9999, 0) > 0 ? { obstructedHours: Math.round(clampNumber(record.obstructedHours, 0, 9999, 0) * 100) / 100 } : {}),
+    healthRatio: Math.round(getFetalHealthRatio(fetus) * 100) / 100,
+  };
+}
 
 /** 各类硬阻塞可用的助产解法，写进难产警示 */
 const OBSTRUCTION_ADVICE = Object.freeze({
@@ -4641,6 +4802,13 @@ function removePresentingFetus(pregnant) {
  * 再转入间歇期或第三产程。自然娩出与助产拉出（extract）共用。
  * 回传是否真的生下了胎儿。
  */
+/** 逐胎娩出时的出生顺位：removePresentingFetus 已把这次的 born 计入 deliveredCount */
+function birthOrderOf(pregnant, born) {
+  const delivered = clampNumber(pregnant?.deliveredCount, 0, 99, 0);
+  const remaining = Array.isArray(pregnant?.fetuses) ? pregnant.fetuses.length : 0;
+  return { mode: 'natural', firstOrder: delivered - born.length + 1, total: delivered + remaining };
+}
+
 function deliverPresentingFetus(profile, female, notify, { lead = '' } = {}) {
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
@@ -4650,7 +4818,8 @@ function deliverPresentingFetus(profile, female, notify, { lead = '' } = {}) {
   const gender = String(born[0]?.gender || '未知');
   const companionEggs = born.reduce((sum, fetus) => sum + getCompanionEggCount(fetus), 0);
   const enclosedNote = `${describeEnclosedBirths(born)}${companionEggs > 0 ? `，同时排出${companionEggs}枚伴生卵` : ''}`;
-  appendChildrenFromFetuses(profile, born);
+  recordDeliveredBulk(profile, born);
+  appendChildrenFromFetuses(profile, born, birthOrderOf(pregnant, born));
   updateFetalEnergyDrain(profile);
   const remaining = pregnant.fetuses;
   if (remaining.length === 0) {
@@ -5415,6 +5584,7 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
   const blocksDescent = stage === '第二产程' && obstruction?.hardBlock
     && (obstruction.type === 'shoulder_dystocia' || phase === '胎体下降');
   if (blocksDescent) {
+    harmObstructedFetuses(pregnant, obstruction, rawHours);
     pregnant.effectiveLaborHours = obstruction.type === 'shoulder_dystocia' ? threshold : currentEffectiveHours;
     // 卡住时进度不动，但时间照样过：还在推就是对着卡住的胎儿白用力，歇着就消退
     const stuckNote = settleWastedLaborEffort(profile, rawHours);
@@ -5426,6 +5596,8 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
     return done(false);
   }
 
+  if (stage === '第二产程' && phase === '胎体下降') harmProlongedDescent(getPresentingFetus(pregnant), rawHours, threshold);
+
   // 宫缩微弱的停滞只在真实分娩模式出现，改在每小时事件判定（见 settleHourlyLaborStall）。
   // 非真实模式宫压满的快速通道也跟着每小时事件：这次推进跨过整点才会突然加速，几分钟的推进不会一轮跳一个阶段
   if (firstSegment && crossedHour && currentPressure >= pressureCap && !realisticLabor
@@ -5436,6 +5608,15 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
       base.stage = '第二产程';
       base.days = 0;
       beginLaborPhase(pregnant, '胎体下降', 1);
+      // 急产：先露胎来不及适应，小幅受损，少数留下产伤（不指定部位）
+      {
+        const rushed = getPresentingFetus(pregnant);
+        if (rushed) {
+          noteLaborComplication(rushed, 'precipitous');
+          harmLaborFetus(rushed, LABOR_FETAL_HARM.precipitous);
+          if (Math.random() < LABOR_FETAL_HARM.precipitousInjuryChance) noteLaborInjury(rushed, 'rushed');
+        }
+      }
       // 快速进入第二产程只破刚锁定的先露胎囊，不再全体破膜
       applyLaborAmnionWear(profile, female, { forceRupture: true, silent: true });
       updateLaborPain(profile, '第二产程', '胎体下降', 0);
@@ -5457,7 +5638,8 @@ function processLaborSegment(profile, female, rawHours, { firstSegment, libidoMu
         father = String(born[0]?.fathers || '未知');
         gender = String(born[0]?.gender || '未知');
         enclosedNote = describeEnclosedBirths(born);
-        appendChildrenFromFetuses(profile, born);
+        recordDeliveredBulk(profile, born);
+        appendChildrenFromFetuses(profile, born, birthOrderOf(pregnant, born));
         updateFetalEnergyDrain(profile);
       }
       const remaining = pregnant.fetuses;
@@ -6126,6 +6308,103 @@ function applyStrain(profile, amount) {
 }
 
 /** 瞬时痛感随时间消退：每小时减半，太小就归零 */
+
+// ── 生殖疼痛（1.4.2）──────────────────────────────────
+// 只算分娩、妊娠、月经的痛，每次组提示词时即时算，不存档：
+// 产程照 laborPain；月经期前两天、产后恢复前段的宫缩痛给基线；假宫缩与胎儿互踢留下会消退的瞬时痛。
+// 个人差异与分娩痛同一套：活力等级越低越痛、情压等级越高越痛。不改任何数值，只给描写。
+export const REPRO_PAIN_MENSTRUAL = Object.freeze([3, 2]);
+export const REPRO_PAIN_KICK = 1;
+/** 胎动的痛：特写里最用力那一胎的踢力 × 0.65（孕晚期约 1～1.5） */
+export const REPRO_PAIN_MOVEMENT_SCALE = 0.65;
+
+/** 假宫缩：子宫撑得越大越痛（整窝胎量），宫压越高越紧（越接近真的） */
+export function getFalseContractionPainBase(profile) {
+  const bulk = getFetalBulk(profile);
+  const pressureRatio = clampNumber((Number(profile?.base?.uterinePressure) || 0) / Math.max(1, getUterinePressureCap(profile)), 0, 1, 0);
+  return 1 + Math.min(2, 0.5 * bulk) + 0.5 * pressureRatio;
+}
+
+/** 产后宫缩痛的起点：撑过越大的子宫收缩越痛（这次生下的胎量合计） */
+export function getAfterpainBase(profile) {
+  const bulk = clampNumber(profile?.base?.postpartumBulk, 0, 99, 1);
+  return 1.5 + 0.5 * Math.min(3, bulk);
+}
+
+/** 生下的胎量记在母体上，产后宫缩痛照它放大；胎儿离开子宫前算 */
+function recordDeliveredBulk(profile, born) {
+  const pregnant = profile?.pregnant;
+  if (!pregnant || !Array.isArray(born) || born.length === 0) return;
+  const bulk = born.reduce((sum, fetus) => sum + getFetusBulk(profile, fetus), 0);
+  pregnant.deliveredBulk = Math.round((clampNumber(pregnant.deliveredBulk, 0, 99, 0) + bulk) * 100) / 100;
+  // 就地写入：呼叫端手上还拿着同一个 base
+  if (!profile.base || typeof profile.base !== 'object') profile.base = {};
+  profile.base.postpartumBulk = pregnant.deliveredBulk;
+}
+
+/** 假宫缩、胎儿互踢留下的瞬时痛：记来源与强度，每故事小时减半 */
+function addReproPainBoost(profile, level, source) {
+  const pregnant = profile?.pregnant;
+  if (!pregnant) return;
+  const current = clampNumber(pregnant.reproPainBoost?.level, 0, 10, 0);
+  if (level >= current) pregnant.reproPainBoost = { level, source };
+}
+
+function decayReproPainBoost(profile, deltaMinutes) {
+  const boost = profile?.pregnant?.reproPainBoost;
+  if (!boost || !(deltaMinutes > 0)) return;
+  const level = clampNumber(boost.level, 0, 10, 0) * (0.5 ** (deltaMinutes / 60));
+  if (level < 0.25) delete profile.pregnant.reproPainBoost;
+  else boost.level = Math.round(level * 100) / 100;
+}
+
+/** 现在的生殖疼痛：{ level 0–10, source }；没有痛回传 null */
+export function getReproductivePain(profile) {
+  const base = profile?.base || {};
+  const pregnant = profile?.pregnant || {};
+  const stage = String(base.stage || '');
+  const candidates = [];
+  if (stage === '产兆前驱' || LABOR_STAGES.includes(stage)) {
+    candidates.push({ level: clampNumber(pregnant.laborPain, 0, 10, 0), source: '分娩', personal: false });
+  }
+  const day = Math.floor(clampNumber(base.days, 0, 9999, 0));
+  if (stage === '月经期' && day < REPRO_PAIN_MENSTRUAL.length) {
+    candidates.push({ level: REPRO_PAIN_MENSTRUAL[day], source: '月经', personal: true });
+  }
+  if (stage === '产后恢复') {
+    const recoveryDays = getStageLimit(profile, '产后恢复') || 56;
+    const progress = Math.min(1, clampNumber(base.days, 0, 99999, 0) / recoveryDays);
+    if (progress < 0.3) candidates.push({ level: getAfterpainBase(profile) * (1 - progress / 0.3), source: '产后宫缩', personal: true });
+  }
+  // 胎动：感觉得到时，取最用力那一胎的踢力（与孕体特写同一条公式）
+  if (PREGNANCY_STAGES.includes(stage) && canFeelFetalMovement(profile)) {
+    const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+    const uterinePct = clampNumber((Number(base.uterinePressure) || 0) / Math.max(1, getUterinePressureCap(profile)), 0, 1, 0) * 100;
+    const strongest = fetuses
+      .filter((fetus) => fetus && !fetus.pendingImplantation && !getEnclosingHost(fetus, fetuses) && canMoveFreely(fetus, fetuses))
+      .reduce((top, fetus) => Math.max(top, getFetalKickStrength({
+        size: getFetusBulk(profile, fetus), weight: fetus.weight, healthPct: fetus.health, uterinePct,
+      })), 0);
+    if (strongest > 0) candidates.push({ level: strongest * REPRO_PAIN_MOVEMENT_SCALE, source: '胎动', personal: true });
+  }
+  const boost = pregnant.reproPainBoost;
+  if (boost && clampNumber(boost.level, 0, 10, 0) > 0) candidates.push({ level: Number(boost.level), source: String(boost.source || '胎动'), personal: true });
+  if (candidates.length === 0) return null;
+  // 个人差异：分娩痛的公式里已经算过，其他来源加一半的同一套修正
+  const personal = (4 - clampNumber(base.vitalityLevel, 1, 7, 4)) * 0.5 + (clampNumber(base.psyStressLevel, 1, 7, 4) - 4) * 0.25;
+  const scored = candidates.map((item) => ({ ...item, level: clampNumber(item.level + (item.personal && item.level > 0 ? personal : 0), 0, 10, 0) }));
+  const top = scored.reduce((best, item) => (item.level > best.level ? item : best), scored[0]);
+  const level = Math.round(top.level * 2) / 2;
+  return level >= 0.5 ? { level, source: top.source } : null;
+}
+
+/** 送进提示词的文字：「3（月经）」；标了痛即为爽的再注明 */
+export function describeReproductivePain(profile) {
+  const pain = getReproductivePain(profile);
+  if (!pain) return '';
+  return `${pain.level}（${pain.source}${profile?.immune?.painPleasure ? '；痛即为爽' : ''}）`;
+}
+
 function decayAssistPainBoost(profile, deltaMinutes) {
   const pregnant = profile?.pregnant;
   if (!pregnant || !(deltaMinutes > 0)) return;
@@ -6252,6 +6531,7 @@ function applyFalseContraction(character, female, skip) {
   if (!PREGNANCY_STAGES.includes(stage)) return skip(`stage ${stage || '(none)'} has no false contractions; from 产兆前驱 on the contractions are real.`);
   if (getFetalBulk(profile) < FALSE_CONTRACTION_MIN_BULK) return skip('the womb is not big enough for false contractions yet (around week 20 in a human-type pregnancy).');
   setVisualCue(profile, 'falseContraction');
+  addReproPainBoost(profile, getFalseContractionPainBase(profile), '假宫缩');
   return { applied: true, message: `${female}: false contraction (irregular tightening that eases with rest); labor, pressure and health unchanged.` };
 }
 
@@ -6394,6 +6674,13 @@ function applyAssistFetalPosition(chatState, args) {
       cueRupture(profile, [sac]);
     }
     applyAssistStrain(profile, action);
+    // 肩难产被拉出：记成助产，扣一次健康，少数留下产伤（不指定部位）。其余 extract 多半是同步剧情里已自己生下的那一胎，照自然产记
+    if (target.shoulderDystocia) {
+      getLaborRecord(target).mode = 'assisted';
+      noteLaborComplication(target, 'shoulder_dystocia');
+      harmLaborFetus(target, LABOR_FETAL_HARM.shoulderExtract);
+      if (Math.random() < LABOR_FETAL_HARM.shoulderInjuryChance) noteLaborInjury(target, 'stuck');
+    }
     deliverPresentingFetus(profile, female, profile.notify || {}); // 不标「助产拉出」：extract 也用来同步剧情里已自己生下的那一胎
     reconcileFetalDescent(profile);
     next.profile = profile;
@@ -6922,6 +7209,7 @@ function applyTimeToCharacter(character, tick) {
 
   if (deltaDays <= 0) return { character: next, stageChanged: false, oldStage, newStage: stage };
   decayAssistPainBoost(profile, tick.deltaMinutes);
+  decayReproPainBoost(profile, tick.deltaMinutes);
 
   // 胎儿健康的周结算起点：这一刻已在妊娠中才有意义；这一步才著床的从著床当下起算
   const healthStartWeek = isPregnancyStage(stage) || stage === '产兆前驱'
@@ -7623,6 +7911,12 @@ function applySetCharacterPresence(chatState, args) {
   };
 }
 
+/** 同名也登记成精方（扶她）：她的身体也有阴茎 */
+export function hasSireBody(chatState, name) {
+  const key = String(name || '').trim();
+  return Boolean(key && chatState?.sires && Object.prototype.hasOwnProperty.call(chatState.sires, key));
+}
+
 function applyRegisterSkillDefinition(chatState, args) {
   const result = registerSkillDefinition(chatState.skillCatalog, args, chatState.nextSkillId);
   if (!result.ok) return { applied: false, message: `bsRegisterSkillDefinition skipped: ${result.message}` };
@@ -7647,6 +7941,10 @@ function applyTrainSkill(chatState, args) {
   const reason = String(args?.reason || '').trim();
   const skillExp = Number(args?.skillExp);
   if (!definition) return { applied: false, message: `bsTrainSkill skipped for ${female}: skill is not registered in skill_catalog.` };
+  // 适用身体（1.4.2）：卵方都有子宫；同名也是精方（扶她）才有阴茎
+  if (!canBodyHaveSkill(definition, { hasWomb: true, hasSword: hasSireBody(chatState, female) })) {
+    return { applied: false, message: `bsTrainSkill skipped for ${female}: ${definition.name} needs a penis (body=sword) and ${female} is not a futa.` };
+  }
   if (!reason) return { applied: false, message: `bsTrainSkill skipped for ${female}: training reason is required.` };
   if (args?.talentExp !== undefined) {
     return { applied: false, message: `bsTrainSkill skipped for ${female}: character talents are read-only to LLM tools; remove talentExp.` };
@@ -9082,6 +9380,7 @@ function applySiblingInteraction(chatState, character, female, args, skip) {
   profile.cooldown = { ...(profile.cooldown || {}), siblingInteractionUsed: true };
   profile.notify = { ...(profile.notify || {}), secondly: summary };
   // 画面事件：孕体特写上两胎的位置先后有动静；记下是哪两胎（动手的在前），特写照着演
+  if (interaction !== 'cuddle') addReproPainBoost(profile, REPRO_PAIN_KICK, '胎动');
   setVisualCue(profile, { kick: 'siblingKick', shove: 'siblingShove', cuddle: 'siblingCuddle' }[interaction],
     { fetuses: [actor?.embryoId, target?.embryoId] });
   next.profile = profile;

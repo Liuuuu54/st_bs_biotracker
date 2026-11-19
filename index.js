@@ -17,6 +17,7 @@ import {
   runRegistryDiaryInference,
   runRegistryOutfitInference,
   runRegistrySireExtraction,
+  applyRegistryChildToSire,
   runRegistrySkillInference,
   runRegistryWardrobeInference,
 } from './scripts/registry.js';
@@ -108,6 +109,7 @@ import {
   getUterinePressureCap as getProfileUterinePressureCap,
   isFetusKnownToCharacter,
   getFetusGrowthShape,
+  describeBirthRecord,
 } from './scripts/tools.js';
 import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
 import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
@@ -130,7 +132,7 @@ import { applyBellyInkBrush, createBellyPainter, createBellyThemePalette } from 
 import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
-import { appendSkillHistory, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeTalentList, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
+import { appendSkillHistory, canBodyHaveSkill, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeSkillBody, normalizeSkillList, normalizeTalentList, SKILL_BODY_LABELS, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
 import {
   canWriteCardSettings, getCardSettings, getEffectiveSettings, getSettingSource,
   syncCardSettings, updateCardSettings, importCardSkillSeed, exportCardSkillSeed,
@@ -660,14 +662,7 @@ function setRegisterTab(tab) {
     node.classList.toggle('is-active', active);
     node.hidden = !active;
   });
-  // 「注册来源」是把孩子注册成卵方用的，精方分页用不到；切过去时清掉来源，种族栏才能编辑
-  const sourceSection = document.querySelector('#bs-bt-view-register .bs-bt-register-source-section');
-  if (sourceSection) sourceSection.hidden = next === 'sire';
-  const sourceSelect = document.getElementById('bs-bt-register-source');
-  if (next === 'sire' && sourceSelect?.value) {
-    sourceSelect.value = '';
-    sourceSelect.dispatchEvent(new Event('change'));
-  }
+  // 「注册来源」卵方、精方都能用（1.4.2 起孩子也能注册成精方）
 }
 
 function setSkillCatalogStatus(message, isError = false) {
@@ -808,7 +803,7 @@ function renderSkillCatalogPage(ctx) {
       const holders = collectSkillDefinitionHolders(chatState, definition.id);
       return `<article class="bs-bt-skill-card bs-bt-skill-card--interactive" data-skill-definition-open="${escapeHtml(definition.id)}" role="button" tabindex="0" aria-label="打开技能 ${escapeHtml(definition.name)}">
         <div class="bs-bt-skill-card__header">
-          <div class="bs-bt-skill-card__title">#${escapeHtml(definition.id)} ${escapeHtml(definition.name)}</div>
+          <div class="bs-bt-skill-card__title">#${escapeHtml(definition.id)} ${escapeHtml(definition.name)}${normalizeSkillBody(definition.body) !== 'any' ? ` <small>（${escapeHtml(SKILL_BODY_LABELS[normalizeSkillBody(definition.body)])}）</small>` : ''}</div>
           <button type="button" class="bs-bt-skill-card__delete" data-skill-definition-delete="${escapeHtml(definition.id)}" aria-label="删除技能 ${escapeHtml(definition.name)}" title="${holders.length > 0 ? '此技能仍在使用中，无法删除' : '删除此技能'}"${holders.length > 0 ? ' disabled' : ''}>×</button>
         </div>
       </article>`;
@@ -842,9 +837,13 @@ function renderSkillDefinitionDetail(chatState, definition) {
   if (title) title.textContent = `技能 #${definition.id}`;
   if (name) name.value = definition.name;
   if (description) description.value = definition.description;
+  const bodySelect = document.getElementById('bs-bt-skill-detail-body');
+  if (bodySelect) bodySelect.value = normalizeSkillBody(definition.body);
   const names = Object.keys(chatState.characters || {}).sort((left, right) => left.localeCompare(right));
-  if (names.length === 0) {
-    container.innerHTML = '<div class="bs-bt-track-description-empty">尚无注册角色。</div>';
+  // 精方（不含扶她：扶她的技能记在她的角色上）也能手动设技能与天赋
+  const sireNames = Object.keys(chatState.sires || {}).filter((sireName) => !names.includes(sireName)).sort((left, right) => left.localeCompare(right));
+  if (names.length === 0 && sireNames.length === 0) {
+    container.innerHTML = '<div class="bs-bt-track-description-empty">尚无注册角色或精方。</div>';
     return;
   }
   const renderEntry = (characterName, kind, entry) => {
@@ -857,8 +856,20 @@ function renderSkillDefinitionDetail(chatState, definition) {
       <label>EXP <input class="text_pole" type="number" data-character-skill-exp min="${isTalent ? -1000000 : 0}" max="1000000" step="1" value="${escapeHtml(exists ? entry.exp : 0)}"></label>
     </div>`;
   };
+  const unfit = '<div class="bs-bt-character-skill-row"><span class="bs-bt-character-skill-name">技能</span><small>身体不适用</small></div>';
+  const sireCards = sireNames.map((sireName) => {
+    const record = chatState.sires[sireName] || {};
+    const skill = (Array.isArray(record.skills) ? record.skills : []).find((entry) => Number(entry.skillId) === definition.id);
+    const talent = (Array.isArray(record.talents) ? record.talents : []).find((entry) => Number(entry.skillId) === definition.id);
+    return `<article class="bs-bt-skill-character-card" data-character-skill-character="${escapeHtml(sireName)}" data-skill-holder="sire">
+      <div class="bs-bt-skill-character-card__name">${escapeHtml(sireName)}（精方）</div>
+      ${canBodyHaveSkill(definition, { hasWomb: false, hasSword: true }) ? renderEntry(sireName, 'skill', skill) : unfit}
+      ${renderEntry(sireName, 'talent', talent)}
+    </article>`;
+  }).join('');
   container.innerHTML = names.map((characterName) => {
     const profile = chatState.characters[characterName]?.profile || {};
+    const characterBody = { hasWomb: true, hasSword: Boolean(chatState.sires && Object.prototype.hasOwnProperty.call(chatState.sires, characterName)) };
     const skill = (Array.isArray(profile.skills) ? profile.skills : []).find((entry) => Number(entry.skillId) === definition.id);
     const talent = (Array.isArray(profile.talents) ? profile.talents : []).find((entry) => Number(entry.skillId) === definition.id);
     const history = (Array.isArray(profile.skillHistory) ? profile.skillHistory : [])
@@ -873,14 +884,33 @@ function renderSkillDefinitionDetail(chatState, definition) {
       : '<li class="bs-bt-track-description-empty">尚无升等记录。</li>';
     return `<article class="bs-bt-skill-character-card" data-character-skill-character="${escapeHtml(characterName)}">
       <div class="bs-bt-skill-character-card__name">${escapeHtml(characterName)}</div>
-      ${renderEntry(characterName, 'skill', skill)}
+      ${canBodyHaveSkill(definition, characterBody) ? renderEntry(characterName, 'skill', skill) : unfit}
       ${renderEntry(characterName, 'talent', talent)}
       <details class="bs-bt-skill-history">
         <summary>技能 history（${history.length}）</summary>
         <ul>${historyHtml}</ul>
       </details>
     </article>`;
-  }).join('');
+  }).join('') + sireCards;
+}
+
+/** 精方的技能与天赋手动改：精方不追踪，只能在这里或注册时设定 */
+function applyManualSireSkillChange(ctx, sireName, listKey, { skillId, level, exp, isTalent }) {
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const record = chatState.sires?.[sireName];
+  if (!record) throw new Error(`找不到精方：${sireName}`);
+  const list = Array.isArray(record[listKey]) ? [...record[listKey]] : [];
+  const index = list.findIndex((entry) => Number(entry.skillId) === skillId);
+  const meansAbsent = isTalent ? level === 0 && exp === 0 : level <= 0;
+  if (meansAbsent) {
+    if (index >= 0) list.splice(index, 1);
+  } else if (index < 0) list.push({ skillId, level, exp });
+  else list[index] = { skillId, level, exp };
+  record[listKey] = isTalent ? normalizeTalentList(list) : normalizeSkillList(list);
+  recordChatStateSnapshot(ctx, chatState, { reason: 'manual_sire_skill_update' });
+  saveSettings(ctx);
+  updateMainFlowPrompt(ctx);
 }
 
 function saveSkillDefinitionEdit(ctx) {
@@ -889,6 +919,7 @@ function saveSkillDefinitionEdit(ctx) {
   const result = updateSkillDefinition(chatState.skillCatalog, selectedSkillDefinitionId, {
     name: document.getElementById('bs-bt-skill-detail-name')?.value,
     description: document.getElementById('bs-bt-skill-detail-description')?.value,
+    body: document.getElementById('bs-bt-skill-detail-body')?.value,
   });
   if (!result.ok) {
     setSkillDetailStatus(result.message, true);
@@ -1339,6 +1370,7 @@ function syncRegisterChildSourceFields(ctx) {
       Number.isFinite(Number(child.birthWeightRatio)) ? `出生胎重倍率 ${formatFixedDisplay(child.birthWeightRatio, 2)}` : '',
       Number(child.birthCompanionEggCount) > 0 ? `出生伴生卵 ${Math.round(Number(child.birthCompanionEggCount))}枚` : '',
       Number.isFinite(Number(child.birthAffinity)) ? `出生亲和 ${formatIntegerDisplay(child.birthAffinity)}` : '',
+      child.birth ? `出生：${describeBirthRecord(child.birth)}` : '',
       child.prenatalSummary ? `孕期：${describePrenatalSummary(child.prenatalSummary)}` : '',
     ].filter(Boolean);
     summary.textContent = `${source.motherName}的孩子 ${source.childIndex + 1}；${[...birthInfo, `天赋：${talentNames.join('、') || '无'}`].join('；')}`;
@@ -1655,6 +1687,12 @@ async function registerSireFromForm(ctx) {
     return;
   }
   const prefill = pendingSirePrefill?.name === name ? pendingSirePrefill : null;
+  // 注册来源选了孩子：种族、血统、衍生与天赋照孩子，孩子记下「已注册为」
+  const childSource = getSelectedRegisterChildSource(ctx);
+  if (childSource?.child?.registeredAs) {
+    setSireStatus(`这个孩子已经注册为 ${childSource.child.registeredAs}。`, true);
+    return;
+  }
   beginRegistryOperation('sire', `正在注册精方 ${name}...`);
   try {
     const extracted = await runRegistrySireExtraction(ctx, {
@@ -1662,6 +1700,7 @@ async function registerSireFromForm(ctx) {
       declaredRace: race,
       userInstruction: String(document.getElementById('bs-bt-sire-custom-notes')?.value || '').trim(),
       prefill,
+      sourceChild: childSource ? { motherName: childSource.motherName, childIndex: childSource.childIndex } : null,
     });
     const latest = getChatState(ctx, getSettings(ctx));
     const current = getSireRecord(latest, name);
@@ -1672,8 +1711,9 @@ async function registerSireFromForm(ctx) {
       spermQuality: typedQuality ?? extracted.spermQuality ?? current?.spermQuality ?? 1,
       swordOffset: typedSword ?? extracted.swordOffset ?? current?.swordOffset ?? 0,
       isHere: extracted.isHere,
-      // 天赋：技能系统关着时模型不判断（null），保留原本的
+      // 天赋与技能：技能系统关着时模型不判断（null），保留原本的
       ...(extracted.talents !== null ? { talents: extracted.talents } : {}),
+      ...(extracted.skills !== null && extracted.skills !== undefined ? { skills: extracted.skills } : {}),
       // 模型没写出描述时保留原本的，不清空
       descriptions: extracted.descriptions.length > 0
         ? extracted.descriptions
@@ -1683,8 +1723,12 @@ async function registerSireFromForm(ctx) {
       setSireStatus(result.message, true);
       return;
     }
+    if (childSource) {
+      const linked = applyRegistryChildToSire(latest, name, { motherName: childSource.motherName, childIndex: childSource.childIndex });
+      if (linked) result.message += `（来自 ${childSource.motherName} 的孩子 ${childSource.childIndex + 1}）`;
+    }
     pendingSirePrefill = null;
-    if (extracted.skippedTalents?.length > 0) result.message += `（跳过对不上图鉴的天赋：${extracted.skippedTalents.join('、')}）`;
+    if (extracted.skippedTalents?.length > 0) result.message += `（跳过对不上图鉴或身体不合的项目：${extracted.skippedTalents.join('、')}）`;
     finishSireRegistration(ctx, latest, name, result);
   } catch (error) {
     setSireStatus(String(error?.message || error), true);
@@ -1698,7 +1742,11 @@ function deleteSelectedSire(ctx) {
   if (!selectedSireName) return;
   if (globalThis.confirm && !globalThis.confirm(`确定删除精方「${selectedSireName}」？既有胎儿与孩子保留当时的父方快照。`)) return;
   const chatState = getChatState(ctx, getSettings(ctx));
+  // 由孩子注册来的精方：删掉档案时把孩子的「已注册为」一并清掉，孩子才能再注册
+  const childSource = getSireRecord(chatState, selectedSireName)?.childSource;
+  const sourceChild = childSource ? chatState.characters?.[childSource.motherName]?.profile?.children?.[childSource.childIndex] : null;
   const result = deleteSireRecord(chatState, selectedSireName);
+  if (result.applied && sourceChild && String(sourceChild.registeredAs || '') === selectedSireName) delete sourceChild.registeredAs;
   if (!result.applied) {
     setSireStatus(result.message, true);
     return;
@@ -6240,6 +6288,7 @@ function lineageDetailRows(node) {
   if (Array.isArray(node.extraSources) && node.extraSources.length > 0) {
     rows.push(['其他来源', `${node.extraSources.join('、')}（嵌合体，仅首位连线）`]);
   }
+  if (node.birth) rows.push(['出生', describeBirthRecord(node.birth)]);
   if (node.prenatalSummary) rows.push(['孕期', describePrenatalSummary(node.prenatalSummary)]);
   return rows
     .map(([label, value]) => `<div class="bs-bt-lineage__detail-row"><span class="bs-bt-lineage__detail-label">${escapeHtml(label)}</span><span class="bs-bt-lineage__detail-value">${escapeHtml(String(value))}</span></div>`)
@@ -6726,6 +6775,10 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
           <span class="bs-bt-track-debug-title">万族相容</span>
           <span class="bs-bt-track-debug-state">${immune.crossSpecies ? 'ON' : 'OFF'}</span>
         </button>
+        <button type="button" class="bs-bt-track-debug-button${immune.painPleasure ? ' is-active' : ''}" data-debug-immune="painPleasure" title="天生把分娩、妊娠、月经的痛感受为快感；疼痛照常计算，只改描写，不会加性欲">
+          <span class="bs-bt-track-debug-title">痛即为爽</span>
+          <span class="bs-bt-track-debug-state">${immune.painPleasure ? 'ON' : 'OFF'}</span>
+        </button>
         <button type="button" class="bs-bt-track-debug-button${isHere ? ' is-active' : ''}" data-debug-action="toggle-presence">
           <span class="bs-bt-track-debug-title">在场</span>
           <span class="bs-bt-track-debug-state">${isHere ? 'ON' : 'OFF'}</span>
@@ -7062,7 +7115,7 @@ function applySelectedTrackBody(ctx, root) {
 
 function toggleSelectedTrackImmune(ctx, immuneKey) {
   if (!selectedTrackName) return;
-  if (!['metabolism', 'miscarriage', 'realisticLabor', 'crossSpecies'].includes(immuneKey)) return;
+  if (!['metabolism', 'miscarriage', 'realisticLabor', 'crossSpecies', 'painPleasure'].includes(immuneKey)) return;
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const character = chatState.characters?.[selectedTrackName];
@@ -7078,7 +7131,7 @@ function toggleSelectedTrackImmune(ctx, immuneKey) {
   renderStatusPanel(ctx);
   renderFullStatePage(ctx);
   globalThis.toastr?.success?.(
-    `[BS BioTracker] ${selectedTrackName} 的 ${{ metabolism: '代谢免疫', miscarriage: '流产免疫', realisticLabor: '真实产程', crossSpecies: '万族相容' }[immuneKey]}已${nextValue ? '开启' : '关闭'}`,
+    `[BS BioTracker] ${selectedTrackName} 的 ${{ metabolism: '代谢免疫', miscarriage: '流产免疫', realisticLabor: '真实产程', crossSpecies: '万族相容', painPleasure: '痛即为爽' }[immuneKey]}已${nextValue ? '开启' : '关闭'}`,
   );
 }
 
@@ -11417,6 +11470,7 @@ async function ensureModal(ctx) {
   });
   document.getElementById('bs-bt-skill-preset-development')?.addEventListener('click', () => importSkillPreset(ctx, 'development'));
   document.getElementById('bs-bt-skill-preset-behavior')?.addEventListener('click', () => importSkillPreset(ctx, 'behavior'));
+  document.getElementById('bs-bt-skill-preset-sword')?.addEventListener('click', () => importSkillPreset(ctx, 'sword'));
   document.getElementById('bs-bt-skill-baseline-save')?.addEventListener('click', () => saveSkillBaselinePrompt(ctx));
   document.getElementById('bs-bt-skill-catalog-list')?.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -11450,6 +11504,11 @@ async function ensureModal(ctx) {
       const exp = Number(row?.querySelector('[data-character-skill-exp]')?.value);
       const characterCard = target.closest('[data-character-skill-character]');
       const characterName = String(characterCard?.getAttribute('data-character-skill-character') || '').trim();
+      if (characterCard?.getAttribute('data-skill-holder') === 'sire') {
+        applyManualSireSkillChange(ctx, characterName, listKey, { skillId, level, exp, isTalent: kind === 'talent' });
+        setStatus(`已自动更新精方 ${characterName} 的${kind === 'talent' ? '天赋' : '技能'}。`);
+        return;
+      }
       applyManualCharacterSkillChange(ctx, characterName, (config) => {
         const index = config[listKey].findIndex((entry) => Number(entry.skillId) === skillId);
         const meansAbsent = kind === 'talent' ? level === 0 && exp === 0 : level <= 0;

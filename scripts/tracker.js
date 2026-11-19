@@ -14,7 +14,7 @@ import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, reso
 import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
 import { getAllocationAlpha, getAllocationText, getBuildText, getBustGrowthText, getCupLabel, getHipText, hasHumanFigure } from './maternal_body.js';
-import { applyToolCallsResult, canFeelFetalMovement, describeBackSide, describeFetalPosition, getBellySize, getCurrentBody, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
+import { applyToolCallsResult, canFeelFetalMovement, describeLaborRecord, describeReproductivePain, describeBackSide, describeFetalPosition, getBellySize, getCurrentBody, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getPrenatalCareKey, PRENATAL_CARE_LEVELS, getFetalHarmFactor, getFetalHealthTier, labelFetalEventTarget } from './fetal_health.js';
 import {
   buildRecentMessages,
@@ -1153,7 +1153,9 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
           health: _health, healthWarned: _healthWarned, healthWarnedAt: _healthWarnedAt, healthCollapsed: _healthCollapsed, spermQuality: _spermQuality,
           // 位置只送紧凑的文字摘要（positionText）；数值、解绑与阻塞旗标不外露
           descentStage: _descentStage, nestedReleased: _nestedReleased, backSide: _backSide,
-          inletIntruder: _inletIntruder, shoulderDystocia: _shoulderDystocia, shoulderRelieved: _shoulderRelieved, ...visibleFetus
+          inletIntruder: _inletIntruder, shoulderDystocia: _shoulderDystocia, shoulderRelieved: _shoulderRelieved,
+          // 产程经过只送文字（labor），时数不外露
+          laborRecord: _laborRecord, ...visibleFetus
         } = fetus;
         return {
           ...visibleFetus,
@@ -1169,6 +1171,7 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
           companionEggCount: Number(fetus?.companionEggCount) > 0 ? Number(fetus.companionEggCount) : undefined,
           ...(amnion.tags.has(fetus) ? { amnion: amnion.tags.get(fetus) } : {}),
           tendencyAngleText: getTendencyAngleText(fetus?.tendencyAngle),
+          ...(describeLaborRecord(fetus.laborRecord) ? { labor: describeLaborRecord(fetus.laborRecord) } : {}),
           race: undefined,
         };
       }),
@@ -1210,6 +1213,9 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   // 读原档：这里的 profile.pregnant 已经换成送给模型的精简版
   const bellySize = getBellySize(item?.profile);
   if (profile.pregnant && bellySize > 0) profile.pregnant.bellySize = Number(bellySize.toFixed(1));
+  // 生殖疼痛（分娩、妊娠、月经）：有痛才送，例如「3（月经）」
+  const reproPain = describeReproductivePain(item?.profile);
+  if (reproPain) profile.pain = reproPain;
   // 胎动感知看胎量（tools.js canFeelFetalMovement），有着床胎儿才送
   if (profile.pregnant && (item?.profile?.pregnant?.fetuses || []).some((fetus) => fetus && !fetus.pendingImplantation)) {
     profile.pregnant.fetalMovementFelt = canFeelFetalMovement(item.profile);
