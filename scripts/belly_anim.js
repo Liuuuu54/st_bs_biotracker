@@ -52,9 +52,9 @@ const nodCurve = (t) => (t < 0.9 ? (t / 0.9) ** 2 : 1 - (t - 0.9) / 0.1);
 // 4×4 有序抖动：宫缩加深的明暗随强度逐格换上
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 // 决定静止画面的状态栏位：这些变了才重算成图
-const SHAPE_KEYS = ['sigma', 'cup', 'build', 'hip', 'days', 'count', 'weight', 'pressure', 'showBra', 'showShorts', 'strapless',
+const SHAPE_KEYS = ['sigma', 'cup', 'build', 'hip', 'days', 'count', 'weight', 'pressure', 'showBra', 'showShorts', 'strapless', 'release',
   'hormStage', 'stageProgress', 'births', 'milk', 'libido', 'noMilk', 'laborPhase', 'ghost'];
-const STILL = Object.freeze({ lift: 0, nippleLift: 0, jiggle: 0, nod: 0, squirm: 0, contraction: 0, push: 0, bumps: [], ripples: [] });
+const STILL = Object.freeze({ lift: 0, nippleLift: 0, steady: 0, wob: 0, nippleWob: 0, jiggle: 0, nod: 0, squirm: 0, contraction: 0, push: 0, bumps: [], ripples: [] });
 
 /**
  * @param layout createBellyLayout() 的结果
@@ -76,6 +76,7 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
   const bellyShiftX = new Int16Array(H);
   const nippleShiftX = new Int16Array(H);
   const moveYAt = new Float32Array(H);
+  const columnMap = new Int16Array(W * H);
   const between = ([a, b]) => a + (b - a) * random();
   const stats = { scenes: 0, ticks: 0, firmBuilds: 0 };
 
@@ -90,6 +91,25 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
     quiet: [], nextKick: 0, nextSquirm: 0, nextYawn: 0, nextNod: 0, nextContraction: 0, nextGrowl: 0, nextDrop: 0, nextSmoke: 0, braxtonUntil: 0, queue: [],
   };
 
+  /**
+   * 每一栏的胸下缘（格）：胸部的晃动从这里往上算，以下不动。胸下线前端以前（乳尖那边）沿用前端的高度，
+   * 后端以后是侧腹与背，没有胸部，记 NaN（不晃）。
+   */
+  function underbustColumns(points) {
+    const col = new Float32Array(W).fill(NaN);
+    const list = (points || []).filter((p) => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1])).sort((a, b) => a[0] - b[0]);
+    if (list.length < 2) return col;
+    for (let x = 0; x < W; x += 1) {
+      if (x > list.at(-1)[0] + 1) continue;
+      if (x <= list[0][0]) { col[x] = list[0][1]; continue; }
+      let j = 0;
+      while (j < list.length - 2 && list[j + 1][0] < x) j += 1;
+      const [a, b] = [list[j], list[j + 1]];
+      col[x] = a[1] + (b[1] - a[1]) * (b[0] === a[0] ? 0 : clamp((x - a[0]) / (b[0] - a[0]), 0, 1));
+    }
+    return col;
+  }
+
   function buildScene() {
     const rest = layout.layout(state);
     const layers = painter.paintLayers(rest, palette);
@@ -98,7 +118,7 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
     for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) if (rest.visibleBelly[y * W + x]) { if (top < 0) top = y; bottom = y; break; }
     // 每列孕肚看得见的前后缘（胎动的位置用）
     const span = Array.from({ length: H }, (_, y) => { let l = -1; let r = -1; for (let x = 0; x < W; x += 1) if (rest.visibleBelly[y * W + x]) { if (l < 0) l = x; r = x; } return l < 0 ? null : [l, r]; });
-    scene = { rest, layers, rows: rest.fig.rows, bellyTop: top, bellyBottom: bottom, span, firm: null, ghost: ghostOutline(rest) };
+    scene = { rest, layers, rows: rest.fig.rows, bellyTop: top, bellyBottom: bottom, span, firm: null, ghost: ghostOutline(rest), ubCol: underbustColumns(rest.fig.underbust) };
     motion.drops = [];
     stats.scenes += 1;
   }
@@ -430,22 +450,45 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
     const cycle = Math.floor(motion.phase / (2 * Math.PI));
     const sigh = b.tired && cycle % 6 === 5 ? 1.8 : 1;
     const breath = b.depth * sigh * (0.5 - 0.5 * Math.cos(motion.phase));
-    const wobble = (list, at) => list.reduce((n, j) => { const t = at - j.start; return t < 0 ? n : n + j.size * Math.exp(-t / 260) * Math.sin(2 * Math.PI * t / 180); }, 0);
+    const wobble = (list, at, period = 180, tau = 260) => list.reduce((n, j) => { const t = at - j.start; return t < 0 ? n : n + j.size * Math.exp(-t / tau) * Math.sin(2 * Math.PI * t / period); }, 0);
     const jiggle = wobble(motion.jiggles, now);
-    const bounce = wobble(motion.bounces, now);
+    // 胸部的晃动：放松胸型（裸身、没有胸罩承托）照罩杯晃得更大、更慢、更久——N 杯幅度 ×1.6、周期 180 → 约 230 ms、
+    // 衰减 260 → 约 340 ms；被孕肚托住的比例越高晃得越少（全托住时减半），托住的部分还会跟着孕肚的晃动走一半
+    const rows = scene?.rows || {};
+    const loose = clamp(rows.loose || 0, 0, 1.2);
+    const rest = clamp(rows.rest || 0, 0, 1);
+    const period = 180 * (1 + 0.28 * loose);
+    const tau = 260 * (1 + 0.3 * loose);
+    const gain = (1 + 0.6 * loose) * (1 - 0.5 * rest);
+    const carried = -0.5 * rest * 0.6 * jiggle;
+    const breastShake = wobble(motion.jiggles, now, period, tau) + wobble(motion.bounces, now, period, tau);
     // 乳头比乳房慢半拍（软组织跟不上晃动），而且甩得更开
-    const lagged = wobble(motion.jiggles, now - 70) + wobble(motion.bounces, now - 70);
+    const lagged = wobble(motion.jiggles, now - 70, period, tau) + wobble(motion.bounces, now - 70, period, tau);
     const squirm = motion.squirms.reduce((n, q) => { const t = now - q.start; return t < 0 ? n : n + q.size * Math.exp(-t / 220) * Math.sin(2 * Math.PI * t / 170); }, 0);
     const along = (list, curve) => list.reduce((n, e) => { const t = (now - e.start) / e.dur; return t < 0 || t > 1 ? n : n + curve(t); }, 0);
     const lab = laborNow(now);
     const steady = Math.max(breath * (lab.calm ? 1 : 1 - 0.5 * lab.c), 0.9 * lab.p) + 2.2 * along(motion.yawns, yawnCurve);
     return {
-      lift: steady + 0.7 * (jiggle + bounce), nippleLift: steady + 0.7 * 1.3 * lagged,
+      steady, wob: 0.7 * gain * breastShake + carried, nippleWob: 0.7 * 1.3 * gain * lagged + carried,
+      lift: steady + 0.7 * gain * breastShake + carried, nippleLift: steady + 0.7 * 1.3 * gain * lagged + carried,
       jiggle, nod: Math.min(1, along(motion.nods, nodCurve)), squirm: squirm + 0.35 * lab.p * Math.sin(2 * Math.PI * now / 110),
       contraction: lab.c, push: lab.p,
       bumps: motion.bumps.map((k) => { const t = clamp((now - k.start) / k.dur, 0, 1); const swell = Math.sin(Math.PI * t); return { v: k.v + k.drift * t, w: k.w + k.driftW * t, sigma: k.sigma, amp: k.amp * swell, crease: k.crease ? swell : 0, fetus: k.fetus }; }),
       ripples: motion.growls.map((g) => (now - g.start) / g.dur).filter((t) => t >= 0 && t <= 1),
     };
+  }
+
+  // 胸部晃动的逐栏版本：第 x 栏的目的列 ← 来源列（规则同 fillRowMap）
+  function fillColumnMap(x, destOf) {
+    const base = x * H;
+    columnMap.fill(-1, base, base + H);
+    let last = -1;
+    for (let s = 0; s < H; s += 1) {
+      const d = destOf(s);
+      for (let y = Math.max(0, last + 1); y <= d && y < H; y += 1) columnMap[base + y] = s;
+      if (d >= 0 && d < H) columnMap[base + d] = s;
+      last = Math.max(last, d);
+    }
   }
 
   // 目的列 ← 来源列：来源列各自搬到新位置后，空出来的目的列沿用下一个来源列，重叠的由后面的盖过
@@ -467,8 +510,11 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
     const liftAt = (lift, y) => lift * clamp((rows.ubRow + 4 - y) / 8, 0, 1);
     const nodAt = (y) => m.nod * clamp((rows.waistRow - y) / Math.max(1, rows.waistRow - rows.neckRow), 0, 1);
     const squirmAt = (y) => m.squirm * clamp((y - rows.waistRow) / Math.max(1, rows.hipRow - rows.waistRow), 0, 1);
-    const moveX = (y, lift = m.lift) => -0.4 * liftAt(lift, y) - 1.5 * nodAt(y) + squirmAt(y);
-    const moveY = (y, lift = m.lift) => -liftAt(lift, y) + 1.2 * nodAt(y);
+    // 呼吸整片一起起伏；晃动在放松胸型时下极甩得比胸根多（胸根 ×1、胸下线 ×1.5，照松紧），上面跟、下面晃
+    const pole = (y) => 1 + 0.5 * clamp(rows.loose || 0, 0, 1.2) * clamp((y - (rows.breastTop ?? rows.ubRow)) / Math.max(1, rows.ubRow - (rows.breastTop ?? rows.ubRow)), 0, 1);
+    const lifted = (y, wob) => liftAt(m.steady ?? m.lift, y) + (m.steady === undefined ? 0 : liftAt(wob, y) * pole(y));
+    const moveX = (y, wob = m.wob) => -0.4 * lifted(y, wob) - 1.5 * nodAt(y) + squirmAt(y);
+    const moveY = (y, wob = m.wob) => -lifted(y, wob) + 1.2 * nodAt(y);
     // 孕肚另外的位移：呼吸时略往前、用力一踢后的晃动、宫缩往上收并往前凸、用力往下压
     const bellyMove = (y) => {
       const v = bellyBottom > bellyTop ? clamp((y - bellyTop) / (bellyBottom - bellyTop), 0, 1) : 0;
@@ -479,15 +525,27 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
         0.6 * m.jiggle - 1.6 * c * (1 - v) + 1.8 * p * (1 - v) * Math.min(1, 2 * v + 0.3),
       ];
     };
+    // 整列的位移只剩呼吸、打瞌睡、扭动；胸部的晃动另外逐栏算（下面 columnMap）
     for (let y = 0; y < H; y += 1) {
-      moveYAt[y] = moveY(y);
-      shiftX[y] = Math.round(moveX(y));
-      bellyShiftX[y] = Math.round(moveX(y) + bellyMove(y)[0]);
-      nippleShiftX[y] = Math.round(moveX(y, m.nippleLift));
+      moveYAt[y] = moveY(y, 0);
+      shiftX[y] = Math.round(moveX(y, 0));
+      bellyShiftX[y] = Math.round(moveX(y, 0) + bellyMove(y)[0]);
+      nippleShiftX[y] = Math.round(moveX(y, 0));
     }
     fillRowMap(rowMap, (s) => Math.round(s + moveYAt[s]));
+    // 胸部的晃动从胸下缘开始：每一栏在自己的胸下缘以上整段一起晃（放松胸型下极甩得多），胸下缘以下 2 格内收回 0，
+    // 肚子与侧腹不跟着跳
+    const wobble = m.wob || 0;
+    const loose = clamp(rows.loose || 0, 0, 1.2);
+    const wobAt = (x, y) => {
+      const u = scene.ubCol[x];
+      if (!(u >= 0) || !wobble) return 0;
+      const top = rows.breastTop ?? u - 20;
+      return wobble * clamp((u + 2 - y) / 2, 0, 1) * (1 + 0.5 * loose * clamp((y - top) / Math.max(1, u - top), 0, 1));
+    };
+    if (wobble) for (let x = 0; x < W; x += 1) fillColumnMap(x, (s) => Math.round(s + moveYAt[s] - wobAt(x, s)));
     fillRowMap(bellyRowMap, (s) => Math.round(s + moveYAt[s] + bellyMove(s)[1]));
-    fillRowMap(nippleRowMap, (s) => Math.round(s + moveY(s, m.nippleLift)));
+    fillRowMap(nippleRowMap, (s) => Math.round(s + moveY(s, m.nippleWob)));
     out.fill(layers.background);
     source.fill(-1);
     const { under, nipples } = layers;
@@ -497,13 +555,14 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
     for (let y = view.y; y < view.y + view.h; y += 1) {
       const fy = y + offsetY;
       if (fy < 0 || fy >= FRAME.height) continue;
-      const s = rowMap[y];
+      const rowSource = rowMap[y];
       const sb = bellyRowMap[y];
       const sn = nippleRowMap[y];
       for (let x = view.x; x < view.x + view.w; x += 1) {
         const fx = x + offsetX;
         if (fx < 0 || fx >= FRAME.width) continue;
         const at = fy * FRAME.width + fx;
+        const s = wobble && x >= 0 && x < W ? columnMap[x * H + y] : rowSource;
         if (s >= 0) { const sx = x - shiftX[s]; if (sx >= 0 && sx < W) { const pixel = under[s * W + sx]; if (pixel) { out[at] = pixel; source[at] = s * W + sx; } } }
         if (sb >= 0) {
           const sx = x - bellyShiftX[sb];

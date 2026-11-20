@@ -12,9 +12,9 @@
 import { getFetalGrowth } from './fetal_growth.js';
 
 /** 成图里可以个别关掉的修补规则（除错与测试用） */
-export const BELLY_SKIP_FIXES = Object.freeze(['repair', 'backTop', 'breastArc', 'bellyArc', 'cleanup', 'shortsBand', 'waistband', 'strapTop', 'braWedge', 'chestSeam', 'nippleSide', 'manual']);
+export const BELLY_SKIP_FIXES = Object.freeze(['repair', 'backTop', 'breastArc', 'bellyArc', 'cleanup', 'shortsBand', 'waistband', 'strapTop', 'braWedge', 'chestSeam', 'nippleSide', 'manual', 'bellyTurnSeam']);
 /** 预览页没有、插件新加的规则（与预览页逐格对照时要关掉） */
-export const BELLY_NEW_FIXES = Object.freeze(['backTop', 'breastArc', 'bellyArc', 'strapTop', 'braWedge', 'chestSeam', 'nippleSide', 'manual']);
+export const BELLY_NEW_FIXES = Object.freeze(['backTop', 'breastArc', 'bellyArc', 'strapTop', 'braWedge', 'chestSeam', 'nippleSide', 'manual', 'bellyTurnSeam']);
 
 /**
  * @param data decodeBellyData() 的结果
@@ -538,7 +538,7 @@ export function createBellyLayout(data, options = {}) {
       const scale=1+(wb+wh*0.5)/radius,extra=Math.max(wh*0.5+br,8*(0.15-scale)),offset=center*(1-scale)-br+squirmAt(y)-1.5*nodAt(y);
       return{scale,extra,offset,left:cx*scale+offset,right:(cx+8)*scale+offset+extra};
     };
-    const warpPoint=([x,y])=>{const w=rowWarp(y);return[x*w.scale+w.offset+w.extra*clamp((x-cx)/8,0,1),y-liftAt(y)+1.2*nodAt(y)]};
+    let warpPoint=([x,y])=>{const w=rowWarp(y);return[x*w.scale+w.offset+w.extra*clamp((x-cx)/8,0,1),y-liftAt(y)+1.2*nodAt(y)]};
     const warps=Array.from({length:H},(_,y)=>rowWarp(y));
     // (只搬成图用到的栏位；raw.torso 只在上面量每列宽度，不必搬)
     for(const key of['bra','belly','shorts','legs',...BODY_FIELDS,...RELIEF_FIELDS]){
@@ -547,6 +547,72 @@ export function createBellyLayout(data, options = {}) {
         const sx=x<=w.left?(x-w.offset)/w.scale:x>=w.right?(x-w.offset-w.extra)/w.scale:cx+(x-w.left)/(w.scale+w.extra/8);
         out[y*W+x]=sampleField(field,sx,y+liftAt(y)-1.2*nodAt(y));
       }}fig[key]=out;
+    }
+    // 放松胸型（实验，只在 s.release 有值时作用）：拿掉胸罩的承托，胸部从胸根往下垂（sag，N 杯的格数）、
+    // 下极往两侧摊（spread，格数），杯越大越多。远侧侧腹在胸部那几列由胸部构成，不钉住（pinFlank 可钉）；胸下缘以下的腰侧钉住，免得腰线被拉出一阶。胸下缘碰到孕肚就停在肚子上（逐列量孕肚上缘，contact），
+    // 所以大孕肚自然把胸托住。位移只套在胸部与上身的栏位，孕肚、短裤、腿不动。
+    if(s.release&&((s.release.sag||0)>0||(s.release.spread||0)>0)){
+      const R=s.release,size=clamp(s.cup/150,0,1.2)**1.3,S=(R.sag||0)*size,SP=(R.spread||0)*size,K=6;
+      const inBra=i=>fig.bra[i]<0;
+      let top=-1,bot=-1;
+      for(let y=0;y<H&&top<0;y++)for(let x=0;x<W;x++)if(inBra(y*W+x)){top=y;break}
+      for(let y=H-1;y>=0&&bot<0;y--)for(let x=0;x<W;x++)if(inBra(y*W+x)){bot=y;break}
+      // 胸罩栏位往上连到颈部，胸根改用乳头高度往上推（乳头到胸下缘的 1.3 倍）
+      const nip=raw.nipples?raw.nipples.map(warpPoint):null,mid=nip?(nip[0][0]+nip[1][0])/2:null;
+      if(nip&&bot>0){const ny=Math.min(nip[0][1],nip[1][1]);top=Math.max(top,Math.floor(ny-1.3*(bot-ny)))}
+      if(top>=0&&bot>top){
+        // 每列可以垂多少：胸下缘到孕肚上缘的空隙（允许压进 1 格），再取平滑
+        const col=new Float32Array(W).fill(1e3);
+        if(R.contact!==false)for(let x=0;x<W;x++){
+          let bb=-1;for(let y=bot;y>=top;y--)if(inBra(y*W+x)){bb=y;break}
+          if(bb<0)continue;
+          let bt=-1;for(let y=top;y<H;y++)if(fig.belly[y*W+x]<0){bt=y;break}
+          // 没怀孕时孕肚栏位就是胸下的腹部，不算接触；孕肚越大（胎量 0.3 → 0.8）越照接触算
+          const hold=clamp((fig.bulk-0.3)/0.5,0,1);
+          if(bt>=0)col[x]=Math.max(0,bt-bb+1)+(1-hold)*1e3;
+        }
+        for(let pass=0;pass<3;pass++){const c=Float32Array.from(col);for(let x=0;x<W;x++){let t=0,n=0;for(let k=-2;k<=2;k++){const j=x+k;if(j>=0&&j<W){t+=c[j];n++}}col[x]=Math.min(c[x],t/n)}}
+        // 远侧侧腹（每列最右的身体格）不动，往内 6 格才全量
+        const flank=new Float32Array(H);
+        for(let y=0;y<H;y++){let r=-1;for(let x=W-1;x>=0;x--){const i=y*W+x;if(fig.body[i]<0||fig.bra[i]<0){r=x;break}}flank[y]=r}
+        const smooth=v=>v*v*(3-2*v);
+        // 内容的位移 [右, 下]（格）
+        // 两边各绕胸骨上端（乳沟顶）往外下方转：近侧逆时针、远侧顺时针，离胸根越远转得越多（弯，不是剪切），
+        // 所以轮廓保持圆弧、下极往下往外挂；胸骨线本身不动。胸部以外（离胸根超过胸高）逐渐不转。
+        const ax=mid??(W/2),ay=top+0.15*(bot-top),L=Math.max(4,bot-ay),theta=S/L;
+        // 每一侧胸部离胸根最远的距离：转动量照它归一，近侧的乳尖与远侧的外缘才会转满
+        const reach=[L,L];
+        for(let y=top;y<=bot;y++)for(let x=0;x<W;x++)if(inBra(y*W+x)){const k=x<ax?0:1;reach[k]=Math.max(reach[k],Math.hypot(x-ax,y-ay))}
+        const move=(x,y)=>{
+          const dx=x-ax,dy=y-ay,r=Math.hypot(dx,dy),u=r/reach[dx<0?0:1];
+          const w=smooth(clamp(u,0,1)),phi=Math.tanh(dx/3)*theta*w;
+          // 只取转动的「往下」分量：离胸骨越远掉得越多（像悬臂），同一侧整片一起往下弯，轮廓不被逐列剪切成尖角；
+          // 横向只留 spread 的外摊，远侧侧腹不会被转歪
+          // 胸根以上（锁骨、腋下）不动，胸根到转轴之间渐入
+          const rise=smooth(clamp((y-top)/Math.max(3,(ay-top)*2),0,1));
+          // 远侧：力臂到远侧乳头为止，再往外到侧腹收回 0（侧腹是躯干，不是胸部）
+          const fy0=clamp(Math.round(y),0,H-1),dn=nip?Math.max(4,nip[1][0]-ax):reach[1]*0.6;
+          const lever=dx<=0?-dx:dx<=dn?dx:dn*(flank[fy0]>ax+dn?clamp((flank[fy0]-x)/(flank[fy0]-ax-dn),0,1):0);
+          let mx=SP*Math.tanh(dx/3)*w*rise,my=Math.abs(Math.sin(phi))*lever*rise;
+          const xi=clamp(Math.round(x),0,W-1);
+          if(my>col[xi]){const k=col[xi]/my;mx*=k;my=col[xi]}
+          // 胸下缘以下：先留出胸部往下挂的空间，再 K 格内收回 0，腹部与下身不动
+          const reachDown=Math.max(0,my),fall=y<=bot+reachDown?1:clamp(1-(y-bot-reachDown)/K,0,1);
+          const fy=clamp(Math.round(y),0,H-1),pin=R.pinFlank||y>bot-2,g=(pin?(flank[fy]>=0?clamp((flank[fy]-x)/8,0,1):0):1)*fall;
+          return[mx*g,my*g];
+        };
+        // 胸部与上身的栏位整个照位移场搬（胸部的轮廓在 body 栏位里，bra 栏位只是罩杯）
+        for(const key of['bra',...BODY_FIELDS,...RELIEF_FIELDS]){if(key==='legVoid')continue;const src=fig[key],out=new Float32Array(N);
+          for(let y=0;y<H;y++)for(let x=0;x<W;x++){const [mx,my]=move(x,y);out[y*W+x]=sampleField(src,x-mx,y-my)}
+          fig[key]=out}
+        const before=warpPoint;
+        warpPoint=p=>{const q=before(p),[mx,my]=move(q[0],q[1]);return[q[0]+mx,q[1]+my]};
+        // 被孕肚托住的比例：胸下缘各列里，接触把下垂量压到一半以下的占几成（孕肚够大才算）
+        let under=0,held=0;
+        for(let x=0;x<W;x++){let has=false;for(let y=top;y<=bot;y++)if(inBra(y*W+x)){has=true;break}
+          if(!has)continue;under++;if(col[x]<0.5*S)held++}
+        fig.release={sag:S,spread:SP,top,bot,loose:size,rest:under?held/under:0,contact:Array.from(col)};
+      }
     }
     // the wobble after a big kick shakes the belly a little forward and down and back (the chest bounces through lift)
     if(motion?.jiggle){const j=motion.jiggle,src=fig.belly,out=new Float32Array(N);
@@ -638,7 +704,10 @@ export function createBellyLayout(data, options = {}) {
         return{...l,points:l.points.map(([x,y])=>[c[0]+dx+(x-c[0])*cos-(y-c[1])*sin,c[1]+(x-c[0])*sin+(y-c[1])*cos])}});
     }
     // 动画用：各段位移的基准列（belly_anim.js 用位移搬静止画面，不重算成图）
-    fig.rows={ubRow,waistRow,hipRow,neckRow,navelRow:navel[1]};
+    // 放松胸型：胸下线跟着形变后的位置走（否则下垂的那段不跟着晃，晃动时会撕开）；
+    // breastTop、loose、rest 给动画算「没有承托的晃法」
+    const rel=fig.release,ubAfter=rel&&fig.underbust?Math.max(...fig.underbust.map(p=>p[1])):ubRow;
+    fig.rows={ubRow:ubAfter,waistRow,hipRow,neckRow,navelRow:navel[1],...(rel?{breastTop:rel.top,loose:rel.loose,rest:rel.rest}:{})};
     fig.days=real.days;
     return fig;
   }
@@ -1168,8 +1237,12 @@ export function createBellyLayout(data, options = {}) {
     // underside down), coming in from twins and full from triplets.
     const sphere=0.45*clamp(fig.bulk-2,0,1);
     if(fig.reviewedModel&&sphere>0){let top=H,bottom=-1;for(let i=0;i<N;i++)if(masks.belly[i]){const y=i/W|0;top=Math.min(top,y);bottom=Math.max(bottom,y)}
-      if(bottom>top){const cy=(top+bottom)/2,ry=(bottom-top)/2;
-        for(let i=0;i<N;i++)if(masks.belly[i]){const v=((i/W|0)-cy)/ry;z[i]*=1-sphere+sphere*Math.sqrt(clamp(1-v*v,0,1))}}}
+      // 横向也要圆：只照列高变化时，距离场的平台（离轮廓够远、高度都是 1）每一列同高，明暗分界成了一条条水平直线。
+      // 改成椭球：每列再照这一列孕肚的左右宽度往两侧落下（横向权重 0.7，免得两侧太暗）
+      if(bottom>top){const cy=(top+bottom)/2,ry=(bottom-top)/2,rowL=new Int16Array(H).fill(-1),rowR=new Int16Array(H).fill(-1);
+        for(let i=0;i<N;i++)if(masks.belly[i]){const x=i%W,y=i/W|0;if(rowL[y]<0)rowL[y]=x;rowR[y]=x}
+        for(let i=0;i<N;i++)if(masks.belly[i]){const x=i%W,y=i/W|0,v=(y-cy)/ry,rx=Math.max(1,(rowR[y]-rowL[y])/2),u=(x-(rowL[y]+rowR[y])/2)/rx;
+          z[i]*=1-sphere+sphere*Math.sqrt(clamp(1-v*v-0.7*u*u,0,1))}}}
     // a contracting womb is hard and round: the belly's relief deepens (up to a third more), so its light and shade sharpen
     // (宫缩不再把整个孕肚的起伏加深：那会让整片上腹的明暗一起跳。改在下面跟着侧腹转折线一起变，见 belly_turn)
     // a belly just emptied is soft and loose: its relief flattens (up to 15%), firming back over the recovery
@@ -1271,6 +1344,11 @@ export function createBellyLayout(data, options = {}) {
       const s=clamp(line.strength,0,1),width=raw.map((_,y)=>{let n=0,t=0;for(let d=-4;d<=4;d++){const v=raw[y+d];if(v===undefined)continue;const w=Math.exp(-0.5*(d/2)**2);n+=w;t+=v*w}return Math.max(0,t/n)*s});
       for(let y=0;y<H;y++){if(back[y]<0)continue;for(let x=Math.max(0,Math.ceil(back[y]-width[y]));x<W;x++){const i=y*W+x;
         for(const id of['belly','body'])if(masks[id][i]&&layers[id].tone[i]>1)layers[id].tone[i]--}}
+      // 暗面边上原本就有一栏较亮的格（底下的明暗交界正好落在这里），减一阶后成了夹在暗面里的一条亮虚线：
+      // 左右两格同阶、自己只亮一阶的单格并回邻格
+      if(!skip('bellyTurnSeam'))for(let y=0;y<H;y++){if(back[y]<0)continue;const x0=Math.max(1,Math.ceil(back[y]-width[y])-3),x1=Math.min(W-2,Math.ceil(back[y]-width[y])+3);
+        for(let x=x0;x<=x1;x++){const i=y*W+x;for(const id of['belly','body']){const t=layers[id].tone;
+          if(masks[id][i]&&masks[id][i-1]&&masks[id][i+1]&&t[i-1]===t[i+1]&&t[i]===t[i-1]+1){t[i]=t[i-1];ruleCells.bellyTurnSeam=(ruleCells.bellyTurnSeam||0)+1}}}}
       // 宫缩（fig.firm，插件改）：孕肚绷紧时暗面从侧腹往外长，是连成一片的一块，不是整片上腹：
       //   侧腹的暗面往前推宽（最多 3 格）；从它的上端沿孕肚上缘、下端沿孕肚下缘各往前伸出一道渐薄的暗边；
       //   三者之间两格以内的缝补起来，暗边和侧腹平顺地接在一起。

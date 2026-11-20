@@ -12,6 +12,9 @@ const percent = (item) => {
 /** 产程阶段（base.stage＋pregnant.laborPhase）→ 特写的宫缩节奏 */
 const FIRST_STAGE_PHASES = { 潜伏期: 'latent', 活跃期: 'active', 过渡期: 'transition' };
 const SECOND_STAGE_PHASES = { 胎体下降: 'descent', 胎体娩出: 'delivery', 间歇期: 'interval' };
+/** 放松胸型：N 杯下垂 12 格、外摊 2 格（其余罩杯照 (罩杯/150)^1.3 缩小） */
+export const BELLY_RELEASE = Object.freeze({ sag: 12, spread: 2, contact: true });
+
 export function getBellyLaborPhase(stage, laborPhase) {
   if (stage === '产兆前驱') return 'prodromal';
   if (stage === '第一产程') return FIRST_STAGE_PHASES[laborPhase] || 'latent';
@@ -130,6 +133,8 @@ export function buildBellyCloseupState(input) {
     showBra: !nude,
     showShorts: !nude,
     strapless: !nude,
+    // 全裸时没有胸罩承托：胸部照罩杯下垂、往两侧摊，碰到孕肚就停在肚子上（belly_layout.js 放松胸型）
+    ...(nude ? { release: { ...BELLY_RELEASE } } : {}),
     vitality: percent(stats.vitality),
     libido: percent(stats.libido),
     stress: percent(stats.stress),
