@@ -12,8 +12,11 @@ const percent = (item) => {
 /** 产程阶段（base.stage＋pregnant.laborPhase）→ 特写的宫缩节奏 */
 const FIRST_STAGE_PHASES = { 潜伏期: 'latent', 活跃期: 'active', 过渡期: 'transition' };
 const SECOND_STAGE_PHASES = { 胎体下降: 'descent', 胎体娩出: 'delivery', 间歇期: 'interval' };
-/** 放松胸型：N 杯下垂 12 格、外摊 2 格（其余罩杯照 (罩杯/150)^1.3 缩小） */
-export const BELLY_RELEASE = Object.freeze({ sag: 12, spread: 2, contact: true });
+/**
+ * 放松胸型（ACG 取向）：N 杯下垂 9 格、外摊 3 格、上极补满 3 格、往前凸的长度收短 15%，软但圆、乳头朝前；
+ * 其余罩杯照 (罩杯/150)^1.3 缩小
+ */
+export const BELLY_RELEASE = Object.freeze({ sag: 9, spread: 3, fill: 3, retract: 0.15, contact: true });
 
 export function getBellyLaborPhase(stage, laborPhase) {
   if (stage === '产兆前驱') return 'prodromal';

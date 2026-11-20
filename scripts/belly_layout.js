@@ -12,9 +12,9 @@
 import { getFetalGrowth } from './fetal_growth.js';
 
 /** 成图里可以个别关掉的修补规则（除错与测试用） */
-export const BELLY_SKIP_FIXES = Object.freeze(['repair', 'backTop', 'breastArc', 'bellyArc', 'cleanup', 'shortsBand', 'waistband', 'strapTop', 'braWedge', 'chestSeam', 'nippleSide', 'manual', 'bellyTurnSeam']);
+export const BELLY_SKIP_FIXES = Object.freeze(['repair', 'backTop', 'breastArc', 'bellyArc', 'cleanup', 'shortsBand', 'waistband', 'strapTop', 'braWedge', 'chestSeam', 'nippleSide', 'manual', 'bellyTurnSeam', 'breastSmooth']);
 /** 预览页没有、插件新加的规则（与预览页逐格对照时要关掉） */
-export const BELLY_NEW_FIXES = Object.freeze(['backTop', 'breastArc', 'bellyArc', 'strapTop', 'braWedge', 'chestSeam', 'nippleSide', 'manual', 'bellyTurnSeam']);
+export const BELLY_NEW_FIXES = Object.freeze(['backTop', 'breastArc', 'bellyArc', 'strapTop', 'braWedge', 'chestSeam', 'nippleSide', 'manual', 'bellyTurnSeam', 'breastSmooth']);
 
 /**
  * @param data decodeBellyData() 的结果
@@ -552,7 +552,7 @@ export function createBellyLayout(data, options = {}) {
     // 下极往两侧摊（spread，格数），杯越大越多。远侧侧腹在胸部那几列由胸部构成，不钉住（pinFlank 可钉）；胸下缘以下的腰侧钉住，免得腰线被拉出一阶。胸下缘碰到孕肚就停在肚子上（逐列量孕肚上缘，contact），
     // 所以大孕肚自然把胸托住。位移只套在胸部与上身的栏位，孕肚、短裤、腿不动。
     if(s.release&&((s.release.sag||0)>0||(s.release.spread||0)>0)){
-      const R=s.release,size=clamp(s.cup/150,0,1.2)**1.3,S=(R.sag||0)*size,SP=(R.spread||0)*size,K=6;
+      const R=s.release,size=clamp(s.cup/150,0,1.2)**1.3,S=(R.sag||0)*size,SP=(R.spread||0)*size,FILL=(R.fill||0)*size,RET=clamp((R.retract||0)*size,0,0.5),K=6;
       const inBra=i=>fig.bra[i]<0;
       let top=-1,bot=-1;
       for(let y=0;y<H&&top<0;y++)for(let x=0;x<W;x++)if(inBra(y*W+x)){top=y;break}
@@ -583,6 +583,10 @@ export function createBellyLayout(data, options = {}) {
         // 每一侧胸部离胸根最远的距离：转动量照它归一，近侧的乳尖与远侧的外缘才会转满
         const reach=[L,L];
         for(let y=top;y<=bot;y++)for(let x=0;x<W;x++)if(inBra(y*W+x)){const k=x<ax?0:1;reach[k]=Math.max(reach[k],Math.hypot(x-ax,y-ay))}
+        // 两边一起被孕肚托住：斜侧面里远侧胸在胸口附近、孕肚最高的地方上方，近侧乳尖在孕肚往前下斜的那一段上方，
+        // 逐栏的接触会让远侧几乎不掉、近侧掉满，两个乳头一高一低。立体上两边是同一个孕肚、同一个高度，
+        // 所以两边的下垂量取两个乳头那一栏可以掉的较小值，逐栏的接触只再修边缘
+        const colAt=px=>col[clamp(Math.round(px),0,W-1)],Seq=nip?Math.min(S,colAt(nip[0][0]),colAt(nip[1][0])):S;
         const move=(x,y)=>{
           const dx=x-ax,dy=y-ay,r=Math.hypot(dx,dy),u=r/reach[dx<0?0:1];
           const w=smooth(clamp(u,0,1)),phi=Math.tanh(dx/3)*theta*w;
@@ -593,7 +597,14 @@ export function createBellyLayout(data, options = {}) {
           // 远侧：力臂到远侧乳头为止，再往外到侧腹收回 0（侧腹是躯干，不是胸部）
           const fy0=clamp(Math.round(y),0,H-1),dn=nip?Math.max(4,nip[1][0]-ax):reach[1]*0.6;
           const lever=dx<=0?-dx:dx<=dn?dx:dn*(flank[fy0]>ax+dn?clamp((flank[fy0]-x)/(flank[fy0]-ax-dn),0,1):0);
-          let mx=SP*Math.tanh(dx/3)*w*rise,my=Math.abs(Math.sin(phi))*lever*rise;
+          // 两边掉一样多：力臂各自以那一侧的乳头为 1（乳头处掉满 sag），近侧乳尖以外最多 1.25 倍。
+          // 斜侧面里近侧乳尖离胸骨比远侧乳头远得多，直接用距离会让近侧掉得多、远侧几乎不动，两边乳头一高一低
+          const levNip=dx<=0?(nip?Math.max(4,ax-nip[0][0]):reach[0]*0.8):dn;
+          let mx=SP*Math.tanh(dx/3)*w*rise,my=Seq*clamp(lever/levNip,0,1.25)*rise;
+          // 上极补满（fill，格）：下极往下掉时，近侧胸的中段往前鼓，上缘保持外凸、不被拉成一条斜直线
+          if(FILL>0&&dx<0)mx-=FILL*Math.sin(Math.PI*clamp(u,0,1))*rise*clamp(-dx/3,0,1);
+          // 收短（retract，比例）：没有承托时近侧胸往前凸的长度变短，乳尖往胸口收，下极变圆，不会拉成往前下方伸的圆锥
+          if(RET>0&&dx<0)mx+=RET*(-dx)*w*rise;
           const xi=clamp(Math.round(x),0,W-1);
           if(my>col[xi]){const k=col[xi]/my;mx*=k;my=col[xi]}
           // 胸下缘以下：先留出胸部往下挂的空间，再 K 格内收回 0，腹部与下身不动
@@ -613,6 +624,16 @@ export function createBellyLayout(data, options = {}) {
           if(!has)continue;under++;if(col[x]<0.5*S)held++}
         fig.release={sag:S,spread:SP,top,bot,loose:size,rest:under?held/under:0,contact:Array.from(col)};
       }
+    }
+    // 胸部轮廓修圆（插件新增 breastSmooth）：有几张参考（N 杯三胎、五胎）近侧胸的上缘是一串小鼓包，明暗跟着轮廓，
+    // 看起来像一道道折痕。胸部那几列（胸罩栏位顶端到胸下线下 2 格）的身体栏位与平滑过两次的版本取较大的范围：只填鼓包之间的凹处、不削鼓包，轮廓变成外包的圆弧
+    if(!skipFixes.has('breastSmooth')&&fig.underbust){
+      let top=-1;for(let y=0;y<H&&top<0;y++)for(let x=0;x<W;x++)if(fig.bra[y*W+x]<0){top=y;break}
+      const low=Math.max(...fig.underbust.map(p=>p[1]))+2;
+      if(top>=0&&low>top)for(const key of['bra',...BODY_FIELDS]){if(key==='legVoid')continue;
+        const src=fig[key],soft=smoothField(smoothField(src)),out=Float32Array.from(src);
+        for(let y=top;y<=Math.min(H-1,low+3);y++){const k=y<=low?1:1-(y-low)/4;for(let x=0;x<W;x++){const i=y*W+x;out[i]=Math.min(src[i],src[i]+(soft[i]-src[i])*k)}}
+        fig[key]=out}
     }
     // the wobble after a big kick shakes the belly a little forward and down and back (the chest bounces through lift)
     if(motion?.jiggle){const j=motion.jiggle,src=fig.belly,out=new Float32Array(N);
@@ -1278,7 +1299,9 @@ export function createBellyLayout(data, options = {}) {
           // else the step between them ran on up the sternum as a seam (it looked like a neck rising out of the cleavage).
           const two=lobes.list.length>1,cleftRow=lobes.cleftTop??-1;
           const other=!two?null:k===0?lobes.list[1]:lobes.list[0].map((v,i)=>v&&(i/W|0)<cleftRow?1:0);
-          const d=distanceTo(lobe.map((v,i)=>v||other?.[i]||(i/W|0)<2?0:1));let R=1,n=0,mean=0,top=H,bottom=-1;for(let i=0;i<N;i++)if(lobe[i]){R=Math.max(R,d[i]);n++;mean+=z[i];top=Math.min(top,i/W|0);bottom=Math.max(bottom,i/W|0)}
+          // 球面高度看到轮廓的距离；距离场的中轴是一道棱，轮廓有鼓包时棱会分岔，明暗在乳房上切出几道斜线（像折痕）：
+          // 距离先平滑两次（breastSmooth），棱化开
+          const d0=distanceTo(lobe.map((v,i)=>v||other?.[i]||(i/W|0)<2?0:1)),d=skip('breastSmooth')?d0:smoothField(smoothField(d0));let R=1,n=0,mean=0,top=H,bottom=-1;for(let i=0;i<N;i++)if(lobe[i]){R=Math.max(R,d[i]);n++;mean+=z[i];top=Math.min(top,i/W|0);bottom=Math.max(bottom,i/W|0)}
           mean/=Math.max(1,n);breastHeight.push(Math.max(0,bottom-top+1));
           // (the surface's slopes are scaled by D, which grows with the belly so it stays round; the breasts' own dome is
           // held at the not-pregnant D, else a quintuplet belly made them 2.3 times as steep and nearly all darkest tone)
