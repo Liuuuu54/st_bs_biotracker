@@ -167,7 +167,7 @@ test('v17 迁移：旧孩子从孕期摘要补出生健康；技能图鉴的预�
   chatState.schemaVersion = 16;
   settings.chatStates.v17 = chatState;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 17);
+  assert.equal(migrated.schemaVersion, 18);
   assert.deepEqual(migrated.characters.A.profile.children[0].birth, { healthRatio: 0.7 });
   assert.deepEqual(migrated.skillCatalog.map((item) => item.body), ['womb', 'any']);
 });

@@ -6964,3 +6964,16 @@
 #bs-biotracker-settings .bs-bt-diary-body p:last-child {
   margin-bottom: 0;
 }
+
+/* 完整变量页「外观」：特写的肤色与乳头色 */
+#bs-biotracker-settings .bs-bt-color-group { margin: 8px 0 12px; }
+#bs-biotracker-settings .bs-bt-color-title { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; font-weight: 600; }
+#bs-biotracker-settings .bs-bt-color-title .bs-bt-inline-status { font-weight: normal; margin: 0; }
+#bs-biotracker-settings .bs-bt-color-swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#bs-biotracker-settings .bs-bt-color-swatch { width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 2px solid var(--SmartThemeBorderColor, #555); cursor: pointer; }
+#bs-biotracker-settings .bs-bt-color-swatch.is-active { outline: 2px solid var(--SmartThemeQuoteColor, #f07aa8); outline-offset: 2px; }
+#bs-biotracker-settings .bs-bt-color-custom { display: inline-flex; gap: 4px; align-items: center; font-size: 0.85em; cursor: pointer; }
+#bs-biotracker-settings .bs-bt-color-custom input[type="color"] { width: 30px; height: 30px; padding: 0; border: none; background: none; cursor: pointer; }
+#bs-biotracker-settings .bs-bt-color-strip { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+#bs-biotracker-settings .bs-bt-color-chip { width: 22px; height: 22px; border-radius: 3px; display: inline-block; }
+#bs-biotracker-settings .bs-bt-color-gap { width: 10px; }

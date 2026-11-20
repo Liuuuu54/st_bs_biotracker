@@ -212,7 +212,7 @@ test('v14 → v15：补身材（按名字固定抽样，主档与快照一致）
   state.recordChatStateSnapshot(ctx, old, { messageCount: 1, reason: 'old' });
   settings.chatStates[ctx.chatId] = old;
   const migrated = state.getChatState(ctx, settings);
-  assert.equal(migrated.schemaVersion, 17);
+  assert.equal(migrated.schemaVersion, 18);
   const base = migrated.characters.A.profile.base;
   const traits = deterministicBodyTraits('A');
   assert.deepEqual([base.build, base.bust, base.hip], [50, 40, 50]);

@@ -54,20 +54,40 @@ function shiftRamp(ramp, fromBase, toBase) {
   });
 }
 
+/** 乳头色带的基准色：预设乳晕（未变深）的第 1 阶 */
+export const BELLY_NIPPLE_BASE = BELLY_DEFAULT_PALETTE.areolaPale[0];
+
 /**
  * 组出一张色表。skinBase 是肤色基准色：肤色、乳晕、乳头的色带一起跟着它换（深肤色配粉乳晕会很怪）；
+ * nippleBase（角色自订的乳头色）给了就让乳晕、乳头改跟它走，与肤色无关；怀孕变深照预设的深浅比例。
  * 其余色组（背景、轮廓线、胸衣、短裤、奶水、臭烟…）可以个别覆写。不给参数就是预设色表。
  */
-export function createBellyPalette({ skinBase = BELLY_SKIN_BASE, ...overrides } = {}) {
+export function createBellyPalette({ skinBase = BELLY_SKIN_BASE, nippleBase = null, ...overrides } = {}) {
   const base = BELLY_DEFAULT_PALETTE;
   const moved = (ramp) => shiftRamp(ramp, BELLY_SKIN_BASE, skinBase);
+  const nipple = nippleBase ? (ramp) => shiftRamp(ramp, BELLY_NIPPLE_BASE, nippleBase) : moved;
   return {
     ...base,
     skin: moved(base.skin),
-    areolaPale: moved(base.areolaPale), areolaDark: moved(base.areolaDark),
-    nipplePale: moved(base.nipplePale), nippleDark: moved(base.nippleDark),
+    areolaPale: nipple(base.areolaPale), areolaDark: nipple(base.areolaDark),
+    nipplePale: nipple(base.nipplePale), nippleDark: nipple(base.nippleDark),
     ...overrides,
   };
+}
+
+/**
+ * 半彩主题的肤色：宫壁色相的那条色带，再照角色自订色与预设色的差别（明度、彩度的比例）调深调浅，
+ * 色相留主题的——所以自订的深肤色在半彩主题是「同色相的深色」。乳头另外带上自订色与预设乳头色的色相差。
+ */
+function personalizeRamp(ramp, fromBase, toBase, keepHue) {
+  if (!toBase) return [...ramp];
+  const from = rgbToHsl(hexToRgb(fromBase));
+  const to = rgbToHsl(hexToRgb(toBase));
+  const ratio = (a, b) => (b > 1e-6 ? a / b : 1);
+  return ramp.map((color) => {
+    const [h, sat, l] = rgbToHsl(hexToRgb(color));
+    return rgbToHex(hslToRgb([keepHue ? h : h + to[0] - from[0], Math.min(1, sat * ratio(to[1], from[1])), Math.min(1, l * ratio(to[2], from[2]))]));
+  });
 }
 
 /**
@@ -88,10 +108,13 @@ const MONO_RAMP_THEMES = new Set(['ink', 'constructivism']);
  * 跟着介面主题的色表：拿子宫图当下的色表（uterus_render.js 的 getUterusPalette）对应过来，
  * 所以特写与子宫图在每个主题下是同一套颜色。theme 是主题名，决定单色、半彩或全彩（见 BELLY_THEME_MODES）。
  */
-export function createBellyThemePalette(womb, { theme = '', realistic = false } = {}) {
-  if (!womb) return createBellyPalette();
+export function createBellyThemePalette(womb, { theme = '', realistic = false, skin = null, nipple = null } = {}) {
+  const personal = { ...(skin ? { skinBase: skin } : {}), ...(nipple ? { nippleBase: nipple } : {}) };
+  if (!womb) return createBellyPalette(personal);
   const mode = realistic ? 'full' : BELLY_THEME_MODES[theme] || 'half';
-  if (mode === 'full') return createBellyPalette({ bg: womb.bg });
+  if (mode === 'full') return createBellyPalette({ bg: womb.bg, ...personal });
+  // 单色主题整张一个色调：不套自订色
+  if (mode === 'mono') { skin = null; nipple = null; }
   const mix = (a, b, t) => rgbToHex(hexToRgb(a).map((value, k) => value + (hexToRgb(b)[k] - value) * t));
   if (mode === 'mono' && MONO_RAMP_THEMES.has(theme)) {
     const dark = womb.ink || womb.wallDark;
@@ -115,12 +138,14 @@ export function createBellyThemePalette(womb, { theme = '', realistic = false } 
   return {
     bg: womb.bg, line: womb.frame || womb.void,
     // 肤色只用宫壁那个色相（最亮两阶往高光色靠一点）。胎儿色在有些主题是另一个色相（赛博埃及是青色），拿来当亮面会变成两种颜色的身体
-    skin: [womb.wallDark, womb.wall, womb.wallLight, mix(womb.wallLight, womb.shine, 0.35), mix(womb.wallLight, womb.shine, 0.7)],
+    skin: personalizeRamp([womb.wallDark, womb.wall, womb.wallLight, mix(womb.wallLight, womb.shine, 0.35), mix(womb.wallLight, womb.shine, 0.7)], BELLY_SKIN_BASE, skin, true),
     bra: [womb.cavityDeep, womb.cavity, womb.shadow, womb.fluid],
     shorts: [womb.void, womb.cavityDeep, womb.cavity, womb.shadow],
     crease: womb.void,
-    areolaPale: [womb.wall, womb.wallDark], areolaDark: [womb.wallDark, womb.cavity],
-    nipplePale: [womb.wallDark, womb.cavity], nippleDark: [womb.cavity, womb.cavityDeep],
+    // 乳头：自订了就照乳头色与预设的差别调（色相差也带上，粉与褐分得出来）；只订了肤色就跟着肤色调深浅
+    ...Object.fromEntries([['areolaPale', [womb.wall, womb.wallDark]], ['areolaDark', [womb.wallDark, womb.cavity]],
+      ['nipplePale', [womb.wallDark, womb.cavity]], ['nippleDark', [womb.cavity, womb.cavityDeep]]]
+      .map(([key, ramp]) => [key, nipple ? personalizeRamp(ramp, BELLY_NIPPLE_BASE, nipple, false) : personalizeRamp(ramp, BELLY_SKIN_BASE, skin, true)])),
     milk: [womb.waterLight, womb.water],
     smoke: [womb.signal, mix(womb.signal, womb.bg, 0.3), mix(womb.signal, womb.bg, 0.55)],
     ghost: womb.fluidLight || womb.shine,

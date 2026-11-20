@@ -1,5 +1,6 @@
 import { getPresetSkillBody } from './skill_config.js';
 import { normalizeFetalHealthFields } from './fetal_health.js';
+import { normalizeDisplayColors } from './display_colors.js';
 import { ensureBodyBaseFields } from './maternal_body.js';
 import { normalizeExperience, psychologySide } from './reproductive.js';
 import { DESCRIPTION_FIELDS, normalizeDescriptionList } from './descriptions.js';
@@ -19,7 +20,7 @@ import { MENSTRUAL_STAGE_DAYS } from './stage_config.js';
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 17;
+export const CHAT_STATE_SCHEMA_VERSION = 18;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -353,6 +354,12 @@ function migrateCharacterV16ToV17(character) {
   }
 }
 
+/** v17 → v18（1.4.3 显示颜色）：每个角色补上 profile.display（肤色、乳头色、发色，null 照预设） */
+function migrateCharacterV17ToV18(character) {
+  if (!character?.profile || typeof character.profile !== 'object') return;
+  character.profile.display = normalizeDisplayColors(character.profile.display);
+}
+
 /** v16 → v17：技能图鉴里照名字对到内置预设的，补上适用身体（性器、子宫开发为卵方专属） */
 export function assignPresetSkillBodies(catalog) {
   if (!Array.isArray(catalog)) return;
@@ -377,6 +384,7 @@ const CHARACTER_MIGRATIONS = Object.freeze({
   14: migrateCharacterV14ToV15,
   15: migrateCharacterV15ToV16,
   16: migrateCharacterV16ToV17,
+  17: migrateCharacterV17ToV18,
 });
 
 export function getChatStateSchemaVersion(chatState) {

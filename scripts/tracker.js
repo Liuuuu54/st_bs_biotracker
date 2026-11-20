@@ -1300,6 +1300,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   else delete profile.immune;
   delete profile.cooldown;
   delete profile.visualCue;
+  // 显示用的颜色只给画面用，不送提示词
+  delete profile.display;
   if (immune.metabolism) delete profile.metabolism;
   if (!hasBreedingPsychology({ current: item })) delete profile.psychology;
   else {

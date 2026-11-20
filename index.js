@@ -128,7 +128,8 @@ import { renderRaceSheetHtml, renderSheetHtml } from './scripts/encyclopedia_she
 import { createBellyAnimator } from './scripts/belly_anim.js';
 import { loadBellyData } from './scripts/belly_data.js';
 import { createBellyLayout } from './scripts/belly_layout.js';
-import { applyBellyInkBrush, createBellyPainter, createBellyThemePalette } from './scripts/belly_render.js';
+import { BELLY_THEME_MODES, applyBellyInkBrush, createBellyPainter, createBellyThemePalette } from './scripts/belly_render.js';
+import { DISPLAY_NIPPLE_PRESETS, DISPLAY_SKIN_PRESETS, normalizeDisplayColor, normalizeDisplayColors } from './scripts/display_colors.js';
 import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
@@ -4863,6 +4864,8 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       sheathLabel: formatSheathLabel(base, experience),
       sheathValue: getSheathLevel(base, experience),
       fitLabel: base.penetrationState && base.penetrationState !== 'idle' ? String(base.penetrationFit?.label || '') : '',
+      // 孕体特写的肤色与乳头色（完整变量页「外观」子页设定，只给画面用）
+      displayColors: normalizeDisplayColors(profile.display),
       // 孕体特写的输入：身体量一律用既有函式的结果，换算在 belly_state.js
       closeup: {
         drawable: hasHumanFigure(base),
@@ -5855,8 +5858,9 @@ function mountBellyView(ctx, content, viewModel) {
   else host.prepend(bellyCanvas);
   // 色表跟着主题：单色、半彩（照子宫图的专属配色）或全彩（写实肤色），分类见 belly_render.js 的 BELLY_THEME_MODES
   const themeColors = readWombThemeColors(settings.theme);
-  const paletteKey = JSON.stringify(themeColors);
-  if (paletteKey !== bellyPaletteKey) { bellyPaletteKey = paletteKey; const womb = getUterusPalette(themeColors); bellyPalette = createBellyThemePalette(womb, { theme: themeColors.name }); document.getElementById('bs-biotracker-settings')?.style.setProperty('--bsbt-gauge-color', getGaugeLabelColor(womb.tick, womb.bg)); bellyTick = hexToPixel(womb.tick); bellyBackground = hexToPixel(bellyPalette.bg); }
+  const colors = viewModel.pregnancy?.displayColors || {};
+  const paletteKey = JSON.stringify([themeColors, colors.skinColor || null, colors.nippleColor || null]);
+  if (paletteKey !== bellyPaletteKey) { bellyPaletteKey = paletteKey; const womb = getUterusPalette(themeColors); bellyPalette = createBellyThemePalette(womb, { theme: themeColors.name, skin: colors.skinColor || null, nipple: colors.nippleColor || null }); document.getElementById('bs-biotracker-settings')?.style.setProperty('--bsbt-gauge-color', getGaugeLabelColor(womb.tick, womb.bg)); bellyTick = hexToPixel(womb.tick); bellyBackground = hexToPixel(bellyPalette.bg); }
   const state = bellyState;
   loadBellyEngine().then((engine) => {
     if (state !== bellyState) return;   // 等资料的时候页面又重绘过
@@ -8647,13 +8651,70 @@ function updateFullStateControls(ctx) {
   if (resetButton) resetButton.disabled = false;
 }
 
+/**
+ * 完整变量页「外观」子页：孕体特写的肤色与乳头色（profile.display）。只给画面用，不送提示词。
+ * 色票、预设、自订取色；下面一排是目前主题下实际会用到的颜色（单色主题不套自订色）。
+ */
+function renderFullStateAppearance(ctx, name, character) {
+  const host = document.getElementById('bs-bt-full-state-appearance');
+  if (!host) return;
+  const colors = normalizeDisplayColors(character?.profile?.display);
+  const settings = getSettings(ctx);
+  const themeColors = readWombThemeColors(settings.theme);
+  const palette = createBellyThemePalette(getUterusPalette(themeColors), { theme: themeColors.name, skin: colors.skinColor, nipple: colors.nippleColor });
+  const mono = BELLY_THEME_MODES[themeColors.name] === 'mono';
+  const group = (key, title, presets) => {
+    const current = colors[key];
+    const chips = presets.map(({ color, label }) => {
+      const active = label === '预设' ? !current : current === color;
+      return `<button type="button" class="bs-bt-color-swatch${active ? ' is-active' : ''}" data-display-key="${key}" data-display-color="${label === '预设' ? '' : color}" style="background:${color}" title="${escapeHtml(label)}" aria-label="${escapeHtml(`${title}：${label}`)}"></button>`;
+    }).join('');
+    return `<div class="bs-bt-color-group">
+      <div class="bs-bt-color-title">${escapeHtml(title)}<span class="bs-bt-inline-status">${current ? `自订 ${current}` : '预设'}</span></div>
+      <div class="bs-bt-color-swatches">${chips}
+        <label class="bs-bt-color-custom" title="自订颜色"><input type="color" data-display-key="${key}" value="${current || presets.find((p) => p.label === '预设').color}" /><span>自订</span></label>
+      </div>
+    </div>`;
+  };
+  const strip = (list) => list.map((color) => `<span class="bs-bt-color-chip" style="background:${color}"></span>`).join('');
+  host.innerHTML = `
+    ${group('skinColor', '肤色', DISPLAY_SKIN_PRESETS)}
+    ${group('nippleColor', '乳头色', DISPLAY_NIPPLE_PRESETS)}
+    <div class="bs-bt-color-group">
+      <div class="bs-bt-color-title">目前主题的实际颜色</div>
+      <div class="bs-bt-color-strip">${strip(palette.skin)}<span class="bs-bt-color-gap"></span>${strip([...palette.areolaPale, ...palette.areolaDark])}</div>
+    </div>
+    <div class="bs-bt-inline-status">只用于孕体特写的画面，不会送进提示词。全彩主题照所选颜色；半彩主题保留主题色相，照所选颜色调深浅（乳头另带色相差）${mono ? '；目前是单色主题，整张一个色调，不套自订色' : '；单色主题不套自订色'}。乳晕、乳头怀孕时照常变深。</div>`;
+  host.querySelectorAll('button[data-display-key]').forEach((node) => node.addEventListener('click', () => setDisplayColor(ctx, name, node.dataset.displayKey, node.dataset.displayColor || null)));
+  host.querySelectorAll('input[type="color"][data-display-key]').forEach((node) => node.addEventListener('change', () => setDisplayColor(ctx, name, node.dataset.displayKey, node.value)));
+}
+
+function setDisplayColor(ctx, name, key, value) {
+  if (!['skinColor', 'nippleColor'].includes(key)) return;
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const character = chatState.characters?.[name];
+  if (!character?.profile) return;
+  const next = normalizeDisplayColors({ ...normalizeDisplayColors(character.profile.display), [key]: normalizeDisplayColor(value) });
+  character.profile.display = next;
+  recordChatStateSnapshot(ctx, chatState, { reason: 'display_color' });
+  saveSettings(ctx);
+  renderStatusPanel(ctx);
+  renderFullStatePage(ctx);
+}
+
 function updateFullStateSubpage() {
   if (!FULL_STATE_SUBPAGES.includes(selectedFullStateSubpage)) selectedFullStateSubpage = 'variables';
   // 精方的调试分页只有作弊开关
   const debugTab = document.querySelector('#bs-bt-full-state-tabs [data-full-state-tab="debug"]');
   if (debugTab) debugTab.hidden = false;
+  // 外观（特写的肤色、乳头色）只有卵方有：精方没有孕体特写
+  const appearanceTab = document.querySelector('#bs-bt-full-state-tabs [data-full-state-tab="appearance"]');
+  const showAppearance = selectedFullStateKind !== 'sire';
+  if (appearanceTab) appearanceTab.hidden = !showAppearance;
+  if (!showAppearance && selectedFullStateSubpage === 'appearance') selectedFullStateSubpage = 'variables';
   const tabRow = document.getElementById('bs-bt-full-state-tabs');
-  if (tabRow) tabRow.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+  if (tabRow) tabRow.style.gridTemplateColumns = `repeat(${showAppearance ? 4 : 3}, minmax(0, 1fr))`;
   const hasSelectedCharacter = Boolean(selectedFullStateName);
   const tabs = document.getElementById('bs-bt-full-state-tabs');
   const varsPanel = document.getElementById('bs-bt-full-state-vars-panel');
@@ -8663,12 +8724,14 @@ function updateFullStateSubpage() {
   if (varsPanel) varsPanel.hidden = !hasSelectedCharacter || selectedFullStateSubpage !== 'variables';
   if (debugSection) debugSection.hidden = !hasSelectedCharacter || selectedFullStateSubpage !== 'debug';
   if (historyPanel) historyPanel.hidden = !hasSelectedCharacter || selectedFullStateSubpage !== 'history';
+  const appearancePanel = document.getElementById('bs-bt-full-state-appearance-panel');
+  if (appearancePanel) appearancePanel.hidden = !hasSelectedCharacter || selectedFullStateSubpage !== 'appearance';
   document.querySelectorAll('#bs-bt-full-state-tabs [data-full-state-tab]').forEach((node) => {
     node.classList.toggle('is-active', String(node.getAttribute('data-full-state-tab') || '') === selectedFullStateSubpage);
   });
 }
 
-const FULL_STATE_SUBPAGES = Object.freeze(['variables', 'debug', 'history']);
+const FULL_STATE_SUBPAGES = Object.freeze(['variables', 'debug', 'history', 'appearance']);
 // 回溯页目前选的快照；换角色或快照清单变动时回到最新一份
 let selectedHistorySnapshotIndex = null;
 
@@ -9121,7 +9184,7 @@ function showFullState(ctx, name) {
   }
   selectedFullStateName = name;
   selectedFullStateKind = 'character';
-  selectedFullStateSubpage = ['variables', 'debug'].includes(selectedFullStateSubpage) ? selectedFullStateSubpage : 'variables';
+  selectedFullStateSubpage = ['variables', 'debug', 'appearance'].includes(selectedFullStateSubpage) ? selectedFullStateSubpage : 'variables';
   renderFullStatePage(ctx);
   setView('full-state');
   globalThis.toastr?.success?.(`[BS BioTracker] 已显示 ${name} 的完整变量`);
@@ -9393,6 +9456,7 @@ function renderFullStatePage(ctx) {
       bindFetalTalentDebugControls(ctx, debugPanel);
       bindDebugPanelControls(ctx, debugPanel, () => renderFullStatePage(ctx));
     }
+    renderFullStateAppearance(ctx, selectedFullStateName, current);
   } else {
     output.value = '请选择角色查看完整变量。';
     setFullStateEditStatus('请选择角色后再编辑。');
