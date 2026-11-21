@@ -430,6 +430,12 @@
             </div>
 
             <div class="settings_section">
+              <label for="bs-bt-auto-track-every">追踪周期（每 N 条 AI 回复自动追踪一次）</label>
+              <input id="bs-bt-auto-track-every" class="text_pole" type="number" min="1" max="20" step="1" />
+              <small>1 = 每次 AI 回复后都更新（预设，等同旧行为）。设成 N 时，攒够 N 条 AI 回复才发一次追踪请求，中间只待命、不消耗额度；追踪仍会把攒下的楼层一次处理完。「立即分析当前对话」不受限制，随时可以插队。</small>
+            </div>
+
+            <div class="settings_section">
               <label for="bs-bt-api-timeout-sec">请求超时（秒，0 = 不限制）</label>
               <input id="bs-bt-api-timeout-sec" class="text_pole" type="number" min="0" max="1800" step="10" />
             </div>

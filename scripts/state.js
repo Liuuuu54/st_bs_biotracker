@@ -300,6 +300,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   pollMs: 1800,
   apiTimeoutMs: 180000,
   contextSize: 12,
+  // 追踪周期：每 N 条 AI 回复自动追踪一次（1 = 每条回复后都追踪）
+  autoTrackEveryReplies: 1,
   mainflowCopyCharLimit: 400000,
   trackerTokenBudget: 4096,
   wombAnimation: true,
@@ -1055,6 +1057,18 @@ const API_PROFILE_FIELDS = Object.freeze([
  * 已命名的连接配置组：名称唯一（去头尾空白后比对）。
  * 保存系统页分隔线以上的整段连接设定：端点、格式、Key、模型、温度、思考强度与回复格式
  */
+/**
+ * 追踪周期：每 N 条 AI 回复自动追踪一次。
+ * 1（预设）＝每次 AI 回复后都更新，与原行为一致；2 以上则攒够 N 条才发一次请求，
+ * 中间只待命，省下逐楼请求。「立即分析当前对话」不受这个限制。
+ */
+export function normalizeAutoTrackEveryReplies(value) {
+  if (value === undefined || value === null || value === '') return 1;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 1;
+  return Math.min(20, Math.max(1, Math.floor(number)));
+}
+
 /** 主线复制字数上限：缺值用预设 40 万，0 表示不限，其余至少 1 万字（与 api.js 的解析一致） */
 export function normalizeMainflowCopyCharLimit(value) {
   if (value === undefined || value === null || value === '') return 400000;

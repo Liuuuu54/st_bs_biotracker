@@ -207,6 +207,7 @@ import {
   sanitizeWorldbookEntryDisplayName,
   saveApiProfile,
   normalizeMainflowCopyCharLimit,
+  normalizeAutoTrackEveryReplies,
   saveSettings,
   saveSettingsNow,
   refreshChatStatesFromHost,
@@ -9854,6 +9855,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-reply-format', normalizeReplyFormat(settings.replyFormat, settings));
   updateApiEndpointPreview();
   setValue('bs-bt-poll-ms', settings.pollMs);
+  setValue('bs-bt-auto-track-every', normalizeAutoTrackEveryReplies(settings.autoTrackEveryReplies));
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
   setValue('bs-bt-context-size', settings.contextSize);
   setValue('bs-bt-mainflow-copy-char-limit', normalizeMainflowCopyCharLimit(settings.mainflowCopyCharLimit));
@@ -10438,6 +10440,7 @@ function readSettingsFromForm(ctx) {
   settings.reasoningEffort = normalizeReasoningEffort(getValue('bs-bt-reasoning-effort'));
   settings.replyFormat = normalizeReplyFormat(getValue('bs-bt-reply-format'));
   settings.pollMs = Math.max(800, Number(getValue('bs-bt-poll-ms')) || 1800);
+  settings.autoTrackEveryReplies = normalizeAutoTrackEveryReplies(getValue('bs-bt-auto-track-every'));
   const rawApiTimeoutSec = String(getValue('bs-bt-api-timeout-sec')).trim();
   const apiTimeoutSec = rawApiTimeoutSec === '' ? NaN : Number(rawApiTimeoutSec);
   settings.apiTimeoutMs = !Number.isFinite(apiTimeoutSec)
