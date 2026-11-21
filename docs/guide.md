@@ -12,8 +12,8 @@ BS BioTracker 會依角色設定與對話追蹤角色狀態。插件內的 PDA �
 
 按 PDA 下方的齒輪鍵進入 `SYSTEM`。
 
-1. 填寫 `OpenAI 兼容 API Base URL` 與 `API Key`。
-2. 在 `API 格式` 選擇服務使用的端點格式。一般 OpenAI 相容服務使用 `/chat/completions`；介面也提供其他自訂格式。
+1. 填寫 `API Base URL` 與 `API Key`。用 Google AI Studio 時選好格式、Base URL 留空即可；接反代就把反代主機填進來。
+2. 在 `API 格式` 選擇服務使用的端點格式。一般 OpenAI 相容服務使用 `/chat/completions`；Google AI Studio 與其反代選 `Google AI Studio（Gemini 原生）`，介面也提供其他自訂格式。
 3. 按 `连接并拉取模型` 選擇模型。若服務不支援模型列表，直接在 `模型名称` 輸入名稱即可。
 4. 勾選系統頁最上面的 `启用 BioTracker`。這是總開關，關掉時不注入狀態、不追蹤，已有資料保留。
 

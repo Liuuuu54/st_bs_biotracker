@@ -84,14 +84,55 @@ export const API_FORMATS = Object.freeze({
   CLAUDE_MESSAGES: 'claude_messages',
   OPENAI_RESPONSES: 'openai_responses',
   GEMINI_INTERACTIONS: 'gemini_interactions',
+  // Google AI Studio 的经典原生端点：/v1beta/models/<模型>:generateContent
+  GEMINI_GENERATE_CONTENT: 'gemini_generate_content',
+  // 最后兜底：不用这里的网址与金钥，直接借酒馆主聊天正在用的连接与模型
+  FOLLOW_HOST: 'follow_host',
 });
+
+/** Google AI Studio 原生主机。选了 Gemini 原生格式、Base URL 又留空时按这个走，等于 SillyTavern 的「Google AI Studio」来源 */
+export const GOOGLE_AI_STUDIO_BASE_URL = 'https://generativelanguage.googleapis.com';
+/** Gemini 原生端点的默认 API 版本（SillyTavern 的 gemini.apiVersion 默认值也是 v1beta） */
+export const GEMINI_DEFAULT_API_VERSION = 'v1beta';
 
 export function normalizeApiFormat(value) {
   const raw = String(value || '').trim().toLowerCase();
+  if (raw === API_FORMATS.FOLLOW_HOST
+    || raw === 'follow'
+    || raw === 'host'
+    || raw === 'tavern'
+    || raw === 'sillytavern'
+    || raw === 'follow_host') return API_FORMATS.FOLLOW_HOST;
   if (raw === API_FORMATS.OPENAI_RESPONSES || raw === 'responses' || raw === 'openai_responses' || raw === 'custom_openai_responses') return API_FORMATS.OPENAI_RESPONSES;
   if (raw === API_FORMATS.CLAUDE_MESSAGES || raw === 'claude' || raw === 'messages' || raw === 'claude_messages' || raw === 'custom_claude_messages' || raw === 'anthropic') return API_FORMATS.CLAUDE_MESSAGES;
+  // 先认「原生 generateContent」：'gemini' 这个旧别名继续指向 Interactions，免得改造后旧存档换意思
+  if (raw === API_FORMATS.GEMINI_GENERATE_CONTENT
+    || raw === 'generate_content'
+    || raw === 'gemini_generate_content'
+    || raw === 'gemini_generatecontent'
+    || raw === 'gemini_generate'
+    || raw === 'google'
+    || raw === 'google_ai_studio'
+    || raw === 'google_gemini'
+    || raw === 'makersuite') return API_FORMATS.GEMINI_GENERATE_CONTENT;
   if (raw === API_FORMATS.GEMINI_INTERACTIONS || raw === 'gemini' || raw === 'interactions' || raw === 'gemini_interactions') return API_FORMATS.GEMINI_INTERACTIONS;
   return API_FORMATS.OPENAI_COMPAT;
+}
+
+/** 两个 Gemini 格式都靠 x-goog-api-key 鉴权、也都不吃 response_format，需要分别判断时用这个 */
+export function isGeminiApiFormat(value) {
+  const fmt = normalizeApiFormat(value);
+  return fmt === API_FORMATS.GEMINI_INTERACTIONS || fmt === API_FORMATS.GEMINI_GENERATE_CONTENT;
+}
+
+/** 「跟随酒馆设定」：不碰这里填的网址与金钥，直接借酒馆主聊天正在用的连接与模型 */
+export function isFollowHostFormat(value) {
+  return normalizeApiFormat(value) === API_FORMATS.FOLLOW_HOST;
+}
+
+/** 主连接彻底失败时，要不要最后再用酒馆设定试一次（默认开） */
+export function isHostFallbackEnabled(settings) {
+  return settings?.hostFallbackEnabled !== false;
 }
 
 // 思考强度（reasoning_effort）档位：'auto'（默认）与非法值都省略该参数、
@@ -129,24 +170,85 @@ export function normalizeTemperatureMode(value) {
   return 'legacy';
 }
 
-export function getApiEndpointSuffix(format) {
+/**
+ * Base URL 归一化：去掉结尾斜线，以及使用者可能连着端点一起贴上来的尾段。
+ * 贴成完整端点（/chat/completions、/models、…:generateContent）时退回主机 + 版本，后面按格式重拼。
+ */
+export function normalizeApiBaseUrl(value) {
+  let base = String(value || '').trim().replace(/\/+$/, '');
+  base = base.replace(/\/(chat\/completions|responses|messages|interactions|models)$/i, '');
+  // Gemini 原生端点的模型在路径里：…/models/<模型>:generateContent 或 …/tunedModels/<模型>:generateContent
+  base = base.replace(/\/(?:models|tunedModels)\/[^/]+:(?:stream)?generateContent$/i, '');
+  return base.replace(/\/+$/, '');
+}
+
+/** Gemini 原生端点要 API 版本：base 已以 /v1、/v1beta 结尾就沿用，否则补默认版本 */
+export function splitGeminiEndpointBase(apiBase) {
+  const base = String(apiBase || '').trim().replace(/\/+$/, '');
+  const match = base.match(/\/(v1(?:beta|alpha)?\d*)$/i);
+  if (match) {
+    return { base: base.slice(0, -match[0].length).replace(/\/+$/, ''), version: match[1] };
+  }
+  return { base, version: GEMINI_DEFAULT_API_VERSION };
+}
+
+/**
+ * Gemini 原生端点把模型放在路径里：`gemini-2.5-pro` → `models/gemini-2.5-pro:generateContent`。
+ * 模型清单回来的是 `models/…` 这种带前缀的名字，微调模型是 `tunedModels/…`（本身的斜线要保留），两种都照原样用。
+ */
+export function buildGeminiModelPath(model, action = 'generateContent') {
+  const raw = String(model || '').trim().replace(/^\/+/, '');
+  const path = /^(?:models|tunedModels)\//i.test(raw) ? raw : `models/${raw}`;
+  return `${path}:${action}`;
+}
+
+/** 追加查询参数：已有查询串时用 &；值为空时不加（免得写出空的 key=） */
+export function appendUrlQuery(url, name, value) {
+  const text = String(url || '');
+  if (!value) return text;
+  const separator = text.includes('?') ? '&' : '?';
+  return `${text}${separator}${name}=${encodeURIComponent(String(value))}`;
+}
+
+/** 显示与日志用：隐去 ?key= 的值（Gemini 原生端点把密钥放在查询串里） */
+export function redactApiUrl(url) {
+  return String(url || '').replace(/([?&]key=)[^&#\s]*/gi, '$1***');
+}
+
+export function getApiEndpointSuffix(format, model = '') {
   switch (normalizeApiFormat(format)) {
     case API_FORMATS.OPENAI_RESPONSES: return '/responses';
     case API_FORMATS.CLAUDE_MESSAGES: return '/messages';
     case API_FORMATS.GEMINI_INTERACTIONS: return '/interactions';
+    // 模型在路径里；版本号由 getApiUrlForFormat 补
+    case API_FORMATS.GEMINI_GENERATE_CONTENT: return `/${buildGeminiModelPath(model)}`;
     case API_FORMATS.OPENAI_COMPAT:
     default: return '/chat/completions';
   }
 }
 
-export function getApiUrlForFormat(apiBase, format) {
+/**
+ * 实际要打的网址。options.model 给 Gemini 原生格式用（模型在路径里），
+ * options.apiKey 给 Google AI Studio 用（照 SillyTavern 带上 ?key=，见 api.js getAuthHeaders 的说明）。
+ *
+ * 一律用非串流的 :generateContent：反代对「没声明串流」的请求会一直等到内容出来或报错，
+ * 拿到的是一整份 JSON，插件这边也只需要整份 JSON（有的中转硬回 SSE，解析侧仍会拼回来）。
+ */
+export function getApiUrlForFormat(apiBase, format, options = {}) {
   const base = String(apiBase || '').trim().replace(/\/+$/, '');
   const fmt = normalizeApiFormat(format);
+  const model = String(options?.model || '').trim();
+  if (fmt === API_FORMATS.GEMINI_GENERATE_CONTENT) {
+    const { base: host, version } = splitGeminiEndpointBase(base);
+    // 反代只要把主机换掉即可：https://my-relay.example → …/v1beta/models/<模型>:generateContent
+    const url = `${host}/${version}/${buildGeminiModelPath(model)}`;
+    return appendUrlQuery(url, 'key', options?.apiKey);
+  }
   // Google AI 原生端点必须带 API 版本；base 已以 /v1 或 /v1beta 结尾时直接拼接（与 TauriTavern build_gemini_url 一致）
   if (fmt === API_FORMATS.GEMINI_INTERACTIONS && !/\/(v1|v1beta)$/i.test(base)) {
     return `${base}/v1beta/interactions`;
   }
-  return `${base}${getApiEndpointSuffix(fmt)}`;
+  return `${base}${getApiEndpointSuffix(fmt, model)}`;
 }
 
 export const DEFAULT_SETTINGS = Object.freeze({
@@ -180,6 +282,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   apiUrl: '',
   apiFormat: API_FORMATS.OPENAI_COMPAT,
   apiKey: '',
+  // 主连接彻底失败时最后改用酒馆设定（跟随主聊天的来源与模型）再试一次
+  hostFallbackEnabled: true,
   apiProfiles: [],
   model: 'gpt-4.1-mini',
   modelOptions: [],
@@ -196,6 +300,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   pollMs: 1800,
   apiTimeoutMs: 180000,
   contextSize: 12,
+  // 追踪周期：每 N 条 AI 回复自动追踪一次（1 = 每条回复后都追踪）
+  autoTrackEveryReplies: 1,
   mainflowCopyCharLimit: 400000,
   trackerTokenBudget: 4096,
   wombAnimation: true,
@@ -951,6 +1057,18 @@ const API_PROFILE_FIELDS = Object.freeze([
  * 已命名的连接配置组：名称唯一（去头尾空白后比对）。
  * 保存系统页分隔线以上的整段连接设定：端点、格式、Key、模型、温度、思考强度与回复格式
  */
+/**
+ * 追踪周期：每 N 条 AI 回复自动追踪一次。
+ * 1（预设）＝每次 AI 回复后都更新，与原行为一致；2 以上则攒够 N 条才发一次请求，
+ * 中间只待命，省下逐楼请求。「立即分析当前对话」不受这个限制。
+ */
+export function normalizeAutoTrackEveryReplies(value) {
+  if (value === undefined || value === null || value === '') return 1;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 1;
+  return Math.min(20, Math.max(1, Math.floor(number)));
+}
+
 /** 主线复制字数上限：缺值用预设 40 万，0 表示不限，其余至少 1 万字（与 api.js 的解析一致） */
 export function normalizeMainflowCopyCharLimit(value) {
   if (value === undefined || value === null || value === '') return 400000;

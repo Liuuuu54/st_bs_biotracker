@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
-import { abortActiveApiRequests, callOpenAICompatible, fetchModelList, getActiveApiRequests, isApiDeadlineError, isApiTimeoutError, isApiUserAbortError, resolveApiTimeoutMs, resolveOverallDeadlineMs } from '../scripts/api.js';
-import { getSettings, normalizeReasoningEffort, normalizeTemperatureMode, resolveUserTemperature } from '../scripts/state.js';
+import { abortActiveApiRequests, assembleGeminiSse, callOpenAICompatible, fetchModelList, getActiveApiRequests, isApiDeadlineError, isApiTimeoutError, isApiUserAbortError, normalizeGeminiGenerateContentData, resolveApiTimeoutMs, resolveOverallDeadlineMs } from '../scripts/api.js';
+import { getSettings, normalizeReasoningEffort, normalizeTemperatureMode, redactApiUrl, resolveUserTemperature } from '../scripts/state.js';
 
 const ORIGINAL_GLOBALS = {
   fetch: globalThis.fetch,
@@ -20,6 +20,8 @@ afterEach(() => {
   // 宿主代理鉴权失败会整个 session 停用代理（见 disableHostProxyForSession），
   // 用例之间必须重置，否则前一个 403 案例会让后续案例直接跳过代理
   delete globalThis.__bs_biotracker_host_proxy_disabled__;
+  // 后端 makersuite 路线被证伪后同样按工作阶段记住（见 disableMakersuiteForSession）
+  delete globalThis.__bs_biotracker_makersuite_disabled__;
 });
 
 function installBrowserHost(fetchImpl) {
@@ -42,6 +44,17 @@ function jsonResponse(data, status = 200) {
     status,
     async text() {
       return JSON.stringify(data);
+    },
+  };
+}
+
+/** 原样回一段文字（SSE、Cloudflare 的 error code、ST 的 ForbiddenError…） */
+function textResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async text() {
+      return body;
     },
   };
 }
@@ -530,6 +543,540 @@ test('gemini_interactions surfaces a failed status as a retriable error', async 
     // failed 是可重试的上游错误：可能直接抛出，也可能在重试链里撞上总时限
     (error) => /Gemini Interactions 回传失败|总时限/.test(error.message),
   );
+});
+
+const GEMINI_GENERATE_CONTENT_RESULT = {
+  candidates: [{
+    content: { role: 'model', parts: [{ text: JSON.stringify({ operations: [] }) }] },
+    finishReason: 'STOP',
+  }],
+};
+
+/** node 里没有 window：请求走浏览器原生协议直连上游，按顺序回包并记下每次请求 */
+function installDirectFetch(responses) {
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    const next = responses[Math.min(calls.length - 1, responses.length - 1)];
+    return typeof next === 'function' ? next() : next;
+  };
+  return calls;
+}
+
+test('Google AI Studio：浏览器里先交给酒馆后端的 makersuite 源，由服务端代发与翻译', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify({ operations: [] }) } }] });
+  });
+
+  const result = await callOpenAICompatible({
+    // 使用者截图里的那种反代：代理预设 + 代理密码
+    apiUrl: 'https://relay.example/proxy',
+    apiKey: 'relay-password',
+    model: 'gemini-2.5-pro',
+    apiFormat: 'gemini_generate_content',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.equal(calls.length, 1, '一条请求就够，不用再走浏览器原生协议');
+  assert.equal(calls[0].url, '/api/backends/chat-completions/generate');
+  assert.equal(calls[0].options.headers['X-CSRF-Token'], 'test-csrf');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.chat_completion_source, 'makersuite');
+  assert.equal(body.reverse_proxy, 'https://relay.example/proxy', '反代主机就是 Base URL');
+  assert.equal(body.proxy_password, 'relay-password', '代理密码就是这一页的 API Key');
+  assert.equal(body.model, 'gemini-2.5-pro');
+  assert.equal(body.use_sysprompt, true, '系统提示词要 ST 放进 systemInstruction');
+  assert.equal(body.stream, false, '不声明串流：反代对非串流请求会一直等到内容出来');
+  assert.equal(body.responseMimeType, 'application/json', '格式化输出翻成 responseMimeType');
+  assert.equal(Array.isArray(body.messages), true);
+  assert.equal(body.contents, undefined, '原生协议那份请求体不发给酒馆后端');
+});
+
+test('Google AI Studio：交给酒馆后端时反代网址去掉版本段（版本由 ST 自己补，免得叠成两层）', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ choices: [{ message: { content: '{"operations":[]}' } }] });
+  });
+
+  await callOpenAICompatible({
+    apiUrl: 'https://my-relay.example/v1beta',
+    apiKey: 'relay-password',
+    model: 'gemini-2.5-pro',
+    apiFormat: 'gemini_generate_content',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.reverse_proxy, 'https://my-relay.example', 'ST 会补 /v1beta/models/…');
+});
+
+test('Google AI Studio：走酒馆后端时不试原生工具调用（ST 只把正文放回 choices），直接用文本协议', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify({ tool_calls: [], character_checks: [] }) } }] });
+  });
+
+  const result = await callOpenAICompatible({
+    apiUrl: 'https://relay.example/proxy',
+    apiKey: 'relay-password',
+    model: 'gemini-2.5-pro',
+    apiFormat: 'gemini_generate_content',
+    replyFormat: 'tools',
+  }, {
+    tracked_females: ['艾拉'],
+    recent_messages: [],
+    available_tools: [{ name: 'bsPassedTime', description: '推进时间', input_schema: { type: 'object', properties: { hour: { type: 'integer' } } } }],
+  }, 'Return JSON.', { flow: 'tracker', nativeTools: true });
+
+  assert.deepEqual(result, { tool_calls: [], character_checks: [] });
+  assert.equal(calls.length, 1, '一轮就完成，不浪费一次注定读不回来的工具调用');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.tools, undefined, '不往 ST 递 tools：它翻得出请求，却不会把 functionCall 放回 choices');
+});
+
+test('Google AI Studio：酒馆后端不认这个来源时，退回浏览器原生协议', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    if (url === '/api/backends/chat-completions/generate') return jsonResponse({ error: true }, 404);
+    return jsonResponse(GEMINI_GENERATE_CONTENT_RESULT);
+  });
+
+  const result = await callOpenAICompatible({
+    apiUrl: 'https://generativelanguage.googleapis.com',
+    apiKey: 'AIza-test',
+    model: 'gemini-2.5-flash',
+    apiFormat: 'gemini_generate_content',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.equal(calls.length, 2, '先撞一次酒馆后端，退回原生协议');
+  // 原生协议先走浏览器直连：对外开放的反代一般对浏览器放行，酒馆的 /proxy/ 反而可能被云端挡住
+  assert.equal(
+    calls[1].url,
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIza-test',
+  );
+  assert.equal(calls[1].options.headers['x-goog-api-key'], 'AIza-test');
+  assert.equal(calls[1].options.headers.Authorization, undefined, 'Google 把 Bearer 当 OAuth 令牌，不能带');
+  const body = JSON.parse(calls[1].options.body);
+  assert.equal(body.model, undefined, '模型在路径里，不进 body');
+  assert.equal(body.messages, undefined);
+  assert.equal(body.contents[0].role, 'user');
+  assert.equal(body.systemInstruction.parts[0].text, 'Return JSON.');
+  assert.equal(body.generationConfig.temperature, 0.2);
+  assert.equal(body.generationConfig.responseMimeType, 'application/json');
+  assert.deepEqual(body.safetySettings.map((setting) => setting.threshold), ['OFF', 'OFF', 'OFF', 'OFF', 'OFF']);
+});
+
+test('Google AI Studio：直连被 CORS 挡下时改走酒馆 /proxy/ 透传', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    if (url === '/api/backends/chat-completions/generate') return jsonResponse({ error: true }, 404);
+    if (String(url).startsWith('https://')) throw new TypeError('Failed to fetch');
+    return jsonResponse(GEMINI_GENERATE_CONTENT_RESULT);
+  });
+
+  const result = await callOpenAICompatible({
+    apiUrl: 'https://relay.example',
+    apiKey: 'relay-key',
+    model: 'gemini-2.5-pro',
+    apiFormat: 'gemini_generate_content',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.deepEqual(calls.map((call) => call.url), [
+    '/api/backends/chat-completions/generate',
+    'https://relay.example/v1beta/models/gemini-2.5-pro:generateContent?key=relay-key',
+    '/proxy/https://relay.example/v1beta/models/gemini-2.5-pro:generateContent?key=relay-key',
+  ]);
+});
+
+test('Google AI Studio：后端回 4xx 后本次工作阶段不再撞它，原生直连一次就够', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    if (url === '/api/backends/chat-completions/generate') {
+      return jsonResponse('ForbiddenError: invalid csrf token', 403);
+    }
+    return jsonResponse(GEMINI_GENERATE_CONTENT_RESULT);
+  });
+  const settings = {
+    apiUrl: 'https://relay.example/proxy', apiKey: 'relay-password', model: 'gemini-2.5-pro', apiFormat: 'gemini_generate_content',
+  };
+
+  await callOpenAICompatible(settings, { recent_messages: [] }, 'Return JSON.');
+  assert.deepEqual(calls.map((call) => call.url), [
+    '/api/backends/chat-completions/generate',
+    'https://relay.example/proxy/v1beta/models/gemini-2.5-pro:generateContent?key=relay-password',
+  ], '后端被拒后改浏览器直连，不绕 /proxy/');
+
+  calls.length = 0;
+  await callOpenAICompatible(settings, { recent_messages: [] }, 'Return JSON.');
+  assert.deepEqual(calls.map((call) => call.url), [
+    'https://relay.example/proxy/v1beta/models/gemini-2.5-pro:generateContent?key=relay-password',
+  ], '本次工作阶段不再先撞后端');
+});
+
+test('Google AI Studio：两跳都失败时，错误里同时写明后端与原生那一跳的回答', async () => {
+  installBrowserHost(async (url) => {
+    if (url === '/api/backends/chat-completions/generate') {
+      return jsonResponse('ForbiddenError: invalid csrf token', 403);
+    }
+    return jsonResponse('error code: 1010', 403);
+  });
+
+  await assert.rejects(
+    callOpenAICompatible({
+      apiUrl: 'https://relay.example/proxy', apiKey: 'relay-password', model: 'gemini-2.5-pro', apiFormat: 'gemini_generate_content',
+    }, { recent_messages: [] }, 'Return JSON.'),
+    (error) => /API 403/.test(error.message)
+      && /先经酒馆后端代发（makersuite）也回 HTTP 403/.test(error.message)
+      && /1010/.test(error.message),
+  );
+});
+
+test('Google AI Studio 串流：SSE 逐块拼回一份 generateContent 回覆（文字拼段、thought 与工具调用分开）', () => {
+  const sse = [
+    'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"{\\"operations\\":"}]}}]}',
+    '',
+    'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"[]}"}]}}]}',
+    '',
+    // 思考摘要单独一段，不能混进要解析的 JSON
+    'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"想一想","thought":true}]}}]}',
+    '',
+    // 工具调用在串流里是整块到的
+    'data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"bsPassedTime","args":{"hour":2}}}]},"finishReason":"STOP"}],"usageMetadata":{"totalTokenCount":42}}',
+    '',
+  ].join('\n');
+
+  const assembled = assembleGeminiSse(sse);
+  const parts = assembled.candidates[0].content.parts;
+  assert.deepEqual(parts[0], { text: '{"operations":[]}' }, '同一段文字要拼成一个 part');
+  assert.deepEqual(parts[1], { thought: true, text: '想一想' });
+  assert.deepEqual(parts[2], { functionCall: { name: 'bsPassedTime', args: { hour: 2 } } });
+  assert.equal(assembled.candidates[0].finishReason, 'STOP');
+  assert.equal(assembled.usageMetadata.totalTokenCount, 42);
+
+  // 拼好的回覆与整份 JSON 走同一条正规化
+  const normalized = normalizeGeminiGenerateContentData(assembled);
+  assert.equal(normalized.choices[0].message.content, '{"operations":[]}');
+  assert.equal(normalized.choices[0].message.tool_calls[0].function.name, 'bsPassedTime');
+  assert.equal(assembleGeminiSse('not sse at all'), null);
+});
+
+test('Google AI Studio：中转硬回 SSE 时拼回整份再解析（插件自己从不请求串流）', async () => {
+  const sse = [
+    'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"{\\"operations\\":"}]}}]}',
+    '',
+    'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"[]}"}]},"finishReason":"STOP"}]}',
+    '',
+  ].join('\n');
+  const calls = installDirectFetch([textResponse(sse)]);
+
+  const result = await callOpenAICompatible({
+    apiUrl: 'https://generativelanguage.googleapis.com',
+    apiKey: 'AIza-test',
+    model: 'gemini-2.5-flash',
+    apiFormat: 'gemini_generate_content',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.equal(
+    calls[0].url,
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIza-test',
+    '请求的是非串流端点：反代对没声明串流的请求会一直等到内容出来',
+  );
+});
+
+test('Google AI Studio：交给酒馆后端时也不声明串流', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ choices: [{ message: { content: '{"operations":[]}' } }] });
+  });
+
+  const result = await callOpenAICompatible({
+    apiUrl: 'https://relay.example/proxy',
+    apiKey: 'relay-password',
+    model: 'gemini-2.5-pro',
+    apiFormat: 'gemini_generate_content',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.equal(JSON.parse(calls[0].options.body).stream, false);
+});
+
+/** 让宿主提供 generateRaw / generateQuietPrompt：模拟酒馆的生成接口 */
+function installHostGeneration({ generateRaw = null, generateQuietPrompt = null, chatCompletionSettings = null } = {}) {
+  globalThis.SillyTavern = {
+    getRequestHeaders: () => ({ 'X-ST-Header': 'host-value' }),
+    getContext: () => ({
+      ...(generateRaw ? { generateRaw } : {}),
+      ...(generateQuietPrompt ? { generateQuietPrompt } : {}),
+      ...(chatCompletionSettings ? { chatCompletionSettings } : {}),
+    }),
+  };
+}
+
+test('跟随酒馆设定：不走 HTTP，直接借酒馆的 generateRaw，回覆照常解析成 JSON', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse(GEMINI_GENERATE_CONTENT_RESULT);
+  });
+  const rawCalls = [];
+  installHostGeneration({
+    generateRaw: async (args) => {
+      rawCalls.push(args);
+      return JSON.stringify({ operations: [] });
+    },
+    chatCompletionSettings: { chat_completion_source: 'makersuite', google_model: 'gemini-2.5-pro' },
+  });
+
+  const result = await callOpenAICompatible({
+    apiUrl: '', apiKey: '', model: '', apiFormat: 'follow_host',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.equal(calls.length, 0, '完全不碰自己填的网址与金钥');
+  assert.equal(rawCalls.length, 1);
+  assert.equal(rawCalls[0].systemPrompt, 'Return JSON.');
+  assert.deepEqual(JSON.parse(rawCalls[0].prompt), { recent_messages: [] });
+  // 模型清单也直接沿用酒馆那条连接
+  assert.deepEqual(await fetchModelList({ apiFormat: 'follow_host' }), ['gemini-2.5-pro']);
+});
+
+test('跟随酒馆设定：没有 generateRaw 的版本退回 generateQuietPrompt；两者都没有就说清楚', async () => {
+  installBrowserHost(async () => jsonResponse(GEMINI_GENERATE_CONTENT_RESULT));
+  const quietCalls = [];
+  installHostGeneration({
+    generateQuietPrompt: async (args) => {
+      quietCalls.push(args);
+      return '```json\n{"operations":[]}\n```';
+    },
+  });
+
+  const result = await callOpenAICompatible({ apiFormat: 'follow_host' }, { recent_messages: [] }, 'Return JSON.');
+  assert.deepEqual(result, { operations: [] }, '围栏里的 JSON 也要认');
+  assert.equal(quietCalls.length, 1);
+  assert.equal(quietCalls[0].skipWIAN, true);
+  assert.match(quietCalls[0].quietPrompt, /^Return JSON\./);
+
+  installHostGeneration({});
+  await assert.rejects(
+    callOpenAICompatible({ apiFormat: 'follow_host' }, { recent_messages: [] }, 'Return JSON.'),
+    /没有提供「跟随酒馆设定」所需的生成接口/,
+  );
+});
+
+test('最后兜底：主连接 401 时改借酒馆设定完成，返回酒馆那次的结果', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ error: { message: 'invalid api key' } }, 401);
+  });
+  const rawCalls = [];
+  installHostGeneration({
+    generateRaw: async (args) => {
+      rawCalls.push(args);
+      return JSON.stringify({ operations: [{ rescued: true }] });
+    },
+  });
+
+  const result = await callOpenAICompatible({
+    apiUrl: 'https://relay.example/v1beta',
+    apiKey: 'bad-key',
+    model: 'gemini-2.5-pro',
+    apiFormat: 'gemini_generate_content',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [{ rescued: true }] });
+  // 主连接两跳都失败：酒馆后端代发一次，退回原生直连一次（401 不重试）
+  assert.equal(calls.length, 2);
+  assert.equal(rawCalls.length, 1, '然后用酒馆设定跑了一次');
+});
+
+test('最后兜底：关掉开关时不再借酒馆设定，照原错误抛出', async () => {
+  installBrowserHost(async () => jsonResponse({ error: { message: 'invalid api key' } }, 401));
+  const rawCalls = [];
+  installHostGeneration({
+    generateRaw: async (args) => {
+      rawCalls.push(args);
+      return JSON.stringify({ operations: [] });
+    },
+  });
+
+  await assert.rejects(
+    callOpenAICompatible({
+      apiUrl: 'https://relay.example/v1beta',
+      apiKey: 'bad-key',
+      model: 'gemini-2.5-pro',
+      apiFormat: 'gemini_generate_content',
+      hostFallbackEnabled: false,
+    }, { recent_messages: [] }, 'Return JSON.'),
+    /API 401/,
+  );
+  assert.equal(rawCalls.length, 0);
+});
+
+test('Google AI Studio 原生协议：Base URL 留空就用官方主机', async () => {
+  const calls = installDirectFetch([jsonResponse(GEMINI_GENERATE_CONTENT_RESULT)]);
+
+  await callOpenAICompatible({
+    apiUrl: '',
+    apiKey: 'AIza-test',
+    model: 'gemini-2.5-flash',
+    apiFormat: 'gemini_generate_content',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.equal(
+    calls[0].url,
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIza-test',
+  );
+});
+
+test('Google AI Studio 原生协议：反代主机照同样规则拼路径，带 /v1 或 /v1beta 的网址不会叠两层版本', async () => {
+  const calls = installDirectFetch([jsonResponse(GEMINI_GENERATE_CONTENT_RESULT)]);
+  const settings = (apiUrl) => ({
+    apiUrl, apiKey: 'relay-key', model: 'gemini-2.5-pro', apiFormat: 'gemini_generate_content',
+  });
+
+  await callOpenAICompatible(settings('https://my-relay.example/v1beta'), { recent_messages: [] }, 'Return JSON.');
+  assert.equal(calls[0].url, 'https://my-relay.example/v1beta/models/gemini-2.5-pro:generateContent?key=relay-key');
+
+  calls.length = 0;
+  await callOpenAICompatible(settings('https://my-relay.example/v1'), { recent_messages: [] }, 'Return JSON.');
+  assert.equal(calls[0].url, 'https://my-relay.example/v1/models/gemini-2.5-pro:generateContent?key=relay-key');
+
+  calls.length = 0;
+  await callOpenAICompatible(settings('https://my-relay.example'), { recent_messages: [] }, 'Return JSON.');
+  assert.equal(calls[0].url, 'https://my-relay.example/v1beta/models/gemini-2.5-pro:generateContent?key=relay-key');
+});
+
+test('Google AI Studio 原生协议：把整条端点贴进 Base URL 也认得（主机、版本、模型照旧重拼）', async () => {
+  const calls = installDirectFetch([jsonResponse(GEMINI_GENERATE_CONTENT_RESULT)]);
+
+  await callOpenAICompatible({
+    apiUrl: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent',
+    apiKey: 'AIza-test',
+    model: 'gemini-2.5-pro',
+    apiFormat: 'gemini_generate_content',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.equal(
+    calls[0].url,
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=AIza-test',
+  );
+});
+
+test('Google AI Studio：状态栏与错误消息里的网址隐去 ?key=', () => {
+  assert.equal(
+    redactApiUrl('https://generativelanguage.googleapis.com/v1beta/models/x:generateContent?key=AIza-secret'),
+    'https://generativelanguage.googleapis.com/v1beta/models/x:generateContent?key=***',
+  );
+  assert.equal(
+    redactApiUrl('https://relay.example/v1beta/models/x:generateContent?alt=sse&key=sk-1'),
+    'https://relay.example/v1beta/models/x:generateContent?alt=sse&key=***',
+  );
+  assert.equal(redactApiUrl('https://relay.example/v1/models'), 'https://relay.example/v1/models');
+});
+
+test('Google AI Studio 回应：跳过 thought、正文逐段拼接，工具调用读成 tool_calls', () => {
+  const withThought = normalizeGeminiGenerateContentData({
+    candidates: [{
+      content: { parts: [{ text: '先想一下', thought: true }, { text: '{"operations":' }, { text: '[]}' }] },
+      finishReason: 'STOP',
+    }],
+  });
+  assert.deepEqual(withThought.choices[0].message, { content: '{"operations":[]}' });
+
+  const withTools = normalizeGeminiGenerateContentData({
+    candidates: [{
+      content: { parts: [{ functionCall: { name: 'bsPassedTime', args: { hour: 2 } } }] },
+      finishReason: 'STOP',
+    }],
+  });
+  assert.equal(withTools.choices[0].message.content, '', '只有工具调用时没有文字，不能报错');
+  assert.equal(withTools.choices[0].message.tool_calls[0].function.name, 'bsPassedTime');
+  assert.deepEqual(withTools.choices[0].message.tool_calls[0].function.arguments, { hour: 2 });
+});
+
+test('Google AI Studio 回应异常分开报：没有 candidate、被封禁、被截断', () => {
+  assert.throws(() => normalizeGeminiGenerateContentData({}), /没有 candidate/);
+  assert.throws(
+    () => normalizeGeminiGenerateContentData({ promptFeedback: { blockReason: 'SAFETY' } }),
+    /blockReason: SAFETY/,
+  );
+  assert.throws(
+    () => normalizeGeminiGenerateContentData({ candidates: [{ content: { parts: [] }, finishReason: 'MAX_TOKENS' }] }),
+    /MAX_TOKENS/,
+  );
+  assert.throws(
+    () => normalizeGeminiGenerateContentData({ candidates: [{ content: { parts: [] }, finishReason: 'SAFETY' }] }),
+    /安全过滤/,
+  );
+});
+
+test('Google AI Studio：模型清单先问酒馆后端，只留能 generateContent 的', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ data: [{ id: 'gemini-2.5-pro' }, { id: 'gemini-2.5-flash' }] });
+  });
+
+  const models = await fetchModelList({
+    apiUrl: 'https://relay.example/proxy',
+    apiKey: 'relay-password',
+    apiFormat: 'gemini_generate_content',
+  });
+
+  assert.deepEqual(models, ['gemini-2.5-flash', 'gemini-2.5-pro']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, '/api/backends/chat-completions/status');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.chat_completion_source, 'makersuite');
+  assert.equal(body.reverse_proxy, 'https://relay.example/proxy');
+  assert.equal(body.proxy_password, 'relay-password');
+});
+
+test('Google AI Studio：酒馆后端取不到清单时说明原因（不假装是网址填错）', async () => {
+  installBrowserHost(async () => jsonResponse({ error: true, bypass: true, data: { data: [] } }));
+
+  await assert.rejects(
+    fetchModelList({ apiUrl: 'https://relay.example/proxy', apiKey: 'relay-password', apiFormat: 'gemini_generate_content' }),
+    /酒馆后端拿不到 Google 模型清单/,
+  );
+});
+
+test('Google AI Studio：酒馆后端没有这个端点时，退回浏览器原生 /models', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    if (url === '/api/backends/chat-completions/status') return jsonResponse({ error: true }, 404);
+    return jsonResponse({
+      models: [
+        { name: 'models/gemini-2.5-pro', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+        { name: 'models/text-embedding-004', supportedGenerationMethods: ['embedContent'] },
+        { name: 'tunedModels/my-model', supportedGenerationMethods: ['generateContent'] },
+      ],
+    });
+  });
+
+  const models = await fetchModelList({
+    apiUrl: 'https://generativelanguage.googleapis.com',
+    apiKey: 'AIza-test',
+    apiFormat: 'gemini_generate_content',
+  });
+
+  assert.deepEqual(models, ['gemini-2.5-pro', 'tunedModels/my-model'], '去掉 models/ 前缀，tunedModels 保留路径');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].url, 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=AIza-test');
+  assert.equal(calls[1].options.method, 'GET');
+  assert.equal(calls[1].options.headers['x-goog-api-key'], 'AIza-test');
 });
 
 test('normalizeReasoningEffort accepts 8 levels with auto fallback', () => {

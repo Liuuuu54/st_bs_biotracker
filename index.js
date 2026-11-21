@@ -1,6 +1,6 @@
 import { getStageProgress, formatProgressDays, formatProgressNumber } from './scripts/stage_progress.js';
 import { normalizeReproductiveSettings, COGNITION_METHODS, psychologySide } from './scripts/reproductive.js';
-import { abortActiveApiRequests, fetchModelList, isApiUserAbortError } from './scripts/api.js';
+import { abortActiveApiRequests, describeHostChatConnection, fetchModelList, isApiUserAbortError } from './scripts/api.js';
 import { isOwnRequest } from './scripts/own_requests.js';
 import { stripBioTrackerInjection } from './scripts/variable_isolation.js';
 import {
@@ -168,12 +168,15 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   deleteApiProfile,
   getApiUrlForFormat,
+  GOOGLE_AI_STUDIO_BASE_URL,
   isSkillSystemEnabled,
   isWardrobeSystemEnabled,
+  normalizeApiBaseUrl,
   normalizeApiFormat,
   normalizeReasoningEffort,
   normalizeReplyFormat,
   normalizeTemperatureMode,
+  redactApiUrl,
   resolveUserTemperature,
   getCharacterWorldBookName,
   getCharacterWorldBookNameViaSTscript,
@@ -204,6 +207,7 @@ import {
   sanitizeWorldbookEntryDisplayName,
   saveApiProfile,
   normalizeMainflowCopyCharLimit,
+  normalizeAutoTrackEveryReplies,
   saveSettings,
   saveSettingsNow,
   refreshChatStatesFromHost,
@@ -9781,12 +9785,28 @@ function updateApiEndpointPreview() {
   try {
     const baseInput = document.getElementById('bs-bt-api-url');
     const formatInput = document.getElementById('bs-bt-api-format');
+    const modelInput = document.getElementById('bs-bt-model');
+    const keyInput = document.getElementById('bs-bt-api-key');
     const previewCode = document.getElementById('bs-bt-api-endpoint-preview-code');
     if (!previewCode) return;
-    const rawBase = String(baseInput?.value || '').trim();
     const fmt = normalizeApiFormat(formatInput?.value);
-    const base = rawBase.replace(/\/+$/, '').replace(/\/(chat\/completions|models|responses|messages|interactions)$/i, '').replace(/\/+$/, '') || '<Base URL>';
-    previewCode.textContent = getApiUrlForFormat(base, fmt);
+    if (fmt === 'follow_host') {
+      // 跟随酒馆设定：没有自己的端点，直接说清楚借的是哪条连接
+      const hostConnection = describeHostChatConnection();
+      const parts = [hostConnection.sourceLabel || '酒馆主聊天'];
+      if (hostConnection.model) parts.push(hostConnection.model);
+      previewCode.textContent = `跟随酒馆设定：${parts.join(' / ')}`;
+      return;
+    }
+    const rawBase = normalizeApiBaseUrl(baseInput?.value);
+    // Google AI Studio：Base URL 留空就是官方主机（与 api.js getApiBase 的补默认一致）
+    const base = rawBase || (fmt === 'gemini_generate_content' ? GOOGLE_AI_STUDIO_BASE_URL : '');
+    // Gemini 原生格式的模型在路径里：还没填模型时给个占位符，免得预览看起来缺一段
+    const previewModel = String(modelInput?.value || '').trim() || '<模型>';
+    previewCode.textContent = redactApiUrl(getApiUrlForFormat(base || '<Base URL>', fmt, {
+      model: previewModel,
+      apiKey: String(keyInput?.value || '').trim(),
+    }));
   } catch {}
 }
 
@@ -9824,6 +9844,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-tracker-preset-list', settings.useStPresetForAsync ? CURRENT_PRESET_OPTION_VALUE : (settings.trackerPresetName || NO_PRESET_OPTION_VALUE));
   setValue('bs-bt-api-url', settings.apiUrl);
   setValue('bs-bt-api-format', normalizeApiFormat(settings.apiFormat));
+  setValue('bs-bt-host-fallback', settings.hostFallbackEnabled !== false);
   setValue('bs-bt-api-key', settings.apiKey);
   renderApiProfileSelect(settings);
   setValue('bs-bt-model', settings.model);
@@ -9834,6 +9855,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-reply-format', normalizeReplyFormat(settings.replyFormat, settings));
   updateApiEndpointPreview();
   setValue('bs-bt-poll-ms', settings.pollMs);
+  setValue('bs-bt-auto-track-every', normalizeAutoTrackEveryReplies(settings.autoTrackEveryReplies));
   setValue('bs-bt-api-timeout-sec', Math.round((Number(settings.apiTimeoutMs) || 0) / 1000));
   setValue('bs-bt-context-size', settings.contextSize);
   setValue('bs-bt-mainflow-copy-char-limit', normalizeMainflowCopyCharLimit(settings.mainflowCopyCharLimit));
@@ -10406,6 +10428,9 @@ function readSettingsFromForm(ctx) {
   }
   settings.apiUrl = String(getValue('bs-bt-api-url')).trim();
   settings.apiFormat = normalizeApiFormat(getValue('bs-bt-api-format'));
+  settings.hostFallbackEnabled = document.getElementById('bs-bt-host-fallback')
+    ? Boolean(document.getElementById('bs-bt-host-fallback').checked)
+    : settings.hostFallbackEnabled !== false;
   settings.apiKey = String(getValue('bs-bt-api-key')).trim();
   settings.model = String(getValue('bs-bt-model')).trim();
   settings.temperatureMode = normalizeTemperatureMode(getValue('bs-bt-temperature-mode'));
@@ -10415,6 +10440,7 @@ function readSettingsFromForm(ctx) {
   settings.reasoningEffort = normalizeReasoningEffort(getValue('bs-bt-reasoning-effort'));
   settings.replyFormat = normalizeReplyFormat(getValue('bs-bt-reply-format'));
   settings.pollMs = Math.max(800, Number(getValue('bs-bt-poll-ms')) || 1800);
+  settings.autoTrackEveryReplies = normalizeAutoTrackEveryReplies(getValue('bs-bt-auto-track-every'));
   const rawApiTimeoutSec = String(getValue('bs-bt-api-timeout-sec')).trim();
   const apiTimeoutSec = rawApiTimeoutSec === '' ? NaN : Number(rawApiTimeoutSec);
   settings.apiTimeoutMs = !Number.isFinite(apiTimeoutSec)
@@ -11261,13 +11287,17 @@ async function ensureModal(ctx) {
     if (centerName) openLineageWindow(ctx, centerName);
   });
   document.addEventListener('input', (event) => {
-    if (event.target?.id === 'bs-bt-api-url') updateApiEndpointPreview();
+    // 端点预览跟着网址、模型、Key 一起变：Gemini 原生格式的模型在路径里，Google AI Studio 的 Key 在查询串里
+    if (['bs-bt-api-url', 'bs-bt-model', 'bs-bt-api-key'].includes(event.target?.id)) updateApiEndpointPreview();
   });
   document.addEventListener('change', (event) => {
     if (event.target?.id === 'bs-bt-api-format') {
       updateApiEndpointPreview();
       try { readSettingsFromForm(ctx); saveSettings(ctx); } catch {}
       console.log('[BS BioTracker] apiFormat changed ->', normalizeApiFormat(event.target?.value));
+    }
+    if (event.target?.id === 'bs-bt-host-fallback') {
+      try { readSettingsFromForm(ctx); saveSettings(ctx); } catch {}
     }
   });
   document.getElementById('bs-bt-tracker-preset-list')?.addEventListener('change', async () => {
