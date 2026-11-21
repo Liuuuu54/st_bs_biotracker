@@ -588,7 +588,7 @@ test('Google AI Studio：浏览器里先交给酒馆后端的 makersuite 源，�
   assert.equal(body.proxy_password, 'relay-password', '代理密码就是这一页的 API Key');
   assert.equal(body.model, 'gemini-2.5-pro');
   assert.equal(body.use_sysprompt, true, '系统提示词要 ST 放进 systemInstruction');
-  assert.equal(body.stream, true, '默认开串流：反代靠首个字节判断上游还活着');
+  assert.equal(body.stream, false, '不声明串流：反代对非串流请求会一直等到内容出来');
   assert.equal(body.responseMimeType, 'application/json', '格式化输出翻成 responseMimeType');
   assert.equal(Array.isArray(body.messages), true);
   assert.equal(body.contents, undefined, '原生协议那份请求体不发给酒馆后端');
@@ -657,7 +657,7 @@ test('Google AI Studio：酒馆后端不认这个来源时，退回浏览器原�
   // 原生协议先走浏览器直连：对外开放的反代一般对浏览器放行，酒馆的 /proxy/ 反而可能被云端挡住
   assert.equal(
     calls[1].url,
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=AIza-test',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIza-test',
   );
   assert.equal(calls[1].options.headers['x-goog-api-key'], 'AIza-test');
   assert.equal(calls[1].options.headers.Authorization, undefined, 'Google 把 Bearer 当 OAuth 令牌，不能带');
@@ -690,8 +690,8 @@ test('Google AI Studio：直连被 CORS 挡下时改走酒馆 /proxy/ 透传', a
   assert.deepEqual(result, { operations: [] });
   assert.deepEqual(calls.map((call) => call.url), [
     '/api/backends/chat-completions/generate',
-    'https://relay.example/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=relay-key',
-    '/proxy/https://relay.example/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=relay-key',
+    'https://relay.example/v1beta/models/gemini-2.5-pro:generateContent?key=relay-key',
+    '/proxy/https://relay.example/v1beta/models/gemini-2.5-pro:generateContent?key=relay-key',
   ]);
 });
 
@@ -711,13 +711,13 @@ test('Google AI Studio：后端回 4xx 后本次工作阶段不再撞它，原�
   await callOpenAICompatible(settings, { recent_messages: [] }, 'Return JSON.');
   assert.deepEqual(calls.map((call) => call.url), [
     '/api/backends/chat-completions/generate',
-    'https://relay.example/proxy/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=relay-password',
+    'https://relay.example/proxy/v1beta/models/gemini-2.5-pro:generateContent?key=relay-password',
   ], '后端被拒后改浏览器直连，不绕 /proxy/');
 
   calls.length = 0;
   await callOpenAICompatible(settings, { recent_messages: [] }, 'Return JSON.');
   assert.deepEqual(calls.map((call) => call.url), [
-    'https://relay.example/proxy/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=relay-password',
+    'https://relay.example/proxy/v1beta/models/gemini-2.5-pro:generateContent?key=relay-password',
   ], '本次工作阶段不再先撞后端');
 });
 
@@ -768,7 +768,7 @@ test('Google AI Studio 串流：SSE 逐块拼回一份 generateContent 回覆（
   assert.equal(assembleGeminiSse('not sse at all'), null);
 });
 
-test('Google AI Studio 串流：原生直连拿回 SSE 也能解析出结果', async () => {
+test('Google AI Studio：中转硬回 SSE 时拼回整份再解析（插件自己从不请求串流）', async () => {
   const sse = [
     'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"{\\"operations\\":"}]}}]}',
     '',
@@ -785,41 +785,29 @@ test('Google AI Studio 串流：原生直连拿回 SSE 也能解析出结果', a
   }, { recent_messages: [] }, 'Return JSON.');
 
   assert.deepEqual(result, { operations: [] });
-  assert.match(calls[0].url, /:streamGenerateContent\?alt=sse&key=AIza-test$/);
+  assert.equal(
+    calls[0].url,
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIza-test',
+    '请求的是非串流端点：反代对没声明串流的请求会一直等到内容出来',
+  );
 });
 
-test('Google AI Studio：关掉串流就回到 :generateContent，请求也不再带 stream', async () => {
+test('Google AI Studio：交给酒馆后端时也不声明串流', async () => {
   const calls = [];
   installBrowserHost(async (url, options) => {
     calls.push({ url, options });
-    if (url === '/api/backends/chat-completions/generate') return jsonResponse({ choices: [{ message: { content: '{"operations":[]}' } }] });
-    return jsonResponse(GEMINI_GENERATE_CONTENT_RESULT);
+    return jsonResponse({ choices: [{ message: { content: '{"operations":[]}' } }] });
   });
 
-  await callOpenAICompatible({
+  const result = await callOpenAICompatible({
     apiUrl: 'https://relay.example/proxy',
     apiKey: 'relay-password',
     model: 'gemini-2.5-pro',
     apiFormat: 'gemini_generate_content',
-    geminiStream: false,
   }, { recent_messages: [] }, 'Return JSON.');
-  assert.equal(JSON.parse(calls[0].options.body).stream, false, '交给酒馆后端时也不开串流');
 
-  calls.length = 0;
-  delete globalThis.__bs_biotracker_makersuite_disabled__;
-  globalThis.__bs_biotracker_makersuite_disabled__ = true; // 直接走原生协议那条
-  await callOpenAICompatible({
-    apiUrl: 'https://relay.example/proxy',
-    apiKey: 'relay-password',
-    model: 'gemini-2.5-pro',
-    apiFormat: 'gemini_generate_content',
-    geminiStream: false,
-  }, { recent_messages: [] }, 'Return JSON.');
-  assert.equal(
-    calls[0].url,
-    'https://relay.example/proxy/v1beta/models/gemini-2.5-pro:generateContent?key=relay-password',
-    '非串流端点不带 alt=sse',
-  );
+  assert.deepEqual(result, { operations: [] });
+  assert.equal(JSON.parse(calls[0].options.body).stream, false);
 });
 
 /** 让宿主提供 generateRaw / generateQuietPrompt：模拟酒馆的生成接口 */
@@ -947,7 +935,7 @@ test('Google AI Studio 原生协议：Base URL 留空就用官方主机', async 
 
   assert.equal(
     calls[0].url,
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=AIza-test',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIza-test',
   );
 });
 
@@ -958,15 +946,15 @@ test('Google AI Studio 原生协议：反代主机照同样规则拼路径，带
   });
 
   await callOpenAICompatible(settings('https://my-relay.example/v1beta'), { recent_messages: [] }, 'Return JSON.');
-  assert.equal(calls[0].url, 'https://my-relay.example/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=relay-key');
+  assert.equal(calls[0].url, 'https://my-relay.example/v1beta/models/gemini-2.5-pro:generateContent?key=relay-key');
 
   calls.length = 0;
   await callOpenAICompatible(settings('https://my-relay.example/v1'), { recent_messages: [] }, 'Return JSON.');
-  assert.equal(calls[0].url, 'https://my-relay.example/v1/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=relay-key');
+  assert.equal(calls[0].url, 'https://my-relay.example/v1/models/gemini-2.5-pro:generateContent?key=relay-key');
 
   calls.length = 0;
   await callOpenAICompatible(settings('https://my-relay.example'), { recent_messages: [] }, 'Return JSON.');
-  assert.equal(calls[0].url, 'https://my-relay.example/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=relay-key');
+  assert.equal(calls[0].url, 'https://my-relay.example/v1beta/models/gemini-2.5-pro:generateContent?key=relay-key');
 });
 
 test('Google AI Studio 原生协议：把整条端点贴进 Base URL 也认得（主机、版本、模型照旧重拼）', async () => {
@@ -981,14 +969,14 @@ test('Google AI Studio 原生协议：把整条端点贴进 Base URL 也认得�
 
   assert.equal(
     calls[0].url,
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=AIza-test',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=AIza-test',
   );
 });
 
 test('Google AI Studio：状态栏与错误消息里的网址隐去 ?key=', () => {
   assert.equal(
-    redactApiUrl('https://generativelanguage.googleapis.com/v1beta/models/x:streamGenerateContent?alt=sse&key=AIza-secret'),
-    'https://generativelanguage.googleapis.com/v1beta/models/x:streamGenerateContent?alt=sse&key=***',
+    redactApiUrl('https://generativelanguage.googleapis.com/v1beta/models/x:generateContent?key=AIza-secret'),
+    'https://generativelanguage.googleapis.com/v1beta/models/x:generateContent?key=***',
   );
   assert.equal(
     redactApiUrl('https://relay.example/v1beta/models/x:generateContent?alt=sse&key=sk-1'),

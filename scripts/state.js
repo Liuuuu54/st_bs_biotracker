@@ -125,16 +125,6 @@ export function isGeminiApiFormat(value) {
   return fmt === API_FORMATS.GEMINI_INTERACTIONS || fmt === API_FORMATS.GEMINI_GENERATE_CONTENT;
 }
 
-/**
- * Gemini 原生格式要不要用串流（SSE）。
- * 默认开：反代多半靠「首个字节／首字」判断上游是否活着，非串流的长请求在它们眼里像卡住，
- * 有的会中途掐断连接，结果就是回覆被截断。这与 SillyTavern 自己（stream: true）一致；
- * 认不得 SSE 的渠道可以在系统页关掉。
- */
-export function isGeminiStreamEnabled(settings) {
-  return settings?.geminiStream !== false;
-}
-
 /** 「跟随酒馆设定」：不碰这里填的网址与金钥，直接借酒馆主聊天正在用的连接与模型 */
 export function isFollowHostFormat(value) {
   return normalizeApiFormat(value) === API_FORMATS.FOLLOW_HOST;
@@ -239,8 +229,10 @@ export function getApiEndpointSuffix(format, model = '') {
 
 /**
  * 实际要打的网址。options.model 给 Gemini 原生格式用（模型在路径里），
- * options.apiKey 给 Google AI Studio 用（照 SillyTavern 带上 ?key=，见 api.js getAuthHeaders 的说明），
- * options.stream 让 Gemini 原生格式走 :streamGenerateContent + alt=sse。
+ * options.apiKey 给 Google AI Studio 用（照 SillyTavern 带上 ?key=，见 api.js getAuthHeaders 的说明）。
+ *
+ * 一律用非串流的 :generateContent：反代对「没声明串流」的请求会一直等到内容出来或报错，
+ * 拿到的是一整份 JSON，插件这边也只需要整份 JSON（有的中转硬回 SSE，解析侧仍会拼回来）。
  */
 export function getApiUrlForFormat(apiBase, format, options = {}) {
   const base = String(apiBase || '').trim().replace(/\/+$/, '');
@@ -249,13 +241,8 @@ export function getApiUrlForFormat(apiBase, format, options = {}) {
   if (fmt === API_FORMATS.GEMINI_GENERATE_CONTENT) {
     const { base: host, version } = splitGeminiEndpointBase(base);
     // 反代只要把主机换掉即可：https://my-relay.example → …/v1beta/models/<模型>:generateContent
-    const streaming = options?.stream === true;
-    const url = `${host}/${version}/${buildGeminiModelPath(
-      model,
-      streaming ? 'streamGenerateContent' : 'generateContent',
-    )}`;
-    // Google 的 SSE 变体要 alt=sse；带 key 时两段查询串依次追加
-    return appendUrlQuery(streaming ? appendUrlQuery(url, 'alt', 'sse') : url, 'key', options?.apiKey);
+    const url = `${host}/${version}/${buildGeminiModelPath(model)}`;
+    return appendUrlQuery(url, 'key', options?.apiKey);
   }
   // Google AI 原生端点必须带 API 版本；base 已以 /v1 或 /v1beta 结尾时直接拼接（与 TauriTavern build_gemini_url 一致）
   if (fmt === API_FORMATS.GEMINI_INTERACTIONS && !/\/(v1|v1beta)$/i.test(base)) {
@@ -295,8 +282,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   apiUrl: '',
   apiFormat: API_FORMATS.OPENAI_COMPAT,
   apiKey: '',
-  // Google AI Studio 原生格式用 SSE 串流（反代靠首个字节判断上游还活着，非串流长请求可能被掐断）
-  geminiStream: true,
   // 主连接彻底失败时最后改用酒馆设定（跟随主聊天的来源与模型）再试一次
   hostFallbackEnabled: true,
   apiProfiles: [],
@@ -1064,8 +1049,6 @@ const API_PROFILE_FIELDS = Object.freeze([
   'apiUrl', 'apiFormat', 'apiKey', 'model', 'temperatureMode', 'temperature', 'reasoningEffort', 'replyFormat',
   // 主线复制的字数上限要跟着这组 API 的上下文大小走
   'mainflowCopyCharLimit',
-  // 串流与否是这组端点的脾气，跟着配置组走
-  'geminiStream',
 ]);
 
 /**
@@ -1099,7 +1082,6 @@ export function normalizeApiProfiles(list) {
       reasoningEffort: normalizeReasoningEffort(entry.reasoningEffort),
       replyFormat: normalizeReplyFormat(entry.replyFormat, entry),
       mainflowCopyCharLimit: normalizeMainflowCopyCharLimit(entry.mainflowCopyCharLimit),
-      geminiStream: entry.geminiStream !== false,
     });
     if (profiles.length >= API_PROFILE_LIMIT) break;
   }

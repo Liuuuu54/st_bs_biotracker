@@ -1,4 +1,4 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, GOOGLE_AI_STUDIO_BASE_URL, appendUrlQuery, getApiUrlForFormat, isFollowHostFormat, isGeminiApiFormat, isGeminiStreamEnabled, isHostFallbackEnabled, normalizeApiBaseUrl, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, redactApiUrl, REPLY_FORMATS, resolveUserTemperature, splitGeminiEndpointBase, usesNativeToolCalls } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, GOOGLE_AI_STUDIO_BASE_URL, appendUrlQuery, getApiUrlForFormat, isFollowHostFormat, isGeminiApiFormat, isHostFallbackEnabled, normalizeApiBaseUrl, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, redactApiUrl, REPLY_FORMATS, resolveUserTemperature, splitGeminiEndpointBase, usesNativeToolCalls } from './state.js';
 import { resolveHostWorldInfo } from './worldinfo_resolve.js';
 import { markOwnRequest } from './own_requests.js';
 import { isNativeToolRejection, resolveNativeToolPlan } from './native_tools.js';
@@ -1564,10 +1564,10 @@ export function looksLikeSse(text) {
 }
 
 /**
- * Google AI Studio 的 SSE 拼回一份 generateContent 形状的回覆（streamGenerateContent?alt=sse）。
+ * Google AI Studio 的 SSE 拼回一份 generateContent 形状的回覆。
  *
- * 为什么要有这条路：反代多半靠「有没有吐出第一个字节」判断上游还活着，非串流的长请求在它们眼里
- * 像卡住，有的会中途掐断，回覆就截断了。串流让字节持续流动，而插件这边仍按整份 JSON 解析。
+ * 插件自己**不请求**串流（反代对没声明串流的请求会一直等到内容出来或报错，整份 JSON 最好解析）；
+ * 这条函数是给「中转硬回 SSE」用的：有的网关不管你声明什么，一律用串流回，这时把逐块内容拼回整份再解析。
  *
  * 逐块累加 candidates[0].content.parts：text 拼进同一段（否则一份 JSON 会被拆成一堆碎片），
  * thought 与 functionCall 各自保留；finishReason / usageMetadata / promptFeedback 取最后一次出现的。
@@ -1682,10 +1682,8 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     const fmt = normalizeApiFormat(settings?.apiFormat);
     // 会话头只认 opencode endpoint，其他渠道为空、直连与代理路径都不会多带
     const sessionId = runContext.sessionId || '';
-    // 模型在 Gemini 原生格式的路径里、key 在 Google AI Studio 的查询串里，两样都要在组网址时带上；
-    // 串流与否决定 generateContent 还是 streamGenerateContent
-    const geminiStreaming = fmt === API_FORMATS.GEMINI_GENERATE_CONTENT && isGeminiStreamEnabled(settings);
-    const upstreamUrl = getApiUrlForFormat(apiBase, fmt, { model: requestBody.model, apiKey: settings?.apiKey, stream: geminiStreaming });
+    // 模型在 Gemini 原生格式的路径里、key 在 Google AI Studio 的查询串里，两样都要在组网址时带上
+    const upstreamUrl = getApiUrlForFormat(apiBase, fmt, { model: requestBody.model, apiKey: settings?.apiKey });
     // 状态栏与错误消息只显示隐去 ?key= 的网址
     const displayUrl = redactApiUrl(upstreamUrl);
     const isCompat = fmt === API_FORMATS.OPENAI_COMPAT;
@@ -1969,7 +1967,6 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     const attemptedUrl = redactApiUrl(getApiUrlForFormat(apiBase, result.format, {
       model: body.model,
       apiKey: settings?.apiKey,
-      stream: result.format === API_FORMATS.GEMINI_GENERATE_CONTENT && isGeminiStreamEnabled(settings),
     }));
     // 先经代理／酒馆后端也失败时，把那一次的回答一并附上：只报最后一跳会把真正的原因（CSRF、云端拦截、
     // key 错）留在另一条路上，使用者与作者都看不出该改哪一边
@@ -1983,11 +1980,11 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     // 中转硬回串流（SSE）：拼回一份完整回应再照常处理
     let parsed;
     if (looksLikeSse(responseText)) {
-      // Gemini 原生格式的 SSE 是 generateContent 的逐块版本（我们自己要的串流，或中转硬回的），
+      // Gemini 原生格式的 SSE 是 generateContent 的逐块版本（插件不主动要串流，这里接的是中转硬回的），
       // 拼回 {candidates:[…]} 之后与整份 JSON 走同一条正规化
       parsed = (isGeminiGenerateContent ? assembleGeminiSse(responseText) : assembleSseResponse(responseText, result.format));
       if (!parsed) {
-        throw new Error(`回应是串流（SSE）格式，无法拼回完整回应：${sanitizeErrorText(responseText)}。${isGeminiGenerateContent ? '可在系统页关掉「Google AI Studio 串流」再试。' : '请在中转设定里关掉这个模型的强制串流。'}`);
+        throw new Error(`回应是串流（SSE）格式，无法拼回完整回应：${sanitizeErrorText(responseText)}。${isGeminiGenerateContent ? '这个渠道把非串流请求也回成了串流，且内容拼不回来。' : '请在中转设定里关掉这个模型的强制串流。'}`);
       }
       console.warn('[BS BioTracker] 回应是串流（SSE），已拼回完整回应');
     } else {
@@ -2068,8 +2065,8 @@ function buildMakersuiteHostPayload(apiBase, settings, requestBody) {
     top_k: requestBody.top_k,
     max_tokens: requestBody.max_tokens ?? requestBody.max_completion_tokens,
     seed: requestBody.seed,
-    // 交给 ST 开串流：它会请求 streamGenerateContent?alt=sse 并把 SSE 原样转回来（见 assembleGeminiSse）
-    stream: isGeminiStreamEnabled(settings),
+    // 不要串流：反代对没声明串流的请求会一直等到内容出来或报错，回一整份 JSON 最好解析
+    stream: false,
     // 系统提示词要 ST 放进 systemInstruction（不给就只会塞进第一则 user）
     use_sysprompt: true,
     // 格式化输出：ST 把它原样写进 generationConfig.responseMimeType

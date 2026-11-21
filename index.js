@@ -9802,13 +9802,9 @@ function updateApiEndpointPreview() {
     const base = rawBase || (fmt === 'gemini_generate_content' ? GOOGLE_AI_STUDIO_BASE_URL : '');
     // Gemini 原生格式的模型在路径里：还没填模型时给个占位符，免得预览看起来缺一段
     const previewModel = String(modelInput?.value || '').trim() || '<模型>';
-    // 串流会换成 :streamGenerateContent?alt=sse，预览要跟着显示
-    const streaming = fmt === 'gemini_generate_content'
-      && document.getElementById('bs-bt-gemini-stream')?.checked !== false;
     previewCode.textContent = redactApiUrl(getApiUrlForFormat(base || '<Base URL>', fmt, {
       model: previewModel,
       apiKey: String(keyInput?.value || '').trim(),
-      stream: streaming,
     }));
   } catch {}
 }
@@ -9847,7 +9843,6 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-tracker-preset-list', settings.useStPresetForAsync ? CURRENT_PRESET_OPTION_VALUE : (settings.trackerPresetName || NO_PRESET_OPTION_VALUE));
   setValue('bs-bt-api-url', settings.apiUrl);
   setValue('bs-bt-api-format', normalizeApiFormat(settings.apiFormat));
-  setValue('bs-bt-gemini-stream', settings.geminiStream !== false);
   setValue('bs-bt-host-fallback', settings.hostFallbackEnabled !== false);
   setValue('bs-bt-api-key', settings.apiKey);
   renderApiProfileSelect(settings);
@@ -10431,9 +10426,6 @@ function readSettingsFromForm(ctx) {
   }
   settings.apiUrl = String(getValue('bs-bt-api-url')).trim();
   settings.apiFormat = normalizeApiFormat(getValue('bs-bt-api-format'));
-  settings.geminiStream = document.getElementById('bs-bt-gemini-stream')
-    ? Boolean(document.getElementById('bs-bt-gemini-stream').checked)
-    : settings.geminiStream !== false;
   settings.hostFallbackEnabled = document.getElementById('bs-bt-host-fallback')
     ? Boolean(document.getElementById('bs-bt-host-fallback').checked)
     : settings.hostFallbackEnabled !== false;
@@ -11300,10 +11292,6 @@ async function ensureModal(ctx) {
       updateApiEndpointPreview();
       try { readSettingsFromForm(ctx); saveSettings(ctx); } catch {}
       console.log('[BS BioTracker] apiFormat changed ->', normalizeApiFormat(event.target?.value));
-    }
-    if (event.target?.id === 'bs-bt-gemini-stream') {
-      updateApiEndpointPreview();
-      try { readSettingsFromForm(ctx); saveSettings(ctx); } catch {}
     }
     if (event.target?.id === 'bs-bt-host-fallback') {
       try { readSettingsFromForm(ctx); saveSettings(ctx); } catch {}

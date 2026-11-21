@@ -334,11 +334,6 @@
                 <option value="follow_host">跟随酒馆设定（最后兜底）</option>
               </select>
               <div class="bs-bt-setting-toggle-row" style="margin-top:6px;">
-                <input type="checkbox" id="bs-bt-gemini-stream" />
-                <label for="bs-bt-gemini-stream">Google AI Studio 串流（SSE）</label>
-              </div>
-              <small style="display:block;margin-top:2px;opacity:0.75;">只对这个格式生效，默认开。反代多靠「有没有吐出第一个字节」判断上游还活着，非串流的长请求容易被它们中途掐断（回覆截断）；串流让字节持续流动，插件这边仍按整份 JSON 解析。认不得 SSE 的渠道才需要关掉。</small>
-              <div class="bs-bt-setting-toggle-row" style="margin-top:6px;">
                 <input type="checkbox" id="bs-bt-host-fallback" />
                 <label for="bs-bt-host-fallback">主连接失败时最后改用酒馆设定</label>
               </div>

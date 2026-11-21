@@ -387,7 +387,7 @@ test('Google AI Studio 直连：工具写成 functionDeclarations，functionCall
   // 模型在路径里，key 同时放在查询串（SillyTavern 的 ?key=）与请求头里
   assert.equal(
     calls[0].url,
-    'https://generativelanguage.googleapis.com/v1beta/models/tool-model:streamGenerateContent?alt=sse&key=secret',
+    'https://generativelanguage.googleapis.com/v1beta/models/tool-model:generateContent?key=secret',
   );
   const body = calls[0].body;
   assert.deepEqual(
