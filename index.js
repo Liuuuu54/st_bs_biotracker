@@ -1,6 +1,6 @@
 import { getStageProgress, formatProgressDays, formatProgressNumber } from './scripts/stage_progress.js';
 import { normalizeReproductiveSettings, COGNITION_METHODS, psychologySide } from './scripts/reproductive.js';
-import { abortActiveApiRequests, fetchModelList, isApiUserAbortError } from './scripts/api.js';
+import { abortActiveApiRequests, describeHostChatConnection, fetchModelList, isApiUserAbortError } from './scripts/api.js';
 import { isOwnRequest } from './scripts/own_requests.js';
 import { stripBioTrackerInjection } from './scripts/variable_isolation.js';
 import {
@@ -9789,6 +9789,14 @@ function updateApiEndpointPreview() {
     const previewCode = document.getElementById('bs-bt-api-endpoint-preview-code');
     if (!previewCode) return;
     const fmt = normalizeApiFormat(formatInput?.value);
+    if (fmt === 'follow_host') {
+      // 跟随酒馆设定：没有自己的端点，直接说清楚借的是哪条连接
+      const hostConnection = describeHostChatConnection();
+      const parts = [hostConnection.sourceLabel || '酒馆主聊天'];
+      if (hostConnection.model) parts.push(hostConnection.model);
+      previewCode.textContent = `跟随酒馆设定：${parts.join(' / ')}`;
+      return;
+    }
     const rawBase = normalizeApiBaseUrl(baseInput?.value);
     // Google AI Studio：Base URL 留空就是官方主机（与 api.js getApiBase 的补默认一致）
     const base = rawBase || (fmt === 'gemini_generate_content' ? GOOGLE_AI_STUDIO_BASE_URL : '');
@@ -9840,6 +9848,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-api-url', settings.apiUrl);
   setValue('bs-bt-api-format', normalizeApiFormat(settings.apiFormat));
   setValue('bs-bt-gemini-stream', settings.geminiStream !== false);
+  setValue('bs-bt-host-fallback', settings.hostFallbackEnabled !== false);
   setValue('bs-bt-api-key', settings.apiKey);
   renderApiProfileSelect(settings);
   setValue('bs-bt-model', settings.model);
@@ -10425,6 +10434,9 @@ function readSettingsFromForm(ctx) {
   settings.geminiStream = document.getElementById('bs-bt-gemini-stream')
     ? Boolean(document.getElementById('bs-bt-gemini-stream').checked)
     : settings.geminiStream !== false;
+  settings.hostFallbackEnabled = document.getElementById('bs-bt-host-fallback')
+    ? Boolean(document.getElementById('bs-bt-host-fallback').checked)
+    : settings.hostFallbackEnabled !== false;
   settings.apiKey = String(getValue('bs-bt-api-key')).trim();
   settings.model = String(getValue('bs-bt-model')).trim();
   settings.temperatureMode = normalizeTemperatureMode(getValue('bs-bt-temperature-mode'));
@@ -11291,6 +11303,9 @@ async function ensureModal(ctx) {
     }
     if (event.target?.id === 'bs-bt-gemini-stream') {
       updateApiEndpointPreview();
+      try { readSettingsFromForm(ctx); saveSettings(ctx); } catch {}
+    }
+    if (event.target?.id === 'bs-bt-host-fallback') {
       try { readSettingsFromForm(ctx); saveSettings(ctx); } catch {}
     }
   });

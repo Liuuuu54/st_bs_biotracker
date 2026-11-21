@@ -86,6 +86,8 @@ export const API_FORMATS = Object.freeze({
   GEMINI_INTERACTIONS: 'gemini_interactions',
   // Google AI Studio 的经典原生端点：/v1beta/models/<模型>:generateContent
   GEMINI_GENERATE_CONTENT: 'gemini_generate_content',
+  // 最后兜底：不用这里的网址与金钥，直接借酒馆主聊天正在用的连接与模型
+  FOLLOW_HOST: 'follow_host',
 });
 
 /** Google AI Studio 原生主机。选了 Gemini 原生格式、Base URL 又留空时按这个走，等于 SillyTavern 的「Google AI Studio」来源 */
@@ -95,6 +97,12 @@ export const GEMINI_DEFAULT_API_VERSION = 'v1beta';
 
 export function normalizeApiFormat(value) {
   const raw = String(value || '').trim().toLowerCase();
+  if (raw === API_FORMATS.FOLLOW_HOST
+    || raw === 'follow'
+    || raw === 'host'
+    || raw === 'tavern'
+    || raw === 'sillytavern'
+    || raw === 'follow_host') return API_FORMATS.FOLLOW_HOST;
   if (raw === API_FORMATS.OPENAI_RESPONSES || raw === 'responses' || raw === 'openai_responses' || raw === 'custom_openai_responses') return API_FORMATS.OPENAI_RESPONSES;
   if (raw === API_FORMATS.CLAUDE_MESSAGES || raw === 'claude' || raw === 'messages' || raw === 'claude_messages' || raw === 'custom_claude_messages' || raw === 'anthropic') return API_FORMATS.CLAUDE_MESSAGES;
   // 先认「原生 generateContent」：'gemini' 这个旧别名继续指向 Interactions，免得改造后旧存档换意思
@@ -125,6 +133,16 @@ export function isGeminiApiFormat(value) {
  */
 export function isGeminiStreamEnabled(settings) {
   return settings?.geminiStream !== false;
+}
+
+/** 「跟随酒馆设定」：不碰这里填的网址与金钥，直接借酒馆主聊天正在用的连接与模型 */
+export function isFollowHostFormat(value) {
+  return normalizeApiFormat(value) === API_FORMATS.FOLLOW_HOST;
+}
+
+/** 主连接彻底失败时，要不要最后再用酒馆设定试一次（默认开） */
+export function isHostFallbackEnabled(settings) {
+  return settings?.hostFallbackEnabled !== false;
 }
 
 // 思考强度（reasoning_effort）档位：'auto'（默认）与非法值都省略该参数、
@@ -279,6 +297,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   apiKey: '',
   // Google AI Studio 原生格式用 SSE 串流（反代靠首个字节判断上游还活着，非串流长请求可能被掐断）
   geminiStream: true,
+  // 主连接彻底失败时最后改用酒馆设定（跟随主聊天的来源与模型）再试一次
+  hostFallbackEnabled: true,
   apiProfiles: [],
   model: 'gpt-4.1-mini',
   modelOptions: [],

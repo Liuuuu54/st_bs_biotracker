@@ -4,6 +4,8 @@
 
 ### 新增
 
+- API 格式新增最後一項「跟随酒馆设定（最后兜底）」：完全不碰本頁的 Base URL、API Key 與模型，直接借酒館主聊天正在用的來源、模型、代理與金鑰，由酒館自己組請求（`generateRaw`，舊版沒有就用 `generateQuietPrompt`）。端點預覽會顯示借的是哪條連接；模型清單也沿用主聊天那個模型。這條路沒有原生工具調用，也不受本頁「請求超時」控制（酒館的停止鍵仍有效）。
+- 新增開關「主连接失败时最后改用酒馆设定」（預設開）：主連接徹底失敗（連不上、401／403 被攔、一直拿不到可解析的 JSON）時，用同一份提示詞借酒館設定再跑一次，救得回來就用它的結果（主控台留警告，第一次發生時跳一次提示），救不回來就照原錯誤拋出。
 - Google AI Studio 原生格式新增**串流（SSE）**，預設開、只對這個格式生效、隨連接配置組保存。反代多半靠「有沒有吐出第一個位元組」判斷上游還活著，非串流的長請求在它們眼裡像卡住，有的會中途掐斷連線，回覆就截斷了；串流讓位元組持續流動，插件把 SSE 逐塊拼回一份 `generateContent` 形狀的回覆後照常解析（文字拼段、`thought` 與 `functionCall` 分開），與 SillyTavern 自己的 `stream: true` 一致。認不得 SSE 的渠道可在系統頁關掉，關掉後回到 `:generateContent`。
 - API 格式新增「Google AI Studio（Gemini 原生）」：請求送到 `<Base URL>/v1beta/models/<模型>:generateContent`，模型寫在路徑裡、不在請求體裡。選了它而 Base URL 留空，就直接打官方主機 `https://generativelanguage.googleapis.com`；要接反代時把反代主機連路徑一起填進 Base URL，自帶 `/v1`、`/v1beta` 或整條 `…/models/<模型>:generateContent` 貼進來都認得，不會疊成兩層。
 - 在酒館裡預設**交給酒館後端代發**：插件遞 `chat_completion_source: makersuite` + `reverse_proxy`（＝Base URL）+ `proxy_password`（＝API Key），由酒館伺服器自己拼網址、把 messages 翻成 `contents`／`systemInstruction`／`generationConfig`、再把回覆收回 OpenAI 結構——與 SillyTavern 的「Google AI Studio + 反向代理」走同一條路。瀏覽器只跟同源的酒館後端說話，沒有 CORS 問題。後端不認這個來源、或回 4xx（CSRF／來源被拒／版本太舊）時才退回瀏覽器原生協議，且**本次工作階段不再重試後端**，不必每輪先白撞一次。

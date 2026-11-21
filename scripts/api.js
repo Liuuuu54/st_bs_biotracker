@@ -1,4 +1,4 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, GOOGLE_AI_STUDIO_BASE_URL, appendUrlQuery, getApiUrlForFormat, isGeminiApiFormat, isGeminiStreamEnabled, normalizeApiBaseUrl, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, redactApiUrl, REPLY_FORMATS, resolveUserTemperature, splitGeminiEndpointBase, usesNativeToolCalls } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, GOOGLE_AI_STUDIO_BASE_URL, appendUrlQuery, getApiUrlForFormat, isFollowHostFormat, isGeminiApiFormat, isGeminiStreamEnabled, isHostFallbackEnabled, normalizeApiBaseUrl, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, redactApiUrl, REPLY_FORMATS, resolveUserTemperature, splitGeminiEndpointBase, usesNativeToolCalls } from './state.js';
 import { resolveHostWorldInfo } from './worldinfo_resolve.js';
 import { markOwnRequest } from './own_requests.js';
 import { isNativeToolRejection, resolveNativeToolPlan } from './native_tools.js';
@@ -2213,6 +2213,12 @@ async function fetchGeminiGenerateContentModelList(settings) {
 }
 
 export async function fetchModelList(settings) {
+  if (isFollowHostFormat(settings?.apiFormat)) {
+    // 跟随酒馆设定时模型来自主聊天，没有「拉取清单」这回事；知道就直接填进去，让人看清用的是哪个
+    const { sourceLabel, model } = describeHostChatConnection();
+    if (model) return [model];
+    throw new Error(`「跟随酒馆设定」用的是酒馆主聊天的连接${sourceLabel ? `（${sourceLabel}）` : ''}，没有可拉取的模型清单。`);
+  }
   if (normalizeApiFormat(settings?.apiFormat) === API_FORMATS.GEMINI_GENERATE_CONTENT) {
     return fetchGeminiGenerateContentModelList(settings);
   }
@@ -2355,6 +2361,135 @@ function rememberNativeToolsDisabled(key) {
  *   - options.nativeTools=true：追踪。
  *   - options.nativeSubmitTool：备装、起始着衣，用一个提交工具交整份结果。
  */
+/**
+ * 「跟随酒馆设定」用的宿主生成通道。
+ *
+ * 这条路完全不碰插件自己填的网址与金钥：直接借酒馆主聊天正在用的来源、模型、代理与密钥，
+ * 由酒馆自己组请求（文本补全与各类聊天补全都走它自己的实现）。用途有两个：
+ * - API 格式选「跟随酒馆设定」：主连接就是酒馆的连接；
+ * - 主连接彻底失败时的最后兜底（见 callOpenAICompatible 的 catch）。
+ * 代价是没有工具调用、也不受插件的单次超时控制（酒馆的停止键仍然有效）。
+ */
+function getHostGenerationApi() {
+  const ctx = getHostContext();
+  if (!ctx) return null;
+  const raw = typeof ctx.generateRaw === 'function' ? ctx.generateRaw : null;
+  const quiet = typeof ctx.generateQuietPrompt === 'function' ? ctx.generateQuietPrompt : null;
+  if (!raw && !quiet) return null;
+  return { ctx, raw, quiet };
+}
+
+const HOST_SOURCE_LABELS = Object.freeze({
+  openai: 'OpenAI',
+  claude: 'Claude',
+  makersuite: 'Google AI Studio',
+  vertexai: 'Google Vertex AI',
+  openrouter: 'OpenRouter',
+  custom: '自定义（OpenAI 兼容）',
+  deepseek: 'DeepSeek',
+  xai: 'xAI',
+  mistralai: 'Mistral',
+  cohere: 'Cohere',
+  perplexity: 'Perplexity',
+  groq: 'Groq',
+  siliconflow: 'SiliconFlow',
+  electronhub: 'Electron Hub',
+  nanogpt: 'NanoGPT',
+  aimlapi: 'AIMLAPI',
+  moonshot: 'Moonshot',
+  fireworks: 'Fireworks',
+  cometapi: 'CometAPI',
+  ai21: 'AI21',
+  azure_openai: 'Azure OpenAI',
+  workers_ai: 'Cloudflare Workers AI',
+  pollinations: 'Pollinations',
+});
+
+/** 酒馆主聊天现在的来源与模型（只用于说明与记录，不参与请求） */
+export function describeHostChatConnection() {
+  const chat = getHostChatCompletionSettings();
+  if (!chat) return { source: '', sourceLabel: '', model: '' };
+  const source = String(chat.chat_completion_source || '').trim().toLowerCase();
+  // makersuite 的模型栏位叫 google_model，其余多半是 <source>_model
+  const modelField = source === 'makersuite' ? 'google_model' : `${source}_model`;
+  const model = String(chat[modelField] || chat.custom_model || '').trim();
+  return { source, sourceLabel: HOST_SOURCE_LABELS[source] || source, model };
+}
+
+/** 宿主有没有可用的生成接口（没有就只能报错，不能假装兜底成功） */
+export function canUseHostGeneration() {
+  return Boolean(getHostGenerationApi());
+}
+
+async function generateThroughHost({ systemPrompt, payloadText }) {
+  const api = getHostGenerationApi();
+  if (!api) {
+    throw new Error('这个酒馆版本没有提供「跟随酒馆设定」所需的生成接口（generateRaw / generateQuietPrompt）。');
+  }
+  const prompt = `${payloadText}`;
+  if (api.raw) {
+    // generateRaw 只借连接，不套角色卡与世界书；系统提示词单独给，正文只放要分析的 JSON
+    return await api.raw({ prompt, systemPrompt });
+  }
+  // 没有 generateRaw 的版本退回 quiet prompt：把系统提示词并进正文
+  return await api.quiet({ quietPrompt: `${systemPrompt}\n\n${prompt}`, skipWIAN: true });
+}
+
+function readHostGenerationText(result) {
+  if (typeof result === 'string') return result;
+  if (result && typeof result === 'object') {
+    return String(result.content ?? result.text ?? result.message ?? '');
+  }
+  return '';
+}
+
+/**
+ * 借酒馆设定跑一次，并把回覆解析成 JSON。
+ * retryOnBadJson 只给「API 格式选跟随酒馆」用：那是主连接，值得再要一次；
+ * 最后兜底只跑一次，免得本来就连不上时又拖两轮。
+ */
+async function runHostGeneration({ systemPrompt, payloadText, retryOnBadJson = false }) {
+  const first = readHostGenerationText(await generateThroughHost({ systemPrompt, payloadText }));
+  let parsed = extractJson(first);
+  if (parsed && typeof parsed === 'object') return parsed;
+  if (retryOnBadJson) {
+    const retry = readHostGenerationText(await generateThroughHost({
+      systemPrompt,
+      payloadText: `${payloadText}\n\n上一条回覆不是可解析的 JSON。请只输出一个 JSON 对象，不要任何说明文字。`,
+    }));
+    parsed = extractJson(retry);
+    if (parsed && typeof parsed === 'object') return parsed;
+    throw new Error(`模型没有返回可解析的 JSON（跟随酒馆设定）。原始回覆：${summarizeModelText(retry || first)}`);
+  }
+  throw new Error(`模型没有返回可解析的 JSON（跟随酒馆设定）。原始回覆：${summarizeModelText(first)}`);
+}
+
+let hostFallbackNotified = false;
+
+/** 最后兜底：主连接彻底失败时借酒馆设定再试一次；救不回来就返回 null，让调用方照原错误抛出 */
+async function tryHostFallback({ settings, systemPrompt, payloadText, originalError }) {
+  if (isFollowHostFormat(settings?.apiFormat)) return null;
+  if (!isHostFallbackEnabled(settings)) return null;
+  if (!canUseHostGeneration()) return null;
+  try {
+    const result = await runHostGeneration({ systemPrompt, payloadText });
+    console.warn('[BS BioTracker] 主连接失败，已改用酒馆设定完成这次请求', originalError);
+    if (!hostFallbackNotified) {
+      hostFallbackNotified = true;
+      try {
+        globalThis.toastr?.warning?.(
+          '主连接的 API 请求失败，这次改用「跟随酒馆设定」完成；频繁出现请检查 API 配置。',
+          '[BS BioTracker]',
+        );
+      } catch {}
+    }
+    return result;
+  } catch (fallbackError) {
+    console.warn('[BS BioTracker] 改用酒馆设定兜底也没成功', fallbackError);
+    return null;
+  }
+}
+
 export async function callOpenAICompatible(settings, payload, systemPrompt = DEFAULT_SYSTEM_PROMPT, options = {}) {
   const apiBase = getApiBase(settings);
   const model = String(settings.model || '').trim();
@@ -2367,9 +2502,16 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
     { role: 'system', content: safeSystemPrompt },
     { role: 'user', content: JSON.stringify(safePayload) },
   ];
-  if (!apiBase || !model) throw new Error('API URL 或模型名称尚未配置');
+  // 「跟随酒馆设定」不碰这里填的网址与模型，交给酒馆主聊天自己的连接
+  const followHost = isFollowHostFormat(settings?.apiFormat);
+  if (!followHost && (!apiBase || !model)) throw new Error('API URL 或模型名称尚未配置');
 
   const payloadText = JSON.stringify(safePayload);
+  if (followHost) {
+    // 主连接就是酒馆的连接：提示词结构与普通请求一致（系统提示词 + 要分析的 JSON），
+    // 只是最后由酒馆自己发出去；解析失败时值得再要一次 JSON
+    return await runHostGeneration({ systemPrompt: safeSystemPrompt, payloadText, retryOnBadJson: true });
+  }
   // Never stage an internal payload in the active chat to resolve presets: hosts
   // and extensions may persist that synthetic message as visible chat content.
   const presetEnvelope = shouldApplyAsyncPreset(settings)
@@ -2540,6 +2682,16 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   } catch (error) {
     // 使用者按下终止时，底层会以「总时限」的形式中断；这里改回正确的原因
     if (requestEntry?.userAborted) throw createApiUserAbortError(requestEntry.label);
+    // 最后兜底：主连接彻底失败（连不上、401、被拦、模型一直不回 JSON…）时，
+    // 借酒馆自己在用的连接与模型再跑一次文本协议，救得回来就用它的结果
+    if (runContext.signal?.aborted) throw error;
+    const rescued = await tryHostFallback({
+      settings,
+      systemPrompt: safeSystemPrompt,
+      payloadText,
+      originalError: error,
+    });
+    if (rescued) return rescued;
     throw error;
   } finally {
     if (overallTimer) clearTimeout(overallTimer);
