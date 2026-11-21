@@ -332,6 +332,11 @@
                 <option value="gemini_interactions">自定义（兼容 Gemini Interactions） /interactions</option>
                 <option value="gemini_generate_content">Google AI Studio（Gemini 原生） /v1beta/models/{模型}:generateContent</option>
               </select>
+              <div class="bs-bt-setting-toggle-row" style="margin-top:6px;">
+                <input type="checkbox" id="bs-bt-gemini-stream" />
+                <label for="bs-bt-gemini-stream">Google AI Studio 串流（SSE）</label>
+              </div>
+              <small style="display:block;margin-top:2px;opacity:0.75;">只对这个格式生效，默认开。反代多靠「有没有吐出第一个字节」判断上游还活着，非串流的长请求容易被它们中途掐断（回覆截断）；串流让字节持续流动，插件这边仍按整份 JSON 解析。认不得 SSE 的渠道才需要关掉。</small>
             </div>
 
             <div class="settings_section">

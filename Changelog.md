@@ -4,6 +4,7 @@
 
 ### 新增
 
+- Google AI Studio 原生格式新增**串流（SSE）**，預設開、只對這個格式生效、隨連接配置組保存。反代多半靠「有沒有吐出第一個位元組」判斷上游還活著，非串流的長請求在它們眼裡像卡住，有的會中途掐斷連線，回覆就截斷了；串流讓位元組持續流動，插件把 SSE 逐塊拼回一份 `generateContent` 形狀的回覆後照常解析（文字拼段、`thought` 與 `functionCall` 分開），與 SillyTavern 自己的 `stream: true` 一致。認不得 SSE 的渠道可在系統頁關掉，關掉後回到 `:generateContent`。
 - API 格式新增「Google AI Studio（Gemini 原生）」：請求送到 `<Base URL>/v1beta/models/<模型>:generateContent`，模型寫在路徑裡、不在請求體裡。選了它而 Base URL 留空，就直接打官方主機 `https://generativelanguage.googleapis.com`；要接反代時把反代主機連路徑一起填進 Base URL，自帶 `/v1`、`/v1beta` 或整條 `…/models/<模型>:generateContent` 貼進來都認得，不會疊成兩層。
 - 在酒館裡預設**交給酒館後端代發**：插件遞 `chat_completion_source: makersuite` + `reverse_proxy`（＝Base URL）+ `proxy_password`（＝API Key），由酒館伺服器自己拼網址、把 messages 翻成 `contents`／`systemInstruction`／`generationConfig`、再把回覆收回 OpenAI 結構——與 SillyTavern 的「Google AI Studio + 反向代理」走同一條路。瀏覽器只跟同源的酒館後端說話，沒有 CORS 問題。後端不認這個來源、或回 4xx（CSRF／來源被拒／版本太舊）時才退回瀏覽器原生協議，且**本次工作階段不再重試後端**，不必每輪先白撞一次。
 - 原生協議一律「先瀏覽器直連，直連不通才走 `/proxy/` 透傳」：對外開放的反代大多對瀏覽器放行並開著 CORS，而酒館的 `/proxy/` 與後端都是服務端 node-fetch，常被 Cloudflare 之類按瀏覽器指紋擋成 403（`error code: 1010`）。別的 API 格式仍維持原本「代理優先」的次序。

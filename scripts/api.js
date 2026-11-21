@@ -1,4 +1,4 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, GOOGLE_AI_STUDIO_BASE_URL, appendUrlQuery, getApiUrlForFormat, isGeminiApiFormat, normalizeApiBaseUrl, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, redactApiUrl, REPLY_FORMATS, resolveUserTemperature, splitGeminiEndpointBase, usesNativeToolCalls } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, GOOGLE_AI_STUDIO_BASE_URL, appendUrlQuery, getApiUrlForFormat, isGeminiApiFormat, isGeminiStreamEnabled, normalizeApiBaseUrl, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, redactApiUrl, REPLY_FORMATS, resolveUserTemperature, splitGeminiEndpointBase, usesNativeToolCalls } from './state.js';
 import { resolveHostWorldInfo } from './worldinfo_resolve.js';
 import { markOwnRequest } from './own_requests.js';
 import { isNativeToolRejection, resolveNativeToolPlan } from './native_tools.js';
@@ -1451,7 +1451,7 @@ function buildGeminiGenerateContentBody(body) {
   return request;
 }
 
-/** 读取第一个 candidate；没有 candidate 时把 promptFeedback 的封禁原因说出来 */
+/** 读取第一个 candidate；没有 candidate 时把 promptFeedback 的封禁原因或 error 说明出来 */
 function readGeminiCandidate(data) {
   if (!data || typeof data !== 'object') return null;
   const candidates = Array.isArray(data.candidates) ? data.candidates : [];
@@ -1460,6 +1460,9 @@ function readGeminiCandidate(data) {
   if (blockReason) {
     throw new Error(`Google AI Studio 把这次请求判为违规（blockReason: ${blockReason}）。可在反向代理或 Google AI Studio 端调整过滤设定后重试。`);
   }
+  // 酒馆后端在上游没有 candidate 时会回 200 + {error:{message}}（例如 "Candidate text empty"）
+  const errorMessage = String(data?.error?.message || '').trim();
+  if (errorMessage) throw new Error(`Gemini 回覆失败：${errorMessage}`);
   return null;
 }
 
@@ -1561,6 +1564,55 @@ export function looksLikeSse(text) {
 }
 
 /**
+ * Google AI Studio 的 SSE 拼回一份 generateContent 形状的回覆（streamGenerateContent?alt=sse）。
+ *
+ * 为什么要有这条路：反代多半靠「有没有吐出第一个字节」判断上游还活着，非串流的长请求在它们眼里
+ * 像卡住，有的会中途掐断，回覆就截断了。串流让字节持续流动，而插件这边仍按整份 JSON 解析。
+ *
+ * 逐块累加 candidates[0].content.parts：text 拼进同一段（否则一份 JSON 会被拆成一堆碎片），
+ * thought 与 functionCall 各自保留；finishReason / usageMetadata / promptFeedback 取最后一次出现的。
+ */
+export function assembleGeminiSse(text) {
+  const events = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const match = line.match(/^data:\s?(.*)$/);
+    if (!match) continue;
+    const data = match[1].trim();
+    if (!data || data === '[DONE]') continue;
+    try { events.push(JSON.parse(data)); } catch { /* 半截的块略过 */ }
+  }
+  if (!events.length) return null;
+  const parts = [];
+  let finishReason = '';
+  let usageMetadata;
+  let promptFeedback;
+  for (const event of events) {
+    if (event?.promptFeedback?.blockReason) promptFeedback = event.promptFeedback;
+    if (event?.usageMetadata) usageMetadata = event.usageMetadata;
+    const candidate = Array.isArray(event?.candidates) ? event.candidates[0] : null;
+    if (!candidate) continue;
+    if (candidate.finishReason) finishReason = String(candidate.finishReason);
+    const chunks = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+    for (const chunk of chunks) {
+      if (typeof chunk?.text === 'string') {
+        const last = parts[parts.length - 1];
+        const sameKind = last && typeof last.text === 'string' && Boolean(last.thought) === Boolean(chunk.thought);
+        if (sameKind) last.text += chunk.text;
+        else parts.push({ ...(chunk.thought ? { thought: true } : {}), text: chunk.text });
+      } else if (chunk?.functionCall) {
+        parts.push({ functionCall: chunk.functionCall });
+      }
+    }
+  }
+  const candidate = { content: { role: 'model', parts } };
+  if (finishReason) candidate.finishReason = finishReason;
+  const assembled = { candidates: [candidate] };
+  if (promptFeedback) assembled.promptFeedback = promptFeedback;
+  if (usageMetadata) assembled.usageMetadata = usageMetadata;
+  return assembled;
+}
+
+/**
  * 中转不理 stream:false、硬回串流时，把 SSE 拼回一份完整回应：
  * - OpenAI 兼容：逐块累加 choices[0].delta（content、reasoning_content、tool_calls 按 index 合并），取最后的 finish_reason 与 usage；
  * - Responses：取 response.completed 事件里的整份 response。
@@ -1630,8 +1682,10 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     const fmt = normalizeApiFormat(settings?.apiFormat);
     // 会话头只认 opencode endpoint，其他渠道为空、直连与代理路径都不会多带
     const sessionId = runContext.sessionId || '';
-    // 模型在 Gemini 原生格式的路径里、key 在 Google AI Studio 的查询串里，两样都要在组网址时带上
-    const upstreamUrl = getApiUrlForFormat(apiBase, fmt, { model: requestBody.model, apiKey: settings?.apiKey });
+    // 模型在 Gemini 原生格式的路径里、key 在 Google AI Studio 的查询串里，两样都要在组网址时带上；
+    // 串流与否决定 generateContent 还是 streamGenerateContent
+    const geminiStreaming = fmt === API_FORMATS.GEMINI_GENERATE_CONTENT && isGeminiStreamEnabled(settings);
+    const upstreamUrl = getApiUrlForFormat(apiBase, fmt, { model: requestBody.model, apiKey: settings?.apiKey, stream: geminiStreaming });
     // 状态栏与错误消息只显示隐去 ?key= 的网址
     const displayUrl = redactApiUrl(upstreamUrl);
     const isCompat = fmt === API_FORMATS.OPENAI_COMPAT;
@@ -1912,7 +1966,11 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
 
   if (!response.ok) {
     // 实际请求的网址只显示到主机与路径，?key= 隐去
-    const attemptedUrl = redactApiUrl(getApiUrlForFormat(apiBase, result.format, { model: body.model, apiKey: settings?.apiKey }));
+    const attemptedUrl = redactApiUrl(getApiUrlForFormat(apiBase, result.format, {
+      model: body.model,
+      apiKey: settings?.apiKey,
+      stream: result.format === API_FORMATS.GEMINI_GENERATE_CONTENT && isGeminiStreamEnabled(settings),
+    }));
     // 先经代理／酒馆后端也失败时，把那一次的回答一并附上：只报最后一跳会把真正的原因（CSRF、云端拦截、
     // key 错）留在另一条路上，使用者与作者都看不出该改哪一边
     const earlier = describeEarlierFailure(result.proxyFailure);
@@ -1925,9 +1983,13 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     // 中转硬回串流（SSE）：拼回一份完整回应再照常处理
     let parsed;
     if (looksLikeSse(responseText)) {
-      parsed = assembleSseResponse(responseText, result.format);
-      if (!parsed) throw new Error(`回应是串流（SSE）格式，无法拼回完整回应：${sanitizeErrorText(responseText)}。请在中转设定里关掉这个模型的强制串流。`);
-      console.warn('[BS BioTracker] 中转回传了串流（SSE），已拼回完整回应');
+      // Gemini 原生格式的 SSE 是 generateContent 的逐块版本（我们自己要的串流，或中转硬回的），
+      // 拼回 {candidates:[…]} 之后与整份 JSON 走同一条正规化
+      parsed = (isGeminiGenerateContent ? assembleGeminiSse(responseText) : assembleSseResponse(responseText, result.format));
+      if (!parsed) {
+        throw new Error(`回应是串流（SSE）格式，无法拼回完整回应：${sanitizeErrorText(responseText)}。${isGeminiGenerateContent ? '可在系统页关掉「Google AI Studio 串流」再试。' : '请在中转设定里关掉这个模型的强制串流。'}`);
+      }
+      console.warn('[BS BioTracker] 回应是串流（SSE），已拼回完整回应');
     } else {
       parsed = JSON.parse(responseText);
     }
@@ -2006,7 +2068,8 @@ function buildMakersuiteHostPayload(apiBase, settings, requestBody) {
     top_k: requestBody.top_k,
     max_tokens: requestBody.max_tokens ?? requestBody.max_completion_tokens,
     seed: requestBody.seed,
-    stream: false,
+    // 交给 ST 开串流：它会请求 streamGenerateContent?alt=sse 并把 SSE 原样转回来（见 assembleGeminiSse）
+    stream: isGeminiStreamEnabled(settings),
     // 系统提示词要 ST 放进 systemInstruction（不给就只会塞进第一则 user）
     use_sysprompt: true,
     // 格式化输出：ST 把它原样写进 generationConfig.responseMimeType
