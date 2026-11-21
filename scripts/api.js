@@ -1300,6 +1300,7 @@ function buildDirectPayload(fmt, requestBody) {
       model: requestBody.model,
       input,
       store: false,
+      stream: false,
       temperature: requestBody.temperature,
       top_p: requestBody.top_p,
       seed: requestBody.seed,
@@ -1327,7 +1328,67 @@ function buildDirectPayload(fmt, requestBody) {
   if (fmt === API_FORMATS.GEMINI_INTERACTIONS) {
     return buildGeminiInteractionsBody(requestBody);
   }
-  return requestBody;
+  // 明说不要串流：有些中转对没写 stream 的请求预设用串流（SSE）回，插件读的是一整份 JSON
+  return { ...requestBody, stream: false };
+}
+
+/** 回应是不是 SSE 串流（每行 data: …） */
+export function looksLikeSse(text) {
+  return /^\s*(?:event:[^\n]*\n)?data:/.test(String(text || ''));
+}
+
+/**
+ * 中转不理 stream:false、硬回串流时，把 SSE 拼回一份完整回应：
+ * - OpenAI 兼容：逐块累加 choices[0].delta（content、reasoning_content、tool_calls 按 index 合并），取最后的 finish_reason 与 usage；
+ * - Responses：取 response.completed 事件里的整份 response。
+ * 认不得的格式回传 null。
+ */
+export function assembleSseResponse(text, format = API_FORMATS.OPENAI_COMPAT) {
+  const events = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const match = line.match(/^data:\s?(.*)$/);
+    if (!match) continue;
+    const data = match[1].trim();
+    if (!data || data === '[DONE]') continue;
+    try { events.push(JSON.parse(data)); } catch { /* 半截的块略过 */ }
+  }
+  if (!events.length) return null;
+  if (format === API_FORMATS.OPENAI_RESPONSES) {
+    const done = events.find((event) => event?.type === 'response.completed' && event.response);
+    return done ? done.response : null;
+  }
+  if (format !== API_FORMATS.OPENAI_COMPAT) return null;
+  let content = '';
+  let reasoning = '';
+  let finishReason = null;
+  let usage;
+  let id;
+  let model;
+  const calls = [];
+  for (const event of events) {
+    id = id || event.id;
+    model = model || event.model;
+    if (event.usage) usage = event.usage;
+    const choice = Array.isArray(event.choices) ? event.choices[0] : null;
+    if (!choice) continue;
+    const delta = choice.delta || choice.message || {};
+    if (typeof delta.content === 'string') content += delta.content;
+    if (typeof delta.reasoning_content === 'string') reasoning += delta.reasoning_content;
+    for (const call of Array.isArray(delta.tool_calls) ? delta.tool_calls : []) {
+      const index = Number.isInteger(call.index) ? call.index : calls.length;
+      const slot = calls[index] || (calls[index] = { id: '', type: 'function', function: { name: '', arguments: '' } });
+      if (call.id) slot.id = call.id;
+      if (call.type) slot.type = call.type;
+      if (call.function?.name) slot.function.name += call.function.name;
+      if (typeof call.function?.arguments === 'string') slot.function.arguments += call.function.arguments;
+    }
+    if (choice.finish_reason) finishReason = choice.finish_reason;
+  }
+  const message = { role: 'assistant', content };
+  if (reasoning) message.reasoning_content = reasoning;
+  const toolCalls = calls.filter(Boolean);
+  if (toolCalls.length) message.tool_calls = toolCalls;
+  return { id, model, object: 'chat.completion', choices: [{ index: 0, message, finish_reason: finishReason }], ...(usage ? { usage } : {}) };
 }
 
 async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
@@ -1541,7 +1602,15 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     throw error;
   }
   try {
-    const parsed = JSON.parse(responseText);
+    // 中转硬回串流（SSE）：拼回一份完整回应再照常处理
+    let parsed;
+    if (looksLikeSse(responseText)) {
+      parsed = assembleSseResponse(responseText, result.format);
+      if (!parsed) throw new Error(`回应是串流（SSE）格式，无法拼回完整回应：${sanitizeErrorText(responseText)}。请在中转设定里关掉这个模型的强制串流。`);
+      console.warn('[BS BioTracker] 中转回传了串流（SSE），已拼回完整回应');
+    } else {
+      parsed = JSON.parse(responseText);
+    }
     if (isResponses) return normalizeResponsesData(parsed);
     if (isClaude) return normalizeClaudeData(parsed);
     if (isGemini) return normalizeGeminiInteractionsData(parsed);
