@@ -29,10 +29,12 @@ function firstSource(list, fallbackText) {
 }
 
 export function buildLineageGraph(chatState) {
-  const characters = (chatState && typeof chatState.characters === 'object' && chatState.characters) || {};
+  // 停用的身体档（1.5.1 性转：失去子宫、失去阴茎）照样在族谱上，子女与血缘不因此消失
+  const dormant = (chatState && typeof chatState.dormant === 'object' && chatState.dormant) || {};
+  const characters = { ...(dormant.characters || {}), ...((chatState && typeof chatState.characters === 'object' && chatState.characters) || {}) };
   const characterNames = Object.keys(characters);
   const isRegistered = (name) => Object.prototype.hasOwnProperty.call(characters, name);
-  const sires = (chatState && typeof chatState.sires === 'object' && chatState.sires) || {};
+  const sires = { ...(dormant.sires || {}), ...((chatState && typeof chatState.sires === 'object' && chatState.sires) || {}) };
 
   const nodes = new Map();
   const edges = [];
@@ -173,13 +175,21 @@ export function buildLineageGraph(chatState) {
 
   // 转化者（1.5.0）：衍生转化的经历里写了转化者（人）的，在节点上记关系；不当亲代、不进 edges、不参与分代
   //（女儿初拥母亲时会成环），只给详情栏列出与滑过时一起高亮。转化者不在图上就只留名字
-  for (const name of characterNames) {
-    const records = Array.isArray(characters[name]?.profile?.derivedTransforms) ? characters[name].profile.derivedTransforms : [];
-    const node = nodes.get(characterNodeId(name));
+  // 精方（1.5.1）也有转化经历：没出现在图上的先建节点
+  const transformSubjects = [
+    ...characterNames.map((name) => ({ name, records: characters[name]?.profile?.derivedTransforms, nodeId: characterNodeId(name) })),
+    ...Object.keys(sires).filter((name) => !isRegistered(name) && Array.isArray(sires[name]?.derivedTransforms) && sires[name].derivedTransforms.length)
+      .map((name) => ({ name, records: sires[name].derivedTransforms, nodeId: resolveParent(name) })),
+  ];
+  for (const { name, records: rawRecords, nodeId } of transformSubjects) {
+    const records = Array.isArray(rawRecords) ? rawRecords : [];
+    const node = nodes.get(nodeId);
     for (const record of records) {
       const source = String(record?.source || '').trim();
       if (!source || !node) continue;
-      const sourceId = nodes.has(characterNodeId(source)) ? characterNodeId(source) : nodes.has(unregisteredNodeId(source)) ? unregisteredNodeId(source) : null;
+      // 转化者是已建档的精方时也连得到（没在图上就建节点）
+      const sourceId = nodes.has(characterNodeId(source)) ? characterNodeId(source)
+        : (nodes.has(unregisteredNodeId(source)) || Object.prototype.hasOwnProperty.call(sires, source)) ? resolveParent(source) : null;
       const entry = { name: source, id: sourceId, method: String(record.method || ''), to: record.to || null, kind: record.kind, time: String(record.time || '') };
       node.transformedBy = [...(node.transformedBy || []), entry];
       if (sourceId) {

@@ -139,10 +139,22 @@ test('转化要时间：转化中、期间不能再转，时间到才改衍生',
 test('衍生转化关掉时，追踪工具里拿掉 transform', () => {
   const on = getTrackerToolDefinitions({}).find((tool) => tool.name === 'bsRecordExperience');
   const off = getTrackerToolDefinitions({ specialTools: { transformDerivedType: false } }).find((tool) => tool.name === 'bsRecordExperience');
+  const both = getTrackerToolDefinitions({ specialTools: { transformDerivedType: false, transformBody: false } }).find((tool) => tool.name === 'bsRecordExperience');
+  const realistic = getTrackerToolDefinitions({ realisticWorld: true }).find((tool) => tool.name === 'bsRecordExperience');
   assert.ok(on.input_schema.properties.action.enum.includes('transform'));
-  assert.ok(!off.input_schema.properties.action.enum.includes('transform'));
+  assert.ok(on.input_schema.properties.body);
+  // 只关衍生转化：身体转化还在，transform 留着、拿掉 derivedType 与那段说明
+  assert.ok(off.input_schema.properties.action.enum.includes('transform'));
   assert.equal(off.input_schema.properties.derivedType, undefined);
+  assert.ok(off.input_schema.properties.body);
   assert.ok(!off.description.includes('transform 记血脉'));
+  assert.ok(off.description.includes('transform 的 body 记身体转化'));
+  // 写实世界同样只拿掉衍生转化
+  assert.ok(realistic.input_schema.properties.body && !realistic.input_schema.properties.derivedType);
+  // 两个都关：整个 transform 拿掉
+  assert.ok(!both.input_schema.properties.action.enum.includes('transform'));
+  assert.equal(both.input_schema.properties.body, undefined);
+  assert.equal(both.input_schema.properties.hours, undefined);
 });
 
 test('1.5.0 bsTrainSkill define：图鉴没有的新技能同一次调用登记并觉醒', () => {
@@ -205,4 +217,101 @@ test('一次生完时，先露的那一胎记成第 1 胎，其余照下降深�
   const kids = P(chatState).children;
   assert.equal(kids.find((kid) => kid.birth?.order === 1)?.gender, '女');
   assert.equal(kids.find((kid) => kid.birth?.order === 2)?.gender, '男');
+});
+
+test('精方年龄：0 岁有效（刚出生的孩子注册成精方），没填才是未知、也不会跟着长大', async () => {
+  const { normalizeSireRecord, advanceSireAges } = await import('../scripts/sires.js');
+  assert.equal(normalizeSireRecord({ race: '人类', age: 0 }).age, 0);
+  assert.equal(normalizeSireRecord({ race: '人类', age: null }).age, null);
+  assert.equal(normalizeSireRecord({ race: '人类' }).age, null);
+  const chatState = { sires: { 新生: normalizeSireRecord({ race: '人类', age: 0 }), 无名: normalizeSireRecord({ race: '人类' }) } };
+  advanceSireAges(chatState, 365);
+  assert.equal(chatState.sires.新生.age, 1);
+  assert.equal(chatState.sires.无名.age, null);
+});
+
+test('1.5.1 纯精方转化：瞬间改档案、有 hours 时转化中到点才改，族谱连得到', async () => {
+  const { normalizeSireRecord } = await import('../scripts/sires.js');
+  const { buildLineageGraph } = await import('../scripts/lineage.js');
+  const chatState = setup({ stage: '卵泡期' });
+  chatState.sires = { 雷恩: normalizeSireRecord({ race: '人类', age: 30 }), 卡蜜拉: normalizeSireRecord({ race: '人类', derivedType: '血族', age: 900 }) };
+  const instant = applyToolCall(chatState, { name: 'bsRecordExperience', arguments: { female: '雷恩', action: 'transform', time: '第1天', derivedType: '魔导', content: '觉醒魔力' } });
+  assert.equal(instant.applied, true, instant.message);
+  assert.equal(chatState.sires.雷恩.derivedType, '魔导');
+  const slow = applyToolCall(chatState, { name: 'bsRecordExperience', arguments: { female: '雷恩', action: 'transform', time: '第2天', derivedType: '血族', partner: '卡蜜拉', content: '被初拥', hours: 10 } });
+  assert.equal(slow.applied, true, slow.message);
+  assert.equal(chatState.sires.雷恩.derivedType, '魔导');
+  assert.ok(chatState.sires.雷恩.transforming);
+  pass(chatState, 11);
+  assert.equal(chatState.sires.雷恩.derivedType, '血族');
+  assert.equal(chatState.sires.雷恩.transforming, undefined);
+  assert.equal(chatState.sires.雷恩.derivedTransforms.length, 2);
+  const graph = buildLineageGraph(chatState);
+  const leon = graph.nodes.find((node) => node.name === '雷恩');
+  assert.ok(leon?.transformedBy?.some((entry) => entry.name === '卡蜜拉' && entry.id));
+  assert.ok(graph.nodes.find((node) => node.name === '卡蜜拉')?.transformed?.some((entry) => entry.name === '雷恩'));
+});
+
+test('1.5.1 性转：长出阴茎变扶她、失去子宫后只剩精方、再长回子宫恢复原档；只剩一样时不能再失去', async () => {
+  const { buildLineageGraph } = await import('../scripts/lineage.js');
+  const chatState = setup({ stage: '卵泡期', derivedType: '魔导' });
+  P(chatState).base.age = 24;
+  P(chatState).children = [{ id: 'k1', name: '小A', gender: '女', race: '人类', fathers: '凯', age: 2, talents: [] }];
+  const body = (b, extra = {}) => applyToolCall(chatState, { name: 'bsRecordExperience', arguments: { female: 'A', action: 'transform', time: '某日', body: b, content: '秘药', ...extra } });
+  assert.equal(body('loseWomb').applied, false, '没有阴茎时不能失去子宫');
+  assert.equal(applyToolCall(chatState, { name: 'bsRecordExperience', arguments: { female: 'A', action: 'transform', time: '某日', body: 'gainSword', derivedType: '血族', content: 'x' } }).applied, false, '一次只做一件');
+  const g = body('gainSword');
+  assert.equal(g.applied, true, g.message);
+  assert.ok(chatState.sires.A, '扶她：同名精方档');
+  const lose = body('loseWomb');
+  assert.equal(lose.applied, true, lose.message);
+  assert.equal(chatState.characters.A, undefined, '卵方档停用');
+  assert.ok(chatState.dormant.characters.A, '保留在停用区');
+  assert.equal(chatState.sires.A.race, '人类');
+  assert.equal(chatState.sires.A.derivedType, '魔导');
+  assert.equal(chatState.sires.A.age, 24);
+  assert.ok(buildLineageGraph(chatState).nodes.some((node) => node.name === '小A'), '子女照样在族谱');
+  assert.equal(body('loseSword').applied, false, '只剩阴茎时不能再失去');
+  // 有 hours：挂在精方档上，时间推进到点才恢复卵方
+  const back = body('gainWomb', { hours: 5 });
+  assert.equal(back.applied, true, back.message);
+  assert.equal(chatState.characters.A, undefined);
+  pass(chatState, 6);
+  assert.ok(chatState.characters.A, '恢复原本的卵方档');
+  assert.equal(P(chatState).base.stage, '卵泡期');
+  assert.equal(P(chatState).children.length, 1);
+  assert.equal(chatState.dormant.characters.A, undefined);
+  assert.ok(P(chatState).derivedTransforms.some((r) => r.body === 'loseWomb'));
+});
+
+test('1.5.1 性转：怀孕与产后恢复中不能失去子宫；纯精方长出子宫会新建卵方档', async () => {
+  const { normalizeSireRecord } = await import('../scripts/sires.js');
+  const chatState = setup({ stage: '产后恢复' });
+  chatState.sires = { A: normalizeSireRecord({ spermQuality: 1 }), 雷恩: normalizeSireRecord({ race: '精灵', age: 120, descriptions: { normalDescription: [{ name: '外貌', value: '银发' }] } }) };
+  const blocked = applyToolCall(chatState, { name: 'bsRecordExperience', arguments: { female: 'A', action: 'transform', time: 'x', body: 'loseWomb', content: 'x' } });
+  assert.equal(blocked.applied, false);
+  assert.match(blocked.message, /产后恢复/);
+  const created = applyToolCall(chatState, { name: 'bsRecordExperience', arguments: { female: '雷恩', action: 'transform', time: 'x', body: 'gainWomb', content: '禁术' } });
+  assert.equal(created.applied, true, created.message);
+  const egg = chatState.characters.雷恩;
+  assert.ok(egg?.profile, '新建卵方档');
+  assert.equal(egg.profile.base.race, '精灵');
+  assert.equal(egg.profile.base.stage, '卵泡期');
+  assert.equal(egg.profile.base.age, 120);
+  assert.ok(chatState.sires.雷恩, '精方档留着（变扶她）');
+});
+
+
+test('1.5.1 日记变短：旧预设自动换新、改写过的不动；主线每人只送最近 2 篇', async () => {
+  const rules = await import('../scripts/prompts/rules.js');
+  const { getSettings } = await import('../scripts/state.js');
+  assert.doesNotMatch(rules.DEFAULT_DIARY_WRITING_PROMPT, /至少三段/);
+  assert.match(rules.DEFAULT_DIARY_WRITING_PROMPT, /100–150 字/);
+  const legacy = getSettings({ extensionSettings: { bs_biotracker: { diaryWritingPrompt: rules.LEGACY_DIARY_WRITING_PROMPT } }, saveSettingsDebounced() {} });
+  assert.equal(legacy.diaryWritingPrompt, rules.DEFAULT_DIARY_WRITING_PROMPT);
+  const custom = getSettings({ extensionSettings: { bs_biotracker: { diaryWritingPrompt: '写长一点，五段。' } }, saveSettingsDebounced() {} });
+  assert.equal(custom.diaryWritingPrompt, '写长一点，五段。');
+  const diary = [1, 2, 3, 4, 5].map((n) => ({ time: `第${n}日`, content: `日记${n}` }));
+  const projected = rules.projectNarrativeState({ A: { profile: { base: { stage: '卵泡期' }, diary } } });
+  assert.deepEqual(projected.A.profile.diary.map((entry) => entry.time), ['第4日', '第5日']);
 });

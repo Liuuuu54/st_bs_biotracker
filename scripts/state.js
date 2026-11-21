@@ -1,7 +1,7 @@
 import { normalizeExperience, normalizeCognitionRecords, normalizePaternityClaims, normalizeReproductiveSettings } from './reproductive.js';
 import { stripVariableUpdateBlocks } from './variable_isolation.js';
 import { syncCardSettings, importCardSkillSeed } from './card_settings.js';
-import { DEFAULT_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, DEFAULT_SYSTEM_PROMPT, DEFAULT_WARDROBE_PREP_PROMPT, LEGACY_NORMAL_DESCRIPTION_GUIDE, LEGACY_PREGNANT_DESCRIPTION_GUIDE, LEGACY_SIRE_DESCRIPTION_GUIDE } from './prompts/rules.js';
+import { DEFAULT_DIARY_WRITING_PROMPT, LEGACY_DIARY_WRITING_PROMPT, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, DEFAULT_SYSTEM_PROMPT, DEFAULT_WARDROBE_PREP_PROMPT, LEGACY_NORMAL_DESCRIPTION_GUIDE, LEGACY_PREGNANT_DESCRIPTION_GUIDE, LEGACY_SIRE_DESCRIPTION_GUIDE } from './prompts/rules.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -760,6 +760,8 @@ export function createEmptyChatState() {
     characters: Object.create(null),
     // 精方档案（scripts/sires.js），同样 null-proto、名字作键
     sires: createEmptySires(),
+    // 停用的身体档（1.5.1 性转）：失去子宫的卵方、失去阴茎的精方，保留不删、换回来时恢复；不追踪、不进提示词
+    dormant: { characters: {}, sires: {} },
     lastRawResult: null,
     lastOperationLogs: [],
     snapshots: [],
@@ -1113,7 +1115,8 @@ export function getSettings(ctx) {
     settings.modelOptions = [];
     shouldSave = true;
   }
-  if (!String(settings.diaryWritingPrompt || '').trim()) {
+  // 1.5.1：还是旧预设（「至少三段」）的换成新预设；使用者改写过的不动
+  if (!String(settings.diaryWritingPrompt || '').trim() || String(settings.diaryWritingPrompt).trim() === LEGACY_DIARY_WRITING_PROMPT) {
     settings.diaryWritingPrompt = DEFAULT_DIARY_WRITING_PROMPT;
     shouldSave = true;
   }
@@ -2360,6 +2363,7 @@ function exportChatStateSnapshotPayload(chatState) {
     characters: packSnapshotCharacters(chatState.characters),
     // 精方档案进快照，删楼回溯与卵方一样还原；转成普通物件才能做差异比对
     sires: cloneValue({ ...normalizeSires(chatState.sires, chatState.minutesPassed || 0) }),
+    dormant: cloneValue(chatState.dormant && typeof chatState.dormant === 'object' ? chatState.dormant : { characters: {}, sires: {} }),
     lastRawResult: summarizeRawResult(chatState.lastRawResult),
     lastOperationLogs: summarizeOperationLogs(chatState.lastOperationLogs),
   };
@@ -2704,6 +2708,8 @@ export function restoreChatStateFromSnapshot(chatState, snapshot) {
   chatState.characters = unpackSnapshotCharacters(payload.characters);
   // 1.2.0 以前的快照没有精方，还原成空表
   chatState.sires = normalizeSires(payload.sires, payload.minutesPassed || 0);
+  // 1.5.1 以前的快照没有停用档，还原成空的
+  chatState.dormant = payload.dormant && typeof payload.dormant === 'object' ? cloneValue(payload.dormant) : { characters: {}, sires: {} };
   chatState.lastRawResult = payload.lastRawResult || null;
   chatState.lastOperationLogs = Array.isArray(payload.lastOperationLogs) ? payload.lastOperationLogs : [];
 }

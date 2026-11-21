@@ -66,6 +66,8 @@ export function getLifeStage(kind, age, childRelations = []) {
  * 会被当成 bug。未注册的路人没有年龄资料，回空字串让渲染层整行略过。
  */
 function ageLabel(age) {
+  // null 是没有年龄资料（Number(null) 会变成 0，误显示成「0岁」）；0 是刚出生，照样显示
+  if (age === null || age === undefined || age === '') return '';
   const value = Number(age);
   if (!Number.isFinite(value)) return '';
   return `${Math.round(value)}岁`;

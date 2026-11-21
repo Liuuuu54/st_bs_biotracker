@@ -205,9 +205,9 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].gender: 胎儿性别。',
   '- fetuses[*].embryoType: 胚胎型态，如 胎生、卵生、卵胎生、胎转卵生、不定型。',
   '- fetuses[*].companionEggCount: 这一胎伴随的背景卵数量（伴生卵），为 0 时不出现。出生时会随这一胎一起排出，可描写成产下整群卵，但只有这一胎会写入族谱；绝不能按伴生卵自行增加 fetusesCount、胎儿卡或孩子。',
-  '- base.transforming: 她正在转化（血脉、衍生类型），写着转化成什么、约剩几小时；期间剧情照转化写（昏睡、发热、闭关…），时间到系统自己完成，不要再呼叫转化。',
+  '- base.transforming: 她正在转化（血脉、衍生类型，或身体：长出／失去阴茎、子宫），写着转化成什么、约剩几小时；期间剧情照转化写（昏睡、发热、闭关…），时间到系统自己完成，不要再呼叫转化。',
   '- pregnant.rejectionCrisis: 母体血脉换了大类或被净化后，腹中胎儿正在被排斥：剧情写出腹中翻搅、胎动异常、血脉灼烧之类的代价；安抚胎儿（bsFetalEvent bonding）、安胎药与治疗能帮忙，熬不过的那一胎会流掉。',
-  '- derivedTransforms: 她最近几次血脉／衍生转化的经历（时间、谁或什么让她转化、怎么转化），剧情可以引用，例如记得是谁初拥了她。',
+  '- derivedTransforms: 她最近几次转化的经历（血脉／衍生或身体；时间、谁或什么让她转化、怎么转化），剧情可以引用，例如记得是谁初拥了她。',
   '- fetuses[*].weight: 胎重系数，標準1.0，范围0.33~3.0：这一胎足月时比同族的标准胎大多少（1.0 就是该族理想的足月大小，不跨族比较），受精时定下、孕期不变；孕期中照物种的胎儿生长型长到这个大小。各族孕肚大小的差别看胎量与 bellySize，不看胎重。影响妊娠负担、分娩难度与恢复期。',
   '- fetuses[*].labor: 这一胎在产程中遇到的事（难产类型、产程延长、急产、产伤）。产伤不指定部位与症状：依这一族的身体构造与这次分娩的整体情况（卡住多久、多急、是不是助产拉出）推想合理的伤，不要直接套人类的医学名词。',
   '- pain: 生殖疼痛 0-10 与来源（分娩、月经、胎动、假宫缩、产后宫缩），有痛才出现；描写这些痛不得明显超过这个等级。标了「痛即为爽」时，她天生把这些分娩、妊娠、月经的痛感受为快感：照等级写出痛，但她的感受是爽；这不会让性欲自动上升，也和技能 M 倾向（从被施加的疼痛、被支配中得到快感）是两回事。',
@@ -277,7 +277,8 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '[diary]',
   '- diary 是角色主观日记，保存为数组；existing_state 中只会发送最近几笔，前端完整变量仍会保留全量。',
   '- diary[*].time: 角色日记中的日期标题，不是具体钟点；应填写故事内日期、年月日、某日/第几天等日期性标题。不要填 HH:mm、午後 这类时刻；若只有时刻信息，请结合上下文写成“今日”“雨夜当日”“第 X 日”等日期标题。',
-  '- diary[*].content: 角色事后写下的主观日记，可包含心境、记忆、误解、愿望、秘密或身体感受；它不是即时心声/旁白，也不是客观状态，不能覆盖数值事实。',
+  '- diary[*].content: 角色事后写下的主观日记，可包含心境、记忆、误解、愿望、秘密或身体感受；它不是即时心声/旁白，也不是客观状态，不能覆盖数值事实。一两段、约 100–150 字，不要长篇。',
+  '- diary 是她的内心纪录，不一定是她真的写在本子上的：角色卡或世界书写明她会写日记的，写成日记本；没写或她不是会写日记的人，写成第一人称的心里话。',
   '- diary 有 24 小时冷却；同一角色在同一个故事日内最多只能写一篇。若当天已经写过，必须跳过 bsWriteDiary。',
   '- 通常只有 bsPassedTime 跨日后才调用 bsWriteDiary，并优先写“昨日/前一日/上一天”的回顾。若剧情发生重大事件或 notify 提醒，也应写成事后补记的语气，不要像当下即时独白。',
   '- 角色不在场也可以写日记；可根据角色性格、处境与已知生活状态补足合理的日常幕外感受，但不要把未经剧情支持的重大事件写成既成事实，也不要用日记改写客观状态。',
@@ -346,7 +347,8 @@ const TRACKER_DIARY_SECTION = [
   '[diary]',
   '- diary 是角色主观日记，保存为数组；existing_state 中只会发送最近几笔，前端完整变量仍会保留全量。',
   '- diary[*].time: 角色日记中的日期标题，不是具体钟点；应填写故事内日期、年月日、某日/第几天等日期性标题。不要填 HH:mm、午後 这类时刻；若只有时刻信息，请结合上下文写成“今日”“雨夜当日”“第 X 日”等日期标题。',
-  '- diary[*].content: 角色事后写下的主观日记，可包含心境、记忆、误解、愿望、秘密或身体感受；它不是即时心声/旁白，也不是客观状态，不能覆盖数值事实。',
+  '- diary[*].content: 角色事后写下的主观日记，可包含心境、记忆、误解、愿望、秘密或身体感受；它不是即时心声/旁白，也不是客观状态，不能覆盖数值事实。一两段、约 100–150 字，不要长篇。',
+  '- diary 是她的内心纪录，不一定是她真的写在本子上的：角色卡或世界书写明她会写日记的，写成日记本；没写或她不是会写日记的人，写成第一人称的心里话。',
   '- diary 有 24 小时冷却；同一角色在同一个故事日内最多只能写一篇。若当天已经写过，必须跳过 bsWriteDiary。',
   '- 通常只有 bsPassedTime 跨日后才调用 bsWriteDiary，并优先写“昨日/前一日/上一天”的回顾。若剧情发生重大事件或 notify 提醒，也应写成事后补记的语气，不要像当下即时独白。',
   '- 角色不在场也可以写日记；可根据角色性格、处境与已知生活状态补足合理的日常幕外感受，但不要把未经剧情支持的重大事件写成既成事实，也不要用日记改写客观状态。',
@@ -358,15 +360,21 @@ const REALISTIC_WORLD_DROPPED_LINES = [
   '- derivedType:', '- sperms[*].derivedType:', '- base.bloodline / fetuses[*].bloodline:', '- fetuses[*].fatherDerivedType:',
   '- fetuses[*].maternalDerivedTypeProgress:', '- fetuses[*].companionEggCount:', '- children[*].derivedType:',
   '- children[*].birthCompanionEggCount:', '- 若角色具有 derivedType', '- fluxPositive / fluxNegative', '- 对 derivedType 角色来说',
-  '- base.transforming:', '- pregnant.rejectionCrisis:', '- derivedTransforms:',
+  '- pregnant.rejectionCrisis:',
 ];
 /** 特殊工具关掉时，它产生的状态也不会出现 */
 const SPECIAL_TOOL_DROPPED_LINES = {
   bsWombReturn: ['- 回归期：', '- 回归期不受', '- pregnant.wombReturn:'],
   bsExtendPregnancy: ['- 延产期：', '- base.uterineAtony：'],
   bsImplantEmbryo: ['- fetuses[*].provider:', '- fetuses[*].providerSources:'],
-  'bsRecordExperience:transform': ['- base.transforming:', '- pregnant.rejectionCrisis:', '- derivedTransforms:'],
+  'bsRecordExperience:transform': ['- pregnant.rejectionCrisis:'],
 };
+
+function isTransformFullyOff(payload) {
+  const disabled = Array.isArray(payload?.disabled_special_tools) ? payload.disabled_special_tools : [];
+  const derivedOff = payload?.realistic_world === true || disabled.includes('bsRecordExperience:transform');
+  return derivedOff && disabled.includes('bsRecordExperience:body');
+}
 
 function dropGuideLines(guide, prefixes) {
   if (prefixes.length === 0) return guide;
@@ -401,6 +409,8 @@ function buildTrackerMetabolismGuide(payload = null) {
   baseGuide = dropGuideLines(baseGuide, [
     ...(payload?.realistic_world === true ? REALISTIC_WORLD_DROPPED_LINES : []),
     ...(Array.isArray(payload?.disabled_special_tools) ? payload.disabled_special_tools : []).flatMap((name) => SPECIAL_TOOL_DROPPED_LINES[name] || []),
+    // 转化中与转化经历：衍生转化（写实世界没有）与身体转化都关掉才拿掉
+    ...(isTransformFullyOff(payload) ? ['- base.transforming:', '- derivedTransforms:'] : []),
   ]);
   // 只解释本轮真的出现过的标签，与种族短叙述同规则：没用到就不占 token
   const fetusTagLines = describeFetusTags(collectRelevantFetusTags(payload || {}));
@@ -793,6 +803,8 @@ export function projectNarrativeState(existingState = {}, recentResults = []) {
     if (!emergencyFresh.has(name)) delete profile.lastEmergencyResult;
     // 还在经期阶段就已经有胎儿，是受精卵尚未着床：旁白看不到，等着床进入孕早期才出现
     if (profile.pregnant && MENSTRUAL_STAGES.includes(String(profile.base?.stage || ''))) delete profile.pregnant;
+    // 日记（1.5.1）：主线只送最近 MAINFLOW_DIARY_LIMIT 篇
+    if (Array.isArray(profile.diary) && profile.diary.length > MAINFLOW_DIARY_LIMIT) profile.diary = profile.diary.slice(-MAINFLOW_DIARY_LIMIT);
     // 胎儿事件纪录是给追踪模型防重复的，主线只看各胎的健康刻度
     if (profile.pregnant?.fetalEvents) {
       const { fetalEvents: _fetalEvents, ...pregnant } = profile.pregnant;
@@ -2299,6 +2311,7 @@ export function buildDiaryRuleLines(requestedDate = '') {
     '只为 payload.target_character 写一篇事后回顾式日记，不得替其他角色写。',
     '结合角色资料、现有状态、最近聊天与既有日记，使用第一人称，保持角色语气与认知边界。',
     '不要把日记写成即时旁白、系统总结或数值清单。',
+    '日记是她的内心纪录，不一定是她真的写在本子上的：角色卡或世界书写明她会写日记的，写成日记本；没写或她不是会写日记的人，写成第一人称的心里话。',
     '严格遵守 payload.diary_writing_prompt。',
     requestedDate
       ? 'time 必须使用 payload.requested_diary_date。'
@@ -2444,7 +2457,14 @@ export const LEGACY_PREGNANT_DESCRIPTION_GUIDE = `
   护理|角色对产前护理采取的行动，包含是否产检、遵照医嘱`;
 
 export const DEFAULT_DIARY_WRITING_PROMPT = `
+日期訂為角色登場的前一天，内容一两段、约 100–150 字，挑当天最在意的事写身体感受、自我解释或情绪，用角色自己的口吻收尾；可以有停顿、遮掩、否认、矛盾与记忆偏差。不要写成长篇。`.trim();
+
+/** 1.5.1 以前的预设（「至少三段」，每篇都偏长）；设定里还是这段原文的照新预设换掉，改过的不动 */
+export const LEGACY_DIARY_WRITING_PROMPT = `
 日期訂為角色登場的前一天，内容通常至少三段，围绕当天事件、身体感受、自我解释、情绪反刍与角色式收尾展开；可以有停顿、遮掩、否认、矛盾与记忆偏差。`.trim();
+
+/** 主线每个角色只送最近几篇日记：够它接上她这几天的心境就好，追踪照设定的篇数送 */
+export const MAINFLOW_DIARY_LIMIT = 2;
 
 // ═══ 六、纪录摘要整理 ════════════════════════════════════════════
 

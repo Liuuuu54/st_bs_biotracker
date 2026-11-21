@@ -200,16 +200,21 @@ test('精力周期：没有衍生类型平滑 ±10%；衍生类型决定形状�
   const chat = state.createEmptyChatState();
   upsertSireRecord(chat, '凯', { race: '人类' });
   const plain = getSireQualityState(chat, '凯');
-  assert.equal(plain.cycleDays, 74);
+  // 1.5.1：基准 64 天，照档案精子品质 ±7（品质 1 → 64）
+  assert.equal(plain.cycleDays, 64);
   assert.equal(plain.cycleShape.amplitude, 0.1);
-  assert.ok(Math.abs(plain.cycle - getSpermCycleFactor(plain.cycleDay / 74)) < 1e-9);
+  assert.ok(Math.abs(plain.cycle - getSpermCycleFactor(plain.cycleDay / 64)) < 1e-9);
+  upsertSireRecord(chat, '强', { race: '人类', spermQuality: 4 });
+  upsertSireRecord(chat, '弱', { race: '人类', spermQuality: 0.25 });
+  assert.ok(Math.abs(getSireQualityState(chat, '强').cycleDays - 57) < 1e-9, '品质好的生精快');
+  assert.ok(Math.abs(getSireQualityState(chat, '弱').cycleDays - 71) < 1e-9);
 
   // 序列（ABO）：易感期型，走到这一轮正中间冲到 ×2，摘要行写内建的易感期叙述
   upsertSireRecord(chat, '阿尔法', { race: '[序列-ABO]人类' });
   assert.equal(chat.sires['阿尔法'].derivedType, '序列-ABO');
   const alpha = getSireQualityState(chat, '阿尔法');
   assert.equal(alpha.cycleShape.peakDays, 3);
-  const toPeak = ((37 - alpha.cycleDay) % 74 + 74) % 74;
+  const toPeak = ((alpha.cycleDays / 2 - alpha.cycleDay) % alpha.cycleDays + alpha.cycleDays) % alpha.cycleDays;
   const peak = getSireQualityState(chat, '阿尔法', { minutesPassed: toPeak * DAY });
   assert.ok(Math.abs(peak.cycle - 2) < 1e-6);
   const entries = buildSirePromptEntries({ ...chat, minutesPassed: toPeak * DAY });
@@ -227,7 +232,8 @@ test('精力周期：没有衍生类型平滑 ±10%；衍生类型决定形状�
     assert.equal(custom.cycleShape.peakDays, 5);
     assert.equal(custom.cycleShape.prompt, '正值筑巢期');
     setDerivedTypeOverrides({ 序列: { sireCyclePrompt: '' } });
-    const toPeakAgain = ((37 - getSireQualityState(chat, '阿尔法').cycleDay) % 74 + 74) % 74;
+    const cycleNow = getSireQualityState(chat, '阿尔法');
+    const toPeakAgain = ((cycleNow.cycleDays / 2 - cycleNow.cycleDay) % cycleNow.cycleDays + cycleNow.cycleDays) % cycleNow.cycleDays;
     const [again] = buildSirePromptEntries({ ...chat, minutesPassed: toPeakAgain * DAY }).filter((item) => item.name === '阿尔法');
     assert.match(again.condition, /正值精力高峰/);
   } finally {

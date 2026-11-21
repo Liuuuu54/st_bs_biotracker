@@ -9,6 +9,7 @@ import { getBloodlineInfo, getDerivedTypeSireCycleProfile, getMergedRacePhysiolo
 import { normalizeReproductiveSettings } from './reproductive.js';
 import { getRaceSeasonShape, getSireSeasonPhase, hashPhase, hasSeasonOrigin, resolveSireSeasonOrigin } from './season_phase.js';
 import { DORMANCY_STAGE } from './stage_config.js';
+import { describeDerivedTransform, normalizeDerivedTransformLog } from './derived_transform.js';
 import { canBodyHaveSkill, getTalentLabel, normalizeSkillList, normalizeTalentList, resolveSkillDefinition } from './skill_config.js';
 
 export const SIRE_SOURCES = Object.freeze(['manual', 'card', 'father', 'library']);
@@ -53,8 +54,15 @@ const MINUTES_PER_DAY = 24 * 60;
 export const SIRE_OFF_SEASON_FACTOR = 0.6;
 /** 季节交界的过渡（天）：两侧各 1.5 天线性过渡，避免一天之内跳变 */
 const SEASON_RAMP_DAYS = 1.5;
-/** 精方精力周期一轮的长度（人类天数，再乘经期倍率）；幅度与形状看衍生类型 */
-export const SPERMATOGENESIS_DAYS = 74;
+/** 精方精力周期一轮的基准长度（人类天数，再乘经期倍率）；幅度与形状看衍生类型 */
+export const SPERMATOGENESIS_DAYS = 64;
+/** 个人差异（1.5.1）：照档案精子品质 ±7 天，品质好的生精快、周期短（品质 4 → 57、1 → 64、0.25 → 71）。不取 ±8：56 天刚好是卵方 28 天的两倍，排卵时会一直落在精力周期的同一个位置 */
+export const SPERMATOGENESIS_SPREAD_DAYS = 7;
+
+/** 这位精方一轮精力周期的天数（未乘经期倍率） */
+export function getSireCycleBaseDays(spermQuality = 1) {
+  return SPERMATOGENESIS_DAYS - (SPERMATOGENESIS_SPREAD_DAYS / 2) * Math.log2(normalizeSpermQuality(spermQuality));
+}
 
 /**
  * 精方周期在一轮里某一点的品质系数，fraction 是 0～1，波峰在正中间。
@@ -136,7 +144,7 @@ export function getSireQualityState(chatState, name, { minutesPassed = null } = 
 
   // 起点：有季节起点就跟着它（同族一起），再按名字错开，免得每位精方一建档就在同一个位置
   const cycleOrigin = hasSeasonOrigin(record) ? Number(record.seasonOrigin) : (Number(record.createdAt) || 0);
-  const cycleDays = SPERMATOGENESIS_DAYS * ratio;
+  const cycleDays = getSireCycleBaseDays(record.spermQuality) * ratio;
   const cycleElapsed = (now - cycleOrigin) / MINUTES_PER_DAY + hashPhase(key) * cycleDays;
   const cycleDay = ((cycleElapsed % cycleDays) + cycleDays) % cycleDays;
   const cycleProfile = getDerivedTypeSireCycleProfile(derivedType);
@@ -257,21 +265,28 @@ export function normalizeSpermQuality(value) {
   return Math.max(SPERM_QUALITY_MIN, Math.min(SPERM_QUALITY_MAX, quality));
 }
 
+/** 有填年龄（0 岁也算，刚出生的孩子注册成精方就是 0）；null、空字串、非数字是没填 */
+function readAge(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const age = Number(raw);
+  return Number.isFinite(age) && age >= 0 ? age : null;
+}
+
 export function normalizeSireRecord(raw, minutesPassed = 0) {
   const value = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const parsed = parseRaceDescriptor(value.race || '人类');
   const race = parsed.race || '人类';
   const ancestry = getBloodlineInfo(race, value.bloodline ?? parsed.bloodline ?? null, value.bloodlineSource || null);
-  const age = Number(value.age);
-  const changedAt = Number(value.bodyChangedAtAge);
+  const age = readAge(value.age);
+  const changedAt = readAge(value.bodyChangedAtAge);
   return {
     race,
     bloodline: ancestry.bloodline,
     bloodlineSource: ancestry.bloodlineSource,
     derivedType: value.derivedType ? String(value.derivedType).trim() || null : (parsed.derivedType || null),
-    age: Number.isFinite(age) && age > 0 ? age : null,
+    age,
     // 身材上次改变时的年龄（bsGrowBody 的门槛，1.3.1）；没有时从当下年龄起算
-    bodyChangedAtAge: Number.isFinite(changedAt) && changedAt > 0 ? changedAt : (Number.isFinite(age) && age > 0 ? age : null),
+    bodyChangedAtAge: changedAt ?? age,
     bodySize: clampIndividualBodySize(value.bodySize),
     isHere: value.isHere !== false,
     descriptions: {
@@ -301,6 +316,11 @@ export function normalizeSireRecord(raw, minutesPassed = 0) {
       ? { childSource: { motherName: String(value.childSource.motherName).trim(), childIndex: Number(value.childSource.childIndex) } }
       : {}),
     createdAt: Math.max(0, Number(value.createdAt) || 0),
+    // 转化（1.5.1）：精方也能转化，结构同卵方的 base.transforming 与 profile.derivedTransforms
+    ...(value.transforming && typeof value.transforming === 'object' && Number.isFinite(Number(value.transforming.untilMinutes))
+      ? { transforming: { ...value.transforming } }
+      : {}),
+    ...(normalizeDerivedTransformLog(value.derivedTransforms).length ? { derivedTransforms: normalizeDerivedTransformLog(value.derivedTransforms) } : {}),
   };
 }
 
@@ -309,8 +329,8 @@ export function advanceSireAges(chatState, days) {
   const sires = chatState?.sires;
   if (!sires || typeof sires !== 'object' || !(Number(days) > 0)) return;
   for (const record of Object.values(sires)) {
-    const age = Number(record?.age);
-    if (Number.isFinite(age) && age > 0) record.age = age + Number(days) / 365;
+    const age = readAge(record?.age);
+    if (age !== null) record.age = age + Number(days) / 365;
   }
 }
 
@@ -472,7 +492,9 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
     const summary = {
       name,
       race: formatSireRace(record),
-      ...(record.age ? { age: Math.round(record.age * 100) / 100 } : {}),
+      ...(record.age !== null && record.age !== undefined ? { age: Math.round(record.age * 100) / 100 } : {}),
+      // 转化中（1.5.1）：给模型一句话与剩余时数
+      ...(record.transforming ? { transforming: `${describeDerivedTransform(record.transforming)}，约剩 ${Math.max(0, Math.ceil((Number(record.transforming.untilMinutes) - now) / 60))} 小时` } : {}),
       // 只给追踪模型判断能不能用 bsGrowBody；主线拿掉
       ...(record.bodyChangedAtAge ? { bodyChangedAtAge: Math.round(record.bodyChangedAtAge * 100) / 100 } : {}),
       ...(record.bodySize ? { bodySize: record.bodySize } : {}),

@@ -919,17 +919,29 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
   for (const name of getDisabledSpecialToolNames(settings)) hiddenTools.add(name);
   if (settings?.timeFlowEnabled === false) hiddenTools.add('bsPassedTime');
   // 写实世界没有衍生类型，也不送转化
-  const transformOff = hiddenTools.has('bsRecordExperience:transform') || isRealisticWorld(settings);
-  return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name)).map((tool) => (transformOff && tool.name === 'bsRecordExperience' ? withoutTransformAction(tool) : tool));
+  // 写实世界没有衍生类型，但身体转化照样能用
+  const derivedOff = hiddenTools.has('bsRecordExperience:transform') || isRealisticWorld(settings);
+  const bodyOff = hiddenTools.has('bsRecordExperience:body');
+  const transformOff = derivedOff || bodyOff;
+  return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name)).map((tool) => (transformOff && tool.name === 'bsRecordExperience' ? withoutTransformAction(tool, { derivedOff, bodyOff }) : tool));
 }
 
 /** 衍生转化关掉时：bsRecordExperience 拿掉 transform 这个 action、它的参数与说明 */
-function withoutTransformAction(tool) {
+function withoutTransformAction(tool, { derivedOff = true, bodyOff = true } = {}) {
   const properties = { ...(tool.input_schema?.properties || {}) };
-  delete properties.derivedType;
-  delete properties.hours;
-  properties.action = { ...properties.action, enum: (properties.action?.enum || []).filter((value) => value !== 'transform') };
-  const description = String(tool.description || '').replace(/transform 记血脉[^]*?产程中不能转化。/, '');
+  let description = String(tool.description || '');
+  if (derivedOff) {
+    delete properties.derivedType;
+    description = description.replace(/transform 记血脉[^]*?产程中不能转化。/, '');
+  }
+  if (bodyOff) {
+    delete properties.body;
+    description = description.replace(/transform 的 body 记身体转化[^]*?只改描述。/, '');
+  }
+  if (derivedOff && bodyOff) {
+    delete properties.hours;
+    properties.action = { ...properties.action, enum: (properties.action?.enum || []).filter((value) => value !== 'transform') };
+  }
   return { ...tool, description, input_schema: { ...tool.input_schema, properties } };
 }
 

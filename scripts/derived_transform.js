@@ -122,8 +122,12 @@ export function getRejectionHours(hours, gestationSpeed = 1) {
   return Math.max(REJECTION_MIN_HOURS, REJECTION_BASE_HOURS / Math.max(1, Number(gestationSpeed) || 1));
 }
 
-/** 转化经历一笔：{ time, from, to, kind, source, sourceKind, method } */
-export function buildDerivedTransformRecord({ time = '', from = null, to = null, kind, partner = '', content = '', minutesPassed = 0 } = {}) {
+/** 身体转化（1.5.1 性转）：照有没有子宫、有没有阴茎，不照性别 */
+export const BODY_TRANSFORMS = Object.freeze(['gainSword', 'loseSword', 'gainWomb', 'loseWomb']);
+const BODY_TRANSFORM_TEXT = Object.freeze({ gainSword: '长出了阴茎', loseSword: '失去了阴茎', gainWomb: '长出了子宫', loseWomb: '失去了子宫' });
+
+/** 转化经历一笔：{ time, from, to, kind, source, sourceKind, method }；身体转化 kind='body' 另带 body */
+export function buildDerivedTransformRecord({ time = '', from = null, to = null, kind, body = null, partner = '', content = '', minutesPassed = 0 } = {}) {
   const source = String(partner || '').trim();
   return {
     time: String(time || '').trim(),
@@ -131,6 +135,7 @@ export function buildDerivedTransformRecord({ time = '', from = null, to = null,
     from: from || null,
     to: to || null,
     kind,
+    ...(kind === 'body' && BODY_TRANSFORMS.includes(body) ? { body } : {}),
     ...(source ? { source, sourceKind: 'person' } : { sourceKind: 'other' }),
     method: String(content || '').trim(),
   };
@@ -138,7 +143,7 @@ export function buildDerivedTransformRecord({ time = '', from = null, to = null,
 
 export function normalizeDerivedTransformLog(value) {
   return (Array.isArray(value) ? value : [])
-    .filter((item) => item && typeof item === 'object' && ['gain', 'refine', 'switch', 'purge'].includes(item.kind))
+    .filter((item) => item && typeof item === 'object' && (['gain', 'refine', 'switch', 'purge'].includes(item.kind) || (item.kind === 'body' && BODY_TRANSFORMS.includes(item.body))))
     .slice(-DERIVED_TRANSFORM_LOG_CAP);
 }
 
@@ -149,6 +154,7 @@ export function describeDerivedTransform(record) {
   const from = record.from || '无衍生';
   const by = record.source ? `被${record.source}` : '';
   const how = record.method ? `（${record.method}）` : '';
+  if (record.kind === 'body' || record.body) return `${by}${BODY_TRANSFORM_TEXT[record.body] || '身体起了变化'}${how}`;
   if (record.kind === 'purge') return `${by}去掉了${from}${how}`;
   if (record.kind === 'refine') return `${by}由${from}转为${to}${how}`;
   if (record.kind === 'switch') return `${by}由${from}转化为${to}${how}`;

@@ -623,7 +623,8 @@ export function sanitizeSireExtractionResult(result) {
       .filter((entry) => entry.name && entry.value)
     : [];
   return {
-    age: Number.isFinite(age) && age > 0 ? Math.round(age) : null,
+    // 0 岁有效（刚出生的孩子注册成精方）；没填才是未知
+    age: value.age !== null && value.age !== undefined && value.age !== '' && Number.isFinite(age) && age >= 0 ? Math.round(age) : null,
     bodySize: clampIndividualBodySize(value.bodySize),
     swordOffset: value.swordOffset === null || value.swordOffset === undefined || value.swordOffset === '' || !Number.isFinite(Number(value.swordOffset))
       ? null

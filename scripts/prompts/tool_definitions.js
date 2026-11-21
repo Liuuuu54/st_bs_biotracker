@@ -25,7 +25,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsWriteDiary',
-    description: '为单一角色追加一条主观日记。time 是日记的日期标题，不是具体钟点；请填写故事内日期、年月日、某日/第几天等，不要填 HH:mm、午後 这类时刻。同一角色每个故事日（24 小时）最多只能写一篇；若当天已写过，不得再次调用。content 应像角色事后写下的日记，不是即时心声或旁白；通常在跨日后回顾昨日，重大事件或 notify 提醒时也应写成事后补记。角色不在场也可以写。',
+    description: '为单一角色追加一条主观日记。time 是日记的日期标题，不是具体钟点；请填写故事内日期、年月日、某日/第几天等，不要填 HH:mm、午後 这类时刻。同一角色每个故事日（24 小时）最多只能写一篇；若当天已写过，不得再次调用。content 应像角色事后写下的日记，不是即时心声或旁白，一两段、约 100–150 字，不要长篇；通常在跨日后回顾昨日，重大事件或 notify 提醒时也应写成事后补记。角色不在场也可以写。',
     input_schema: {
       type: 'object',
       properties: {
@@ -195,7 +195,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsRecordExperience',
-    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。她得知、确认或相信自己怀孕的那条 cognition 必须附 prenatalCare（没什么特别就给 normal），之后养胎态度改变再附。cognition 需 method、content：记角色感知、猜测、被告知或检查解读，也记她对生殖、性与母职的心境转变（附 psychology），允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她自己心里认定的父亲，可以是未注册人物，null 取消，省略保留；认定可以与真相不符。对外说法与心里认定不同时（谎称、隐瞒），selectedFather 仍记心里的认定，对外怎么说写进 content，例如「她心里认定是乙的，却对甲谎称是甲的」；心里认定改变（独自想通、起疑、改认）也用 claim 记，不改用 cognition。不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知纪录较多时只会送你最近几条、钉选的条目与一行更早纪录的摘要。认知实际进月经刷新，关系、孩子与胎父认定长期保留。transform 记血脉／衍生类型的转化（被初拥、觉醒、被净化、改宗、修炼突破、改造…），只在剧情明确写到时用，一般变强不用：需 derivedType 与 content（一句白描写怎么转化的），转化者是人时给 partner（转化者不必是同一种衍生：工程师改造出机械、施咒者下咒缚）；要花时间的给 hours，而且先调用 transform 再用 bsPassedTime 推进那段时间（剧情里转化花了半天，就是 transform hours=12 再推进 12 小时），不要先推进时间再记成瞬间转化。同一大类只换子项（突破、改宗）只记经历、不影响怀孕；怀孕中换成另一大类或去掉衍生会引起血脉排斥：胎儿健康持续下降，熬不过的那一胎会流掉，剧情要写出代价；这份伤害由系统按排斥自动结算，不要再用 bsFetalEvent 另记这次转化对胎儿的伤害（之后的安抚、安胎药照常记）。回归期、产兆前驱与产程中不能转化。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
+    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。她得知、确认或相信自己怀孕的那条 cognition 必须附 prenatalCare（没什么特别就给 normal），之后养胎态度改变再附。cognition 需 method、content：记角色感知、猜测、被告知或检查解读，也记她对生殖、性与母职的心境转变（附 psychology），允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她自己心里认定的父亲，可以是未注册人物，null 取消，省略保留；认定可以与真相不符。对外说法与心里认定不同时（谎称、隐瞒），selectedFather 仍记心里的认定，对外怎么说写进 content，例如「她心里认定是乙的，却对甲谎称是甲的」；心里认定改变（独自想通、起疑、改认）也用 claim 记，不改用 cognition。不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知纪录较多时只会送你最近几条、钉选的条目与一行更早纪录的摘要。认知实际进月经刷新，关系、孩子与胎父认定长期保留。transform 记血脉／衍生类型的转化（被初拥、觉醒、被净化、改宗、修炼突破、改造…），只在剧情明确写到时用，一般变强不用；female 也可以是已注册的精方（只改他的档案，不会排斥）：需 derivedType 与 content（一句白描写怎么转化的），转化者是人时给 partner（转化者不必是同一种衍生：工程师改造出机械、施咒者下咒缚）；要花时间的给 hours，而且先调用 transform 再用 bsPassedTime 推进那段时间（剧情里转化花了半天，就是 transform hours=12 再推进 12 小时），不要先推进时间再记成瞬间转化。同一大类只换子项（突破、改宗）只记经历、不影响怀孕；怀孕中换成另一大类或去掉衍生会引起血脉排斥：胎儿健康持续下降，熬不过的那一胎会流掉，剧情要写出代价；这份伤害由系统按排斥自动结算，不要再用 bsFetalEvent 另记这次转化对胎儿的伤害（之后的安抚、安胎药照常记）。回归期、产兆前驱与产程中不能转化。transform 的 body 记身体转化（性转），照有没有子宫、有没有阴茎，不照性别：gainSword 卵方长出阴茎（变扶她）、loseSword 扶她失去阴茎、gainWomb 只有精方档的人长出子宫、loseWomb 扶她失去子宫（怀孕、回归期、产兆前驱、产程、产后恢复期不能）；只剩一样时不能再失去它，完全变男是先 gainSword 再 loseWomb。body 与 derivedType 一次只给一个，同样可给 hours、partner。器官没变、只是性别认同或外观变了的不用它，只改描述。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
     input_schema: {
       type: 'object',
       properties: {
@@ -206,6 +206,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         content: { type: 'string', minLength: 1 }, partner: { type: 'string', minLength: 1 },
         childIndex: { type: 'integer', minimum: 0 }, fetusIndex: { type: 'integer', minimum: 0 }, name: { type: 'string', minLength: 1 },
         selectedFather: { type: ['string', 'null'], minLength: 1 },
+        body: { type: 'string', enum: ['gainSword', 'loseSword', 'gainWomb', 'loseWomb'], description: '只用于 transform 的身体转化（性转），与 derivedType 二择一。' },
         derivedType: { type: 'string', description: '只用于 transform：转化后的衍生类型，照 [derivedType-装饰子项] 的写法（血族、血族-真祖、修炼-金丹）；空字串表示去掉衍生。' },
         hours: { type: 'number', minimum: 0, description: '只用于 transform：转化要花的故事时间（小时），靠 bsPassedTime 推进，期间她在「转化中」；省略或 0 为瞬间完成。' },
         pin: { type: 'boolean', description: '只用于 cognition：之后每轮都该看到的重要认知传 true：确认或否认怀孕、得知胎数、性别、胎父、预产期、诊断与医嘱，或推翻她先前的重要信念。' },

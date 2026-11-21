@@ -8,6 +8,8 @@ export const SPECIAL_TOOLS = Object.freeze({
   extendPregnancy: 'bsExtendPregnancy',
   // 衍生转化是 bsRecordExperience 的 action=transform，不是独立工具：关掉时只拿掉那一段（见 tracker.js）
   transformDerivedType: 'bsRecordExperience:transform',
+  // 身体转化（1.5.1 性转）：transform 的 body 参数；写实世界照样能用
+  transformBody: 'bsRecordExperience:body',
 });
 
 export const SPECIAL_TOOL_LABELS = Object.freeze({
@@ -15,6 +17,7 @@ export const SPECIAL_TOOL_LABELS = Object.freeze({
   wombReturn: '胎归',
   extendPregnancy: '延产',
   transformDerivedType: '衍生转化',
+  transformBody: '身体转化',
 });
 
 export function normalizeSpecialTools(value) {

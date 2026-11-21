@@ -22,7 +22,8 @@ import {
 } from './fetal_health.js';
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
-import { advanceSireAges, consumeSireReserve, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, normalizeSpermQuality, resolveSireBase } from './sires.js';
+import { applyRegistryResult } from './registry.js';
+import { advanceSireAges, consumeSireReserve, normalizeSireRecord, pruneFutaSireRecord, upsertSireRecord, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, normalizeSpermQuality, resolveSireBase } from './sires.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
 import { clampIndividualBodySize, describeBodySizeFit, normalizeSwordOffset, getAltFormBodySize, getBodySizeSigma, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
@@ -132,6 +133,7 @@ import {
   REJECTION_VITALITY_PER_HOUR, TRANSFORMING_VITALITY_PER_HOUR, buildDerivedTransformRecord, causesRejection, classifyDerivedTransform,
   describeDerivedTransform, getAffinityCoefficient, getRejectionHours, getRejectionLoss, normalizeDerivedTransformLog,
   remapInheritanceProgress, resolveDerivedTypeInput,
+  BODY_TRANSFORMS,
 } from './derived_transform.js';
 import { normalizeSpecialTools } from './world_mode.js';
 export { TOOL_DEFINITIONS };
@@ -6773,6 +6775,13 @@ function applyDerivedTransform(chatState, args) {
   const female = String(args?.female || '').trim();
   const character = chatState.characters?.[female];
   const skip = (reason) => ({ applied: false, message: `bsRecordExperience transform skipped for ${female || '(empty)'}: ${reason}` });
+  // 身体转化（1.5.1 性转）：与衍生转化共用 transform，一次只做一件
+  if (args?.body !== undefined && args?.body !== null && args?.body !== '') {
+    if (args?.derivedType !== undefined) return skip('一次只做一件：derivedType 与 body 不能同时给，分两次调用。');
+    return applyBodyTransform(chatState, female, args, skip);
+  }
+  // 纯精方（1.5.1）：只改精方档案，不会怀孕所以没有排斥；扶她走卵方那份、精方跟着同步
+  if (female && !character && chatState.sires && Object.prototype.hasOwnProperty.call(chatState.sires, female)) return applySireDerivedTransform(chatState, female, args, skip);
   if (!female || !character) return skip('unknown character.');
   const time = typeof args?.time === 'string' ? args.time.trim() : '';
   const content = typeof args?.content === 'string' ? args.content.trim() : '';
@@ -6809,6 +6818,191 @@ function applyDerivedTransform(chatState, args) {
   syncSireDerivedType(chatState, female, to);
   chatState.characters[female] = next;
   return { applied: true, message: `${done}${tail}。` };
+}
+
+/** 纯精方的衍生转化：瞬间就改档案；有 hours 就进转化中，时间推进到点才改（advanceSireTransforming） */
+function applySireDerivedTransform(chatState, name, args, skip) {
+  const time = typeof args?.time === 'string' ? args.time.trim() : '';
+  const content = typeof args?.content === 'string' ? args.content.trim() : '';
+  if (!time) return skip('time is required.');
+  if (!content) return skip('content is required（一句话写怎么转化的）.');
+  if (!args || !Object.hasOwn(args, 'derivedType')) return skip('derivedType is required（空字串表示去掉衍生）.');
+  const to = resolveDerivedTypeInput(args.derivedType);
+  if (to === undefined) return skip(`衍生类型「${args.derivedType}」不在名录里。`);
+  const sire = chatState.sires[name];
+  if (sire.transforming) return skip(`${name}正在转化成${sire.transforming.to || '无衍生'}，等这次完成再转。`);
+  const hours = Number(args?.hours);
+  if (args?.hours !== undefined && (!Number.isFinite(hours) || hours < 0)) return skip('hours must be a number ≥ 0.');
+  const from = sire.derivedType ? canonicalDerivedName(String(sire.derivedType)) : null;
+  const kind = classifyDerivedTransform(from, to);
+  if (kind === 'same') return skip(`${name}已经是${to || '无衍生'}。`);
+  const minutesPassed = Math.max(0, Number(chatState.minutesPassed) || 0);
+  const record = buildDerivedTransformRecord({ time, from, to, kind, partner: args?.partner, content, minutesPassed });
+  if (hours > 0) {
+    chatState.sires[name] = normalizeSireRecord({ ...sire, transforming: { ...record, startedMinutes: minutesPassed, hours, untilMinutes: minutesPassed + hours * 60, body: null } }, minutesPassed);
+    return { applied: true, message: `${name}（精方）开始转化成${to || '无衍生'}，${Math.round(hours * 10) / 10} 小时后完成。` };
+  }
+  completeSireDerivedTransform(chatState, name, record);
+  return { applied: true, message: `${name}（精方）${describeDerivedTransform(record)}。` };
+}
+
+function completeSireDerivedTransform(chatState, name, record) {
+  const sire = chatState.sires?.[name];
+  if (!sire) return;
+  const { transforming, ...rest } = sire;
+  chatState.sires[name] = normalizeSireRecord({
+    ...rest,
+    derivedType: record.to || null,
+    derivedTransforms: normalizeDerivedTransformLog([...(sire.derivedTransforms || []), record]),
+  }, Math.max(0, Number(chatState.minutesPassed) || 0));
+}
+
+/** 时间推进时纯精方的转化中跟着走（扶她的转化在卵方那份） */
+function advanceSireTransforming(chatState, nowMinutes) {
+  for (const [name, sire] of Object.entries(chatState?.sires || {})) {
+    const transforming = sire?.transforming;
+    if (!transforming || Object.prototype.hasOwnProperty.call(chatState.characters || {}, name)) continue;
+    if (Number(nowMinutes) < Number(transforming.untilMinutes)) continue;
+    const record = { ...transforming };
+    for (const key of ['startedMinutes', 'hours', 'untilMinutes']) delete record[key];
+    if (record.kind === 'body') {
+      const { transforming: _done, ...rest } = sire;
+      chatState.sires[name] = normalizeSireRecord(rest, Number(nowMinutes) || 0);
+      completeBodyTransform(chatState, name, record);
+      continue;
+    }
+    delete record.body;
+    completeSireDerivedTransform(chatState, name, record);
+  }
+}
+
+/** 停用的身体档（失去子宫的卵方、失去阴茎的精方）：保留不删，换回来时恢复 */
+function getDormant(chatState) {
+  if (!chatState.dormant || typeof chatState.dormant !== 'object') chatState.dormant = { characters: {}, sires: {} };
+  if (!chatState.dormant.characters || typeof chatState.dormant.characters !== 'object') chatState.dormant.characters = {};
+  if (!chatState.dormant.sires || typeof chatState.dormant.sires !== 'object') chatState.dormant.sires = {};
+  return chatState.dormant;
+}
+
+/** 不能失去子宫的阶段：妊娠各期、产兆前驱、产程、回归期、产后恢复（产后的事件堆与回缩还在结算） */
+const LOSE_WOMB_BLOCKED_STAGES = new Set([...PREGNANCY_STAGES, '产兆前驱', ...LABOR_STAGES, WOMB_RETURN_STAGE, '产后恢复']);
+
+/**
+ * 身体转化（1.5.1 性转）。照有没有子宫（卵方档）、有没有阴茎（精方档）：
+ * gainSword 卵方长出阴茎（变扶她）、loseSword 扶她失去阴茎、gainWomb 纯精方长出子宫、loseWomb 扶她失去子宫。
+ * 两样都没有的身体不追踪，所以只剩一样时不能再失去它。
+ */
+function applyBodyTransform(chatState, name, args, skip) {
+  const body = String(args.body);
+  if (!BODY_TRANSFORMS.includes(body)) return skip(`body 只能是 ${BODY_TRANSFORMS.join('／')}。`);
+  const time = typeof args?.time === 'string' ? args.time.trim() : '';
+  const content = typeof args?.content === 'string' ? args.content.trim() : '';
+  if (!time) return skip('time is required.');
+  if (!content) return skip('content is required（一句话写身体怎么变的）.');
+  const hours = Number(args?.hours);
+  if (args?.hours !== undefined && (!Number.isFinite(hours) || hours < 0)) return skip('hours must be a number ≥ 0.');
+  const egg = chatState.characters?.[name] || null;
+  const sire = chatState.sires && Object.prototype.hasOwnProperty.call(chatState.sires, name) ? chatState.sires[name] : null;
+  if (!egg && !sire) return skip('unknown character.');
+  if (body === 'gainSword' && !egg) return skip(`${name}只有精方档，本来就有阴茎。`);
+  if (body === 'gainSword' && sire) return skip(`${name}已经有阴茎（扶她）。`);
+  if (body === 'loseSword' && !sire) return skip(`${name}没有阴茎。`);
+  if (body === 'loseSword' && !egg) return skip(`${name}没有子宫，失去阴茎后两样都没有，系统不追踪这种身体；要先 gainWomb。`);
+  if (body === 'gainWomb' && egg) return skip(`${name}已经有子宫。`);
+  if (body === 'loseWomb' && !egg) return skip(`${name}没有子宫。`);
+  if (body === 'loseWomb' && !sire) return skip(`${name}没有阴茎，失去子宫后两样都没有，系统不追踪这种身体；要先 gainSword。`);
+  if (body === 'loseWomb') {
+    const stage = String(egg.profile?.base?.stage || '');
+    if (LOSE_WOMB_BLOCKED_STAGES.has(stage)) return skip(`${stage}中不能失去子宫，等恢复到月经周期再说。`);
+  }
+  // 转化中挂在有子宫的那份；纯精方长子宫时挂在精方档
+  const holder = body === 'gainWomb' ? sire : egg.profile?.base;
+  if (holder?.transforming) return skip(`${name}正在转化（${describeDerivedTransform(holder.transforming)}），等这次完成再转。`);
+  const minutesPassed = Math.max(0, Number(chatState.minutesPassed) || 0);
+  const record = buildDerivedTransformRecord({ time, kind: 'body', body, partner: args?.partner, content, minutesPassed });
+  if (hours > 0) {
+    const transforming = { ...record, startedMinutes: minutesPassed, hours, untilMinutes: minutesPassed + hours * 60 };
+    if (body === 'gainWomb') chatState.sires[name] = normalizeSireRecord({ ...sire, transforming }, minutesPassed);
+    else {
+      const next = cloneValue(egg);
+      next.profile.base.transforming = transforming;
+      chatState.characters[name] = next;
+    }
+    return { applied: true, message: `${name}的身体开始变化（${describeDerivedTransform(record)}），${Math.round(hours * 10) / 10} 小时后完成。` };
+  }
+  return { applied: true, message: `${completeBodyTransform(chatState, name, record)}。` };
+}
+
+/** 身体转化完成：建立、停用或恢复卵方／精方档，经历记在两边都看得到的那份 */
+function completeBodyTransform(chatState, name, record) {
+  const dormant = getDormant(chatState);
+  const minutesPassed = Math.max(0, Number(chatState.minutesPassed) || 0);
+  const logOn = (target) => { if (target) target.derivedTransforms = normalizeDerivedTransformLog([...(target.derivedTransforms || []), record]); };
+  const egg = chatState.characters?.[name];
+  if (record.body === 'gainSword' && egg) {
+    const base = egg.profile.base || {};
+    if (dormant.sires[name]) {
+      chatState.sires[name] = normalizeSireRecord({ ...dormant.sires[name], isHere: base.isHere !== false }, minutesPassed);
+      delete dormant.sires[name];
+    } else {
+      upsertSireRecord(chatState, name, { race: base.race, age: base.age, bodySize: base.bodySize, spermQuality: 1, swordOffset: 0, isHere: base.isHere !== false, descriptions: [] }, { source: 'manual' });
+    }
+    pruneFutaSireRecord(chatState, name);
+    logOn(egg.profile);
+  } else if (record.body === 'loseSword' && chatState.sires?.[name]) {
+    dormant.sires[name] = chatState.sires[name];
+    delete chatState.sires[name];
+    logOn(egg?.profile);
+  } else if (record.body === 'loseWomb' && egg) {
+    // 扶她失去子宫：精方档补回种族、年龄等（扶她时只存精子品质），卵方档停用；子宫里的精液与卵清掉
+    const profile = egg.profile;
+    const base = profile.base || {};
+    const sire = chatState.sires[name];
+    chatState.sires[name] = normalizeSireRecord({
+      ...sire,
+      race: base.race, bloodline: base.bloodline, bloodlineSource: base.bloodlineSource, derivedType: base.derivedType || null,
+      age: base.age, bodySize: base.bodySize, isHere: base.isHere !== false,
+      descriptions: { normalDescription: profile.descriptions?.normalDescription || [] },
+      talents: profile.talents || [], skills: profile.skills || [],
+    }, minutesPassed);
+    logOn(chatState.sires[name]);
+    base.sperms = [];
+    base.eggs = 0;
+    base.fertilizationDays = 0;
+    profile.pregnant = { ...(profile.pregnant || {}), fetuses: [], fetusesCount: 0 };
+    logOn(profile);
+    dormant.characters[name] = egg;
+    delete chatState.characters[name];
+  } else if (record.body === 'gainWomb' && chatState.sires?.[name] && !egg) {
+    const sire = chatState.sires[name];
+    if (dormant.characters[name]) {
+      const restored = dormant.characters[name];
+      delete dormant.characters[name];
+      Object.assign(restored.profile.base, { stage: '卵泡期', days: 0, sperms: [], eggs: 0, fertilizationDays: 0, isHere: sire.isHere !== false, derivedType: sire.derivedType || null, ...(sire.age !== null && sire.age !== undefined ? { age: sire.age } : {}) });
+      chatState.characters[name] = restored;
+    } else {
+      applyRegistryResult(chatState, {
+        name,
+        profile: {
+          base: { race: sire.race, bloodline: sire.bloodline, bloodlineSource: sire.bloodlineSource, derivedType: sire.derivedType || null, age: sire.age, bodySize: sire.bodySize, isHere: sire.isHere !== false },
+          descriptions: { normalDescription: sire.descriptions?.normalDescription || [] },
+        },
+      }, { allowBreedingPsychology: false, useGestationModifier: false });
+      const created = chatState.characters[name];
+      if (created) {
+        Object.assign(created.profile.base, { stage: '卵泡期', days: 0 });
+        if (Array.isArray(sire.talents) && sire.talents.length) created.profile.talents = sire.talents;
+        if (Array.isArray(sire.skills) && sire.skills.length) created.profile.skills = sire.skills;
+      }
+    }
+    logOn(chatState.characters[name]?.profile);
+    logOn(chatState.sires[name]);
+    pruneFutaSireRecord(chatState, name);
+  }
+  const text = `${name}${describeDerivedTransform(record)}`;
+  const holder = chatState.characters?.[name]?.profile;
+  if (holder) holder.notify = { ...(holder.notify || {}), secondly: text };
+  return text;
 }
 
 /** 转化完成：改写衍生、遗传轴重新对位、清掉未着床的受精卵（换大类与去衍生）、记经历与通知 */
@@ -6862,7 +7056,14 @@ function advanceDerivedTransforming(profile, tick, female) {
   if (hours > 0) profile.base.vitality = Math.max(0, (Number(profile.base.vitality) || 0) - TRANSFORMING_VITALITY_PER_HOUR * hours);
   if (Number.isFinite(until) && Number.isFinite(now) && now >= until) {
     const record = { ...transforming };
-    for (const key of ['startedMinutes', 'hours', 'untilMinutes', 'body']) delete record[key];
+    for (const key of ['startedMinutes', 'hours', 'untilMinutes']) delete record[key];
+    if (record.kind === 'body') {
+      // 身体转化会搬动卵方／精方档案，等这轮所有角色都推进完再做
+      delete profile.base.transforming;
+      tick.onBodyTransformDue?.(female, record);
+      return;
+    }
+    delete record.body;
     completeDerivedTransform(profile, female, record, until);
     tick.onDerivedTransformed?.(female, record.to || null);
   }
@@ -7806,6 +8007,7 @@ function requestedTimeMinutes(args) {
 }
 
 function applyPassedTime(chatState, args) {
+  const dueBodyTransforms = [];
   const totalMinutes = requestedTimeMinutes(args);
   if (totalMinutes <= 0) return { applied: false, message: 'bsPassedTime skipped: no positive duration.' };
   const hasPooledCharacter = Object.values(chatState.characters || {}).some((item) => isPooledConception(item?.profile?.base));
@@ -7846,10 +8048,13 @@ function applyPassedTime(chatState, args) {
     tick.pooledEvents = pooledEvents;
     tick.minutesBefore = Math.max(0, Number(chatState.minutesPassed) || 0);
     tick.onDerivedTransformed = (who, type) => syncSireDerivedType(chatState, who, type);
+    tick.onBodyTransformDue = (who, record) => dueBodyTransforms.push([who, record]);
     chatState.characters[name] = applyTimeToCharacter(subject, tick).character;
   }
   transferProviderChildren(chatState);
   advanceSireAges(chatState, totalMinutes / 1440);
+  advanceSireTransforming(chatState, Math.max(0, Number(chatState.minutesPassed) || 0) + totalMinutes);
+  for (const [who, record] of dueBodyTransforms) completeBodyTransform(chatState, who, record);
   const elapsedMinutes = totalMinutes;
   const previousMinutes = Math.max(0, Number(chatState.minutesPassed) || 0);
   chatState.minutesPassed = previousMinutes + elapsedMinutes;
@@ -9375,8 +9580,11 @@ const SKILL_SYSTEM_TOOLS = new Set(['bsRegisterSkillDefinition', 'bsTrainSkill']
 
 /** 系统页关掉的扩充系统：工具本来就不会送给模型，模型若凭空呼叫也不执行 */
 function getDisabledSystemToolMessage(settings, name, args = null) {
-  if (name === 'bsRecordExperience' && String(args?.action || '') === 'transform' && normalizeSpecialTools(settings?.specialTools).transformDerivedType === false) {
-    return 'bsRecordExperience transform skipped: 衍生转化已在特殊妊娠工具里关闭。';
+  if (name === 'bsRecordExperience' && String(args?.action || '') === 'transform') {
+    const isBody = args?.body !== undefined && args?.body !== null && args?.body !== '';
+    const tools = normalizeSpecialTools(settings?.specialTools);
+    if (isBody && tools.transformBody === false) return 'bsRecordExperience transform skipped: 身体转化已在特殊妊娠工具里关闭。';
+    if (!isBody && tools.transformDerivedType === false) return 'bsRecordExperience transform skipped: 衍生转化已在特殊妊娠工具里关闭。';
   }
   if (WARDROBE_SYSTEM_TOOLS.has(name) && !isWardrobeSystemEnabled(settings)) return `${name} skipped: 着衣系统已在系统页关闭。`;
   if (SKILL_SYSTEM_TOOLS.has(name) && !isSkillSystemEnabled(settings)) return `${name} skipped: 技能系统已在系统页关闭。`;

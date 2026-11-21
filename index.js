@@ -3331,7 +3331,7 @@ function renderDerivedTypeEditor(derivedType) {
     '<label class="bs-bt-race-editor-field bs-bt-race-editor-field-wide"><span>Flux 描述</span><textarea id="bs-bt-derived-flux-definition" class="text_pole bs-bt-race-introduction-input">' + escapeHtml(flux.fluxDefinition || '') + '</textarea></label>' +
     '<label class="bs-bt-race-editor-field"><span>遗传速度</span><input id="bs-bt-derived-inheritance-speed" class="text_pole" type="number" min="0" step="0.01" value="' + escapeHtml(inheritance.inheritanceSpeed) + '" /></label>' +
     '<label class="bs-bt-race-editor-field" title="精方精力周期：波峰品质 ×(1＋幅度)。0＝没有周期、品质恒定；预设 0.1（±10% 的平滑起伏）"><span>精力周期幅度</span><input id="bs-bt-derived-sire-cycle-amplitude" class="text_pole" type="number" min="0" max="3" step="0.05" value="' + escapeHtml(cycle.sireCycleAmplitude ?? 0.1) + '" /></label>' +
-    '<label class="bs-bt-race-editor-field" title="0＝平滑起伏；填几天就是平时持平、每轮（约 74 天 × 经期倍率）只有这几天冲高，例如易感期、发情期"><span>精力周期峰期（天）</span><input id="bs-bt-derived-sire-cycle-peak" class="text_pole" type="number" min="0" max="60" step="1" value="' + escapeHtml(cycle.sireCyclePeakDays ?? 0) + '" /></label>' +
+    '<label class="bs-bt-race-editor-field" title="0＝平滑起伏；填几天就是平时持平、每轮（约 57–71 天，照精子品质 × 经期倍率）只有这几天冲高，例如易感期、发情期"><span>精力周期峰期（天）</span><input id="bs-bt-derived-sire-cycle-peak" class="text_pole" type="number" min="0" max="60" step="1" value="' + escapeHtml(cycle.sireCyclePeakDays ?? 0) + '" /></label>' +
     '<label class="bs-bt-race-editor-field bs-bt-race-editor-field-wide" title="精方冲到高峰时，摘要行写给模型的状态。留空就写通用的「正值精力高峰，精液浓稠量多」"><span>精力周期短叙述</span><textarea id="bs-bt-derived-sire-cycle-prompt" class="text_pole bs-bt-race-introduction-input" placeholder="例：正值易感期：信息素浓烈失控……">' + escapeHtml(cycle.sireCyclePrompt || '') + '</textarea></label>';
   const fields = ['introductionLine', 'fluxDefinition', 'inheritanceSpeed', 'sireCycleAmplitude', 'sireCyclePeakDays', 'sireCyclePrompt'];
   editor.querySelectorAll('label').forEach((label, index) => {
@@ -5207,6 +5207,7 @@ function renderTrackOverview(viewModel) {
       <div class="bs-bt-track-section-title">代谢需求</div>
       ${renderMetabolismSummary(viewModel.overview.metabolismSummary)}
     </div>
+    ${viewModel.futaSireHtml || ''}
     <div class="bs-bt-action-row">
       <button type="button" class="menu_button" data-character-full-state="${escapeHtml(viewModel.name)}">变量</button>
     </div>
@@ -8178,8 +8179,17 @@ function appendSireTrackEntries(ctx, list, chatState) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `bs-bt-track-character-button${name === selectedTrackSireName ? ' is-active' : ''}${isOffscreen ? ' is-offscreen' : ''}`;
-    button.innerHTML = `<span class="bs-bt-track-character-name">${escapeHtml(name)}</span><span class="bs-bt-track-character-stage">${escapeHtml(formatRaceLabel(base?.race, base?.derivedType))}${isOffscreen ? ' · 离场' : ''}</span>`;
+    // 扶她（1.5.1）：精方那份并进卵方的分页，这里留一列、点了跳到卵方页
+    const isFuta = Object.prototype.hasOwnProperty.call(chatState.characters || {}, name);
+    button.innerHTML = `<span class="bs-bt-track-character-name">${escapeHtml(name)}</span><span class="bs-bt-track-character-stage">${escapeHtml(formatRaceLabel(base?.race, base?.derivedType))}${isFuta ? ' · 扶她（见卵方页）' : ''}${isOffscreen ? ' · 离场' : ''}</span>`;
     button.addEventListener('click', () => {
+      if (isFuta) {
+        selectedTrackName = name;
+        selectedTrackSubpage = 'overview';
+        renderStatusPanel(ctx);
+        setView('track-char');
+        return;
+      }
       selectedTrackSireName = name;
       renderStatusPanel(ctx);
       setView('track-sire');
@@ -8214,7 +8224,10 @@ function renderTrackSirePage(chatState) {
       metaRow('在场', base?.isHere === false ? '离场' : '在场'),
       metaRow('种族', formatRaceLabel(base?.race, base?.derivedType)),
       metaRow('血脉', formatBloodlineLabel(base?.race, base?.bloodline, base?.bloodlineSource) || '未知'),
-      metaRow('年龄', base?.age ? `${Math.round(Number(base.age))} 岁` : '未记录'),
+      metaRow('年龄', base?.age !== null && base?.age !== undefined ? `${Math.round(Number(base.age))} 岁` : '未记录'),
+      ...(!isFuta && normalizeDerivedTransformLog(record.derivedTransforms).length
+        ? [metaRow('转化经历', normalizeDerivedTransformLog(record.derivedTransforms).slice(-2).map((item) => `${item.time ? `${item.time} ` : ''}${describeDerivedTransform(item)}`).join('；'))]
+        : []),
       ...(sword
         ? [metaRow('体型／剑', `${formatCharacterBodySizeLabel(base || {})}·剑${sword.value}`, sword.title)]
         : [metaRow('体型', formatCharacterBodySizeLabel(base || {}))]),
@@ -8228,6 +8241,8 @@ function renderTrackSirePage(chatState) {
         .join('、') || '无'),
       ...(isFuta ? [metaRow('卵方', '同名卵方已注册（扶她），资料与描述读卵方')] : []),
     ].join('')),
+    // 转化中（1.5.1）：与卵方同一条独立进度条
+    !isFuta && record.transforming ? `<div class="bs-bt-track-section bs-bt-track-stage-progress"><div class="bs-bt-track-section-title">转化</div>${renderProgressList(getTransformProgressItems({ base: { transforming: record.transforming } }, minutesPassed))}</div>` : '',
     renderSireCycleSections(chatState, name),
     isFuta
       ? section('基本描述', metaRow('描述', '同名卵方已注册（扶她），见卵方的描述页'))
@@ -8251,6 +8266,22 @@ function renderTrackSirePage(chatState) {
       <button type="button" class="menu_button" data-sire-full-state="${escapeHtml(name)}">变量</button>
     </div>`,
   ].join('');
+}
+
+/** 扶她卵方页的「精方」段：精子品质、剑、胎儿守护与精力周期；不是扶她回传空字串 */
+function renderFutaSireSection(chatState, name) {
+  if (!name || !Object.prototype.hasOwnProperty.call(chatState?.characters || {}, name)) return '';
+  const record = getSireRecord(chatState, name);
+  if (!record) return '';
+  const { base } = getSireTrackBase(chatState, name);
+  const sword = formatSwordLabel(base || {}, record.swordOffset);
+  const metaRow = (label, value, title = '') => `<div class="bs-bt-track-meta-row"${title ? ` title="${escapeHtml(title)}"` : ''}><span class="bs-bt-track-meta-label">${escapeHtml(label)}</span><span class="bs-bt-track-meta-value">${escapeHtml(String(value))}</span></div>`;
+  const rows = [
+    ...renderSireQualityRows(chatState, name, record, metaRow),
+    ...(sword ? [metaRow('剑', sword.value, sword.title)] : []),
+    ...(record.fetalGuard ? [metaRow('胎儿守护', '作弊开启')] : []),
+  ].join('');
+  return `<div class="bs-bt-track-section"><div class="bs-bt-track-section-title">精方（扶她）</div><div class="bs-bt-track-meta">${rows}</div></div>${renderSireCycleSections(chatState, name)}`;
 }
 
 /** 精方概览里的精子品质一行：档案值 → 当下值，滑鼠提示看分项 */
@@ -8339,9 +8370,9 @@ function renderSireCycleSections(chatState, name) {
         <div class="bs-bt-sire-wave-dot" style="left:${pct(cyclePos)};top:${(toY(state.cycle) / 24 * 100).toFixed(1)}%;"></div>
       </div>`,
     peakMode
-      ? `约 74 天 × 经期倍率一轮；平时持平，中间约 ${state.cycleShape.peakDays} 天冲高，最高品质 ×${(1 + state.cycleShape.amplitude).toFixed(2)}（看衍生类型，百科可调）`
+      ? `这位约 ${Math.round(state.cycleDays)} 天一轮（照精子品质与经期倍率）；平时持平，中间约 ${state.cycleShape.peakDays} 天冲高，最高品质 ×${(1 + state.cycleShape.amplitude).toFixed(2)}（看衍生类型，百科可调）`
       : amplitudePct > 0
-        ? `约 74 天 × 经期倍率一轮，品质随之起伏约 ±${amplitudePct}%（看衍生类型，百科可调）`
+        ? `这位约 ${Math.round(state.cycleDays)} 天一轮（照精子品质与经期倍率），品质随之起伏约 ±${amplitudePct}%（看衍生类型，百科可调）`
         : '这个衍生类型没有精力周期，品质恒定（百科可调）',
   ));
 
@@ -8449,6 +8480,8 @@ function renderStatusPanel(ctx) {
   const viewModel = buildTrackCharacterViewModel(current, Number(chatState.minutesPassed) || 0, chatState);
   const owner = JSON.stringify([getChatKey(ctx), selectedTrackName]);
   const viewKey = JSON.stringify([owner, selectedTrackSubpage]);
+  // 扶她（1.5.1）：概览接上精方那份（精子品质、剑、季节），不必再去精方页
+  viewModel.futaSireHtml = selectedTrackSubpage === 'overview' ? renderFutaSireSection(chatState, selectedTrackName) : '';
   const markup = renderTrackCharacterContent(viewModel);
   const cached = trackContentRenderCache.get(content);
   // Unchanged poll/status refreshes must not replace the reader's scroll/focus DOM.

@@ -49,12 +49,12 @@ test('特殊妊娠工具预设全开，关掉的会从工具清单与状态说�
 test('卡片可以绑写实世界与个别特殊工具，未写的工具沿用全域', () => {
   assert.deepEqual(sanitizeCardSettings({ version: 1, realisticWorld: true, specialTools: { wombReturn: false, bogus: false } }),
     { version: 1, realisticWorld: true, specialTools: { wombReturn: false } });
-  assert.deepEqual(normalizeSpecialTools(undefined), { implantEmbryo: true, wombReturn: true, extendPregnancy: true, transformDerivedType: true });
+  assert.deepEqual(normalizeSpecialTools(undefined), { implantEmbryo: true, wombReturn: true, extendPregnancy: true, transformDerivedType: true, transformBody: true });
 
   const ctx = { characterId: 0, characters: [{ data: { extensions: { bs_biotracker: { version: 1, realisticWorld: true, specialTools: { wombReturn: false } } } } }], extensionSettings: {} };
   const effective = getEffectiveSettings(ctx, { realisticWorld: false, specialTools: { implantEmbryo: false } });
   assert.equal(effective.realisticWorld, true);
-  assert.deepEqual(effective.specialTools, { implantEmbryo: false, wombReturn: false, extendPregnancy: true, transformDerivedType: true });
+  assert.deepEqual(effective.specialTools, { implantEmbryo: false, wombReturn: false, extendPregnancy: true, transformDerivedType: true, transformBody: true });
 });
 
 test('写实世界的注册提示不送名录与种族说明，并要求种族填人类', () => {
