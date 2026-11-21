@@ -1,4 +1,4 @@
-import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, getApiUrlForFormat, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, REPLY_FORMATS, resolveUserTemperature, usesNativeToolCalls } from './state.js';
+import { API_FORMATS, DEFAULT_SYSTEM_PROMPT, GOOGLE_AI_STUDIO_BASE_URL, appendUrlQuery, getApiUrlForFormat, isGeminiApiFormat, normalizeApiBaseUrl, normalizeApiFormat, normalizeReplyFormat, normalizeWorldbookMode, normalizeReasoningEffort, normalizeTemperatureMode, redactApiUrl, REPLY_FORMATS, resolveUserTemperature, splitGeminiEndpointBase, usesNativeToolCalls } from './state.js';
 import { resolveHostWorldInfo } from './worldinfo_resolve.js';
 import { markOwnRequest } from './own_requests.js';
 import { isNativeToolRejection, resolveNativeToolPlan } from './native_tools.js';
@@ -87,9 +87,13 @@ export function shouldInjectV4Instruction(settings, model) {
 }
 
 export function getApiBase(settings) {
-  let apiBase = String(settings.apiUrl || '').trim().replace(/\/+$/, '');
-  apiBase = apiBase.replace(/\/(chat\/completions|models|responses|messages|interactions)$/i, '');
-  return apiBase.replace(/\/+$/, '');
+  const apiBase = normalizeApiBaseUrl(settings.apiUrl);
+  // Google AI Studio：Base URL 留空时就是官方主机（等于 SillyTavern 选「Google AI Studio」来源、只填 Key 的用法）；
+  // 反代使用者把反代主机填进来即可，路径与版本照同样规则拼
+  if (!apiBase && normalizeApiFormat(settings?.apiFormat) === API_FORMATS.GEMINI_GENERATE_CONTENT) {
+    return GOOGLE_AI_STUDIO_BASE_URL;
+  }
+  return apiBase;
 }
 
 export function getAuthHeaders(settings, sessionId = '') {
@@ -102,8 +106,11 @@ export function getAuthHeaders(settings, sessionId = '') {
       headers.Authorization = `Bearer ${key}`;
       headers['x-api-key'] = key;
     }
-  } else if (format === API_FORMATS.GEMINI_INTERACTIONS) {
-    // Google AI 认证走 x-goog-api-key（TauriTavern apply_gemini_auth 同规则）
+  } else if (isGeminiApiFormat(format)) {
+    // Google AI 认证走 x-goog-api-key（TauriTavern apply_gemini_auth 同规则）。
+    // 原生 generateContent 另外把 key 放进 ?key=（SillyTavern 的做法，见 getApiUrlForFormat）：
+    // Google 两种都收、同时带不会冲突；反代多半只认其中一种，两边都带最稳。
+    // 绝不能带 Authorization: Bearer —— Google 会当成 OAuth 令牌而 401。
     if (key) headers['x-goog-api-key'] = key;
   } else if (key) {
     headers.Authorization = `Bearer ${key}`;
@@ -211,6 +218,20 @@ function hostSupportsFormatAwareProxy() {
 }
 
 /**
+ * 宿主后端认得哪些 custom_api_format。Gemini 原生 generateContent 不在其中（TT 只到 Interactions），
+ * 认不得的格式递给宿主后端只会换来一个 404 再退回直连，不如一开始就走直连或 /proxy/ 透传。
+ */
+const HOST_FORMAT_AWARE_FORMATS = new Set([
+  API_FORMATS.OPENAI_RESPONSES,
+  API_FORMATS.CLAUDE_MESSAGES,
+  API_FORMATS.GEMINI_INTERACTIONS,
+]);
+
+function canHostTranslateFormat(format) {
+  return HOST_FORMAT_AWARE_FORMATS.has(normalizeApiFormat(format)) && hostSupportsFormatAwareProxy();
+}
+
+/**
  * 把最近一次真实请求打到 UI（连接状态栏），TT 桌面端没有控制台也能看到端点与状态码。
  */
 function traceRequestToUi(method, url, status, transport = '') {
@@ -267,7 +288,7 @@ function buildHostProxyConfig(apiBase, settings, sessionId = '') {
   const format = normalizeApiFormat(settings?.apiFormat);
   const headerLines = [];
   if (apiKey) {
-    if (format === API_FORMATS.GEMINI_INTERACTIONS) {
+    if (isGeminiApiFormat(format)) {
       // Google AI 认 x-goog-api-key；Authorization: Bearer 会被当成 OAuth 而 401
       headerLines.push(`x-goog-api-key: ${apiKey}`);
     } else if (format === API_FORMATS.CLAUDE_MESSAGES) {
@@ -1294,6 +1315,186 @@ function normalizeGeminiInteractionsData(data) {
   return buildNormalizedChoice('', toolCalls);
 }
 
+/**
+ * Google AI Studio 的安全过滤档位，与 SillyTavern 的 GEMINI_SAFETY 一致：全部 OFF。
+ * 追踪模型读的是角色扮演原文，默认档位会把这类内容判成 SEXUALLY_EXPLICIT 而整轮空回；
+ * 反代多半原样转发这份设定，认不得的服务端一般也只忽略、不报错。
+ */
+const GEMINI_SAFETY_SETTINGS = Object.freeze([
+  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' },
+  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
+  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
+  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
+  { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'OFF' },
+]);
+
+/**
+ * Gemini 的 Schema 只认 OpenAPI 的一个子集：多带一个字段就整份请求 400
+ * （「Invalid JSON payload received. Unknown name "additionalProperties"」）。
+ * 插件的工具定义带 additionalProperties 这类 JSON Schema 方言，递过去之前全部滤掉；
+ * 没有任何栏位的对象型参数整段省略（Gemini 不收空 properties，SillyTavern 也是这么处理的）。
+ */
+const GEMINI_SCHEMA_KEYS = new Set([
+  'type', 'format', 'title', 'description', 'nullable', 'enum', 'maxItems', 'minItems',
+  'minProperties', 'maxProperties', 'minLength', 'maxLength', 'pattern', 'default', 'example',
+  'anyOf', 'propertyOrdering', 'items', 'properties', 'required', 'minimum', 'maximum',
+]);
+
+function sanitizeGeminiSchema(schema) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return undefined;
+  const out = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (!GEMINI_SCHEMA_KEYS.has(key)) continue;
+    if (key === 'properties') {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const properties = {};
+      for (const [name, child] of Object.entries(value)) {
+        const next = sanitizeGeminiSchema(child);
+        if (next) properties[name] = next;
+      }
+      if (Object.keys(properties).length === 0) continue;
+      out.properties = properties;
+    } else if (key === 'items') {
+      const next = sanitizeGeminiSchema(value);
+      if (next) out.items = next;
+    } else if (key === 'anyOf') {
+      if (!Array.isArray(value)) continue;
+      const branches = value.map(sanitizeGeminiSchema).filter(Boolean);
+      if (branches.length) out.anyOf = branches;
+    } else {
+      out[key] = value;
+    }
+  }
+  // 空 properties 的对象型参数整段不要，连带它声明不了任何栏位的 required
+  if (out.type === 'object' && !out.properties) return undefined;
+  if (!out.properties) delete out.required;
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * Google AI Studio 原生 generateContent 请求体（形状照 SillyTavern sendMakerSuiteRequest）：
+ * messages → contents（system 抽成 systemInstruction），采样参数进 generationConfig，
+ * 工具翻成 tools[0].functionDeclarations。模型名不进 body——它在网址路径里（见 state.js buildGeminiModelPath）。
+ */
+function buildGeminiGenerateContentBody(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const systemParts = [];
+  const contents = [];
+  for (const m of messages) {
+    const role = String(m?.role || '').toLowerCase();
+    const text = String(m?.content ?? '');
+    if (role === 'system' || role === 'developer') {
+      if (text.trim()) systemParts.push(text.trim());
+      continue;
+    }
+    // 空正文（模型回了空消息、纠错重送的 assistant 回合）在 Gemini 里没有对应形状，直接不放
+    if (!text) continue;
+    const geminiRole = role === 'assistant' ? 'model' : 'user';
+    // Gemini 要求 user/model 轮流；连续同角色（预设里的多段系统消息、纠错重送）合并成一则，免得服务端直接拒
+    const last = contents[contents.length - 1];
+    if (last && last.role === geminiRole) last.parts.push({ text });
+    else contents.push({ role: geminiRole, parts: [{ text }] });
+  }
+  const request = {
+    contents,
+    safetySettings: GEMINI_SAFETY_SETTINGS.map((setting) => ({ ...setting })),
+  };
+  if (systemParts.length) request.systemInstruction = { parts: [{ text: systemParts.join('\n\n') }] };
+  const generationConfig = {};
+  if (Number.isFinite(body.temperature)) generationConfig.temperature = body.temperature;
+  if (Number.isFinite(body.top_p)) generationConfig.topP = body.top_p;
+  if (Number.isFinite(body.top_k) && body.top_k >= 0) generationConfig.topK = Math.floor(body.top_k);
+  const maxTokens = Number.isFinite(body.max_tokens) ? body.max_tokens : body.max_completion_tokens;
+  if (Number.isFinite(maxTokens) && maxTokens > 0) generationConfig.maxOutputTokens = Math.floor(maxTokens);
+  // 格式化输出：Gemini 的对应物是 responseMimeType=application/json（没有 response_format）。
+  // 服务端会硬性只吐 JSON，比只在提示词里讲一句可靠得多。
+  const wantsJson = body.response_format?.type === 'json_object';
+  if (wantsJson) generationConfig.responseMimeType = 'application/json';
+  if (Object.keys(generationConfig).length) request.generationConfig = generationConfig;
+  const tools = readFunctionTools(body.tools).map((fn) => {
+    const parameters = sanitizeGeminiSchema(fn.parameters);
+    return parameters
+      ? { name: fn.name, description: fn.description, parameters }
+      : { name: fn.name, description: fn.description };
+  });
+  if (tools.length) {
+    request.tools = [{ functionDeclarations: tools }];
+    // OpenAI 的 tool_choice 翻成 Gemini 的 functionCallingConfig
+    const choice = body.tool_choice;
+    let mode = 'AUTO';
+    if (choice === 'none') mode = 'NONE';
+    else if (choice === 'required') mode = 'ANY';
+    const functionCallingConfig = { mode };
+    if (choice && typeof choice === 'object' && choice?.function?.name) {
+      functionCallingConfig.mode = 'ANY';
+      functionCallingConfig.allowedFunctionNames = [String(choice.function.name)];
+    }
+    request.toolConfig = { functionCallingConfig };
+  }
+  return request;
+}
+
+/** 读取第一个 candidate；没有 candidate 时把 promptFeedback 的封禁原因说出来 */
+function readGeminiCandidate(data) {
+  if (!data || typeof data !== 'object') return null;
+  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+  if (candidates.length > 0) return candidates[0];
+  const blockReason = String(data?.promptFeedback?.blockReason || '').trim();
+  if (blockReason) {
+    throw new Error(`Google AI Studio 把这次请求判为违规（blockReason: ${blockReason}）。可在反向代理或 Google AI Studio 端调整过滤设定后重试。`);
+  }
+  return null;
+}
+
+/** 正文 = 所有非 thought 的 text part 拼起来。thought 是思考摘要，不能混进要解析的 JSON */
+function readGeminiPartsText(parts) {
+  let text = '';
+  for (const part of Array.isArray(parts) ? parts : []) {
+    if (part?.thought) continue;
+    if (typeof part?.text === 'string') text += part.text;
+  }
+  return text;
+}
+
+/** finishReason 说明「为什么没有可用的文字」：被截断、被安全过滤、被引用条款挡下各是不同的处置 */
+function describeGeminiFinishReason(finishReason, model) {
+  const reason = String(finishReason || '');
+  if (reason === 'MAX_TOKENS') {
+    return `Gemini 回覆被输出上限截断（finishReason: MAX_TOKENS）。可缩短请求内容，或改用输出上限更高的模型（${model || '未知模型'}）。`;
+  }
+  if (['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'RECITATION', 'IMAGE_SAFETY'].includes(reason)) {
+    return `Gemini 回覆被安全过滤挡下（finishReason: ${reason}）。可在 Google AI Studio 端放宽过滤设定，或改用别的渠道。`;
+  }
+  return `Gemini 回覆没有可消费的文本（finishReason: ${reason || 'unknown'}）。`;
+}
+
+function extractGeminiGenerateContentText(data, model = '') {
+  // 有些反代已经先把回应正规化成 OpenAI 结构，能直接拿就用
+  if (typeof data?.choices?.[0]?.message?.content === 'string') return data.choices[0].message.content;
+  const candidate = readGeminiCandidate(data);
+  if (!candidate) throw new Error('Gemini 回覆没有 candidate。');
+  const text = readGeminiPartsText(candidate?.content?.parts);
+  if (!text) throw new Error(describeGeminiFinishReason(candidate?.finishReason, model));
+  return text;
+}
+
+/**
+ * 原生 generateContent 回覆 → OpenAI {choices:[{message:{content, tool_calls}}]}。
+ * 工具调用在 parts[].functionCall：Gemini 不给调用 ID，自己编号；args 是对象，交给 native_tools.js 直接读。
+ */
+export function normalizeGeminiGenerateContentData(data, model = '') {
+  if (Array.isArray(data?.choices)) return data;
+  const candidate = readGeminiCandidate(data);
+  if (!candidate) return buildNormalizedChoice(extractGeminiGenerateContentText(data, model), []);
+  const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+  const toolCalls = parts
+    .filter((part) => part?.functionCall?.name)
+    .map((part, index) => toOpenAiToolCall(`gemini-call-${index + 1}`, part.functionCall.name, part.functionCall.args ?? {}));
+  // 只发工具调用时通常没有文字，这时不能按「没有可消费的文本」报错
+  if (toolCalls.length) return buildNormalizedChoice(readGeminiPartsText(parts), toolCalls);
+  return buildNormalizedChoice(extractGeminiGenerateContentText(data, model), []);
+}
+
 /** 直连时按格式转换请求体；宿主代理走格式感知翻译时用不到（后端自己转）。 */
 function buildDirectPayload(fmt, requestBody) {
   if (fmt === API_FORMATS.OPENAI_RESPONSES) {
@@ -1329,6 +1530,9 @@ function buildDirectPayload(fmt, requestBody) {
   }
   if (fmt === API_FORMATS.GEMINI_INTERACTIONS) {
     return buildGeminiInteractionsBody(requestBody);
+  }
+  if (fmt === API_FORMATS.GEMINI_GENERATE_CONTENT) {
+    return buildGeminiGenerateContentBody(requestBody);
   }
   // 明说不要串流：有些中转对没写 stream 的请求预设用串流（SSE）回，插件读的是一整份 JSON
   return { ...requestBody, stream: false };
@@ -1409,20 +1613,39 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     const fmt = normalizeApiFormat(settings?.apiFormat);
     // 会话头只认 opencode endpoint，其他渠道为空、直连与代理路径都不会多带
     const sessionId = runContext.sessionId || '';
-    const upstreamUrl = getApiUrlForFormat(apiBase, fmt);
+    // 模型在 Gemini 原生格式的路径里、key 在 Google AI Studio 的查询串里，两样都要在组网址时带上
+    const upstreamUrl = getApiUrlForFormat(apiBase, fmt, { model: requestBody.model, apiKey: settings?.apiKey });
+    // 状态栏与错误消息只显示隐去 ?key= 的网址
+    const displayUrl = redactApiUrl(upstreamUrl);
     const isCompat = fmt === API_FORMATS.OPENAI_COMPAT;
     // TT 后端按 custom_api_format 在服务端翻译；原版 ST 后端不认得这个字段
-    const formatAwareProxy = !isCompat && hostSupportsFormatAwareProxy();
+    const formatAwareProxy = !isCompat && canHostTranslateFormat(fmt);
     // ST/Luker 的 /proxy/<url> 透传代理：服务端原样转发绕开 CORS（需 config.yaml 开启 enableCorsProxy，未开启返回 404）
     const transparentProxyUrl = !isCompat && !formatAwareProxy && isBrowserRuntime() && isCrossOriginUrl(upstreamUrl)
       ? `/proxy/${upstreamUrl}`
       : null;
     const canUseHostProxy = shouldUseHostProxy(upstreamUrl) && (isCompat || formatAwareProxy);
-    let transport = canUseHostProxy
-      ? (formatAwareProxy ? 'host-proxy-formatted' : 'host-proxy')
-      : (transparentProxyUrl ? 'host-proxy-transparent' : 'direct');
-    let url = canUseHostProxy ? '/api/backends/chat-completions/generate' : (transparentProxyUrl || upstreamUrl);
-    const payloadForTransport = canUseHostProxy ? requestBody : buildDirectPayload(fmt, requestBody);
+    // Google AI Studio 先让酒馆后端代发（SillyTavern 的 makersuite 源：服务端拼网址、翻请求体与回应），
+    // 浏览器原生协议留作退路。反代挂了 Cloudflare 浏览器指纹拦截时，这条路是唯一能走通的一条。
+    const makersuiteProxy = fmt === API_FORMATS.GEMINI_GENERATE_CONTENT && hostServesMakersuite();
+    const makersuitePayload = makersuiteProxy
+      ? buildMakersuiteHostPayload(apiBase, settings, requestBody)
+      : null;
+    let transport = makersuiteProxy
+      ? 'host-makersuite'
+      : (canUseHostProxy
+        ? (formatAwareProxy ? 'host-proxy-formatted' : 'host-proxy')
+        : (transparentProxyUrl ? 'host-proxy-transparent' : 'direct'));
+    let url = (makersuiteProxy || canUseHostProxy)
+      ? '/api/backends/chat-completions/generate'
+      : (transparentProxyUrl || upstreamUrl);
+    const payloadForTransport = makersuiteProxy ? makersuitePayload : (canUseHostProxy ? requestBody : buildDirectPayload(fmt, requestBody));
+    // 原生协议那份请求体（makersuite 后端不认时改发它）：只有真的要用才序列化
+    let nativeText = '';
+    const getNativeText = () => {
+      if (!nativeText) nativeText = JSON.stringify(buildDirectPayload(fmt, requestBody));
+      return nativeText;
+    };
     assertSafeDirectApiBase(apiBase);
     // 代理失败后改走浏览器直连时，记下代理那边的结果：直连多半又被 CORS 挡成 Failed to fetch，
     // 只报直连的错会把上游真正的状态码（401 key 错、404 模型或网址错…）丢掉
@@ -1441,7 +1664,37 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
       });
       let response;
       let responseText;
-      if (canUseHostProxy) {
+      if (makersuiteProxy) {
+        let proxyError = null;
+        try {
+          ({ response, responseText } = await requestHostMakersuiteChatCompletion(settings, makersuitePayload, runContext));
+        } catch (error) {
+          proxyError = error;
+          logApiDebug(`makersuite_proxy_error:${attempt}`, { proxyError: error });
+          if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
+        }
+        if (proxyError || (!response.ok && shouldFallbackFromHostProxy(responseText, response.status))) {
+          proxyFailure = proxyError
+            ? { via: transport, error: proxyError }
+            : { via: transport, status: response.status, text: responseText };
+          transport = proxyError ? 'native-after-makersuite-error' : `native-after-makersuite-${response.status}`;
+          url = transparentProxyUrl || upstreamUrl;
+          const body = getNativeText();
+          const fetchOptions = {
+            method: 'POST',
+            body,
+            cache: 'no-cache',
+            timeoutMs: resolveApiTimeoutMs(settings),
+            externalSignal: runContext.signal || null,
+            deadlineMs: runContext.deadlineMs || 0,
+          };
+          // 原生协议：跨域且有 /proxy/ 就透传（酒馆服务器代发），否则浏览器直连。
+          // 两条都失败时不在这里包错误，交给外层带着 proxyFailure 一起说明
+          ({ response, responseText } = transparentProxyUrl
+            ? await fetchText(transparentProxyUrl, { ...fetchOptions, headers: getHostProxyHeaders(getAuthHeaders(settings, sessionId)) })
+            : await fetchText(upstreamUrl, { ...fetchOptions, headers: getAuthHeaders(settings, sessionId) }));
+        }
+      } else if (canUseHostProxy) {
         let proxyError = null;
         try {
           ({ response, responseText } = await requestHostProxyChatCompletion(apiBase, settings, requestBody, runContext, fmt));
@@ -1505,14 +1758,14 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
           deadlineMs: runContext.deadlineMs || 0,
         }));
       }
-      traceRequestToUi('POST', upstreamUrl, response.status, transport);
+      traceRequestToUi('POST', displayUrl, response.status, transport);
       if (globalThis.__bs_biotracker_debug_api__) {
         globalThis[DEBUG_LAST_API_RESPONSE_KEY] = {
           capturedAt: Date.now(),
           attempt,
           transport,
           format: fmt,
-          url,
+          url: redactApiUrl(url),
           status: response.status,
           ok: response.ok,
           responseText,
@@ -1521,27 +1774,28 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
       }
       logApiDebug(`response:${attempt}`, {
         transport,
-        url,
+        url: redactApiUrl(url),
         status: response.status,
         ok: response.ok,
         responseText,
         requestText,
       });
-      // response_format 真的送出去了没有：TauriTavern 翻成其他格式时不带，Claude 与 Gemini 直连也没有对应参数
+      // response_format 真的送出去了没有：TauriTavern 翻成其他格式时不带，Claude 与 Gemini 直连也没有对应参数；
+      // Gemini 原生格式把格式化输出翻成 generationConfig.responseMimeType（见 buildGeminiGenerateContentBody）
       const sentResponseFormat = Boolean(requestBody.response_format)
-        && (isCompat || (fmt === API_FORMATS.OPENAI_RESPONSES && !formatAwareProxy));
+        && (isCompat || fmt === API_FORMATS.GEMINI_GENERATE_CONTENT || (fmt === API_FORMATS.OPENAI_RESPONSES && !formatAwareProxy));
       return { response, responseText, requestText, format: fmt, sentResponseFormat };
     } catch (error) {
-      traceRequestToUi('POST', upstreamUrl, 0, transport);
+      traceRequestToUi('POST', displayUrl, 0, transport);
       logApiDebug(`error:${attempt}`, {
         transport,
-        url,
+        url: redactApiUrl(url),
         requestBody: payloadForTransport,
         requestText,
         error,
       });
       if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
-      throw new Error(describeConnectionFailure({ error, proxyFailure, upstreamUrl }));
+      throw new Error(describeConnectionFailure({ error, proxyFailure, upstreamUrl: displayUrl }));
     }
   };
 
@@ -1552,7 +1806,8 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   const isResponses = result.format === API_FORMATS.OPENAI_RESPONSES;
   const isClaude = result.format === API_FORMATS.CLAUDE_MESSAGES;
   const isGemini = result.format === API_FORMATS.GEMINI_INTERACTIONS;
-  const isNonCompatFormat = isResponses || isClaude || isGemini;
+  const isGeminiGenerateContent = result.format === API_FORMATS.GEMINI_GENERATE_CONTENT;
+  const isNonCompatFormat = isResponses || isClaude || isGemini || isGeminiGenerateContent;
 
   // 格式化输出被 400 拒绝：先只拿掉 response_format 重送，成功就证明渠道不认它，
   // 本次会话里这个模型不再带（见 callOpenAICompatible）；仍是 400 再照旧版连同其他采样参数一起拿掉试一次，
@@ -1598,7 +1853,9 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   }
 
   if (!response.ok) {
-    const error = new Error(`API ${response.status}［实际请求: ${getApiUrlForFormat(apiBase, result.format)}］: ${sanitizeErrorText(errorText)}`);
+    // 实际请求的网址只显示到主机与路径，?key= 隐去
+    const attemptedUrl = redactApiUrl(getApiUrlForFormat(apiBase, result.format, { model: body.model, apiKey: settings?.apiKey }));
+    const error = new Error(`API ${response.status}［实际请求: ${attemptedUrl}］: ${sanitizeErrorText(errorText)}`);
     // 调用方据此区分「上游不认请求参数」与鉴权、限流、服务端错误
     error.status = response.status;
     throw error;
@@ -1616,6 +1873,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     if (isResponses) return normalizeResponsesData(parsed);
     if (isClaude) return normalizeClaudeData(parsed);
     if (isGemini) return normalizeGeminiInteractionsData(parsed);
+    if (isGeminiGenerateContent) return normalizeGeminiGenerateContentData(parsed, body.model);
     return parsed;
   } catch (error) {
     logApiDebug('parse_error', {
@@ -1627,7 +1885,192 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   }
 }
 
+/**
+ * Google AI Studio 的「交给酒馆后端」路线。
+ *
+ * SillyTavern（以及它的 Luker）后端认得 `chat_completion_source: 'makersuite'`：服务端自己拼
+ * `…/v1beta/models/<模型>:generateContent?key=…`、把 messages 翻成 contents / systemInstruction /
+ * generationConfig、再把 candidates 收回成 OpenAI 结构。这正是 SillyTavern 本身的做法，浏览器只跟
+ * 同源的酒馆后端说话，没有 CORS 问题，也不受反代那边 Cloudflare 浏览器指纹拦截的影响。
+ *
+ * TauriTavern 的 Rust 后端是另一套实现，不赌它认这个来源，改走下面的浏览器原生协议。
+ */
+function hostServesMakersuite() {
+  if (!isBrowserRuntime()) return false;
+  try {
+    return getHostKind() !== 'tauritavern';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 递给酒馆后端的 makersuite 请求。
+ * 只有带了 reverse_proxy，ST 才会拿 proxy_password 当金钥（否则去读服务器上存的 Google 金钥），
+ * 所以官方主机也显式填进 reverse_proxy，才能用使用者在这一页填的 key。
+ *
+ * reverse_proxy 去掉版本段：ST 自己会补 `/<gemini.apiVersion>/models/…`（默认 v1beta），
+ * 使用者照原生协议的习惯把 `/v1beta` 一起贴进来时，不先拆掉就会变成 `/v1beta/v1beta`。
+ */
+function buildMakersuiteHostPayload(apiBase, settings, requestBody) {
+  const payload = {
+    chat_completion_source: 'makersuite',
+    reverse_proxy: splitGeminiEndpointBase(apiBase).base,
+    proxy_password: String(settings?.apiKey || ''),
+    model: requestBody.model,
+    messages: requestBody.messages,
+    temperature: requestBody.temperature,
+    top_p: requestBody.top_p,
+    top_k: requestBody.top_k,
+    max_tokens: requestBody.max_tokens ?? requestBody.max_completion_tokens,
+    seed: requestBody.seed,
+    stream: false,
+    // 系统提示词要 ST 放进 systemInstruction（不给就只会塞进第一则 user）
+    use_sysprompt: true,
+    // 格式化输出：ST 把它原样写进 generationConfig.responseMimeType
+    responseMimeType: requestBody.response_format?.type === 'json_object' ? 'application/json' : undefined,
+    tools: requestBody.tools,
+    tool_choice: requestBody.tool_choice,
+  };
+  Object.keys(payload).forEach((key) => {
+    if (payload[key] === undefined) delete payload[key];
+  });
+  return payload;
+}
+
+async function requestHostMakersuiteChatCompletion(settings, payload, runContext = {}) {
+  return fetchText('/api/backends/chat-completions/generate', {
+    method: 'POST',
+    headers: getHostProxyHeaders(),
+    body: JSON.stringify(payload),
+    cache: 'no-cache',
+    timeoutMs: resolveApiTimeoutMs(settings),
+    externalSignal: runContext.signal || null,
+    deadlineMs: runContext.deadlineMs || 0,
+  });
+}
+
+/** 同一个来源的模型清单：ST 的 /status 认 makersuite + reverse_proxy + proxy_password（版本段同样交给 ST 补） */
+async function requestHostMakersuiteModelList(apiBase, settings) {
+  return fetchText('/api/backends/chat-completions/status', {
+    method: 'POST',
+    headers: getHostProxyHeaders(),
+    body: JSON.stringify({
+      chat_completion_source: 'makersuite',
+      reverse_proxy: splitGeminiEndpointBase(apiBase).base,
+      proxy_password: String(settings?.apiKey || ''),
+    }),
+    cache: 'no-cache',
+    timeoutMs: resolveModelListTimeoutMs(settings),
+  });
+}
+
+/**
+ * 模型清单的三种包装都读：Google 原生 {models:[{name}]}、酒馆后端的 {data:[{id}]}、
+ * 有些中转把结果包在 {response: "<json>"} 里。读不到就回空数组，由调用方决定要不要报错。
+ */
+function readGoogleModelIds(payload) {
+  let data = payload;
+  if (data && typeof data === 'object' && !Array.isArray(data) && data.response) {
+    try {
+      const nested = typeof data.response === 'string' ? JSON.parse(data.response) : data.response;
+      if (nested && typeof nested === 'object') data = nested;
+    } catch {}
+  }
+  let items = [];
+  if (Array.isArray(data)) items = data;
+  else if (Array.isArray(data?.models)) items = data.models;
+  else if (Array.isArray(data?.data)) items = data.data;
+  else if (Array.isArray(data?.data?.data)) items = data.data.data;
+  return items
+    .filter((item) => !Array.isArray(item?.supportedGenerationMethods)
+      || item.supportedGenerationMethods.includes('generateContent'))
+    .map((item) => String(item?.id || item?.name || item?.model || '').trim().replace(/^models\//i, ''))
+    .filter(Boolean);
+}
+
+/**
+ * Google AI Studio 的模型清单：先问酒馆后端的 makersuite 源（服务端代取，反代挂在 Cloudflare 后面也过得去），
+ * 拿不到再按浏览器原生协议问 `GET <主机>/<版本>/models?key=…`。两边都只留能 generateContent 的模型。
+ */
+async function fetchGeminiGenerateContentModelList(settings) {
+  const apiBase = getApiBase(settings);
+  if (!apiBase) throw new Error('请先填写 API Base URL');
+  const { base: host, version } = splitGeminiEndpointBase(apiBase);
+  const apiKey = String(settings?.apiKey || '').trim();
+  // 端点里已经带了 ?pageSize，appendUrlQuery 会自动用 &
+  const url = appendUrlQuery(`${host}/${version}/models?pageSize=1000`, 'key', apiKey);
+  const displayUrl = redactApiUrl(url);
+  assertSafeDirectApiBase(apiBase);
+
+  if (hostServesMakersuite()) {
+    try {
+      const { response, responseText } = await requestHostMakersuiteModelList(apiBase, settings);
+      if (response.ok) {
+        const payload = JSON.parse(responseText);
+        // ST 取不到上游清单时也回 200，只是带 error 标记 —— 这种要说清楚，别让人以为是网址填错了
+        if (!payload?.error) {
+          const models = readGoogleModelIds(payload);
+          if (models.length) {
+            traceRequestToUi('GET', displayUrl, response.status, 'host-makersuite');
+            return [...new Set(models)].sort((a, b) => a.localeCompare(b));
+          }
+        } else {
+          throw new Error('酒馆后端拿不到 Google 模型清单（上游 /models 失败，或反代不提供这个端点）。请手动填写模型名称后直接使用追踪/注册。');
+        }
+      }
+    } catch (error) {
+      if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
+      // 后端没有这个来源（旧版酒馆）或直接报错：静默退回浏览器原生协议
+      if (/酒馆后端拿不到/.test(String(error?.message || ''))) throw error;
+    }
+  }
+
+  let response;
+  let responseText = '';
+  let transport = 'direct';
+  const fetchOptions = () => ({
+    method: 'GET',
+    headers: getAuthHeaders(settings),
+    timeoutMs: resolveModelListTimeoutMs(settings),
+  });
+  try {
+    ({ response, responseText } = await fetchText(url, fetchOptions()));
+  } catch (error) {
+    if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
+    // 浏览器直连被 CORS 挡下（或本机连不到 Google）时改走酒馆的 /proxy/ 透传；
+    // 透传会把 x-goog-api-key 一起送过去，所以查询串被吃掉也还能鉴权
+    if (!(isBrowserRuntime() && isCrossOriginUrl(url))) {
+      traceRequestToUi('GET', displayUrl, 0, transport);
+      throw new Error(`模型列表连接失败（${transport}）。请检查 Base URL / API Key；也可手动填写模型名称后直接使用追踪/注册。原始错误: ${String(error?.message || error)}`);
+    }
+    transport = 'host-proxy-transparent';
+    try {
+      ({ response, responseText } = await fetchText(`/proxy/${host}/${version}/models?pageSize=1000`, fetchOptions()));
+    } catch (proxyError) {
+      traceRequestToUi('GET', displayUrl, 0, transport);
+      throw new Error(`模型列表连接失败（${transport}）。请检查 Base URL / API Key；也可手动填写模型名称后直接使用追踪/注册。原始错误: ${String(proxyError?.message || proxyError)}`);
+    }
+  }
+  traceRequestToUi('GET', displayUrl, response?.status, transport);
+  if (!response.ok) {
+    throw new Error(`模型列表请求失败 ${response.status}（${transport}）: ${sanitizeErrorText(responseText)}。可手动填写模型名称后直接使用追踪/注册。`);
+  }
+  let data;
+  try {
+    data = JSON.parse(responseText);
+  } catch {
+    throw new Error(`模型列表响应不是 JSON（${transport}）: ${sanitizeErrorText(responseText)}`);
+  }
+  const models = readGoogleModelIds(data);
+  if (models.length === 0) throw new Error('API 有响应，但没有返回可用模型；可手动填写模型名称。');
+  return [...new Set(models)].sort((a, b) => a.localeCompare(b));
+}
+
 export async function fetchModelList(settings) {
+  if (normalizeApiFormat(settings?.apiFormat) === API_FORMATS.GEMINI_GENERATE_CONTENT) {
+    return fetchGeminiGenerateContentModelList(settings);
+  }
   const apiBase = getApiBase(settings);
   if (!apiBase) throw new Error('请先填写 API Base URL');
   let response;
@@ -1822,7 +2265,11 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   // 系统提示词末尾说明本次改用工具调用。上游不认或模型没用工具时退回上面这份文本协议请求。
   // 四种 API 格式都适用：请求体一律先组成 OpenAI 格式，直连时由 buildDirectPayload 翻成各家格式，
   // TauriTavern 的格式感知代理则交给后端翻译。
-  const nativePlan = usesNativeToolCalls(replyFormat) && !isNativeToolsDisabled(sessionKey, flow)
+  // Gemini 原生格式走酒馆后端时，ST 只把正文放进 choices（functionCall 留在 responseContent 里），
+  // 原生工具调用读不回来；直接用文本协议，省掉每轮白跑的那一次
+  const nativeToolsUnavailable = normalizeApiFormat(settings?.apiFormat) === API_FORMATS.GEMINI_GENERATE_CONTENT
+    && hostServesMakersuite();
+  const nativePlan = usesNativeToolCalls(replyFormat) && !nativeToolsUnavailable && !isNativeToolsDisabled(sessionKey, flow)
     ? resolveNativeToolPlan(options, safePayload)
     : null;
   let nativeBody = null;

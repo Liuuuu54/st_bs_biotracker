@@ -84,14 +84,37 @@ export const API_FORMATS = Object.freeze({
   CLAUDE_MESSAGES: 'claude_messages',
   OPENAI_RESPONSES: 'openai_responses',
   GEMINI_INTERACTIONS: 'gemini_interactions',
+  // Google AI Studio 的经典原生端点：/v1beta/models/<模型>:generateContent
+  GEMINI_GENERATE_CONTENT: 'gemini_generate_content',
 });
+
+/** Google AI Studio 原生主机。选了 Gemini 原生格式、Base URL 又留空时按这个走，等于 SillyTavern 的「Google AI Studio」来源 */
+export const GOOGLE_AI_STUDIO_BASE_URL = 'https://generativelanguage.googleapis.com';
+/** Gemini 原生端点的默认 API 版本（SillyTavern 的 gemini.apiVersion 默认值也是 v1beta） */
+export const GEMINI_DEFAULT_API_VERSION = 'v1beta';
 
 export function normalizeApiFormat(value) {
   const raw = String(value || '').trim().toLowerCase();
   if (raw === API_FORMATS.OPENAI_RESPONSES || raw === 'responses' || raw === 'openai_responses' || raw === 'custom_openai_responses') return API_FORMATS.OPENAI_RESPONSES;
   if (raw === API_FORMATS.CLAUDE_MESSAGES || raw === 'claude' || raw === 'messages' || raw === 'claude_messages' || raw === 'custom_claude_messages' || raw === 'anthropic') return API_FORMATS.CLAUDE_MESSAGES;
+  // 先认「原生 generateContent」：'gemini' 这个旧别名继续指向 Interactions，免得改造后旧存档换意思
+  if (raw === API_FORMATS.GEMINI_GENERATE_CONTENT
+    || raw === 'generate_content'
+    || raw === 'gemini_generate_content'
+    || raw === 'gemini_generatecontent'
+    || raw === 'gemini_generate'
+    || raw === 'google'
+    || raw === 'google_ai_studio'
+    || raw === 'google_gemini'
+    || raw === 'makersuite') return API_FORMATS.GEMINI_GENERATE_CONTENT;
   if (raw === API_FORMATS.GEMINI_INTERACTIONS || raw === 'gemini' || raw === 'interactions' || raw === 'gemini_interactions') return API_FORMATS.GEMINI_INTERACTIONS;
   return API_FORMATS.OPENAI_COMPAT;
+}
+
+/** 两个 Gemini 格式都靠 x-goog-api-key 鉴权、也都不吃 response_format，需要分别判断时用这个 */
+export function isGeminiApiFormat(value) {
+  const fmt = normalizeApiFormat(value);
+  return fmt === API_FORMATS.GEMINI_INTERACTIONS || fmt === API_FORMATS.GEMINI_GENERATE_CONTENT;
 }
 
 // 思考强度（reasoning_effort）档位：'auto'（默认）与非法值都省略该参数、
@@ -129,24 +152,82 @@ export function normalizeTemperatureMode(value) {
   return 'legacy';
 }
 
-export function getApiEndpointSuffix(format) {
+/**
+ * Base URL 归一化：去掉结尾斜线，以及使用者可能连着端点一起贴上来的尾段。
+ * 贴成完整端点（/chat/completions、/models、…:generateContent）时退回主机 + 版本，后面按格式重拼。
+ */
+export function normalizeApiBaseUrl(value) {
+  let base = String(value || '').trim().replace(/\/+$/, '');
+  base = base.replace(/\/(chat\/completions|responses|messages|interactions|models)$/i, '');
+  // Gemini 原生端点的模型在路径里：…/models/<模型>:generateContent 或 …/tunedModels/<模型>:generateContent
+  base = base.replace(/\/(?:models|tunedModels)\/[^/]+:(?:stream)?generateContent$/i, '');
+  return base.replace(/\/+$/, '');
+}
+
+/** Gemini 原生端点要 API 版本：base 已以 /v1、/v1beta 结尾就沿用，否则补默认版本 */
+export function splitGeminiEndpointBase(apiBase) {
+  const base = String(apiBase || '').trim().replace(/\/+$/, '');
+  const match = base.match(/\/(v1(?:beta|alpha)?\d*)$/i);
+  if (match) {
+    return { base: base.slice(0, -match[0].length).replace(/\/+$/, ''), version: match[1] };
+  }
+  return { base, version: GEMINI_DEFAULT_API_VERSION };
+}
+
+/**
+ * Gemini 原生端点把模型放在路径里：`gemini-2.5-pro` → `models/gemini-2.5-pro:generateContent`。
+ * 模型清单回来的是 `models/…` 这种带前缀的名字，微调模型是 `tunedModels/…`（本身的斜线要保留），两种都照原样用。
+ */
+export function buildGeminiModelPath(model, action = 'generateContent') {
+  const raw = String(model || '').trim().replace(/^\/+/, '');
+  const path = /^(?:models|tunedModels)\//i.test(raw) ? raw : `models/${raw}`;
+  return `${path}:${action}`;
+}
+
+/** 追加查询参数：已有查询串时用 &；值为空时不加（免得写出空的 key=） */
+export function appendUrlQuery(url, name, value) {
+  const text = String(url || '');
+  if (!value) return text;
+  const separator = text.includes('?') ? '&' : '?';
+  return `${text}${separator}${name}=${encodeURIComponent(String(value))}`;
+}
+
+/** 显示与日志用：隐去 ?key= 的值（Gemini 原生端点把密钥放在查询串里） */
+export function redactApiUrl(url) {
+  return String(url || '').replace(/([?&]key=)[^&#\s]*/gi, '$1***');
+}
+
+export function getApiEndpointSuffix(format, model = '') {
   switch (normalizeApiFormat(format)) {
     case API_FORMATS.OPENAI_RESPONSES: return '/responses';
     case API_FORMATS.CLAUDE_MESSAGES: return '/messages';
     case API_FORMATS.GEMINI_INTERACTIONS: return '/interactions';
+    // 模型在路径里；版本号由 getApiUrlForFormat 补
+    case API_FORMATS.GEMINI_GENERATE_CONTENT: return `/${buildGeminiModelPath(model)}`;
     case API_FORMATS.OPENAI_COMPAT:
     default: return '/chat/completions';
   }
 }
 
-export function getApiUrlForFormat(apiBase, format) {
+/**
+ * 实际要打的网址。options.model 给 Gemini 原生格式用（模型在路径里），
+ * options.apiKey 给 Google AI Studio 用（照 SillyTavern 带上 ?key=，见 api.js getAuthHeaders 的说明）。
+ */
+export function getApiUrlForFormat(apiBase, format, options = {}) {
   const base = String(apiBase || '').trim().replace(/\/+$/, '');
   const fmt = normalizeApiFormat(format);
+  const model = String(options?.model || '').trim();
+  if (fmt === API_FORMATS.GEMINI_GENERATE_CONTENT) {
+    const { base: host, version } = splitGeminiEndpointBase(base);
+    // 反代只要把主机换掉即可：https://my-relay.example → …/v1beta/models/<模型>:generateContent
+    const url = `${host}/${version}/${buildGeminiModelPath(model)}`;
+    return appendUrlQuery(url, 'key', options?.apiKey);
+  }
   // Google AI 原生端点必须带 API 版本；base 已以 /v1 或 /v1beta 结尾时直接拼接（与 TauriTavern build_gemini_url 一致）
   if (fmt === API_FORMATS.GEMINI_INTERACTIONS && !/\/(v1|v1beta)$/i.test(base)) {
     return `${base}/v1beta/interactions`;
   }
-  return `${base}${getApiEndpointSuffix(fmt)}`;
+  return `${base}${getApiEndpointSuffix(fmt, model)}`;
 }
 
 export const DEFAULT_SETTINGS = Object.freeze({

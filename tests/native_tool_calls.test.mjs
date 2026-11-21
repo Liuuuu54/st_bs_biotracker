@@ -365,6 +365,73 @@ test('Gemini Interactions 直连：工具写成 function 步骤格式，requires
   assert.deepEqual(result, { tool_calls: [{ name: 'bsPassedTime', arguments: { hour: 2 } }], character_checks: [{ female: '艾拉', status: 'updated' }] });
 });
 
+test('Google AI Studio 直连：工具写成 functionDeclarations，functionCall 读回 tool_calls、不因没有文字报错', async () => {
+  const calls = installDirectFetch([jsonResponse({
+    candidates: [{
+      content: {
+        role: 'model',
+        parts: [
+          { functionCall: { name: 'bsPassedTime', args: { hour: 2 } } },
+          { functionCall: { name: CHARACTER_CHECKS_TOOL_NAME, args: { checks: [{ female: '艾拉', status: 'updated' }] } } },
+        ],
+      },
+      finishReason: 'STOP',
+    }],
+  })]);
+  const result = await callOpenAICompatible(
+    { ...SETTINGS, apiUrl: 'https://generativelanguage.googleapis.com', apiFormat: 'gemini_generate_content' },
+    trackerPayload(),
+    'SYSTEM',
+    { flow: 'tracker', nativeTools: true },
+  );
+  // 模型在路径里，key 同时放在查询串（SillyTavern 的 ?key=）与请求头里
+  assert.equal(
+    calls[0].url,
+    'https://generativelanguage.googleapis.com/v1beta/models/tool-model:generateContent?key=secret',
+  );
+  const body = calls[0].body;
+  assert.deepEqual(
+    body.tools[0].functionDeclarations[0],
+    {
+      name: 'bsPassedTime',
+      description: '推进时间',
+      // additionalProperties 这类 JSON Schema 方言在这里被滤掉：Gemini 多一个字段就整份 400
+      parameters: { type: 'object', properties: { hour: { type: 'integer' } } },
+    },
+  );
+  assert.equal(body.tools[0].functionDeclarations.at(-1).name, CHARACTER_CHECKS_TOOL_NAME);
+  assert.deepEqual(body.toolConfig, { functionCallingConfig: { mode: 'AUTO' } });
+  assert.equal(body.contents.at(-1).role, 'user');
+  assert.deepEqual(result, { tool_calls: [{ name: 'bsPassedTime', arguments: { hour: 2 } }], character_checks: [{ female: '艾拉', status: 'updated' }] });
+});
+
+test('Google AI Studio：真实工具定义的 additionalProperties 全部滤掉、栏位与必填保留', async () => {
+  const calls = installDirectFetch([jsonResponse({
+    candidates: [{
+      content: { parts: [{ functionCall: { name: CHARACTER_CHECKS_TOOL_NAME, args: { checks: [{ female: '艾拉', status: 'updated' }] } } }] },
+      finishReason: 'STOP',
+    }],
+  })]);
+  const payload = { tracked_females: ['艾拉'], recent_messages: [], available_tools: REAL_TOOL_DEFINITIONS };
+  await callOpenAICompatible(
+    { ...SETTINGS, apiUrl: 'https://generativelanguage.googleapis.com', apiFormat: 'gemini_generate_content' },
+    payload,
+    'SYSTEM',
+    { flow: 'tracker', nativeTools: true },
+  );
+  const declarations = calls[0].body.tools[0].functionDeclarations;
+  assert.ok(declarations.length > 5, '追踪工具的完整清单都在');
+  // Gemini 的 Schema 是 OpenAPI 子集，多一个字段整份请求就 400
+  assert.doesNotMatch(JSON.stringify(declarations), /additionalProperties/);
+  declarations.forEach((declaration) => {
+    assert.equal(typeof declaration.name, 'string');
+    if (!declaration.parameters) return;
+    assert.ok(Object.keys(declaration.parameters.properties || {}).length > 0, `${declaration.name} 不该剩下空 properties`);
+  });
+  // 嵌套栏位与必填清单不能因为过滤而丢
+  assert.ok(declarations.some((declaration) => JSON.stringify(declaration).includes('"required"')));
+});
+
 test('原生格式下模型没用工具：照样退回文本 JSON（Gemini 只回文字也不算失败）', async () => {
   const textResult = { tool_calls: [], character_checks: [] };
   const calls = installDirectFetch([

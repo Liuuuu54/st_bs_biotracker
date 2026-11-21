@@ -168,12 +168,15 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   deleteApiProfile,
   getApiUrlForFormat,
+  GOOGLE_AI_STUDIO_BASE_URL,
   isSkillSystemEnabled,
   isWardrobeSystemEnabled,
+  normalizeApiBaseUrl,
   normalizeApiFormat,
   normalizeReasoningEffort,
   normalizeReplyFormat,
   normalizeTemperatureMode,
+  redactApiUrl,
   resolveUserTemperature,
   getCharacterWorldBookName,
   getCharacterWorldBookNameViaSTscript,
@@ -9781,12 +9784,20 @@ function updateApiEndpointPreview() {
   try {
     const baseInput = document.getElementById('bs-bt-api-url');
     const formatInput = document.getElementById('bs-bt-api-format');
+    const modelInput = document.getElementById('bs-bt-model');
+    const keyInput = document.getElementById('bs-bt-api-key');
     const previewCode = document.getElementById('bs-bt-api-endpoint-preview-code');
     if (!previewCode) return;
-    const rawBase = String(baseInput?.value || '').trim();
     const fmt = normalizeApiFormat(formatInput?.value);
-    const base = rawBase.replace(/\/+$/, '').replace(/\/(chat\/completions|models|responses|messages|interactions)$/i, '').replace(/\/+$/, '') || '<Base URL>';
-    previewCode.textContent = getApiUrlForFormat(base, fmt);
+    const rawBase = normalizeApiBaseUrl(baseInput?.value);
+    // Google AI Studio：Base URL 留空就是官方主机（与 api.js getApiBase 的补默认一致）
+    const base = rawBase || (fmt === 'gemini_generate_content' ? GOOGLE_AI_STUDIO_BASE_URL : '');
+    // Gemini 原生格式的模型在路径里：还没填模型时给个占位符，免得预览看起来缺一段
+    const previewModel = String(modelInput?.value || '').trim() || '<模型>';
+    previewCode.textContent = redactApiUrl(getApiUrlForFormat(base || '<Base URL>', fmt, {
+      model: previewModel,
+      apiKey: String(keyInput?.value || '').trim(),
+    }));
   } catch {}
 }
 
@@ -11261,7 +11272,8 @@ async function ensureModal(ctx) {
     if (centerName) openLineageWindow(ctx, centerName);
   });
   document.addEventListener('input', (event) => {
-    if (event.target?.id === 'bs-bt-api-url') updateApiEndpointPreview();
+    // 端点预览跟着网址、模型、Key 一起变：Gemini 原生格式的模型在路径里，Google AI Studio 的 Key 在查询串里
+    if (['bs-bt-api-url', 'bs-bt-model', 'bs-bt-api-key'].includes(event.target?.id)) updateApiEndpointPreview();
   });
   document.addEventListener('change', (event) => {
     if (event.target?.id === 'bs-bt-api-format') {
