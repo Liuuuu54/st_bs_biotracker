@@ -21,8 +21,8 @@
 ### 連接設定
 
 - **API Base URL、API 格式、API Key、模型名稱**：追蹤、註冊與各種推演共用同一組連接。輸入網址時下方會預覽實際請求的端點。API 格式決定請求送到 `/chat/completions`、`/responses`、`/messages`、`/interactions` 或 `/v1beta/models/<模型>:generateContent`；非相容格式在 TauriTavern 由宿主後端翻譯，在原版 SillyTavern 走 `/proxy/` 透傳。
-- **Google AI Studio（Gemini 原生）**：API 格式多了這一項，等同 SillyTavern 的「Google AI Studio」來源。選了它、Base URL 又留空，就直接打官方主機 `https://generativelanguage.googleapis.com`；要接反代時把反代主機填進 Base URL（含路徑，例如 `https://arena.lix.do/express/yes`），版本與模型的路徑照 SillyTavern 的規則補（已自帶 `/v1` 或 `/v1beta` 的不會疊成兩層，貼整條 `…/models/<模型>:generateContent` 也認得）。在酒館裡預設**交給酒館後端代發**：插件遞 `chat_completion_source: makersuite` + `reverse_proxy` + `proxy_password`，由酒館伺服器自己拼網址、翻請求體與回應，跟 SillyTavern 本身走同一條路——瀏覽器只跟同源的酒館後端說話，沒有 CORS 問題，也不怕反代掛在 Cloudflare 這類瀏覽器指紋攔截後面。交給後端時 Base URL 的版本段會先拆掉，版本由酒館的 `gemini.apiVersion`（預設 `v1beta`）決定，所以把 `/v1beta` 一起貼進來也不會疊成兩層。後端不認這個來源（舊版酒館、TauriTavern）時才退回瀏覽器原生協議：`?key=` 與 `x-goog-api-key` 同時帶（Google 兩種都收，反代多半只認其中一種），不帶 `Authorization: Bearer`（Google 會當成 OAuth 令牌而 401），必要時經 `/proxy/` 透傳。端點預覽、連線狀態列與錯誤訊息裡的 `?key=` 一律顯示成 `***`。[Gemini 原生](../../scripts/api.js#L1379)、[後端代發](../../scripts/api.js#L1898)。
-- **連接並拉取模型**：向端點要模型清單，選了會填進模型名稱。切換配置組後舊清單會清空，需要時再拉一次。選 Gemini 原生格式時同樣先問酒館後端；後端取不到（反代不提供 `/models`、或沒有這個來源）才自己問 `…/v1beta/models`。兩邊都只留 `supportedGenerationMethods` 裡有 `generateContent` 的模型，名字去掉 `models/` 前綴（`tunedModels/…` 的微調模型保留路徑）；清單拉不到時直接手動填模型名稱即可。[Gemini 模型清單](../../scripts/api.js#L1994)。
+- **Google AI Studio（Gemini 原生）**：API 格式多了這一項，等同 SillyTavern 的「Google AI Studio」來源。選了它、Base URL 又留空，就直接打官方主機 `https://generativelanguage.googleapis.com`；要接反代時把反代主機填進 Base URL（含路徑，例如 `https://arena.lix.do/express/yes`），版本與模型的路徑照 SillyTavern 的規則補（已自帶 `/v1` 或 `/v1beta` 的不會疊成兩層，貼整條 `…/models/<模型>:generateContent` 也認得）。在酒館裡預設**交給酒館後端代發**：插件遞 `chat_completion_source: makersuite` + `reverse_proxy` + `proxy_password`，由酒館伺服器自己拼網址、翻請求體與回應，跟 SillyTavern 本身走同一條路——瀏覽器只跟同源的酒館後端說話，沒有 CORS 問題，也不怕反代掛在 Cloudflare 這類瀏覽器指紋攔截後面。交給後端時 Base URL 的版本段會先拆掉，版本由酒館的 `gemini.apiVersion`（預設 `v1beta`）決定，所以把 `/v1beta` 一起貼進來也不會疊成兩層。後端不認這個來源（舊版酒館、TauriTavern）、或回 4xx（CSRF／來源被拒）時才退回瀏覽器原生協議，而且本次工作階段不再重試後端；原生協議一律**先瀏覽器直連**，直連連不上（CORS／網路）才走 `/proxy/` 透傳——對外開放的反代通常對瀏覽器放行，酒館的 `/proxy/` 反而可能被雲端按指紋擋掉。原生協議的鑑權是 `?key=` 與 `x-goog-api-key` 同時帶（Google 兩種都收，反代多半只認其中一種），不帶 `Authorization: Bearer`（Google 會當成 OAuth 令牌而 401）。端點預覽、連線狀態列與錯誤訊息裡的 `?key=` 一律顯示成 `***`。[Gemini 原生](../../scripts/api.js#L1396)、[後端代發](../../scripts/api.js#L1959)。
+- **連接並拉取模型**：向端點要模型清單，選了會填進模型名稱。切換配置組後舊清單會清空，需要時再拉一次。選 Gemini 原生格式時同樣先問酒館後端；後端取不到（反代不提供 `/models`、或沒有這個來源）才自己問 `…/v1beta/models`。兩邊都只留 `supportedGenerationMethods` 裡有 `generateContent` 的模型，名字去掉 `models/` 前綴（`tunedModels/…` 的微調模型保留路徑）；清單拉不到時直接手動填模型名稱即可。[Gemini 模型清單](../../scripts/api.js#L2078)。
 - **連接配置組**：把分隔線以上的整段連接設定（網址、格式、Key、模型、溫度、思考強度、回覆格式）以名稱存成一組，最多 30 組，同名覆蓋前會確認；從下拉選一組即套用並保存。下拉只顯示名稱，不顯示 Key。Key 與其他設定一樣存在本機的 SillyTavern 設定檔。[配置組](../../scripts/state.js#L943)。
 
 ### 回覆格式
@@ -42,7 +42,7 @@
 
 - **溫度**：三種模式。「沿用舊行為」是過去的邏輯（主請求 0.2、重試 0.1，預設可覆蓋）；「不傳參數」給要求省略 temperature 的模型；「手動指定」每次都用你填的值，也會覆蓋預設。[溫度](../../scripts/state.js#L130)。
 - **思考強度**（`reasoning_effort`）：Minimal 到 Max；預設 Auto 不傳這個參數，由服務端決定。小尺寸模型拉高思考強度有助於輸出正確。[思考強度](../../scripts/state.js#L120)。
-- **主線複製字數上限**（預設 40 萬字，0 為不限）：世界書模式為「主流模式」時，追蹤請求會複製主線上一輪的系統訊息與最近訊息。主線的上下文上限可能遠大於追蹤 API 的上限，strict 提示後處理又會把整份系統內容合併成一則，所以只限則數擋不住。超過這個字數時先由舊到新略去複製來的聊天訊息，仍超過才從系統訊息尾端截斷並註明截斷字數，同時跳出提示。這個值會一併存進 API 配置組，跟著那組 API 的上下文大小走。[主線複製上限](../../scripts/api.js#L832)。
+- **主線複製字數上限**（預設 40 萬字，0 為不限）：世界書模式為「主流模式」時，追蹤請求會複製主線上一輪的系統訊息與最近訊息。主線的上下文上限可能遠大於追蹤 API 的上限，strict 提示後處理又會把整份系統內容合併成一則，所以只限則數擋不住。超過這個字數時先由舊到新略去複製來的聊天訊息，仍超過才從系統訊息尾端截斷並註明截斷字數，同時跳出提示。這個值會一併存進 API 配置組，跟著那組 API 的上下文大小走。[主線複製上限](../../scripts/api.js#L849)。
 
 ### 追蹤節奏
 

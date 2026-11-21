@@ -436,6 +436,23 @@ export function describeConnectionFailure({ error, proxyFailure = null, upstream
     + `原始错误: ${direct}`;
 }
 
+/**
+ * 失败后改道时，把「先走的那一跳」的回答写进错误消息。
+ * 两跳各自的状态码与错误内容都要看得到：只报最后一跳，真正的原因（CSRF、云端拦截、key 错）
+ * 会留在另一条路上，读错误的人分不清该改哪一边。
+ */
+function describeEarlierFailure(proxyFailure) {
+  if (!proxyFailure) return '';
+  const via = proxyFailure.via === 'host-makersuite'
+    ? '酒馆后端代发（makersuite）'
+    : (String(proxyFailure.via || '').includes('transparent') ? '酒馆 /proxy/ 透传' : '代理');
+  if (proxyFailure.error) {
+    return `（先经${via}也没送到：${String(proxyFailure.error?.message || proxyFailure.error)}）`;
+  }
+  const body = sanitizeErrorText(proxyFailure.text) || '（没有回应内容）';
+  return `（先经${via}也回 HTTP ${proxyFailure.status}：${body}）`;
+}
+
 function shouldFallbackFromHostProxy(responseText, status) {
   // 不含 429：上游限流时再直连一次等于对已限流的端点翻倍施压，
   // 而浏览器跨域直连多半又会 CORS 失败，白白多打一次
@@ -1627,18 +1644,24 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
     const canUseHostProxy = shouldUseHostProxy(upstreamUrl) && (isCompat || formatAwareProxy);
     // Google AI Studio 先让酒馆后端代发（SillyTavern 的 makersuite 源：服务端拼网址、翻请求体与回应），
     // 浏览器原生协议留作退路。反代挂了 Cloudflare 浏览器指纹拦截时，这条路是唯一能走通的一条。
-    const makersuiteProxy = fmt === API_FORMATS.GEMINI_GENERATE_CONTENT && hostServesMakersuite();
+    const makersuiteProxy = fmt === API_FORMATS.GEMINI_GENERATE_CONTENT && hostServesMakersuite() && !isMakersuiteDisabled();
     const makersuitePayload = makersuiteProxy
       ? buildMakersuiteHostPayload(apiBase, settings, requestBody)
       : null;
+    // Google AI Studio 的原生协议一律「先浏览器直连，直连不通再 /proxy/ 透传」：
+    // 对外开放的反代大多对浏览器放行并开着 CORS，而酒馆的 /proxy/ 与后端都是服务端 node-fetch，
+    // 常被 Cloudflare 之类按浏览器指纹挡成 403。别的格式仍维持原本「代理优先」的次序。
+    const nativeDirectFirst = !makersuiteProxy && fmt === API_FORMATS.GEMINI_GENERATE_CONTENT;
     let transport = makersuiteProxy
       ? 'host-makersuite'
-      : (canUseHostProxy
-        ? (formatAwareProxy ? 'host-proxy-formatted' : 'host-proxy')
-        : (transparentProxyUrl ? 'host-proxy-transparent' : 'direct'));
+      : (nativeDirectFirst
+        ? 'direct'
+        : (canUseHostProxy
+          ? (formatAwareProxy ? 'host-proxy-formatted' : 'host-proxy')
+          : (transparentProxyUrl ? 'host-proxy-transparent' : 'direct')));
     let url = (makersuiteProxy || canUseHostProxy)
       ? '/api/backends/chat-completions/generate'
-      : (transparentProxyUrl || upstreamUrl);
+      : (nativeDirectFirst ? upstreamUrl : (transparentProxyUrl || upstreamUrl));
     const payloadForTransport = makersuiteProxy ? makersuitePayload : (canUseHostProxy ? requestBody : buildDirectPayload(fmt, requestBody));
     // 原生协议那份请求体（makersuite 后端不认时改发它）：只有真的要用才序列化
     let nativeText = '';
@@ -1677,8 +1700,13 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
           proxyFailure = proxyError
             ? { via: transport, error: proxyError }
             : { via: transport, status: response.status, text: responseText };
+          // 后端的 4xx 多半不是「这次请求有问题」，而是这条路本身不可用（CSRF 拦截、来源被拒、版本太旧）。
+          // 记下来，本次工作阶段别再撞：每轮白搭一次只会拖慢追踪
+          if (!proxyError && response.status >= 400 && response.status < 500) {
+            disableMakersuiteForSession(response.status, responseText);
+          }
           transport = proxyError ? 'native-after-makersuite-error' : `native-after-makersuite-${response.status}`;
-          url = transparentProxyUrl || upstreamUrl;
+          url = upstreamUrl;
           const body = getNativeText();
           const fetchOptions = {
             method: 'POST',
@@ -1688,11 +1716,41 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
             externalSignal: runContext.signal || null,
             deadlineMs: runContext.deadlineMs || 0,
           };
-          // 原生协议：跨域且有 /proxy/ 就透传（酒馆服务器代发），否则浏览器直连。
-          // 两条都失败时不在这里包错误，交给外层带着 proxyFailure 一起说明
-          ({ response, responseText } = transparentProxyUrl
-            ? await fetchText(transparentProxyUrl, { ...fetchOptions, headers: getHostProxyHeaders(getAuthHeaders(settings, sessionId)) })
-            : await fetchText(upstreamUrl, { ...fetchOptions, headers: getAuthHeaders(settings, sessionId) }));
+          // 原生协议先走浏览器直连：对外开放的反代一般对浏览器放行（CORS 也开着），
+          // 而酒馆的 /proxy/ 与后端都是服务端 node-fetch，常被 Cloudflare 的浏览器指纹规则挡成 403。
+          // 直连不通（CORS／网络）才退回 /proxy/ 透传。两条都失败时不在这里包错误，
+          // 交给外层带着 proxyFailure 一起说明
+          try {
+            ({ response, responseText } = await fetchText(upstreamUrl, { ...fetchOptions, headers: getAuthHeaders(settings, sessionId) }));
+          } catch (error) {
+            if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
+            if (!transparentProxyUrl) throw error;
+            transport = `${transport}+host-proxy`;
+            ({ response, responseText } = await fetchText(transparentProxyUrl, { ...fetchOptions, headers: getHostProxyHeaders(getAuthHeaders(settings, sessionId)) }));
+          }
+        }
+      } else if (nativeDirectFirst) {
+        const fetchOptions = {
+          method: 'POST',
+          body: requestText,
+          cache: 'no-cache',
+          timeoutMs: resolveApiTimeoutMs(settings),
+          externalSignal: runContext.signal || null,
+          deadlineMs: runContext.deadlineMs || 0,
+        };
+        try {
+          ({ response, responseText } = await fetchText(upstreamUrl, { ...fetchOptions, headers: getAuthHeaders(settings, sessionId) }));
+        } catch (error) {
+          logApiDebug(`direct_error:${attempt}`, { error });
+          if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
+          // 直连连不上（CORS／网络）才退 /proxy/；拿得到状态码就照实报，不再四处试探
+          if (!transparentProxyUrl) throw error;
+          transport = 'host-proxy-transparent';
+          url = transparentProxyUrl;
+          ({ response, responseText } = await fetchText(transparentProxyUrl, {
+            ...fetchOptions,
+            headers: getHostProxyHeaders(getAuthHeaders(settings, sessionId)),
+          }));
         }
       } else if (canUseHostProxy) {
         let proxyError = null;
@@ -1784,7 +1842,7 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
       // Gemini 原生格式把格式化输出翻成 generationConfig.responseMimeType（见 buildGeminiGenerateContentBody）
       const sentResponseFormat = Boolean(requestBody.response_format)
         && (isCompat || fmt === API_FORMATS.GEMINI_GENERATE_CONTENT || (fmt === API_FORMATS.OPENAI_RESPONSES && !formatAwareProxy));
-      return { response, responseText, requestText, format: fmt, sentResponseFormat };
+      return { response, responseText, requestText, format: fmt, sentResponseFormat, proxyFailure };
     } catch (error) {
       traceRequestToUi('POST', displayUrl, 0, transport);
       logApiDebug(`error:${attempt}`, {
@@ -1855,7 +1913,10 @@ async function requestChatCompletion(apiBase, settings, body, runContext = {}) {
   if (!response.ok) {
     // 实际请求的网址只显示到主机与路径，?key= 隐去
     const attemptedUrl = redactApiUrl(getApiUrlForFormat(apiBase, result.format, { model: body.model, apiKey: settings?.apiKey }));
-    const error = new Error(`API ${response.status}［实际请求: ${attemptedUrl}］: ${sanitizeErrorText(errorText)}`);
+    // 先经代理／酒馆后端也失败时，把那一次的回答一并附上：只报最后一跳会把真正的原因（CSRF、云端拦截、
+    // key 错）留在另一条路上，使用者与作者都看不出该改哪一边
+    const earlier = describeEarlierFailure(result.proxyFailure);
+    const error = new Error(`API ${response.status}［实际请求: ${attemptedUrl}］: ${sanitizeErrorText(errorText)}${earlier}`);
     // 调用方据此区分「上游不认请求参数」与鉴权、限流、服务端错误
     error.status = response.status;
     throw error;
@@ -1902,6 +1963,27 @@ function hostServesMakersuite() {
   } catch {
     return false;
   }
+}
+
+/**
+ * 后端的 makersuite 路线本次工作阶段已被证伪（4xx：CSRF 拦截、来源被拒、版本太旧…）时，
+ * 后续请求直接走浏览器原生协议，不再每轮先白撞一次。
+ */
+const MAKERSUITE_DISABLED_KEY = '__bs_biotracker_makersuite_disabled__';
+
+function isMakersuiteDisabled() {
+  return globalThis[MAKERSUITE_DISABLED_KEY] === true;
+}
+
+function disableMakersuiteForSession(status, responseText) {
+  if (isMakersuiteDisabled()) return;
+  globalThis[MAKERSUITE_DISABLED_KEY] = true;
+  const hint = /csrf|forbidden/i.test(String(responseText || ''))
+    ? '（看起来是 CSRF 或来源拦截：硬重整页面 Ctrl+Shift+R 后可恢复）'
+    : '';
+  console.warn(
+    `[BS BioTracker] 酒馆后端代发 Google AI Studio 返回 ${status}${hint}，本次工作阶段改走浏览器直连原生协议。`,
+  );
 }
 
 /**
@@ -2003,7 +2085,7 @@ async function fetchGeminiGenerateContentModelList(settings) {
   const displayUrl = redactApiUrl(url);
   assertSafeDirectApiBase(apiBase);
 
-  if (hostServesMakersuite()) {
+  if (hostServesMakersuite() && !isMakersuiteDisabled()) {
     try {
       const { response, responseText } = await requestHostMakersuiteModelList(apiBase, settings);
       if (response.ok) {
@@ -2268,7 +2350,8 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   // Gemini 原生格式走酒馆后端时，ST 只把正文放进 choices（functionCall 留在 responseContent 里），
   // 原生工具调用读不回来；直接用文本协议，省掉每轮白跑的那一次
   const nativeToolsUnavailable = normalizeApiFormat(settings?.apiFormat) === API_FORMATS.GEMINI_GENERATE_CONTENT
-    && hostServesMakersuite();
+    && hostServesMakersuite()
+    && !isMakersuiteDisabled();
   const nativePlan = usesNativeToolCalls(replyFormat) && !nativeToolsUnavailable && !isNativeToolsDisabled(sessionKey, flow)
     ? resolveNativeToolPlan(options, safePayload)
     : null;

@@ -4,8 +4,9 @@
 
 ### 新增
 
-- API 格式新增「Google AI Studio（Gemini 原生）」：請求送到 `<Base URL>/v1beta/models/<模型>:generateContent`，模型寫在路徑裡、不在請求體裡。選了它而 Base URL 留空，就直接打官方主機 `https://generativelanguage.googleapis.com`；要接反代時把反代主機連路徑一起填進 Base URL（例如 `https://arena.lix.do/express/yes`），自帶 `/v1`、`/v1beta` 或整條 `…/models/<模型>:generateContent` 貼進來都認得，不會疊成兩層。
-- 在酒館裡預設**交給酒館後端代發**：插件遞 `chat_completion_source: makersuite` + `reverse_proxy`（＝Base URL）+ `proxy_password`（＝API Key），由酒館伺服器自己拼網址、把 messages 翻成 `contents`／`systemInstruction`／`generationConfig`、再把回覆收回 OpenAI 結構——與 SillyTavern 的「Google AI Studio + 反向代理」走同一條路。瀏覽器只跟同源的酒館後端說話，沒有 CORS 問題，也不受反代那端 Cloudflare 之類的瀏覽器指紋攔截影響。後端不認這個來源（舊版酒館、TauriTavern）時才退回瀏覽器原生協議。
+- API 格式新增「Google AI Studio（Gemini 原生）」：請求送到 `<Base URL>/v1beta/models/<模型>:generateContent`，模型寫在路徑裡、不在請求體裡。選了它而 Base URL 留空，就直接打官方主機 `https://generativelanguage.googleapis.com`；要接反代時把反代主機連路徑一起填進 Base URL，自帶 `/v1`、`/v1beta` 或整條 `…/models/<模型>:generateContent` 貼進來都認得，不會疊成兩層。
+- 在酒館裡預設**交給酒館後端代發**：插件遞 `chat_completion_source: makersuite` + `reverse_proxy`（＝Base URL）+ `proxy_password`（＝API Key），由酒館伺服器自己拼網址、把 messages 翻成 `contents`／`systemInstruction`／`generationConfig`、再把回覆收回 OpenAI 結構——與 SillyTavern 的「Google AI Studio + 反向代理」走同一條路。瀏覽器只跟同源的酒館後端說話，沒有 CORS 問題。後端不認這個來源、或回 4xx（CSRF／來源被拒／版本太舊）時才退回瀏覽器原生協議，且**本次工作階段不再重試後端**，不必每輪先白撞一次。
+- 原生協議一律「先瀏覽器直連，直連不通才走 `/proxy/` 透傳」：對外開放的反代大多對瀏覽器放行並開著 CORS，而酒館的 `/proxy/` 與後端都是服務端 node-fetch，常被 Cloudflare 之類按瀏覽器指紋擋成 403（`error code: 1010`）。別的 API 格式仍維持原本「代理優先」的次序。
 - 原生協議的鑑權照 SillyTavern：`?key=` 與 `x-goog-api-key` 同時帶（Google 兩種都收、同時帶不衝突，反代多半只認其中一種），而且不帶 `Authorization: Bearer`（Google 會當成 OAuth 令牌而 401）。端點預覽、連線狀態列與錯誤訊息裡的 `?key=` 一律顯示成 `***`。
 - 模型清單在 Gemini 原生格式下也先問酒館後端；取不到才自己問 `…/v1beta/models`，只留 `supportedGenerationMethods` 裡有 `generateContent` 的，名字去掉 `models/` 前綴（`tunedModels/…` 保留路徑）。兩邊都拿不到時說清楚是「後端取不到清單」，而不是讓人以為網址填錯。
 - 瀏覽器原生協議的請求體按原生格式翻：`contents`（連續同角色合併成一則）+ `systemInstruction` + `generationConfig`（`maxOutputTokens`、`topP`、`topK`、`responseMimeType`）+ `safetySettings`（全部 OFF，與 SillyTavern 相同）+ `tools[].functionDeclarations` 與 `toolConfig`；回覆讀 `candidates[0].content.parts`，跳過 `thought`、`functionCall` 讀成 `tool_calls`，被封禁、被截斷或沒有 candidate 時分開報原因。工具定義裡的 `additionalProperties` 等 JSON Schema 方言會先濾掉（Gemini 只收 OpenAPI 子集，多一個欄位整份請求就 400）。
@@ -13,6 +14,7 @@
 
 ### 調整
 
+- 失敗訊息會把「先走的那一跳」的回答一併寫出來（例如先經酒館後端也回 HTTP 403：…）：只報最後一跳時，真正的原因（CSRF、雲端攔截、key 錯）留在另一條路上，讀的人分不清該改哪一邊。
 - 系統頁的「OpenAI 兼容 API Base URL」標籤改成「API Base URL」，並補一行 Google AI Studio／反代的說明。
 - 端點預覽現在跟著網址、模型、Key 一起更新：Gemini 原生格式的模型在路徑裡、Google 的金鑰在查詢串裡，只看網址已經預覽不出真正的端點。
 

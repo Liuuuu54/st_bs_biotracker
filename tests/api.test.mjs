@@ -20,6 +20,8 @@ afterEach(() => {
   // 宿主代理鉴权失败会整个 session 停用代理（见 disableHostProxyForSession），
   // 用例之间必须重置，否则前一个 403 案例会让后续案例直接跳过代理
   delete globalThis.__bs_biotracker_host_proxy_disabled__;
+  // 后端 makersuite 路线被证伪后同样按工作阶段记住（见 disableMakersuiteForSession）
+  delete globalThis.__bs_biotracker_makersuite_disabled__;
 });
 
 function installBrowserHost(fetchImpl) {
@@ -641,9 +643,10 @@ test('Google AI Studio：酒馆后端不认这个来源时，退回浏览器原�
 
   assert.deepEqual(result, { operations: [] });
   assert.equal(calls.length, 2, '先撞一次酒馆后端，退回原生协议');
+  // 原生协议先走浏览器直连：对外开放的反代一般对浏览器放行，酒馆的 /proxy/ 反而可能被云端挡住
   assert.equal(
     calls[1].url,
-    '/proxy/https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIza-test',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIza-test',
   );
   assert.equal(calls[1].options.headers['x-goog-api-key'], 'AIza-test');
   assert.equal(calls[1].options.headers.Authorization, undefined, 'Google 把 Bearer 当 OAuth 令牌，不能带');
@@ -655,6 +658,74 @@ test('Google AI Studio：酒馆后端不认这个来源时，退回浏览器原�
   assert.equal(body.generationConfig.temperature, 0.2);
   assert.equal(body.generationConfig.responseMimeType, 'application/json');
   assert.deepEqual(body.safetySettings.map((setting) => setting.threshold), ['OFF', 'OFF', 'OFF', 'OFF', 'OFF']);
+});
+
+test('Google AI Studio：直连被 CORS 挡下时改走酒馆 /proxy/ 透传', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    if (url === '/api/backends/chat-completions/generate') return jsonResponse({ error: true }, 404);
+    if (String(url).startsWith('https://')) throw new TypeError('Failed to fetch');
+    return jsonResponse(GEMINI_GENERATE_CONTENT_RESULT);
+  });
+
+  const result = await callOpenAICompatible({
+    apiUrl: 'https://relay.example',
+    apiKey: 'relay-key',
+    model: 'gemini-4-argon',
+    apiFormat: 'gemini_generate_content',
+  }, { recent_messages: [] }, 'Return JSON.');
+
+  assert.deepEqual(result, { operations: [] });
+  assert.deepEqual(calls.map((call) => call.url), [
+    '/api/backends/chat-completions/generate',
+    'https://relay.example/v1beta/models/gemini-4-argon:generateContent?key=relay-key',
+    '/proxy/https://relay.example/v1beta/models/gemini-4-argon:generateContent?key=relay-key',
+  ]);
+});
+
+test('Google AI Studio：后端回 4xx 后本次工作阶段不再撞它，原生直连一次就够', async () => {
+  const calls = [];
+  installBrowserHost(async (url, options) => {
+    calls.push({ url, options });
+    if (url === '/api/backends/chat-completions/generate') {
+      return jsonResponse('ForbiddenError: invalid csrf token', 403);
+    }
+    return jsonResponse(GEMINI_GENERATE_CONTENT_RESULT);
+  });
+  const settings = {
+    apiUrl: 'https://arena.lix.do/express/yes', apiKey: 'relay-password', model: 'gemini-4-argon', apiFormat: 'gemini_generate_content',
+  };
+
+  await callOpenAICompatible(settings, { recent_messages: [] }, 'Return JSON.');
+  assert.deepEqual(calls.map((call) => call.url), [
+    '/api/backends/chat-completions/generate',
+    'https://arena.lix.do/express/yes/v1beta/models/gemini-4-argon:generateContent?key=relay-password',
+  ], '后端被拒后改浏览器直连，不绕 /proxy/');
+
+  calls.length = 0;
+  await callOpenAICompatible(settings, { recent_messages: [] }, 'Return JSON.');
+  assert.deepEqual(calls.map((call) => call.url), [
+    'https://arena.lix.do/express/yes/v1beta/models/gemini-4-argon:generateContent?key=relay-password',
+  ], '本次工作阶段不再先撞后端');
+});
+
+test('Google AI Studio：两跳都失败时，错误里同时写明后端与原生那一跳的回答', async () => {
+  installBrowserHost(async (url) => {
+    if (url === '/api/backends/chat-completions/generate') {
+      return jsonResponse('ForbiddenError: invalid csrf token', 403);
+    }
+    return jsonResponse('error code: 1010', 403);
+  });
+
+  await assert.rejects(
+    callOpenAICompatible({
+      apiUrl: 'https://arena.lix.do/express/yes', apiKey: 'relay-password', model: 'gemini-4-argon', apiFormat: 'gemini_generate_content',
+    }, { recent_messages: [] }, 'Return JSON.'),
+    (error) => /API 403/.test(error.message)
+      && /先经酒馆后端代发（makersuite）也回 HTTP 403/.test(error.message)
+      && /1010/.test(error.message),
+  );
 });
 
 test('Google AI Studio 原生协议：Base URL 留空就用官方主机', async () => {
