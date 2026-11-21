@@ -1016,7 +1016,8 @@
   gap: 8px;
 }
 
-#bs-biotracker-settings .bs-bt-theme-option.is-active {
+#bs-biotracker-settings .bs-bt-theme-option.is-active,
+#bs-biotracker-settings .bs-bt-option-chip.is-active {
   background: var(--bsbt-lcd-text);
   color: var(--bsbt-lcd-bg);
 }
@@ -3774,7 +3775,8 @@
 }
 
 #bs-biotracker-settings.theme-holo .bs-bt-size-option.is-active,
-#bs-biotracker-settings.theme-holo .bs-bt-theme-option.is-active {
+#bs-biotracker-settings.theme-holo .bs-bt-theme-option.is-active,
+#bs-biotracker-settings.theme-holo .bs-bt-option-chip.is-active {
   background: rgba(141, 247, 255, 0.18);
   color: #d9fdff;
   box-shadow:
@@ -3907,7 +3909,8 @@
 }
 
 #bs-biotracker-settings.theme-gothic .bs-bt-size-option.is-active,
-#bs-biotracker-settings.theme-gothic .bs-bt-theme-option.is-active {
+#bs-biotracker-settings.theme-gothic .bs-bt-theme-option.is-active,
+#bs-biotracker-settings.theme-gothic .bs-bt-option-chip.is-active {
   background: rgba(143, 63, 75, 0.42);
   color: #f0e3d8;
   border-color: rgba(214, 186, 164, 0.68);
@@ -4043,7 +4046,8 @@
 }
 
 #bs-biotracker-settings.theme-steampunk .bs-bt-size-option.is-active,
-#bs-biotracker-settings.theme-steampunk .bs-bt-theme-option.is-active {
+#bs-biotracker-settings.theme-steampunk .bs-bt-theme-option.is-active,
+#bs-biotracker-settings.theme-steampunk .bs-bt-option-chip.is-active {
   background: rgba(138, 75, 45, 0.72);
   color: #f4e4c2;
   border-color: rgba(209, 168, 90, 0.78);
@@ -4212,7 +4216,8 @@
 }
 
 #bs-biotracker-settings.theme-eldritch .bs-bt-size-option.is-active,
-#bs-biotracker-settings.theme-eldritch .bs-bt-theme-option.is-active {
+#bs-biotracker-settings.theme-eldritch .bs-bt-theme-option.is-active,
+#bs-biotracker-settings.theme-eldritch .bs-bt-option-chip.is-active {
   background: rgba(104, 214, 194, 0.2);
   color: #d7efe8;
   border-color: rgba(215, 239, 232, 0.54);
@@ -4370,7 +4375,8 @@
 }
 
 #bs-biotracker-settings.theme-ink .bs-bt-size-option.is-active,
-#bs-biotracker-settings.theme-ink .bs-bt-theme-option.is-active {
+#bs-biotracker-settings.theme-ink .bs-bt-theme-option.is-active,
+#bs-biotracker-settings.theme-ink .bs-bt-option-chip.is-active {
   background: rgba(164, 56, 47, 0.18);
   color: #1f2522;
   border-color: rgba(164, 56, 47, 0.5);
@@ -4511,7 +4517,8 @@
 }
 
 #bs-biotracker-settings.theme-constructivism .bs-bt-size-option.is-active,
-#bs-biotracker-settings.theme-constructivism .bs-bt-theme-option.is-active {
+#bs-biotracker-settings.theme-constructivism .bs-bt-theme-option.is-active,
+#bs-biotracker-settings.theme-constructivism .bs-bt-option-chip.is-active {
   background:
     linear-gradient(135deg, #b62525 0 58%, #141414 58% 100%);
   color: #ece3cf;
@@ -6967,13 +6974,15 @@
 
 /* 完整变量页「外观」：特写的肤色与乳头色 */
 #bs-biotracker-settings .bs-bt-color-group { margin: 8px 0 12px; }
-#bs-biotracker-settings .bs-bt-color-title { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; font-weight: 600; }
+#bs-biotracker-settings .bs-bt-color-title { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; margin-bottom: 6px; font-weight: 600; white-space: nowrap; }
+#bs-biotracker-settings .bs-bt-color-title .bs-bt-inline-status { white-space: normal; }
 #bs-biotracker-settings .bs-bt-color-title .bs-bt-inline-status { font-weight: normal; margin: 0; }
 #bs-biotracker-settings .bs-bt-color-swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-#bs-biotracker-settings .bs-bt-color-swatch { width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 2px solid var(--SmartThemeBorderColor, #555); cursor: pointer; }
-#bs-biotracker-settings .bs-bt-color-swatch.is-active { outline: 2px solid var(--SmartThemeQuoteColor, #f07aa8); outline-offset: 2px; }
+#bs-biotracker-settings .bs-bt-color-swatch { width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 2px solid var(--bsbt-border-color, currentColor); cursor: pointer; }
+#bs-biotracker-settings .bs-bt-color-swatch.is-active { outline: 2px solid var(--bsbt-lcd-text, currentColor); outline-offset: 2px; }
 #bs-biotracker-settings .bs-bt-color-custom { display: inline-flex; gap: 4px; align-items: center; font-size: 0.85em; cursor: pointer; }
 #bs-biotracker-settings .bs-bt-color-custom input[type="color"] { width: 30px; height: 30px; padding: 0; border: none; background: none; cursor: pointer; }
 #bs-biotracker-settings .bs-bt-color-strip { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
 #bs-biotracker-settings .bs-bt-color-chip { width: 22px; height: 22px; border-radius: 3px; display: inline-block; }
 #bs-biotracker-settings .bs-bt-color-gap { width: 10px; }
+#bs-biotracker-settings .bs-bt-option-chip { padding: 2px 10px; border-radius: 12px; border: 1px solid var(--bsbt-border-color, currentColor); background: transparent; color: inherit; cursor: pointer; font-size: 0.9em; }

@@ -517,7 +517,7 @@ export function createBellyLayout(data, options = {}) {
   function shapeOf(s){if(!afterBirth(s))return s;const q=recoveryOf(s),n=Math.max(1,Number(s.count)||1);
     return{...s,days:140*(1+0.3*(n-1))*(1-q)**1.5,count:1,weight:1}}
   function figureFor(real,motion=null){
-    const s=shapeOf(real),raw=baseFigure(s),fig={...raw,bulk:bulkOf(s),pressure:pressureOf(s),sigma:s.sigma,cup:s.cup,days:real.days,breast:{milk:(real.milk??0)/100,engorged:engorgement(real),births:real.births||0,noMilk:!!real.noMilk,libido:(real.libido??0)/100,hormone:areolaHormone(real)}};
+    const s=shapeOf(real),raw=baseFigure(s),fig={...raw,look:{nippleScale:clamp(Number(real.nippleScale)||1,0.5,2),navel:real.navel||'pop',navelLarge:!!real.navelLarge,stretchMarks:real.stretchMarks||'off',pastBulk:Number(real.pastBulk)||0,fetalBulk:bulkOf(real),births:real.births||0,hormStage:real.hormStage||'',recovery:afterBirth(real)?recoveryOf(real):null},bulk:bulkOf(s),pressure:pressureOf(s),sigma:s.sigma,cup:s.cup,days:real.days,breast:{milk:(real.milk??0)/100,engorged:engorgement(real),births:real.births||0,noMilk:!!real.noMilk,libido:(real.libido??0)/100,hormone:areolaHormone(real)}};
     const lift=motion?.lift||0,ubRow=raw.underbust?Math.max(...raw.underbust.map(p=>p[1])):(raw.crotch-Y0)/STEP*0.4;
     // the in-breath lifts everything above the under-bust (fading out over 8 rows below it) and brings it a little forward;
     // the belly only drifts forward with it, broadly, so no single spot swells
@@ -890,7 +890,8 @@ export function createBellyLayout(data, options = {}) {
     const br=fig.breast||{},hormone=br.hormone??clamp((Number(fig.days)||0)/280,0,1),lact=br.noMilk?0:1;
     const tint=lact*hormone,grow=lact*(0.35*hormone+0.1*(br.milk||0)+0.25*(br.engorged||0)),erect=clamp(((br.libido||0)-0.5)/0.4,0,1);
     const box=lobe=>{let l=W,r=-1,t=H,b=-1,n=0,sx=0;for(let i=0;i<N;i++)if(lobe[i]){const x=i%W,y=i/W|0;l=Math.min(l,x);r=Math.max(r,x);t=Math.min(t,y);b=Math.max(b,y);n++;sx+=x}return{l,r,t,b,n,sx}};
-    const sizeOf=({l,r,t,b})=>clamp(0.09*Math.sqrt((r-l+1)*(b-t+1)),0.9,3.2)*(1+grow)*(1-0.1*erect);
+    // 乳晕大小（外观设定，乳晕与乳头一起缩放）
+    const sizeOf=({l,r,t,b})=>clamp(0.09*Math.sqrt((r-l+1)*(b-t+1)),0.9,3.2)*(1+grow)*(1-0.1*erect)*(fig.look?.nippleScale||1);
     const two=lobes.list.length>1;
     // Where the author placed them (near, far): the far one as it is; the near one, within a few cells of its breast's
     // outline, on the outline at that row (so it turns with the edge), otherwise as it is.
@@ -1267,7 +1268,10 @@ export function createBellyLayout(data, options = {}) {
     // a contracting womb is hard and round: the belly's relief deepens (up to a third more), so its light and shade sharpen
     // (宫缩不再把整个孕肚的起伏加深：那会让整片上腹的明暗一起跳。改在下面跟着侧腹转折线一起变，见 belly_turn)
     // a belly just emptied is soft and loose: its relief flattens (up to 15%), firming back over the recovery
-    if(fig.soft>0.01)for(let i=0;i<N;i++)if(masks.belly[i])z[i]*=1-0.15*fig.soft;
+    // 产后的松软不是把孕肚整个压低（那会在孕肚下缘和身体之间留一阶高低差，受光成一条亮带），
+    // 而是把孕肚的起伏往「大范围平滑过的表面」拉近：圆鼓的地方变平，边缘处两边本来就接得上，不会有台阶
+    if(fig.soft>0.01){let w=Float32Array.from(masks.belly),flat=z;for(let k=0;k<4;k++)w=smoothField(w);for(let k=0;k<6;k++)flat=smoothField(flat);
+      for(let i=0;i<N;i++)z[i]+=0.6*fig.soft*w[i]*(flat[i]-z[i])}
     // from I up the chest's shadows deepen (I half, K and up fully): lower breast, under-bust and cleavage
     const deep=clamp(((fig.cupLevel??0.5)*100-85)/30,0,1);
     if(fig.reviewedModel){

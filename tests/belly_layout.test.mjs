@@ -393,7 +393,7 @@ test('主题色表：照子宫图的色表对应，iPhone 主题维持写实肤�
   const { createBellyThemePalette } = await import('../scripts/belly_render.js');
   const { getUterusPalette } = await import('../scripts/uterus_render.js');
   const retro = getUterusPalette({ name: 'retro', screen: '#8faf6f', text: '#22301a', border: '#33402a' });
-  const themed = createBellyThemePalette(retro);
+  const themed = createBellyThemePalette(retro, { theme: 'retro' });
   assert.equal(themed.bg, retro.bg);
   assert.deepEqual(themed.skin.slice(0, 3), [retro.wallDark, retro.wall, retro.wallLight]);
   assert.equal(themed.skin.length, 5);
@@ -419,11 +419,12 @@ test('主题色表：照子宫图的色表对应，iPhone 主题维持写实肤�
     for (const color of mono.skin) { const [r, g, b] = channels(color); assert.ok(r - Math.min(g, b) < 40, `${name} ${color}`); }
     assert.equal(Boolean(mono.brush), name === 'ink');
   }
-  // 半彩：赛博埃及照专属配色
+  // 半彩（1.4.3 起）：写实肤色打主题色光——赛博埃及偏金黄，由深到浅，明度照写实
   const cyber = getUterusPalette({ name: 'cyber-egypt' });
   const cyberSkin = createBellyThemePalette(cyber, { theme: 'cyber-egypt' }).skin;
-  assert.deepEqual(cyberSkin.slice(0, 3), [cyber.wallDark, cyber.wall, cyber.wallLight]);
-  // 亮面仍是宫壁的金黄色相，不混进胎儿的青色（红不低于蓝）
+  for (let k = 1; k < cyberSkin.length; k += 1) assert.ok(channels(cyberSkin[k]).reduce((a, b) => a + b) > channels(cyberSkin[k - 1]).reduce((a, b) => a + b), `赛博埃及肤色色带应由深到浅`);
+  assert.notDeepEqual(cyberSkin, [...BELLY_DEFAULT_PALETTE.skin]);
+  // 亮面往宫壁的金黄色相靠，不混进胎儿的青色（红不低于蓝）
   for (const color of cyberSkin) { const [red, , blue] = channels(color); assert.ok(red >= blue, color); }
   // 每个色组都画得出来
   const image = createBellyPainter(layout).paint(layout.layout({ ...base, days: 280 }), themed);

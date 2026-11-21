@@ -50,7 +50,9 @@ function shiftRamp(ramp, fromBase, toBase) {
   const ratio = (a, b) => (b > 1e-6 ? a / b : 1);
   return ramp.map((color) => {
     const [h, s, l] = rgbToHsl(hexToRgb(color));
-    return rgbToHex(hslToRgb([h + to[0] - from[0], Math.min(1, s * ratio(to[1], from[1])), Math.min(1, l * ratio(to[2], from[2]))]));
+    // 明度照「跟基准色差多少」搬过去，差距最少留七成：很深的肤色（墨黑）各阶才不会挤成一团；很浅的（惨白）高光不超过 0.97
+    const k = Math.max(0.7, Math.min(1.15, ratio(to[2], from[2])));
+    return rgbToHex(hslToRgb([h + to[0] - from[0], Math.min(1, s * ratio(to[1], from[1])), Math.max(0.02, Math.min(0.97, to[2] + (l - from[2]) * k))]));
   });
 }
 
@@ -66,9 +68,13 @@ export function createBellyPalette({ skinBase = BELLY_SKIN_BASE, nippleBase = nu
   const base = BELLY_DEFAULT_PALETTE;
   const moved = (ramp) => shiftRamp(ramp, BELLY_SKIN_BASE, skinBase);
   const nipple = nippleBase ? (ramp) => shiftRamp(ramp, BELLY_NIPPLE_BASE, nippleBase) : moved;
+  // 很深的肤色：轮廓线要比最暗那阶还暗，不然线比皮肤亮、像描了一圈浅边
+  const skinRamp = moved(base.skin);
+  const dark = rgbToHsl(hexToRgb(skinBase))[2] < 0.35;
   return {
     ...base,
-    skin: moved(base.skin),
+    ...(dark ? { line: rgbToHex(hexToRgb(skinRamp[0]).map((v) => v * 0.55)) } : {}),
+    skin: skinRamp,
     areolaPale: nipple(base.areolaPale), areolaDark: nipple(base.areolaDark),
     nipplePale: nipple(base.nipplePale), nippleDark: nipple(base.nippleDark),
     ...overrides,
@@ -76,24 +82,26 @@ export function createBellyPalette({ skinBase = BELLY_SKIN_BASE, nippleBase = nu
 }
 
 /**
- * 半彩主题的肤色：宫壁色相的那条色带，再照角色自订色与预设色的差别（明度、彩度的比例）调深调浅，
- * 色相留主题的——所以自订的深肤色在半彩主题是「同色相的深色」。乳头另外带上自订色与预设乳头色的色相差。
+ * 半彩主题的肤色（1.4.3 起）：写实色表（含角色自订的肤色、乳头色）打上主题的色光——
+ * 像隔着一片宫壁颜色的滤光片看：每个颜色的 RGB 各乘上宫壁颜色（最亮的通道当 1）的六成，再把明度还原成写实的。
+ * 预设肤色会偏成主题色；冰蓝、苔绿这类奇幻肤色只是染上主题色，不会被转成别的颜色。
  */
-function personalizeRamp(ramp, fromBase, toBase, keepHue) {
-  if (!toBase) return [...ramp];
-  const from = rgbToHsl(hexToRgb(fromBase));
-  const to = rgbToHsl(hexToRgb(toBase));
-  const ratio = (a, b) => (b > 1e-6 ? a / b : 1);
-  return ramp.map((color) => {
-    const [h, sat, l] = rgbToHsl(hexToRgb(color));
-    return rgbToHex(hslToRgb([keepHue ? h : h + to[0] - from[0], Math.min(1, sat * ratio(to[1], from[1])), Math.min(1, l * ratio(to[2], from[2]))]));
-  });
+const HALF_TINT = 0.6;
+function halfTint(wall) {
+  const w = hexToRgb(wall);
+  const peak = Math.max(1, ...w);
+  const filter = w.map((v) => 1 - HALF_TINT + HALF_TINT * (v / peak));
+  return (color) => {
+    const [, , l] = rgbToHsl(hexToRgb(color));
+    const [h, sat] = rgbToHsl(hexToRgb(color).map((v, k) => v * filter[k]));
+    return rgbToHex(hslToRgb([h, Math.min(1, sat * 1.1), l]));
+  };
 }
 
 /**
  * 各主题的特写怎么上色（2026-11-15 使用者定）：
  *   mono 单色：整张一个色调（仿真、废土照子宫图的单色阶；水墨、建构由深到浅一条色带，乳晕用主题的警示色点一下）；
- *   half 半彩：照主题的专属配色，身体换成该主题的宫壁色相（修仙、奇幻、赛博埃及、全息、蒸汽、克系）；
+ *   half 半彩：照主题的专属配色；身体是写实肤色打上主题的色光（隔着宫壁颜色的滤光片看，见 halfTint）（修仙、奇幻、赛博埃及、全息、蒸汽、克系）；
  *   full 全彩：写实肤色，只有背景跟主题（iPhone、樱花、哥特）。之后的种族色表、自订肤色只在全彩主题看得出来。
  * 没列到的主题当半彩。
  */
@@ -115,6 +123,8 @@ export function createBellyThemePalette(womb, { theme = '', realistic = false, s
   if (mode === 'full') return createBellyPalette({ bg: womb.bg, ...personal });
   // 单色主题整张一个色调：不套自订色
   if (mode === 'mono') { skin = null; nipple = null; }
+  const real = createBellyPalette(personal);
+  const tint = halfTint(womb.wall);
   const mix = (a, b, t) => rgbToHex(hexToRgb(a).map((value, k) => value + (hexToRgb(b)[k] - value) * t));
   if (mode === 'mono' && MONO_RAMP_THEMES.has(theme)) {
     const dark = womb.ink || womb.wallDark;
@@ -138,14 +148,18 @@ export function createBellyThemePalette(womb, { theme = '', realistic = false, s
   return {
     bg: womb.bg, line: womb.frame || womb.void,
     // 肤色只用宫壁那个色相（最亮两阶往高光色靠一点）。胎儿色在有些主题是另一个色相（赛博埃及是青色），拿来当亮面会变成两种颜色的身体
-    skin: personalizeRamp([womb.wallDark, womb.wall, womb.wallLight, mix(womb.wallLight, womb.shine, 0.35), mix(womb.wallLight, womb.shine, 0.7)], BELLY_SKIN_BASE, skin, true),
+    // 单色主题（仿真、废土）仍用宫壁那条色带；半彩是写实肤色打主题色光
+    skin: mode === 'mono' ? [womb.wallDark, womb.wall, womb.wallLight, mix(womb.wallLight, womb.shine, 0.35), mix(womb.wallLight, womb.shine, 0.7)] : real.skin.map(tint),
     bra: [womb.cavityDeep, womb.cavity, womb.shadow, womb.fluid],
     shorts: [womb.void, womb.cavityDeep, womb.cavity, womb.shadow],
     crease: womb.void,
-    // 乳头：自订了就照乳头色与预设的差别调（色相差也带上，粉与褐分得出来）；只订了肤色就跟着肤色调深浅
-    ...Object.fromEntries([['areolaPale', [womb.wall, womb.wallDark]], ['areolaDark', [womb.wallDark, womb.cavity]],
-      ['nipplePale', [womb.wallDark, womb.cavity]], ['nippleDark', [womb.cavity, womb.cavityDeep]]]
-      .map(([key, ramp]) => [key, nipple ? personalizeRamp(ramp, BELLY_NIPPLE_BASE, nipple, false) : personalizeRamp(ramp, BELLY_SKIN_BASE, skin, true)])),
+    // 乳晕、乳头：照写实色表（自订乳头色或跟着肤色）打同样的主题色光
+    ...(mode === 'mono'
+      ? { areolaPale: [womb.wall, womb.wallDark], areolaDark: [womb.wallDark, womb.cavity], nipplePale: [womb.wallDark, womb.cavity], nippleDark: [womb.cavity, womb.cavityDeep] }
+      : {
+        areolaPale: real.areolaPale.map(tint), areolaDark: real.areolaDark.map(tint),
+        nipplePale: real.nipplePale.map(tint), nippleDark: real.nippleDark.map(tint),
+      }),
     milk: [womb.waterLight, womb.water],
     smoke: [womb.signal, mix(womb.signal, womb.bg, 0.3), mix(womb.signal, womb.bg, 0.55)],
     ghost: womb.fluidLight || womb.shine,
@@ -200,7 +214,20 @@ export function createBellyPainter(layout, options = {}) {
   const usePalette = (palette) => {
     PAL = palette;
     AREOLA_PALE = PAL.areolaPale; AREOLA_DARK = PAL.areolaDark; NIPPLE_PALE = PAL.nipplePale; NIPPLE_DARK = PAL.nippleDark;
+    CLOTH = { bra: contrastCloth(PAL.bra, PAL.skin), shorts: contrastCloth(PAL.shorts, PAL.skin) };
   };
+  // 胸衣、短裤是「有穿」的通用代表，不是角色真正的衣服：颜色不开放自订，改成一律跟肤色拉开对比——
+  // 肤色很深（墨黑、深褐）时布料换成浅色，并用 2×2 的马赛克方格纹（每格隔一块暗一阶），跟光滑的皮肤分得开
+  let CLOTH = { bra: [], shorts: [] };
+  function contrastCloth(ramp, skin) {
+    const lum = (hex) => hexToRgb(hex).reduce((n, v, k) => n + v * [0.299, 0.587, 0.114][k], 0) / 255;
+    const clothMid = (lum(ramp[1]) + lum(ramp[2])) / 2;
+    if (Math.abs(lum(skin[3]) - clothMid) >= 0.22) return ramp;
+    // 太接近：布料往反方向推（皮肤暗就变浅、皮肤亮就变深），各阶照原本的深浅顺序
+    const toward = lum(skin[3]) < 0.5 ? '#eae4ee' : '#1c1822';
+    return ramp.map((c, k) => { const t = lum(skin[3]) < 0.5 ? 0.55 + 0.1 * k : 0.5; return rgbToHex(hexToRgb(c).map((v, i) => v + (hexToRgb(toward)[i] - v) * t)); });
+  }
+  const mosaic = (x, y, shade) => ((((x >> 1) + (y >> 1)) & 1) ? shade : Math.max(0, shade - 1));
   const rgbaCache = new Map();
   const rgba = (hex) => {
     let value = rgbaCache.get(hex);
@@ -325,7 +352,7 @@ export function createBellyPainter(layout, options = {}) {
       if (!fig.layerVisibility[id]) continue;
       const { mask, tone } = layers[id];
       const cloth = id === 'bra' || id === 'shorts';
-      const pal = id === 'bra' ? PAL.bra : id === 'shorts' ? PAL.shorts : PAL.skin;
+      const pal = id === 'bra' ? CLOTH.bra : id === 'shorts' ? CLOTH.shorts : PAL.skin;
       const inLayer = (x, y) => x >= 0 && x < W && y >= 0 && y < H && mask[y * W + x];
       for (let y = view.y; y < view.y + view.h; y += 1) {
         for (let x = view.x; x < view.x + view.w; x += 1) {
@@ -341,7 +368,7 @@ export function createBellyPainter(layout, options = {}) {
             : touch ? PAL.skin[Math.max(0, Math.min(bulk >= 1.5 ? 1 : 2, shade - (bulk >= 1.5 ? 2 : 1)))]
               : edge ? pal[Math.max(0, shade - 1)]
                 : rim ? PAL.skin[Math.max(1, shade - 1)]
-                  : pal[shade]);
+                  : cloth ? pal[mosaic(x, y, shade)] : pal[shade]);
         }
       }
     }
@@ -356,12 +383,8 @@ export function createBellyPainter(layout, options = {}) {
     paintContourLines(frame, put);
     paintLinea(frame, put, vx, vy);
     paintNipples(frame, put);
-    if (vx >= 0 && vx < W && vy >= 0 && vy < H && frame.visibleBelly[vy * W + vx]) {
-      if (p >= 10) { bellyPut(vx - 1, vy - 1, PAL.skin[4]); bellyPut(vx, vy - 1, PAL.skin[4]); bellyPut(vx - 1, vy, PAL.skin[3]); bellyPut(vx, vy, PAL.skin[2]); bellyPut(vx + 1, vy, PAL.skin[1]); bellyPut(vx, vy + 1, PAL.skin[1]); }
-      else if (p >= 7) { bellyPut(vx, vy - 1, PAL.skin[4]); bellyPut(vx, vy, PAL.skin[2]); bellyPut(vx + 1, vy, PAL.skin[1]); }
-      else if (p >= 5) { bellyPut(vx, vy, PAL.skin[1]); bellyPut(vx + 1, vy, PAL.skin[2]); }
-      else { bellyPut(vx, vy, PAL.line); bellyPut(vx, vy - 1, PAL.skin[1]); bellyPut(vx + 1, vy, PAL.skin[2]); }
-    }
+    paintStretchMarks(frame, bellyPut, vx, vy);
+    if (vx >= 0 && vx < W && vy >= 0 && vy < H && frame.visibleBelly[vy * W + vx]) paintNavel(fig, bellyPut, vx, vy, p);
     return { width: FRAME.width, height: FRAME.height, pixels, offsetX, offsetY, view };
   }
 
@@ -384,7 +407,7 @@ export function createBellyPainter(layout, options = {}) {
       if (!fig.layerVisibility[id]) continue;
       const { mask, tone } = layers[id];
       const cloth = id === 'bra' || id === 'shorts';
-      const pal = id === 'bra' ? PAL.bra : id === 'shorts' ? PAL.shorts : PAL.skin;
+      const pal = id === 'bra' ? CLOTH.bra : id === 'shorts' ? CLOTH.shorts : PAL.skin;
       const inLayer = (x, y) => x >= 0 && x < W && y >= 0 && y < H && mask[y * W + x];
       for (let y = 0; y < H; y += 1) {
         for (let x = 0; x < W; x += 1) {
@@ -401,7 +424,7 @@ export function createBellyPainter(layout, options = {}) {
             : touch ? PAL.skin[Math.max(0, Math.min(bulk >= 1.5 ? 1 : 2, shade - (bulk >= 1.5 ? 2 : 1)))]
               : edge ? pal[Math.max(0, shade - 1)]
                 : rim ? PAL.skin[Math.max(1, shade - 1)]
-                  : pal[shade];
+                  : cloth ? pal[mosaic(x, y, shade)] : pal[shade];
           if (id === 'belly') belly[i] = rgba(color); else if (owner[i] !== 3 || id === 'body') under[i] = rgba(color);
         }
       }
@@ -420,16 +443,224 @@ export function createBellyPainter(layout, options = {}) {
     paintContourLines(frame, put);
     paintLinea(frame, put, vx, vy);
     paintNipples(frame, (x, y, color) => { if (x >= view.x && x < view.x + view.w && y >= view.y && y < view.y + view.h) nipples[y * W + x] = rgba(color); });
-    if (vx >= 0 && vx < W && vy >= 0 && vy < H && frame.visibleBelly[vy * W + vx]) {
-      if (p >= 10) { bellyPut(vx - 1, vy - 1, PAL.skin[4]); bellyPut(vx, vy - 1, PAL.skin[4]); bellyPut(vx - 1, vy, PAL.skin[3]); bellyPut(vx, vy, PAL.skin[2]); bellyPut(vx + 1, vy, PAL.skin[1]); bellyPut(vx, vy + 1, PAL.skin[1]); }
-      else if (p >= 7) { bellyPut(vx, vy - 1, PAL.skin[4]); bellyPut(vx, vy, PAL.skin[2]); bellyPut(vx + 1, vy, PAL.skin[1]); }
-      else if (p >= 5) { bellyPut(vx, vy, PAL.skin[1]); bellyPut(vx + 1, vy, PAL.skin[2]); }
-      else { bellyPut(vx, vy, PAL.line); bellyPut(vx, vy - 1, PAL.skin[1]); bellyPut(vx + 1, vy, PAL.skin[2]); }
-    }
+    paintStretchMarks(frame, bellyPut, vx, vy);
+    if (vx >= 0 && vx < W && vy >= 0 && vy < H && frame.visibleBelly[vy * W + vx]) paintNavel(fig, bellyPut, vx, vy, p);
     return {
-      under, belly, nipples, view, ghost: rgba(PAL.ghost || PAL.line), bra: PAL.bra.map(rgba), shorts: PAL.shorts.map(rgba), milk: PAL.milk.map(rgba), smoke: PAL.smoke.map(rgba), background: rgba(PAL.bg), line: rgba(PAL.line), skin: PAL.skin.map(rgba),
+      under, belly, nipples, view, ghost: rgba(PAL.ghost || PAL.line), bra: CLOTH.bra.map(rgba), shorts: CLOTH.shorts.map(rgba), milk: PAL.milk.map(rgba), smoke: PAL.smoke.map(rgba), background: rgba(PAL.bg), line: rgba(PAL.line), skin: PAL.skin.map(rgba),
       offsetX: Math.floor((FRAME.width - view.w) / 2) - view.x, offsetY: FRAME.height - view.h - view.y,
     };
+  }
+
+  /**
+   * 肚脐（外观设定 fig.look.navel）：
+   *   pop 一般——依孕肚大小：凹、5 起变平、7（单胎足月）起外凸、10 起大凸；
+   *   innie 不外凸——撑大只变平；outie 天生外凸（没怀孕也凸）；faint 淡疤；none 不画。
+   * 「大」的肚脐：外凸提早一级到大凸，凹的多一格深。
+   */
+  function paintNavel(fig, bellyPut, vx, vy, p) {
+    const look = fig.look || {};
+    const mode = look.navel || 'pop';
+    if (mode === 'none') return;
+    if (mode === 'faint') { bellyPut(vx, vy, PAL.skin[2]); return; }
+    const large = Boolean(look.navelLarge);
+    const big = () => { bellyPut(vx - 1, vy - 1, PAL.skin[4]); bellyPut(vx, vy - 1, PAL.skin[4]); bellyPut(vx - 1, vy, PAL.skin[3]); bellyPut(vx, vy, PAL.skin[2]); bellyPut(vx + 1, vy, PAL.skin[1]); bellyPut(vx, vy + 1, PAL.skin[1]); };
+    const out = () => { bellyPut(vx, vy - 1, PAL.skin[4]); bellyPut(vx, vy, PAL.skin[2]); bellyPut(vx + 1, vy, PAL.skin[1]); };
+    const flat = () => { bellyPut(vx, vy, PAL.skin[1]); bellyPut(vx + 1, vy, PAL.skin[2]); if (large) bellyPut(vx, vy + 1, PAL.skin[2]); };
+    const innie = () => { bellyPut(vx, vy, PAL.line); bellyPut(vx, vy - 1, PAL.skin[1]); bellyPut(vx + 1, vy, PAL.skin[2]); if (large) { bellyPut(vx, vy + 1, PAL.line); bellyPut(vx + 1, vy + 1, PAL.skin[2]); } };
+    if (mode === 'outie') { if (large || p >= 10) big(); else out(); return; }
+    if (mode === 'innie') { if (p >= 5) flat(); else innie(); return; }
+    if (p >= 10 || (large && p >= 7)) big();
+    else if (p >= 7) out();
+    else if (p >= 5) flat();
+    else innie();
+  }
+
+  /**
+   * 妊娠纹（外观设定 fig.look.stretchMarks，预设关）。真实的妊娠纹是一丛丛细长、略弯的纹，长在孕肚的下半与侧腹，
+   * 大致从肚脐往外放射（垂直于撑开的方向）；刚长出来红紫色，产后慢慢淡成银白。auto 时：
+   *   新纹照现在的胎量：胎量 0.6（约孕 7 个月的单胎）起出现，越大越多越长，五胎满；
+   *   产后照这次生下的胎量（base.postpartumBulk），颜色随恢复从红紫淡成银白；
+   *   生过孩子的旧纹照上一次生下的胎量，银白、很淡，下一胎怀上时还在、新纹长在上面。
+   * 位置是固定的一组种子（肚脐为中心的角度、到孕肚边缘的比例），照胎量依序增加，所以纹只会越长越多、不会跳；
+   * 每颗种子长出 2～3 道平行的纹（一丛）。只画在看得见的孕肚上、离轮廓至少一格。
+   */
+  // 下腹型的种子：沿腹下摺痕一排一排（[第几排, 沿摺痕的位置 0–1, 长度系数]），每道纹与摺痕垂直、往孕肚里长；
+  // 同一排的纹并排、间距固定，下一排错开半格、从上一排的纹尾再往上，所以彼此不交叉。第一排先长满
+  const STRETCH_SEEDS = (() => {
+    let seed = 20261121;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
+    const list = [];
+    const perRow = 12;
+    for (let row = 0; row < 3; row += 1) {
+      for (let k = 0; k < perRow; k += 1) list.push({ row, u: (k + 0.5 + (row % 2) * 0.5 + (rand() - 0.5) * 0.3) / (perRow + 0.5), len: 0.55 + 0.45 * rand(), order: row + rand() });
+    }
+    return list.sort((a, b) => a.order - b.order);
+  })();
+  const stretchCount = (bulk) => Math.round(STRETCH_SEEDS.length * Math.max(0, Math.min(1, (bulk - 0.6) / 3.4)));
+  // 脐周型的种子：沿脐中线两侧平行排开的纹（哪一侧、第几道、沿中线离肚脐多远、长度）；先长在肚脐上下、最靠中线的那道
+  const NAVEL_STRETCH_SEEDS = (() => {
+    let seed = 1121;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
+    const list = [];
+    for (let band = 0; band < 2; band += 1) {
+      for (const side of [-1, 1]) {
+        // 一道上排三四段，长短、间距都不齐
+        let s0 = 2.5 + 3 * rand();
+        for (let k = 0; k < 4; k += 1) {
+          const dir = k % 2 === 0 ? 1 : -1;
+          const len = 0.4 + 0.9 * rand();
+          list.push({ side, band, s0: dir * s0, len, jitter: (rand() - 0.5) * 0.8, order: band * 0.9 + s0 / 8 + 0.4 * rand() });
+          if (dir < 0) s0 += 3 + 4 * len + 2 * rand();
+        }
+      }
+    }
+    return list.sort((a, b) => a.order - b.order);
+  })();
+  const navelStretchCount = (bulk) => Math.round(NAVEL_STRETCH_SEEDS.length * Math.max(0, Math.min(1, (bulk - 0.8) / 3.2)));
+  function paintStretchMarks(frame, bellyPut, vx, vy) {
+    const look = frame.fig.look || {};
+    const type = look.stretchMarks;
+    if (!['lower', 'navel', 'both'].includes(type)) return;
+    const view = frame.view;
+    const bottom = view.y + view.h - 2;
+    // 只算画框里看得见的孕肚（大孕肚的下缘在画框外，不能把纹放到看不见的地方）
+    const mask = Uint8Array.from(frame.visibleBelly, (v, i) => (v && ((i / W) | 0) <= bottom ? 1 : 0));
+    const tone = frame.tone;
+    const inside = (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1 && mask[y * W + x] && mask[y * W + x - 1] && mask[y * W + x + 1] && mask[(y - 1) * W + x] && mask[(y + 1) * W + x];
+    const mixHex = (a, b, t) => rgbToHex(hexToRgb(a).map((v, i) => v + (hexToRgb(b)[i] - v) * t));
+    // 纹的颜色照底下那一格的明暗：新纹比它暗一阶再往乳晕色偏（红紫），旧纹比它亮一阶（银白）
+    const freshAt = (t, fade = 0) => mixHex(mixHex(PAL.skin[Math.max(1, t - 1)], PAL.areolaDark[0], 0.3), PAL.skin[Math.min(4, t + 1)], fade);
+    // 旧纹银白但很淡：比底色亮半阶
+    const silverAt = (t) => mixHex(PAL.skin[t], PAL.skin[Math.min(4, t + 1)], 0.5);
+    const pregnant = look.hormStage === 'pregnant';
+    const recovering = look.recovery !== null && look.recovery !== undefined;
+    const bulk = Math.max(0, Number(look.fetalBulk) || 0);
+    const past = Math.max(0, Number(look.pastBulk) || 0);
+    const layers = [];
+    // 旧纹：生过孩子就有，照上一次生下的胎量；产后恢复中就是刚生的这一胎，颜色随恢复从红紫淡成银白
+    if ((look.births || 0) > 0 || recovering) layers.push({ source: past, color: (t) => (recovering ? freshAt(t, Math.max(0, Math.min(1, look.recovery))) : silverAt(t)), grow: 1 });
+    if (pregnant) layers.push({ source: bulk, color: (t) => freshAt(t), grow: Math.max(0.8, Math.min(1.5, Math.sqrt(bulk / 1.5))) });
+    if (!layers.length) return;
+    const used = new Uint8Array(N);
+    if (type === 'lower' || type === 'both') paintLowerStretch(layers.map((layer) => ({ ...layer, count: stretchCount(layer.source) })));
+    if (type === 'navel' || type === 'both') paintNavelStretch(layers.map((layer) => ({ ...layer, count: navelStretchCount(layer.source) })));
+
+    // 脐周型：沿脐中线（作者画的 linea，没有就从肚脐沿孕肚前缘往下）两侧平行排开、长短间距不齐的纹，
+    // 从肚脐上下开始冒；同一侧的纹在不同的道上，彼此不交叉；碰到下腹型的纹就停
+    function paintNavelStretch(list) {
+      if (!(vx >= 0 && vy >= 0 && vx < W && vy < H) || !mask[vy * W + vx]) return;
+      const fig = frame.fig;
+      let line = [];
+      const author = (fig.manualLines || []).find((l) => l.kind === 'linea');
+      if (author) {
+        line = author.points.map((p) => fig.warpPoint([(p[0] - X0) / STEP, (p[1] - Y0) / STEP]));
+        if (line.at(-1)[1] < line[0][1]) line = line.reverse();
+      } else {
+        const front = (y) => { for (let x = 0; x < W; x += 1) if (mask[y * W + x]) return x; return NaN; };
+        const offset = vx - front(vy);
+        for (let y = Math.max(0, vy - 20); y < H; y += 1) { const f = front(y); if (!Number.isNaN(f)) line.push([f + offset, y]); }
+      }
+      if (line.length < 2) return;
+      // 中线照肚脐对齐，沿线每 0.5 格取一点，记下离肚脐的距离（往下为正）与法线
+      let near = 0;
+      line.forEach((p, k) => { if (Math.hypot(p[0] - vx, p[1] - vy) < Math.hypot(line[near][0] - vx, line[near][1] - vy)) near = k; });
+      const [sx, sy] = [vx - line[near][0], vy - line[near][1]];
+      const pts = [];
+      for (let k = 1; k < line.length; k += 1) {
+        const a = [line[k - 1][0] + sx, line[k - 1][1] + sy];
+        const b = [line[k][0] + sx, line[k][1] + sy];
+        const seg = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        for (let t = 0; t < seg; t += 0.5) pts.push([a[0] + ((b[0] - a[0]) * t) / seg, a[1] + ((b[1] - a[1]) * t) / seg, -(b[1] - a[1]) / seg, (b[0] - a[0]) / seg]);
+      }
+      let zero = 0;
+      pts.forEach((p, k) => { if (Math.hypot(p[0] - vx, p[1] - vy) < Math.hypot(pts[zero][0] - vx, pts[zero][1] - vy)) zero = k; });
+      const draw = (x, y, color) => {
+        const i = y * W + x;
+        if (!inside(x, y)) return true;
+        if (used[i] === 2) return false;
+        used[i] = 1;
+        bellyPut(x, y, color(Math.max(1, Math.min(4, tone[i] || 3))));
+        return true;
+      };
+      for (const { count, color, grow } of list) {
+        NAVEL_STRETCH_SEEDS.slice(0, pregnant ? count : Math.min(count, 6)).forEach((seed) => {
+          const offset = seed.side * (2.4 + seed.band * 2.4 + seed.jitter);
+          const steps = Math.round(((2 + 3 * seed.len) * grow) / 0.5);
+          const start = zero + Math.round((seed.s0 * grow) / 0.5);
+          for (let k = 0; k < steps; k += 1) {
+            const p = pts[start + Math.sign(seed.s0) * k];
+            if (!p) break;
+            const t = k / Math.max(1, steps - 1);
+            const d = offset * (1 - 0.15 * (1 - Math.sin(Math.PI * t)));
+            if (!draw(Math.round(p[0] + p[2] * d), Math.round(p[1] + p[3] * d), color)) break;
+          }
+        });
+      }
+    }
+
+    function paintLowerStretch(layers) {
+    // 纹沿着腹下摺痕走：摺痕（作者画的 belly_fold）往孕肚里平移一道一道，纹是这些平行弧上的一段一段，彼此不会交叉。
+    // 没有摺痕（没怀孕、孕肚还小）时用看得见的孕肚的下缘代替
+    let fold = [];
+    const foldLine = (frame.fig.manualLines || []).find((line) => line.kind === 'belly_fold' && (line.strength ?? 1) >= 0.3);
+    if (foldLine) fold = sampleContourLine(foldLine).map((p) => frame.fig.warpPoint([(p[0] - X0) / STEP, (p[1] - Y0) / STEP]));
+    const noFold = fold.length < 4;
+    if (noFold) {
+      // 没有摺痕（没怀孕、产后恢复）：沿看得见的下腹下缘，只取前半段（下腹前方，纹长在那里），
+      // 而且只留最靠近下缘的两道、最多 5 段——不然一整道横过腹部，看起来像一圈亮带
+      fold = [];
+      const cols = [];
+      for (let x = 0; x < W; x += 1) { let low = -1; for (let y = 0; y <= bottom && y < H; y += 1) if (mask[y * W + x]) low = y; if (low >= 0) cols.push([x, low]); }
+      // 下缘是一阶一阶的格子，直接取法线会乱指：先把高度平滑（前后各 3 栏平均）
+      const smooth = cols.map(([x], k) => { let t = 0; let n = 0; for (let d = -3; d <= 3; d += 1) { const c = cols[k + d]; if (c) { t += c[1]; n += 1; } } return [x, t / n]; });
+      fold = smooth.slice(0, Math.ceil(smooth.length * 0.55));
+      for (const layer of layers) layer.count = Math.min(layer.count, 5);
+    }
+    if (fold.length < 4 || !layers.some((layer) => layer.count > 0)) return;
+    // 沿摺痕每 0.5 格取一点，记下往孕肚里（往上）的法线
+    const path = [];
+    for (let k = 1; k < fold.length; k += 1) {
+      const [a, b] = [fold[k - 1], fold[k]];
+      const seg = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      for (let t = 0; t < seg; t += 0.5) {
+        const f = t / seg;
+        let nx = -(b[1] - a[1]) / seg;
+        let ny = (b[0] - a[0]) / seg;
+        if (ny > 0) { nx = -nx; ny = -ny; }
+        path.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, nx, ny]);
+      }
+    }
+    if (path.length < 8) return;
+    // 纹的最长（照胎量），一排的高度＝最长再留 1.5 格
+    const longest = Math.max(...layers.map((layer) => (3 + 5 * Math.min(1, Math.max(0, (layer.source - 0.6) / 3))) * layer.grow));
+    for (const { count, color, grow, source } of layers) {
+      const maxLen = (3 + 5 * Math.min(1, Math.max(0, (source - 0.6) / 3))) * grow;
+      // 没怀孕（产后、生过以后）孕肚小、摺痕弯得急，往里几排会挤成一团：只留第一排
+      STRETCH_SEEDS.filter((seed) => (pregnant && !noFold) || seed.row < 1).slice(0, count).forEach(({ row, u, len }) => {
+        const k0 = Math.round(u * (path.length - 1));
+        const base = path[k0];
+        if (!base) return;
+        const [px, py, nx, ny] = base;
+        // 往孕肚里（与摺痕垂直），略往肚脐那边弯；纹两端细、中间实（两端各留半格不画满）
+        const start = 1.5 + row * (longest + 1.5);
+        const length = maxLen * len;
+        const toNavel = Math.hypot(vx - px, vy - py) || 1;
+        const [bx, by] = [(vx - px) / toNavel, (vy - py) / toNavel];
+        for (let t = 0; t <= length; t += 0.5) {
+          const pull = 0.15 * (t / Math.max(1, length));
+          const dx = nx * (1 - pull) + bx * pull;
+          const dy = ny * (1 - pull) + by * pull;
+          const r = start + t;
+          const x = Math.round(px + dx * r);
+          const y = Math.round(py + dy * r);
+          const i = y * W + x;
+          if (!inside(x, y) || used[i]) continue;
+          used[i] = 2;
+          bellyPut(x, y, color(Math.max(1, Math.min(4, tone[i] || 3))));
+        }
+      });
+    }
+    }
   }
 
   return { frame: FRAME, paint, paintLayers, parts: { paintContourLines, paintLinea, paintNipples, usePalette } };

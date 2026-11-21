@@ -129,7 +129,7 @@ import { createBellyAnimator } from './scripts/belly_anim.js';
 import { loadBellyData } from './scripts/belly_data.js';
 import { createBellyLayout } from './scripts/belly_layout.js';
 import { BELLY_THEME_MODES, applyBellyInkBrush, createBellyPainter, createBellyThemePalette } from './scripts/belly_render.js';
-import { DISPLAY_NIPPLE_PRESETS, DISPLAY_SKIN_PRESETS, normalizeDisplayColor, normalizeDisplayColors } from './scripts/display_colors.js';
+import { DISPLAY_NAVELS, DISPLAY_NAVEL_SIZES, DISPLAY_NIPPLE_PRESETS, DISPLAY_NIPPLE_SIZES, DISPLAY_SKIN_PRESETS, DISPLAY_STRETCH_MARKS, normalizeDisplay, normalizeDisplayColor } from './scripts/display_colors.js';
 import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
@@ -4865,10 +4865,14 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       sheathValue: getSheathLevel(base, experience),
       fitLabel: base.penetrationState && base.penetrationState !== 'idle' ? String(base.penetrationFit?.label || '') : '',
       // 孕体特写的肤色与乳头色（完整变量页「外观」子页设定，只给画面用）
-      displayColors: normalizeDisplayColors(profile.display),
+      displayColors: normalizeDisplay(profile.display),
       // 孕体特写的输入：身体量一律用既有函式的结果，换算在 belly_state.js
       closeup: {
         drawable: hasHumanFigure(base),
+        // 外观（乳晕大小、肚脐、妊娠纹；颜色另走色表）
+        display: normalizeDisplay(profile.display),
+        // 上一次生下的胎量（妊娠纹的旧纹照它）
+        pastBulk: Number(base.postpartumBulk) || 0,
         // 体型等级（量尺旁的数字）；可变或未知时没有
         bodySizeValue: (() => { const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize }); return resolved.kind === 'fixed' ? resolved.size : null; })(),
         sigma: getBodySizeSigma(base),
@@ -8658,7 +8662,7 @@ function updateFullStateControls(ctx) {
 function renderFullStateAppearance(ctx, name, character) {
   const host = document.getElementById('bs-bt-full-state-appearance');
   if (!host) return;
-  const colors = normalizeDisplayColors(character?.profile?.display);
+  const colors = normalizeDisplay(character?.profile?.display);
   const settings = getSettings(ctx);
   const themeColors = readWombThemeColors(settings.theme);
   const palette = createBellyThemePalette(getUterusPalette(themeColors), { theme: themeColors.name, skin: colors.skinColor, nipple: colors.nippleColor });
@@ -8677,25 +8681,44 @@ function renderFullStateAppearance(ctx, name, character) {
     </div>`;
   };
   const strip = (list) => list.map((color) => `<span class="bs-bt-color-chip" style="background:${color}"></span>`).join('');
+  // 选项组：预设值存 null
+  const choices = (key, title, options, hint = '', fallback = options[0].value) => {
+    const current = colors[key];
+    const buttons = options.map(({ value, label }) => {
+      const active = current === null ? value === fallback : current === value;
+      return `<button type="button" class="bs-bt-option-chip${active ? ' is-active' : ''}" data-display-option="${key}" data-display-value="${value === fallback ? '' : escapeHtml(String(value))}">${escapeHtml(label)}</button>`;
+    }).join('');
+    return `<div class="bs-bt-color-group"><div class="bs-bt-color-title">${escapeHtml(title)}${hint ? `<span class="bs-bt-inline-status">${escapeHtml(hint)}</span>` : ''}</div><div class="bs-bt-color-swatches">${buttons}</div></div>`;
+  };
   host.innerHTML = `
     ${group('skinColor', '肤色', DISPLAY_SKIN_PRESETS)}
     ${group('nippleColor', '乳头色', DISPLAY_NIPPLE_PRESETS)}
+    ${choices('nippleSize', '乳晕大小', DISPLAY_NIPPLE_SIZES, '乳晕与乳头一起缩放', 1)}
+    ${choices('navel', '肚脐', DISPLAY_NAVELS, '照她自己怎么被生出来：卵生的可选淡疤或没有')}
+    ${choices('navelSize', '肚脐大小', DISPLAY_NAVEL_SIZES)}
+    ${choices('stretchMarks', '妊娠纹', DISPLAY_STRETCH_MARKS, '长在哪里因人而异：下腹沿腹下摺痕、脐周从肚脐往外；照胎量长，产后淡成银白')}
     <div class="bs-bt-color-group">
       <div class="bs-bt-color-title">目前主题的实际颜色</div>
       <div class="bs-bt-color-strip">${strip(palette.skin)}<span class="bs-bt-color-gap"></span>${strip([...palette.areolaPale, ...palette.areolaDark])}</div>
     </div>
-    <div class="bs-bt-inline-status">只用于孕体特写的画面，不会送进提示词。全彩主题照所选颜色；半彩主题保留主题色相，照所选颜色调深浅（乳头另带色相差）${mono ? '；目前是单色主题，整张一个色调，不套自订色' : '；单色主题不套自订色'}。乳晕、乳头怀孕时照常变深。</div>`;
+    <div class="bs-bt-inline-status">只用于孕体特写的画面，不会送进提示词。颜色：全彩主题照所选颜色；半彩主题是所选颜色打上主题的色光（色相往主题色靠七成、明暗照所选）${mono ? '；目前是单色主题，整张一个色调，不套自订色' : '；单色主题不套自订色'}。乳晕、乳头怀孕时照常变深。</div>`;
   host.querySelectorAll('button[data-display-key]').forEach((node) => node.addEventListener('click', () => setDisplayColor(ctx, name, node.dataset.displayKey, node.dataset.displayColor || null)));
   host.querySelectorAll('input[type="color"][data-display-key]').forEach((node) => node.addEventListener('change', () => setDisplayColor(ctx, name, node.dataset.displayKey, node.value)));
+  host.querySelectorAll('button[data-display-option]').forEach((node) => node.addEventListener('click', () => {
+    const key = node.dataset.displayOption;
+    const raw = node.dataset.displayValue || null;
+    setDisplayColor(ctx, name, key, raw === null ? null : key === 'nippleSize' ? Number(raw) : raw);
+  }));
 }
 
 function setDisplayColor(ctx, name, key, value) {
-  if (!['skinColor', 'nippleColor'].includes(key)) return;
+  if (!['skinColor', 'nippleColor', 'nippleSize', 'navel', 'navelSize', 'stretchMarks'].includes(key)) return;
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const character = chatState.characters?.[name];
   if (!character?.profile) return;
-  const next = normalizeDisplayColors({ ...normalizeDisplayColors(character.profile.display), [key]: normalizeDisplayColor(value) });
+  const isColor = key === 'skinColor' || key === 'nippleColor';
+  const next = normalizeDisplay({ ...normalizeDisplay(character.profile.display), [key]: isColor ? normalizeDisplayColor(value) : value });
   character.profile.display = next;
   recordChatStateSnapshot(ctx, chatState, { reason: 'display_color' });
   saveSettings(ctx);

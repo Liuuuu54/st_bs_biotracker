@@ -138,6 +138,12 @@ export function buildBellyCloseupState(input) {
     strapless: !nude,
     // 全裸时没有胸罩承托：胸部照罩杯下垂、往两侧摊，碰到孕肚就停在肚子上（belly_layout.js 放松胸型）
     ...(nude ? { release: { ...BELLY_RELEASE } } : {}),
+    // 外观（完整变量页「外观」子页）：乳晕与乳头一起缩放、肚脐、妊娠纹
+    nippleScale: Number(input.display?.nippleSize) || 1,
+    navel: input.display?.navel || 'pop',
+    navelLarge: input.display?.navelSize === 'large',
+    stretchMarks: input.display?.stretchMarks || 'off',
+    pastBulk: Math.max(0, Number(input.pastBulk) || 0),
     vitality: percent(stats.vitality),
     libido: percent(stats.libido),
     stress: percent(stats.stress),

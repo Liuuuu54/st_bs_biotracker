@@ -52,7 +52,7 @@ const nodCurve = (t) => (t < 0.9 ? (t / 0.9) ** 2 : 1 - (t - 0.9) / 0.1);
 // 4×4 有序抖动：宫缩加深的明暗随强度逐格换上
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 // 决定静止画面的状态栏位：这些变了才重算成图
-const SHAPE_KEYS = ['sigma', 'cup', 'build', 'hip', 'days', 'count', 'weight', 'pressure', 'showBra', 'showShorts', 'strapless', 'release',
+const SHAPE_KEYS = ['sigma', 'cup', 'build', 'hip', 'days', 'count', 'weight', 'pressure', 'showBra', 'showShorts', 'strapless', 'release', 'nippleScale', 'navel', 'navelLarge', 'stretchMarks', 'pastBulk',
   'hormStage', 'stageProgress', 'births', 'milk', 'libido', 'noMilk', 'laborPhase', 'ghost'];
 const STILL = Object.freeze({ lift: 0, nippleLift: 0, steady: 0, wob: 0, nippleWob: 0, jiggle: 0, nod: 0, squirm: 0, contraction: 0, push: 0, bumps: [], ripples: [] });
 

@@ -900,8 +900,8 @@ export function createDefaultFemaleState(name = '') {
         // 痛即为爽（1.4.2）：天生把分娩、妊娠、月经的痛感受为快感，只改描写
         painPleasure: false,
       },
-      // 显示用的颜色（1.4.3）：孕体特写的肤色、乳头色与（预留给头像的）发色，null 照预设；只给画面用，不送提示词
-      display: { skinColor: null, nippleColor: null, hairColor: null },
+      // 显示用的外观（1.4.3）：孕体特写的肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设；只给画面用，不送提示词
+      display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null },
     },
   };
   return syncCharacterStageFromProfile(normalizeCharacterPsychologyState(character));
@@ -2256,8 +2256,8 @@ function createSnapshotCharacterBaseline(name = '') {
         // 痛即为爽（1.4.2）：天生把分娩、妊娠、月经的痛感受为快感，只改描写
         painPleasure: false,
       },
-      // 显示用的颜色（1.4.3）：孕体特写的肤色、乳头色与（预留给头像的）发色，null 照预设；只给画面用，不送提示词
-      display: { skinColor: null, nippleColor: null, hairColor: null },
+      // 显示用的外观（1.4.3）：孕体特写的肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设；只给画面用，不送提示词
+      display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null },
     },
   };
 }

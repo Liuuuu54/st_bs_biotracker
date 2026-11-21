@@ -1,6 +1,6 @@
 import { getPresetSkillBody } from './skill_config.js';
 import { normalizeFetalHealthFields } from './fetal_health.js';
-import { normalizeDisplayColors } from './display_colors.js';
+import { normalizeDisplay } from './display_colors.js';
 import { ensureBodyBaseFields } from './maternal_body.js';
 import { normalizeExperience, psychologySide } from './reproductive.js';
 import { DESCRIPTION_FIELDS, normalizeDescriptionList } from './descriptions.js';
@@ -354,10 +354,10 @@ function migrateCharacterV16ToV17(character) {
   }
 }
 
-/** v17 → v18（1.4.3 显示颜色）：每个角色补上 profile.display（肤色、乳头色、发色，null 照预设） */
+/** v17 → v18（1.4.3 显示外观）：每个角色补上 profile.display（肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设） */
 function migrateCharacterV17ToV18(character) {
   if (!character?.profile || typeof character.profile !== 'object') return;
-  character.profile.display = normalizeDisplayColors(character.profile.display);
+  character.profile.display = normalizeDisplay(character.profile.display);
 }
 
 /** v16 → v17：技能图鉴里照名字对到内置预设的，补上适用身体（性器、子宫开发为卵方专属） */
