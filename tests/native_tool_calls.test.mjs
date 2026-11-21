@@ -489,7 +489,7 @@ test('备装与起始着衣的提交工具：参数沿用追踪工具的衣物�
   assert.equal(WARDROBE_TOOL.name, 'bsSubmitWardrobePrep');
   const wardrobe = WARDROBE_TOOL.parameters;
   assert.deepEqual(wardrobe.properties.items.items, REAL_SCHEMAS.bsAddWardrobeItem.properties.item);
-  assert.deepEqual(wardrobe.properties.remove.items.properties.id, REAL_SCHEMAS.bsRemoveWardrobeItem.properties.itemId);
+  assert.deepEqual(wardrobe.properties.remove.items.properties.id, REAL_SCHEMAS.bsChangeOutfit.properties.discardItemIds.items);
   assert.equal(wardrobe.properties.remove.items.properties.reason.type, 'string');
   assert.deepEqual(wardrobe.required, ['items', 'remove']);
 

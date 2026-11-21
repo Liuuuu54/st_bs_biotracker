@@ -153,6 +153,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   theme: 'retro',
   deviceSize: 'phone',
   fontSize: 'standard',
+  // 悬浮球（1.5.0）：大小 small／standard／large；常驻＝一进酒馆就显示，不必先从魔法棒选单打开面板
+  sphereSize: 'standard',
+  sphereAlways: true,
   // 只有 iphone 主题会读这三项：其余 12 套是固定美术风格，配色是主题本身的一部分
   iphoneBase: 'light',
   iphoneAccent: '#0a84ff',

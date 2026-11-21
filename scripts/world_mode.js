@@ -6,12 +6,15 @@ export const SPECIAL_TOOLS = Object.freeze({
   implantEmbryo: 'bsImplantEmbryo',
   wombReturn: 'bsWombReturn',
   extendPregnancy: 'bsExtendPregnancy',
+  // 衍生转化是 bsRecordExperience 的 action=transform，不是独立工具：关掉时只拿掉那一段（见 tracker.js）
+  transformDerivedType: 'bsRecordExperience:transform',
 });
 
 export const SPECIAL_TOOL_LABELS = Object.freeze({
   implantEmbryo: '代孕／注卵',
   wombReturn: '胎归',
   extendPregnancy: '延产',
+  transformDerivedType: '衍生转化',
 });
 
 export function normalizeSpecialTools(value) {

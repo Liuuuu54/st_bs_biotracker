@@ -37,7 +37,7 @@
 | 時間與身體 | `bsPassedTime`、`bsUpdateCharacterStatus`、`bsExcreteMetabolism`、`bsSetMenstrualPhases`、`bsSetCharacterPresence` |
 | 生殖與分娩 | `bsAddSperm`、`bsDrainSperm`、`bsImplantEmbryo`、`bsAbortion`、`bsChildbirth`、`bsAssistFetalPosition`、`bsFetalEvent`、`bsWombReturn` |
 | 記錄與描述 | `bsWriteDiary`、`bsRecordExperience`（心理變化也由它的 `psychology` 帶）、`bsSetDescription` |
-| 技能與衣物 | `bsRegisterSkillDefinition`、`bsTrainSkill`、`bsAddWardrobeItem`、`bsRemoveWardrobeItem`、`bsChangeOutfit` |
+| 技能與衣物 | `bsTrainSkill`（含 `define` 登記新技能）、`bsAddWardrobeItem`、`bsChangeOutfit`（含 `discardItemIds` 刪衣物） |
 | 測試／診斷 | `bsDebugInjectPregnancy`、`bsDebugClearContainers`、`bsDebugSetGestationModifier`、`bsDebugFetalActivity`、`bsDebugSetProdromal`、`bsDebugSetFetalPosition` |
 
 實際支援的名稱以[分派器](../../scripts/tools.js#L7598)為準；可送給追蹤模型的清單還會依設定及角色狀態過濾，見 [getTrackerToolDefinitions](../../scripts/tracker.js#L738)。

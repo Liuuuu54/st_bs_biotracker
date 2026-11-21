@@ -190,5 +190,7 @@ export function buildLineageView(chatState, centerName, { up = 2, down = 2 } = {
 export function relatedNodeIds(view, nodeId) {
   const node = (view?.nodes || []).find((item) => item.id === nodeId);
   if (!node) return [];
-  return [...node.parents.map((item) => item.id), ...node.children.map((item) => item.id)];
+  // 转化者与被转化的人也一起高亮（不画线）
+  const transforms = [...(node.transformedBy || []), ...(node.transformed || [])].map((item) => item.id).filter(Boolean);
+  return [...node.parents.map((item) => item.id), ...node.children.map((item) => item.id), ...transforms];
 }

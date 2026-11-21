@@ -6,6 +6,7 @@ import {
   deriveFetusAncestry,
   getBloodlineInfo,
   getCompanionEggsMeanByRace,
+  getBaseDerivedTypeName,
   getDerivedTypeInheritanceProfile,
   getEmbryoTypeByRace,
   getFetusInheritanceTag,
@@ -24,7 +25,7 @@ export const CROSS_RACE_DIFFICULTY_MULTIPLIER = 1.5;
 export const EMBRYO_TYPE_MISMATCH_MULTIPLIER = 1.25;
 /**
  * 受精率常数：每颗卵的机率 = 1 − e^(−k × 有效暴露天数 ÷ 有效难度)。
- * 以「人类在排卵期同房一次（精液量 20）整个周期受孕约 30%」校准，见 plan/FERTILIZATION_CALIBRATION_PLAN.md。
+ * 以「人类在排卵期同房一次（精液量 20）整个周期受孕约 30%」校准，见 plan/done/FERTILIZATION_CALIBRATION_PLAN.md。
  */
 export const FERTILIZATION_RATE = 0.3;
 
@@ -346,7 +347,8 @@ export const DERIVED_UNCONTESTED_PULL = 0.5;
 export function getDerivedInheritanceSeed(motherDerivedType, fatherDerivedType) {
   const mother = motherDerivedType ? String(motherDerivedType) : null;
   const father = fatherDerivedType ? String(fatherDerivedType) : null;
-  return { affinity: 0, progress: mother && father && mother === father ? 30 : 0 };
+  // 同型只比大类：血族与血族-真祖算同一型（1.5.0；原本比完整字串，子项不同就掉进对拼）
+  return { affinity: 0, progress: mother && father && getBaseDerivedTypeName(mother) === getBaseDerivedTypeName(father) ? 30 : 0 };
 }
 
 function getDerivedTypeSpeed(derivedType) {
@@ -390,7 +392,7 @@ function getDerivedInheritanceRate({
   );
   const modifier = clampNumber(gestationModifierMultiplier, 0, GESTATION_SPEED_MAX, 1);
   const baseRate = (DERIVED_INHERITANCE_THRESHOLD / DERIVED_INHERITANCE_BASELINE_DAYS) * speciesSpeed * modifier;
-  const sameType = Boolean(mother && father && mother === father);
+  const sameType = Boolean(mother && father && getBaseDerivedTypeName(mother) === getBaseDerivedTypeName(father));
   // 没有对手衍生竞争的那一方另得一份不看感情、契合的底力
   const baseShare = DERIVED_UNCONTESTED_PULL;
   const maternalBase = mother && (!father || sameType) ? baseShare * getDerivedTypeSpeed(mother) : 0;

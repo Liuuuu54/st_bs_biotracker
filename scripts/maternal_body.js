@@ -1,4 +1,4 @@
-// 母胎分配与孕期身体（1.3.1，见 plan/MATERNAL_FETAL_ALLOCATION_PLAN.md §0）。
+// 母胎分配与孕期身体（1.3.1，见 plan/done/MATERNAL_FETAL_ALLOCATION_PLAN.md §0）。
 //
 // 单向的链：
 //   母体倾向 ＋ 每胎索取 → 本胎 α（只决定母体留多少）→ 体重（脂肪储备）→ 外溢到臀与胸

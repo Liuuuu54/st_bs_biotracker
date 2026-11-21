@@ -1,4 +1,4 @@
-// 精方周期、剑鞘尺寸与同族周期对齐（1.2.4，plan/SIRE_CYCLE_AND_FIT_PLAN.md）。
+// 精方周期、剑鞘尺寸与同族周期对齐（1.2.4，plan/done/SIRE_CYCLE_AND_FIT_PLAN.md）。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 

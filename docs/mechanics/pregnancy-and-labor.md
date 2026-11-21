@@ -174,7 +174,7 @@
 
 ## 母胎分配與孕期身體
 
-1.3.1 起，「這胎養分偏給誰」同時接上胎兒健康與母體的身材。設計見 `plan/MATERNAL_FETAL_ALLOCATION_PLAN.md` §0；純函式在 [maternal_body.js](../../scripts/maternal_body.js)。
+1.3.1 起，「這胎養分偏給誰」同時接上胎兒健康與母體的身材。設計見 `plan/done/MATERNAL_FETAL_ALLOCATION_PLAN.md` §0；純函式在 [maternal_body.js](../../scripts/maternal_body.js)。
 
 ### 母體傾向與本胎 α
 

@@ -171,6 +171,23 @@ export function buildLineageGraph(chatState) {
     }
   }
 
+  // 转化者（1.5.0）：衍生转化的经历里写了转化者（人）的，在节点上记关系；不当亲代、不进 edges、不参与分代
+  //（女儿初拥母亲时会成环），只给详情栏列出与滑过时一起高亮。转化者不在图上就只留名字
+  for (const name of characterNames) {
+    const records = Array.isArray(characters[name]?.profile?.derivedTransforms) ? characters[name].profile.derivedTransforms : [];
+    const node = nodes.get(characterNodeId(name));
+    for (const record of records) {
+      const source = String(record?.source || '').trim();
+      if (!source || !node) continue;
+      const sourceId = nodes.has(characterNodeId(source)) ? characterNodeId(source) : nodes.has(unregisteredNodeId(source)) ? unregisteredNodeId(source) : null;
+      const entry = { name: source, id: sourceId, method: String(record.method || ''), to: record.to || null, kind: record.kind, time: String(record.time || '') };
+      node.transformedBy = [...(node.transformedBy || []), entry];
+      if (sourceId) {
+        const sourceNode = nodes.get(sourceId);
+        sourceNode.transformed = [...(sourceNode.transformed || []), { name, id: node.id, method: entry.method, to: entry.to, kind: entry.kind, time: entry.time }];
+      }
+    }
+  }
   return { nodes: [...nodes.values()], edges };
 }
 

@@ -543,3 +543,14 @@ test('a maternity item lifts the outfit cap to 15 so stacked gear can hold a bur
   assert.ok(Math.abs((special.totals.capacity - special.gap.capacity) - getBellySize(chatState.characters.A.profile)) < 1e-6, '容身扣的就是孕肚大小');
   assert.equal(chatState.characters.A.profile.wardrobe.items.find((item) => item.name === '孕肚托').maternity, true);
 });
+
+test('1.5.0 bsChangeOutfit discardItemIds：先换下再删，一次调用', () => {
+  const state = makeWardrobeState();
+  const result = applyToolCall(state, { name: 'bsChangeOutfit', arguments: { female: '艾拉', mainItemId: 0, discardItemIds: ['白色连身裙'] } });
+  assert.equal(result.applied, true, result.message);
+  const profile = state.characters['艾拉'].profile;
+  assert.equal(profile.outfit.mainItemId, 0);
+  assert.equal(profile.wardrobe.items.some((item) => item.name === '白色连身裙'), false);
+  assert.equal(applyToolCall(state, { name: 'bsChangeOutfit', arguments: { female: '艾拉', discardItemIds: [0] } }).applied, false);
+  assert.equal(applyToolCall(state, { name: 'bsChangeOutfit', arguments: { female: '艾拉', discardItemIds: ['不存在'] } }).applied, false);
+});

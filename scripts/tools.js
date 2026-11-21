@@ -107,6 +107,7 @@ import {
   getFetalGrowthShapeByRace,
   parseRaceDescriptor,
   getRaceDescriptorComponents,
+  canonicalizeDerivedTypeName as canonicalDerivedName,
 } from './race_config.js';
 import { getFetalGrowth, getFetalGrowthRate, getFetalKickStrength, getFetalLoadFactor } from './fetal_growth.js';
 import {
@@ -126,6 +127,13 @@ export {
 } from './calculator.js';
 import { addSkillExperience, addTalentExperience, appendSkillHistory, canBodyHaveSkill, normalizeSkillList, normalizeTalentList, registerSkillDefinition, requiredExp, resolveSkillDefinition, seedInnateTalents } from './skill_config.js';
 import { TOOL_DEFINITIONS } from './prompts/tool_definitions.js';
+import {
+  REJECTION_AMNION_TOTAL, REJECTION_BONDING_HEALTH, getRejectionPainLevel, REJECTION_PRESSURE_TOTAL, REJECTION_SURVIVOR_AFFINITY,
+  REJECTION_VITALITY_PER_HOUR, TRANSFORMING_VITALITY_PER_HOUR, buildDerivedTransformRecord, causesRejection, classifyDerivedTransform,
+  describeDerivedTransform, getAffinityCoefficient, getRejectionHours, getRejectionLoss, normalizeDerivedTransformLog,
+  remapInheritanceProgress, resolveDerivedTypeInput,
+} from './derived_transform.js';
+import { normalizeSpecialTools } from './world_mode.js';
 export { TOOL_DEFINITIONS };
 
 function clampNumber(value, min, max, fallback = 0) {
@@ -353,6 +361,8 @@ function resolvePersonNameArgs(args) {
 const reportedUnknownStages = new Set();
 
 const WOMB_RETURN_STAGE = '回归期';
+/** 回归期刚开始的生殖疼痛（撑满之痛），照剩余时间线性降到 0 */
+const WOMB_RETURN_PAIN = 6;
 const WOMB_RETURN_PEAK_BELLY_SIZE = 10;
 const WOMB_RETURN_PEAK_WEIGHT = 3.0;
 
@@ -3249,6 +3259,8 @@ function syncFetalHealthWeeks(profile, isHere, startWeek = null) {
       settleFetalHealthWeek(fetus, { at, target });
     }
   }
+  // 血脉排斥期间不判见底：危机结束时一次定生死（1.5.0）
+  if (pregnant.rejectionCrisis) holdRejectionFloors(pregnant);
 }
 
 /** 见底警告中的提醒（每轮由 updateAdvisoryNotify 重算，回升后自动消失）；角色还不知道的那一胎不点名 */
@@ -4046,7 +4058,14 @@ function applyChildbirthInternal(profile, female, isNatural) {
   revealSuperfetationFetuses(profile, female, null, { force: true });
   const experience = profile.experience || {};
   const runtime = profile.__runtimeRef || null;
-  const remainingFetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((item) => ({ ...item })) : [];
+  // 出生顺序：先露那一胎先出，其余照下降得深的先出（原本照阵列顺序，先露的那胎可能被记成第 2 胎）
+  const presentingId = pregnant.presentingEmbryoId;
+  const remainingFetuses = (Array.isArray(pregnant.fetuses) ? pregnant.fetuses.map((item) => ({ ...item })) : [])
+    .map((fetus, index) => ({ fetus, index }))
+    .sort((a, b) => (Number(b.fetus.embryoId === presentingId) - Number(a.fetus.embryoId === presentingId))
+      || ((Number(b.fetus.descentStage) || 0) - (Number(a.fetus.descentStage) || 0))
+      || (a.index - b.index))
+    .map(({ fetus }) => fetus);
   const companionEggs = remainingFetuses.reduce((sum, fetus) => sum + getCompanionEggCount(fetus), 0);
   const companionNote = companionEggs > 0 ? `，并排出${companionEggs}枚伴生卵` : '';
   if (remainingFetuses.length > 0) {
@@ -6376,6 +6395,15 @@ export function getReproductivePain(profile) {
     const progress = Math.min(1, clampNumber(base.days, 0, 99999, 0) / recoveryDays);
     if (progress < 0.3) candidates.push({ level: getAfterpainBase(profile) * (1 - progress / 0.3), source: '产后宫缩', personal: true });
   }
+  // 血脉排斥（1.5.0）：危机期间腹中翻搅
+  if (PREGNANCY_STAGES.includes(stage) && profile?.pregnant?.rejectionCrisis) {
+    candidates.push({ level: getRejectionPainLevel(profile.pregnant.rejectionCrisis), source: '血脉排斥', personal: true });
+  }
+  // 回归期：一个成人的体积刚挤进子宫，撑满之痛随孕肚一起照剩余时间消退
+  if (stage === WOMB_RETURN_STAGE) {
+    const total = clampNumber(pregnant.wombReturn?.totalHours, 0, 99999, 0);
+    if (total > 0) candidates.push({ level: WOMB_RETURN_PAIN * clampNumber(pregnant.wombReturn?.remainingHours, 0, total, 0) / total, source: '回归撑满', personal: true });
+  }
   // 胎动：感觉得到时，取最用力那一胎的踢力（与孕体特写同一条公式）
   if (PREGNANCY_STAGES.includes(stage) && canFeelFetalMovement(profile)) {
     const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
@@ -6719,6 +6747,231 @@ function sumTodayFetalEffect(events, embryoId, today, field, group) {
  * 防刷以故事日记帐：同一天同一胎同一 kind 只结算一次；亲和与照料 7 天内递减、每天有上限；伤害不递减。
  * 每次都记进 pregnant.fetalEvents，被挡下的也记（counted=false）。
  */
+// ---- 衍生转化（1.5.0，计划 DERIVED_TRANSFORM_PLAN.md）----
+// 回归期、产兆前驱与产程中不能转化（等分娩后再转）
+const DERIVED_TRANSFORM_BLOCKED_STAGES = new Set([WOMB_RETURN_STAGE, '产兆前驱', ...LABOR_STAGES]);
+const SYSTEM_FETAL_EVENT_TIME = '血脉';
+
+/** 扶她：同名精方档案的衍生跟着改（精方没有怀孕，只改档案） */
+function syncSireDerivedType(chatState, name, type) {
+  const sire = chatState?.sires?.[name];
+  if (sire && typeof sire === 'object') sire.derivedType = type || null;
+}
+
+/** 系统记的胎儿事件（钉选）：转化、血脉排斥开始、熬过排斥。没有健康效果，只进孕期 log */
+function pushSystemFetalEvent(pregnant, { time = '', minutesPassed = 0, kind = 'other_harm', content = '', embryoIds = [] } = {}) {
+  const events = normalizeFetalEventList(pregnant.fetalEvents);
+  const sequence = (events.at(-1)?.sequence || 0) + 1;
+  events.push({
+    id: `${sequence}`, sequence, time: time || SYSTEM_FETAL_EVENT_TIME, minutesPassed, storyDayIndex: getStoryDayIndex(minutesPassed),
+    kind, scope: 'all', embryoIds, content, pin: true, effects: {}, counted: false, system: 'derivedTransform',
+  });
+  pregnant.fetalEvents = events;
+}
+
+function applyDerivedTransform(chatState, args) {
+  const female = String(args?.female || '').trim();
+  const character = chatState.characters?.[female];
+  const skip = (reason) => ({ applied: false, message: `bsRecordExperience transform skipped for ${female || '(empty)'}: ${reason}` });
+  if (!female || !character) return skip('unknown character.');
+  const time = typeof args?.time === 'string' ? args.time.trim() : '';
+  const content = typeof args?.content === 'string' ? args.content.trim() : '';
+  if (!time) return skip('time is required.');
+  if (!content) return skip('content is required（一句话写怎么转化的：初拥、九转金丹入腹、自行顿悟…）.');
+  if (!args || !Object.hasOwn(args, 'derivedType')) return skip('derivedType is required（空字串表示去掉衍生）.');
+  const to = resolveDerivedTypeInput(args.derivedType);
+  if (to === undefined) return skip(`衍生类型「${args.derivedType}」不在名录里。`);
+  const base = character.profile?.base || {};
+  const stage = String(base.stage || '');
+  if (DERIVED_TRANSFORM_BLOCKED_STAGES.has(stage)) return skip(stage === WOMB_RETURN_STAGE ? '回归期中不能转化。' : `${stage}中不能转化，等分娩后再转。`);
+  if (base.transforming) return skip(`${female}正在转化成${base.transforming.to || '无衍生'}，等这次完成再转。`);
+  const hours = Number(args?.hours);
+  if (args?.hours !== undefined && (!Number.isFinite(hours) || hours < 0)) return skip('hours must be a number ≥ 0.');
+  const from = base.derivedType ? canonicalDerivedName(String(base.derivedType)) : null;
+  const kind = classifyDerivedTransform(from, to);
+  if (kind === 'same') return skip(`${female}已经是${to || '无衍生'}。`);
+  const minutesPassed = Math.max(0, Number(chatState.minutesPassed) || 0);
+  const record = buildDerivedTransformRecord({ time, from, to, kind, partner: args?.partner, content, minutesPassed });
+
+  const next = cloneValue(character);
+  const profile = next.profile;
+  const rejecting = PREGNANCY_STAGES.includes(stage) && causesRejection(kind)
+    && startRejectionCrisis(profile, { from, to, hours: hours > 0 ? hours : 0, time, minutesPassed });
+  const tail = rejecting ? '，腹中开始血脉排斥' : '';
+  if (hours > 0) {
+    profile.base.transforming = { ...record, startedMinutes: minutesPassed, hours, untilMinutes: minutesPassed + hours * 60, body: null };
+    profile.notify = { ...(profile.notify || {}), secondly: `${female}开始转化（${describeDerivedTransform(record)}），约需 ${Math.round(hours * 10) / 10} 小时${tail}` };
+    chatState.characters[female] = next;
+    return { applied: true, message: `${female}开始转化成${to || '无衍生'}，${Math.round(hours * 10) / 10} 小时后完成${tail}。` };
+  }
+  const done = completeDerivedTransform(profile, female, record, minutesPassed);
+  if (tail) profile.notify = { ...(profile.notify || {}), secondly: `${done}${tail}` };
+  syncSireDerivedType(chatState, female, to);
+  chatState.characters[female] = next;
+  return { applied: true, message: `${done}${tail}。` };
+}
+
+/** 转化完成：改写衍生、遗传轴重新对位、清掉未着床的受精卵（换大类与去衍生）、记经历与通知 */
+function completeDerivedTransform(profile, female, record, minutesPassed) {
+  const base = profile.base || {};
+  const pregnant = profile.pregnant || {};
+  const from = record.from || null;
+  const to = record.to || null;
+  base.derivedType = to;
+  delete base.transforming;
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  for (const fetus of fetuses) {
+    if (!fetus || typeof fetus !== 'object') continue;
+    fetus.maternalDerivedTypeProgress = Math.round(remapInheritanceProgress(fetus.maternalDerivedTypeProgress, {
+      oldType: from, newType: to, fatherType: fetus.fatherDerivedType || null,
+    }) * 100) / 100;
+  }
+  if (causesRejection(record.kind) && fetuses.length) {
+    if (MENSTRUAL_STAGES.includes(String(base.stage || ''))) {
+      // 还没着床的受精卵：比照月经排出，不算流产
+      pregnant.fetuses = [];
+      pregnant.fetusesCount = 0;
+      pregnant.fetalEnergyDrain = 0;
+      base.fertilizationDays = 0;
+    } else {
+      pregnant.fetuses = fetuses.filter((fetus) => isImplantedFetus(fetus));
+      pregnant.fetusesCount = pregnant.fetuses.length;
+    }
+  }
+  profile.derivedTransforms = normalizeDerivedTransformLog([...(profile.derivedTransforms || []), record]);
+  const implanted = (pregnant.fetuses || []).filter(isImplantedFetus);
+  if (implanted.length && PREGNANCY_STAGES.includes(String(base.stage || '')) && !causesRejection(record.kind)) {
+    pushSystemFetalEvent(pregnant, { time: record.time, minutesPassed, kind: 'other_care', content: `母体${describeDerivedTransform(record)}`, embryoIds: implanted.map((fetus) => fetus.embryoId) });
+  }
+  profile.base = base;
+  profile.pregnant = pregnant;
+  applyDerivedMetabolismExemptions(profile);
+  const text = `${female}${describeDerivedTransform(record)}`;
+  profile.notify = { ...(profile.notify || {}), secondly: text };
+  return text;
+}
+
+/** 转化中：额外消耗活力，时间到就完成 */
+function advanceDerivedTransforming(profile, tick, female) {
+  const transforming = profile?.base?.transforming;
+  if (!transforming || typeof transforming !== 'object') return;
+  const now = Number(tick.nowMinutes);
+  const until = Number(transforming.untilMinutes);
+  const startOfTick = Number.isFinite(tick.minutesBefore) ? tick.minutesBefore : now - tick.deltaMinutes;
+  const hours = Math.max(0, Math.min(tick.deltaMinutes, (Number.isFinite(until) ? until : now) - startOfTick)) / 60;
+  if (hours > 0) profile.base.vitality = Math.max(0, (Number(profile.base.vitality) || 0) - TRANSFORMING_VITALITY_PER_HOUR * hours);
+  if (Number.isFinite(until) && Number.isFinite(now) && now >= until) {
+    const record = { ...transforming };
+    for (const key of ['startedMinutes', 'hours', 'untilMinutes', 'body']) delete record[key];
+    completeDerivedTransform(profile, female, record, until);
+    tick.onDerivedTransformed?.(female, record.to || null);
+  }
+}
+
+/**
+ * 血脉排斥开始：每胎总扣量在这里算定（舊血脈係數、亲密度、耐受、内胎减半），之后按时间摊。
+ * 已有危机（又转化一次）时先结束旧的、照当下健康判。没有已着床的胎儿就不开始。
+ */
+function startRejectionCrisis(profile, { from, to, hours = 0, time = '', minutesPassed = 0 } = {}) {
+  const pregnant = profile.pregnant || {};
+  if (pregnant.rejectionCrisis) endRejectionCrisis(profile, '', minutesPassed);
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const implanted = fetuses.filter(isImplantedFetus);
+  if (!implanted.length) return false;
+  const losses = {};
+  for (const fetus of implanted) {
+    normalizeFetalHealthFields(fetus);
+    const loss = getRejectionLoss({
+      progress: fetus.maternalDerivedTypeProgress, affinity: fetus.affinity, oldType: from, newType: to,
+      fatherType: fetus.fatherDerivedType || null, harmFactor: getFetalHarmFactor(profile, fetus), nested: Boolean(getEnclosingHost(fetus, fetuses)),
+    });
+    losses[String(fetus.embryoId)] = { total: loss, remaining: loss, affinityCoefficient: getAffinityCoefficient(fetus.affinity) };
+  }
+  const totalHours = getRejectionHours(hours, getGestationEffectiveSpeed(profile));
+  pregnant.rejectionCrisis = { fromType: from || null, toType: to || null, startedMinutes: minutesPassed, totalHours, remainingHours: totalHours, losses };
+  pushSystemFetalEvent(pregnant, { time, minutesPassed, kind: 'other_harm', content: `母体血脉由${from || '无衍生'}转为${to || '无衍生'}，腹中开始血脉排斥`, embryoIds: implanted.map((fetus) => fetus.embryoId) });
+  profile.pregnant = pregnant;
+  return true;
+}
+
+/** 危机期间健康最低停在 1%，周结算的见底警告与中断暂停 */
+function holdRejectionFloors(pregnant) {
+  const floor = FETAL_HEALTH_BASE * FETAL_HEALTH_FLOOR_RATIO;
+  for (const fetus of Array.isArray(pregnant?.fetuses) ? pregnant.fetuses : []) {
+    if (!fetus || !pregnant.rejectionCrisis?.losses?.[String(fetus.embryoId)]) continue;
+    delete fetus.healthWarned;
+    delete fetus.healthWarnedAt;
+    delete fetus.healthCollapsed;
+    if ((Number(fetus.health) || 0) < floor) fetus.health = floor;
+  }
+}
+
+/** 每次时间推进：照经过的小时摊扣量（亲密度系数重算，安抚有效）、加母体症状，时间到就结束 */
+/** 妊娠已经结束（流产、分娩、吸收）或被排斥的胎儿都不在了：排斥危机跟着撤掉，不留在产后恢复里 */
+function clearStaleRejectionCrisis(profile) {
+  const pregnant = profile?.pregnant;
+  const crisis = pregnant?.rejectionCrisis;
+  if (!crisis) return;
+  const stillPregnant = PREGNANCY_STAGES.includes(String(profile.base?.stage || ''));
+  const targets = (Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []).some((fetus) => crisis.losses?.[String(fetus?.embryoId)] && isImplantedFetus(fetus));
+  if (!stillPregnant || !targets) delete pregnant.rejectionCrisis;
+}
+
+function applyRejectionCrisisTick(profile, tick, female) {
+  const pregnant = profile?.pregnant;
+  const crisis = pregnant?.rejectionCrisis;
+  if (!crisis) return;
+  if (!PREGNANCY_STAGES.includes(String(profile.base?.stage || ''))) { delete pregnant.rejectionCrisis; return; }
+  const remaining = Math.max(0, Number(crisis.remainingHours) || 0);
+  const hours = Math.min(remaining, Math.max(0, Number(tick.deltaMinutes) || 0) / 60);
+  if (hours > 0 && remaining > 0) {
+    const share = hours / remaining;
+    const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+    const floor = FETAL_HEALTH_BASE * FETAL_HEALTH_FLOOR_RATIO;
+    for (const fetus of fetuses) {
+      const entry = crisis.losses?.[String(fetus?.embryoId)];
+      if (!entry || !isImplantedFetus(fetus)) continue;
+      normalizeFetalHealthFields(fetus);
+      const portion = entry.remaining * share;
+      entry.remaining = Math.max(0, entry.remaining - portion);
+      const drain = portion * (Number(entry.affinityCoefficient) || 1) / getAffinityCoefficient(fetus.affinity);
+      fetus.health = Math.max(floor, (Number(fetus.health) || 0) - drain);
+      fetus.amnionDurability = Math.max(1, clampNumber(fetus.amnionDurability, -100, 100, 100) - REJECTION_AMNION_TOTAL * hours / crisis.totalHours);
+    }
+    const base = profile.base;
+    const cap = getUterinePressureCap(profile);
+    base.uterinePressure = clampNumber((Number(base.uterinePressure) || 0) + REJECTION_PRESSURE_TOTAL * hours / crisis.totalHours, 0, cap, 0);
+    base.vitality = Math.max(0, (Number(base.vitality) || 0) - REJECTION_VITALITY_PER_HOUR * hours);
+    crisis.remainingHours = Math.round((remaining - hours) * 1000) / 1000;
+  }
+  if (crisis.remainingHours <= 1e-6) endRejectionCrisis(profile, female, tick.nowMinutes);
+}
+
+/**
+ * 危机结束：健康见底（≤10%）的胎儿标成见底，交给接着的 applyFetalHealthCrisis（孕早中期吸收或流产、孕晚期起早产、
+ * 流产免疫停在 1%）；其余熬过来，亲密度 +2、记一笔钉选事件。
+ */
+function endRejectionCrisis(profile, female, minutesPassed = 0) {
+  const pregnant = profile?.pregnant;
+  const crisis = pregnant?.rejectionCrisis;
+  if (!crisis) return;
+  const bottom = FETAL_HEALTH_BASE * 0.1;
+  const survivors = [];
+  for (const fetus of Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []) {
+    if (!crisis.losses?.[String(fetus?.embryoId)] || !isImplantedFetus(fetus)) continue;
+    if ((Number(fetus.health) || 0) <= bottom) fetus.healthCollapsed = true;
+    else {
+      fetus.affinity = clampNumber((Number(fetus.affinity) || 0) + REJECTION_SURVIVOR_AFFINITY, -50, 50, 0);
+      survivors.push(fetus);
+    }
+  }
+  delete pregnant.rejectionCrisis;
+  if (survivors.length) {
+    pushSystemFetalEvent(pregnant, { minutesPassed: Math.max(0, Number(minutesPassed) || 0), kind: 'other_care', content: '熬过了血脉排斥', embryoIds: survivors.map((fetus) => fetus.embryoId) });
+    if (female) profile.notify = { ...(profile.notify || {}), thirdly: `${female}腹中的血脉排斥平息了` };
+  }
+}
+
 function applyFetalEvent(chatState, args, source = '') {
   const female = String(args?.female || '').trim();
   const character = chatState.characters?.[female];
@@ -6786,6 +7039,12 @@ function applyFetalEvent(chatState, args, source = '') {
       fetus.affinity = clampNumber(before + amount, -50, 50, 0);
       const applied = Math.round((fetus.affinity - before) * 100) / 100;
       if (applied !== 0) effects[id] = { affinity: applied };
+      // 血脉排斥中的安抚（1.5.0）：亲近另外加健康，算进每天照料上限
+      if (meta.sign > 0 && pregnant.rejectionCrisis?.losses?.[id]) {
+        const room = Math.max(0, FETAL_EVENT_DAILY_CARE_CAP - sumTodayFetalEffect(events, id, today, 'health', 'care'));
+        const healed = Math.round(addFetalHealth(fetus, Math.min(REJECTION_BONDING_HEALTH[magnitude] * decay, room)) * 100) / 100;
+        if (healed > 0) effects[id] = { ...(effects[id] || {}), health: healed };
+      }
     } else {
       const nested = getEnclosingHost(fetus, fetuses) ? FETAL_EVENT_NESTED_FACTOR : 1;
       let amount = FETAL_EVENT_HEALTH[magnitude] * nested * decay;
@@ -7210,6 +7469,7 @@ function applyTimeToCharacter(character, tick) {
   if (deltaDays <= 0) return { character: next, stageChanged: false, oldStage, newStage: stage };
   decayAssistPainBoost(profile, tick.deltaMinutes);
   decayReproPainBoost(profile, tick.deltaMinutes);
+  advanceDerivedTransforming(profile, tick, next.name);
 
   // 胎儿健康的周结算起点：这一刻已在妊娠中才有意义；这一步才著床的从著床当下起算
   const healthStartWeek = isPregnancyStage(stage) || stage === '产兆前驱'
@@ -7285,6 +7545,7 @@ function applyTimeToCharacter(character, tick) {
         stageChanged = true;
       }
     }
+    applyRejectionCrisisTick(profile, tick, next.name);
     const pressureCrisis = isHere && PREGNANCY_STAGES.includes(stage)
       ? applyPressureCrisis(profile, next.runtime || {}, next.name)
       : { changed: false, warned: false };
@@ -7583,6 +7844,8 @@ function applyPassedTime(chatState, args) {
     tick.parentTalentsOf = (male) => getParentTalents(chatState, male);
     tick.guardingSireOf = (fetus) => getGuardingSire(chatState, fetus);
     tick.pooledEvents = pooledEvents;
+    tick.minutesBefore = Math.max(0, Number(chatState.minutesPassed) || 0);
+    tick.onDerivedTransformed = (who, type) => syncSireDerivedType(chatState, who, type);
     chatState.characters[name] = applyTimeToCharacter(subject, tick).character;
   }
   transferProviderChildren(chatState);
@@ -7715,19 +7978,29 @@ function applyRemoveWardrobeItem(chatState, args) {
   if (!female || !character) return { applied: false, message: `bsRemoveWardrobeItem skipped: unknown character ${female || '(empty)'}.` };
   const next = cloneValue(character);
   const profile = next.profile || {};
-  const wardrobe = ensureWardrobeState(profile);
-  const target = resolveWardrobeItemRef(wardrobe.items, args?.itemId);
-  if (!target) return { applied: false, message: `bsRemoveWardrobeItem skipped for ${female}: item not found (${JSON.stringify(args?.itemId ?? null)}).` };
-  const itemId = target.id;
-  if (itemId === DEFAULT_WARDROBE_ITEM.id) return { applied: false, message: `bsRemoveWardrobeItem skipped for ${female}: id=0 cannot be removed.` };
-  wardrobe.items = wardrobe.items.filter((item) => item.id !== itemId);
-  const outfit = ensureOutfitState(profile);
-  if (outfit.mainItemId === itemId) outfit.mainItemId = null;
-  outfit.accessoryItemIds = outfit.accessoryItemIds.filter((id) => id !== itemId);
+  const result = discardWardrobeItems(profile, [args?.itemId]);
+  if (result.error) return { applied: false, message: `bsRemoveWardrobeItem skipped for ${female}: ${result.error}` };
   refreshOutfitPregFit(profile);
   next.profile = profile;
   chatState.characters[female] = syncCharacterStageFromProfile(next);
-  return { applied: true, message: `bsRemoveWardrobeItem applied to ${female}: ${itemId}.` };
+  return { applied: true, message: `bsRemoveWardrobeItem applied to ${female}: ${result.removed.join(', ')}.` };
+}
+
+/** 从长期衣柜永久删除几件衣物，并清掉当前穿着对它们的引用；有一件找不到或是 id=0 就整批不删 */
+function discardWardrobeItems(profile, refs) {
+  const wardrobe = ensureWardrobeState(profile);
+  const ids = [];
+  for (const ref of refs) {
+    const target = resolveWardrobeItemRef(wardrobe.items, ref);
+    if (!target) return { error: `item not found (${JSON.stringify(ref ?? null)}).` };
+    if (target.id === DEFAULT_WARDROBE_ITEM.id) return { error: 'id=0 cannot be removed.' };
+    if (!ids.includes(target.id)) ids.push(target.id);
+  }
+  wardrobe.items = wardrobe.items.filter((item) => !ids.includes(item.id));
+  const outfit = ensureOutfitState(profile);
+  if (ids.includes(outfit.mainItemId)) outfit.mainItemId = null;
+  outfit.accessoryItemIds = outfit.accessoryItemIds.filter((id) => !ids.includes(id));
+  return { removed: ids };
 }
 
 function createInlineOutfitItem(profile, source, slot, scope) {
@@ -7819,10 +8092,18 @@ function applyChangeOutfit(chatState, args) {
     ...outfit.accessoryItemIds,
   ]);
   outfit.transientItems = outfit.transientItems.filter((item) => wornIds.has(item.id));
+  // 1.5.0：删衣物併进换装（discardItemIds），先换装再删，正在穿的被毁时一次调用就能换下并删除
+  let discarded = [];
+  if (args?.discardItemIds !== undefined) {
+    if (!Array.isArray(args.discardItemIds)) return { applied: false, message: `bsChangeOutfit skipped for ${female}: discardItemIds must be an array.` };
+    const result = discardWardrobeItems(profile, args.discardItemIds);
+    if (result.error) return { applied: false, message: `bsChangeOutfit skipped for ${female}: ${result.error}` };
+    discarded = result.removed;
+  }
   refreshOutfitPregFit(profile);
   next.profile = profile;
   chatState.characters[female] = syncCharacterStageFromProfile(next);
-  return { applied: true, message: `bsChangeOutfit applied to ${female}.` };
+  return { applied: true, message: `bsChangeOutfit applied to ${female}${discarded.length ? `; discarded ${discarded.join(', ')}` : ''}.` };
 }
 /** 精方只有 normalDescription；扶她两边都有时描述放卵方那份，不会走到这里 */
 function applySireDescription(chatState, name, sire, options) {
@@ -7937,6 +8218,23 @@ function applyTrainSkill(chatState, args) {
   const character = chatState.characters?.[female];
   if (!female || !character) return { applied: false, message: `bsTrainSkill skipped: unknown character ${female || '(empty)'}.` };
 
+  // 1.5.0：登记技能併进训练——图鉴没有的新技能同一次调用给 define，skill 当名称；已有同名就直接沿用
+  let definedNote = '';
+  if (args?.define && typeof args.define === 'object' && !resolveSkillDefinition(chatState.skillCatalog, args?.skill)) {
+    // 先把训练会拒绝的情况挡掉，免得这次调用失败却已经登记进图鉴
+    const preExp = Number(args?.skillExp);
+    const preReject = !String(args?.reason || '').trim() ? 'training reason is required'
+      : args?.talentExp !== undefined ? 'character talents are read-only to LLM tools; remove talentExp'
+        : (!Number.isInteger(preExp) || preExp < 0 || preExp > 1000000) ? 'skillExp must be an integer from 0 to 1000000'
+          : args?.awaken !== true ? `${String(args?.skill ?? '')} is new, so pass awaken=true only when the story triggers awakening`
+            : !canBodyHaveSkill({ body: args.define.body }, { hasWomb: true, hasSword: hasSireBody(chatState, female) }) ? `body=${args.define.body} needs a penis and ${female} is not a futa`
+              : '';
+    if (preReject) return { applied: false, message: `bsTrainSkill skipped for ${female}: ${preReject}; skill not registered.` };
+    const registered = applyRegisterSkillDefinition(chatState, { name: args.skill, description: args.define.description, body: args.define.body });
+    if (!registered.applied) return { applied: false, message: `bsTrainSkill skipped for ${female}: ${registered.message}` };
+    // 回传里不再出现旧工具名，免得模型以为还要另外呼叫它
+    definedNote = ` ${registered.message.replace(/^bsRegisterSkillDefinition /, 'define ')}`;
+  }
   const definition = resolveSkillDefinition(chatState.skillCatalog, args?.skill);
   const reason = String(args?.reason || '').trim();
   const skillExp = Number(args?.skillExp);
@@ -8026,7 +8324,7 @@ function applyTrainSkill(chatState, args) {
   chatState.characters[female] = next;
   return {
     applied: true,
-    message: `bsTrainSkill applied to ${female}: ${definition.name} Lv${skill.level}, EXP ${skill.exp}/${skill.level >= 10 ? 0 : requiredExp(skill.level)}${awakened ? '; awakened' : ''}${inheritedFetusIndex >= 0 ? `; fetus #${inheritedFetusIndex + 1} selected${inheritedExp !== 0 ? `, inherited EXP ${inheritedExp}` : ', no inherited EXP'}` : ''}.`,
+    message: `bsTrainSkill applied to ${female}: ${definition.name} Lv${skill.level}, EXP ${skill.exp}/${skill.level >= 10 ? 0 : requiredExp(skill.level)}${awakened ? '; awakened' : ''}${inheritedFetusIndex >= 0 ? `; fetus #${inheritedFetusIndex + 1} selected${inheritedExp !== 0 ? `, inherited EXP ${inheritedExp}` : ', no inherited EXP'}` : ''}.${definedNote}`,
     ...(levelUpNotify ? { notify: levelUpNotify } : {}),
   };
 }
@@ -9004,12 +9302,13 @@ export function applyToolCall(chatState, call) {
     if (result.applied && stage === '月经期' && oldStage !== stage && call.name !== 'bsPassedTime') refreshCognition(character.profile);
     if (result.applied && call.name !== 'bsPassedTime') syncPsychologyLifecycle(character.profile, oldStage); if (result.applied && !['bsPassedTime', 'bsExcreteMetabolism'].includes(call.name) && (oldStage !== stage || oldIntact[name] !== hasIntactPresentingSac(character.profile))) refreshAdvisoryNotify(character.profile, name);
     if (result.applied && call.name !== 'bsPassedTime') clearResolvedObstructionNotice(character.profile);
+    if (result.applied) clearStaleRejectionCrisis(character.profile);
   }
   if (guarded && result.applied) {
     const profile = chatState.characters[args.female].profile;
     profile.reproductiveOperations = [...(profile.reproductiveOperations || []), { source: call.sourceId, action: args.action || call.name, result }].slice(-512);
   }
-  if (call?.name === 'bsRecordExperience') return result;
+  if (call?.name === 'bsRecordExperience' && String(args?.action || '') !== 'transform') return result;
   syncAllNutritionBurst(chatState);
   for (const character of Object.values(chatState?.characters || {})) {
     const pregnant = character?.profile?.pregnant;
@@ -9046,6 +9345,8 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsSetDescription') return applyDescription(chatState, args);
   if (name === 'bsSetCharacterPresence') return applySetCharacterPresence(chatState, args);
   if (name === 'bsGrowBody') return applyGrowBody(chatState, args, call.sourceId || '');
+  // 衍生转化（1.5.0）走 bsRecordExperience 的 action=transform，套用在这里（会动到孕期与时间推进）
+  if (name === 'bsRecordExperience' && String(args?.action || '') === 'transform') return applyDerivedTransform(chatState, args);
   if (name === 'bsRecordExperience') return recordExperience(chatState, args, call.sourceId || '', { resolveFetus: resolveVisibleFetus, shiftPsychology: shiftCognitionPsychology });
   if (name === 'bsRegisterSkillDefinition') return applyRegisterSkillDefinition(chatState, args);
   if (name === 'bsTrainSkill') return applyTrainSkill(chatState, args);
@@ -9073,7 +9374,10 @@ const WARDROBE_SYSTEM_TOOLS = new Set(['bsAddWardrobeItem', 'bsRemoveWardrobeIte
 const SKILL_SYSTEM_TOOLS = new Set(['bsRegisterSkillDefinition', 'bsTrainSkill']);
 
 /** 系统页关掉的扩充系统：工具本来就不会送给模型，模型若凭空呼叫也不执行 */
-function getDisabledSystemToolMessage(settings, name) {
+function getDisabledSystemToolMessage(settings, name, args = null) {
+  if (name === 'bsRecordExperience' && String(args?.action || '') === 'transform' && normalizeSpecialTools(settings?.specialTools).transformDerivedType === false) {
+    return 'bsRecordExperience transform skipped: 衍生转化已在特殊妊娠工具里关闭。';
+  }
   if (WARDROBE_SYSTEM_TOOLS.has(name) && !isWardrobeSystemEnabled(settings)) return `${name} skipped: 着衣系统已在系统页关闭。`;
   if (SKILL_SYSTEM_TOOLS.has(name) && !isSkillSystemEnabled(settings)) return `${name} skipped: 技能系统已在系统页关闭。`;
   if (name === 'bsPassedTime' && settings?.timeFlowEnabled === false) return 'bsPassedTime skipped: 时间推进已在追踪页冻结。';
@@ -9176,7 +9480,7 @@ export function applyToolCallsResult(ctx, result, sourceId = '') {
       sourceId: sourceId ? `${sourceId}:${callIndex}` : String(call?.id || ''),
     };
     remapBatchFetusIndex(chatState, batchFetusOrder, normalizedCall);
-    const disabledMessage = getDisabledSystemToolMessage(settings, normalizedCall.name);
+    const disabledMessage = getDisabledSystemToolMessage(settings, normalizedCall.name, normalizedCall.arguments);
     const appliedResult = disabledMessage
       ? { applied: false, message: disabledMessage }
       : applyToolCall(chatState, normalizedCall);

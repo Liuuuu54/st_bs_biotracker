@@ -14,7 +14,7 @@ const server = createServer((request, response) => {
     if (!path.startsWith(resolve(root) + sep)) throw Error('Outside root');
     let body = readFileSync(path);
     if (path.endsWith('ui-harness.html')) body = Buffer.from(body.toString().replace("await import('/index.js');", `
-      Object.assign(chatState.characters.艾拉.profile.base, {race:'精灵x人类',bloodline:{精灵:0.25,人类:0.75},bloodlineSource:'explicit'});
+      Object.assign(chatState.characters.索菲亚.profile.base, {race:'精灵x人类',bloodline:{精灵:0.25,人类:0.75},bloodlineSource:'explicit'});
       await import('/index.js');`));
     response.setHeader('Content-Type', path.endsWith('.html') ? 'text/html;charset=utf-8' : path.endsWith('.css') ? 'text/css' : 'text/javascript;charset=utf-8');
     response.end(body);
@@ -46,9 +46,9 @@ try {
   for(let i=0;i<150;i++){if(await evaluate("!!document.querySelector('[data-nav-view=\"track-list\"]')"))break;await sleep(100)}
   for(let i=0;i<100;i++){if(await evaluate("document.querySelector('#bs-biotracker-modal')?.getBoundingClientRect().width>0"))break;await sleep(100)}
   if(!await evaluate("document.querySelector('#bs-biotracker-modal')?.getBoundingClientRect().width>0"))throw Error('Panel did not open');
-  await evaluate(`document.querySelector('[data-nav-view="track-list"]').click(); [...document.querySelectorAll('.bs-bt-track-character-button')].find(b=>b.querySelector('.bs-bt-track-character-name').textContent==='艾拉').click()`);
+  await evaluate(`document.querySelector('[data-nav-view="track-list"]').click(); [...document.querySelectorAll('.bs-bt-track-character-button')].find(b=>b.querySelector('.bs-bt-track-character-name').textContent==='索菲亚').click()`);
   if(!await evaluate("document.body.textContent.includes('精灵 25%')&&document.body.textContent.includes('人类 75%')"))throw Error('Overview bloodline missing');
-  await evaluate(`document.querySelector('[data-track-tab="experience"]').click();document.querySelector('[data-lineage-center="艾拉"]').click()`);
+  await evaluate(`document.querySelector('[data-track-tab="experience"]').click();document.querySelector('[data-lineage-center="索菲亚"]').click()`);
   if(!await evaluate("document.querySelector('#bs-bt-lineage').textContent.includes('精灵 25%')"))throw Error('Lineage bloodline missing');
   if(!await evaluate("document.querySelector('#bs-bt-lineage').getBoundingClientRect().width>0"))throw Error('Lineage is hidden');
   if(errors.length)throw Error(JSON.stringify(errors));

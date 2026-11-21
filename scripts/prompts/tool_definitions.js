@@ -101,21 +101,9 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
-    name: 'bsRemoveWardrobeItem',
-    description: '从单一角色的长期衣柜永久删除衣物。剧情中衣物被撕毁报废、丢弃、送人、卖掉、遗失、被没收，或角色明确把穿不下的衣服收起不再穿时调用；只是脱下、换下、弄脏送洗不要删。itemId 可传整数 id 或准确名称。不能删除 id=0 的裸体特殊状态；删除正在穿的主衣装后，当前衣着会变为未记录，所以正在穿的衣物被毁时先用 bsChangeOutfit 换下再删。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        female: { type: 'string' },
-        itemId: { type: ['integer', 'string'] },
-      },
-      required: ['female', 'itemId'],
-      additionalProperties: false,
-    },
-  },
-  {
     name: 'bsChangeOutfit',
-    description: '原子更换单一角色的当前穿着，无需先准备衣柜。可用 mainItemId/配件 id 或准确名称引用既有衣物，也可在 main 与 accessories 直接建立并穿上新衣；scope=owned 收入衣柜，temporary 只存在当前穿着。mainItemId=0 是明确全裸，null 是衣着未记录。accessoryItemIds 覆盖整表，add/removeAccessoryItemIds 增量穿脱。wearState 只是 12 字内的动态状态标签。新建的 main 或 accessories 可带 maternity=true 表示特制孕妇用品（规则同 bsAddWardrobeItem）。',
+    description: '原子更换单一角色的当前穿着，无需先准备衣柜。可用 mainItemId/配件 id 或准确名称引用既有衣物，也可在 main 与 accessories 直接建立并穿上新衣；scope=owned 收入衣柜，temporary 只存在当前穿着。mainItemId=0 是明确全裸，null 是衣着未记录。accessoryItemIds 覆盖整表，add/removeAccessoryItemIds 增量穿脱。wearState 只是 12 字内的动态状态标签。新建的 main 或 accessories 可带 maternity=true 表示特制孕妇用品（规则同 bsAddWardrobeItem）。'
+      + 'discardItemIds 从长期衣柜永久删除衣物（id 或准确名称）：剧情中被撕毁报废、丢弃、送人、卖掉、遗失、被没收，或角色明确把穿不下的衣服收起不再穿时才给；只是脱下、换下、弄脏送洗不要删。同一次调用先换装再删，所以正在穿的衣物被毁时一并给 mainItemId／removeAccessoryItemIds 换下；删掉仍穿着的主衣装会变成衣着未记录。id=0（全裸）不能删。只删衣物不换装时只给 female 与 discardItemIds。',
     input_schema: {
       type: 'object',
       properties: {
@@ -161,6 +149,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         addAccessoryItemIds: { type: 'array', items: { type: ['integer', 'string'] } },
         removeAccessoryItemIds: { type: 'array', items: { type: ['integer', 'string'] } },
         wearState: { type: 'string' },
+        discardItemIds: { type: 'array', items: { type: ['integer', 'string'] } },
       },
       required: ['female'],
       additionalProperties: false,
@@ -206,17 +195,19 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsRecordExperience',
-    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。她得知、确认或相信自己怀孕的那条 cognition 必须附 prenatalCare（没什么特别就给 normal），之后养胎态度改变再附。cognition 需 method、content：记角色感知、猜测、被告知或检查解读，也记她对生殖、性与母职的心境转变（附 psychology），允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她自己心里认定的父亲，可以是未注册人物，null 取消，省略保留；认定可以与真相不符。对外说法与心里认定不同时（谎称、隐瞒），selectedFather 仍记心里的认定，对外怎么说写进 content，例如「她心里认定是乙的，却对甲谎称是甲的」；心里认定改变（独自想通、起疑、改认）也用 claim 记，不改用 cognition。不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知纪录较多时只会送你最近几条、钉选的条目与一行更早纪录的摘要。认知实际进月经刷新，关系、孩子与胎父认定长期保留。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
+    description: '记录单一角色的认知或更新长期关系/孩子。female、action、time 必填。她得知、确认或相信自己怀孕的那条 cognition 必须附 prenatalCare（没什么特别就给 normal），之后养胎态度改变再附。cognition 需 method、content：记角色感知、猜测、被告知或检查解读，也记她对生殖、性与母职的心境转变（附 psychology），允许错误与矛盾，不执行检查、不改真实胎父/胎数/孕程。date/breakup/marry/divorce 需 partner，一次一人，不连带修改其他关系。child 只改名：需已存在的 childIndex（从0起）及 name。claim 记胎父认定：fetusIndex（胎儿，从0起，按当前可见顺序）或 childIndex（已出生的孩子）二择一，content 必填，用一句白描写角色认定孩子是谁的、为什么这样认定；若告诉了谁、对方相信、怀疑、否认还是认领，也写进这句，不必一定有告知对象。selectedFather 为她自己心里认定的父亲，可以是未注册人物，null 取消，省略保留；认定可以与真相不符。对外说法与心里认定不同时（谎称、隐瞒），selectedFather 仍记心里的认定，对外怎么说写进 content，例如「她心里认定是乙的，却对甲谎称是甲的」；心里认定改变（独自想通、起疑、改认）也用 claim 记，不改用 cognition。不改遗传父方，也不代表任何人知道真相。之后改认定或对方态度改变就再记一笔，不改旧纪录。各 action 参数互斥。认知纪录较多时只会送你最近几条、钉选的条目与一行更早纪录的摘要。认知实际进月经刷新，关系、孩子与胎父认定长期保留。transform 记血脉／衍生类型的转化（被初拥、觉醒、被净化、改宗、修炼突破、改造…），只在剧情明确写到时用，一般变强不用：需 derivedType 与 content（一句白描写怎么转化的），转化者是人时给 partner（转化者不必是同一种衍生：工程师改造出机械、施咒者下咒缚）；要花时间的给 hours，而且先调用 transform 再用 bsPassedTime 推进那段时间（剧情里转化花了半天，就是 transform hours=12 再推进 12 小时），不要先推进时间再记成瞬间转化。同一大类只换子项（突破、改宗）只记经历、不影响怀孕；怀孕中换成另一大类或去掉衍生会引起血脉排斥：胎儿健康持续下降，熬不过的那一胎会流掉，剧情要写出代价；这份伤害由系统按排斥自动结算，不要再用 bsFetalEvent 另记这次转化对胎儿的伤害（之后的安抚、安胎药照常记）。回归期、产兆前驱与产程中不能转化。系统结果不等于角色知情；尚未结算的操作不得预写亲历结果，下一轮依实际结果与剧情补记。',
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string', minLength: 1 },
-        action: { type: 'string', enum: ['cognition', 'date', 'breakup', 'marry', 'divorce', 'child', 'claim'] },
+        action: { type: 'string', enum: ['cognition', 'date', 'breakup', 'marry', 'divorce', 'child', 'claim', 'transform'] },
         time: { type: 'string', minLength: 1 },
         method: { type: 'string', enum: ['perception', 'guess', 'informed', 'test', 'prenatal', 'experience'], description: 'perception 亲历或身体自觉；guess 猜测或自行推算；informed 被他人告知；test 借助检测手段（验孕棒、药草、占卜、魔法等，只用世界观里已有的手段）；prenatal 由专业者诊察（医师、产婆、祭司、治疗师等）；experience 让她心境改变的经历，不限于怀孕（性爱里的主导或被迫、看到别人的孩子、爱人的话、失去孩子的阴影），心理变化多半记在这里。不得引入世界观没有的器具。' },
         content: { type: 'string', minLength: 1 }, partner: { type: 'string', minLength: 1 },
         childIndex: { type: 'integer', minimum: 0 }, fetusIndex: { type: 'integer', minimum: 0 }, name: { type: 'string', minLength: 1 },
         selectedFather: { type: ['string', 'null'], minLength: 1 },
+        derivedType: { type: 'string', description: '只用于 transform：转化后的衍生类型，照 [derivedType-装饰子项] 的写法（血族、血族-真祖、修炼-金丹）；空字串表示去掉衍生。' },
+        hours: { type: 'number', minimum: 0, description: '只用于 transform：转化要花的故事时间（小时），靠 bsPassedTime 推进，期间她在「转化中」；省略或 0 为瞬间完成。' },
         pin: { type: 'boolean', description: '只用于 cognition：之后每轮都该看到的重要认知传 true：确认或否认怀孕、得知胎数、性别、胎父、预产期、诊断与医嘱，或推翻她先前的重要信念。' },
         psychology: {
           type: 'object',
@@ -230,22 +221,8 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
-    name: 'bsRegisterSkillDefinition',
-    description: '向当前聊天的全局技能图鉴登记一个全新技能定义。新增时 name 与 description 都必填；先检查 skill_catalog，已有同名技能时直接引用，不要制造近义重复。此工具只建立定义，不会让任何角色觉醒或获得经验。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        description: { type: 'string' },
-        body: { type: 'string', enum: ['any', 'womb', 'sword'], description: '适用身体：womb 卵方专属（要有阴道、子宫，如子宫开发）、sword 精方专属（要有阴茎，如阴茎开发）、any 通用。省略为 any。' },
-      },
-      required: ['name', 'description'],
-      additionalProperties: false,
-    },
-  },
-  {
     name: 'bsTrainSkill',
-    description: '依最近剧情让单一角色觉醒或锻炼一个已登记技能。技能图鉴的 body 为 sword（精方专属，要有阴茎）的，只有扶她（同名也是精方）能练。skillExp 只能非负，技能只会进步、不会降级；技能不存在时必须明确传 awaken=true 才会从 Lv1 觉醒。角色自己的 talents 对所有 LLM 工具均为只读，只能作为判断 skillExp 的参考，绝不可直接修改；角色天赋仅能由用户在外部界面调整。若角色处于孕中期、孕晚期、临产期、逾期、产兆前驱或第一产程，系统每次只随机选择一胎，把本次 skillExp 按该胎 affinity/50 转为正负胎儿天赋经验；第二、第三产程不会传递。',
+    description: '依最近剧情让单一角色觉醒或锻炼一个技能。skill_catalog 没有的新技能，在同一次调用给 define（description 必填）登记进图鉴：skill 就是新技能的名称；先检查既有定义，已有同名或近义的直接引用，不要制造重复。技能图鉴的 body 为 sword（精方专属，要有阴茎）的，只有扶她（同名也是精方）能练。skillExp 只能非负，技能只会进步、不会降级；技能不存在时必须明确传 awaken=true 才会从 Lv1 觉醒。角色自己的 talents 对所有 LLM 工具均为只读，只能作为判断 skillExp 的参考，绝不可直接修改；角色天赋仅能由用户在外部界面调整。若角色处于孕中期、孕晚期、临产期、逾期、产兆前驱或第一产程，系统每次只随机选择一胎，把本次 skillExp 按该胎 affinity/50 转为正负胎儿天赋经验；第二、第三产程不会传递。',
     input_schema: {
       type: 'object',
       properties: {
@@ -254,6 +231,16 @@ export const TOOL_DEFINITIONS = Object.freeze([
         skillExp: { type: 'integer', minimum: 0, maximum: 1000000 },
         awaken: { type: 'boolean' },
         reason: { type: 'string' },
+        define: {
+          type: 'object',
+          description: '只用于图鉴还没有的新技能：description 是技能的说明（所有角色共用）；body 为适用身体，womb 卵方专属（要有阴道、子宫，如子宫开发）、sword 精方专属（要有阴茎，如阴茎开发）、any 通用，省略为 any。',
+          properties: {
+            description: { type: 'string' },
+            body: { type: 'string', enum: ['any', 'womb', 'sword'] },
+          },
+          required: ['description'],
+          additionalProperties: false,
+        },
       },
       required: ['female', 'skill', 'skillExp', 'reason'],
       additionalProperties: false,
@@ -597,10 +584,10 @@ function findToolSchema(toolDefinitions, name) {
   return schema && typeof schema === 'object' && !Array.isArray(schema) ? schema : null;
 }
 
-/** 备装的提交工具：参数就是文本协议的 { items, remove }，衣物结构取自 bsAddWardrobeItem，丢弃的 id 取自 bsRemoveWardrobeItem */
+/** 备装的提交工具：参数就是文本协议的 { items, remove }，衣物结构取自 bsAddWardrobeItem，丢弃的 id 与 bsChangeOutfit 的 discardItemIds 同型 */
 export function buildWardrobePrepSubmitTool(toolDefinitions) {
   const item = findToolSchema(toolDefinitions, 'bsAddWardrobeItem')?.properties?.item;
-  const itemId = findToolSchema(toolDefinitions, 'bsRemoveWardrobeItem')?.properties?.itemId;
+  const itemId = findToolSchema(toolDefinitions, 'bsChangeOutfit')?.properties?.discardItemIds?.items;
   if (!item || !itemId) return null;
   return {
     name: WARDROBE_PREP_TOOL_NAME,

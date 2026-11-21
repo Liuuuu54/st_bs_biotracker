@@ -825,7 +825,9 @@ test('skill tool and inheritance guidance are always available to tracker', () =
   const trainSkillTool = definitions.find((tool) => tool.name === 'bsTrainSkill');
   assert.ok(trainSkillTool);
   assert.equal(Object.hasOwn(trainSkillTool.input_schema.properties, 'talentExp'), false);
-  assert.equal(definitions.some((tool) => tool.name === 'bsRegisterSkillDefinition'), true);
+  // 1.5.0：登记新技能併进 bsTrainSkill 的 define
+  assert.equal(definitions.some((tool) => tool.name === 'bsRegisterSkillDefinition'), false);
+  assert.ok(trainSkillTool.input_schema.properties.define);
   const prompt = buildTrackerSystemPrompt('', null, {});
   assert.equal(prompt.includes('[skills / talents]'), true);
   assert.equal(prompt.includes('第二与第三产程禁止传递'), true);
@@ -833,7 +835,7 @@ test('skill tool and inheritance guidance are always available to tracker', () =
     skill_baseline_prompt: '只追踪战斗、生存、探索与交涉；排除调教技能。',
   });
   assert.match(boundedPrompt, /\[本聊天技能基准：高优先级\]/);
-  assert.match(boundedPrompt, /不得为基准排除的类别调用 bsRegisterSkillDefinition 或 bsTrainSkill/);
+  assert.match(boundedPrompt, /不得为基准排除的类别调用 bsTrainSkill（含 define 登记新技能）/);
 });
 
 test('derived type overrides affect base types and custom subtypes', () => {

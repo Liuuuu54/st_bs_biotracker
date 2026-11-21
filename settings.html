@@ -219,6 +219,19 @@
 
             <hr class="sysHR" />
 
+            <div class="bs-bt-section-title">悬浮球</div>
+            <div class="bs-bt-size-options" id="bs-bt-sphere-size-options">
+              <button type="button" class="bs-bt-size-option" data-sphere-size-option="small">小</button>
+              <button type="button" class="bs-bt-size-option" data-sphere-size-option="standard">标准</button>
+              <button type="button" class="bs-bt-size-option" data-sphere-size-option="large">大</button>
+            </div>
+            <div class="bs-bt-setting-toggle-row">
+              <input id="bs-bt-sphere-always" type="checkbox" />
+              <label for="bs-bt-sphere-always" title="关掉时，要先从魔法棒选单打开一次面板，悬浮球才会出现">常驻（一进酒馆就显示）</label>
+            </div>
+
+            <hr class="sysHR" />
+
             <div class="bs-bt-section-title">主题风格</div>
             <div class="bs-bt-theme-list" id="bs-bt-theme-list">
               <button type="button" class="bs-bt-theme-option" data-theme-option="retro">1. 仿真 (Retro)</button>
@@ -976,7 +989,7 @@
             </div>
             <div id="bs-bt-wardrobe-prep-page" hidden>
               <div class="settings_section">
-                <small>让模型代入这名角色补充或整理长期衣柜。 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/wardrobe-and-skills.md#三個服裝工具" target="_blank" rel="noopener noreferrer" title="备装说明" aria-label="备装说明">?</a></small>
+                <small>让模型代入这名角色补充或整理长期衣柜。 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/wardrobe-and-skills.md#兩個服裝工具" target="_blank" rel="noopener noreferrer" title="备装说明" aria-label="备装说明">?</a></small>
               </div>
 
               <div class="settings_section">
@@ -1359,6 +1372,10 @@
                 <div class="bs-bt-setting-toggle-row">
                   <input id="bs-bt-special-tool-extendPregnancy" data-special-tool="extendPregnancy" type="checkbox" />
                   <label for="bs-bt-special-tool-extendPregnancy">延产</label>
+                </div>
+                <div class="bs-bt-setting-toggle-row">
+                  <input id="bs-bt-special-tool-transformDerivedType" data-special-tool="transformDerivedType" type="checkbox" />
+                  <label for="bs-bt-special-tool-transformDerivedType">衍生转化</label>
                 </div>
                 <div id="bs-bt-world-mode-source" class="bs-bt-inline-status"></div>
                 <label for="bs-bt-world-baseline-prompt">世界基准提示词 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#世界基準與提示詞名錄" target="_blank" rel="noopener noreferrer" title="世界基准说明" aria-label="世界基准说明">?</a></label>

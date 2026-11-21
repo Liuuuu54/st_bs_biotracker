@@ -12,13 +12,28 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * 一行白话的说明；多行的（Flux 描述：总述、[平衡]、[正极]、[负极]）逐行分开，方括号标签做成粗体小标，
+ * 免得整段挤成一堵字墙
+ */
+function renderNoteHtml(note) {
+  const lines = String(note || '').split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length <= 1) return `<small class="bs-bt-sheet-note">${escapeHtml(lines[0] || '')}</small>`;
+  return `<small class="bs-bt-sheet-note bs-bt-sheet-note--lines">${lines.map((line) => {
+    const tagged = line.match(/^\[([^\]]{1,8})\]\s*(.*)$/);
+    return tagged
+      ? `<span class="bs-bt-sheet-note-line"><b class="bs-bt-sheet-note-tag">${escapeHtml(tagged[1])}</b>${escapeHtml(tagged[2])}</span>`
+      : `<span class="bs-bt-sheet-note-line">${escapeHtml(line)}</span>`;
+  }).join('')}</small>`;
+}
+
 /** 百科资料卡：标题列（图示、名称、标签）、短敘述、分组的「栏名／数值／一行白话」，另可附折叠段落 */
 export function renderSheetHtml({ title, icon = '', tags = [], introduction = '', sections = [], extra = '' }) {
   const rowHtml = (row) => `
       <div class="bs-bt-sheet-row">
         <span class="bs-bt-sheet-label">${escapeHtml(row.label)}</span>
         <span class="bs-bt-sheet-value">${escapeHtml(row.value)}</span>
-        ${row.note ? `<small class="bs-bt-sheet-note">${escapeHtml(row.note)}</small>` : ''}
+        ${row.note ? renderNoteHtml(row.note) : ''}
         ${row.chartHtml || ''}
       </div>`;
   return `

@@ -2,7 +2,7 @@
 
 [返回機制索引](README.md) · [服裝與技能細節](wardrobe-and-skills.md)
 
-本頁按[公開工具定義](../../scripts/tools.js#L107)與[實際分派器](../../scripts/tools.js#L7598)逐項核對。`female` 是已註冊角色名稱，除 `bsRegisterSkillDefinition` 以外的公開工具都要指定它；未知角色會拒絕。`applied=false` 表示該次呼叫未完成其預定變更。多個工具依回覆順序執行，不會整批回滾。[結果紀錄](../../scripts/tools.js#L7656)。
+本頁按[公開工具定義](../../scripts/tools.js#L107)與[實際分派器](../../scripts/tools.js#L7598)逐項核對。`female` 是已註冊角色名稱，公開工具都要指定它；未知角色會拒絕。`applied=false` 表示該次呼叫未完成其預定變更。多個工具依回覆順序執行，不會整批回滾。[結果紀錄](../../scripts/tools.js#L7656)。
 
 下表的「必填」依模型可見的 schema；實作仍會再次檢查有效值。`bsDebug*` 有分派實作，但不在公開 `TOOL_DEFINITIONS` 中；它們由 UI 診斷功能呼叫。[UI 入口](../../index.js#L5646)。
 
@@ -38,7 +38,7 @@
 | [`bsExcreteMetabolism`](../../scripts/tools.js#L3127) | 必填 `female`；可在 `options` 傳 `excretion`、`hunger`、`sleep`、`milk`、`odor`、`companionship`、`flux` 的非負減量。 | 普通角色不帶選項時使用預設直接減量；衍生類型不帶選項時預設釋放 `flux`。堵塞降低效果，進食／睡眠／排泄有交叉回升，處理前後需求等級還會影響胎兒供養。代謝免疫會拒絕。[代謝細節](character-systems.md#需求累積與處理)。 |
 | [`bsWriteDiary`](../../scripts/tools.js#L6253) | 必填 `female`、日期標題 `time`、正文 `content`。 | 追加一則主觀日記並記錄故事日；同角色同故事日（`floor(minutesPassed/1440)`）已有日記時拒絕。`time` 是文字標題，不決定故事日索引；角色離場仍可寫。 |
 | [`bsSetDescription`](../../scripts/tools.js#L6558) | 必填 `female`、`options.normalDescription` 或 `pregnantDescription`，值為以欄位名為鍵的物件。 | 只傳有變化或被點名待確認的欄位，未傳的保留。逐欄處理：不存在的欄位名只略過那一欄並回報，其餘照常更新；內容與原文相同算「確認未變」，刷新時間戳；空字串不改。原本空白的描述可首次建立欄位。過渡期仍接受舊的「欄名|內容;;」字串。`female` 查不到卵方但有同名[精方檔案](registration.md#精方檔案)時改寫精方描述，只接受 `normalDescription`。[合併實作](../../scripts/descriptions.js#L84)。 |
-| [`bsRecordExperience`](../../scripts/tools.js) | 必填 `female/action/time`；`cognition` 另需 `method/content`，方法為 `perception/guess/informed/test/prenatal/experience`，可附 `pin`、`prenatalCare`（`devoted/attentive/normal/unaware/neglect/abusive`，見[產前護理](pregnancy-and-labor.md#產前護理)）與 `psychology`（每軸 `slight/significant/severe` 加 `_increase/_decrease`，取代 1.2.4 的 `bsUpdatePsychology`，見[心理](character-systems.md)）；四種關係 action 需 `partner`；`child` 需從 0 起的 `childIndex` 及 `name`；`claim` 需 `fetusIndex` 或 `childIndex` 擇一及 `content`，選填 `selectedFather`。 | action 參數互斥，認知只追加角色主觀紀錄；關係每次改一人且婚姻與交往互不連動。`claim` 追加胎父認定紀錄，`selectedFather=null` 取消、省略保留，不改實際血緣與後臺經驗次數。 |
+| [`bsRecordExperience`](../../scripts/tools.js) | 必填 `female/action/time`；`cognition` 另需 `method/content`，方法為 `perception/guess/informed/test/prenatal/experience`，可附 `pin`、`prenatalCare`（`devoted/attentive/normal/unaware/neglect/abusive`，見[產前護理](pregnancy-and-labor.md#產前護理)）與 `psychology`（每軸 `slight/significant/severe` 加 `_increase/_decrease`，取代 1.2.4 的 `bsUpdatePsychology`，見[心理](character-systems.md)）；四種關係 action 需 `partner`；`child` 需從 0 起的 `childIndex` 及 `name`；`claim` 需 `fetusIndex` 或 `childIndex` 擇一及 `content`，選填 `selectedFather`；`transform`（1.5.0）需 `derivedType`（空字串為去衍生）與 `content`，選填 `partner`（轉化者）、`hours`。 | action 參數互斥，認知只追加角色主觀紀錄；關係每次改一人且婚姻與交往互不連動。`claim` 追加胎父認定紀錄，`selectedFather=null` 取消、省略保留，不改實際血緣與後臺經驗次數。`transform` 改衍生類型（有 `hours` 時先進入轉化中），懷孕中換大類或去衍生會引起血脈排斥；回歸期、產兆前驅、產程中與相同類型拒絕，「衍生轉化」開關關閉或寫實世界時不送也不執行。 |
 | [`bsGrowBody`](../../scripts/tools.js) | 必填 `time`、`reason`，`female` 與 `male` 二選一。卵方可傳 `vitalityLevel`、`psyStressLevel`（等級變化）與 `build`、`bust`、`hip`、`bodySize`（變化量）；精方可傳 `bodySize`、`swordOffset`（−2～+2，步長 0.5）、`spermQuality`（檔案品質 0.25～4）；至少一項，給錯一方的欄位會整筆拒絕。 | 記下身材與體質的長期變化。距上次改變（卵方 `base.bodyChangedAtAge`、精方檔案 `bodyChangedAtAge`）至少長了 1 歲才生效，否則跳過；扶她的體型在卵方那份，`male` 不能改；精方沒有認知紀錄，變化只寫在回傳；改的是孕前基準，不設上限、只夾在欄位範圍內，懷孕中也能用；成功時錨點更新為當下年齡，並記一條「身材變化：…」的經歷認知。見[母胎分配與孕期身體](pregnancy-and-labor.md#母胎分配與孕期身體)。 |
 
 ## 服裝與技能
@@ -46,10 +46,8 @@
 | 工具 | 參數 | 成功效果與拒絕條件 |
 | --- | --- | --- |
 | [`bsAddWardrobeItem`](../../scripts/tools.js#L6389) | 必填 `female`、`item`；衣物須有 `name/note/slot`，可帶 ID、`parts/fitProfile` 或 `category/effects`。 | 更新或新增長期衣櫃；主服與配件資料按各自規則正規化。`id=0` 保留，無效物件拒絕。詳見[衣櫃](wardrobe-and-skills.md#衣櫃與當前穿著是兩份資料)。 |
-| [`bsRemoveWardrobeItem`](../../scripts/tools.js#L6443) | 必填 `female`、`itemId`（ID 或名稱）。 | 永久刪除長期衣物，並清掉目前穿著對它的引用；找不到或 `id=0` 時拒絕。 |
-| [`bsChangeOutfit`](../../scripts/tools.js#L6480) | 必填 `female`；可傳 `mainItemId`、`main`、`accessories`、`scope`、配件 ID 清單或增減清單、`wearState`。 | 同一次呼叫內換主服與配件，可引用既有或建立新衣。`mainItemId=0` 為全裸，`null` 為未記錄；無效引用拒絕整次提交。細節與數值見[服裝機制](wardrobe-and-skills.md#三個服裝工具)。 |
-| [`bsRegisterSkillDefinition`](../../scripts/tools.js#L6616) | 必填非空 `name`、`description`。 | 向本聊天圖鑑註冊技能定義並取得新 ID；同名時重用舊定義，此次 `applied=false`，不會讓角色覺醒。 |
-| [`bsTrainSkill`](../../scripts/tools.js#L6631) | 必填 `female`、已登記技能 `skill`（ID／名稱）、整數 `skillExp`（0–1,000,000）、非空 `reason`；可傳 `awaken`。 | 對角色技能加經驗、升級並記歷史；未覺醒時須 `awaken=true`。LLM 不可直接改角色天賦；特定孕期會把部分經驗轉為隨機胎兒的有號天賦經驗。[技能機制](wardrobe-and-skills.md#技能目錄角色技能與天賦)。 |
+| [`bsChangeOutfit`](../../scripts/tools.js#L6480) | 必填 `female`；可傳 `mainItemId`、`main`、`accessories`、`scope`、配件 ID 清單或增減清單、`wearState`、`discardItemIds`。 | 同一次呼叫內換主服與配件，可引用既有或建立新衣；`discardItemIds` 在換裝後永久刪除長期衣物並清掉目前穿著對它的引用，有一件找不到或是 `id=0` 就拒絕整次（1.5.0 起取代 `bsRemoveWardrobeItem`，舊名仍可執行但不送給模型）。`mainItemId=0` 為全裸，`null` 為未記錄；無效引用拒絕整次提交。細節與數值見[服裝機制](wardrobe-and-skills.md#兩個服裝工具)。 |
+| [`bsTrainSkill`](../../scripts/tools.js#L6631) | 必填 `female`、已登記技能 `skill`（ID／名稱）、整數 `skillExp`（0–1,000,000）、非空 `reason`；可傳 `awaken`、`define`（`description` 必填、`body` 選填）。 | 圖鑑沒有的技能給 `define` 時，先以 `skill` 為名登記再訓練（1.5.0 起取代 `bsRegisterSkillDefinition`，舊名仍可執行但不送給模型）。對角色技能加經驗、升級並記歷史；未覺醒時須 `awaken=true`。LLM 不可直接改角色天賦；特定孕期會把部分經驗轉為隨機胎兒的有號天賦經驗。[技能機制](wardrobe-and-skills.md#技能目錄角色技能與天賦)。 |
 
 ## UI 診斷工具
 

@@ -32,13 +32,12 @@
 
 增刪衣物、換裝、時間推進或孕期狀態變化都可能重新計算 `pregFit`。它是服裝適應度提示，不會回寫胎重、宮壓等生理值。[相關工具](../../scripts/tools.js#L6372)。
 
-### 三個服裝工具
+### 兩個服裝工具
 
 | 工具 | 操作與限制 |
 | --- | --- |
 | [`bsAddWardrobeItem`](../../scripts/tools.js#L6389) | `female`、`item` 必填；`item` 要有 `name`、`note`、`slot`。指定正整數 `id` 更新該 ID；省略 ID 時按名稱更新，找不到才新增。衣櫃裡沒有、但 ID 或名稱對上正在穿的暫時衣物時，改為把它收進衣櫃（槽位以正在穿的為準）。`id=0` 保留。更新會替換整筆正規化衣物。 |
-| [`bsRemoveWardrobeItem`](../../scripts/tools.js#L6443) | `female`、`itemId` 必填；ID 或準確名稱皆可。刪除正在穿的主服會使主服變成未記錄，刪配件則自當前配件清單移除。`id=0` 不可刪。 |
-| [`bsChangeOutfit`](../../scripts/tools.js#L6480) | `female` 必填。可用既有 ID／名稱，也可在 `main`、`accessories` 直接建立並穿上；`scope=owned` 存衣櫃，`temporary` 僅暫存。`accessoryItemIds` 覆蓋整表；`addAccessoryItemIds`／`removeAccessoryItemIds` 在現有清單增減。主服變更時若未指定 `wearState`，預設回「整齊」。無效引用會拒絕整次換裝。 |
+| [`bsChangeOutfit`](../../scripts/tools.js#L6480) | `female` 必填。可用既有 ID／名稱，也可在 `main`、`accessories` 直接建立並穿上；`scope=owned` 存衣櫃，`temporary` 僅暫存。`accessoryItemIds` 覆蓋整表；`addAccessoryItemIds`／`removeAccessoryItemIds` 在現有清單增減。主服變更時若未指定 `wearState`，預設回「整齊」。`discardItemIds`（ID 或準確名稱）在換裝後永久刪除長期衣物：刪除仍穿著的主服會使主服變成未記錄，配件自當前清單移除，`id=0` 不可刪。無效引用會拒絕整次換裝。 |
 
 衣櫃頁的「備裝」讓模型代入角色整理衣櫃，結果是 `{items, remove}`：`items` 逐件以 `bsAddWardrobeItem` 寫入，`remove` 是要丟的既有衣物 id 與理由。套用時先丟後加，正在穿的、`id=0` 與找不到的丟棄項會跳過並回報，任一新增失敗整份不寫。[備裝套用](../../scripts/registry.js#L426)。
 
@@ -62,7 +61,7 @@ v1.1.3 起，技能頁可把目前圖鑑與基準「存到角色卡」，或「�
 
 ### 技能升級
 
-角色技能從 Lv1 開始，下一級需求是 `100 × 目前等級²` 經驗；一次可跨多級，最高 Lv10，滿級的經驗歸零。`bsTrainSkill` 只接受已登記的技能 ID／名稱、非負整數 `skillExp` 和非空 `reason`。角色沒有該技能時，須明確傳 `awaken=true`；覺醒後從 Lv1 起算。升級會寫入最多保留 100 筆的歷史並產生通知。[requiredExp](../../scripts/skill_config.js#L52)、[加經驗](../../scripts/skill_config.js#L221)、[訓練](../../scripts/tools.js#L6619)。
+角色技能從 Lv1 開始，下一級需求是 `100 × 目前等級²` 經驗；一次可跨多級，最高 Lv10，滿級的經驗歸零。`bsTrainSkill` 只接受已登記的技能 ID／名稱、非負整數 `skillExp` 和非空 `reason`；圖鑑沒有的新技能在同一次呼叫給 `define`（說明、適用身體）先登記。角色沒有該技能時，須明確傳 `awaken=true`；覺醒後從 Lv1 起算。升級會寫入最多保留 100 筆的歷史並產生通知。[requiredExp](../../scripts/skill_config.js#L52)、[加經驗](../../scripts/skill_config.js#L221)、[訓練](../../scripts/tools.js#L6619)。
 
 ### 天賦與胎兒承接
 

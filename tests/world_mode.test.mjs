@@ -29,7 +29,9 @@ test('写实世界的主线提示不送种族生理设定', () => {
 });
 
 test('特殊妊娠工具预设全开，关掉的会从工具清单与状态说明里拿掉', () => {
-  const names = (settings) => getTrackerToolDefinitions(settings, {}).map((tool) => tool.name);
+  // 有人在妊娠阶段才送延产、手术分娩
+  const pregnantState = { A: { profile: { base: { stage: '孕中期' } } } };
+  const names = (settings) => getTrackerToolDefinitions(settings, pregnantState).map((tool) => tool.name);
   for (const tool of ['bsImplantEmbryo', 'bsWombReturn', 'bsExtendPregnancy']) assert.ok(names({}).includes(tool));
 
   const settings = { realisticWorld: true, specialTools: { implantEmbryo: false, extendPregnancy: false } };
@@ -47,12 +49,12 @@ test('特殊妊娠工具预设全开，关掉的会从工具清单与状态说�
 test('卡片可以绑写实世界与个别特殊工具，未写的工具沿用全域', () => {
   assert.deepEqual(sanitizeCardSettings({ version: 1, realisticWorld: true, specialTools: { wombReturn: false, bogus: false } }),
     { version: 1, realisticWorld: true, specialTools: { wombReturn: false } });
-  assert.deepEqual(normalizeSpecialTools(undefined), { implantEmbryo: true, wombReturn: true, extendPregnancy: true });
+  assert.deepEqual(normalizeSpecialTools(undefined), { implantEmbryo: true, wombReturn: true, extendPregnancy: true, transformDerivedType: true });
 
   const ctx = { characterId: 0, characters: [{ data: { extensions: { bs_biotracker: { version: 1, realisticWorld: true, specialTools: { wombReturn: false } } } } }], extensionSettings: {} };
   const effective = getEffectiveSettings(ctx, { realisticWorld: false, specialTools: { implantEmbryo: false } });
   assert.equal(effective.realisticWorld, true);
-  assert.deepEqual(effective.specialTools, { implantEmbryo: false, wombReturn: false, extendPregnancy: true });
+  assert.deepEqual(effective.specialTools, { implantEmbryo: false, wombReturn: false, extendPregnancy: true, transformDerivedType: true });
 });
 
 test('写实世界的注册提示不送名录与种族说明，并要求种族填人类', () => {
@@ -77,4 +79,14 @@ test('注册提示要求一定填写年龄', () => {
   const prompt = buildRegistrySystemPrompt({}, {});
   assert.match(prompt, /- base\.age: 必填，不得省略或填 null/);
   assert.match(prompt, /可以省略字段或给 null（base\.age 除外）/);
+});
+
+test('没有人在妊娠阶段时不送延产与手术分娩，流产（事后避孕）照送', () => {
+  const names = (existing) => getTrackerToolDefinitions({}, existing).map((tool) => tool.name);
+  const notPregnant = names({ A: { profile: { base: { stage: '卵泡期' } } } });
+  assert.equal(notPregnant.includes('bsExtendPregnancy'), false);
+  assert.equal(notPregnant.includes('bsChildbirth'), false);
+  assert.ok(notPregnant.includes('bsAbortion'));
+  const laboring = names({ A: { profile: { base: { stage: '第二产程' } } } });
+  assert.ok(laboring.includes('bsChildbirth'));
 });

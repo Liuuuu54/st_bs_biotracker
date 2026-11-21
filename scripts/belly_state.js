@@ -41,7 +41,8 @@ export function getBellyHormoneStage(stage) {
 export function isBellyNude(outfit) {
   if (!outfit || outfit.enabled !== true) return false;
   if (/全裸|赤裸|一丝不挂|一絲不掛|裸体|裸體/.test(String(outfit.wearState || ''))) return true;
-  return !outfit.main;
+  // 主衣物是衣柜保留的 id 0「全裸」（bsChangeOutfit mainItemId=0）就是明确全裸
+  return !outfit.main || Number(outfit.main.id) === 0;
 }
 
 /**

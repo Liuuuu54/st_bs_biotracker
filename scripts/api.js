@@ -693,7 +693,9 @@ async function withGlobalApiRetries(task, options = {}) {
       const delay = 1000 * (attempt + 1);
       console.warn(`[BS BioTracker] ${label} 第 ${attempt + 1}/${totalTries} 次失败，将在 ${delay}ms 后重试`, error);
       try {
-        globalThis.toastr?.warning?.(`${label} 第 ${attempt + 1}/${totalTries} 次失败，${Math.round(delay / 1000)}s 后重试`, '[BS BioTracker]');
+        // 附上失败原因的第一行：只写「第几次失败」时，使用者与作者都看不出是金钥、额度、模型名还是中转的问题
+        const reason = String(error?.message || error || '').split('\n')[0].trim().slice(0, 120);
+        globalThis.toastr?.warning?.(`${label} 第 ${attempt + 1}/${totalTries} 次失败，${Math.round(delay / 1000)}s 后重试${reason ? `：${reason}` : ''}`, '[BS BioTracker]');
       } catch {}
       await sleepMs(delay, overallSignal);
     }

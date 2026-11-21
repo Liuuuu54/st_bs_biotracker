@@ -129,6 +129,7 @@ import { createBellyAnimator } from './scripts/belly_anim.js';
 import { loadBellyData } from './scripts/belly_data.js';
 import { createBellyLayout } from './scripts/belly_layout.js';
 import { BELLY_THEME_MODES, applyBellyInkBrush, createBellyPainter, createBellyThemePalette } from './scripts/belly_render.js';
+import { describeDerivedTransform, normalizeDerivedTransformLog } from './scripts/derived_transform.js';
 import { DISPLAY_NAVELS, DISPLAY_NAVEL_SIZES, DISPLAY_NIPPLE_PRESETS, DISPLAY_NIPPLE_SIZES, DISPLAY_SKIN_PRESETS, DISPLAY_STRETCH_MARKS, normalizeDisplay, normalizeDisplayColor } from './scripts/display_colors.js';
 import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
@@ -4702,6 +4703,33 @@ function buildFetusDerivedInheritanceView(profile, fetus, intimacyRanking = []) 
   return { ...preview, motherDerivedType, fatherDerivedType, father, paternalFit, affinity: Number(fetus?.affinity) || 0 };
 }
 
+/** 概览的衍生转化几行（文字）：最近的转化经历 [标签, 文字] */
+function describeTransformOverview(profile) {
+  const log = normalizeDerivedTransformLog(profile?.derivedTransforms);
+  return log.length ? [['转化经历', log.slice(-2).map((record) => `${record.time ? `${record.time} ` : ''}${describeDerivedTransform(record)}`).join('；')]] : [];
+}
+
+/**
+ * 阶段区里与阶段并列的独立进度条（1.5.0）：转化不是一个「XX 期」，所以不占阶段条，另画一条。
+ * 怀孕中换大类时血脉排斥与转化等长，共用这一条，排斥以气泡标在条头；瞬间转化没有转化条，排斥自己一条。
+ */
+function getTransformProgressItems(profile, minutesPassed) {
+  const now = Number.isFinite(Number(minutesPassed)) ? Number(minutesPassed) : 0;
+  const t = profile?.base?.transforming;
+  const crisis = profile?.pregnant?.rejectionCrisis;
+  const hasCrisis = Boolean(crisis && typeof crisis === 'object' && Number(crisis.totalHours) > 0);
+  const hours = Number(t?.hours);
+  if (t && typeof t === 'object' && hours > 0) {
+    const elapsed = Math.max(0, Math.min(hours, hours - (Number(t.untilMinutes) - now) / 60));
+    return [{ label: `转化中·${t.from || '无衍生'}→${t.to || '无衍生'}`, value: elapsed, cap: hours, unit: 'h', badge: hasCrisis ? '血脉排斥' : '' }];
+  }
+  if (hasCrisis) {
+    const total = Number(crisis.totalHours);
+    return [{ label: `血脉排斥·${crisis.fromType || '无衍生'}→${crisis.toType || '无衍生'}`, value: Math.max(0, total - (Number(crisis.remainingHours) || 0)), cap: total, unit: 'h' }];
+  }
+  return [];
+}
+
 function buildTrackCharacterViewModel(character, minutesPassed = null, chatState = null) {
   const runtimeCtx = getContextSafe();
   const runtimeSettings = runtimeCtx ? getSettings(runtimeCtx) : null;
@@ -4777,6 +4805,9 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       stage,
     },
     overview: {
+      // 衍生转化（1.5.0）：转化中、血脉排斥倒数、最近的转化经历
+      transformLines: describeTransformOverview(profile),
+      transformProgress: getTransformProgressItems(profile, minutesPassed),
       raceLabel: formatRaceLabel(base.race, base.derivedType),
       bloodlineLabel: formatBloodlineLabel(base.race, base.bloodline, base.bloodlineSource),
       age: Number.isFinite(Number(base.age)) ? Math.round(Number(base.age)) : null,
@@ -5046,7 +5077,7 @@ function renderProgressList(items) {
         ? `${unbounded ? formatAmount(value) : `${formatAmount(Math.min(cap, value))} / ${formatAmount(cap)}`}${unit}`
         : unbounded ? String(displayCurrent) : `${displayCurrent} / ${displayCap}`;
       return `<div class="bs-bt-track-progress">
-        <div class="bs-bt-track-progress-head"><span>${escapeHtml(item.label)}</span><span>${displayValue}</span></div>
+        <div class="bs-bt-track-progress-head"><span>${escapeHtml(item.label)}${item.badge ? ` <span class="bs-bt-track-title-badge">${escapeHtml(item.badge)}</span>` : ''}</span><span>${displayValue}</span></div>
         ${unbounded ? '' : `<div class="bs-bt-track-progress-bar" style="width:${scale};"><div class="bs-bt-track-progress-fill" style="width:${fill};"></div></div>`}
       </div>`;
     })
@@ -5156,6 +5187,7 @@ function renderTrackOverview(viewModel) {
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">种族</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.raceLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">血脉</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bloodlineLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">年龄</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.age ?? '未知')}</span></div>
+        ${(viewModel.overview.transformLines || []).map(([label, value]) => `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">${escapeHtml(label)}</span><span class="bs-bt-track-meta-value">${escapeHtml(value)}</span></div>`).join('')}
         ${!hasBellyCloseup(viewModel) && viewModel.overview.bodySizeLabel ? `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodySizeLabel)}${viewModel.overview.altFormBodySizeLabel ? `（变化态 ${escapeHtml(viewModel.overview.altFormBodySizeLabel)}）` : ''}</span></div>` : ''}
       </div>
     </div>
@@ -5164,6 +5196,7 @@ function renderTrackOverview(viewModel) {
         ? `<div class="bs-bt-track-section-title bs-bt-track-section-title--split"><span class="bs-bt-track-title-left">${renderTrackTitle('阶段')}</span>${seasonBadge}</div>`
         : `<div class="bs-bt-track-section-title">${renderTrackTitle('阶段', stageBadge)}</div>`}
       ${progressHtml}
+      ${(viewModel.overview.transformProgress || []).length ? renderProgressList(viewModel.overview.transformProgress) : ''}
       ${effortHtml}
     </div>
     <div class="bs-bt-track-section">
@@ -6286,6 +6319,10 @@ function lineageDetailRows(node) {
   // 代孕分开列：承载者不是遗传亲代，混进亲代那行会让血统看起来多一个人
   if (node.carriers.length > 0) rows.push(['孕育者', `${node.carriers.map((item) => item.name).join('、')}（代孕承载）`]);
   if (node.carriedChildren.length > 0) rows.push(['代孕承载', node.carriedChildren.map((item) => item.name).join('、')]);
+  // 衍生转化（1.5.0）：转化者不是亲代，另列；括号里照模型写的方式原文与新衍生
+  const transformText = (item) => `${item.name}（${[item.method, item.to || '去掉衍生'].filter(Boolean).join('，')}）`;
+  if (node.transformedBy?.length) rows.push(['转化者', node.transformedBy.map(transformText).join('、')]);
+  if (node.transformed?.length) rows.push(['转化了', node.transformed.map(transformText).join('、')]);
   if (node.kind === 'unregistered') rows.push(['状态', '未注册（仅作为亲代出现）']);
   if (node.kind === 'sire') rows.push(['状态', '已建档的精方']);
   // 只在亲代那行空着时才补这句：有亲代时它是废话，没亲代时它是唯一线索，
@@ -9591,6 +9628,22 @@ function syncIphonePanel(settings) {
   if (fontSelect) fontSelect.value = IPHONE_FONT_STACKS[String(settings?.iphoneFont || '')] ? String(settings.iphoneFont) : 'system';
 }
 
+function getSphereSize(settings) {
+  const size = String(settings?.sphereSize || '').trim();
+  return ['small', 'standard', 'large'].includes(size) ? size : 'standard';
+}
+
+/** 常驻悬浮球：面板没开时把悬浮球摆回上次的位置并显示 */
+function showFloatingSphereIfAlways(ctx) {
+  const settings = getSettings(ctx);
+  const sphere = document.getElementById('bs-bt-floating-sphere');
+  const modal = document.getElementById(MODAL_ID);
+  if (!sphere || settings.sphereAlways === false || modal?.classList.contains('is-open')) return;
+  // 先显示再定位：隐藏时量不到宽度，夹进视窗会算错
+  sphere.style.display = 'flex';
+  restoreFloatingSpherePositionForElement(sphere);
+}
+
 function applyTheme(settings) {
   const root = document.getElementById(PANEL_ID);
   const sphere = document.getElementById('bs-bt-floating-sphere');
@@ -9601,6 +9654,16 @@ function applyTheme(settings) {
   }
   root.classList.add(`theme-${settings.theme}`);
   if (sphere) sphere.classList.add(`theme-${settings.theme}`);
+  const sphereSize = getSphereSize(settings);
+  if (sphere) {
+    sphere.classList.remove('sphere-small', 'sphere-standard', 'sphere-large');
+    sphere.classList.add(`sphere-${sphereSize}`);
+  }
+  document.querySelectorAll('#bs-biotracker-settings [data-sphere-size-option]').forEach((node) => {
+    node.classList.toggle('is-active', String(node.dataset.sphereSizeOption || 'standard') === sphereSize);
+  });
+  const sphereAlways = document.getElementById('bs-bt-sphere-always');
+  if (sphereAlways) sphereAlways.checked = settings.sphereAlways !== false;
   root.classList.remove('size-phone', 'size-tablet', 'font-compact', 'font-standard', 'font-large');
   const deviceSize = String(settings.deviceSize || 'phone').trim() === 'tablet' ? 'tablet' : 'phone';
   const fontSize = ['compact', 'standard', 'large'].includes(String(settings.fontSize || '').trim()) ? String(settings.fontSize).trim() : 'standard';
@@ -10676,7 +10739,7 @@ async function ensureModal(ctx) {
   if (!sphere) {
     sphere = document.createElement('div');
     sphere.id = 'bs-bt-floating-sphere';
-    sphere.className = `bs-bt-floating-sphere theme-${getSettings(ctx).theme || 'retro'}`;
+    sphere.className = `bs-bt-floating-sphere theme-${getSettings(ctx).theme || 'retro'} sphere-${getSphereSize(getSettings(ctx))}`;
     sphere.style.display = 'none';
     sphere.innerHTML = `𓃠`;
     document.body.appendChild(sphere);
@@ -11029,6 +11092,22 @@ async function ensureModal(ctx) {
       setView('theme');
     }),
   );
+  document.querySelectorAll('#bs-biotracker-settings [data-sphere-size-option]').forEach((node) =>
+    node.addEventListener('click', () => {
+      const settings = getSettings(ctx);
+      settings.sphereSize = String(node.dataset.sphereSizeOption || 'standard').trim();
+      saveSettings(ctx);
+      applyTheme(settings);
+      // 换了大小，位置要重新夹进视窗
+      const sphere = document.getElementById('bs-bt-floating-sphere');
+      if (sphere && sphere.style.display !== 'none') restoreFloatingSpherePositionForElement(sphere);
+    }),
+  );
+  document.getElementById('bs-bt-sphere-always')?.addEventListener('change', (event) => {
+    const settings = getSettings(ctx);
+    settings.sphereAlways = event.currentTarget.checked;
+    saveSettings(ctx);
+  });
   document.querySelectorAll('#bs-biotracker-settings [data-font-size-option]').forEach((node) =>
     node.addEventListener('click', () => {
       const settings = getSettings(ctx);
@@ -12495,6 +12574,7 @@ async function bootstrap() {
     installVariableIsolation(ctx);
     await ensureModal(ctx);
     await registerMenuItem(ctx);
+    showFloatingSphereIfAlways(ctx);
     trackerDeps.updateMainFlowPrompt = updateMainFlowPrompt;
     resetPoller(ctx, trackerDeps);
     updateMainFlowPrompt(ctx);

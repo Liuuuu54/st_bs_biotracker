@@ -13,6 +13,7 @@ import { summarizePendingRecords } from './record_notes.js';
 import { abortActiveApiRequests, callOpenAICompatible, isApiUserAbortError, resolveOverallDeadlineMs } from './api.js';
 import { classifyTailEdit, EDIT_GATE_BASELINE_MAX_CHARS, isEditGateConfigured, normalizeEditGateKeepFloors, requestEditGateDecision } from './edit_gate.js';
 import { DEFAULT_WEAR_STATE, sanitizeWearState } from './wardrobe_config.js';
+import { describeDerivedTransform, normalizeDerivedTransformLog } from './derived_transform.js';
 import { getAllocationAlpha, getAllocationText, getBuildText, getBustGrowthText, getCupLabel, getHipText, hasHumanFigure } from './maternal_body.js';
 import { applyToolCallsResult, canFeelFetalMovement, describeLaborRecord, describeReproductivePain, describeBackSide, describeFetalPosition, getBellySize, getCurrentBody, getFetusAmnionDurability, getLaborEffort, getLaborEffortMode, isFetusKnownToCharacter, TOOL_DEFINITIONS } from './tools.js';
 import { buildCognitionWindow, buildFetalEventWindow, describeFetalResilience, getPrenatalCareKey, PRENATAL_CARE_LEVELS, getFetalHarmFactor, getFetalHealthTier, labelFetalEventTarget } from './fetal_health.js';
@@ -882,6 +883,13 @@ export function hasBreedingPsychology(existingState = {}) {
   });
 }
 
+function hasPregnancyStageCharacter(existingState = {}) {
+  return Object.values(existingState || {}).some((item) => {
+    const stage = String(item?.profile?.base?.stage || '');
+    return PREGNANCY_STAGES.includes(stage) || stage === '产兆前驱' || LABOR_STAGES.includes(stage);
+  });
+}
+
 function hasAnyFetus(existingState = {}) {
   return Object.values(existingState || {}).some((item) => (
     Array.isArray(item?.profile?.pregnant?.fetuses) && item.profile.pregnant.fetuses.length > 0
@@ -900,16 +908,29 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
   if (!hasAnyFetus(existingState)) hiddenTools.add('bsFetalEvent');
   if (!wardrobeEnabled) {
     hiddenTools.add('bsAddWardrobeItem');
-    hiddenTools.add('bsRemoveWardrobeItem');
     hiddenTools.add('bsChangeOutfit');
   }
-  if (!skillEnabled) {
-    hiddenTools.add('bsRegisterSkillDefinition');
-    hiddenTools.add('bsTrainSkill');
+  if (!skillEnabled) hiddenTools.add('bsTrainSkill');
+  // 没有人在妊娠阶段（孕早期起、含产兆前驱与产程）时，延产与手术分娩用不到；bsAbortion 留着（事后避孕在着床前用）
+  if (!hasPregnancyStageCharacter(existingState)) {
+    hiddenTools.add('bsExtendPregnancy');
+    hiddenTools.add('bsChildbirth');
   }
   for (const name of getDisabledSpecialToolNames(settings)) hiddenTools.add(name);
   if (settings?.timeFlowEnabled === false) hiddenTools.add('bsPassedTime');
-  return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name));
+  // 写实世界没有衍生类型，也不送转化
+  const transformOff = hiddenTools.has('bsRecordExperience:transform') || isRealisticWorld(settings);
+  return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name)).map((tool) => (transformOff && tool.name === 'bsRecordExperience' ? withoutTransformAction(tool) : tool));
+}
+
+/** 衍生转化关掉时：bsRecordExperience 拿掉 transform 这个 action、它的参数与说明 */
+function withoutTransformAction(tool) {
+  const properties = { ...(tool.input_schema?.properties || {}) };
+  delete properties.derivedType;
+  delete properties.hours;
+  properties.action = { ...properties.action, enum: (properties.action?.enum || []).filter((value) => value !== 'transform') };
+  const description = String(tool.description || '').replace(/transform 记血脉[^]*?产程中不能转化。/, '');
+  return { ...tool, description, input_schema: { ...tool.input_schema, properties } };
 }
 
 function getRecentDiaryEntries(profile, limit) {
@@ -1302,6 +1323,19 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   delete profile.visualCue;
   // 显示用的颜色只给画面用，不送提示词
   delete profile.display;
+  // 衍生转化（1.5.0）：经历只送最近 3 笔的一句话；转化中、血脉排斥只送剩多久，不送扣量数字
+  const transformLog = normalizeDerivedTransformLog(profile.derivedTransforms);
+  if (transformLog.length) profile.derivedTransforms = transformLog.slice(-3).map((record) => `${record.time ? `${record.time}：` : ''}${describeDerivedTransform(record)}`);
+  else delete profile.derivedTransforms;
+  if (profile.base?.transforming) {
+    const t = profile.base.transforming;
+    const left = Math.max(0, (Number(t.untilMinutes) - minutesPassed) / 60);
+    profile.base.transforming = `正在转化成${t.to || '无衍生'}（${describeDerivedTransform(t)}），约剩 ${Math.ceil(left)} 小时`;
+  }
+  if (profile.pregnant?.rejectionCrisis) {
+    const crisis = profile.pregnant.rejectionCrisis;
+    profile.pregnant.rejectionCrisis = `血脉排斥中（由${crisis.fromType || '无衍生'}转为${crisis.toType || '无衍生'}），约剩 ${Math.ceil(Number(crisis.remainingHours) || 0)} 小时：腹中翻搅、胎动异常，胎儿健康持续下降；安抚（bsFetalEvent bonding）、安胎与治疗能帮忙`;
+  }
   if (immune.metabolism) delete profile.metabolism;
   if (!hasBreedingPsychology({ current: item })) delete profile.psychology;
   else {

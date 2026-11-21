@@ -45,6 +45,8 @@ test('穿着：衣柜没开或有穿主衣物照有穿画，没有主衣物或�
   assert.equal(isBellyNude({ enabled: true, main: { name: '衬衫' }, wearState: '半脱' }), false);
   assert.equal(isBellyNude({ enabled: true, main: null, wearState: '整齐' }), true);
   assert.equal(isBellyNude({ enabled: true, main: { name: '衬衫' }, wearState: '全裸' }), true);
+  // 衣柜保留的 id 0「全裸」：mainItemId=0 明确全裸（1.4.3 时误画成有穿）
+  assert.equal(isBellyNude({ enabled: true, main: { id: 0, name: '全裸', slot: 'main' }, wearState: '整齐' }), true);
   const clothed = buildBellyCloseupState(input());
   assert.deepEqual([clothed.showBra, clothed.showShorts, clothed.strapless], [true, true, true]);
   const nude = buildBellyCloseupState(input({ outfit: { enabled: true, main: null } }));

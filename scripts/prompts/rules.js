@@ -47,7 +47,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '如果只是活力、情压、性欲、宫压波动，使用 bsUpdateCharacterStatus。',
   '心理数值随认知纪录变化：她因为某件事有了新的体会或态度时，用 bsRecordExperience（action=cognition）记下，并在 psychology 给变化程度；没有独立的心理工具。',
   '如果只是描述文字变化，使用 bsSetDescription。',
-  '剧情中出现穿上、脱下、更衣、借穿、被脱除、淋湿更换、洗浴后重新着装等衣着变化时，必须用 bsChangeOutfit 同步当前穿着；只更新衣着描述文字而不换装是错误的。角色获得新长期衣物用 bsAddWardrobeItem，永久失去衣物用 bsRemoveWardrobeItem。',
+  '剧情中出现穿上、脱下、更衣、借穿、被脱除、淋湿更换、洗浴后重新着装等衣着变化时，必须用 bsChangeOutfit 同步当前穿着；只更新衣着描述文字而不换装是错误的。角色获得新长期衣物用 bsAddWardrobeItem，永久失去衣物用 bsChangeOutfit 的 discardItemIds。',
   '可受孕生殖道的插入／精液沉积／拔出用 bsAddSperm 状态机；排出既有残留精液用 bsDrainSperm；缓解生理需求用 bsExcreteMetabolism。',
   '跨日、重大事件或 notify 提醒时，可用 bsWriteDiary 为角色追加主观日记。',
   '月经阶段、排卵期、假孕期切换用 bsSetMenstrualPhases；不要用它覆盖正在进行的受精、真妊娠或产程。',
@@ -205,6 +205,9 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].gender: 胎儿性别。',
   '- fetuses[*].embryoType: 胚胎型态，如 胎生、卵生、卵胎生、胎转卵生、不定型。',
   '- fetuses[*].companionEggCount: 这一胎伴随的背景卵数量（伴生卵），为 0 时不出现。出生时会随这一胎一起排出，可描写成产下整群卵，但只有这一胎会写入族谱；绝不能按伴生卵自行增加 fetusesCount、胎儿卡或孩子。',
+  '- base.transforming: 她正在转化（血脉、衍生类型），写着转化成什么、约剩几小时；期间剧情照转化写（昏睡、发热、闭关…），时间到系统自己完成，不要再呼叫转化。',
+  '- pregnant.rejectionCrisis: 母体血脉换了大类或被净化后，腹中胎儿正在被排斥：剧情写出腹中翻搅、胎动异常、血脉灼烧之类的代价；安抚胎儿（bsFetalEvent bonding）、安胎药与治疗能帮忙，熬不过的那一胎会流掉。',
+  '- derivedTransforms: 她最近几次血脉／衍生转化的经历（时间、谁或什么让她转化、怎么转化），剧情可以引用，例如记得是谁初拥了她。',
   '- fetuses[*].weight: 胎重系数，標準1.0，范围0.33~3.0：这一胎足月时比同族的标准胎大多少（1.0 就是该族理想的足月大小，不跨族比较），受精时定下、孕期不变；孕期中照物种的胎儿生长型长到这个大小。各族孕肚大小的差别看胎量与 bellySize，不看胎重。影响妊娠负担、分娩难度与恢复期。',
   '- fetuses[*].labor: 这一胎在产程中遇到的事（难产类型、产程延长、急产、产伤）。产伤不指定部位与症状：依这一族的身体构造与这次分娩的整体情况（卡住多久、多急、是不是助产拉出）推想合理的伤，不要直接套人类的医学名词。',
   '- pain: 生殖疼痛 0-10 与来源（分娩、月经、胎动、假宫缩、产后宫缩），有痛才出现；描写这些痛不得明显超过这个等级。标了「痛即为爽」时，她天生把这些分娩、妊娠、月经的痛感受为快感：照等级写出痛，但她的感受是爽；这不会让性欲自动上升，也和技能 M 倾向（从被施加的疼痛、被支配中得到快感）是两回事。',
@@ -255,7 +258,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- 只有 recent_messages 明确出现相关事件、练习、实战运用、教学或领悟时，才调用 bsTrainSkill；不得仅凭“角色可能擅长”增加。',
   '- skillExp 由你直接给非负整数，并综合事件成果、当前技能等级、本级需求及同名天赋判断。正天赋通常让同等事件更容易获得较多技能经验，负天赋通常较少；系统不会再次套倍率。',
   '- 严禁尝试传入 talentExp 或用任何工具修改角色自己的 talents。只有系统在允许孕期阶段执行技能锻炼时，才能依亲和度自动改变 fetuses[*].talents。',
-  '- 新技能必须先调用 bsRegisterSkillDefinition，以 name+description 登记到 skill_catalog；先检查既有定义，禁止制造同义重复。随后才能用精确名称调用 bsTrainSkill，并在剧情确实触发觉醒时传 awaken=true。',
+  '- 新技能在 bsTrainSkill 同一次调用里给 define（description）登记到 skill_catalog，skill 即新技能名称；先检查既有定义，禁止制造同义重复。既有技能用精确名称调用，剧情确实触发觉醒时传 awaken=true。',
   '- 孕中期、孕晚期、临产期、逾期、延产期、产兆前驱、第一产程调用 bsTrainSkill 时，系统每次只随机选择一胎，将本次 skillExp 依该胎 affinity 自动传为天赋经验：skillExp*abs(affinity)/50，正亲和为擅长、负亲和为苦手、0 不传。第二与第三产程禁止传递。',
   '- 胎儿与孩子只有 talents，没有 skills。分娩时 talents 原样进入 children；日后注册孩子角色时，由用户在注册第五子页参考并载入，不会只凭同名自动继承。',
   '- 天赋不分身体，会隔代遗传：儿子可能带着子宫开发的天赋，女儿可能带着阴茎开发的天赋。天赋对应的部位本人身体没有时（skill_catalog 里 body 为 womb 而本人没有子宫，或 body 为 sword 而本人不是扶她），这项天赋是隐性的，标成 latent：本人无从表现，剧情不写他（她）在这方面擅长或苦手，只是带着、会遗传给孩子。',
@@ -317,8 +320,8 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fitProfile 必须与衣物的 name、note 一致，逐项判断：宽松、宽大、孕妇装的 capacity 用 stretch 或 loose，修身、紧身、孕前旧衣用 fitted 或 tight；有托腹或承托设计的 support 用 strong。',
   '- slot=accessory 是可独立穿脱的内衣、外搭、鞋袜、头饰、饰品或支撑用品。category=underwear/outerwear/footwear/headwear/ornament/support/other；effects 最多两项，使用 masking/support/capacity/convenience 加 _up 或 _down。',
   '- masking 是掩盖身体曲线与孕肚变化，不等于露肤；support 是胸腹腰与重心承托；capacity 是容许体型变化；convenience 是行动、穿脱、如厕、哺乳或排解需求的方便程度。',
-  '- 新衣可直接用 bsChangeOutfit 的 main/accessories 建立并穿上：scope=owned 收入长期衣柜，scope=temporary 仅保留到该衣物脱下。bsAddWardrobeItem 只收藏或更新长期衣物，引用正在穿的临时衣物时会把它转为长期衣物（id 与穿着不变）；bsRemoveWardrobeItem 永久删除。衣物可用整数 id 或准确名称引用。',
-  '- 衣柜也要跟着剧情减少：衣物被撕毁报废、丢弃、送人、卖掉、遗失、被没收，或角色明确把穿不下的衣服收起、丢掉时，用 bsRemoveWardrobeItem 删除；只是脱下、换下、弄脏送洗不删。正在穿的衣物被毁时，同轮先用 bsChangeOutfit 换下（或换上别的），再删除。',
+  '- 新衣可直接用 bsChangeOutfit 的 main/accessories 建立并穿上：scope=owned 收入长期衣柜，scope=temporary 仅保留到该衣物脱下。bsAddWardrobeItem 只收藏或更新长期衣物，引用正在穿的临时衣物时会把它转为长期衣物（id 与穿着不变）；bsChangeOutfit 的 discardItemIds 永久删除。衣物可用整数 id 或准确名称引用。',
+  '- 衣柜也要跟着剧情减少：衣物被撕毁报废、丢弃、送人、卖掉、遗失、被没收，或角色明确把穿不下的衣服收起、丢掉时，用 bsChangeOutfit 的 discardItemIds 删除；只是脱下、换下、弄脏送洗不删。正在穿的衣物被毁时，同一次调用一并换下（或换上别的）再删除。',
   '- accessoryItemIds 覆盖当前配件整表；addAccessoryItemIds/removeAccessoryItemIds 用于增量穿脱。全裸传 mainItemId:0 与 accessoryItemIds:[]。wearState 只是 12 字内的状态标签，不会改变穿了哪些衣物；换主件而未传 wearState 时自动回到整齐。',
   '- recent_messages 出现穿脱、更衣、借穿、被脱除、淋湿、衣衫不整或洗浴后着装时，调用 bsChangeOutfit 使 outfit 与叙事一致。outfit.currentWearText 与 currentItems 只供核对，不要写回，也不要在 descriptions 另建衣着状态。',
   '- 幕外角色也会附精简衣柜名录与当前穿着摘要；重新登场时若衣着改变，应与 bsSetCharacterPresence 同轮换装。衣柜名录始终精简；当前衣物才附稳定外观，内部换算分数只在孕期窗口发送并参与 pregFit。',
@@ -355,12 +358,14 @@ const REALISTIC_WORLD_DROPPED_LINES = [
   '- derivedType:', '- sperms[*].derivedType:', '- base.bloodline / fetuses[*].bloodline:', '- fetuses[*].fatherDerivedType:',
   '- fetuses[*].maternalDerivedTypeProgress:', '- fetuses[*].companionEggCount:', '- children[*].derivedType:',
   '- children[*].birthCompanionEggCount:', '- 若角色具有 derivedType', '- fluxPositive / fluxNegative', '- 对 derivedType 角色来说',
+  '- base.transforming:', '- pregnant.rejectionCrisis:', '- derivedTransforms:',
 ];
 /** 特殊工具关掉时，它产生的状态也不会出现 */
 const SPECIAL_TOOL_DROPPED_LINES = {
   bsWombReturn: ['- 回归期：', '- 回归期不受', '- pregnant.wombReturn:'],
   bsExtendPregnancy: ['- 延产期：', '- base.uterineAtony：'],
   bsImplantEmbryo: ['- fetuses[*].provider:', '- fetuses[*].providerSources:'],
+  'bsRecordExperience:transform': ['- base.transforming:', '- pregnant.rejectionCrisis:', '- derivedTransforms:'],
 };
 
 function dropGuideLines(guide, prefixes) {
@@ -522,6 +527,21 @@ function buildSireTrackerBlock(payload, descriptionGuides) {
   ].join('\n');
 }
 
+/**
+ * 系统提示（使用者可改）里提到、但本轮 available_tools 没送的工具：拿掉那一句，免得模型去叫不存在的工具。
+ * 只认预设文字；使用者改写过的句子对不上就照送。
+ */
+const UNAVAILABLE_TOOL_MENTIONS = [
+  ['bsExtendPregnancy', /^剧情以特殊手段让逾期的妊娠延后不生用 bsExtendPregnancy[^\n]*(\n|$)/m, ''],
+  ['bsChildbirth', '立即结束分娩用 bsChildbirth；', ''],
+];
+
+function dropUnavailableToolMentions(prompt, payload) {
+  if (!Array.isArray(payload?.available_tools)) return prompt;
+  const available = new Set(payload.available_tools.map((tool) => tool?.name));
+  return UNAVAILABLE_TOOL_MENTIONS.reduce((text, [name, pattern, replacement]) => (available.has(name) ? text : text.replace(pattern, replacement)), prompt);
+}
+
 export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = null, payload = null) {
   const diaryEnabled = payload?.diary_enabled !== false;
   const metabolismGuide = buildTrackerMetabolismGuide(payload);
@@ -546,7 +566,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
       '- 其他状态工具默认建立在时间推进之后，不要跳过 bsPassedTime 直接更新长程状态。\n- 例外：剧情里的操作（转胎、托高、破水、助产、手术产等）发生在这段时间中途、而推进时间可能先改变条件（例如胎儿入盆后只能小幅转动）时，把 bsPassedTime 拆成操作前、操作后两次调用，中间放该操作。',
       '- 在场切换要放在对的位置，因为这段时间里谁在场会影响需求、胎儿与其他结算：角色或精方在这段时间开头就登场、之后一起度过（回家、来访、重逢），先调用 bsSetCharacterPresence 设为在场，再调用 bsPassedTime；在这段时间结尾才离开，先 bsPassedTime 再设离场；中途登场或离开，把 bsPassedTime 拆成前后两次，中间放 bsSetCharacterPresence。',
     ].join('\n'),
-    String(basePrompt || '').trim(),
+    dropUnavailableToolMentions(String(basePrompt || '').trim(), payload),
     buildWorldBaselineBlock(payload?.world_baseline_prompt),
     buildContraceptionBlock(payload?.contraception_levels, true),
     metabolismGuide,
@@ -559,7 +579,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
       '[本聊天技能基准：高优先级]',
       skillBaselinePrompt,
       '- 此基准决定当前聊天应辨识、建立与成长的技能类型，优先于技能图鉴中「已有某项技能」所形成的暗示。',
-      '- 不得为基准排除的类别调用 bsRegisterSkillDefinition 或 bsTrainSkill。既有技能资料只保留，不因基准变化而删除或主动降级。',
+      '- 不得为基准排除的类别调用 bsTrainSkill（含 define 登记新技能）。既有技能资料只保留，不因基准变化而删除或主动降级。',
     ].join('\n'));
   }
   if (payload?.mainflow_context_snapshot) {
