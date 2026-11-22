@@ -90,8 +90,10 @@ test('bsAddSperm 以 insert / deposit / withdraw 驱动插入状态机', () => {
   assert.equal(chatState.characters.A.profile.base.penetrationSource, null);
 });
 
-test('bsSetMenstrualPhases 说明列出的阶段，正好就是实作接受的阶段', () => {
-  const description = toolOf('bsSetMenstrualPhases').description;
+test('切换阶段（bsReproductiveIntervention effect=phase）说明列出的阶段，正好就是实作接受的阶段；旧的 bsSetMenstrualPhases 不再给模型、照样能用', () => {
+  const description = toolOf('bsReproductiveIntervention').description;
+  assert.equal(TOOL_DEFINITIONS.some((tool) => tool.name === 'bsSetMenstrualPhases'), false);
+  for (const stage of ['卵泡期', '月经期']) assert.equal(call(one(), 'bsReproductiveIntervention', { female: 'A', effect: 'phase', stage }).applied, true, `${stage} 走新工具`);
   const accepted = ['卵泡期', '排卵期', '黄体期', '月经期', '产后恢复', '假孕期'];
   for (const stage of accepted) {
     assert.match(description, new RegExp(stage), `说明没提到 ${stage}`);

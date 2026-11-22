@@ -1,4 +1,5 @@
-import { dateAt, describeCalendarForPrompt, fromLocalYears, getActiveCalendar } from './calendar.js';
+import { dateAt, describeCalendarForPrompt, fromLocalYears, getActiveCalendar, registrationEarthAge } from './calendar.js';
+import { eggQualityFromVitalityLevel, normalizeEggQuality } from './egg_quality.js';
 
 /** 对话历法（1.5.2）：注册与日记请求也要知道今天是哪天，没指定日期的日记照历法写今天 */
 function calendarDiaryDate(chatState) {
@@ -677,6 +678,13 @@ export async function runRegistrySireExtraction(ctx, options = {}) {
   const systemPrompt = buildSireExtractionSystemPrompt(settings, { declaredRace, userInstruction, withTalents });
   const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'sire' });
   const sanitized = sanitizeSireExtractionResult(result);
+  // 生日（1.5.3）：与卵方注册同一条——卡上写明照它，没写在这一岁里随机落一天，重新注册岁数没变就沿用
+  if (sanitized.age !== null) {
+    const calendar = getActiveCalendar();
+    const local = calendar ? Number(result.age) : Math.round(Number(result.age));
+    const age = registrationEarthAge(local, calendar, Number(chatState.minutesPassed) || 0, { birthday: options.birthday || result?.birthday, previousAge: payload.existing_sire?.age ?? null });
+    if (Number.isFinite(age)) sanitized.age = Math.round(age * 1000) / 1000;
+  }
   // 天赋与技能按名字对到图鉴，对不上的略过；没问时回 null，注册时保留原本的。精方只能有通用与精方专属的技能
   if (!withTalents) return { ...sanitized, talents: null, skills: null, skippedTalents: [] };
   const resolved = normalizeInitialSkillTalentConfig({
@@ -1394,7 +1402,7 @@ function sanitizeMeter(value, { min = 0, max = 999 } = {}) {
   return Math.max(min, Math.min(max, Math.round(next)));
 }
 
-function sanitizeRegistryProfile(profile, baseProfile) {
+function sanitizeRegistryProfile(profile, baseProfile, nowMinutes = 0, { previousAge = null, random = Math.random } = {}) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return {};
   const sanitized = {};
   if (profile.base && typeof profile.base === 'object' && !Array.isArray(profile.base)) {
@@ -1408,8 +1416,9 @@ function sanitizeRegistryProfile(profile, baseProfile) {
     if (profile.base.bloodline !== undefined) Object.assign(nextBase, getBloodlineInfo(nextBase.race ?? baseProfile.base.race, profile.base.bloodline, profile.base.bloodlineSource));
     if (profile.base.derivedType !== undefined) nextBase.derivedType = profile.base.derivedType === null ? null : String(profile.base.derivedType || '').trim() || null;
     if (profile.base.age !== undefined) {
-      // 模型照角色卡写的是这个世界的岁；有历法时换成地球年存（1.5.2）
-      const age = fromLocalYears(Number(profile.base.age), getActiveCalendar());
+      // 模型照角色卡写的是这个世界的岁；有历法时换成地球年存（1.5.2）。
+      // 生日（1.5.3）：卡上写明（base.birthday {month, day}）照它；没写时在这一岁里随机落一天，重新注册岁数没变就沿用
+      const age = registrationEarthAge(profile.base.age, getActiveCalendar(), nowMinutes, { birthday: profile.base.birthday, previousAge, random });
       if (Number.isFinite(age)) nextBase.age = age;
     }
     if (profile.base.bodySize !== undefined) {
@@ -1449,6 +1458,9 @@ function sanitizeRegistryProfile(profile, baseProfile) {
     }
     if (profile.base.sperms !== undefined) {
       nextBase.sperms = sanitizeRegistrySperms(profile.base.sperms);
+    }
+    if (profile.base.eggQuality !== undefined && profile.base.eggQuality !== null && Number.isFinite(Number(profile.base.eggQuality))) {
+      nextBase.eggQuality = normalizeEggQuality(profile.base.eggQuality);
     }
     if (profile.base.vitalityLevel !== undefined) {
       const vitalityLevel = Number(profile.base.vitalityLevel);
@@ -1546,7 +1558,10 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
   if (!name) throw new Error('注册结果缺少角色名称');
   const current = chatState.characters[name];
   const base = current && typeof current === 'object' ? current : createDefaultFemaleState(name);
-  const sanitizedProfile = sanitizeRegistryProfile(result.profile, base.profile);
+  const sanitizedProfile = sanitizeRegistryProfile(result.profile, base.profile, Number(chatState.minutesPassed) || 0, {
+    previousAge: current?.initialized ? current.profile?.base?.age : null,
+    random,
+  });
   if (!allowBreedingPsychology) delete sanitizedProfile.psychology;
   // 注册页没勾「使用妊娠变速」：模型就算写了变速也不采用，倍率会在下面重设回 1
   if (!useGestationModifier) delete sanitizedProfile.bio;
@@ -1622,6 +1637,12 @@ export function applyRegistryResult(chatState, result, { allowBreedingPsychology
           ? Number(base.profile.base.bodyChangedAtAge)
           : Number(sanitizedProfile.base?.age ?? base.profile.base.age) || 0,
         vitality: getVitalityInitByLevel(sanitizedProfile.base?.vitalityLevel ?? base.profile.base.vitalityLevel),
+        // 卵子品质（1.5.3）：模型照角色卡判断；没写时，第一次注册照活力等级换算，重新注册保留原本的
+        ...(() => {
+          const eggQuality = sanitizedProfile.base?.eggQuality
+            ?? (current?.initialized && Number.isFinite(Number(base.profile.base?.eggQuality)) ? Number(base.profile.base.eggQuality) : eggQualityFromVitalityLevel(sanitizedProfile.base?.vitalityLevel ?? base.profile.base.vitalityLevel));
+          return { eggQuality: normalizeEggQuality(eggQuality), cycleEggQuality: normalizeEggQuality(eggQuality), cycleLengthFactor: 1 };
+        })(),
         psyStress: getPsyStressInitByLevel(sanitizedProfile.base?.psyStressLevel ?? base.profile.base.psyStressLevel),
       },
       pregnant: {
@@ -2240,7 +2261,13 @@ export async function runRegistry(ctx, options = {}) {
   } catch (error) {
     console.warn('[BS BioTracker][registry] payload size debug failed', error);
   }
-  const basePrompt = options.systemPrompt || buildRegistrySystemPrompt(settings, { ...options, customNotes, declaredRace, payload, includeBreedingPsychology });
+  const basePrompt = (options.systemPrompt || buildRegistrySystemPrompt(settings, { ...options, customNotes, declaredRace, payload, includeBreedingPsychology }))
+    // 对话历法（1.5.3）：岁数照这个世界的岁写，卡上写明生日就照填
+    + (payload.calendar_note ? `
+
+[对话历法]
+- ${payload.calendar_note}
+- base.age 写这个世界的岁（整数，照角色卡）。角色卡或世界书写明生日时，base.birthday 给 { "month": 月份序号（从 1 起，照上面的历法）, "day": 日 }；没写就不要给。` : '');
   const systemPrompt = bundle
     ? `${basePrompt}\n\n${buildRegistryBundlePrompt({
       includeSkills: bundleSkills,
@@ -2312,6 +2339,18 @@ export async function runRegistry(ctx, options = {}) {
       result.profile = result.profile && typeof result.profile === 'object' ? result.profile : {};
       result.profile.base = result.profile.base && typeof result.profile.base === 'object' ? result.profile.base : {};
       result.profile.base.sheathOffset = Number(options.sheathOffset);
+    }
+    // 卵子品质拉杆（1.5.3）：勾了就盖过模型
+    if (options.eggQuality !== null && options.eggQuality !== undefined && Number.isFinite(Number(options.eggQuality))) {
+      result.profile = result.profile && typeof result.profile === 'object' ? result.profile : {};
+      result.profile.base = result.profile.base && typeof result.profile.base === 'object' ? result.profile.base : {};
+      result.profile.base.eggQuality = Number(options.eggQuality);
+    }
+    // 生日（1.5.3）：注册页手动指定（或掷出来）的盖过模型
+    if (options.birthday && Number.isFinite(Number(options.birthday.month)) && Number.isFinite(Number(options.birthday.day))) {
+      result.profile = result.profile && typeof result.profile === 'object' ? result.profile : {};
+      result.profile.base = result.profile.base && typeof result.profile.base === 'object' ? result.profile.base : {};
+      result.profile.base.birthday = { month: Number(options.birthday.month), day: Number(options.birthday.day) };
     }
     // 身材拉杆同理：勾了的栏位盖过模型
     if (options.bodyOverrides && typeof options.bodyOverrides === 'object') {
@@ -2467,5 +2506,41 @@ export async function runCalendarInference(ctx, options = {}) {
   ].join('\n') : systemPrompt;
   const result = await callOpenAICompatible(settings, payload, finalPrompt, { flow: 'registry' });
   if (!result || typeof result !== 'object') throw new Error('历法拟定没有回传 JSON');
+  return result;
+}
+
+/**
+ * 从角色卡拟定药物名录（1.5.3）：照角色卡、世界书与最近对话，列出这个世界有的生殖药（或法术、秘方）。
+ * 只回传草稿，由画面填进表单给使用者改。allowedEffects 是这个世界能用的效果（写实世界、开关决定）。
+ */
+export async function runDrugCatalogInference(ctx, options = {}) {
+  const settings = getEffectiveSettings(ctx, getSettings(ctx));
+  const chatState = getChatState(ctx, settings);
+  const card = getCharacterCard(ctx);
+  const payload = await buildRegistryPayload(ctx, settings, chatState, {
+    targetName: String(card?.name || '').trim() || '药物名录',
+    reason: 'drug_catalog_inference',
+    customNotes: '',
+    userInstruction: String(options.userInstruction || '').trim(),
+  });
+  payload.existing_state = null;
+  payload.existing_drug_catalog = Array.isArray(options.existingCatalog) ? options.existingCatalog : [];
+  payload.allowed_effects = Array.isArray(options.allowedEffects) ? options.allowedEffects : [];
+  payload.world_baseline_prompt = String(settings.worldBaselinePrompt || '').trim() || null;
+  const lines = [
+    '你是 AIRP 世界设定整理者，替这个故事拟定「生殖药物名录」：这个世界里影响生殖的药、法术或秘方。依据：角色卡、世界书、世界基准、最近对话。',
+    '- 只列世界观里存在或合理的；现代背景照现实（避孕药、事后避孕药、促排卵药、调经药），奇幻背景照设定的药草、魔药、法术取名与描述。设定没写的照世界观补完，通常 3～8 种。',
+    '- 每种药：name（剧情里的名字，24 字内）、description（一两句给追踪模型看的说明：是什么、怎么用、副作用或代价）、effects（一到多个效果）、days（服用一次生效几天，事后避孕这类立即生效的给 0）。',
+    '- effect 只能用 payload.allowed_effects 里的：phase 切换月经阶段（要给 stage：卵泡期、排卵期、黄体期、月经期、乏情期、产后恢复、假孕期；例如催经药 stage=月经期）、emergency 事后避孕、pill 避孕药、regulate 调经、ovulation 促排卵、fertility 助孕（受孕难度降低、卵子品质提高：更容易受精、着床更稳）、twinning 促分裂（同卵多胞胎）、chimera 促嵌合、amnion 固膜（孕期中修复、保护羊膜）、abortifacient 堕胎（只对已着床的妊娠，每胎各自掷成败，失败的胎儿受伤、她多半以为流掉了；days 给 0）、induce 催产（孕晚期起，掷会不会发动，未足月就是早产；days 给 0）。堕胎、催产在很多世界观是禁忌或秘传，设定里没有就别补。',
+    '- strength：light、normal、strong。一种药可以带多个效果（例如促排卵＋促嵌合）。',
+    '- existing_drug_catalog 是使用者目前的名录（可能是空的），在它上面修正与补完。',
+    '只输出 JSON：{"drugs":[{"name":"","description":"","effects":[{"effect":"pill","strength":"normal"}],"days":30}],"notes":"一两句：哪些照设定、哪些是补的"}',
+  ];
+  const rules = String(options.userInstruction || '').trim();
+  const systemPrompt = rules
+    ? [...lines, '', '[使用者的补充规矩——最优先，逐条照做]', rules, '- 规矩写到的一律照规矩，覆盖角色卡、世界书与目前的名录；notes 逐条交代怎么落实。'].join('\n')
+    : lines.join('\n');
+  const result = await callOpenAICompatible(settings, payload, systemPrompt, { flow: 'registry' });
+  if (!result || typeof result !== 'object') throw new Error('药物名录拟定没有回传 JSON');
   return result;
 }

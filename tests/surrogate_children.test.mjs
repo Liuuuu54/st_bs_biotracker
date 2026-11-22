@@ -106,6 +106,9 @@ function makeHost(name, race = '人类') {
   const character = makeCharacter(name);
   character.profile.base.race = race;
   character.profile.base.stage = '卵泡期';
+  // 卵子品质拉满（1.5.3）：这些测试把乱数固定在 0.99，着床失败率要压到 1% 以下才稳
+  character.profile.base.eggQuality = 4;
+  character.profile.base.cycleEggQuality = 4;
   character.profile.pregnant.pregnantDays = 0;
   character.profile.pregnant.effectivePregnantDays = 0;
   character.profile.pregnant.fetuses = [];

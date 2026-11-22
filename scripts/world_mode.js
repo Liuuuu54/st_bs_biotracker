@@ -10,6 +10,8 @@ export const SPECIAL_TOOLS = Object.freeze({
   transformDerivedType: 'bsRecordExperience:transform',
   // 身体转化（1.5.1 性转）：transform 的 body 参数；写实世界照样能用
   transformBody: 'bsRecordExperience:body',
+  // 生殖药物（1.5.3）：bsReproductiveIntervention 的药效部分；关掉时只留切换阶段与事后避孕
+  reproductiveDrugs: 'bsReproductiveIntervention:drugs',
 });
 
 export const SPECIAL_TOOL_LABELS = Object.freeze({
@@ -18,6 +20,7 @@ export const SPECIAL_TOOL_LABELS = Object.freeze({
   extendPregnancy: '延产',
   transformDerivedType: '衍生转化',
   transformBody: '身体转化',
+  reproductiveDrugs: '生殖药物',
 });
 
 export function normalizeSpecialTools(value) {

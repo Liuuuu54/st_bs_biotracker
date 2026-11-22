@@ -25,7 +25,7 @@ test('色票里的「预设」就是预设色表的基准色', () => {
 });
 
 test('v17 → v18：角色补上空的 display；已有的颜色正规化后保留', () => {
-  assert.equal(CHAT_STATE_SCHEMA_VERSION, 18);
+  assert.equal(CHAT_STATE_SCHEMA_VERSION, 19);
   const characters = { A: { profile: { base: {} } }, B: { profile: { base: {}, display: { skinColor: '#ABC' } } } };
   migrateCharacters(characters, 17);
   assert.deepEqual(characters.A.profile.display, { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null });

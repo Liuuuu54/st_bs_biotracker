@@ -5,6 +5,31 @@ import { FETAL_EVENT_CHANGES, FETAL_EVENT_KINDS } from '../fetal_health.js';
 
 // ── 追踪工具 ─────────────────────────────────────────
 
+/** 生殖干预（1.5.3）每种效果给模型的说明；工具只送开放的那几种 */
+export const REPRO_EFFECT_TOOL_TEXT = Object.freeze({
+  phase: 'phase 切换月经相关阶段（stage 只接受卵泡期、排卵期、黄体期、月经期、乏情期、产后恢复、假孕期；外力催经、被咒假孕、封印进乏情，或正文写她来月经了而状态不符时对齐；已有胎儿或受精进行中、真妊娠、回归期、产兆前驱、产程时会被拒绝）',
+  emergency: 'emergency 事后避孕（仅着床前、处理服药前已有的接触；越晚越差、着床后无效；服药不等于成功，结果由系统结算，下一次叙事才提示）',
+  pill: 'pill 避孕药（生效期间抑制排卵，照世界基准的可靠度）',
+  regulate: 'regulate 调经（这一轮起周期规律）',
+  ovulation: 'ovulation 促排卵（下一次排卵多排卵，strong 在卵泡期时直接催到排卵期）',
+  fertility: 'fertility 助孕（受孕难度降低、这一轮卵子品质提高：更容易受精、着床更稳、胎儿起点更好；只在着床前有意义，保胎不是这个工具，走 bsFetalEvent）',
+  twinning: 'twinning 促分裂（同卵多胞胎机率提高）',
+  chimera: 'chimera 促嵌合（同一次受孕的胚胎融合成嵌合体的机率提高，要先有两颗以上胚胎，常配促排卵）',
+  amnion: 'amnion 固膜（孕期中羊膜每天修复一点、受宫压与排斥的磨损减轻，进产程时胎膜比较完整；产程中无效）',
+  abortifacient: 'abortifacient 堕胎（只对已着床、还没发动的妊娠；每一胎各自掷成败，孕期越后越难；没流掉的胎儿照样受伤，她多半以为已经流掉了。结果由系统结算）',
+  induce: 'induce 催产（孕晚期起；照强度与离足月多远掷会不会发动，成了就进入产兆前驱，未足月就是早产；没成只是宫缩几阵又停。结果由系统结算）',
+});
+
+export function describeReproductiveInterventionTool(allowed = Object.keys(REPRO_EFFECT_TOOL_TEXT)) {
+  const keys = allowed.filter((key) => REPRO_EFFECT_TOOL_TEXT[key]);
+  const lasting = keys.filter((key) => !['phase', 'emergency', 'abortifacient', 'induce'].includes(key));
+  return '生殖干预：剧情里吃了药、用了法术或外力改变生殖状态，或照正文对齐月经阶段时调用。只有世界观里存在、剧情确实使用了才调用，不得引入世界观没有的药或手段。'
+    + 'payload.drug_catalog 有列药时，drug 只能填名录里的药名，效果照名录（不必再给 effect）；名录是空的才直接给 effect。'
+    + `\neffect：${keys.map((key) => REPRO_EFFECT_TOOL_TEXT[key]).join('；')}。`
+    + '\nstrength：light、normal、strong（省略为 normal）。'
+    + (lasting.length ? `${lasting.join('、')} 生效到期为止（days 或 hours 是持续时间，省略照名录或预设），其余立即结算、不留在身上。` : '全部立即结算、不留在身上。');
+}
+
 export const TOOL_DEFINITIONS = Object.freeze([
   {
     name: 'bsPassedTime',
@@ -289,19 +314,20 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
-    name: 'bsSetMenstrualPhases',
-    description: '直接设置月经相关阶段，用于催情、药物、外力或剧情推进。'
-      + 'stage 只接受这几个值：卵泡期、排卵期、黄体期、月经期、乏情期、产后恢复、假孕期；其他值（含妊娠阶段与回归期）一律拒绝，无法用本工具让角色怀孕或结束妊娠。'
-      + '切到排卵期时会重新允许高潮排卵，切到黄体期时也会刷新一次；假孕期可留精但不会排卵或受孕。'
-      + '乏情期是长周期物种月经后的静止期，不会自然排卵；只有子宫被灌满、且至少八成是异种精液时，高潮才会诱发排卵。物种没有乏情期时切过去会立刻进入卵泡期。'
-      + '角色体内已有胎儿或受精进行中，或正处于真妊娠、回归期、产兆前驱、产程时，本工具会被拒绝，不会覆盖这些状态。',
+    name: 'bsReproductiveIntervention',
+    description: describeReproductiveInterventionTool(),
     input_schema: {
       type: 'object',
       properties: {
         female: { type: 'string' },
-        stage: { type: 'string' },
+        drug: { type: 'string', description: '药物名录的药名；名录是空的时可写剧情里的药名当标签' },
+        effect: { type: 'string', enum: Object.keys(REPRO_EFFECT_TOOL_TEXT) },
+        stage: { type: 'string', description: 'effect=phase 时要切到的阶段' },
+        strength: { type: 'string', enum: ['light', 'normal', 'strong'] },
+        days: { type: 'number' },
+        hours: { type: 'number' },
       },
-      required: ['female', 'stage'],
+      required: ['female'],
       additionalProperties: false,
     },
   },
@@ -332,7 +358,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAbortion',
-    description: 'purpose=emergency 表示事后避孕药/紧急避孕尝试（或世界观中的等效手段，如药草、魔法；世界观没有的手段不得引入），仅著床前处理服药前已有接触，按各自接触时间结算，窗口沿用该角色的着床时长，成功不清可见残留，不提供未来保护；服药不等于成功，结果只在下一次叙事提示，不代表角色知道。purpose=termination（旧调用默认）表示已明确成功的人工终止，purpose=miscarriage 落实非人工流产；确定结果不重抽，不自动 force。' + '已成立妊娠的自然流产与人工终止分别累计，著床前不计妊娠损失。'
+    description: '已成立的妊娠：purpose=termination（省略时默认）表示已明确成功的人工终止，purpose=miscarriage 落实非人工流产；确定结果不重抽，不自动 force。事后避孕不是这个工具，走 bsReproductiveIntervention effect=emergency；吃药、草药、法术这类结果不确定的堕胎也不是，走 bsReproductiveIntervention（名录里的堕胎药，由系统掷成败）。这里只用于结果已确定的处置（手术、正文已确认流掉）。' + '已成立妊娠的自然流产与人工终止分别累计，著床前不计妊娠损失。'
       + '可指定 fetusIndex 做减胎（只拿掉那一胎，其余继续）；fetusIndex 从 0 起算，越界会被拒绝——'
       + '系统通知与介面说的「第 2 胎」对应 fetusIndex=1，不要直接照抄那个序号。省略 fetusIndex 则终止整个妊娠。'
       + '若 miscarriage 保护开启，则需 force=true 才会生效。',
@@ -340,7 +366,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       type: 'object',
       properties: {
         female: { type: 'string' },
-        purpose: { type: 'string', enum: ['emergency', 'termination', 'miscarriage'] },
+        purpose: { type: 'string', enum: ['termination', 'miscarriage'] },
         force: { type: 'boolean' },
         fetusIndex: { type: 'integer' },
       },
@@ -355,7 +381,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       + '\naction=extend：第一次只能在逾期（满 42 周），或由逾期发动的产兆前驱使用，妊娠会维持到第 52 周；'
       + '之后延产期满会进入产兆前驱，可在那次产兆前驱再用，每次再延 28 天；第二次起每延一次会加深子宫乏力（宫压与性欲上限下降、产程变慢、产后恢复变长）。'
       + '已破水、已进入产程时不能延产。'
-      + '\naction=induce：引产，结束延产期并立即进入产兆前驱；延产期间这是唯一的出口——不能剖腹（bsChildbirth）也不能终止妊娠（bsAbortion）。'
+      + '\naction=induce：引产，结束延产期并立即进入产兆前驱（结果确定）；看机率的催产药走 bsReproductiveIntervention。延产期间这是唯一确定的出口——不能剖腹（bsChildbirth）也不能终止妊娠（bsAbortion）。'
       + '\n延产期间宫压不会自行累积，也不会引发流产或产程；羊膜每天回复一点、不会破水。',
     input_schema: {
       type: 'object',

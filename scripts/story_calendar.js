@@ -4,6 +4,7 @@
 import { DORMANCY_STAGE, DUE_DATE_DAYS, LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGE_DAYS } from './stage_config.js';
 import { getGestationEffectiveSpeed } from './state.js';
 import { applySeasonAnchor, getNextMenstrualStage, getPseudoPregnancyLimit, getStageLimit } from './tools.js';
+import { cycleLengthSpread } from './egg_quality.js';
 
 const MINUTES_PER_DAY = 24 * 60;
 const MAX_SEGMENTS = 2000;
@@ -58,6 +59,8 @@ export function projectStageTimeline(profile, fromMinutes, toMinutes) {
     else segments.push({ stage, start: t, end, ...(open ? { open: true } : {}) });
     t = end;
   };
+  // 这一轮的长度已经掷好；往后推算的新一轮掷不出来，照期望（系数 1），会乱的人在月经起点前后标出可能的范围
+  let projectedCycle = false;
   for (let guard = 0; t < toMinutes && guard < MAX_SEGMENTS; guard += 1) {
     const stage = String(p.base.stage || '').trim();
     const days = Math.max(0, num(p.base.days));
@@ -66,11 +69,23 @@ export function projectStageTimeline(profile, fromMinutes, toMinutes) {
       const limit = getStageLimit(p, stage);
       if (limit === null) { push(stage, 0, true); break; }
       const left = Math.max(0, limit - days);
+      if (stage === '月经期' && projectedCycle && left > 0) {
+        const spread = cycleLengthSpread(p.base.eggQuality);
+        if (spread > 0) {
+          const cycleDays = ['卵泡期', '排卵期', '黄体期', '月经期'].reduce((sum, item) => sum + (getStageLimit(p, item) || 0), 0);
+          const margin = spread * cycleDays * MINUTES_PER_DAY;
+          marks.push({ kind: 'mensesRange', from: t - margin, to: t + margin });
+        }
+      }
       if (left > 0) push(stage, left);
       if (t >= toMinutes) break;
       if (stage === '月经期') applySeasonAnchor(p, t);
       p.base.stage = getNextMenstrualStage(p, stage) || '卵泡期';
       if (p.base.stage !== DORMANCY_STAGE) delete p.base.seasonDormancyDays;
+      if (p.base.stage === '卵泡期') {
+        projectedCycle = true;
+        p.base.cycleLengthFactor = 1;
+      }
       p.base.days = 0;
       continue;
     }
@@ -114,7 +129,7 @@ export function projectStageTimeline(profile, fromMinutes, toMinutes) {
     push(stage, 0, true);
     break;
   }
-  return { segments, marks: marks.filter((mark) => mark.at >= fromMinutes && mark.at <= toMinutes) };
+  return { segments, marks: marks.filter((mark) => (mark.kind === 'mensesRange' ? mark.to >= fromMinutes && mark.from <= toMinutes : mark.at >= fromMinutes && mark.at <= toMinutes)) };
 }
 
 /**
@@ -155,6 +170,6 @@ export function stageOnDay(timeline, dayStart) {
     // 纪录接推算、快照接快照的地方阶段没变，不算转入
     if (index > 0 && segment.start > dayStart && segment.start < dayEnd && segments[index - 1].stage !== segment.stage) changes.push(segment.stage);
   });
-  const marks = (timeline?.marks || []).filter((mark) => mark.at >= dayStart && mark.at < dayEnd).map((mark) => mark.kind);
+  const marks = (timeline?.marks || []).filter((mark) => (mark.kind === 'mensesRange' ? mark.to > dayStart && mark.from < dayEnd : mark.at >= dayStart && mark.at < dayEnd)).map((mark) => mark.kind);
   return best ? { stage: best.stage, group: stageGroupOf(best.stage), predicted: best.predicted === true, open: best.open === true, changes, marks } : (marks.length ? { stage: '', group: '', changes, marks } : null);
 }

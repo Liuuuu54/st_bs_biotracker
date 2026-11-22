@@ -89,3 +89,73 @@ test('繁殖季锚点：月日或季名；下一次到那天的时刻', () => {
   const leap = nextAnchorMinutes(cal, getBreedingAnchor(cal, '猫妖'), 0);
   assert.deepEqual([dateAt(cal, leap).month, dateAt(cal, leap).day], [2, 28], '2027 平年，2/29 落到 2/28');
 });
+
+test('闰日锚点：闰年 2/29 开季，平年落到 2/28；跨年的季照样每年同一天', () => {
+  const cal = normalizeCalendar({ mode: 'gregorian', start: { year: 2027, month: 6, day: 1 }, breedingSeasons: { 天使: { month: 2, day: 29 }, 兽耳族: { month: 12, day: 20 } } });
+  const at = (anchor, from) => { const m = nextAnchorMinutes(cal, anchor, from); const d = dateAt(cal, m); return `${d.year}/${d.month}/${d.day}`; };
+  const leapAnchor = getBreedingAnchor(cal, '天使');
+  assert.equal(at(leapAnchor, 0), '2028/2/29');
+  assert.equal(at(leapAnchor, minutesAtDate(cal, 2028, 3, 1)), '2029/2/28');
+  assert.equal(at(getBreedingAnchor(cal, '兽耳族'), minutesAtDate(cal, 2027, 12, 21)), '2028/12/20');
+});
+
+test('法定岁数与生日（1.5.3）：照活过的时间算，过了生日才加一；卡上写的生日对得上', async () => {
+  const { legalAge, nextBirthdayMinutes, formatBirthday, earthAgeForBirthday } = await import('../scripts/calendar.js');
+  const cal = normalizeCalendar({ mode: 'custom', months: ['霜月', '雪月', '冰月', '萌月', '花月', '炎月', '烈月', '稻月', '叶月', '枯月'].map((name) => ({ name, days: 40 })), start: { year: 88, month: 1, day: 12 } });
+  const earth = fromLocalYears(140.25, cal);
+  assert.equal(legalAge(earth, cal), 140);
+  assert.equal(Math.round(nextBirthdayMinutes(earth, cal, 0) / 1440), 300, '还差 0.75 个当地年＝300 天');
+  // 卡上写「生日：萌月1日」，法定 140 岁
+  const aged = earthAgeForBirthday(140, cal, 0, { month: 4, day: 1 });
+  assert.equal(legalAge(aged, cal), 140);
+  assert.equal(formatBirthday(aged, cal, 0), '萌月1日');
+  // 活过 300 天之后过生日：141 岁，生日不变
+  const later = aged + 300 / 365;
+  assert.equal(legalAge(later, cal), 141);
+  assert.equal(formatBirthday(later, cal, 300 * 1440), '萌月1日');
+  // 今天就是生日：小数为 0
+  assert.equal(legalAge(earthAgeForBirthday(20, cal, 0, { month: 1, day: 12 }), cal), 20);
+  assert.equal(formatBirthday(earthAgeForBirthday(20, cal, 0, { month: 1, day: 12 }), cal, 0), '霜月12日');
+  // 没有历法：地球年取整
+  assert.equal(legalAge(22.9, null), 22);
+});
+
+test('注册定生日（1.5.3）：没写生日在这一岁里随机落一天，写了照它，重新注册岁数没变就沿用', async () => {
+  const { registrationEarthAge, legalAge, birthdayOf } = await import('../scripts/calendar.js');
+  // 没历法：24 岁 + 这一岁的随机位置
+  assert.equal(registrationEarthAge(24, null, 0, { random: () => 0.25 }), 24.25);
+  assert.equal(registrationEarthAge(24, null, 0, { random: () => 0 }), 24);
+  // 带小数的（半岁婴儿）照写的，不掷
+  assert.equal(registrationEarthAge(0.5, null, 0, { random: () => 0.9 }), 0.5);
+  // 重新注册：法定岁数相同沿用旧年龄，生日不跳；长了一岁才重掷
+  assert.equal(registrationEarthAge(24, null, 0, { previousAge: 24.71, random: () => 0.1 }), 24.71);
+  assert.equal(registrationEarthAge(25, null, 0, { previousAge: 24.71, random: () => 0.1 }), 25.1);
+  // 有历法：法定岁数照当地年，卡上写明生日就落在那天
+  const age = registrationEarthAge(20, roshar, 0, { birthday: { month: 5, day: 12 }, random: () => 0.9 });
+  assert.equal(legalAge(age, roshar), 20);
+  const birthday = birthdayOf(age, roshar, 0);
+  assert.deepEqual([birthday.month, birthday.day], [5, 12]);
+  // 不同的随机落在不同的日子
+  const a = birthdayOf(registrationEarthAge(20, roshar, 0, { random: () => 0.2 }), roshar, 0);
+  const b = birthdayOf(registrationEarthAge(20, roshar, 0, { random: () => 0.7 }), roshar, 0);
+  assert.notDeepEqual([a.month, a.day], [b.month, b.day]);
+  assert.equal(registrationEarthAge('不知道', roshar), null);
+});
+
+test('长大（1.5.3）：上次改变后过了一个生日就能再记', async () => {
+  const { getGrowthWaitYears } = await import('../scripts/tools.js');
+  // 24.7 岁改过：25 岁生日（还差 0.3 年）就能再记，不必等到 25.7
+  assert.ok(Math.abs(getGrowthWaitYears({ age: 24.7, bodyChangedAtAge: 24.7 }) - 0.3) < 1e-9);
+  assert.ok(getGrowthWaitYears({ age: 25, bodyChangedAtAge: 24.7 }) <= 1e-9);
+  assert.ok(getGrowthWaitYears({ age: 24.99, bodyChangedAtAge: 24.1 }) > 0, '同一岁里不能再长');
+});
+
+test('掷生日：每一天机会相同，公历不掷出 2/29，没历法回传 null', async () => {
+  const { randomBirthday } = await import('../scripts/calendar.js');
+  assert.equal(randomBirthday(null), null);
+  assert.deepEqual(randomBirthday(roshar, () => 0), { month: 1, day: 1 });
+  assert.deepEqual(randomBirthday(roshar, () => 0.999999), { month: 10, day: 50 });
+  assert.deepEqual(randomBirthday(roshar, () => 0.5), { month: 6, day: 1 });
+  const greg = normalizeCalendar({ mode: 'gregorian', start: { year: 2024, month: 1, day: 1 } });
+  assert.deepEqual(randomBirthday(greg, () => 59 / 365), { month: 3, day: 1 }, '平年第 60 天是 3/1');
+});

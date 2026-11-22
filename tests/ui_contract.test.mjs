@@ -43,11 +43,11 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(html, /id="bs-bt-register-skill-result"/);
   assert.deepEqual(
     [...html.matchAll(/data-encyclopedia-tab="([^"]+)"/g)].map((match) => match[1]),
-    ['race', 'world', 'calendar', 'calculator'],
+    ['race', 'world', 'calendar', 'drugs', 'calculator'],
   );
   assert.deepEqual(
     [...html.matchAll(/data-encyclopedia-tab="[^"]+">([^<]+)<\/button>/g)].map((match) => match[1]),
-    ['物种', '基准', '历法', '计算'],
+    ['物种', '基准', '历法', '药物', '计算'],
   );
   assert.match(html, /data-encyclopedia-page="world"[\s\S]*?id="bs-bt-world-baseline-prompt"/);
   assert.match(html, /data-encyclopedia-page="calculator"[\s\S]*?id="bs-bt-calculator-tabs"/);
@@ -72,7 +72,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.doesNotMatch(html, /id="bs-bt-calc-implant-/);
   assert.doesNotMatch(html, /id="bs-bt-calc-derived-modifier"/);
   assert.match(html, /id="bs-bt-calc-offspring-stage"/);
-  assert.match(controller, /selectedEncyclopediaSubpage = \['race', 'world', 'calendar', 'calculator'\]\.includes\(page\)/);
+  assert.match(controller, /selectedEncyclopediaSubpage = \['race', 'world', 'calendar', 'drugs', 'calculator'\]\.includes\(page\)/);
   assert.match(controller, /bs-bt-race-open-editor'[\s\S]*?scrollEncyclopediaToTop\(\)[\s\S]*?openRacePhysiologyEditor/);
   assert.doesNotMatch(html, /id="bs-bt-register-skill-load-child"/);
   assert.doesNotMatch(html, /用自然语言描述角色注册时应具备的技能与天赋/);

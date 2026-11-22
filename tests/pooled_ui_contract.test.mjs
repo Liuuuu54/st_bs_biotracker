@@ -167,7 +167,8 @@ test('legacy sperm prompt projection remains unchanged, including upstream exten
   const mainflow = buildMainFlowPrompt(ctx, settings);
   assert.deepEqual(payload.existing_state.A.profile.base.sperms[0], before);
   const narrated = JSON.parse(mainflow.match(/\[当前已注册角色状态\]\n(.+)/)[1].split('<\\/').join('</'));
-  assert.deepEqual(narrated.A.profile.base.sperms[0], before);
+  // 主线只把量换成文字（1.5.3），其余栏位照旧
+  assert.deepEqual(narrated.A.profile.base.sperms[0], { ...before, value: '一些' });
   assert.deepEqual(character.profile.base.sperms[0], before);
 });
 
@@ -215,7 +216,7 @@ test('actual tracker payload and mainflow prompt exclude pool randomness, source
     bodySize: 1.75, quality: 1, value: profile.base.sperms[0].value, blocked: true,
   });
   const narrated = JSON.parse(mainflow.match(/\[当前已注册角色状态\]\n(.+)/)[1].split('<\\/').join('</'));
-  assert.deepEqual(narrated.A.profile.base.sperms[0], promptSperm);
+  assert.deepEqual(narrated.A.profile.base.sperms[0], { ...promptSperm, value: '一些' }, '主线只把量换成文字');
   assert.deepEqual(payload.existing_state.A.profile.pregnant.fetuses[0].pooledConception, { minute: 120 });
   assert.deepEqual(payload.existing_state.A.profile.children[0].pooledConception, { minute: 100 });
   assert.equal(payload.existing_state.B.offscreen, true);

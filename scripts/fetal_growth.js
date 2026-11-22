@@ -131,7 +131,7 @@ export function getFetalGrowthRate(ownAge, shape) {
 /**
  * 一胎踢起来有多用力（孕体特写的动画与生殖疼痛共用，画面与数值才一致）：
  * size 胎量（份量 × 胎重 × 份量倍率）、weight 胎重、healthPct 健康 0–100（50 平常）、uterinePct 宫压占上限 0–100、
- * vigorHard 活力档的力道倍率（活力档还没有资料，一律是「一般」的 1）。回传 0 到约 2.6。
+ * vigorHard 活力档的力道倍率（活力档＝今天的动静，见 fetal_activity.js）。回传 0 到约 2.6。
  */
 export function getFetalKickStrength({ size = 0, weight = 1, healthPct = 50, uterinePct = 0, vigorHard = 1 } = {}) {
   const clamp01 = (value) => Math.max(0, Math.min(1, value));

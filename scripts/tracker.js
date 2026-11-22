@@ -1,10 +1,16 @@
-import { describeCalendarForPrompt, getActiveCalendar, toLocalYears } from './calendar.js';
+import { describeCalendarForPrompt, formatBirthday, getActiveCalendar, legalAge, toLocalYears } from './calendar.js';
 import { describeSheathOffset, normalizeSheathOffset } from './body_size.js';
 import { inferPendingPsychology } from './registry.js';
 import { findWorldInfoMissingFromSnapshot, resolveHostWorldInfo, stripExcludedFromSnapshot } from './worldinfo_resolve.js';
 import { isOwnRequest } from './own_requests.js';
 import { getWorldbookEntryActivationMode, worldbookEntryKeywordsMatch } from './worldbook_match.js';
 import { getDisabledSpecialToolNames, isRealisticWorld } from './world_mode.js';
+import { BASIC_REPRO_EFFECTS, REPRO_EFFECTS, REPRO_EFFECT_KEYS, getActiveDrugCatalog, hasCustomDrugCatalog, isEffectInCatalog } from './repro_effects.js';
+import { describeReproductiveInterventionTool } from './prompts/tool_definitions.js';
+import { describeMovementCue } from './fetal_activity.js';
+import { describeCycleCondition, describeFertility } from './egg_quality.js';
+import { fertilityMultiplier } from './repro_effects.js';
+import { getLibidoCap, getNarrativeNeedLevels, getUterinePressureCap } from './tools.js';
 import { syncCardSettings } from './card_settings.js';
 import { contraceptionLevels, naturalNoticeDays, psychologySide } from './reproductive.js';
 import { buildSirePromptEntries, getGuardingSire } from './sires.js';
@@ -49,9 +55,11 @@ import {
   shouldTriggerForMessage,
   worldbookSelectionMatches,
   normalizeWorldbookMode,
+  getPsyStressInitByLevel,
+  getVitalityInitByLevel,
 } from './state.js';
 import { getDerivedTypeMetabolismExemptions } from './race_config.js';
-import { LABOR_STAGES, PREGNANCY_STAGES } from './stage_config.js';
+import { LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGES } from './stage_config.js';
 import { DESCRIPTION_FIELDS, descriptionListToObject, getStaleDescriptionFields } from './descriptions.js';
 import { canLoadHostWorldInfo, getHostAgentRunBarrier, getHostChat, getHostExtensionSettings, getHostKind, loadHostWorldInfo, refreshHostChatView } from './host.js';
 
@@ -880,19 +888,25 @@ function getDiaryRecentLimit(settings, characterCount) {
  * 与角色卡、世界书写的「她 18 岁」同一把尺。孩子与精方一样换。
  */
 const localYears = (value, calendar) => (Number.isFinite(Number(value)) && value !== null ? Math.round(toLocalYears(Number(value), calendar) * 10) / 10 : value);
-function localizeStateAges(state, calendar) {
+function localizeStateAges(state, calendar, nowMinutes = 0) {
   if (!calendar || !state || typeof state !== 'object') return state;
   for (const item of Object.values(state)) {
     const profile = item?.profile;
     if (!profile) continue;
-    if (profile.base && profile.base.age !== undefined) profile.base.age = localYears(profile.base.age, calendar);
+    // 本人：法定岁数（整数）＋生日（1.5.3）
+    if (profile.base && profile.base.age !== undefined && profile.base.age !== null && Number.isFinite(Number(profile.base.age))) {
+      const earth = Number(profile.base.age);
+      profile.base.age = legalAge(earth, calendar);
+      const birthday = formatBirthday(earth, calendar, nowMinutes);
+      if (birthday) profile.base.birthday = birthday;
+    }
     if (Array.isArray(profile.children)) profile.children = profile.children.map((child) => (child && child.age !== undefined ? { ...child, age: localYears(child.age, calendar) } : child));
   }
   return state;
 }
 function localizeSireAges(entries, calendar) {
   if (!calendar || !Array.isArray(entries)) return entries;
-  return entries.map((entry) => (entry && entry.age !== undefined ? { ...entry, age: localYears(entry.age, calendar), ...(entry.bodyChangedAtAge !== undefined ? { bodyChangedAtAge: localYears(entry.bodyChangedAtAge, calendar) } : {}) } : entry));
+  return entries.map((entry) => (entry && entry.age !== undefined ? { ...entry, age: entry.age === null ? null : legalAge(Number(entry.age), calendar), ...(entry.bodyChangedAtAge !== undefined ? { bodyChangedAtAge: localYears(entry.bodyChangedAtAge, calendar) } : {}) } : entry));
 }
 
 export function hasBreedingPsychology(existingState = {}) {
@@ -944,7 +958,34 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
   const derivedOff = hiddenTools.has('bsRecordExperience:transform') || isRealisticWorld(settings);
   const bodyOff = hiddenTools.has('bsRecordExperience:body');
   const transformOff = derivedOff || bodyOff;
-  return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name)).map((tool) => (transformOff && tool.name === 'bsRecordExperience' ? withoutTransformAction(tool, { derivedOff, bodyOff }) : tool));
+  const allowedEffects = getAllowedReproEffects(settings);
+  return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name)).map((tool) => {
+    if (transformOff && tool.name === 'bsRecordExperience') return withoutTransformAction(tool, { derivedOff, bodyOff });
+    if (tool.name === 'bsReproductiveIntervention') return withAllowedEffects(tool, allowedEffects);
+    return tool;
+  });
+}
+
+/**
+ * 生殖干预能用哪些效果（1.5.3）：「生殖药物」关掉只剩切换阶段与事后避孕；写实世界只留现实存在的；
+ * 助孕、促分裂、促嵌合这类奇幻效果要名录里有药带它才开放
+ */
+export function getAllowedReproEffects(settings, { forCatalog = false } = {}) {
+  const drugsOn = !getDisabledSpecialToolNames(settings).includes('bsReproductiveIntervention:drugs');
+  const realistic = isRealisticWorld(settings);
+  const catalog = forCatalog ? [] : getActiveDrugCatalog();
+  // forCatalog：拟定名录时能写哪些效果——只看开关与写实世界，不看目前名录有没有
+  return REPRO_EFFECT_KEYS.filter((key) => (drugsOn ? true : BASIC_REPRO_EFFECTS.includes(key))
+    && (!realistic || REPRO_EFFECTS[key].realistic)
+    && (forCatalog || !REPRO_EFFECTS[key].catalogOnly || isEffectInCatalog(key, catalog)));
+}
+
+/** 只送开放的效果：enum 与说明都只留这几种（没开放的效果说明不占 token） */
+function withAllowedEffects(tool, allowed) {
+  if (allowed.length === REPRO_EFFECT_KEYS.length) return tool;
+  const properties = { ...(tool.input_schema?.properties || {}) };
+  properties.effect = { ...properties.effect, enum: allowed };
+  return { ...tool, description: describeReproductiveInterventionTool(allowed), input_schema: { ...tool.input_schema, properties } };
 }
 
 /** 衍生转化关掉时：bsRecordExperience 拿掉 transform 这个 action、它的参数与说明 */
@@ -1137,6 +1178,31 @@ function describeFigureForPrompt(sourceProfile) {
   ].join('，');
 }
 
+/** 胎动提示（1.5.3）：角色已知、已着床、没封在宿主里的胎儿各自今天的动静 */
+export function buildMovementCue(profile, minutesPassed = 0) {
+  const pregnant = profile?.pregnant || {};
+  const fetuses = (pregnant.fetuses || []).filter((fetus) => fetus && !fetus.pendingImplantation && isFetusKnownToCharacter(fetus) && !(fetus.nestedInEmbryoId && !fetus.nestedReleased));
+  const stressCap = Math.max(1, getPsyStressInitByLevel(profile?.base?.psyStressLevel) * 2);
+  return describeMovementCue(fetuses, {
+    storyDay: Math.floor((Number(minutesPassed) || 0) / 1440),
+    effectiveDays: Number(pregnant.effectivePregnantDays) || 0,
+    stressRatio: (Number(profile?.base?.psyStress) || 0) / stressCap,
+  });
+}
+
+/**
+ * 追踪跑完这一轮后记下「今天已经强推过胎动」：这一轮的主线提示已经要求过正文带一笔，
+ * 同一个故事日后面的回合降回许可，免得每轮都踢。
+ */
+export function markMovementCueDelivered(chatState) {
+  const day = Math.floor((Number(chatState?.minutesPassed) || 0) / 1440);
+  for (const item of Object.values(chatState?.characters || {})) {
+    const profile = item?.profile;
+    if (!profile?.base || !canFeelFetalMovement(profile)) continue;
+    if (buildMovementCue(profile, chatState.minutesPassed).push) profile.base.movementCueDay = day;
+  }
+}
+
 function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true, minutesPassed = 0, reproductiveSettings = null, guardingSireOf = () => '') {
   const next = cloneValue(item);
   const profile = next?.profile || {};
@@ -1146,10 +1212,16 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   const metabolism = profile.metabolism || {};
   const sendPregnantState = shouldSendPregnantState(base, pregnant);
 
+  // 卵子品质（1.5.3）：与精方的 virility／condition 一样给文字；怀孕、产后不送（这时用不到）
+  const inCycle = MENSTRUAL_STAGES.includes(String(base.stage || ''));
+  const fertility = inCycle ? describeFertility(base.eggQuality) : '';
+  const cycleCondition = inCycle ? describeCycleCondition({ eggQuality: base.eggQuality, cycleEggQuality: base.cycleEggQuality, boosted: fertilityMultiplier(item.profile) > 1 }) : '';
   profile.base = {
     ...base,
     vitalityLevelText: getVitalityLevelText(base.vitalityLevel),
     psyStressLevelText: getPsyStressLevelText(base.psyStressLevel),
+    ...(fertility ? { fertility } : {}),
+    ...(cycleCondition ? { cycleCondition } : {}),
   };
   // 聚合 view 会继承 contact 元数据；pooled 提示词只取叙事字段，阻断历史/审计旁路。
   // next 已深拷贝，权威 contacts 与持久化聚合 view 均保持原样；legacy 不改。
@@ -1273,6 +1345,15 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   // 胎动感知看胎量（tools.js canFeelFetalMovement），有着床胎儿才送
   if (profile.pregnant && (item?.profile?.pregnant?.fetuses || []).some((fetus) => fetus && !fetus.pendingImplantation)) {
     profile.pregnant.fetalMovementFelt = canFeelFetalMovement(item.profile);
+    // 胎动提示（1.5.3）：感觉得到时附上每一胎今天的动静（安静／一般／好动／激烈，每个故事日掷一次）
+    if (profile.pregnant.fetalMovementFelt) {
+      const cue = buildMovementCue(item.profile, minutesPassed);
+      if (cue.text) {
+        profile.pregnant.movementCue = cue.text;
+        // 有好动以上的胎儿、今天还没强推过：要求正文带一笔
+        if (cue.push && Number(item.profile?.base?.movementCueDay) !== Math.floor((Number(minutesPassed) || 0) / 1440)) profile.pregnant.movementCuePush = true;
+      }
+    }
   }
   // 母胎分配只在有着床胎儿时送文字
   if (profile.pregnant && (item?.profile?.pregnant?.fetuses || []).some((fetus) => fetus && !fetus.pendingImplantation)) {
@@ -1484,6 +1565,101 @@ function stripSkillFields(view) {
     if (child && typeof child === 'object') delete child.talents;
   }
   return view;
+}
+
+// ---- 主线状态文字化（1.5.3）----
+// 写剧情的模型看裸数字读不出轻重（宫压 40 是轻是重要看上限，上限又随孕程变），
+// 主线这份把数值换成照各自上限判定的分级文字，用不到的数值直接拿掉；追踪模型那份照旧给数字（它要算增减）。
+const tier = (ratio, steps) => steps.find(([limit]) => ratio < limit)?.[1] ?? steps[steps.length - 1][1];
+const ratioOf = (value, cap) => Math.max(0, Number(value) || 0) / Math.max(1, Number(cap) || 1);
+const VITALITY_TIERS = [[0.1, '虚脱'], [0.3, '筋疲力尽'], [0.55, '疲惫'], [0.8, '尚有精神'], [Infinity, '精力充沛']];
+// 情压的初始值就是上限的一半（平常的状态），一半上下都算平稳
+const STRESS_TIERS = [[0.25, '放松'], [0.6, '平稳'], [0.75, '紧绷'], [0.9, '焦虑不安'], [Infinity, '濒临崩溃']];
+const LIBIDO_TIERS = [[0.15, '平静'], [0.4, '微有欲念'], [0.7, '情动'], [0.95, '欲火难耐'], [Infinity, '到了顶点']];
+const PRESSURE_TIERS = [[0.15, '松弛'], [0.33, '偶尔发紧'], [0.5, '明显发紧'], [0.66, '紧绷发硬（宫压危机）'], [Infinity, '剧烈紧缩（宫压危机）']];
+const CONTRACTION_TIERS = [[0.33, '宫缩轻'], [0.66, '宫缩规律有力'], [Infinity, '宫缩强烈']];
+const LABOR_PRESSURE_STAGES = ['产兆前驱', '第一产程', '第二产程', '第三产程'];
+
+function describeAmnion(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return undefined;
+  if (num <= 0) return '已破';
+  return num >= 70 ? '完好' : num >= 40 ? '变薄' : '很薄';
+}
+
+function describeBellySize(value) {
+  const num = Number(value) || 0;
+  return tier(num, [[0.3, '平坦'], [1.5, '微隆'], [3.5, '明显隆起'], [6, '浑圆'], [8, '足月大小'], [10, '硕大'], [Infinity, '巨大（任何衣服都包不住）']]);
+}
+
+function describeFetalSize(weight) {
+  const num = Number(weight);
+  if (!Number.isFinite(num)) return undefined;
+  return num < 0.9 ? '偏小' : num > 1.1 ? '偏大' : '适中';
+}
+
+function describeAffinity(value) {
+  const num = Number(value) || 0;
+  return num >= 20 ? '亲近' : num >= 5 ? '略亲' : num > -5 ? '一般' : num > -20 ? '疏离' : '排斥';
+}
+
+function describeSpermAmount(value) {
+  const num = Number(value) || 0;
+  return num < 10 ? '残留少许' : num < 40 ? '一些' : num < 100 ? '不少' : '大量';
+}
+
+/** 一位角色的主线状态：view 是送出的那份（会被改写），source 是原始档案（拿上限） */
+function narrateProfileNumbers(view, source) {
+  const base = view?.base;
+  const raw = source?.base || {};
+  if (base) {
+    const stage = String(raw.stage || base.stage || '');
+    if (base.vitality !== undefined) base.vitality = tier(ratioOf(raw.vitality, getVitalityInitByLevel(raw.vitalityLevel)), VITALITY_TIERS);
+    if (base.psyStress !== undefined) base.psyStress = tier(ratioOf(raw.psyStress, getPsyStressInitByLevel(raw.psyStressLevel) * 2), STRESS_TIERS);
+    if (base.libido !== undefined) base.libido = tier(ratioOf(raw.libido, getLibidoCap(source)), LIBIDO_TIERS);
+    if (base.uterinePressure !== undefined) {
+      base.uterinePressure = tier(ratioOf(raw.uterinePressure, getUterinePressureCap(source)), LABOR_PRESSURE_STAGES.includes(stage) ? CONTRACTION_TIERS : PRESSURE_TIERS);
+    }
+    for (const key of ['eggQuality', 'cycleEggQuality', 'cycleLengthFactor', 'eggs', 'fertilizationDays', 'seasonCycle', 'vitalityLevel', 'psyStressLevel']) delete base[key];
+    if (Array.isArray(base.sperms)) base.sperms = base.sperms.map((sperm) => (sperm && typeof sperm === 'object' && sperm.value !== undefined ? { ...sperm, value: describeSpermAmount(sperm.value) } : sperm));
+  }
+  if (view.metabolism && typeof view.metabolism === 'object') {
+    const levels = getNarrativeNeedLevels(source);
+    view.metabolism = Object.fromEntries(Object.entries(levels).filter(([, level]) => level !== '无'));
+    if (!Object.keys(view.metabolism).length) delete view.metabolism;
+  }
+  const pregnant = view.pregnant;
+  if (pregnant && typeof pregnant === 'object') {
+    delete pregnant.effectivePregnantDays;
+    if (pregnant.amnionDurability !== undefined) pregnant.amnionDurability = describeAmnion(pregnant.amnionDurability);
+    if (pregnant.bellySize !== undefined) pregnant.bellySize = describeBellySize(pregnant.bellySize);
+    if (pregnant.pushFatigue !== undefined) {
+      const fatigue = Number(pregnant.pushFatigue) || 0;
+      pregnant.pushFatigue = fatigue >= 60 ? '力竭' : fatigue >= 30 ? '疲惫' : '还有余力';
+    }
+    if (Array.isArray(pregnant.fetuses)) {
+      for (const fetus of pregnant.fetuses) {
+        if (!fetus || typeof fetus !== 'object') continue;
+        if (fetus.weight !== undefined) fetus.weight = describeFetalSize(fetus.weight);
+        if (fetus.affinity !== undefined) fetus.affinity = describeAffinity(fetus.affinity);
+        if (fetus.amnionDurability !== undefined) fetus.amnionDurability = describeAmnion(fetus.amnionDurability);
+        delete fetus.eggQuality;
+        if (fetus.tendencyAngleText) delete fetus.tendencyAngle;
+        if (!(Number(fetus.maternalDerivedTypeProgress) > 0)) delete fetus.maternalDerivedTypeProgress;
+        else fetus.maternalDerivedTypeProgress = `${Math.round(Number(fetus.maternalDerivedTypeProgress) * 100)}%`;
+      }
+    }
+  }
+  return view;
+}
+
+/** 主线用：每位角色的数值换成文字（只动送出的那份，不碰存档） */
+export function narrateStateNumbers(state, sourceCharacters = {}) {
+  for (const [name, item] of Object.entries(state || {})) {
+    const source = sourceCharacters?.[name]?.profile;
+    if (item?.profile && source) narrateProfileNumbers(item.profile, source);
+  }
+  return state;
 }
 
 /** 胎父认定纪录只增不改，模型只需要最近几笔的时间与白描，来源与系统分钟数不外露 */
@@ -1723,7 +1899,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
       skill_baseline_prompt: String(chatState.skillBaselinePrompt || '').trim(),
       skill_catalog: Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [],
     } : {}),
-    existing_state: localizeStateAges(buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus)), getActiveCalendar()),
+    existing_state: (reason === 'mainflow' ? narrateStateNumbers : (state) => state)(localizeStateAges(buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus)), getActiveCalendar(), Number(chatState.minutesPassed) || 0), existingState),
     // 对话历法（1.5.2）：今天是哪天、这个世界的月与年多长；没设历法时不送
     ...(getActiveCalendar() ? { calendar_note: describeCalendarForPrompt(getActiveCalendar(), Number(chatState.minutesPassed) || 0) } : {}),
     available_tools: getTrackerToolDefinitions(settings, existingState),
@@ -1731,8 +1907,19 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     race_catalog_selection: settings?.raceCatalogSelection || null,
     realistic_world: isRealisticWorld(settings),
     disabled_special_tools: getDisabledSpecialToolNames(settings),
+    // 药物名录（1.5.3）：只送名称与说明；名录外的药 bsReproductiveIntervention 会拒绝
+    ...(() => {
+      const allowed = getAllowedReproEffects(settings);
+      const drugs = getActiveDrugCatalog().filter((drug) => drug.effects.every((entry) => allowed.includes(entry.effect)));
+      if (!drugs.length) return {};
+      return {
+        drug_catalog: drugs.map((drug) => ({ name: drug.name, description: drug.description })),
+        // 卡片或使用者自订的名录：主线也送药名，剧情才会用到这个世界的药
+        ...(hasCustomDrugCatalog() ? { drug_catalog_custom: true } : {}),
+      };
+    })(),
     ...(settings?.timeFlowEnabled === false ? { time_frozen: true } : {}),
-    recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => ['bsAddSperm', 'bsAbortion'].includes(log.name) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),
+    recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => (['bsAddSperm', 'bsAbortion'].includes(log.name) || (log.name === 'bsReproductiveIntervention' && String(log.message || '').includes('事后避孕'))) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),
     world_baseline_prompt: String(settings?.worldBaselinePrompt || '').trim(),
     contraception_levels: contraceptionLevels(settings?.reproductiveSettings),
     ...(psychologyEnabled ? { breeding_psychology_enabled: true } : {}),
@@ -2089,6 +2276,8 @@ async function processTrackerMessage(ctx, settings, chatState, deps, reason, mes
 
   const result = normalizeTrackerResult(rawResult);
   result.character_check_coverage = buildCharacterCheckCoverage(payload.tracked_females, result.character_checks);
+  // 刚分析的这则正文是按推进前那天的提示写的：那天的胎动强推已经用掉
+  markMovementCueDelivered(chatState);
   applyToolCallsResult(ctx, result, attemptedSignature);
   // Persist the event snapshot before awaiting the optional side inference.
   const branchKey = getChatKey(ctx);

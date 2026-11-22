@@ -54,9 +54,10 @@ test('自然排卵与高潮额外排卵都记为 ovulation', () => {
   assert.equal(cue(orgasm)?.type, 'ovulation');
 });
 
-function implant(embryoType, vitality = 150) {
+function implant(embryoType, eggQuality = 4) {
+  // 着床照这一轮的卵子品质（1.5.3）；4 的失败率不到 1%
   const chatState = setup('黄体期', {
-    base: { vitality, fertilizationDays: 30 },
+    base: { cycleEggQuality: eggQuality, fertilizationDays: 30 },
     pregnant: {
       fetusesCount: 1,
       fetuses: [{
@@ -78,9 +79,9 @@ test('着床成功不分胚型，一律记为 implantation', () => {
   }
 });
 
-test('体力不足导致着床失败时记为 implantationFailed', () => {
-  Math.random = () => 0;
-  const chatState = implant('胎生', 10);
+test('卵子品质差导致着床失败时记为 implantationFailed', () => {
+  Math.random = () => 0.99;
+  const chatState = implant('胎生', 0.25);
   assert.equal(P(chatState).pregnant.fetuses.length, 0);
   assert.equal(cue(chatState)?.type, 'implantationFailed');
 });

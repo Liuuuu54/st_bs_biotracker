@@ -18,6 +18,7 @@ import {
   runRegistryOutfitInference,
   runRegistrySireExtraction,
   runCalendarInference,
+  runDrugCatalogInference,
   applyRegistryChildToSire,
   runRegistrySkillInference,
   runRegistryWardrobeInference,
@@ -135,9 +136,13 @@ import { createBellyLayout } from './scripts/belly_layout.js';
 import { BELLY_THEME_MODES, applyBellyInkBrush, createBellyPainter, createBellyThemePalette } from './scripts/belly_render.js';
 import { describeDerivedTransform, normalizeDerivedTransformLog } from './scripts/derived_transform.js';
 import { DISPLAY_NAVELS, DISPLAY_NAVEL_SIZES, DISPLAY_NIPPLE_PRESETS, DISPLAY_NIPPLE_SIZES, DISPLAY_SKIN_PRESETS, DISPLAY_STRETCH_MARKS, normalizeDisplay, normalizeDisplayColor } from './scripts/display_colors.js';
-import { averageYearDays, dateAt, formatCalendarDate, getActiveCalendar, minutesAtDate, monthCount, monthDays, monthName, normalizeCalendar, setCalendarProvider, toLocalYears } from './scripts/calendar.js';
+import { averageYearDays, birthdayOf, dateAt, earthAgeForBirthday, formatBirthday, formatCalendarDate, getActiveCalendar, legalAge, minutesAtDate, nextBirthdayMinutes, monthCount, monthDays, monthName, normalizeCalendar, randomBirthday, setCalendarProvider, toLocalYears } from './scripts/calendar.js';
 import { CALENDAR_STAGE_GROUPS, buildStageTimeline, stageOnDay } from './scripts/story_calendar.js';
-import { listSnapshotCharacterTimeline } from './scripts/state.js';
+import { getEggQualityTier } from './scripts/egg_quality.js';
+import { DEFAULT_DRUG_CATALOG, REPRO_EFFECTS, REPRO_EFFECT_KEYS, REPRO_STRENGTHS, REPRO_STRENGTH_LABELS, describeReproEffects, normalizeDrugCatalog, setDrugCatalogProvider } from './scripts/repro_effects.js';
+import { getAllowedReproEffects } from './scripts/tracker.js';
+import { getFetalDailyActivity } from './scripts/fetal_activity.js';
+import { getPsyStressInitByLevel, listSnapshotCharacterTimeline } from './scripts/state.js';
 import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
@@ -1457,7 +1462,106 @@ function saveToLibraryFromTrack(ctx, kind, name) {
   }
 }
 
+// ---- 生日选择（1.5.3）：设了对话历法才显示；勾了手动才送，勾下去先掷一个 ----
+function birthdayPickerParts(node) {
+  if (!node) return null;
+  return {
+    node,
+    manual: node.querySelector('[data-role="manual"]'),
+    month: node.querySelector('[data-role="month"]'),
+    day: node.querySelector('[data-role="day"]'),
+    roll: node.querySelector('[data-role="roll"]'),
+    value: node.querySelector('[data-role="value"]'),
+  };
+}
+
+function setBirthdayPickerValue(parts, calendar, birthday) {
+  if (!parts?.month || !parts.day || !calendar || !birthday) return;
+  const month = Math.max(1, Math.min(monthCount(calendar), Math.round(Number(birthday.month) || 1)));
+  parts.month.value = String(month);
+  const maxDay = Math.max(1, monthDays(calendar, 2000, month));
+  parts.day.max = String(maxDay);
+  parts.day.value = String(Math.max(1, Math.min(maxDay, Math.round(Number(birthday.day) || 1))));
+  updateBirthdayPickerLabel(parts, calendar);
+}
+
+function updateBirthdayPickerLabel(parts, calendar) {
+  if (!parts?.value) return;
+  const manual = parts.manual ? parts.manual.checked : true;
+  parts.value.textContent = manual && calendar
+    ? `${monthName(calendar, Number(parts.month.value) || 1)}${Number(parts.day.value) || 1}日`
+    : '交给模型';
+}
+
+/** 依目前的历法重画月份；没有历法就藏起来（勾选一并取消） */
+function renderBirthdayPicker(node) {
+  const parts = birthdayPickerParts(node);
+  if (!parts) return;
+  const calendar = getActiveCalendar();
+  parts.node.hidden = !calendar;
+  if (!calendar) {
+    if (parts.manual) parts.manual.checked = false;
+    syncBirthdayPickerEnabled(parts, null);
+    return;
+  }
+  const signature = Array.from({ length: monthCount(calendar) }, (_, index) => monthName(calendar, index + 1)).join('|');
+  if (parts.month.dataset.signature !== signature) {
+    const previous = Number(parts.month.value) || 1;
+    parts.month.innerHTML = Array.from({ length: monthCount(calendar) }, (_, index) => `<option value="${index + 1}">${escapeHtml(monthName(calendar, index + 1))}</option>`).join('');
+    parts.month.dataset.signature = signature;
+    setBirthdayPickerValue(parts, calendar, { month: previous, day: Number(parts.day.value) || 1 });
+  }
+  syncBirthdayPickerEnabled(parts, calendar);
+}
+
+function syncBirthdayPickerEnabled(parts, calendar) {
+  const enabled = Boolean(calendar) && (parts.manual ? parts.manual.checked : true);
+  for (const input of [parts.month, parts.day, parts.roll]) if (input) input.disabled = !enabled;
+  updateBirthdayPickerLabel(parts, calendar);
+}
+
+function bindBirthdayPicker(node) {
+  const parts = birthdayPickerParts(node);
+  if (!parts || parts.node.dataset.bound === 'true') return;
+  parts.node.dataset.bound = 'true';
+  parts.manual?.addEventListener('change', () => {
+    const calendar = getActiveCalendar();
+    if (parts.manual.checked && calendar) setBirthdayPickerValue(parts, calendar, randomBirthday(calendar));
+    syncBirthdayPickerEnabled(parts, calendar);
+  });
+  parts.roll?.addEventListener('click', () => {
+    const calendar = getActiveCalendar();
+    if (calendar) setBirthdayPickerValue(parts, calendar, randomBirthday(calendar));
+  });
+  parts.month?.addEventListener('change', () => {
+    const calendar = getActiveCalendar();
+    if (calendar) setBirthdayPickerValue(parts, calendar, { month: Number(parts.month.value), day: Number(parts.day.value) });
+  });
+  parts.day?.addEventListener('change', () => {
+    const calendar = getActiveCalendar();
+    if (calendar) setBirthdayPickerValue(parts, calendar, { month: Number(parts.month.value), day: Number(parts.day.value) });
+  });
+}
+
+/** 勾了手动、有历法时回传 { month, day }；否则 null（交给模型） */
+function readBirthdayPicker(id) {
+  const parts = birthdayPickerParts(document.getElementById(id));
+  if (!parts || parts.node.hidden || !getActiveCalendar()) return null;
+  if (parts.manual && !parts.manual.checked) return null;
+  const month = Number(parts.month?.value);
+  const day = Number(parts.day?.value);
+  return Number.isFinite(month) && Number.isFinite(day) ? { month, day } : null;
+}
+
+function renderRegisterBirthdayPickers() {
+  document.querySelectorAll('[data-birthday-picker]').forEach((node) => {
+    bindBirthdayPicker(node);
+    renderBirthdayPicker(node);
+  });
+}
+
 function renderRegisterChildSourceOptions(ctx) {
+  renderRegisterBirthdayPickers();
   renderLibraryOptions(ctx);
   const select = document.getElementById('bs-bt-register-source');
   if (!select) return;
@@ -1597,6 +1701,7 @@ function syncOverrideSlider(id) {
   const word = id === 'bs-bt-sire-quality' ? getSpermQualityTier(value)
     : id === 'bs-bt-sire-sword' ? describeSwordOffset(value, { short: true })
       : id === 'bs-bt-register-sheath' ? describeSheathOffset(value)
+        : id === 'bs-bt-register-egg-quality' ? getEggQualityTier(value)
         : (REGISTER_BODY_SLIDERS.find((entry) => entry.id === id)?.word?.(value) || '');
   const number = parts.node.dataset.scale === 'log2' ? `×${value}`
     : parts.node.dataset.scale === 'plain' ? `${value}` : `${value > 0 ? '+' : ''}${value}`;
@@ -1714,6 +1819,7 @@ async function registerSireFromForm(ctx) {
       userInstruction: String(document.getElementById('bs-bt-sire-custom-notes')?.value || '').trim(),
       prefill,
       sourceChild: childSource ? { motherName: childSource.motherName, childIndex: childSource.childIndex } : null,
+      birthday: readBirthdayPicker('bs-bt-sire-birthday'),
     });
     const latest = getChatState(ctx, getSettings(ctx));
     const current = getSireRecord(latest, name);
@@ -1867,6 +1973,10 @@ const REPRODUCTIVE_EDITOR_FIELDS = Object.freeze([
   ['condomCapacity', '套子容量（与精液量同单位）', false],
   ['condomReliability', '套子可靠度（0～1）', true],
   ['emergencyEffectiveness', '即时事后避孕成功率（0～1）', true],
+  ['pillReliability', '避孕药可靠度（0～1，生效期间压住排卵的机率）', true],
+  ['ovulationExtraEggsMax', '促排卵最多多排几颗（0～9）', false],
+  ['twinningMaxMultiplier', '促分裂最高倍率（同卵机率乘几倍，1～50）', false],
+  ['chimeraMaxMultiplier', '促嵌合最高倍率（融合机率乘几倍，1～50）', false],
   ['intimacyHalfLifeDays', '契合度半衰期（天）', false],
   ['intimacyBaseline', '契合度基准值（还不熟悉的身体，越大越难熟）', false],
   ['intimacyDedupeHours', '同一场插入的去重间隔（小时）', false],
@@ -1900,6 +2010,8 @@ function getRegisterFormValues(ctx = getContextSafe()) {
     useGestationModifier: Boolean(document.getElementById('bs-bt-register-gestation-modifier')?.checked),
     gestationModifierMultiplier: Number(document.getElementById('bs-bt-register-gestation-multiplier')?.value ?? 1),
     sheathOffset: readOverrideSlider('bs-bt-register-sheath'),
+    eggQuality: readOverrideSlider('bs-bt-register-egg-quality'),
+    birthday: readBirthdayPicker('bs-bt-register-birthday'),
     bodyOverrides: readRegisterBodyOverrides(),
     breedingInferencePrompt: String(document.getElementById('bs-bt-breeding-inference-prompt')?.value || '').trim(),
     skillPrompt: String(document.getElementById('bs-bt-register-skill-prompt')?.value || '').trim(),
@@ -2956,13 +3068,149 @@ function bindCalendarEditor(ctx) {
   }));
 }
 
+// ---------- 药物名录（1.5.3）：百科「药物」分页 ----------
+let drugEditorDirty = false;
+const PHASE_STAGE_OPTIONS = ['卵泡期', '排卵期', '黄体期', '月经期', '乏情期', '产后恢复', '假孕期'];
+
+/** 药物列的摘要（折叠时那一行）：「月神露　助孕·强、促排卵｜7 天」 */
+function describeDrugSummary(drug = {}) {
+  const effects = (drug.effects || []).map((entry) => `${REPRO_EFFECTS[entry.effect]?.label || entry.effect}${entry.strength && entry.strength !== 'normal' ? `·${REPRO_STRENGTH_LABELS[entry.strength] || ''}` : ''}${entry.effect === 'phase' && entry.stage ? `（${entry.stage}）` : ''}`);
+  const days = Number(drug.days) || 0;
+  return {
+    name: String(drug.name || '').trim() || '（未命名）',
+    detail: `${effects.length ? effects.join('、') : '还没选效果'}${days > 0 ? `｜${days} 天` : ''}`,
+  };
+}
+
+function readDrugRow(row) {
+  return {
+    name: row.querySelector('[data-drug-name]')?.value || '',
+    description: row.querySelector('[data-drug-description]')?.value || '',
+    days: Number(row.querySelector('[data-drug-days]')?.value) || 0,
+    effects: [...row.querySelectorAll('[data-drug-effect]')].filter((input) => input.checked).map((input) => {
+      const effect = input.getAttribute('data-drug-effect');
+      return { effect, strength: row.querySelector(`[data-drug-strength="${effect}"]`)?.value || 'normal', ...(effect === 'phase' ? { stage: row.querySelector('[data-drug-stage]')?.value || '月经期' } : {}) };
+    }),
+  };
+}
+
+/** 一种药一列，预设折叠（只露出药名与效果摘要）；新增的空白药打开 */
+function renderDrugRow(drug = {}, { open = false } = {}) {
+  const summary = describeDrugSummary(drug);
+  const effects = new Map((drug.effects || []).map((entry) => [entry.effect, entry]));
+  const effectInputs = REPRO_EFFECT_KEYS.map((key) => {
+    const entry = effects.get(key);
+    const strength = entry?.strength || 'normal';
+    return `<label class="bs-bt-drug-effect">
+      <input type="checkbox" data-drug-effect="${key}"${entry ? ' checked' : ''} />${escapeHtml(REPRO_EFFECTS[key].label)}
+      <select class="text_pole" data-drug-strength="${key}">${REPRO_STRENGTHS.map((value) => `<option value="${value}"${value === strength ? ' selected' : ''}>${REPRO_STRENGTH_LABELS[value]}</option>`).join('')}</select>
+      ${key === 'phase' ? `<select class="text_pole" data-drug-stage>${PHASE_STAGE_OPTIONS.map((stage) => `<option value="${stage}"${stage === (entry?.stage || '月经期') ? ' selected' : ''}>${stage}</option>`).join('')}</select>` : ''}
+    </label>`;
+  }).join('');
+  return `<details class="bs-bt-drug-row" data-drug-row${open ? ' open' : ''}>
+    <summary class="bs-bt-drug-row__summary"><span data-drug-summary-name>${escapeHtml(summary.name)}</span><small data-drug-summary-detail>${escapeHtml(summary.detail)}</small></summary>
+    <div class="bs-bt-drug-row__head">
+      <input class="text_pole" type="text" maxlength="24" data-drug-name placeholder="药名" value="${escapeHtml(drug.name || '')}" />
+      <label class="bs-bt-drug-days"><input class="text_pole" type="number" min="0" max="365" step="1" data-drug-days value="${Number(drug.days) || 0}" />天</label>
+      <button type="button" class="menu_button" data-drug-remove title="删除这种药">删除</button>
+    </div>
+    <textarea class="text_pole bs-bt-textarea" rows="2" maxlength="200" data-drug-description placeholder="给追踪模型看的说明：是什么、怎么用、代价">${escapeHtml(drug.description || '')}</textarea>
+    <div class="bs-bt-drug-effects">${effectInputs}</div>
+  </details>`;
+}
+
+function readDrugEditor() {
+  return normalizeDrugCatalog([...document.querySelectorAll('#bs-bt-drug-list [data-drug-row]')].map(readDrugRow));
+}
+
+function renderDrugEditor(ctx, globalSettings, settings) {
+  const list = document.getElementById('bs-bt-drug-list');
+  if (!list) return;
+  const source = document.getElementById('bs-bt-drug-source');
+  const realistic = isRealisticWorld(settings);
+  const own = Array.isArray(settings?.drugCatalog) ? settings.drugCatalog : null;
+  const defaultNote = realistic
+    ? '（没设名录：用通用的四种现实药物）'
+    : '（没设名录：用通用的四种，世界观里的等效草药、法术也算；助孕、促分裂、促嵌合这类奇幻药要按「从角色卡拟定」或手动新增，名录里有才能用）';
+  if (source) source.textContent = `名录来源：${getSettingSource(ctx, globalSettings, 'drugCatalog')}${own ? '' : defaultNote}。可以绑在角色卡上。`;
+  if (drugEditorDirty) return;
+  const catalog = own || DEFAULT_DRUG_CATALOG;
+  list.innerHTML = catalog.length ? catalog.map((drug) => renderDrugRow(drug)).join('') : '<div class="bs-bt-inline-status" data-drug-empty>还没有药物：按「新增药物」或「从角色卡拟定」。</div>';
+}
+
+function bindDrugEditor(ctx) {
+  const list = document.getElementById('bs-bt-drug-list');
+  if (!list) return;
+  // 改了药名、效果、天数：折叠那一行的摘要跟着变
+  const markDirty = (event) => {
+    drugEditorDirty = true;
+    const row = event?.target instanceof Element ? event.target.closest('[data-drug-row]') : null;
+    if (!row) return;
+    const summary = describeDrugSummary(readDrugRow(row));
+    const name = row.querySelector('[data-drug-summary-name]');
+    const detail = row.querySelector('[data-drug-summary-detail]');
+    if (name) name.textContent = summary.name;
+    if (detail) detail.textContent = summary.detail;
+  };
+  list.addEventListener('input', markDirty);
+  list.addEventListener('change', markDirty);
+  list.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('[data-drug-remove]') : null;
+    if (!button) return;
+    button.closest('[data-drug-row]')?.remove();
+    drugEditorDirty = true;
+  });
+  document.getElementById('bs-bt-drug-add')?.addEventListener('click', () => {
+    list.querySelector('[data-drug-empty]')?.remove();
+    list.insertAdjacentHTML('beforeend', renderDrugRow({ effects: [] }, { open: true }));
+    drugEditorDirty = true;
+    list.lastElementChild?.querySelector('[data-drug-name]')?.focus();
+  });
+  document.getElementById('bs-bt-drug-save')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    const catalog = readDrugEditor();
+    drugEditorDirty = false;
+    await saveEncyclopediaPatch(ctx, { drugCatalog: catalog });
+    globalThis.toastr?.success?.(`药物名录已保存（${catalog.length} 种）。`);
+  }));
+  document.getElementById('bs-bt-drug-clear')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    drugEditorDirty = false;
+    // 全域存 null＝没设；卡片「清除」就是拿掉覆盖，沿用全域
+    await saveEncyclopediaPatch(ctx, { drugCatalog: isEditingCard() ? undefined : null });
+    globalThis.toastr?.success?.('已清除药物名录。');
+  }));
+  document.getElementById('bs-bt-drug-generate')?.addEventListener('click', async () => {
+    const button = document.getElementById('bs-bt-drug-generate');
+    const status = document.getElementById('bs-bt-drug-generate-status');
+    const show = (text) => { if (status) { status.hidden = !text; status.textContent = text; } };
+    if (button) button.disabled = true;
+    show('正在读角色卡与世界书拟定药物名录…');
+    try {
+      const settings = getEncyclopediaEditorSettings(ctx);
+      const draft = await runDrugCatalogInference(ctx, {
+        userInstruction: String(document.getElementById('bs-bt-drug-generate-rules')?.value || '').trim().slice(0, 2000),
+        existingCatalog: readDrugEditor(),
+        allowedEffects: getAllowedReproEffects(settings, { forCatalog: true }),
+      });
+      const catalog = normalizeDrugCatalog(draft?.drugs);
+      if (!catalog.length) throw new Error('模型没有给出认得出来的药物。');
+      list.innerHTML = catalog.map((drug) => renderDrugRow(drug)).join('');
+      drugEditorDirty = true;
+      show(`已填进表单（${catalog.length} 种），看过再按「保存名录」。${draft?.notes ? `模型说明：${String(draft.notes).slice(0, 200)}` : ''}`);
+    } catch (error) {
+      show(`拟定失败：${error?.message || error}`);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+}
+
 async function saveWorldBaselinePrompt(ctx, value) {
   await saveEncyclopediaPatch(ctx, { worldBaselinePrompt: String(value || '').trim() });
 }
 
 function setEncyclopediaSubpage(page) {
   // 物种与衍生同一页（1.5.2）：衍生接在物种下面
-  selectedEncyclopediaSubpage = ['race', 'world', 'calendar', 'calculator'].includes(page) ? page : 'race';
+  selectedEncyclopediaSubpage = ['race', 'world', 'calendar', 'drugs', 'calculator'].includes(page) ? page : 'race';
   document.querySelectorAll('#bs-bt-encyclopedia-tabs [data-encyclopedia-tab]').forEach((node) => {
     node.classList.toggle('is-active', node.dataset.encyclopediaTab === selectedEncyclopediaSubpage);
   });
@@ -3871,6 +4119,7 @@ function renderRaceEncyclopediaPage(ctx = null) {
   renderCustomRacePanel();
   renderWorldModeControls(ctx, globalSettings, settings);
   renderCalendarEditor(ctx, globalSettings, settings);
+  renderDrugEditor(ctx, globalSettings, settings);
   if (settings) renderReproductiveControls(settings);
   const baselineSource = document.getElementById('bs-bt-world-baseline-source');
   if (baselineSource) baselineSource.textContent = `世界基准来源：${getSettingSource(ctx, globalSettings, 'worldBaselinePrompt')}；名录来源：${getSettingSource(ctx, globalSettings, 'raceCatalogSelection')}。`;
@@ -5123,6 +5372,28 @@ function getTransformProgressItems(profile, minutesPassed) {
   return [];
 }
 
+/** 概览的卵子品质：「一般（这一轮偏弱）」；周期会乱时补一句 */
+function describeEggQualityOverview(base) {
+  if (!base || !Number.isFinite(Number(base.eggQuality))) return {};
+  const personal = getEggQualityTier(base.eggQuality);
+  const cycle = Number.isFinite(Number(base.cycleEggQuality)) ? getEggQualityTier(base.cycleEggQuality) : personal;
+  const factor = Number(base.cycleLengthFactor);
+  const irregular = Number.isFinite(factor) && Math.abs(factor - 1) >= 0.02 ? `・这一轮周期${factor > 1 ? '偏长' : '偏短'}` : '';
+  return {
+    eggQualityLabel: `${personal}${cycle !== personal ? `（这一轮${cycle}）` : ''}${irregular}`,
+    eggQualityTitle: `个人基准 ×${Number(base.eggQuality)}；这一轮 ×${Number(base.cycleEggQuality ?? base.eggQuality)}；周期长度 ×${Number.isFinite(factor) ? factor : 1}。品质越好越容易着床，胎儿起点越健康`,
+  };
+}
+
+/** 「140 岁・生日 萌月1日」：法定岁数照活过的时间算；没设历法只写岁数 */
+function formatAgeWithBirthday(age, minutesPassed = 0) {
+  const calendar = getActiveCalendar();
+  const years = legalAge(Number(age), calendar);
+  if (!Number.isFinite(years)) return '未知';
+  const birthday = formatBirthday(Number(age), calendar, Number(minutesPassed) || 0);
+  return birthday ? `${years} 岁・生日 ${birthday}` : `${years} 岁`;
+}
+
 function buildTrackCharacterViewModel(character, minutesPassed = null, chatState = null) {
   const runtimeCtx = getContextSafe();
   const runtimeSettings = runtimeCtx ? getSettings(runtimeCtx) : null;
@@ -5203,7 +5474,12 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       transformProgress: getTransformProgressItems(profile, minutesPassed),
       raceLabel: formatRaceLabel(base.race, base.derivedType),
       bloodlineLabel: formatBloodlineLabel(base.race, base.bloodline, base.bloodlineSource),
-      age: Number.isFinite(Number(base.age)) ? Math.round(toLocalYears(Number(base.age), getActiveCalendar())) : null,
+      // 法定岁数（1.5.3）：活过几个当地年取整，过了生日才加一；有历法时另标生日
+      age: Number.isFinite(Number(base.age)) && base.age !== null ? formatAgeWithBirthday(base.age, minutesPassed ?? runtimeChatState?.minutesPassed ?? 0) : null,
+      // 卵子品质（1.5.3）：个人基准的分级，这一轮不同时另标；数字在滑鼠提示
+      ...describeEggQualityOverview(base),
+      // 生殖干预（1.5.3）：生效中的药与剩余时间
+      reproEffects: describeReproEffects(profile, minutesPassed ?? runtimeChatState?.minutesPassed ?? 0),
       bodySizeLabel: formatCharacterBodySizeLabel(base),
       altFormBodySizeLabel: formatAltFormBodySizeLabel(base),
       sheathLabel: formatSheathLabel(base, profile.experience || {}),
@@ -5333,6 +5609,12 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
             // 孕中孕：还包在宿主体内的内胎，动静算在宿主身上
             nestedInEmbryoId: fetus.nestedInEmbryoId ?? null,
             nestedReleased: Boolean(fetus.nestedReleased),
+            // 今天的动静 0–3（安静／一般／好动／激烈）：与主线的胎动提示同一个值
+            vigor: getFetalDailyActivity(fetus, {
+              storyDay: Math.floor((Number(minutesPassed ?? runtimeChatState?.minutesPassed) || 0) / 1440),
+              effectiveDays: Number(pregnant.effectivePregnantDays) || 0,
+              stressRatio: (Number(base.psyStress) || 0) / Math.max(1, getPsyStressInitByLevel(base.psyStressLevel) * 2),
+            }),
           })),
       },
       showPregnantFields: isPregnantStage(stage),
@@ -5379,7 +5661,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
     },
     outfit: outfitView,
     debug: {
-      body: { ...getBodyBaseline(base), sheathOffset: normalizeSheathOffset(base.sheathOffset), bodyChangedAtAge: Number(base.bodyChangedAtAge), vitalityLevel: base.vitalityLevel },
+      body: { ...getBodyBaseline(base), sheathOffset: normalizeSheathOffset(base.sheathOffset), bodyChangedAtAge: Number(base.bodyChangedAtAge), vitalityLevel: base.vitalityLevel, age: Number(base.age), nowMinutes: Number(minutesPassed ?? runtimeChatState?.minutesPassed) || 0 },
       immune: {
         metabolism: Boolean(immune.metabolism),
         miscarriage: Boolean(immune.miscarriage),
@@ -5580,6 +5862,8 @@ function renderTrackOverview(viewModel) {
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">种族</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.raceLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">血脉</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bloodlineLabel)}</span></div>
         <div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">年龄</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.age ?? '未知')}</span></div>
+        ${viewModel.overview.reproEffects?.length ? `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">生效中</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.reproEffects.join('、'))}</span></div>` : ''}
+        ${viewModel.overview.eggQualityLabel ? `<div class="bs-bt-track-meta-row" title="${escapeHtml(viewModel.overview.eggQualityTitle || '')}"><span class="bs-bt-track-meta-label">卵子品质</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.eggQualityLabel)}</span></div>` : ''}
         ${(viewModel.overview.transformLines || []).map(([label, value]) => `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">${escapeHtml(label)}</span><span class="bs-bt-track-meta-value">${escapeHtml(value)}</span></div>`).join('')}
         ${!hasBellyCloseup(viewModel) && viewModel.overview.bodySizeLabel ? `<div class="bs-bt-track-meta-row"><span class="bs-bt-track-meta-label">体型</span><span class="bs-bt-track-meta-value">${escapeHtml(viewModel.overview.bodySizeLabel)}${viewModel.overview.altFormBodySizeLabel ? `（变化态 ${escapeHtml(viewModel.overview.altFormBodySizeLabel)}）` : ''}</span></div>` : ''}
       </div>
@@ -5787,11 +6071,11 @@ function getWombObstructionLabel(obstruction, fetuses) {
   if (obstruction.type === 'transverse') return `${numberOf(first)}横位无法入盆`;
   return obstruction.message;
 }
-/** 宫压危机的短版警告：还有一次缓冲的写风险，下次推进就会发生的写即将 */
+/** 宫压危机的短版警告：示警那一轮写风险，之后写正在发生的事（伤胎、随时可能早产、下次推进就发动） */
 function getWombPressureLabel(risk) {
   const labels = {
-    miscarriage: ['宫压过高，有流产风险', '宫压未缓解，即将流产'],
-    preterm: ['宫压过高，有早产风险', '宫压未缓解，即将早产'],
+    damage: ['宫压过高，会伤到胎儿', '宫压未缓解，胎儿正在受损'],
+    preterm: ['宫压过高，有早产风险', '宫压未缓解，随时可能早产'],
     labor: ['宫压过高，产程将发动', '宫压已达临界，即将发动'],
   };
   return (labels[risk.type] || labels.labor)[risk.imminent ? 1 : 0];
@@ -7050,6 +7334,7 @@ function renderDiaryPage(item, index, total) {
   return `<article class="bs-bt-diary-page">
     <header class="bs-bt-diary-head">
       <span class="bs-bt-diary-date">${escapeHtml(item?.time || `日记 ${index + 1}`)}</span>
+      ${item?.dateLabel && !String(item?.time || '').includes(String(item.dateLabel)) ? `<span class="bs-bt-diary-calendar" title="写下时的历法日期">${escapeHtml(item.dateLabel)}</span>` : ''}
       ${total > 1 ? `<span class="bs-bt-diary-folio">${index + 1} / ${total}</span>` : ''}
     </header>
     <div class="bs-bt-diary-body">${paragraphs.map((line) => `<p>${escapeHtml(line)}</p>`).join('') || '<p></p>'}</div>
@@ -7239,6 +7524,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '', sireCheatHtml = '') {
       ${sireCheatHtml}
     </div>
     ${renderBodyDebugSection(viewModel.debug?.body || {})}
+    ${renderBirthdayDebugSection(viewModel.debug?.body || {})}
     <div class="bs-bt-track-section" style="margin-top: 10px;">
       <div class="bs-bt-track-section-title">妊娠需求症状调试</div>
       <fieldset class="bs-bt-track-debug-form">
@@ -7514,9 +7800,67 @@ function renderBodyDebugSection(body = {}) {
     </div>`;
 }
 
+/** 变量页的生日（1.5.3）：设了历法才有；法定岁数不动，只把生日挪到选的那天 */
+function renderBirthdayDebugSection(body = {}) {
+  const calendar = getActiveCalendar();
+  const age = Number(body.age);
+  if (!calendar || !Number.isFinite(age)) return '';
+  const current = birthdayOf(age, calendar, Number(body.nowMinutes) || 0);
+  const label = formatBirthday(age, calendar, Number(body.nowMinutes) || 0);
+  return `
+    <div class="bs-bt-track-section" style="margin-top: 10px;">
+      <div class="bs-bt-track-section-title">生日</div>
+      <fieldset class="bs-bt-track-debug-form">
+        <div class="bs-bt-birthday-picker" data-birthday-debug data-month="${escapeHtml(current?.month ?? 1)}" data-day="${escapeHtml(current?.day ?? 1)}">
+          <div class="bs-bt-track-debug-label">现在：${escapeHtml(label || '未知')}（${escapeHtml(legalAge(age, calendar))} 岁）　改成：<span data-role="value"></span></div>
+          <div class="bs-bt-birthday-row">
+            <select data-role="month" class="text_pole" aria-label="生日月份"></select>
+            <input data-role="day" class="text_pole" type="number" min="1" step="1" value="1" aria-label="生日日" />
+            <span>日</span>
+            <button data-role="roll" class="menu_button" type="button" title="重掷生日" aria-label="重掷生日">⚄ 重掷</button>
+          </div>
+        </div>
+        <div class="bs-bt-track-inline-action"><button type="button" class="menu_button" data-debug-action="set-birthday">套用生日</button></div>
+      </fieldset>
+      <div class="bs-bt-track-debug-hint">岁数不变，只把下一个生日挪到选的那天；1.5.3 以前注册的角色生日都落在注册那天，可以在这里重掷。</div>
+    </div>`;
+}
+
+function bindBirthdayDebugControls(ctx, root) {
+  const node = root?.querySelector('[data-birthday-debug]');
+  if (!node) return;
+  bindBirthdayPicker(node);
+  renderBirthdayPicker(node);
+  const calendar = getActiveCalendar();
+  if (calendar) setBirthdayPickerValue(birthdayPickerParts(node), calendar, { month: Number(node.dataset.month), day: Number(node.dataset.day) });
+  root.querySelectorAll('[data-debug-action="set-birthday"]').forEach((button) =>
+    button.addEventListener('click', () => applySelectedTrackBirthday(ctx, node)),
+  );
+}
+
+function applySelectedTrackBirthday(ctx, node) {
+  if (!selectedTrackName) return;
+  const calendar = getActiveCalendar();
+  if (!calendar) return;
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const base = chatState.characters?.[selectedTrackName]?.profile?.base;
+  const age = Number(base?.age);
+  if (!base || !Number.isFinite(age)) return;
+  const parts = birthdayPickerParts(node);
+  const birthday = { month: Number(parts.month.value), day: Number(parts.day.value) };
+  base.age = earthAgeForBirthday(legalAge(age, calendar), calendar, Number(chatState.minutesPassed) || 0, birthday);
+  recordChatStateSnapshot(ctx, chatState, { reason: 'debug_birthday' });
+  saveSettings(ctx);
+  renderStatusPanel(ctx);
+  renderFullStatePage(ctx);
+  globalThis.toastr?.success?.(`[BS BioTracker] ${selectedTrackName} 的生日改成 ${formatBirthday(base.age, calendar, Number(chatState.minutesPassed) || 0)}`);
+}
+
 /** 身材拉杆：拖动时更新读数，按「套用身材」才写入 */
 function bindBodyDebugControls(ctx, root) {
   if (!root) return;
+  bindBirthdayDebugControls(ctx, root);
   root.querySelectorAll('[data-body-debug]').forEach((node) =>
     node.addEventListener('input', () => {
       const field = BODY_DEBUG_FIELDS.find((item) => item.key === node.dataset.bodyDebug);
@@ -8618,7 +8962,7 @@ function renderTrackSirePage(chatState) {
       metaRow('在场', base?.isHere === false ? '离场' : '在场'),
       metaRow('种族', formatRaceLabel(base?.race, base?.derivedType)),
       metaRow('血脉', formatBloodlineLabel(base?.race, base?.bloodline, base?.bloodlineSource) || '未知'),
-      metaRow('年龄', base?.age !== null && base?.age !== undefined ? `${Math.round(toLocalYears(Number(base.age), getActiveCalendar()))} 岁` : '未记录'),
+      metaRow('年龄', base?.age !== null && base?.age !== undefined ? formatAgeWithBirthday(base.age, minutesPassed) : '未记录'),
       ...(!isFuta && normalizeDerivedTransformLog(record.derivedTransforms).length
         ? [metaRow('转化经历', normalizeDerivedTransformLog(record.derivedTransforms).slice(-2).map((item) => `${item.time ? `${item.time} ` : ''}${describeDerivedTransform(item)}`).join('；'))]
         : []),
@@ -9999,26 +10343,43 @@ function renderStoryCalendarPage(ctx = getContextSafe()) {
     if (!state || state.alwaysPeak || amplitude <= 0) return null;
     return state.cycle >= 1 + amplitude * 0.8 ? state.cycle : null;
   };
+  // 生日（1.5.3）：照活过的时间，每满一个当地年一次；只在设了历法时标
+  const yearMinutes = averageYearDays(calendar) * 1440;
+  const firstBirthday = new Map(people.map((name) => {
+    const age = Number(chatState.characters?.[name]?.profile?.base?.age);
+    return [name, calendar && Number.isFinite(age) ? nextBirthdayMinutes(age, calendar, now) : null];
+  }));
+  const isBirthdayOn = (name, dayStart) => {
+    const first = firstBirthday.get(name);
+    if (first === null || first === undefined) return false;
+    const n = Math.round((dayStart + 720 - first) / yearMinutes);
+    const at = first + n * yearMinutes;
+    return at >= dayStart && at < dayStart + 1440;
+  };
   const cells = month.days.map((day) => {
     const infos = people.map((name) => stageOnDay(timelines.get(name), day.start));
     const peaks = people.filter((name) => futaPeak(name, day.start));
     // 只画重点阶段；看机率、画不出结束的推算（今天以后的逾期）不画，今天与纪录照画
-    const bars = infos.map((info, index) => (info?.stage && info.group && (!(info.open && info.predicted) || day.start === todayStart)
+    const bars = infos.map((info, index) => (info?.marks?.includes('mensesRange') && info.group !== 'menses' && (!info.group || info.group === 'luteal' || info.group === '')
+      ? `<span class="bs-bt-story-calendar__bar bs-bt-cal-stage--menses is-possible" title="${escapeHtml(`${people[index]}：可能来月经（周期不规律）`)}"></span>`
+      : info?.stage && info.group && (!(info.open && info.predicted) || day.start === todayStart)
       ? `<span class="bs-bt-story-calendar__bar bs-bt-cal-stage--${info.group}" title="${escapeHtml(`${people[index]}：${info.stage}`)}"></span>`
       : '<span class="bs-bt-story-calendar__bar is-empty"></span>')).join('');
     const due = infos.some((info) => info?.marks?.includes('due'));
     const extensionEnd = infos.some((info) => info?.marks?.includes('extension'));
+    const birthdays = people.filter((name) => isBirthdayOn(name, day.start));
     const classes = ['bs-bt-story-calendar__day'];
     if (day.start === todayStart) classes.push('is-today');
     if (day.start + 1440 <= 0) classes.push('is-before-story');
-    return `<div class="${classes.join(' ')}" data-story-calendar-day="${day.start}"><span class="bs-bt-story-calendar__num">${escapeHtml(day.label)}${due ? '<span class="bs-bt-story-calendar__due" title="预产期">☉</span>' : ''}${extensionEnd ? '<span class="bs-bt-story-calendar__due" title="延产期限">⧗</span>' : ''}${peaks.length ? `<span class="bs-bt-story-calendar__due" title="${escapeHtml(`精力高峰：${peaks.join('、')}`)}">☿</span>` : ''}</span><span class="bs-bt-story-calendar__bars">${bars}</span></div>`;
+    return `<div class="${classes.join(' ')}" data-story-calendar-day="${day.start}"><span class="bs-bt-story-calendar__num">${escapeHtml(day.label)}${due ? '<span class="bs-bt-story-calendar__due" title="预产期">☉</span>' : ''}${extensionEnd ? '<span class="bs-bt-story-calendar__due" title="延产期限">⧗</span>' : ''}${birthdays.length ? `<span class="bs-bt-story-calendar__due" title="${escapeHtml(`生日：${birthdays.join('、')}`)}">✶</span>` : ''}${peaks.length ? `<span class="bs-bt-story-calendar__due" title="${escapeHtml(`精力高峰：${peaks.join('、')}`)}">☿</span>` : ''}</span><span class="bs-bt-story-calendar__bars">${bars}</span></div>`;
   }).join('');
   grid.innerHTML = head + blanks + cells;
 
   const legend = document.getElementById('bs-bt-story-calendar-legend');
   if (legend) {
     legend.innerHTML = CALENDAR_STAGE_GROUPS.map((group) => `<span class="bs-bt-story-calendar__key"><span class="bs-bt-story-calendar__swatch bs-bt-cal-stage--${group.key}"></span>${escapeHtml(group.label)}</span>`).join('')
-      + '<span class="bs-bt-story-calendar__key">☉ 预产期</span><span class="bs-bt-story-calendar__key">⧗ 延产期限</span><span class="bs-bt-story-calendar__key">☿ 扶她的精力高峰</span>';
+      + '<span class="bs-bt-story-calendar__key"><span class="bs-bt-story-calendar__swatch bs-bt-cal-stage--menses is-possible"></span>可能来月经</span><span class="bs-bt-story-calendar__key">☉ 预产期</span><span class="bs-bt-story-calendar__key">⧗ 延产期限</span><span class="bs-bt-story-calendar__key">☿ 扶她的精力高峰</span>'
+      + (calendar ? '<span class="bs-bt-story-calendar__key">✶ 生日</span>' : '');
   }
 
 }
@@ -11977,16 +12338,19 @@ async function ensureModal(ctx) {
     renderRaceEncyclopediaPage(ctx);
   });
   bindCalendarEditor(ctx);
+  bindDrugEditor(ctx);
   bindStoryCalendarPage(ctx);
   document.getElementById('bs-bt-world-setting-target')?.addEventListener('change', () => {
     calendarEditorDirty = false;
+    drugEditorDirty = false;
     closeRacePhysiologyEditor();
     closeDerivedTypeEditor();
     renderRaceEncyclopediaPage(ctx);
   });
   document.getElementById('bs-bt-card-baseline-reset')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
     calendarEditorDirty = false;
-    await saveEncyclopediaPatch(ctx, { worldBaselinePrompt: undefined, raceCatalogSelection: undefined, reproductiveSettings: undefined, realisticWorld: undefined, specialTools: undefined, calendar: undefined });
+    drugEditorDirty = false;
+    await saveEncyclopediaPatch(ctx, { worldBaselinePrompt: undefined, raceCatalogSelection: undefined, reproductiveSettings: undefined, realisticWorld: undefined, specialTools: undefined, calendar: undefined, drugCatalog: undefined });
     globalThis.toastr?.success?.('已清除卡片基准覆盖，沿用全域。');
   }));
   document.getElementById('bs-bt-catalog-checklist')?.addEventListener('change', (event) => {
@@ -12526,7 +12890,7 @@ async function ensureModal(ctx) {
       globalThis.toastr?.info?.('[BS BioTracker] 注册请求正在进行中，请等待完成');
       return;
     }
-    const { targetName, declaredRace, customNotes, initialCognitionRecords, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier, sheathOffset, bodyOverrides } = getRegisterFormValues();
+    const { targetName, declaredRace, customNotes, initialCognitionRecords, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier, sheathOffset, eggQuality, birthday, bodyOverrides } = getRegisterFormValues();
     if (specialFetus?.error) {
       setRegisterStatus(specialFetus.error, true);
       globalThis.toastr?.warning?.(specialFetus.error, '[BS BioTracker]');
@@ -12566,7 +12930,7 @@ async function ensureModal(ctx) {
     const bundleReport = {};
     try {
       const character = await runRegistry(ctx, {
-        targetName, customNotes, initialCognitionRecords, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier, sheathOffset, bodyOverrides, bodyOnly,
+        targetName, customNotes, initialCognitionRecords, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier, sheathOffset, eggQuality, birthday, bodyOverrides, bodyOnly,
         ...(useGestationModifier ? { gestationModifierMultiplier } : {}),
         ...(bundleOptions ? { bundle: bundleOptions, bundleReport } : {}),
       });
@@ -13268,6 +13632,11 @@ async function bootstrap() {
   installThemedTooltips();
   // 对话历法（1.5.2）：引擎推进时间（bsPassedTime 的月、年）与画面读目前生效的历法：角色卡优先，再来全域
   setCalendarProvider(() => getEffectiveSettings(getContextSafe() || ctx, getSettings(getContextSafe() || ctx)).calendar);
+  setDrugCatalogProvider(() => {
+    const effective = getEffectiveSettings(getContextSafe() || ctx, getSettings(getContextSafe() || ctx));
+    if (Array.isArray(effective.drugCatalog)) return effective.drugCatalog;
+    return DEFAULT_DRUG_CATALOG;
+  });
   try {
     // 载入当下记忆体里的各聊天都视为与宿主同步，之后的改动才算这个分页的新改动
     markChatStatesSynced(ctx);

@@ -261,3 +261,59 @@ test('繁殖季定锚：种族子项（兽耳族-狼）照基种族的锚点', a
     setCalendarProvider(null);
   }
 });
+
+test('bsPassedTime 的月、年照日历：下个月同一天（月底夹回），不是平均月长', async () => {
+  const { setCalendarProvider, dateAt, normalizeCalendar } = await import('../scripts/calendar.js');
+  const odd = { mode: 'custom', months: [{ name: '长月', days: 31 }, { name: '短月', days: 20 }, { name: '平月', days: 30 }], start: { year: 1, month: 1, day: 15, hour: 9 } };
+  try {
+    setCalendarProvider(() => odd);
+    const chat = setup('人类', '卵泡期', 0);
+    pass(chat, 0);
+    applyToolCall(chat, { name: 'bsPassedTime', arguments: { month: 1 } });
+    const d = dateAt(normalizeCalendar(odd), chat.minutesPassed);
+    assert.deepEqual([d.month, d.day, d.hour], [2, 15, 9], '长月15日 + 一个月 = 短月15日（31 天，不是平均 27 天）');
+    applyToolCall(chat, { name: 'bsPassedTime', arguments: { month: 1 } });
+    assert.equal(chat.minutesPassed / 1440, 31 + 20);
+
+    const greg = { mode: 'gregorian', start: { year: 2027, month: 1, day: 31 } };
+    setCalendarProvider(() => greg);
+    const g = setup('人类', '卵泡期', 0);
+    applyToolCall(g, { name: 'bsPassedTime', arguments: { month: 1 } });
+    assert.deepEqual([dateAt(normalizeCalendar(greg), g.minutesPassed).month, dateAt(normalizeCalendar(greg), g.minutesPassed).day], [2, 28], '1/31 + 一个月 = 2/28（月底夹回）');
+
+    const leap = { mode: 'gregorian', start: { year: 2028, month: 2, day: 29 } };
+    setCalendarProvider(() => leap);
+    const l = setup('人类', '卵泡期', 0);
+    applyToolCall(l, { name: 'bsPassedTime', arguments: { year: 1, day: 1 } });
+    const ld = dateAt(normalizeCalendar(leap), l.minutesPassed);
+    assert.deepEqual([ld.year, ld.month, ld.day], [2029, 3, 1], '2028/2/29 + 一年 = 2029/2/28，再加一天');
+  } finally {
+    setCalendarProvider(null);
+  }
+});
+
+test('繁殖季定锚：季内怀孕、季外生完，产后月经结束直接乏情到明年开季，不在季外补跑', async () => {
+  const { setCalendarProvider, dateAt, normalizeCalendar } = await import('../scripts/calendar.js');
+  const raw = { mode: 'custom', months: Array.from({ length: 10 }, (_, i) => ({ name: `${i + 1}月`, days: 40 })), start: { year: 1, month: 6, day: 1 }, breedingSeasons: { 兽耳族: { month: 3, day: 1 } } };
+  setCalendarProvider(() => raw);
+  try {
+    const wolf = setup('兽耳族-狼', '产后恢复', 0);
+    wolf.characters.A.profile.bio.recoveryDays = 56;
+    const seen = new Set();
+    for (let i = 0; i < 400; i += 1) {
+      pass(wolf, 1);
+      seen.add(`${base(wolf).stage}@${dateAt(normalizeCalendar(raw), wolf.minutesPassed).year}`);
+    }
+    assert.equal(seen.has('卵泡期@1'), false, '第 1 年季外不发情');
+    assert.equal(seen.has('卵泡期@2'), true, '第 2 年开季');
+
+    // 一次跳三年与逐日推进结果一致
+    const jump = setup('兽耳族-狼', '月经期', 0);
+    applyToolCall(jump, { name: 'bsPassedTime', arguments: { day: 1200 } });
+    const step = setup('兽耳族-狼', '月经期', 0);
+    for (let i = 0; i < 1200; i += 1) pass(step, 1);
+    assert.deepEqual([base(jump).stage, Math.round(base(jump).days * 100)], [base(step).stage, Math.round(base(step).days * 100)]);
+  } finally {
+    setCalendarProvider(null);
+  }
+});

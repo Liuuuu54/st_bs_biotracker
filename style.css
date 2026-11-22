@@ -2011,7 +2011,7 @@
 }
 
 #bs-biotracker-settings #bs-bt-encyclopedia-tabs {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 #bs-biotracker-settings .bs-bt-encyclopedia-page {
@@ -7262,6 +7262,9 @@
 #bs-biotracker-settings.theme-retro, #bs-biotracker-settings.theme-wasteland { --bsbt-alert-ink: color-mix(in srgb, var(--bsbt-lcd-bg) 70%, transparent); }
 /* 樱花的本文色就是玫红，与告警色同色：斜纹改白 */
 #bs-biotracker-settings.theme-sakura { --bsbt-alert-ink: rgba(255, 255, 255, 0.85); }
+/* 樱花的日历色是粉彩、哥德的是深色宝石调：告警要醒目，不跟日历的月经色，照旧用本文的玫红与亮一阶的血红 */
+#bs-biotracker-settings.theme-sakura { --bsbt-alert: #c2185b; }
+#bs-biotracker-settings.theme-gothic { --bsbt-alert: #c43a52; }
 
 /* 日历色票跟着主题（1.5.2）：每个主题从自己的色盘挑六个阶段色；单色主题用同一种墨分深浅，纹理补足分辨 */
 #bs-biotracker-settings.theme-retro {
@@ -7285,22 +7288,24 @@
   --bsbt-cal-ink-pregnancy: var(--bsbt-lcd-bg);
 }
 #bs-biotracker-settings.theme-ink {
+  /* 水墨：国画颜料，彩度压低——朱砂、藤黄、花青、胭脂紫、石绿、赭石 */
   --bsbt-cal-menses: #a8322a;
-  --bsbt-cal-overdue: color-mix(in srgb, var(--bsbt-lcd-text) 82%, var(--bsbt-lcd-bg));
-  --bsbt-cal-pregnancy: color-mix(in srgb, var(--bsbt-lcd-text) 64%, var(--bsbt-lcd-bg));
-  --bsbt-cal-ovulation: color-mix(in srgb, var(--bsbt-lcd-text) 46%, var(--bsbt-lcd-bg));
-  --bsbt-cal-postpartum: color-mix(in srgb, var(--bsbt-lcd-text) 32%, var(--bsbt-lcd-bg));
-  --bsbt-cal-pseudo: color-mix(in srgb, var(--bsbt-lcd-text) 20%, var(--bsbt-lcd-bg));
+  --bsbt-cal-ovulation: #c99a2e;
+  --bsbt-cal-pregnancy: #3e5f7a;
+  --bsbt-cal-overdue: #6e3b5c;
+  --bsbt-cal-postpartum: #5a8468;
+  --bsbt-cal-pseudo: #a07656;
   --bsbt-cal-ink-overdue: var(--bsbt-lcd-bg);
   --bsbt-cal-ink-pregnancy: var(--bsbt-lcd-bg);
 }
 #bs-biotracker-settings.theme-constructivism {
+  /* 构成主义：海报的红、芥末黄、钢蓝、黑、橄榄灰绿、灰 */
   --bsbt-cal-menses: #c8102e;
-  --bsbt-cal-overdue: color-mix(in srgb, var(--bsbt-lcd-text) 82%, var(--bsbt-lcd-bg));
-  --bsbt-cal-pregnancy: color-mix(in srgb, var(--bsbt-lcd-text) 64%, var(--bsbt-lcd-bg));
-  --bsbt-cal-ovulation: color-mix(in srgb, var(--bsbt-lcd-text) 46%, var(--bsbt-lcd-bg));
-  --bsbt-cal-postpartum: color-mix(in srgb, var(--bsbt-lcd-text) 32%, var(--bsbt-lcd-bg));
-  --bsbt-cal-pseudo: color-mix(in srgb, var(--bsbt-lcd-text) 20%, var(--bsbt-lcd-bg));
+  --bsbt-cal-ovulation: #d9a21b;
+  --bsbt-cal-pregnancy: #2c4f7c;
+  --bsbt-cal-overdue: #141414;
+  --bsbt-cal-postpartum: #6f7d55;
+  --bsbt-cal-pseudo: #8b8f8c;
   --bsbt-cal-ink-overdue: var(--bsbt-lcd-bg);
   --bsbt-cal-ink-pregnancy: var(--bsbt-lcd-bg);
 }
@@ -7329,12 +7334,13 @@
   --bsbt-cal-pseudo: #7c6fb0;
 }
 #bs-biotracker-settings.theme-sakura {
-  --bsbt-cal-menses: #c2185b;
-  --bsbt-cal-ovulation: #ff8a65;
-  --bsbt-cal-pregnancy: #ab6fc7;
-  --bsbt-cal-overdue: #7b1f8a;
-  --bsbt-cal-postpartum: #5fb8a8;
-  --bsbt-cal-pseudo: #f4aac5;
+  /* 樱花：粉彩少女系——樱粉、蜜桃、薰衣草、葡萄紫、薄荷、藕粉；色淡，靠细框与纹理在白屏上撑住 */
+  --bsbt-cal-menses: #f06292;
+  --bsbt-cal-ovulation: #ffb38a;
+  --bsbt-cal-pregnancy: #b39ddb;
+  --bsbt-cal-overdue: #9575cd;
+  --bsbt-cal-postpartum: #80cbc4;
+  --bsbt-cal-pseudo: #f8bbd0;
 }
 #bs-biotracker-settings.theme-holo {
   --bsbt-cal-menses: #ff4d7d;
@@ -7345,12 +7351,13 @@
   --bsbt-cal-pseudo: #ff9ff3;
 }
 #bs-biotracker-settings.theme-gothic {
-  --bsbt-cal-menses: #9e1b32;
-  --bsbt-cal-ovulation: #c9a227;
-  --bsbt-cal-pregnancy: #6a4c9c;
-  --bsbt-cal-overdue: #b0306a;
-  --bsbt-cal-postpartum: #4f8a8b;
-  --bsbt-cal-pseudo: #8c7480;
+  /* 哥德：深色宝石调——酒红、暗金、深紫、梅紫、暗青、灰玫瑰；纹理用本文的浅色画，暗底上靠它分 */
+  --bsbt-cal-menses: #7a1022;
+  --bsbt-cal-ovulation: #8f6d1a;
+  --bsbt-cal-pregnancy: #45306e;
+  --bsbt-cal-overdue: #6b1a45;
+  --bsbt-cal-postpartum: #2f5e5f;
+  --bsbt-cal-pseudo: #5e4652;
 }
 #bs-biotracker-settings.theme-steampunk {
   --bsbt-cal-menses: #8b2e1a;
@@ -7514,4 +7521,125 @@
   border-radius: 3px;
   font-size: 0.75em;
   font-weight: 700;
+}
+
+/* 日记：写下时的历法日期（1.5.3），模型写的标题旁边小字 */
+#bs-biotracker-settings .bs-bt-diary-calendar {
+  font-size: 0.78em;
+  opacity: 0.7;
+  margin-left: 6px;
+}
+
+/* 日历：周期不规律的人，可能来月经的日子画淡色（1.5.3） */
+#bs-biotracker-settings .bs-bt-story-calendar__bar.is-possible,
+#bs-biotracker-settings .bs-bt-story-calendar__swatch.is-possible {
+  opacity: 0.35;
+}
+
+/* 药物名录（1.5.3） */
+#bs-biotracker-settings .bs-bt-drug-editor,
+#bs-biotracker-settings .bs-bt-drug-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-drug-row {
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--bsbt-lcd-text) 25%, transparent);
+  border-radius: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-drug-row[open] {
+  display: grid;
+  gap: 6px;
+}
+
+/* 折叠时只露出这一行：药名＋效果摘要（1.5.3） */
+#bs-biotracker-settings .bs-bt-drug-row__summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-drug-row__summary small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+#bs-biotracker-settings .bs-bt-drug-row__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+}
+
+#bs-biotracker-settings .bs-bt-drug-row .text_pole,
+#bs-biotracker-settings .bs-bt-drug-row .menu_button {
+  margin: 0;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-drug-days {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.85em;
+}
+
+#bs-biotracker-settings .bs-bt-drug-days input {
+  width: 4em;
+}
+
+#bs-biotracker-settings .bs-bt-drug-effects {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 8px;
+  font-size: 0.85em;
+}
+
+#bs-biotracker-settings .bs-bt-drug-effect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-drug-effect select {
+  width: auto;
+  padding: 0 2px;
+  font-size: 0.95em;
+}
+
+#bs-biotracker-settings .bs-bt-drug-row textarea {
+  min-height: 3.2em;
+  height: auto;
+}
+
+/* 生日选择（1.5.3）：月份、日、重掷排一行 */
+.bs-bt-birthday-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.bs-bt-birthday-row select {
+  flex: 1 1 8em;
+  min-width: 0;
+}
+.bs-bt-birthday-row input[type="number"] {
+  flex: 0 0 4.5em;
+  width: 4.5em;
+}
+.bs-bt-birthday-row .menu_button {
+  flex: 0 0 auto;
+  margin: 0;
 }

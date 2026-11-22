@@ -185,11 +185,11 @@ test('待著床的胚胎撞上孕中期会被清掉，不会活到分娩变成�
 });
 
 test('异期胎著床失败时只掉自己，先来那胎不受影响', () => {
-  // 活力 50 → 著床失败率 0.5；random 0.4 < 0.5 必定失败
-  Math.random = () => 0.4;
-  const chatState = one({ stage: '孕早期', vitality: 50, fertilizationDays: 99 }, {
+  // 卵子品质 0.25 → 著床失败率 0.4（1.5.3 起照卵子品质，不看活力）；random 0.7 > 1 − 0.4 必定失败
+  Math.random = () => 0.7;
+  const chatState = one({ stage: '孕早期', fertilizationDays: 99 }, {
     pregnantDays: 30, effectivePregnantDays: 30, fetusesCount: 2,
-    fetuses: [fetus(), lateFetus({ conceivedAtDays: 25, pendingImplantation: true, revealed: undefined })],
+    fetuses: [fetus(), lateFetus({ conceivedAtDays: 25, pendingImplantation: true, revealed: undefined, eggQuality: 0.25 })],
   });
   step(chatState);
   assert.equal(P(chatState).pregnant.fetuses.length, 1, '只该掉待著床那一颗');

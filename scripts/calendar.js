@@ -309,6 +309,96 @@ export function fromLocalYears(localYears, cal) {
   return cal ? value * averageYearDays(cal) / EARTH_YEAR_DAYS : value;
 }
 
+// ---- 法定岁数与生日（1.5.3）----
+// 时间只有一根：存的年龄是活过的地球年（经过天数 ÷ 365，只会往前）。
+// 法定岁数＝活过几个当地年（取整）；生日＝活过的时间再满一个当地年的那一刻，照目前的历法读成日期。
+// 不存出生日期：换历法、穿越（改「现在是哪天」）都跟着重算，岁数不会倒退或变负数。
+
+/** 法定岁数：活过几个当地年，取整；没有历法就是地球年取整 */
+export function legalAge(earthYears, cal) {
+  const value = toLocalYears(earthYears, cal);
+  return Number.isFinite(value) ? Math.max(0, Math.floor(value + 1e-9)) : value;
+}
+
+/** 下一个生日的 minutesPassed（今天就是生日时回传今天这一刻） */
+export function nextBirthdayMinutes(earthYears, cal, nowMinutes = 0) {
+  const local = toLocalYears(earthYears, cal);
+  if (!Number.isFinite(local)) return null;
+  const fraction = local - Math.floor(local + 1e-9);
+  const remainingYears = fraction < 1e-9 ? 0 : 1 - fraction;
+  return Number(nowMinutes) + remainingYears * averageYearDays(cal) * MINUTES_PER_DAY;
+}
+
+/** 生日（月、日）：下一个生日那天在目前历法上的日期；没有历法回传 null */
+export function birthdayOf(earthYears, cal, nowMinutes = 0) {
+  if (!cal) return null;
+  const at = nextBirthdayMinutes(earthYears, cal, nowMinutes);
+  if (at === null) return null;
+  const date = dateAt(cal, at);
+  return { month: date.month, day: date.day, monthName: date.monthName, minutes: at };
+}
+
+/** 生日的文字（「霜月3日」「3月3日」）；没有历法回传空字串 */
+export function formatBirthday(earthYears, cal, nowMinutes = 0) {
+  const birthday = birthdayOf(earthYears, cal, nowMinutes);
+  if (!birthday) return '';
+  return cal.mode === 'custom' ? `${birthday.monthName}${birthday.day}日` : `${birthday.month}月${birthday.day}日`;
+}
+
+/**
+ * 角色卡写明生日时：法定岁数 legal 不变，把年龄的小数调成「下一个生日落在那个月日」，回传地球年。
+ * 月日不在历法里（月份超出、日子超出）就夹回；没有历法照 legal 原样换算。
+ */
+export function earthAgeForBirthday(legal, cal, nowMinutes, birthday) {
+  const whole = Math.max(0, Math.floor(Number(legal) || 0));
+  if (!cal || !birthday) return fromLocalYears(whole, cal);
+  const month = Math.max(1, Math.min(monthCount(cal), Math.round(Number(birthday.month) || 1)));
+  const anchor = { month, day: Math.max(1, Math.round(Number(birthday.day) || 1)) };
+  const now = Number(nowMinutes) || 0;
+  // 今天就是生日：小数为 0
+  const today = dateAt(cal, now);
+  if (today.month === anchor.month && today.day === Math.min(anchor.day, monthDays(cal, today.year, anchor.month))) return fromLocalYears(whole, cal);
+  // 对到那天中午：生日那一刻落在当天正中，不会因为浮点误差掉到前一天深夜
+  const anchorMidnight = nextAnchorMinutes(cal, anchor, now - MINUTES_PER_DAY / 2);
+  const next = anchorMidnight === null ? null : anchorMidnight + MINUTES_PER_DAY / 2;
+  const yearDaysAvg = averageYearDays(cal);
+  const untilYears = next === null ? 0 : Math.min(1, (next - now) / MINUTES_PER_DAY / yearDaysAvg);
+  return fromLocalYears(whole + (1 - untilYears), cal);
+}
+
+/** 掷一个生日（月、日）：一年里每一天机会相同；公历照平年（不掷出 2/29） */
+export function randomBirthday(cal, random = Math.random) {
+  if (!cal) return null;
+  const total = yearDays(cal, 2001);
+  let left = Math.min(total - 1, Math.max(0, Math.floor(Number(random()) * total) || 0));
+  for (let month = 1; month <= monthCount(cal); month += 1) {
+    const days = monthDays(cal, 2001, month);
+    if (left < days) return { month, day: left + 1 };
+    left -= days;
+  }
+  return { month: 1, day: 1 };
+}
+
+/**
+ * 注册时定生日（1.5.3）：模型照角色卡写的当地岁数 → 存的地球年。
+ * 卡上写明生日（有历法）照它；岁数带小数（半岁的婴儿）照写的；
+ * 整数岁数：重新注册且法定岁数没变就沿用旧年龄（生日不跳），否则在这一岁里随机落一天，
+ * 不让所有人的生日都落在注册那天。
+ */
+export function registrationEarthAge(localAge, cal, nowMinutes = 0, { birthday = null, previousAge = null, random = Math.random } = {}) {
+  const local = Number(localAge);
+  if (!Number.isFinite(local) || local < 0) return null;
+  const whole = Math.floor(local + 1e-9);
+  if (cal && birthday && typeof birthday === 'object' && Number.isFinite(Number(birthday.month)) && Number.isFinite(Number(birthday.day))) {
+    return earthAgeForBirthday(whole, cal, nowMinutes, birthday);
+  }
+  if (local - whole > 1e-6) return fromLocalYears(local, cal);
+  const previous = previousAge === null || previousAge === undefined || previousAge === '' ? NaN : Number(previousAge);
+  if (Number.isFinite(previous) && legalAge(previous, cal) === whole) return previous;
+  const roll = Number(random());
+  return fromLocalYears(whole + Math.min(0.999, Math.max(0, Number.isFinite(roll) ? roll : 0)), cal);
+}
+
 /** 一句给模型看的历法说明；没有历法回传空字串 */
 export function describeCalendarForPrompt(cal, minutesPassed) {
   if (!cal) return '';

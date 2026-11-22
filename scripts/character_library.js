@@ -149,6 +149,8 @@ export function importLibraryEntry(chatState, settings, name, { random = Math.ra
         profile: { base, descriptions: { normalDescription: clone(entry.egg.descriptions?.normalDescription) || [] } },
       }, { allowBreedingPsychology: false, useGestationModifier: false, random });
       const profile = chatState.characters[key].profile;
+      // 年龄照档案原样（存的就是地球年，生日不跳）
+      if (Number.isFinite(Number(base.age)) && base.age !== null) profile.base.age = Number(base.age);
       profile.immune = { ...(profile.immune || {}), ...(clone(entry.egg.immune) || {}) };
       const talents = talentsFromPortable(entry.egg.talents, chatState);
       if (talents.length > 0) profile.talents = talents;

@@ -34,11 +34,11 @@ test('设 0 时注明本世界不存在；工具名只出现在追踪提示词',
   const payload = payloadWith({ condomReliability: 0, emergencyEffectiveness: 0 });
   const tracker = buildTrackerSystemPrompt('', null, payload);
   assert.match(tracker, /屏障式避孕.*本世界不存在.*hasCondom=true/);
-  assert.match(tracker, /事后避孕.*本世界不存在.*purpose=emergency/);
+  assert.match(tracker, /事后避孕.*本世界不存在.*effect=emergency/);
   const mainflow = buildMainFlowStatePrompt(payload);
   assert.match(mainflow, /屏障式避孕.*本世界不存在，剧情不得出现。/);
   assert.match(mainflow, /事后避孕.*本世界不存在，剧情不得出现。/);
-  assert.ok(!/hasCondom|bsAbortion/.test(mainflow), '主流模型不能调用工具');
+  assert.ok(!/hasCondom|bsAbortion|bsReproductiveIntervention/.test(mainflow), '主流模型不能调用工具');
 });
 
 test('成败由系统结算：主流这一轮不自己写破裂或漏出、不把事后避孕写成确定；追踪照实记戴套', () => {

@@ -11,6 +11,8 @@ const PSY_SHIFT_PATTERN = /^(slight|significant|severe)_(increase|decrease)$/;
 export const REPRODUCTIVE_DEFAULTS = Object.freeze({
   condomCapacity: 50, condomReliability: 0.95,
   emergencyEffectiveness: 0.8,
+  // 生殖药物（1.5.3）：避孕药可靠度、促排卵最多多排几颗、促分裂与促嵌合的最高倍率
+  pillReliability: 0.99, ovulationExtraEggsMax: 2, twinningMaxMultiplier: 3, chimeraMaxMultiplier: 5,
   noticeBaseDays: 42, noticeMinDays: 28, noticeMaxDays: 280, noticeSpread: 0.6,
   noticeFetalWeight: 0.15, experienceCap: 10,
   noticeExperienceH: 0, noticeExperienceM: 0, noticeExperienceA: 0, noticeExperienceU: 0,
@@ -31,7 +33,9 @@ export function normalizeReproductiveSettings(value = {}) {
     const n = value[key];
     if (typeof n === 'number' && Number.isFinite(n)) result[key] = n;
   }
-  for (const key of ['condomReliability', 'emergencyEffectiveness']) result[key] = Math.max(0, Math.min(1, result[key]));
+  for (const key of ['condomReliability', 'emergencyEffectiveness', 'pillReliability']) result[key] = Math.max(0, Math.min(1, result[key]));
+  result.ovulationExtraEggsMax = Math.max(0, Math.min(9, Math.floor(result.ovulationExtraEggsMax)));
+  for (const key of ['twinningMaxMultiplier', 'chimeraMaxMultiplier']) result[key] = Math.max(1, Math.min(50, result[key]));
   for (const key of ['condomCapacity', 'noticeFetalWeight']) result[key] = Math.max(0, result[key]);
   for (const key of ['noticeSpread', 'experienceCap']) result[key] = Math.max(0.001, result[key]);
   result.intimacyHalfLifeDays = Math.max(1, result.intimacyHalfLifeDays);

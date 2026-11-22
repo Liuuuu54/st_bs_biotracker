@@ -8,6 +8,7 @@ import { normalizeSkillCatalog, registerSkillDefinition } from './skill_config.j
 import { getHostKind, getHostContext } from './host.js';
 import { SPECIAL_TOOLS, normalizeSpecialTools } from './world_mode.js';
 import { normalizeCalendar } from './calendar.js';
+import { normalizeDrugCatalog } from './repro_effects.js';
 
 export const CARD_SETTINGS_KEY = 'bs_biotracker';
 export const CARD_SETTINGS_VERSION = 1;
@@ -85,6 +86,8 @@ export function sanitizeCardSettings(value) {
     const calendar = normalizeCalendar(value.calendar);
     if (calendar) result.calendar = calendar;
   }
+  // 药物名录（1.5.3）：世界基准，绑卡；空阵列也是明确设定（这个世界没有药）
+  if (Array.isArray(value.drugCatalog)) result.drugCatalog = normalizeDrugCatalog(value.drugCatalog);
   if (object(value.specialTools)) {
     const tools = {};
     for (const key of Object.keys(SPECIAL_TOOLS)) if (typeof value.specialTools[key] === 'boolean') tools[key] = value.specialTools[key];
@@ -136,6 +139,7 @@ export function getEffectiveSettings(ctx, settings) {
     worldBaselinePrompt: card && own(card, 'worldBaselinePrompt') ? card.worldBaselinePrompt : settings?.worldBaselinePrompt,
     realisticWorld: card && own(card, 'realisticWorld') ? card.realisticWorld : settings?.realisticWorld === true,
     calendar: card && own(card, 'calendar') ? card.calendar : normalizeCalendar(settings?.calendar),
+    drugCatalog: card && own(card, 'drugCatalog') ? card.drugCatalog : (Array.isArray(settings?.drugCatalog) ? normalizeDrugCatalog(settings.drugCatalog) : null),
     specialTools: normalizeSpecialTools({ ...normalizeSpecialTools(settings?.specialTools), ...card?.specialTools }),
     reproductiveSettings: normalizeReproductiveSettings({ ...settings?.reproductiveSettings, ...card?.reproductiveSettings }),
   };

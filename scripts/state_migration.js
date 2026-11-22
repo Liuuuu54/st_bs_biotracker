@@ -15,12 +15,13 @@ import {
   getWeightedRaceParts,
 } from './race_config.js';
 import { MENSTRUAL_STAGE_DAYS } from './stage_config.js';
+import { eggQualityFromVitalityLevel, normalizeEggQuality } from './egg_quality.js';
 
 /**
  * 聊天存档结构版本。1.0.0～1.0.5 的存档没有这个栏位，视为 1。
  * 升版时在这里加一段 v(n) → v(n+1) 的角色迁移，并让 CHAT_STATE_SCHEMA_VERSION 跟着加一。
  */
-export const CHAT_STATE_SCHEMA_VERSION = 18;
+export const CHAT_STATE_SCHEMA_VERSION = 19;
 
 /**
  * 1.0.6 之前的内置承载耐受。那时产后恢复天数除以承载耐受，
@@ -360,6 +361,19 @@ function migrateCharacterV17ToV18(character) {
   character.profile.display = normalizeDisplay(character.profile.display);
 }
 
+/**
+ * v18 → v19（1.5.3 卵子品质）：个人基准照活力等级换算（1 → 0.5 … 4 → 1 … 7 → 1.6），
+ * 这一轮的卵照基准，周期长度系数 1（下一次开新一轮才真的掷）
+ */
+function migrateCharacterV18ToV19(character) {
+  const base = character?.profile?.base;
+  if (!base || typeof base !== 'object') return;
+  if (!Number.isFinite(Number(base.eggQuality))) base.eggQuality = eggQualityFromVitalityLevel(base.vitalityLevel ?? 4);
+  base.eggQuality = normalizeEggQuality(base.eggQuality);
+  if (!Number.isFinite(Number(base.cycleEggQuality))) base.cycleEggQuality = base.eggQuality;
+  if (!Number.isFinite(Number(base.cycleLengthFactor))) base.cycleLengthFactor = 1;
+}
+
 /** v16 → v17：技能图鉴里照名字对到内置预设的，补上适用身体（性器、子宫开发为卵方专属） */
 export function assignPresetSkillBodies(catalog) {
   if (!Array.isArray(catalog)) return;
@@ -385,6 +399,7 @@ const CHARACTER_MIGRATIONS = Object.freeze({
   15: migrateCharacterV15ToV16,
   16: migrateCharacterV16ToV17,
   17: migrateCharacterV17ToV18,
+  18: migrateCharacterV18ToV19,
 });
 
 export function getChatStateSchemaVersion(chatState) {

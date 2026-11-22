@@ -141,7 +141,7 @@ test('节点带上整数岁的年龄标签，未注册的路人留空', () => {
     },
   }, '艾拉');
   const center = view.nodes.find((node) => node.isCenter);
-  assert.equal(center.ageLabel, '25岁', '与追踪页概览同样取整');
+  assert.equal(center.ageLabel, '24岁', '法定岁数：过了生日才加一，与追踪页概览一致（1.5.3）');
   const baby = view.nodes.find((node) => node.displayName === '幼子');
   assert.equal(baby.ageLabel, '0岁');
   const stranger = view.nodes.find((node) => node.displayName === '路人甲');

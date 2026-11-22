@@ -34,7 +34,7 @@
 
 | 類別 | 工具 |
 | --- | --- |
-| 時間與身體 | `bsPassedTime`、`bsUpdateCharacterStatus`、`bsExcreteMetabolism`、`bsSetMenstrualPhases`、`bsSetCharacterPresence` |
+| 時間與身體 | `bsPassedTime`、`bsUpdateCharacterStatus`、`bsExcreteMetabolism`、`bsReproductiveIntervention`、`bsSetCharacterPresence` |
 | 生殖與分娩 | `bsAddSperm`、`bsDrainSperm`、`bsImplantEmbryo`、`bsAbortion`、`bsChildbirth`、`bsAssistFetalPosition`、`bsFetalEvent`、`bsWombReturn` |
 | 記錄與描述 | `bsWriteDiary`、`bsRecordExperience`（心理變化也由它的 `psychology` 帶）、`bsSetDescription` |
 | 技能與衣物 | `bsTrainSkill`（含 `define` 登記新技能）、`bsAddWardrobeItem`、`bsChangeOutfit`（含 `discardItemIds` 刪衣物） |
@@ -58,6 +58,25 @@
 明確啟用 `pooled-v1` 的角色會把完整 `base.spermPool`、canonical 接觸來源與卵風險預算保存在角色狀態；其中 `spermPool.segment` 包含連續段的錨點、凍結來源、係數與首穿資料，保存恢復後仍從原段續算。建立追蹤 payload 與主流程提示時，深複製後刪除**整個池**及接觸歷史，不只刪舊有的 seed／eggs 欄位。聚合精源也只保留敘事白名單，避免接觸元資料繞過隔離；胎兒與孩子的公開派生審計只留顯示分鐘，不送連續段錨點或隨機預算。[投影](../../scripts/tracker.js)。
 
 這項投影不修改保存中的池，也不替 legacy 角色新增模式。啟用前後快照與回退入口見[實驗開關](settings-and-encyclopedia.md#完整變數中的實驗性混合池)。快照保存與提示隔離不是瀏覽器／長期存檔驗收完成的聲明。
+
+### 主線看到的是文字，追蹤模型看到的是數字
+
+追蹤模型要算增減（`bsUpdateCharacterStatus` 給的是增減量），所以它那份狀態照舊是數字。寫劇情的主線模型看裸數字讀不出輕重，例如宮壓 40 是輕是重要看上限，而上限又隨孕程改變。所以從 1.5.3 起，主線那份把數值照各自的上限換成文字，用不到的數值直接拿掉（只改送出的那份，不碰存檔）。[narrateStateNumbers](../../scripts/tracker.js)。
+
+| 欄位 | 主線看到的 |
+|---|---|
+| 活力 | 虛脫、筋疲力盡、疲憊、尚有精神、精力充沛（照活力上限） |
+| 情壓 | 放鬆、平穩、緊繃、焦慮不安、瀕臨崩潰（初始值是上限一半，算平穩） |
+| 性欲 | 平靜、微有欲念、情動、欲火難耐、到了頂點 |
+| 宮壓 | 鬆弛、偶爾發緊、明顯發緊、緊繃發硬（宮壓危機）、劇烈緊縮（宮壓危機）；產兆與產程中改寫宮縮強弱 |
+| 代謝需求 | 低／中／高／滿／爆，與通知同一套字；沒有的不列 |
+| 體內精液的量 | 殘留少許、一些、不少、大量 |
+| 羊膜 | 完好、變薄、很薄、已破 |
+| 孕肚大小 | 平坦、微隆、明顯隆起、渾圓、足月大小、碩大、巨大 |
+| 胎兒個頭、母胎親密度 | 偏小／適中／偏大；親近、略親、一般、疏離、排斥 |
+| 用力疲勞 | 還有餘力、疲憊、力竭 |
+
+拿掉的：卵子品質、這一輪的卵子品質、週期長度係數、胎兒的卵子品質、可受精卵數、受精天數、季內輪數、活力與情壓的等級數字（已有文字）、有文字版的胎位角度、有效孕日。留下的數字是讀得懂的：階段第幾天、年齡、孕齡天數、經歷次數、血統比例。
 
 ## 快照與宿主保存
 

@@ -50,7 +50,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '剧情中出现穿上、脱下、更衣、借穿、被脱除、淋湿更换、洗浴后重新着装等衣着变化时，必须用 bsChangeOutfit 同步当前穿着；只更新衣着描述文字而不换装是错误的。角色获得新长期衣物用 bsAddWardrobeItem，永久失去衣物用 bsChangeOutfit 的 discardItemIds。',
   '可受孕生殖道的插入／精液沉积／拔出用 bsAddSperm 状态机；排出既有残留精液用 bsDrainSperm；缓解生理需求用 bsExcreteMetabolism。',
   '跨日、重大事件或 notify 提醒时，可用 bsWriteDiary 为角色追加主观日记。',
-  '月经阶段、排卵期、假孕期切换用 bsSetMenstrualPhases；不要用它覆盖正在进行的受精、真妊娠或产程。',
+  '吃药、法术、外力改变生殖状态（事后避孕、避孕药、调经、促排卵、助孕、促分裂、促嵌合），或月经阶段要切换、要照正文对齐时，用 bsReproductiveIntervention；不要用它覆盖正在进行的受精、真妊娠或产程。',
   '剧情以特殊手段让逾期的妊娠延后不生用 bsExtendPregnancy（action=extend），结束延产用 action=induce；延产期间不能用 bsAbortion 或 bsChildbirth。',
   '流产用 bsAbortion；立即结束分娩用 bsChildbirth；角色在场状态变化用 bsSetCharacterPresence，参数必须为 female 和 isPresent（布尔值 true/false，不要使用 isHere）。角色明确回到当前场景、重新同行或参与当前互动时应设为 true；明确离开、失联或转为幕外时才设为 false。',
   '腹中胎儿受到伤害（喝酒、外伤、过劳、生病、诅咒）、得到照料（安胎药、产检、休养、祝福），或母胎之间亲近、疏离（母体安抚、胎教，胎儿回应或排斥）时，用 bsFetalEvent 记一件事；吃睡排泄等需求照料系统已自动计入胎儿健康，不要重复记。腹中两胎互踢、推挤、依偎用 bsAssistFetalPosition（action=sibling）。剧情明确出现人工胎位操作（转位、托高延后分娩、推送），或胎儿有意识地自己转身、缩回、往下钻时用 bsAssistFetalPosition（后者加 actor=fetus）。',
@@ -81,7 +81,7 @@ function buildContraceptionBlock(levels, forTracker) {
     ? `- 屏障式避孕（套子，或羊肠套、魔法屏障等等效手段）：本世界不存在，剧情不得出现${forTracker ? '；bsAddSperm 不得传 hasCondom=true' : ''}。`
     : CONDOM_LEVEL_TEXT[levels.condom] ? `- 屏障式避孕（套子或世界观中的等效手段）：${CONDOM_LEVEL_TEXT[levels.condom]}。${forTracker ? '正文写到戴着套就传 hasCondom=true，即使正文写了破裂、滑脱或漏出也照传，成败由系统结算，不要改记成没戴套。' : '这一次破没破由系统结算，下一轮才会告诉你；这一轮正文不要自己写破裂、滑脱或漏出，可以写担心。'}` : '';
   const emergency = levels.emergency === 'none'
-    ? `- 事后避孕（避孕药，或药草、魔法等等效手段）：本世界不存在，剧情不得出现${forTracker ? '；不得调用 bsAbortion purpose=emergency' : ''}。`
+    ? `- 事后避孕（避孕药，或药草、魔法等等效手段）：本世界不存在，剧情不得出现${forTracker ? '；不得调用 bsReproductiveIntervention effect=emergency' : ''}。`
     : EMERGENCY_LEVEL_TEXT[levels.emergency] ? `- 事后避孕（避孕药或世界观中的等效手段）：${EMERGENCY_LEVEL_TEXT[levels.emergency]}；越晚使用效果越差，着床后无效。${forTracker ? '' : '有没有效由系统结算，角色当下不会知道，正文不要写成已经确定。'}` : '';
   return condom || emergency ? ['[本世界的避孕手段]', condom, emergency].filter(Boolean).join('\n') : '';
 }
@@ -160,11 +160,12 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- sperms[*].value: 当前残留量，用于多父竞争与受精判定；每天自动衰减 10，无需手动清除。',
   '- eggs: 当前可受精卵子数。',
   '- libido: 性欲。角色在剧情中达到高潮时，用 bsUpdateCharacterStatus 传 options.orgasm=true（同一段性事只传一次），由系统结算高潮排卵并让性欲归零；事后的满足不要用减少 libido 代替。',
-  '- uterinePressure: 宫压，越高越接近妊娠风险或分娩。临产期或逾期时，剧情出现规律宫缩、见红等分娩发动的迹象，用 bsUpdateCharacterStatus 把 uterinePressure 加到接近上限（可直接给 +150，系统会夹在上限内），系统当下进入产兆前驱（约 48 小时后进入第一产程）；剧情明确写到已经规律宫缩、产程走得比这快时，用 bsAssistFetalPosition（action=descend）推送领头胎儿，每次缩短约 24 小时；孕早期、孕中期不要这样做，宫压过高在那时是流产风险。「直接给 +150」只用在触发临产。进入产程后宫压代表宫缩强弱，是一个取舍：越高产程越快，但越痛、休息也越难缓过来（满宫压时疲劳消退只剩一半）；剧情写到放松呼吸、宫缩间隙、镇痛、宫缩减弱时，用 bsUpdateCharacterStatus 给负值降宫压，换来疼痛减轻、休息更有效，代价是产程变慢，不要一律维持在上限。宫压在这段时间里就变了（例如宫缩缓下来后才歇着），这次 bsUpdateCharacterStatus 要排在这段时间的 bsPassedTime 之前，否则这段时间仍按原本的宫压结算。非真实分娩模式下宫压达到上限、而且这次推进跨过整点时，会让产程突然加速、直接跳过一个阶段，每跳一次用力疲劳 +30；用力疲劳要在 20 以下（缓过来了）才会突然加速，所以不能连跳，中间要先休息。',
+  '- uterinePressure: 宫压，越高越接近妊娠风险或分娩。临产期或逾期时，剧情出现规律宫缩、见红等分娩发动的迹象，用 bsUpdateCharacterStatus 把 uterinePressure 加到接近上限（可直接给 +150，系统会夹在上限内），系统当下进入产兆前驱（约 48 小时后进入第一产程）；剧情明确写到已经规律宫缩、产程走得比这快时，用 bsAssistFetalPosition（action=descend）推送领头胎儿，每次缩短约 24 小时；孕早期、孕中期、孕晚期不要这样做：宫压过上限一半是宫压危机，孕早中期会一路伤胎（伤到见底才流产），孕晚期每次推进都可能提前发动。要流产或催生，照剧情用 bsReproductiveIntervention（药物、法术）或 bsAbortion（结果已确定的处置），不要拿宫压硬推。「直接给 +150」只用在触发临产。进入产程后宫压代表宫缩强弱，是一个取舍：越高产程越快，但越痛、休息也越难缓过来（满宫压时疲劳消退只剩一半）；剧情写到放松呼吸、宫缩间隙、镇痛、宫缩减弱时，用 bsUpdateCharacterStatus 给负值降宫压，换来疼痛减轻、休息更有效，代价是产程变慢，不要一律维持在上限。临产以前也一样：宫压危机（过上限一半）时，剧情写到卧床休息、情绪平复、安胎的药草或法术让小腹发紧缓下来，用负值降宫压，否则宫压一直卡在高处会持续伤胎；没有缓解的迹象就不要降。宫压在这段时间里就变了（例如宫缩缓下来后才歇着），这次 bsUpdateCharacterStatus 要排在这段时间的 bsPassedTime 之前，否则这段时间仍按原本的宫压结算。非真实分娩模式下宫压达到上限、而且这次推进跨过整点时，会让产程突然加速、直接跳过一个阶段，每跳一次用力疲劳 +30；用力疲劳要在 20 以下（缓过来了）才会突然加速，所以不能连跳，中间要先休息。',
   '- vitality: 活力。',
   '- psyStress: 情压/精神压力。',
   '- vitalityLevel / psyStressLevel: 个体等级，决定对应数值上限与体质倾向。',
   '- vitalityLevelText / psyStressLevelText: 系统额外附带的等级文字说明，方便直接理解体质与精神倾向。',
+  '- base.fertility / base.cycleCondition（卵子品质的文字）：fertility 是天生的生育力（一般的不写），cycleCondition 是这一轮与平常不同之处与月经准不准；eggQuality／cycleEggQuality 是对应的数值（0.25–4，1 为一般），由系统按周期掷出，不要用工具改。',
   '',
   '[pregnant]',
   '- pregnant 只会在已有 fetuses、妊娠阶段、产兆前驱/产程、产后恢复或假孕期发送；幕外角色发送时只保留少量 pregnant 摘要，并用 fetusesCount 表示胎儿数量。',
@@ -212,6 +213,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- fetuses[*].labor: 这一胎在产程中遇到的事（难产类型、产程延长、急产、产伤）。产伤不指定部位与症状：依这一族的身体构造与这次分娩的整体情况（卡住多久、多急、是不是助产拉出）推想合理的伤，不要直接套人类的医学名词。',
   '- pain: 生殖疼痛 0-10 与来源（分娩、月经、胎动、假宫缩、产后宫缩），有痛才出现；描写这些痛不得明显超过这个等级。标了「痛即为爽」时，她天生把这些分娩、妊娠、月经的痛感受为快感：照等级写出痛，但她的感受是爽；这不会让性欲自动上升，也和技能 M 倾向（从被施加的疼痛、被支配中得到快感）是两回事。',
   '- pregnant.fetalMovementFelt: 系统按胎量判定她现在感觉不感觉得到胎动（人类型约孕 18–20 周起，物种生长型早熟的更早、晚成或胎儿份量小的更晚）；false 时剧情不写她感到胎动、踢动。',
+  '- pregnant.movementCue: 每一胎今天的动静（感觉得到胎动时才有）；写到胎动时照它（哪一胎好动、往哪侧踢），不写数字。pregnant.movementCuePush 为 true 时，这一轮正文带一笔胎动（一句即可，照 movementCue），不要每段都写；角色还不知道怀孕或拒绝承认时，照认知规则写成胀气、肠胃蠕动。',
   '- fetuses[*].tendencyAngle: 胎位角度，0/360=头位，180=臀位，90或270=横位，禁止反写；影响第二产程的难度。若 notify 发出难产警示，应优先考虑 bsChildbirth 手术产。',
   '- fetuses[*].tendencyAngleText: 系统额外附带的胎位文字说明，如 头位(头朝下)/臀位(臀部朝下)/横位/斜位。',
   '- fetuses[*].positionText: 这一胎在子宫里的深度，由系统的胎动与产程自动结算：顶到宫顶／宫内自由／子宫低位／入盆／进入产道／着冠／先露部已出；卡住时会写明（如 与另一胎在入口互锁、肩部卡住、在宿主胎儿体内）。描写胎儿位置、腹部下沉、入盆时须与它一致，不要自行改写。',
@@ -694,16 +696,16 @@ function buildMainFlowFieldNotes(existingState = {}) {
     '- cognitionRecords 保存角色信念，可以与事实不同；系统结果、真实胎父与胎数不自动成为角色知识。自然线索到点也不强制知孕；产程是系统结果，她认出自己在分娩之前不得写成她知道。',
     ...(profiles.some((profile) => profile.bodyFamiliarity) ? ['- bodyFamiliarity 是身体对各性伴的熟悉度（系统按次数、体型相容与时间算出，前三名）：只描述身体的记忆与反应，例如对谁的触碰更快有反应，不代表感情或爱意。'] : []),
     ...(profiles.some((profile) => profile.lastCondomResult || profile.lastEmergencyResult) ? ['- lastCondomResult/lastEmergencyResult 只在结算后的下一次叙事出现：是系统结果，不等于角色察觉；可据此描写合理可见的后果，不要求本轮处理。'] : []),
-    '- base：vitality 活力、psyStress 情压，体质与精神倾向看 *LevelText；libido 性欲；figure 当下身材（含孕期变化，胸部大小与奶量无关）；uterinePressure 宫压（上限随孕程提高，越高越接近流产或分娩）；eggs 可受精卵数；sperms 为体内残留精液，value 每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。',
+    '- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。描写照这些文字，不写数字。',
   ];
   if (profiles.some((profile) => profile.metabolism)) {
-    lines.push('- metabolism：excretion 泄意、hunger 饿意、sleep 困意、milk 乳意（孕晚期以前是乳房胀痛敏感，孕晚期起才可能溢乳）、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；数值越高越急迫（一般上限 150）。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');
+    lines.push('- metabolism：excretion 泄意、hunger 饿意、sleep 困意、milk 乳意（孕晚期以前是乳房胀痛敏感，孕晚期起才可能溢乳）、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；分级为 低／中／高／满／爆（没列的就是没有）。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');
   }
   if (profiles.some((profile) => profile.pregnant)) {
     lines.push(
-      '- pregnant：pregnantDays 孕龄天数；bellySize 孕肚大小（0–15，足月单胎约 7，超过 10 是任何衣服都包不住的巨大孕肚；产后从约 4 缩回 0），只用来描写孕肚有多大，不写数字；allocation 这胎养分偏给谁；pain（在角色层）生殖疼痛与来源，标了痛即为爽时她把这些痛感受为快感（不因此加性欲）；fetalMovementFelt 她现在感觉不感觉得到胎动（看胎量，不看孕龄），false 时不写她感到胎动；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；amnionDurability 或胎儿上的 amnion 表示羊膜，已破即破水。',
-      '- pregnant.laborEffort / pushFatigue（产程中）：push 表示产妇正在用力、rest 表示停下来喘口气；第一产程用力是白费力气；pushFatigue 用力疲劳 0-100，60 以上已经力竭、越推越没效果，描写可体现喘息与脱力。',
-      '- fetuses 按子宫里由左到右排列，不代表出生顺序；presenting=true 是正在下降或娩出的那一胎。weight 胎重系数，1.0 为标准；affinity 母胎亲密度 -50～50，负值为排斥；health 胎儿健康（健壮／平稳／虚弱／危急），描写胎儿状况须一致，不写出刻度本身；resilience 顽强（很耐疏忽与伤害，可写母体挺着肚子照样奔波、胎儿稳如磐石）或脆弱（稍有闪失就会出事），没有就是一般；positionText、backSideText、tendencyAngleText 是胎位现况，描写须一致。',
+      '- pregnant：pregnantDays 孕龄天数；bellySize 孕肚大小（平坦、微隆、明显隆起、浑圆、足月大小、硕大、巨大；产后会慢慢缩回）；allocation 这胎养分偏给谁；pain（在角色层）生殖疼痛与来源，标了痛即为爽时她把这些痛感受为快感（不因此加性欲）；fetalMovementFelt 她现在感觉不感觉得到胎动（看胎量，不看孕龄），false 时不写她感到胎动；laborPhase 产程内部阶段；laborPain 分娩疼痛 0-10，描写不得明显超过；amnionDurability 或胎儿上的 amnion 表示羊膜（完好、变薄、很薄、已破），已破即破水。',
+      '- pregnant.laborEffort / pushFatigue（产程中）：push 表示产妇正在用力、rest 表示停下来喘口气；第一产程用力是白费力气；pushFatigue 用力疲劳（还有余力、疲惫、力竭），力竭时越推越没效果，描写可体现喘息与脱力。',
+      '- fetuses 按子宫里由左到右排列，不代表出生顺序；presenting=true 是正在下降或娩出的那一胎。weight 胎儿个头（偏小、适中、偏大）；affinity 母胎亲密度（亲近、略亲、一般、疏离、排斥）；health 胎儿健康（健壮／平稳／虚弱／危急），描写胎儿状况须一致，不写出刻度本身；resilience 顽强（很耐疏忽与伤害，可写母体挺着肚子照样奔波、胎儿稳如磐石）或脆弱（稍有闪失就会出事），没有就是一般；positionText、backSideText、tendencyAngleText 是胎位现况，描写须一致。',
     );
   }
   if (profiles.some((profile) => profile.base?.stage === '延产期' || Number(profile.pregnant?.extensionCount) > 0)) {
@@ -723,6 +725,16 @@ function buildMainFlowFieldNotes(existingState = {}) {
 }
 
 /** 对话历法（1.5.2）：今天是哪天、这个世界的月与年多长；年龄是当地的岁。tracker 另外交代 time 与 bsPassedTime 的写法 */
+/** 这个世界的生殖药物（1.5.3）：只在名录是卡片或使用者自订时送，通用预设不占提示 */
+function buildMainFlowDrugBlock(payload) {
+  if (payload?.drug_catalog_custom !== true || !Array.isArray(payload?.drug_catalog) || !payload.drug_catalog.length) return '';
+  return [
+    '[这个世界的生殖药物]',
+    ...payload.drug_catalog.map((drug) => `- ${drug.name}${drug.description ? `：${drug.description}` : ''}`),
+    '- 剧情需要时可以出现、被使用；效果由系统结算，正文不写数值，也不要让药效立刻、确定地成功。',
+  ].join('\n');
+}
+
 function buildCalendarBlock(note, forTracker) {
   const text = String(note || '').trim();
   if (!text) return '';
@@ -755,6 +767,7 @@ export function buildMainFlowStatePrompt(payload = {}) {
     buildWorldBaselineBlock(payload?.world_baseline_prompt),
     buildCalendarBlock(payload?.calendar_note, false),
     buildContraceptionBlock(payload?.contraception_levels, false),
+    buildMainFlowDrugBlock(payload),
     racePhysiologyPrompt,
     '<bs_biotracker>',
     '[并行生理追踪上下文]',
@@ -785,7 +798,7 @@ const NARRATIVE_REMINDER_RULES = [
   [/^(.+?)渴望陪伴，但当前臭意会妨碍社交舒适度$/, '$1渴望陪伴，但身上的气味令人在意'],
 ];
 // 受精本身无从察觉（着床前身体没有任何变化），旁白读到「受精成功」会让角色提早出现孕兆、去验孕
-const NARRATIVE_REMINDER_DROPS = [/供养力/, /^若释放量足够大/, /^清洁后再给予陪伴/, /\bbs[A-Z]\w*/, /受精成功/, /再度受精/, /结出了新的受精卵/];
+const NARRATIVE_REMINDER_DROPS = [/供养力/, /^若释放量足够大/, /^清洁后再给予陪伴/, /\bbs[A-Z]\w*/, /受精成功/, /再度受精/, /结出了新的受精卵/, /^认知照她的理解写/];
 
 /** 旁白不能调用工具：禁令留下，「须先调用某工具」这类句子或分句拿掉，仍带工具名的片段整段丢弃 */
 export function narrativeReminders(text) {
@@ -805,7 +818,8 @@ export function projectNarrativeState(existingState = {}, recentResults = []) {
   const results = Array.isArray(recentResults) ? recentResults : [];
   const fresh = (tool, test = () => true) => new Set(results.filter((item) => item?.name === tool && test(item)).map((item) => item.female));
   const condomFresh = fresh('bsAddSperm', (item) => String(item.message || '').includes('deposit'));
-  const emergencyFresh = fresh('bsAbortion');
+  // 事后避孕 1.5.3 起走生殖干预；旧存档的操作纪录可能还是 bsAbortion
+  const emergencyFresh = new Set([...fresh('bsAbortion'), ...fresh('bsReproductiveIntervention', (item) => String(item.message || '').includes('事后避孕'))]);
   return Object.fromEntries(Object.entries(existingState || {}).map(([name, item]) => {
     if (!item?.profile) return [name, item];
     const profile = { ...item.profile };
@@ -1900,6 +1914,7 @@ export function buildSireExtractionSystemPrompt(settings, options = {}) {
     '只写资料与对话里看得出来的；没提到的数值栏位填 null，不要编造。target_character 可能是角色卡本身，也可能只是卡里或对话里的人物。',
     `- 种族已由使用者指定为 ${sanitizePromptText(declaredRace)}，只用来判断体型与人外特征，不要输出种族。`,
     '- age: 实际年龄（岁）。长生种只写外表年龄时按设定推估；完全没有线索填 null。',
+    '- birthday: 设了对话历法、角色卡或世界书写明生日时给 { "month": 月份序号（从 1 起）, "day": 日 }；没写就不要给。',
     '- bodySize: 常态（人态）的个体体型，1–7 级，人类为 4，可带一位小数。依写明的身高或身材换算：约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7，锚点之间按比例内插。能变形的种族只填常态。卡上没写身材填 null，系统用种族平均。',
     '- isHere: 最近对话里此人是否在场；看不出来填 true。',
     ...(options.withTalents ? ['- talents: 此人的天赋（资质），阵列 [{"skill":"技能名","level":整数}]，level 为 -5～5，正为擅长、负为苦手；技能名只能用 payload.skill_catalog 里的。天赋是与生俱来的资质，会有一部分遗传给孩子；只写设定里明确的长处或短处，没有就给空阵列。',
@@ -1976,7 +1991,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '你只需要填写角色注册时真正需要声明的内容，不需要补充其他无关信息。',
     '不要扩写额外分类，不要发散到注册步骤之外的内容。',
     '你只需要填写以下声明内容：',
-    '1. 角色基础注册：base.age、base.race、base.bodySize、base.sheathOffset、base.build、base.bust、base.hip、base.allocationBias、base.bustGain、base.hipGain、base.vitalityLevel、base.psyStressLevel、base.libido、base.uterinePressure、base.latestSexDays、base.penetrationState、base.penetrationSource、base.sperms、metabolism',
+    '1. 角色基础注册：base.age、base.race、base.bodySize、base.sheathOffset、base.build、base.bust、base.hip、base.allocationBias、base.bustGain、base.hipGain、base.vitalityLevel、base.eggQuality、base.psyStressLevel、base.libido、base.uterinePressure、base.latestSexDays、base.penetrationState、base.penetrationSource、base.sperms、metabolism',
     '2. 情感与妊娠经验：experience',
     ...(includeBreedingPsychology ? ['3. 繁育心理：psychology.mens 或 psychology.preg（二选一，互斥）'] : []),
     '4. 既有孩子记录：children',
@@ -1990,6 +2005,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     `- base.race: 纯种/混血/衍生种族/子类物种，保留原始写法，若故事为现代写实，种族统一填人类即可${declaredRace ? `。【重要】用户已明确指定，必须强制填写為：${declaredRace}` : ''}`,
     '- base.bloodline: 原文写明血脉比例时，可把比例直接写进 base.race，或另填 bloodline 对象（键与 race 成分一致，值为0到1、合计1）。其余成分已知就写全，例如祖母是精灵、其余祖辈是人类：race="1/4精灵x3/4人类"（或 race="精灵x人类"、bloodline={"精灵":0.25,"人类":0.75}）。其余成分不详就只写已知那一份，例如「八分之一龙血，其余血统不详」：race="1/8西方龙"，系统会把剩下的87.5%记为未知；不得擅自补成人类。没有比例依据就省略；系统会标为比例推定。衍生类型不占种族血脉份额。',
     '- base.vitalityLevel: 1-7，默认语义为 一推就倒(1)-身怀病弱(2)-体弱易累(3)-均衡活力(4)-健康有余(5)-经过锻炼(6)-无坚不摧(7)',
+    '- base.eggQuality: 卵子品质 0.25–4（与精子品质同一把尺，1 为一般）。照角色卡：难以受孕、体弱多病、年长偏低（0.5 左右），丰饶、多子多孙的体质偏高（2 左右）；卡上没写就照 vitalityLevel（体弱 0.7、一般 1、强健 1.4）。只管着床与胎儿起点，不管会不会受精。',
     '- base.psyStressLevel: 1-7，默认语义为 情感丧失麻木不仁(1)-内向压抑冷感(2)-情绪平缓理性(3)-情绪均衡稳定(4)-情绪丰富敏感(5)-强烈波动焦躁(6)-极端情绪精神异常(7)',
     '- base.age: 必填，不得省略或填 null。依角色卡、世界书与对话推断实际年龄；长生种只写外表年龄时，按设定推估实际岁数；资料完全没有提到时，按外貌、身分与经历推估一个合理年龄。',
     `- base.bodySize: 常态（人态）的个体体型，1–7 级，人类为 4，可带一位小数。依角色卡写明的身高或身材换算：约 30 cm＝1.5、120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7，锚点之间按比例内插；萝莉体型约 3–3.5，八尺约 5.3。半人马、拉弥亚等大型下半身看整体量体，以种族体型为准再增减。能变形的种族只填常态，变化态由系统按种族推算。未成年角色填当下的体型。卡上没写身材就省略，系统按种族分布抽取；种族体型为依个体时（${getIndividualBodySizeRaces().join('、')}）必须按子项或描述填写；种族体型为可变时省略。`,
@@ -2003,7 +2019,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- 身材（体重比例、胸、臀）一律填「人类等效值」：想象她是一名同样身材的人类女性时是多少，体重比例也一样，不按兽躯的真实重量。半人形（马身、蛇尾、蛛身、鱼尾等）按人身上半部的胖瘦与胸填；臀部填人身与下半身相接处的宽度（马身看前躯与腰胯相接处，蛇尾、鱼尾看尾根的腰胯），角色卡写了能化成人形的，化人形时的身材就是这组值。形体不定者（史莱姆、触手怪、元素灵等）按她平常最常维持、或剧情里最常拟成的人形填；没有固定人形就照常态的丰盈程度估体重，胸、臀填预设。非人形（兽、鸟、虫、鱼、植物等）只有体重比例有意义（整体胖瘦），胸填 0、臀填 50，增长倾向都填 0；之后会只用胖瘦描写。',
     '- 注册孩子时可参考父母的身材与倾向。胸部大小与奶量无关，不要因为胸大就写奶多。',
     '- base.libido: 初始性欲。非妊娠上限100；妊娠後会随孕期提升，临产最后一天上限可达150。若角色开场就在发情、催情、强欲状态，可给较高值。',
-    '- base.uterinePressure: 初始宫压。非妊娠上限50；妊娠後会随进度平滑提升，臨產期上限达150。【危险警告】孕早期与孕中期前期上限极低，超过15便极易触发流产警告！除非开局正在临盆或剧烈腹痛，否则强烈建议填 0。',
+    '- base.uterinePressure: 初始宫压。非妊娠上限50；妊娠後会随进度平滑提升，臨產期上限达150。孕早期与孕中期前期上限很低，超过约 15 就进入宫压危机（会持续伤到胎儿）；除非开局正在临盆或剧烈腹痛，否则填 0。',
     '- base.latestSexDays: 距最近一次性行为经过的天数。若 experience.latestSexPartner 有意义，建议一并填写；若已超过最近一月经周期或无从判断，可为 null。',
     '- base.penetrationState / penetrationSource: 当前可受孕生殖道的插入状态（idle/inserted/spent）与来源；一般开场为 idle/null，插入不等于射精。',
     '- base.sperms: 体内残留精液来源列表。适用于刚性交结束、仍有精液残留的开局；每项包含 male、race、value，value 以人类精方 10-30 为准，按精方体型每级翻倍（每天自动衰减，人类女方 10，同样按女方体型每级翻倍）。race 可直接写 [衍生]种族，系统会自动拆出 derivedType。',

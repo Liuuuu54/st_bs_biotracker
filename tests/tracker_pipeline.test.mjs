@@ -369,7 +369,8 @@ test('1.5.2 对话历法：送今天的日期与历法说明、年龄换成当�
     const settings = state.getSettings(ctx);
     const payload = buildTrackerPayload(ctx, settings);
     assert.match(payload.calendar_note, /今天是 帝国历 312年 第3月9日/);
-    assert.equal(payload.existing_state['贝拉'].profile.base.age, 19.7, '27 个地球年 = 9855 天 ≈ 19.7 个 500 天的年');
+    assert.equal(payload.existing_state['贝拉'].profile.base.age, 19, '27 个地球年 = 9855 天 ≈ 19.7 个 500 天的年，法定 19 岁（1.5.3）');
+    assert.match(String(payload.existing_state['贝拉'].profile.base.birthday || ''), /月\d+日$/, '附上生日');
     const prompt = buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, payload);
     assert.match(prompt, /\[对话历法\]/);
     assert.match(prompt, /bsPassedTime 的 month、year 照这个历法换算/);

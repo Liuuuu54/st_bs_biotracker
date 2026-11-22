@@ -104,6 +104,8 @@ export function buildBellyCloseupState(input) {
       // 健康比例 0–1（0.5 是平常）→ 0–100
       health: clamp((Number.isFinite(Number(fetus.healthRatio)) ? Number(fetus.healthRatio) : 0.5) * 100, 0, 100),
       canMove: fetus.canMove !== false,
+      // 今天的动静 0–3（没给的旧呼叫是「一般」）
+      vigor: Number.isFinite(Number(fetus.vigor)) ? clamp(Math.round(Number(fetus.vigor)), 0, 3) : 1,
       ...(zone ? { zone } : {}),
       ...(behind ? { behind } : {}),
       // 内胎：动静算在宿主身上，自己没有位置

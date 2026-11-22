@@ -63,8 +63,9 @@ export const FETAL_HEALTH_INITIAL_MIN = 35;
 export const FETAL_HEALTH_INITIAL_MAX = 70;
 
 /** 受精时抽初始健康；quality 是射精当下的精子品质快照 */
-export function sampleFetalInitialHealth({ quality = 1, stage = '排卵期', random = Math.random } = {}) {
-  const q = clamp(quality, 0.25, 4, 1);
+/** 受精时抽初始健康；quality 是射精当下的精子品质快照，eggQuality 是这一轮的卵子品质（1.5.3） */
+export function sampleFetalInitialHealth({ quality = 1, eggQuality = 1, stage = '排卵期', random = Math.random } = {}) {
+  const q = clamp(quality, 0.25, 4, 1) * clamp(eggQuality, 0.25, 4, 1);
   const z = Math.max(-MAX_SD_LIMIT, Math.min(MAX_SD_LIMIT, standardNormal(random)));
   const value = FETAL_HEALTH_BASE * FETAL_HEALTH_INITIAL_RATIO * q ** 0.25 * getConceptionTimingFactor(stage) * Math.exp(CONCEPTION_WEIGHT_LOG_SD * z);
   return round(clamp(value, FETAL_HEALTH_INITIAL_MIN, FETAL_HEALTH_INITIAL_MAX, FETAL_HEALTH_BASE * FETAL_HEALTH_INITIAL_RATIO), 1);

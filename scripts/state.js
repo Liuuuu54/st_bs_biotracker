@@ -193,6 +193,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   realisticWorld: false,
   // 对话历法（1.5.2）：null＝没设，照旧显示「第 N 天」；角色卡可以覆盖
   calendar: null,
+  // 药物名录（1.5.3）：null＝没设（写实世界退回预设名录）；角色卡可以覆盖
+  drugCatalog: null,
   specialTools: { implantEmbryo: true, wombReturn: true, extendPregnancy: true },
   reproductiveSettings: normalizeReproductiveSettings(),
   pollMs: 1800,
@@ -797,6 +799,10 @@ export function createDefaultFemaleState(name = '') {
         derivedType: null,
         sperms: [],
         eggs: 0,
+        // 卵子品质（1.5.3）：个人基准、这一轮的卵、这一轮的周期长度系数
+        eggQuality: 1,
+        cycleEggQuality: 1,
+        cycleLengthFactor: 1,
         libido: 0,
         uterinePressure: 0,
         vitality: getVitalityInitByLevel(vitalityLevel),
@@ -2154,6 +2160,10 @@ function createSnapshotCharacterBaseline(name = '') {
         derivedType: null,
         sperms: [],
         eggs: 0,
+        // 卵子品质（1.5.3）：个人基准、这一轮的卵、这一轮的周期长度系数
+        eggQuality: 1,
+        cycleEggQuality: 1,
+        cycleLengthFactor: 1,
         libido: 0,
         uterinePressure: 0,
         vitality: getVitalityInitByLevel(4),

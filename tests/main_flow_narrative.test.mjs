@@ -150,7 +150,13 @@ test('a fertilized egg stays hidden from the narrator until it implants; the tra
   assert.match(tracked.notify.secondly, /受精成功/);
   assert.ok(tracked.pregnant.fetuses.length > 0);
 
-  for (let day = 0; day < 20 && profile().base.stage !== '孕早期'; day += 1) applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 1 } });
+  // 著床失败率照卵子品质（一般约 5%）：同样钉住乱数，0.05 不会判失败
+  Math.random = () => 0.05;
+  try {
+    for (let day = 0; day < 20 && profile().base.stage !== '孕早期'; day += 1) applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 1 } });
+  } finally {
+    Math.random = realRandom;
+  }
   assert.equal(profile().base.stage, '孕早期');
   assert.ok(narratedState()['甲'].profile.pregnant, 'after implantation the narrator sees the pregnancy');
 });
@@ -213,4 +219,58 @@ test('bsChildbirth records a natural birth only when asked, and refuses it befor
   const early = deliver(150, 'natural');
   assert.equal(early.result.applied, false, 'a mid-pregnancy delivery is a miscarriage, not a birth');
   assert.equal(early.profile.base.stage, '孕中期');
+});
+
+test('自订药物名录的药名送给主线，通用预设不送（1.5.3）', async () => {
+  const { setDrugCatalogProvider, DEFAULT_DRUG_CATALOG } = await import('../scripts/repro_effects.js');
+  const { ctx, settings } = setup([['甲', '卵泡期']]);
+  try {
+    setDrugCatalogProvider(() => DEFAULT_DRUG_CATALOG);
+    assert.doesNotMatch(buildMainFlowPrompt(ctx, settings), /这个世界的生殖药物/);
+    setDrugCatalogProvider(() => [{ name: '月神露', description: '精灵祭司调的助孕露', effects: [{ effect: 'fertility', strength: 'normal' }], days: 7 }]);
+    const prompt = buildMainFlowPrompt(ctx, settings);
+    assert.match(prompt, /\[这个世界的生殖药物\]\n- 月神露：精灵祭司调的助孕露/);
+    const drugBlock = prompt.match(/\[这个世界的生殖药物\][\s\S]*?效果由系统结算/)[0];
+    assert.doesNotMatch(drugBlock, /fertility|strength|days/, '药名段不送效果与数值');
+  } finally {
+    setDrugCatalogProvider(null);
+  }
+});
+
+test('事后避孕走生殖干预后，结果照样只给主线看一轮（1.5.3）', async () => {
+  const { projectNarrativeState } = await import('../scripts/prompts/rules.js');
+  const state = { A: { profile: { base: { stage: '黄体期' }, lastEmergencyResult: { outcomes: [] } } } };
+  const fresh = [{ name: 'bsReproductiveIntervention', female: 'A', applied: true, message: 'bsReproductiveIntervention applied to A（晨露汤）: 事后避孕.' }];
+  assert.ok(projectNarrativeState(state, fresh).A.profile.lastEmergencyResult, '刚结算的那一轮看得到');
+  assert.equal(projectNarrativeState(state, []).A.profile.lastEmergencyResult, undefined, '之后不再提醒');
+  const other = [{ name: 'bsReproductiveIntervention', female: 'A', applied: true, message: 'bsReproductiveIntervention applied to A（月神露）: 助孕（7 天）.' }];
+  assert.equal(projectNarrativeState(state, other).A.profile.lastEmergencyResult, undefined, '别的药不算');
+});
+
+test('主线状态把数值换成文字，追踪模型照旧给数字（1.5.3）', async () => {
+  const { applyToolCall: apply } = await import('../scripts/tools.js');
+  const { ctx, settings, chatState } = setup([['甲', '卵泡期', (p) => { p.base.vitality = 20; p.base.psyStress = 100; p.metabolism = { ...p.metabolism, hunger: 120, sleep: 10 }; }]]);
+  apply(chatState, { name: 'bsDebugInjectPregnancy', arguments: { female: '甲', mode: 'normal', father: 'U', race: '人类', fetusCount: 1, genders: '女', equivalentDays: 150 } });
+  const narrated = JSON.parse(buildMainFlowPrompt(ctx, settings).match(/\[当前已注册角色状态\]\n(.+)/)[1].split('<\/').join('</'))['甲'].profile;
+  assert.equal(narrated.base.vitality, '筋疲力尽', '20／125');
+  assert.equal(narrated.base.psyStress, '濒临崩溃', '100／110');
+  assert.equal(narrated.base.uterinePressure, '松弛');
+  assert.equal(narrated.base.eggQuality, undefined, '卵子品质主线用不到');
+  assert.equal(narrated.base.cycleLengthFactor, undefined);
+  assert.deepEqual(narrated.metabolism, { hunger: '满' }, '没有的需求不列');
+  assert.equal(typeof narrated.pregnant.bellySize, 'string');
+  assert.equal(narrated.pregnant.fetuses[0].affinity, '一般');
+  assert.ok(['偏小', '适中', '偏大'].includes(narrated.pregnant.fetuses[0].weight));
+  assert.equal(narrated.pregnant.fetuses[0].eggQuality, undefined);
+  const tracked = buildTrackerPayload(ctx, settings, 'manual').existing_state['甲'].profile;
+  assert.equal(tracked.base.vitality, 20, '追踪模型要算增减，照旧给数字');
+  assert.equal(tracked.metabolism.hunger, 120);
+  assert.equal(chatState.characters['甲'].profile.base.vitality, 20, '不碰存档');
+});
+
+test('情压在初始值（上限一半）读作平稳', () => {
+  const { ctx, settings } = setup([['乙', '卵泡期']]);
+  const narrated = JSON.parse(buildMainFlowPrompt(ctx, settings).match(/\[当前已注册角色状态\]\n(.+)/)[1].split('<\/').join('</'))['乙'].profile;
+  assert.equal(narrated.base.psyStress, '平稳');
+  assert.equal(narrated.base.vitality, '精力充沛');
 });

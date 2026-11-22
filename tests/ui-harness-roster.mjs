@@ -77,10 +77,11 @@ export const HARNESS_CALENDAR = Object.freeze({
 /** 主题说明：页首照这份自动列出 */
 export const ROSTER_NOTES = {
   卡蜜拉: '月经期｜血族千年萝（1200 岁、外表少女），族谱第一代，转化了银月与珂赛特',
-  索菲亚: '卵泡期｜未孕综合：技能天赋、三源精液灌满、族谱分支、未孕心理、日记、关系',
   晴岚: '乏情期｜扶她双周期：卵方乏情（妖狐，二月二十日进繁殖季）→ 精方跟着非繁殖季 ×0.6，精力周期另外照跑；精方专属技能；衣着未记录',
   塞拉菲: '排卵期｜天使，繁殖季中（十二月二十一日起一轮约 42 天，之后乏情到明年同一天）',
+  朵拉: '黄体期｜卵子品质很差（×0.3）、周期不规律：这一轮偏短；下一次月经日子已定（实心），再往后每次月经前约 4 天画淡色的可能范围；着床失败率约 30%',
   伊芙: '乏情期｜兽耳族-狼，乏情中、一月二十五日进繁殖季（季内三轮），日历页看得到对齐',
+  索菲亚: '卵泡期｜未孕综合：技能天赋、三源精液灌满、族谱分支、未孕心理、日记、关系',
   小茉: '黄体期｜人类x兽耳族-兔，族谱第三代，刚受精特写',
   银月: '孕早期｜转化中（被卡蜜拉初拥，进度条）；饥饿咕噜；衣着余裕',
   诺艾尔: '孕中期｜兽化；纪录堆、孕期心理、虚弱胎、未揭露的异期复孕；泄意扭动；特制孕妇装',
@@ -118,6 +119,33 @@ export function buildRoster() {
       metabolism: { hunger: 40, flux: 60 },
     }),
     // 第二代：未孕综合
+    晴岚: female('晴岚', {
+      // 扶她双周期：照妖狐的生理（乏情 337 天、一季一轮），乏情已过 250 天，推进时间对齐到二月二十日
+      bio: getRacePhysiologyProfile('妖狐'),
+      base: { stage: '乏情期', days: 250, seasonCycle: 0, age: 300, race: '妖狐', derivedType: '妖怪', build: 50, bust: 62, hip: 55 },
+      display: { skinColor: '#f9e0cc' },
+      descriptions: { normalDescription: desc([['外貌', '九条狐尾、金瞳，裙下藏着不该有的东西'], ['神态', '笑眯眯地打量每一个人']]) },
+      skills: [{ skillId: 6, level: 2, exp: 40 }, { skillId: 7, level: 1, exp: 0 }],
+    }),
+    // 繁殖季（1.5.2 历法定锚）：天使十二月二十一日起，现在是季内第 15 天、排卵中
+    塞拉菲: female('塞拉菲', {
+      bio: getRacePhysiologyProfile('天使'),
+      base: { stage: '排卵期', days: 1.5, seasonCycle: 0, eggs: 1, age: 500, race: '天使', build: 40, bust: 48, hip: 50 },
+      display: { skinColor: '#fbf1e6' },
+      descriptions: { normalDescription: desc([['外貌', '白翼收在背后，金发垂到腰间'], ['神态', '端庄，却掩不住季节带来的燥热']]) },
+    }),
+    // 乏情中：兽耳族-狼一月二十五日进繁殖季
+    朵拉: female('朵拉', {
+      base: { stage: '黄体期', days: 3, eggs: 0, age: 34, eggQuality: 0.3, cycleEggQuality: 0.27, cycleLengthFactor: 0.86, vitalityLevel: 2, build: 30, bust: 32, hip: 38 },
+      descriptions: { normalDescription: desc([['外貌', '面色苍白、眼下发青，瘦得锁骨分明'], ['神态', '说话总是轻声细气，像怕打扰到谁']]) },
+    }),
+    // 第三代：刚受精
+    伊芙: female('伊芙', {
+      bio: getRacePhysiologyProfile('兽耳族-狼'),
+      base: { stage: '乏情期', days: 60, seasonCycle: 0, eggs: 0, age: 22, race: '兽耳族-狼', build: 45, bust: 50, hip: 55 },
+      descriptions: { normalDescription: desc([['外貌', '灰色狼耳与蓬松尾巴，琥珀色眼睛'], ['神态', '懒洋洋的，对谁都提不起兴致']]) },
+    }),
+    // 卵子品质很差、周期不规律（1.5.3）
     索菲亚: female('索菲亚', {
       base: {
         stage: '卵泡期', days: 3, age: 40, eggs: 2, build: 35, bust: 40, hip: 45,
@@ -156,28 +184,6 @@ export function buildRoster() {
         kid({ id: 'so-6', name: '狐丸', gender: '男', race: '人类x妖狐', fathers: '晴岚', fatherRace: '妖狐', fatherDerivedType: '妖怪', age: 2 }),
       ],
     }),
-    晴岚: female('晴岚', {
-      // 扶她双周期：照妖狐的生理（乏情 337 天、一季一轮），乏情已过 250 天，推进时间对齐到二月二十日
-      bio: getRacePhysiologyProfile('妖狐'),
-      base: { stage: '乏情期', days: 250, seasonCycle: 0, age: 300, race: '妖狐', derivedType: '妖怪', build: 50, bust: 62, hip: 55 },
-      display: { skinColor: '#f9e0cc' },
-      descriptions: { normalDescription: desc([['外貌', '九条狐尾、金瞳，裙下藏着不该有的东西'], ['神态', '笑眯眯地打量每一个人']]) },
-      skills: [{ skillId: 6, level: 2, exp: 40 }, { skillId: 7, level: 1, exp: 0 }],
-    }),
-    // 繁殖季（1.5.2 历法定锚）：天使十二月二十一日起，现在是季内第 15 天、排卵中
-    塞拉菲: female('塞拉菲', {
-      bio: getRacePhysiologyProfile('天使'),
-      base: { stage: '排卵期', days: 1.5, seasonCycle: 0, eggs: 1, age: 500, race: '天使', build: 40, bust: 48, hip: 50 },
-      display: { skinColor: '#fbf1e6' },
-      descriptions: { normalDescription: desc([['外貌', '白翼收在背后，金发垂到腰间'], ['神态', '端庄，却掩不住季节带来的燥热']]) },
-    }),
-    // 乏情中：兽耳族-狼一月二十五日进繁殖季
-    伊芙: female('伊芙', {
-      bio: getRacePhysiologyProfile('兽耳族-狼'),
-      base: { stage: '乏情期', days: 60, seasonCycle: 0, eggs: 0, age: 22, race: '兽耳族-狼', build: 45, bust: 50, hip: 55 },
-      descriptions: { normalDescription: desc([['外貌', '灰色狼耳与蓬松尾巴，琥珀色眼睛'], ['神态', '懒洋洋的，对谁都提不起兴致']]) },
-    }),
-    // 第三代：刚受精
     小茉: female('小茉', {
       base: { stage: '黄体期', days: 1, age: 18, race: '人类x兽耳族-兔', bloodline: { 人类: 0.5, 兽耳族: 0.5 }, bloodlineSource: 'explicit', eggs: 0, fertilizationDays: 0.3, bodySize: 3, build: 30, bust: 35, hip: 40, sperms: [{ male: '凯', race: '人类', derivedType: null, value: 35 }] },
       visualCue: { type: 'fertilization', seq: 1 },

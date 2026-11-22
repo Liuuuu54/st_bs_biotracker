@@ -543,3 +543,54 @@ test('a failed breeding inference shows the start of what the model returned, fo
     return true;
   });
 });
+
+test('1.5.3 注册时卡上写的生日：法定岁数照模型写的整数，下一个生日落在那天', async () => {
+  const { setCalendarProvider, legalAge, formatBirthday, normalizeCalendar } = await import('../scripts/calendar.js');
+  const raw = { mode: 'custom', months: ['霜月', '雪月', '冰月', '萌月', '花月', '炎月', '烈月', '稻月', '叶月', '枯月'].map((name) => ({ name, days: 40 })), start: { year: 88, month: 1, day: 12, hour: 9 } };
+  setCalendarProvider(() => raw);
+  try {
+    const { applyRegistryResult } = await import('../scripts/registry.js');
+    const state = await import('../scripts/state.js');
+    const chat = state.createEmptyChatState();
+    chat.minutesPassed = 0;
+    applyRegistryResult(chat, { name: 'S', profile: { base: { race: '精灵', age: 140, birthday: { month: 4, day: 1 } } } });
+    const age = chat.characters.S.profile.base.age;
+    assert.equal(legalAge(age, normalizeCalendar(raw)), 140);
+    assert.equal(formatBirthday(age, normalizeCalendar(raw), 0), '萌月1日');
+    assert.equal(chat.characters.S.profile.base.birthday, undefined, '生日不另存，照活过的时间推');
+  } finally {
+    setCalendarProvider(null);
+  }
+});
+
+test('注册页指定的卵子品质与生日盖过模型（1.5.3）', async () => {
+  const calendarModule = await import('../scripts/calendar.js');
+  const cal = calendarModule.normalizeCalendar({ mode: 'custom', months: [{ name: '霜月', days: 30 }, { name: '花月', days: 30 }], start: { year: 1, month: 1, day: 1 } });
+  calendarModule.setCalendarProvider(() => cal);
+  try {
+    const ctx = {
+      chatId: 'registry-birthday-chat', name1: 'User', name2: '卡片角色', characterId: 0,
+      characters: [{ name: '卡片角色', description: '角色卡描述', avatar: 'card.png' }],
+      chat: [{ is_user: false, name: '卡片角色', mes: '一段剧情。' }],
+      extensionSettings: {}, saveSettingsDebounced() {},
+    };
+    globalThis.SillyTavern = { getContext: () => ctx };
+    const settings = state.getSettings(ctx);
+    settings.apiUrl = 'https://example.test/v1';
+    settings.model = 'test-model';
+    globalThis.fetch = async () => ({
+      ok: true, status: 200,
+      async text() {
+        return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ name: '露比', profile: { base: { age: 20, eggQuality: 1, birthday: { month: 1, day: 3 } } } }) } }] });
+      },
+    });
+    const character = await runRegistry(ctx, { targetName: '露比', eggQuality: 2.5, birthday: { month: 2, day: 14 } });
+    const base = character.profile.base;
+    assert.equal(base.eggQuality, 2.5, '卵子品质拉杆要送到注册');
+    assert.equal(calendarModule.legalAge(base.age, cal), 20);
+    const birthday = calendarModule.birthdayOf(base.age, cal, 0);
+    assert.deepEqual([birthday.month, birthday.day], [2, 14], '注册页的生日盖过模型写的');
+  } finally {
+    calendarModule.setCalendarProvider(() => null);
+  }
+});
