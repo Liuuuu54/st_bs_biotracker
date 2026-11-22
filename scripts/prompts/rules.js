@@ -578,6 +578,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     ].join('\n'),
     dropUnavailableToolMentions(String(basePrompt || '').trim(), payload),
     buildWorldBaselineBlock(payload?.world_baseline_prompt),
+    buildCalendarBlock(payload?.calendar_note, true),
     buildContraceptionBlock(payload?.contraception_levels, true),
     metabolismGuide,
     // 名录只给名字：模型写 bsAddSperm.race 时需要词汇表，但每轮都发，不附辨识提示
@@ -721,6 +722,21 @@ function buildMainFlowFieldNotes(existingState = {}) {
   return lines.join('\n');
 }
 
+/** 对话历法（1.5.2）：今天是哪天、这个世界的月与年多长；年龄是当地的岁。tracker 另外交代 time 与 bsPassedTime 的写法 */
+function buildCalendarBlock(note, forTracker) {
+  const text = String(note || '').trim();
+  if (!text) return '';
+  return [
+    '[对话历法]',
+    `- ${text}`,
+    '- 状态里的年龄（age）是这个世界的岁（照这个历法的年算），与角色卡、世界书写的岁数同一把尺。',
+    ...(forTracker ? [
+      '- 写 time（日记、认知、胎儿事件、经历）时照这个历法写日期。',
+      '- bsPassedTime 的 month、year 照这个历法换算（一个月、一年就是这个历法的长度）；剧情说过了当地的几个月、几年就照实传 month、year，「三个冬天后」这类说法自己换算成天数。',
+    ] : ['- 叙事里提到日期、季节、年岁时照这个历法写。']),
+  ].join('\n');
+}
+
 export function buildMainFlowStatePrompt(payload = {}) {
   const trackedState = payload?.existing_state && typeof payload.existing_state === 'object' ? payload.existing_state : {};
   const presentSires = (Array.isArray(payload?.registered_sires) ? payload.registered_sires : [])
@@ -737,6 +753,7 @@ export function buildMainFlowStatePrompt(payload = {}) {
     : '';
   return [
     buildWorldBaselineBlock(payload?.world_baseline_prompt),
+    buildCalendarBlock(payload?.calendar_note, false),
     buildContraceptionBlock(payload?.contraception_levels, false),
     racePhysiologyPrompt,
     '<bs_biotracker>',
@@ -2052,7 +2069,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- identical：同卵的几胎都标上；只标一胎会被撤销。同卵＝同一颗受精卵分裂，组内 fathers、provider、race、gender、embryoType 必须相同（不同时以组内第一胎为准）。一颗受精卵最多分成 4 胎，超过会被自动拆成几组。',
     '- identicalGroup: 同时有两组以上同卵时才需要，用同一个整数标出同一颗受精卵的几胎，不同受精卵用不同数字。例如七胞胎是两颗受精卵分别分成男四胞胎与女三胞胎：前四胎 tags: ["identical"]、identicalGroup: 1、gender: "男"，后三胎 tags: ["identical"]、identicalGroup: 2、gender: "女"。只有一组同卵时可省略。',
     '- superfetation：必须一并给 conceivedAtDays（这一胎受精时，母体已经怀了多少有效孕日），会被夹进这次妊娠的范围内。它比同腹其他胎儿晚受精、发育落后。',
-    '- nested：这一胎长在另一颗胎儿体内。除了 conceivedAtDays，还要给 nestedInIndex＝宿主在 fetuses 阵列里的下标（从 0 起算，不能指自己）。它的母亲是那颗胎儿，出生后承载者会同时生下孩子与孙辈。宿主只能是胎生、胎转卵生或不定型的胎儿（卵生在壳里、卵胎生在卵膜里，进不去）。',
+    '- nested：这一胎长在另一颗胎儿体内。除了 conceivedAtDays，还要给 nestedInIndex＝宿主在 fetuses 阵列里的下标（从 0 起算，不能指自己）。它的母亲是那颗胎儿，出生后承载者会同时生下孩子与孙辈。宿主五种胚型都可以；宿主是卵生、卵胎生或胎转卵生时，内胎会被封在宿主里，只能随宿主一起生出来。',
     '- rebirth：一名已出生的角色回到子宫里成为这一胎，fathers 写那个人的名字（可以是 user）。适合「开场就已经在角色子宫里」的设定。产出后是全新个体，与原来那个人不是同一笔资料。',
     '- revealed：这一胎角色本人知不知道。省略时系统按孕龄自动判定（异期复孕进孕中期才知道、孕中孕要到孕晚期）；想让角色暂时不知情就明确给 false。',
     '- provider: 代孕母方、寄生等提供者名称，正常情况下为 null',

@@ -390,3 +390,34 @@ test('作弊：品质锁在档案值，无视繁殖季与存量；只有使用�
   assert.ok(getSireQualityState(chat, '精').effective < 2);
   assert.equal(sanitizeSireExtractionResult({ alwaysPeak: true }).alwaysPeak, undefined, '模型不能开作弊');
 });
+
+test('历法定锚（1.5.2）：纯精方的繁殖季与衍生的精力高峰改成每年固定日期', async () => {
+  const { setCalendarProvider } = await import('../scripts/calendar.js');
+  setCalendarProvider(() => ({
+    mode: 'custom', months: Array.from({ length: 13 }, (_, i) => ({ name: `${i + 1}月`, days: 28 })),
+    start: { year: 1, month: 1, day: 1 },
+    breedingSeasons: { 天使: { month: 3, day: 1 } },
+    derivedPeaks: { 序列: { month: 6, day: 1 } },
+  }));
+  try {
+    const chat = state.createEmptyChatState();
+    upsertSireRecord(chat, '米迦', { race: '天使', spermQuality: 1 });
+    upsertSireRecord(chat, '凯', { race: '人类', spermQuality: 1 });
+    chat.sires['凯'] = normalizeSireRecord({ ...chat.sires['凯'], derivedType: '序列' }, 0);
+    // 3月1日＝第 56 天
+    const inSeason = getSireQualityState(chat, '米迦', { minutesPassed: 60 * DAY });
+    assert.equal(inSeason.inSeason, true, '3月1日起是繁殖季');
+    assert.equal(inSeason.seasonAnchored, true);
+    const before = getSireQualityState(chat, '米迦', { minutesPassed: 50 * DAY });
+    assert.equal(before.inSeason, false, '3月1日以前还是去年的非繁殖季');
+    assert.equal(Math.round(before.seasonTotal), 364, '一轮就是一年 13×28 天');
+    // 6月1日＝第 140 天：高峰 3 天，正中间（第 141.5 天）最高
+    const peak = getSireQualityState(chat, '凯', { minutesPassed: 141.5 * DAY });
+    assert.equal(peak.cycleAnchored, true);
+    assert.ok(Math.abs(peak.cycle - 2) < 1e-9, '幅度 1：高峰 ×2');
+    assert.equal(getSireQualityState(chat, '凯', { minutesPassed: 150 * DAY }).cycle, 1, '高峰过后持平到明年');
+    assert.equal(Math.round(peak.cycleDays), 364);
+  } finally {
+    setCalendarProvider(null);
+  }
+});

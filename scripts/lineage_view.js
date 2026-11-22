@@ -2,6 +2,7 @@
  * 血缘视窗的视图模型：把 lineage 图整理成「按世代分列 + 每个节点的关系摘要」。
  * 只做资料整形，不产生 DOM，也不依赖任何宿主 API。
  */
+import { getActiveCalendar, toLocalYears } from './calendar.js';
 import { buildLineageGraph, focusLineage } from './lineage.js';
 import { formatBloodlineLabel } from './race_config.js';
 
@@ -68,7 +69,8 @@ export function getLifeStage(kind, age, childRelations = []) {
 function ageLabel(age) {
   // null 是没有年龄资料（Number(null) 会变成 0，误显示成「0岁」）；0 是刚出生，照样显示
   if (age === null || age === undefined || age === '') return '';
-  const value = Number(age);
+  // 存的是地球年，显示照聊天历法的岁（1.5.2）
+  const value = toLocalYears(Number(age), getActiveCalendar());
   if (!Number.isFinite(value)) return '';
   return `${Math.round(value)}岁`;
 }

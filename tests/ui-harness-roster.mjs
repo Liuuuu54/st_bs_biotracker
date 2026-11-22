@@ -3,6 +3,7 @@
 
 import { createDefaultFemaleState } from '/scripts/state.js';
 import { applyToolCall } from '/scripts/tools.js';
+import { getRacePhysiologyProfile } from '/scripts/race_config.js';
 
 export const USER_NAME = '旅人';
 
@@ -42,11 +43,44 @@ const pregnancy = (stage, days, fields = {}) => ({
 const desc = (pairs) => pairs.map(([name, value]) => ({ name, value, updatedAt: 0 }));
 const kid = (fields) => ({ talents: [], age: 0, ...fields });
 
+/**
+ * 对话历法（1.5.2）：真机「从角色卡拟定」的结果（Seraphina／Eldoria 世界书，deepseek-flash，2026-11-22），
+ * 一年 12 个月各 30 天、七曜、四季，60 个有乏情期的物种各自的繁殖季开始日。故事开始＝新历 9年 一月5日 20:00。
+ */
+export const HARNESS_CALENDAR = Object.freeze({
+  mode: 'custom', era: '新历',
+  months: ["一月","二月","三月","四月","五月","六月","七月","八月","九月","十月","十一月","十二月"].map((name) => ({ name, days: 30 })),
+  weekdays: ["日曜","月曜","星曜","风曜","雨曜","雷曜","霜曜"],
+  start: { year: 9, month: 1, day: 5, hour: 20, minute: 0, weekday: 1 },
+  seasons: [{ name: '春', month: 1, day: 1 }, { name: '夏', month: 4, day: 1 }, { name: '秋', month: 7, day: 1 }, { name: '冬', month: 10, day: 1 }],
+  breedingSeasons: {
+    爱那温: { month: 2, day: 12 }, 白泽: { month: 1, day: 20 }, 半人鹿: { month: 9, day: 10 }, 半人马: { month: 5, day: 20 },
+    宝石人: { month: 12, day: 1 }, 地狱犬: { month: 6, day: 6 }, 灯神: { month: 5, day: 5 }, 东方龙: { month: 2, day: 2 },
+    独角兽: { month: 3, day: 21 }, 杜拉罕: { month: 9, day: 30 }, 夺心魔: { month: 9, day: 5 }, 恶魔: { month: 7, day: 20 },
+    凤凰: { month: 6, day: 21 }, 龟族: { month: 5, day: 30 }, 海德拉: { month: 3, day: 5 }, 海马族: { month: 2, day: 25 },
+    华根蕴桃: { month: 3, day: 10 }, 化狸: { month: 9, day: 25 }, 甲壳族: { month: 6, day: 1 }, 鲛人: { month: 5, day: 10 },
+    精灵: { month: 2, day: 28 }, 巨人: { month: 11, day: 5 }, 卡玛佐兹: { month: 8, day: 20 }, 空鲸: { month: 8, day: 8 },
+    雷鸟: { month: 6, day: 12 }, 镰鼬: { month: 11, day: 20 }, 貓又: { month: 2, day: 5 }, 梅杜莎: { month: 3, day: 18 },
+    米戈: { month: 8, day: 5 }, 米诺陶族: { month: 3, day: 30 }, 魔族: { month: 7, day: 25 }, 鸟族: { month: 3, day: 1 },
+    宁芙: { month: 1, day: 15 }, 麒麟: { month: 2, day: 18 }, 绒虫族: { month: 4, day: 20 }, 蝾螈族: { month: 5, day: 15 },
+    萨堤尔族: { month: 9, day: 1 }, 赛尔克族: { month: 6, day: 18 }, 赛壬: { month: 3, day: 25 }, 蛇人: { month: 1, day: 28 },
+    深潜者: { month: 1, day: 5 }, 狮鹫: { month: 4, day: 8 }, 兽耳族: { month: 1, day: 25 }, 斯芬克斯: { month: 5, day: 18 },
+    天狗: { month: 9, day: 20 }, 天马: { month: 4, day: 25 }, 天使: { month: 12, day: 21 }, 蛙族: { month: 2, day: 8 },
+    西方龙: { month: 6, day: 28 }, 蜥蜴人: { month: 5, day: 25 }, 星繭族: { month: 7, day: 15 }, 熊人族: { month: 6, day: 10 },
+    修格斯: { month: 8, day: 28 }, 眼魔: { month: 7, day: 1 }, 妖狐: { month: 2, day: 20 }, 妖精: { month: 6, day: 24 },
+    鱼人: { month: 3, day: 8 }, 羽蛇: { month: 7, day: 7 }, 月兔: { month: 8, day: 15 }, 卓尔: { month: 10, day: 15 },
+  },
+  // 手加（模型没给）：兽化的发情期改成每年一月十日起，格雷五天后进高峰
+  derivedPeaks: { 兽化: { month: 1, day: 10 } },
+});
+
 /** 主题说明：页首照这份自动列出 */
 export const ROSTER_NOTES = {
   卡蜜拉: '月经期｜血族千年萝（1200 岁、外表少女），族谱第一代，转化了银月与珂赛特',
   索菲亚: '卵泡期｜未孕综合：技能天赋、三源精液灌满、族谱分支、未孕心理、日记、关系',
-  晴岚: '排卵期｜扶她（同名也是精方），精方专属技能；衣着未记录',
+  晴岚: '乏情期｜扶她双周期：卵方乏情（妖狐，二月二十日进繁殖季）→ 精方跟着非繁殖季 ×0.6，精力周期另外照跑；精方专属技能；衣着未记录',
+  塞拉菲: '排卵期｜天使，繁殖季中（十二月二十一日起一轮约 42 天，之后乏情到明年同一天）',
+  伊芙: '乏情期｜兽耳族-狼，乏情中、一月二十五日进繁殖季（季内三轮），日历页看得到对齐',
   小茉: '黄体期｜人类x兽耳族-兔，族谱第三代，刚受精特写',
   银月: '孕早期｜转化中（被卡蜜拉初拥，进度条）；饥饿咕噜；衣着余裕',
   诺艾尔: '孕中期｜兽化；纪录堆、孕期心理、虚弱胎、未揭露的异期复孕；泄意扭动；特制孕妇装',
@@ -123,10 +157,25 @@ export function buildRoster() {
       ],
     }),
     晴岚: female('晴岚', {
-      base: { stage: '排卵期', days: 1, age: 300, race: '妖狐', derivedType: '妖怪', build: 50, bust: 62, hip: 55 },
+      // 扶她双周期：照妖狐的生理（乏情 337 天、一季一轮），乏情已过 250 天，推进时间对齐到二月二十日
+      bio: getRacePhysiologyProfile('妖狐'),
+      base: { stage: '乏情期', days: 250, seasonCycle: 0, age: 300, race: '妖狐', derivedType: '妖怪', build: 50, bust: 62, hip: 55 },
       display: { skinColor: '#f9e0cc' },
       descriptions: { normalDescription: desc([['外貌', '九条狐尾、金瞳，裙下藏着不该有的东西'], ['神态', '笑眯眯地打量每一个人']]) },
       skills: [{ skillId: 6, level: 2, exp: 40 }, { skillId: 7, level: 1, exp: 0 }],
+    }),
+    // 繁殖季（1.5.2 历法定锚）：天使十二月二十一日起，现在是季内第 15 天、排卵中
+    塞拉菲: female('塞拉菲', {
+      bio: getRacePhysiologyProfile('天使'),
+      base: { stage: '排卵期', days: 1.5, seasonCycle: 0, eggs: 1, age: 500, race: '天使', build: 40, bust: 48, hip: 50 },
+      display: { skinColor: '#fbf1e6' },
+      descriptions: { normalDescription: desc([['外貌', '白翼收在背后，金发垂到腰间'], ['神态', '端庄，却掩不住季节带来的燥热']]) },
+    }),
+    // 乏情中：兽耳族-狼一月二十五日进繁殖季
+    伊芙: female('伊芙', {
+      bio: getRacePhysiologyProfile('兽耳族-狼'),
+      base: { stage: '乏情期', days: 60, seasonCycle: 0, eggs: 0, age: 22, race: '兽耳族-狼', build: 45, bust: 50, hip: 55 },
+      descriptions: { normalDescription: desc([['外貌', '灰色狼耳与蓬松尾巴，琥珀色眼睛'], ['神态', '懒洋洋的，对谁都提不起兴致']]) },
     }),
     // 第三代：刚受精
     小茉: female('小茉', {
@@ -193,10 +242,10 @@ export function buildRoster() {
       descriptions: { pregnantDescription: desc([['孕态', '六胎撑得腹部巨大，几乎站不稳']]) },
       intimacy: { 莱昂: { count: 12, effective: 10, lastMinutes: 0, compatLabel: '恰好契合' }, 海德: { count: 7, effective: 6, lastMinutes: 0, compatLabel: '略有落差' } },
       pregnant: {
-        nextEmbryoId: 107,
+        nextEmbryoId: 108,
         fetuses: [
           // 卵生・胎内回归（回到子宫里的鸟人）
-          fetus({ embryoId: 101, descentStage: -3, fathers: '翼', fatherRace: '鸟族', race: '魔族x鸟族', embryoType: '卵生', gender: '男', weight: 0.9, tendencyAngle: 45, affinity: 20, amnionDurability: 85, tags: ['rebirth'], health: 80 }),
+          fetus({ embryoId: 101, descentStage: -3, fathers: '翼', fatherRace: '鸟族', race: '魔族x鸟族', embryoType: '卵生', gender: '女', weight: 1.6, tendencyAngle: 45, affinity: 20, amnionDurability: 85, tags: ['rebirth'], health: 80 }),
           // 胎生・代孕（卵源索菲亚），孕中孕的宿主；声称父亲与实际不同；胎父莱昂血族，轴偏父
           fetus({ embryoId: 102, descentStage: -1, fathers: '莱昂', fatherDerivedType: '血族', maternalDerivedTypeProgress: -20, selectedFather: '卡尔', paternityClaims: [{ time: '第三日', content: '珂赛特对卡尔说孩子是他的，卡尔半信半疑。', minutesPassed: 0 }], provider: '索菲亚', providerSources: ['索菲亚'], race: '人类', embryoType: '胎生', gender: '女', weight: 1.1, affinity: 40, amnionDurability: 90, talents: [{ skillId: 1, level: 2, exp: 40 }], health: 70 }),
           // 胎转卵生・嵌合；负亲和、苦手
@@ -207,6 +256,8 @@ export function buildRoster() {
           fetus({ embryoId: 105, descentStage: -2, fathers: '珂赛特', fatherRace: '魔族x史萊姆', race: '魔族x史萊姆', embryoType: '不定型', gender: '女', weight: 0.8, tendencyAngle: 270, affinity: 5, tags: ['gynogenesis'], health: 60 }),
           // 孕中孕：长在 102 体内
           fetus({ embryoId: 106, fathers: '莱昂', fatherRace: '人类', race: '人类', gender: '男', weight: 0.6, affinity: 0, nestedInEmbryoId: 102, conceivedAtDays: 60, tags: ['superfetation', 'nested'], revealed: true, health: 60 }),
+          // 1.5.2：卵生宿主里的孕中孕（封在蛋里，随宿主一起产出）
+          fetus({ embryoId: 107, fathers: '翼', fatherRace: '鸟族', race: '鸟族', embryoType: '卵生', gender: '女', weight: 0.5, affinity: 5, nestedInEmbryoId: 101, conceivedAtDays: 70, tags: ['superfetation', 'nested'], revealed: true, health: 60 }),
         ],
       },
     })),
@@ -293,6 +344,8 @@ export function buildRoster() {
     海德: { race: '人鱼', derivedType: '不死', age: 300, isHere: false },
     泽塔: { race: '灰人', derivedType: '星际', age: 60, bodySize: 3, isHere: false },
     深渊之触: { race: '触手怪', age: 500, bodySize: 6, isHere: false, descriptions: { normalDescription: desc([['外貌', '一团缠绕的深色触手，中央有一只眼']]) } },
+    // 季节性纯精方（1.5.2）：兽耳族-狼一月二十五日进繁殖季（现在非繁殖季 ×0.6）；兽化的发情期定在一月十日（五天后高峰）
+    格雷: { race: '兽耳族-狼', derivedType: '兽化', age: 28, bodySize: 4.5, isHere: true, descriptions: { normalDescription: desc([['外貌', '高大的狼耳男人，颈后一道爪痕'], ['行动', '在角落里来回踱步']]) } },
     // 扶她：同名也是卵方，种族等读卵方那份
     晴岚: { race: '妖狐', isHere: true, skills: [{ skillId: 6, level: 2, exp: 40 }], descriptions: { normalDescription: desc([['性器', '狐尾间藏着一根细长的']]) } },
   };

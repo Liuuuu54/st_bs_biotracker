@@ -23,6 +23,7 @@ import {
 import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
 import { applyRegistryResult } from './registry.js';
+import { averageMonthDays, averageYearDays, fromLocalYears, getActiveCalendar, getBreedingAnchor, nextAnchorMinutes } from './calendar.js';
 import { advanceSireAges, consumeSireReserve, normalizeSireRecord, pruneFutaSireRecord, upsertSireRecord, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, normalizeSpermQuality, resolveSireBase } from './sires.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
 import { clampIndividualBodySize, describeBodySizeFit, normalizeSwordOffset, getAltFormBodySize, getBodySizeSigma, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
@@ -674,11 +675,13 @@ export const GROWTH_MIN_YEARS = 1;
 
 /** 还要等几年（≤ 0 表示现在就能记）；没有锚点时当作刚注册，从现在起算 */
 export function getGrowthWaitYears(base = {}) {
+  // 「满 1 岁」照聊天历法的年（1.5.2）；年龄存的是地球年，所以门槛换成地球年来比
+  const minYears = fromLocalYears(GROWTH_MIN_YEARS, getActiveCalendar());
   const age = Number(base?.age);
   const anchor = Number(base?.bodyChangedAtAge);
-  if (!Number.isFinite(age)) return GROWTH_MIN_YEARS;
-  if (!Number.isFinite(anchor)) return GROWTH_MIN_YEARS;
-  return GROWTH_MIN_YEARS - (age - anchor);
+  if (!Number.isFinite(age)) return minYears;
+  if (!Number.isFinite(anchor)) return minYears;
+  return minYears - (age - anchor);
 }
 
 /**
@@ -1050,20 +1053,21 @@ const NESTED_MIN_SPERM = 100;
 const NESTED_REVEAL_DAYS = SUPERFETATION_RAW_WINDOW_DAYS + (Number(PREGNANCY_STAGE_DAYS['孕中期']) || 105);
 
 /**
- * 能当孕中孕宿主的胚型：胎生；胎转卵生（受精视窗在孕早期，壳还只是几片碎片、没合拢）；
- * 不定型（没有固定外壳，精液浸得进去）。卵生从一开始就在壳里、卵胎生一直在卵膜里，进不去。
- * 性别不设限
+ * 能当孕中孕宿主的胚型：1.5.2 起五种都可以。奇幻处理——胎生也有羊膜挡着，本来就不是「精液进得去」的事，
+ * 所以不再拿壳或卵膜当理由。带壳或包在卵膜里的宿主，内胎会被一起封住（见 isSealedNestedFetus）。性别不设限
  */
-const NESTED_HOST_EMBRYO_TYPES = new Set(['胎生', '胎转卵生', '不定型']);
+const NESTED_HOST_EMBRYO_TYPES = new Set(['胎生', '卵生', '卵胎生', '胎转卵生', '不定型']);
+/** 内胎会被封在宿主里、只能随宿主一起娩出的宿主胚型：胎转卵生（壳合拢后）、卵生（一开始就在壳里）、卵胎生（卵膜里；之后供养器官层改成卵黄耗尽才放出） */
+const SEALED_NESTED_HOST_EMBRYO_TYPES = new Set(['胎转卵生', '卵生', '卵胎生']);
 
 export function canHostNestedPregnancy(fetus) {
   return NESTED_HOST_EMBRYO_TYPES.has(String(fetus?.embryoType || '胎生'));
 }
 
-/** 宿主是胎转卵生时，壳合拢后内胎跟着被封在里面：胎膜破不了，只能随宿主一起娩出 */
+/** 宿主带壳或包在卵膜里（胎转卵生、卵生、卵胎生）时，内胎跟着被封在里面：胎膜破不了，只能随宿主一起娩出 */
 function isSealedNestedFetus(fetus, fetuses) {
   const host = getEnclosingHost(fetus, fetuses);
-  return Boolean(host) && String(host.embryoType || '胎生') === '胎转卵生';
+  return Boolean(host) && SEALED_NESTED_HOST_EMBRYO_TYPES.has(String(host.embryoType || '胎生'));
 }
 
 /**
@@ -2558,12 +2562,21 @@ function processPooledConception(profile, tick, notify, name) {
     updateFetalEnergyDrain(p);
     return true;
   };
+  // 繁殖季定锚（1.5.2）：混合池走自己的时间线，同样在进乏情那刻算到下一个开始日；已在乏情、还没算过的从乏情开始对齐
+  if (profile.base?.stage === DORMANCY_STAGE && !Number.isFinite(Number(profile.base.seasonDormancyDays))) {
+    applySeasonAnchor(profile, startMinute - Math.max(0, Number(profile.base.days) || 0) * 1440);
+  }
   const plan = advancePooledTimeline(profile, {
     fromMinute: startMinute, toMinute: tick.nowMinutes,
     dayCarryMinutes: Number(runtime.dayCarryMinutes) || 0, hourCarryMinutes: Number(runtime.hourCarryMinutes) || 0,
   }, {
     stageLimit: (p, stage) => stage === '假孕期' ? getPseudoPregnancyLimit(p) : getStageLimit(p, stage),
-    nextMenstrualStage: getNextMenstrualStage,
+    nextMenstrualStage: (p, stage, atMinute) => {
+      if (stage === '月经期' && Number.isFinite(atMinute)) applySeasonAnchor(p, atMinute);
+      const next = getNextMenstrualStage(p, stage);
+      if (next !== DORMANCY_STAGE && p.base) delete p.base.seasonDormancyDays;
+      return next;
+    },
     implantationDays: getImplantationDays, gestationSpeed: getGestationEffectiveSpeed,
     superfetationWindowDays: getSuperfetationWindowDays, volumeFactor: (p) => getUterusVolumeFactor(p.base),
     sourceRate: (p, source) => getFertilizationSourceRates({ eggRace: p.base.race,
@@ -6046,7 +6059,7 @@ function applyImplantEmbryo(chatState, args) {
       return { applied: false, message: `bsImplantEmbryo skipped for ${female}: invalid hostFetusIndex.` };
     }
     if (!canHostNestedPregnancy(nestedHost)) {
-      return { applied: false, message: `bsImplantEmbryo skipped for ${female}: ${String(nestedHost.embryoType || '胎生')} 的胎儿包在壳或卵膜里，不能当孕中孕宿主（只有胎生、胎转卵生、不定型可以）。` };
+      return { applied: false, message: `bsImplantEmbryo skipped for ${female}: ${String(nestedHost.embryoType || '胎生')} 的胎儿不能当孕中孕宿主。` };
     }
   }
   // 承载者自己的胚胎没有要转交的归属方
@@ -6153,7 +6166,7 @@ function ruptureFetalSac(profile, female, target) {
   const reject = (reason) => ({ applied: false, message: `bsAssistFetalPosition skipped for ${female}: ${reason}` });
   if (!inPrelabor && !inLabor) return reject(`stage ${stage || '(none)'} cannot rupture; do not narrate rupture yet.`);
   if (isSealedNestedFetus(target, fetuses)) {
-    return reject("this fetus is sealed inside a 胎转卵生 host's hardened shell; its membrane cannot break on its own, and it will be born together with the host.");
+    return reject(`this fetus is sealed inside a ${String(getEnclosingHost(target, fetuses)?.embryoType || '胎转卵生')} host's shell or egg membrane; its membrane cannot break on its own, and it will be born together with the host.`);
   }
   const sac = getSacOfFetus(pregnant, target);
   if (!sac) return reject('that fetus is not implanted and has no sac yet.');
@@ -7528,7 +7541,11 @@ function getMenstrualStageFluctuation(profile, stage) {
 }
 
 export function getStageLimit(profile, stage) {
-  if (stage === DORMANCY_STAGE) return getDormancyDays(profile);
+  if (stage === DORMANCY_STAGE) {
+    // 繁殖季定锚（1.5.2）：进乏情那刻算好「到下一个繁殖季开始还有几天」，存在 base.seasonDormancyDays
+    const anchored = Number(profile?.base?.seasonDormancyDays);
+    return Number.isFinite(anchored) && anchored >= 0 && getDormancyDays(profile) > 0 ? anchored : getDormancyDays(profile);
+  }
   if (MENSTRUAL_STAGE_DAYS[stage]) {
     const ratio = clampNumber(profile?.bio?.menstrualLengthRatio, 0.1, 20, 1);
     const fluctuation = getMenstrualStageFluctuation(profile, stage);
@@ -7543,9 +7560,28 @@ export function getPseudoPregnancyLimit(profile) {
   return Math.max(1, 84 * clampNumber(getGestationEffectiveSpeed(profile), GESTATION_SPEED_MIN, GESTATION_SPEED_MAX, 1));
 }
 
-function advanceMenstrualStage(profile, stage, daysValue) {
+/**
+ * 繁殖季定锚（1.5.2）：聊天历法给这个物种设了繁殖季开始日时，乏情期一律到下一个开始日为止，
+ * 同族的人自然同步。atMinutes＝要进乏情（或乏情开始）的那一刻；没有锚点、没有乏情期就拿掉覆盖，照物种天数。
+ */
+export function applySeasonAnchor(profile, atMinutes) {
+  const base = profile?.base;
+  if (!base || !Number.isFinite(Number(atMinutes))) return;
+  const calendar = getActiveCalendar();
+  const anchor = getDormancyDays(profile) > 0 ? getBreedingAnchor(calendar, getBaseRaceName(base.race || '')) : null;
+  const next = anchor ? nextAnchorMinutes(calendar, anchor, Number(atMinutes)) : null;
+  if (next === null) delete base.seasonDormancyDays;
+  else base.seasonDormancyDays = Math.max(0, (next - Number(atMinutes)) / 1440);
+}
+
+function advanceMenstrualStage(profile, stage, daysValue, tickEndMinutes = null) {
   let nextStage = stage;
   let nextDays = daysValue;
+  // 这个阶段开始的那一刻（故事分钟）；呼叫端没给时间就不定锚
+  let at = Number.isFinite(Number(tickEndMinutes)) && tickEndMinutes !== null ? Number(tickEndMinutes) - Number(daysValue) * 1440 : null;
+  const base = profile.base || (profile.base = {});
+  // 已经在乏情里、还没算过锚点（刚设历法的聊天）：从乏情开始那刻对齐
+  if (at !== null && stage === DORMANCY_STAGE && !Number.isFinite(Number(base.seasonDormancyDays))) applySeasonAnchor(profile, at);
   let changed = false;
   let enteredFollicular = false;
   let flushedEmbryos = 0;
@@ -7553,7 +7589,13 @@ function advanceMenstrualStage(profile, stage, daysValue) {
     const limit = getStageLimit(profile, nextStage);
     if (limit === null || nextDays <= limit) break;
     nextDays -= limit;
+    if (at !== null) at += limit * 1440;
+    const leaving = nextStage;
+    // 月经结束、可能要进乏情：先照那一刻算好到下一个繁殖季还有几天
+    if (leaving === '月经期' && at !== null) applySeasonAnchor(profile, at);
     nextStage = getNextMenstrualStage(profile, nextStage);
+    // 算好的天数只给乏情用：离开乏情、或月经后没进乏情（季内还有轮数）都拿掉
+    if (nextStage !== DORMANCY_STAGE) delete base.seasonDormancyDays;
     if (nextStage === '月经期') {
       if (shouldEnterPseudoPregnancy(profile, '黄体期', nextStage)) return { stage: '假孕期', days: 0, changed: true, enteredFollicular };
       refreshCognition(profile);
@@ -7702,7 +7744,7 @@ function applyTimeToCharacter(character, tick) {
     const currentStageDay = Math.max(0, Number(days) || 0);
     const advanced = pooledPlan ? { stage, days: base.days, changed: stage !== oldStage,
       enteredFollicular: pooledPlan.enteredFollicular, flushedEmbryos: 0 }
-      : advanceMenstrualStage(profile, stage, currentStageDay + deltaDays);
+      : advanceMenstrualStage(profile, stage, currentStageDay + deltaDays, tick.nowMinutes);
     stage = advanced.stage;
     days = advanced.days;
     stageChanged = advanced.changed;
@@ -7783,7 +7825,7 @@ function applyTimeToCharacter(character, tick) {
       days = Math.max(0, days - recoveryDays);
       stageChanged = true;
       refreshCognition(profile);
-      const advanced = advanceMenstrualStage(profile, stage, days);
+      const advanced = advanceMenstrualStage(profile, stage, days, tick.nowMinutes);
       stage = advanced.stage;
       days = advanced.days;
       enteredFollicular = advanced.enteredFollicular;
@@ -7820,7 +7862,7 @@ function applyTimeToCharacter(character, tick) {
       pregnant.pregnantDays = 0;
       pregnant.effectivePregnantDays = 0;
       refreshCognition(profile);
-      const advanced = advanceMenstrualStage(profile, stage, days);
+      const advanced = advanceMenstrualStage(profile, stage, days, tick.nowMinutes);
       stage = advanced.stage;
       days = advanced.days;
       enteredFollicular = advanced.enteredFollicular;
@@ -8003,7 +8045,10 @@ function requestedTimeMinutes(args) {
   const week = clampNumber(args?.week, 0, 5200, 0);
   const month = clampNumber(args?.month, 0, 1200, 0);
   const year = clampNumber(args?.year, 0, 200, 0);
-  return minute + (hour * 60) + (day * 24 * 60) + (week * 7 * 24 * 60) + (month * 30 * 24 * 60) + (year * 365 * 24 * 60);
+  // 月、年照聊天历法（1.5.2）：一年 500 天的世界，year: 1 就是 500 天；没有历法照旧 30／365
+  const calendar = getActiveCalendar();
+  return minute + (hour * 60) + (day * 24 * 60) + (week * 7 * 24 * 60)
+    + Math.round(month * averageMonthDays(calendar) * 24 * 60) + Math.round(year * averageYearDays(calendar) * 24 * 60);
 }
 
 function applyPassedTime(chatState, args) {
@@ -9102,9 +9147,8 @@ function applyDebugInjectPregnancy(chatState, args) {
     if (!isImplantedFetus(nestedHost)) {
       return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: host fetus must already be implanted.` };
     }
-    // 调试也挡：卵生在壳里、卵胎生在卵膜里，物理上进不去
     if (!canHostNestedPregnancy(nestedHost)) {
-      return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: ${String(nestedHost.embryoType || '胎生')} 的胎儿包在壳或卵膜里，不能当孕中孕宿主（只有胎生、胎转卵生、不定型可以）。` };
+      return { applied: false, message: `bsDebugInjectPregnancy skipped for ${female}: ${String(nestedHost.embryoType || '胎生')} 的胎儿不能当孕中孕宿主。` };
     }
   }
 

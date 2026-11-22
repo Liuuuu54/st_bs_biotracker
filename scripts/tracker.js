@@ -1,3 +1,4 @@
+import { describeCalendarForPrompt, getActiveCalendar, toLocalYears } from './calendar.js';
 import { describeSheathOffset, normalizeSheathOffset } from './body_size.js';
 import { inferPendingPsychology } from './registry.js';
 import { findWorldInfoMissingFromSnapshot, resolveHostWorldInfo, stripExcludedFromSnapshot } from './worldinfo_resolve.js';
@@ -874,6 +875,26 @@ function getDiaryRecentLimit(settings, characterCount) {
   return characterCount > 1 ? Math.max(1, Math.floor(singleLimit / 2)) : singleLimit;
 }
 
+/**
+ * 年龄存的是地球年（经过天数 ÷ 365）；有历法时送给模型的换成当地的岁（1.5.2），
+ * 与角色卡、世界书写的「她 18 岁」同一把尺。孩子与精方一样换。
+ */
+const localYears = (value, calendar) => (Number.isFinite(Number(value)) && value !== null ? Math.round(toLocalYears(Number(value), calendar) * 10) / 10 : value);
+function localizeStateAges(state, calendar) {
+  if (!calendar || !state || typeof state !== 'object') return state;
+  for (const item of Object.values(state)) {
+    const profile = item?.profile;
+    if (!profile) continue;
+    if (profile.base && profile.base.age !== undefined) profile.base.age = localYears(profile.base.age, calendar);
+    if (Array.isArray(profile.children)) profile.children = profile.children.map((child) => (child && child.age !== undefined ? { ...child, age: localYears(child.age, calendar) } : child));
+  }
+  return state;
+}
+function localizeSireAges(entries, calendar) {
+  if (!calendar || !Array.isArray(entries)) return entries;
+  return entries.map((entry) => (entry && entry.age !== undefined ? { ...entry, age: localYears(entry.age, calendar), ...(entry.bodyChangedAtAge !== undefined ? { bodyChangedAtAge: localYears(entry.bodyChangedAtAge, calendar) } : {}) } : entry));
+}
+
 export function hasBreedingPsychology(existingState = {}) {
   return Object.values(existingState || {}).some((item) => {
     if (item?.profile?.psychology?.enabled) return true;
@@ -1692,17 +1713,19 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     character_worldbook: payloadWorldBook,
     mainflow_context_snapshot: mainflowContextSnapshot,
     tracked_females: getRegisteredTargetNames(ctx, settings, chatState),
-    registered_sires: buildSirePromptEntries(chatState, {
+    registered_sires: localizeSireAges(buildSirePromptEntries(chatState, {
       recentText: recentMessages.map((message) => message.text).join('\n'),
       guide: settings?.registryDescriptionGuides?.sireDescription ?? DEFAULT_REGISTRY_DESCRIPTION_GUIDES.sireDescription,
-    }),
+    }), getActiveCalendar()),
     priority_character_names: getPriorityCharacterNames(ctx, settings, chatState),
     skill_enabled: isSkillSystemEnabled(settings),
     ...(isSkillSystemEnabled(settings) ? {
       skill_baseline_prompt: String(chatState.skillBaselinePrompt || '').trim(),
       skill_catalog: Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [],
     } : {}),
-    existing_state: buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus)),
+    existing_state: localizeStateAges(buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus)), getActiveCalendar()),
+    // 对话历法（1.5.2）：今天是哪天、这个世界的月与年多长；没设历法时不送
+    ...(getActiveCalendar() ? { calendar_note: describeCalendarForPrompt(getActiveCalendar(), Number(chatState.minutesPassed) || 0) } : {}),
     available_tools: getTrackerToolDefinitions(settings, existingState),
     diary_enabled: diaryEnabled,
     race_catalog_selection: settings?.raceCatalogSelection || null,

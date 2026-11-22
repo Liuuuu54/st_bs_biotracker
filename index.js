@@ -17,6 +17,7 @@ import {
   runRegistryDiaryInference,
   runRegistryOutfitInference,
   runRegistrySireExtraction,
+  runCalendarInference,
   applyRegistryChildToSire,
   runRegistrySkillInference,
   runRegistryWardrobeInference,
@@ -47,6 +48,9 @@ import {
   computeAutoFetalBulkRatio,
   getBuiltinRaceIntroductionLine,
   getMergedRacePhysiologyProfile,
+  parseRaceDescriptor,
+  getBaseDerivedTypeName,
+  getBaseRaceName,
   formatBloodlineLabel,
   getDerivedTypeFluxProfile,
   getDerivedTypeInheritanceProfile,
@@ -131,6 +135,9 @@ import { createBellyLayout } from './scripts/belly_layout.js';
 import { BELLY_THEME_MODES, applyBellyInkBrush, createBellyPainter, createBellyThemePalette } from './scripts/belly_render.js';
 import { describeDerivedTransform, normalizeDerivedTransformLog } from './scripts/derived_transform.js';
 import { DISPLAY_NAVELS, DISPLAY_NAVEL_SIZES, DISPLAY_NIPPLE_PRESETS, DISPLAY_NIPPLE_SIZES, DISPLAY_SKIN_PRESETS, DISPLAY_STRETCH_MARKS, normalizeDisplay, normalizeDisplayColor } from './scripts/display_colors.js';
+import { averageYearDays, dateAt, formatCalendarDate, getActiveCalendar, minutesAtDate, monthCount, monthDays, monthName, normalizeCalendar, setCalendarProvider, toLocalYears } from './scripts/calendar.js';
+import { CALENDAR_STAGE_GROUPS, buildStageTimeline, stageOnDay } from './scripts/story_calendar.js';
+import { listSnapshotCharacterTimeline } from './scripts/state.js';
 import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
@@ -272,6 +279,10 @@ const PSY_STRESS_CAPS = { 1: 20, 2: 50, 3: 80, 4: 110, 5: 140, 6: 170, 7: 200 };
 let selectedFullStateName = '';
 // 扶她同名同时有卵方与精方，变量页要分得出选的是哪一份
 let selectedFullStateKind = 'character';
+// 从追踪页某位角色的「变量」进来时只看她一人（1.5.2）：上方不列其他角色，改成她的名字、扶她的卵方／精方切换与返回
+let fullStateFocused = false;
+// 变量页里的区块预设折叠；使用者展开过的记着（照区块标题），重画后照旧展开
+const fullStateOpenSections = new Set();
 let selectedFullStateSubpage = 'variables';
 let selectedTrackName = '';
 let selectedTrackSubpage = 'overview';
@@ -2566,17 +2577,398 @@ function toggleRaceCatalogGroup(ctx, index) {
   return saveRaceCatalogSelection(ctx, selection);
 }
 
+// ---------- 对话历法（1.5.2）：百科「历法」分页 ----------
+// 表单有未保存的修改时（calendarEditorDirty），重绘不覆盖使用者正在填的内容
+let calendarEditorDirty = false;
+const calendarField = (id) => document.getElementById(`bs-bt-calendar-${id}`);
+const splitCalendarNames = (value) => String(value || '').split(/[\s,，、;；]+/).map((item) => item.trim()).filter(Boolean);
+
+function parseCalendarMonthLines(value) {
+  return String(value || '').split(/\n/).map((line) => line.trim()).filter(Boolean).map((line, index) => {
+    const match = line.match(/^(.*?)[\s:：,，]*(\d+)\s*天?$/);
+    return match ? { name: match[1].trim() || `${index + 1}月`, days: Number(match[2]) } : { name: line, days: NaN };
+  });
+}
+
+function readCalendarForm() {
+  const mode = calendarField('mode')?.value || '';
+  if (!mode) return null;
+  const num = (id) => Number(calendarField(id)?.value);
+  const raw = {
+    mode,
+    era: calendarField('era')?.value || '',
+    start: { year: num('start-year'), month: num('start-month'), day: num('start-day'), hour: num('start-hour'), minute: num('start-minute') },
+  };
+  if (mode === 'custom') {
+    raw.months = parseCalendarMonthLines(calendarField('months')?.value);
+    raw.weekdays = splitCalendarNames(calendarField('weekdays')?.value);
+    raw.start.weekday = num('start-weekday');
+  }
+  raw.seasons = parseCalendarSeasonLines(calendarField('seasons')?.value);
+  raw.breedingSeasons = readCalendarBreedingRows();
+  raw.derivedPeaks = readCalendarPeakRows();
+  return raw;
+}
+
+/** 表单目前的月名（自订历照月份栏，公历 1月～12月） */
+function getCalendarFormMonthNames() {
+  return calendarField('mode')?.value === 'custom'
+    ? parseCalendarMonthLines(calendarField('months')?.value).map((item, index) => item.name || `${index + 1}月`)
+    : Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
+}
+
+/** 季节栏：每行「季名 月 日」，月可写数字、月名或「3月」 */
+function parseCalendarSeasonLines(value) {
+  const names = getCalendarFormMonthNames();
+  return String(value || '').split(/\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const parts = line.split(/[\s,，、:：]+/).filter(Boolean);
+    if (parts.length < 2) return null;
+    const day = parts.length >= 3 ? Number(String(parts[parts.length - 1]).replace(/日$/, '')) : 1;
+    const token = parts.length >= 3 ? parts[parts.length - 2] : parts[1];
+    const byName = names.indexOf(token);
+    const month = byName >= 0 ? byName + 1 : Number(String(token).replace(/月$/, ''));
+    return { name: parts.slice(0, parts.length >= 3 ? parts.length - 2 : 1).join(' '), month, day };
+  }).filter((item) => item && item.name && Number.isFinite(item.month) && Number.isFinite(item.day));
+}
+
+/** 繁殖季列：提示词名录里有乏情期的物种，加上聊天里已注册角色的物种 */
+function getCalendarBreedingRaces(ctx, settings) {
+  if (isRealisticWorld(settings)) return [];
+  const races = new Set(getRaceCatalogSelection(settings).races);
+  for (const item of Object.values(getChatState(ctx, getSettings(ctx))?.characters || {})) {
+    // 种族子项（兽耳族-狼）照基种族定锚
+    const race = getBaseRaceName(item?.profile?.base?.race || '');
+    if (race) races.add(race);
+  }
+  return [...races].filter((race) => Number(getRacePhysiologyProfile(race)?.dormancyDays) > 0);
+}
+
+/** 衍生的精力高峰列：名录里与已注册者身上有峰期的衍生类型 */
+function getCalendarPeakTypes(ctx, settings) {
+  if (isRealisticWorld(settings)) return [];
+  const types = new Set(getRaceCatalogSelection(settings).derivedTypes);
+  const chatState = getChatState(ctx, getSettings(ctx));
+  for (const item of Object.values(chatState?.characters || {})) if (item?.profile?.base?.derivedType) types.add(String(item.profile.base.derivedType));
+  for (const item of Object.values(chatState?.sires || {})) if (item?.derivedType) types.add(String(item.derivedType));
+  return [...new Set([...types].map((type) => getBaseDerivedTypeName(type) || type))]
+    .filter((type) => Number(getDerivedTypeSireCycleProfile(type)?.sireCyclePeakDays) > 0);
+}
+
+function readCalendarPeakRows() {
+  const result = {};
+  document.querySelectorAll('#bs-bt-calendar-peaks [data-peak-type]').forEach((row) => {
+    const type = row.getAttribute('data-peak-type');
+    const mode = row.querySelector('[data-breeding-mode]')?.value || '';
+    if (mode.startsWith('season:')) result[type] = { season: mode.slice(7) };
+    else if (mode === 'date') result[type] = { month: Number(row.querySelector('[data-breeding-month]')?.value) || 1, day: Number(row.querySelector('[data-breeding-day]')?.value) || 1 };
+  });
+  return result;
+}
+
+/** 一列锚点：模式（不定锚／随某季／指定日期）＋月日 */
+function renderCalendarAnchorRow(attr, key, info, item, seasons, months) {
+  const mode = item?.season ? `season:${item.season}` : (item?.month ? 'date' : '');
+  const options = [['', '不定锚'], ...seasons.map((entry) => [`season:${entry.name}`, `随「${entry.name}」开始`]), ['date', '指定日期']];
+  if (item?.season && !seasons.some((entry) => entry.name === item.season)) options.push([mode, `随「${item.season}」（季节已删）`]);
+  return `<div class="bs-bt-calendar-breeding__row" ${attr}="${escapeHtml(key)}">
+      <div class="bs-bt-calendar-breeding__name"><b>${escapeHtml(key)}</b><span>${escapeHtml(info)}</span></div>
+      <div class="bs-bt-calendar-breeding__pick">
+        <select class="text_pole" data-breeding-mode>${options.map(([value, label]) => `<option value="${escapeHtml(value)}"${value === mode ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>
+        <select class="text_pole" data-breeding-month${mode === 'date' ? '' : ' hidden'}>${months.map((name, index) => `<option value="${index + 1}"${index + 1 === Number(item?.month || 1) ? ' selected' : ''}>${escapeHtml(name)}</option>`).join('')}</select>
+        <input class="text_pole" type="number" min="1" max="999" step="1" data-breeding-day value="${Number(item?.day) || 1}"${mode === 'date' ? '' : ' hidden'} aria-label="日" />
+      </div>
+    </div>`;
+}
+
+function renderCalendarPeakRows(ctx, settings, stored = {}) {
+  const node = calendarField('peaks');
+  if (!node) return;
+  const types = getCalendarPeakTypes(ctx, settings);
+  const summary = calendarField('peaks-summary');
+  if (summary) summary.textContent = types.length ? `衍生的精力高峰（${types.length} 型有峰期，已定锚 ${types.filter((type) => stored?.[type]).length}）` : '衍生的精力高峰';
+  if (!types.length) {
+    node.innerHTML = '<div class="bs-bt-inline-status">提示词名录里没有带峰期的衍生类型。</div>';
+    return;
+  }
+  const seasons = parseCalendarSeasonLines(calendarField('seasons')?.value);
+  const months = getCalendarFormMonthNames();
+  node.innerHTML = types.map((type) => {
+    const profile = getDerivedTypeSireCycleProfile(type);
+    return renderCalendarAnchorRow('data-peak-type', type, `高峰约 ${profile.sireCyclePeakDays} 天、品质最高 ×${(1 + Number(profile.sireCycleAmplitude || 0)).toFixed(2)}`, stored?.[type], seasons, months);
+  }).join('');
+}
+
+function readCalendarBreedingRows() {
+  const result = {};
+  document.querySelectorAll('#bs-bt-calendar-breeding [data-breeding-race]').forEach((row) => {
+    const race = row.getAttribute('data-breeding-race');
+    const mode = row.querySelector('[data-breeding-mode]')?.value || '';
+    if (mode.startsWith('season:')) result[race] = { season: mode.slice(7) };
+    else if (mode === 'date') result[race] = { month: Number(row.querySelector('[data-breeding-month]')?.value) || 1, day: Number(row.querySelector('[data-breeding-day]')?.value) || 1 };
+  });
+  return result;
+}
+
+/** 画繁殖季列；stored＝要显示的设定（存着的或表单目前的） */
+function renderCalendarBreedingRows(ctx, settings, stored = {}) {
+  const node = calendarField('breeding');
+  if (!node) return;
+  const races = getCalendarBreedingRaces(ctx, settings);
+  const summary = calendarField('breeding-summary');
+  if (summary) summary.textContent = races.length ? `繁殖季（${races.length} 族有乏情期，已定锚 ${races.filter((race) => stored?.[race]).length}）` : '繁殖季';
+  const bulk = calendarField('breeding-bulk');
+  if (bulk) bulk.innerHTML = [['', '不定锚'], ...parseCalendarSeasonLines(calendarField('seasons')?.value).map((entry) => [`season:${entry.name}`, `随「${entry.name}」开始`])]
+    .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+  if (!races.length) {
+    node.innerHTML = `<div class="bs-bt-inline-status">${isRealisticWorld(settings) ? '写实世界只有人类，没有繁殖季。' : '提示词名录里没有乏情期的物种。'}</div>`;
+    return;
+  }
+  const seasons = parseCalendarSeasonLines(calendarField('seasons')?.value);
+  const months = getCalendarFormMonthNames();
+  const preview = normalizeCalendar(readCalendarFormBase());
+  const yearLength = preview ? averageYearDays(preview) : 365;
+  node.innerHTML = races.map((race) => {
+    const bio = getRacePhysiologyProfile(race) || {};
+    const cycles = Math.max(1, Math.round(Number(bio.seasonCycles) || 1));
+    const seasonDays = Math.round(28 * (Number(bio.menstrualLengthRatio) || 1) * cycles);
+    const warn = seasonDays >= yearLength ? `；季内约 ${seasonDays} 天，比一年长，会隔年才再发情` : '';
+    return renderCalendarAnchorRow('data-breeding-race', race, `乏情 ${Math.round(Number(bio.dormancyDays) || 0)} 天・季内 ${cycles} 轮（约 ${seasonDays} 天）${warn}`, stored?.[race], seasons, months);
+  }).join('');
+}
+
+/** 不含繁殖季的表单（画繁殖季列时算一年几天用，避免回头读自己） */
+function readCalendarFormBase() {
+  const mode = calendarField('mode')?.value || '';
+  if (!mode) return null;
+  return mode === 'custom' ? { mode, months: parseCalendarMonthLines(calendarField('months')?.value) } : { mode };
+}
+
+/** 表单的日期若是「现在」，换算回故事开始那一刻（minutesPassed = 0） */
+function resolveCalendarFormAnchor(calendar, ctx) {
+  if (!calendar || calendarField('anchor')?.value !== 'now') return calendar;
+  const passed = Math.max(0, Number(getChatState(ctx, getSettings(ctx))?.minutesPassed) || 0);
+  const start = dateAt(calendar, -passed);
+  return normalizeCalendar({
+    ...calendar,
+    start: { year: start.year, month: start.month, day: start.day, hour: start.hour, minute: start.minute, ...(start.weekday !== null ? { weekday: start.weekday } : {}) },
+  });
+}
+
+/** 月份与星期的下拉随表单的月份、星期更新，保留原本选的值 */
+function syncCalendarFormChoices() {
+  const mode = calendarField('mode')?.value || '';
+  document.querySelectorAll('#bs-bt-view-race-encyclopedia [data-calendar-when]').forEach((node) => {
+    node.hidden = !String(node.getAttribute('data-calendar-when')).split(' ').includes(mode);
+  });
+  const monthSelect = calendarField('start-month');
+  if (monthSelect) {
+    const months = mode === 'custom' ? parseCalendarMonthLines(calendarField('months')?.value) : Array.from({ length: 12 }, (_, i) => ({ name: `${i + 1}月` }));
+    const previous = monthSelect.value || '1';
+    monthSelect.innerHTML = months.map((item, index) => `<option value="${index + 1}">${escapeHtml(item.name || `${index + 1}月`)}</option>`).join('') || '<option value="1">1月</option>';
+    monthSelect.value = Number(previous) <= monthSelect.options.length ? previous : '1';
+  }
+  const weekdaySelect = calendarField('start-weekday');
+  if (weekdaySelect) {
+    const names = splitCalendarNames(calendarField('weekdays')?.value);
+    const previous = weekdaySelect.value || '0';
+    weekdaySelect.innerHTML = names.map((name, index) => `<option value="${index}">${escapeHtml(name)}</option>`).join('') || '<option value="0">（不分周）</option>';
+    weekdaySelect.value = Number(previous) < weekdaySelect.options.length ? previous : '0';
+    weekdaySelect.disabled = !names.length;
+  }
+}
+
+function renderCalendarPreview(ctx) {
+  const node = calendarField('preview');
+  if (!node) return;
+  const raw = readCalendarForm();
+  if (!raw) {
+    node.textContent = '没设历法：标题列显示「第 N 天」，年龄照地球年。';
+    return;
+  }
+  const calendar = resolveCalendarFormAnchor(normalizeCalendar(raw), ctx);
+  if (!calendar) {
+    const bad = raw.mode === 'custom' ? parseCalendarMonthLines(calendarField('months')?.value).filter((item) => !(item.days >= 1 && item.days <= 999)) : [];
+    node.textContent = bad.length ? `这几行认不出天数：${bad.map((item) => item.name).join('、')}` : '历法不完整：自订历至少要 1 个月、最多 24 个月，每月 1～999 天。';
+    return;
+  }
+  const passed = Math.max(0, Number(getChatState(ctx, getSettings(ctx))?.minutesPassed) || 0);
+  const yearLength = Math.round(averageYearDays(calendar) * 100) / 100;
+  node.textContent = [
+    `故事开始：${formatCalendarDate(calendar, dateAt(calendar, 0), { withTime: true, withWeekday: true })}`,
+    `现在（故事第 ${Math.floor(passed / 1440) + 1} 天）：${formatCalendarDate(calendar, dateAt(calendar, passed), { withTime: true, withWeekday: true })}${dateAt(calendar, passed).season ? `，${dateAt(calendar, passed).season}` : ''}`,
+    `一年 ${yearLength} 天、${monthCount(calendar)} 个月${calendar.weekdays.length ? `、一周 ${calendar.weekdays.length} 天` : '、不分周'}；20 个地球年＝当地 ${Math.round(toLocalYears(20, calendar) * 10) / 10} 岁`,
+  ].join('\n');
+}
+
+/** 把存着的历法填进表单（有未保存的修改时不动） */
+function renderCalendarEditor(ctx, globalSettings, settings) {
+  const modeNode = calendarField('mode');
+  if (!modeNode) return;
+  const source = calendarField('source');
+  if (source) source.textContent = `历法来源：${getSettingSource(ctx, globalSettings, 'calendar')}。历法算世界基准，可以绑在角色卡上。`;
+  if (!calendarEditorDirty) {
+    const calendar = normalizeCalendar(settings?.calendar);
+    modeNode.value = calendar?.mode || '';
+    calendarField('era').value = calendar?.era || '';
+    if (calendar?.mode === 'custom') {
+      calendarField('months').value = calendar.months.map((item) => `${item.name} ${item.days}`).join('\n');
+      calendarField('weekdays').value = calendar.weekdays.join(' ');
+    }
+    calendarField('anchor').value = 'start';
+    const start = calendar?.start || { year: 2026, month: 1, day: 1, hour: 8, minute: 0 };
+    calendarField('start-year').value = String(start.year);
+    calendarField('start-day').value = String(start.day);
+    calendarField('start-hour').value = String(start.hour);
+    calendarField('start-minute').value = String(start.minute);
+    syncCalendarFormChoices();
+    calendarField('start-month').value = String(start.month);
+    calendarField('start-weekday').value = String(start.weekday || 0);
+    calendarField('seasons').value = (calendar?.seasons || []).map((item) => `${item.name} ${monthName(calendar, item.month)} ${item.day}`).join('\n');
+    renderCalendarBreedingRows(ctx, settings, calendar?.breedingSeasons || {});
+    renderCalendarPeakRows(ctx, settings, calendar?.derivedPeaks || {});
+  } else {
+    syncCalendarFormChoices();
+    renderCalendarBreedingRows(ctx, settings, readCalendarBreedingRows());
+    renderCalendarPeakRows(ctx, settings, readCalendarPeakRows());
+  }
+  renderCalendarPreview(ctx);
+}
+
+/** 模型拟的历法草稿填进表单（不保存）；认不出来的栏位照表单原样 */
+function applyCalendarDraft(ctx, draft) {
+  const calendar = normalizeCalendar({ ...draft, breedingSeasons: {} });
+  if (!calendar) throw new Error('模型拟的历法不完整（月份或天数认不出来），表单没有改。');
+  calendarField('mode').value = calendar.mode;
+  calendarField('era').value = calendar.era || '';
+  if (calendar.mode === 'custom') {
+    calendarField('months').value = calendar.months.map((item) => `${item.name} ${item.days}`).join('\n');
+    calendarField('weekdays').value = calendar.weekdays.join(' ');
+  }
+  calendarField('seasons').value = (calendar.seasons || []).map((item) => `${item.name} ${monthName(calendar, item.month)} ${item.day}`).join('\n');
+  calendarField('anchor').value = draft?.anchor === 'now' ? 'now' : 'start';
+  calendarField('start-year').value = String(calendar.start.year);
+  calendarField('start-day').value = String(calendar.start.day);
+  calendarField('start-hour').value = String(calendar.start.hour);
+  calendarField('start-minute').value = String(calendar.start.minute);
+  syncCalendarFormChoices();
+  calendarField('start-month').value = String(calendar.start.month);
+  calendarField('start-weekday').value = String(calendar.start.weekday || 0);
+  // 繁殖季：只收画面列得出来的物种；季名对不上的丢掉
+  const breeding = {};
+  const raw = draft?.breedingSeasons && typeof draft.breedingSeasons === 'object' ? draft.breedingSeasons : {};
+  for (const [race, item] of Object.entries(raw)) {
+    if (!item || typeof item !== 'object') continue;
+    if (item.season && (calendar.seasons || []).some((entry) => entry.name === String(item.season).trim())) breeding[race] = { season: String(item.season).trim() };
+    else if (Number.isFinite(Number(item.month))) breeding[race] = { month: Number(item.month), day: Number(item.day) || 1 };
+  }
+  renderCalendarBreedingRows(ctx, getEncyclopediaEditorSettings(ctx), breeding);
+  // 衍生的精力高峰：同样只收季名对得上的
+  const peaks = {};
+  const rawPeaks = draft?.derivedPeaks && typeof draft.derivedPeaks === 'object' ? draft.derivedPeaks : {};
+  for (const [type, item] of Object.entries(rawPeaks)) {
+    if (!item || typeof item !== 'object') continue;
+    if (item.season && (calendar.seasons || []).some((entry) => entry.name === String(item.season).trim())) peaks[type] = { season: String(item.season).trim() };
+    else if (Number.isFinite(Number(item.month))) peaks[type] = { month: Number(item.month), day: Number(item.day) || 1 };
+  }
+  renderCalendarPeakRows(ctx, getEncyclopediaEditorSettings(ctx), peaks);
+  calendarEditorDirty = true;
+  renderCalendarPreview(ctx);
+}
+
+function bindCalendarEditor(ctx) {
+  const editor = document.querySelector('#bs-bt-view-race-encyclopedia .bs-bt-calendar-editor');
+  if (!editor) return;
+  const onChange = (event) => {
+    if (event?.target instanceof HTMLButtonElement || ['bs-bt-calendar-breeding-bulk', 'bs-bt-calendar-generate-rules'].includes(event?.target?.id)) return;
+    calendarEditorDirty = true;
+    syncCalendarFormChoices();
+    const target = event?.target;
+    if (target instanceof Element && target.closest('#bs-bt-calendar-breeding, #bs-bt-calendar-peaks')) {
+      const row = target.closest('[data-breeding-race], [data-peak-type]');
+      const isDate = row?.querySelector('[data-breeding-mode]')?.value === 'date';
+      row?.querySelectorAll('[data-breeding-month], [data-breeding-day]').forEach((node) => { node.hidden = !isDate; });
+    } else if (event?.type === 'change' || (target instanceof Element && target.id === 'bs-bt-calendar-seasons')) {
+      renderCalendarBreedingRows(ctx, getEncyclopediaEditorSettings(ctx), readCalendarBreedingRows());
+      renderCalendarPeakRows(ctx, getEncyclopediaEditorSettings(ctx), readCalendarPeakRows());
+    }
+    renderCalendarPreview(ctx);
+  };
+  editor.addEventListener('input', onChange);
+  editor.addEventListener('change', onChange);
+  calendarField('generate')?.addEventListener('click', async () => {
+    const button = calendarField('generate');
+    const status = calendarField('generate-status');
+    const show = (text, kind = '') => { if (status) { status.hidden = !text; status.textContent = text; status.dataset.kind = kind; } };
+    if (button) button.disabled = true;
+    show('正在读角色卡与世界书拟定历法…');
+    try {
+      const settings = getEncyclopediaEditorSettings(ctx);
+      const breedingRaces = getCalendarBreedingRaces(ctx, settings).map((race) => {
+        const bio = getRacePhysiologyProfile(race) || {};
+        const seasonCycles = Math.max(1, Math.round(Number(bio.seasonCycles) || 1));
+        // 物种短叙述：让模型照这族的天性（寒带、喜热、植物、夜行…）挑季节，不要全塞同一季
+        return { race, nature: getRaceIntroductionLine(race) || '', dormancyDays: Math.round(Number(bio.dormancyDays) || 0), seasonCycles, seasonDays: Math.round(28 * (Number(bio.menstrualLengthRatio) || 1) * seasonCycles) };
+      });
+      const raw = readCalendarForm();
+      const peakTypes = getCalendarPeakTypes(ctx, settings).map((type) => ({ derivedType: type, peakDays: getDerivedTypeSireCycleProfile(type).sireCyclePeakDays, prompt: getDerivedTypeSireCycleProfile(type).sireCyclePrompt || '' }));
+      // 使用者的补充规矩：优先于设定补完，模型照这里的要求拟
+      const userInstruction = String(calendarField('generate-rules')?.value || '').trim().slice(0, 2000);
+      const draft = await runCalendarInference(ctx, { breedingRaces, peakTypes, userInstruction, existingCalendar: raw ? normalizeCalendar(raw) : null });
+      applyCalendarDraft(ctx, draft);
+      show(`已填进表单，看过再按「保存历法」。${draft?.notes ? `模型说明：${String(draft.notes).slice(0, 200)}` : ''}`);
+    } catch (error) {
+      show(`拟定失败：${error?.message || error}`, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+  calendarField('breeding-bulk-apply')?.addEventListener('click', () => {
+    const value = calendarField('breeding-bulk')?.value || '';
+    const stored = {};
+    document.querySelectorAll('#bs-bt-calendar-breeding [data-breeding-race]').forEach((row) => {
+      if (value) stored[row.getAttribute('data-breeding-race')] = { season: value.slice(7) };
+    });
+    calendarEditorDirty = true;
+    renderCalendarBreedingRows(ctx, getEncyclopediaEditorSettings(ctx), stored);
+    renderCalendarPreview(ctx);
+  });
+  calendarField('quick-fill')?.addEventListener('click', () => {
+    const count = Math.max(1, Math.min(24, Math.round(Number(calendarField('quick-count')?.value) || 12)));
+    const days = Math.max(1, Math.min(999, Math.round(Number(calendarField('quick-days')?.value) || 30)));
+    calendarField('months').value = Array.from({ length: count }, (_, i) => `${i + 1}月 ${days}`).join('\n');
+    onChange();
+  });
+  calendarField('save')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    const raw = readCalendarForm();
+    const calendar = raw ? resolveCalendarFormAnchor(normalizeCalendar(raw), ctx) : null;
+    if (raw && !calendar) throw new Error('历法不完整，没有保存。');
+    calendarEditorDirty = false;
+    // 全域存 null＝没设；卡片「不设」就是拿掉覆盖，沿用全域
+    await saveEncyclopediaPatch(ctx, { calendar: calendar || (isEditingCard() ? undefined : null) });
+    updateClock(getSettings(ctx));
+    globalThis.toastr?.success?.(calendar ? '对话历法已保存。' : '已清除对话历法。');
+  }));
+  calendarField('clear')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
+    calendarEditorDirty = false;
+    await saveEncyclopediaPatch(ctx, { calendar: isEditingCard() ? undefined : null });
+    updateClock(getSettings(ctx));
+    globalThis.toastr?.success?.(isEditingCard() ? '已清除卡片历法，沿用全域。' : '已清除对话历法。');
+  }));
+}
+
 async function saveWorldBaselinePrompt(ctx, value) {
   await saveEncyclopediaPatch(ctx, { worldBaselinePrompt: String(value || '').trim() });
 }
 
 function setEncyclopediaSubpage(page) {
-  selectedEncyclopediaSubpage = ['race', 'derived', 'world', 'calculator'].includes(page) ? page : 'race';
+  // 物种与衍生同一页（1.5.2）：衍生接在物种下面
+  selectedEncyclopediaSubpage = ['race', 'world', 'calendar', 'calculator'].includes(page) ? page : 'race';
   document.querySelectorAll('#bs-bt-encyclopedia-tabs [data-encyclopedia-tab]').forEach((node) => {
     node.classList.toggle('is-active', node.dataset.encyclopediaTab === selectedEncyclopediaSubpage);
   });
   document.querySelectorAll('[data-encyclopedia-page]').forEach((node) => {
-    const active = node.dataset.encyclopediaPage === selectedEncyclopediaSubpage;
+    const active = node.dataset.encyclopediaPage === selectedEncyclopediaSubpage
+      || (selectedEncyclopediaSubpage === 'race' && node.dataset.encyclopediaPage === 'derived');
     node.classList.toggle('is-active', active);
     node.hidden = !active;
   });
@@ -3478,6 +3870,7 @@ function renderRaceEncyclopediaPage(ctx = null) {
   renderRaceCatalogChecklist(settings);
   renderCustomRacePanel();
   renderWorldModeControls(ctx, globalSettings, settings);
+  renderCalendarEditor(ctx, globalSettings, settings);
   if (settings) renderReproductiveControls(settings);
   const baselineSource = document.getElementById('bs-bt-world-baseline-source');
   if (baselineSource) baselineSource.textContent = `世界基准来源：${getSettingSource(ctx, globalSettings, 'worldBaselinePrompt')}；名录来源：${getSettingSource(ctx, globalSettings, 'raceCatalogSelection')}。`;
@@ -4810,7 +5203,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       transformProgress: getTransformProgressItems(profile, minutesPassed),
       raceLabel: formatRaceLabel(base.race, base.derivedType),
       bloodlineLabel: formatBloodlineLabel(base.race, base.bloodline, base.bloodlineSource),
-      age: Number.isFinite(Number(base.age)) ? Math.round(Number(base.age)) : null,
+      age: Number.isFinite(Number(base.age)) ? Math.round(toLocalYears(Number(base.age), getActiveCalendar())) : null,
       bodySizeLabel: formatCharacterBodySizeLabel(base),
       altFormBodySizeLabel: formatAltFormBodySizeLabel(base),
       sheathLabel: formatSheathLabel(base, profile.experience || {}),
@@ -5120,8 +5513,8 @@ function renderCardCarouselSection(title, items, renderCard, emptyText, kind, op
         <span class="bs-bt-track-title-left">${titleHtml}</span>
         <span style="display:flex;align-items:center;gap:8px;">
           ${showNav
-            ? `<button type="button" class="menu_button" data-card-nav="${escapeHtml(kind)}" data-card-step="-1" data-card-count="${items.length}" style="min-width:32px;padding:2px 8px;">◀</button>
-               <button type="button" class="menu_button" data-card-nav="${escapeHtml(kind)}" data-card-step="1" data-card-count="${items.length}" style="min-width:32px;padding:2px 8px;">▶</button>`
+            ? `<button type="button" class="menu_button" data-card-nav="${escapeHtml(kind)}" data-card-step="-1" data-card-count="${items.length}" style="min-width:32px;padding:2px 8px;">◂</button>
+               <button type="button" class="menu_button" data-card-nav="${escapeHtml(kind)}" data-card-step="1" data-card-count="${items.length}" style="min-width:32px;padding:2px 8px;">▸</button>`
             : ''
           }
         </span>
@@ -5541,8 +5934,8 @@ function buildFetalEventTimelineView(pregnant) {
   return { events, earlier: describeFetalEventSummary(pregnant?.fetalEventSummary) };
 }
 
-/** 钉选标记：文字符号 ★（加 U+FE0E 固定文字呈现，不画成 emoji），颜色跟着主题走 */
-const PIN_BADGE_HTML = '<span class="bs-bt-pin-mark" title="钉选：每轮都送给追踪模型" aria-label="钉选">★︎</span>';
+/** 钉选标记：⌖（定位符号，单色，不会画成 emoji），颜色跟着主题走 */
+const PIN_BADGE_HTML = '<span class="bs-bt-pin-mark" title="钉选：每轮都送给追踪模型" aria-label="钉选">⌖</span>';
 
 /** 时间轴节点的图例：形状与 style.css 的 .bs-bt-timeline-key 同一套，不靠颜色区分 */
 function renderTimelineLegend(keys) {
@@ -6235,7 +6628,7 @@ function renderTrackIntimacySection(viewModel) {
     const tooltip = [`契合度 ${percent(item.fit)}%`, item.compatLabel ? `最近一场：${item.compatLabel}` : ''].filter(Boolean).join('，');
     return `<div class="bs-bt-intimacy-row" title="${escapeHtml(tooltip)}">
       <div class="bs-bt-intimacy-head"><span>${escapeHtml(item.name)} · ${escapeHtml(level.name)}</span><span class="bs-bt-intimacy-pips" aria-label="${escapeHtml(level.name)}">${pips}</span></div>
-      <div class="bs-bt-intimacy-detail">${escapeHtml(detail)}${fading ? ' · <span class="bs-bt-intimacy-fading" title="一周以上没有再做，正在淡去">↘ 淡去</span>' : ''}</div>
+      <div class="bs-bt-intimacy-detail">${escapeHtml(detail)}${fading ? ' · <span class="bs-bt-intimacy-fading" title="一周以上没有再做，正在淡去">⇘ 淡去</span>' : ''}</div>
     </div>`;
   }).join('');
   return `
@@ -6357,7 +6750,7 @@ function lineageInitial(name) {
   return [...text].slice(0, 2).join('');
 }
 
-const LINEAGE_SEX_GLYPHS = { 男: '♂', 女: '♀', 雄: '♂', 雌: '♀' };
+const LINEAGE_SEX_GLYPHS = { 男: '♂︎', 女: '♀︎', 雄: '♂︎', 雌: '♀︎' };
 
 function lineageSexGlyph(node) {
   const gender = String(node?.gender || '').trim();
@@ -6681,7 +7074,7 @@ function renderTrackDiary(viewModel) {
   `;
 }
 
-function renderTrackDebug(viewModel, fetalTalentHtml = '') {
+function renderTrackDebug(viewModel, fetalTalentHtml = '', sireCheatHtml = '') {
   const immune = viewModel.debug?.immune || {};
   const isHere = viewModel.debug?.isHere !== false;
   const counts = viewModel.debug?.counts || {};
@@ -6843,6 +7236,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '') {
         </button>
       </div>
       <div class="bs-bt-track-debug-hint">淨空胎儿时，若当前已是着床后的妊娠状态，会追加一次流产经验；尚未着床的受精卵不计入。</div>
+      ${sireCheatHtml}
     </div>
     ${renderBodyDebugSection(viewModel.debug?.body || {})}
     <div class="bs-bt-track-section" style="margin-top: 10px;">
@@ -8224,7 +8618,7 @@ function renderTrackSirePage(chatState) {
       metaRow('在场', base?.isHere === false ? '离场' : '在场'),
       metaRow('种族', formatRaceLabel(base?.race, base?.derivedType)),
       metaRow('血脉', formatBloodlineLabel(base?.race, base?.bloodline, base?.bloodlineSource) || '未知'),
-      metaRow('年龄', base?.age !== null && base?.age !== undefined ? `${Math.round(Number(base.age))} 岁` : '未记录'),
+      metaRow('年龄', base?.age !== null && base?.age !== undefined ? `${Math.round(toLocalYears(Number(base.age), getActiveCalendar()))} 岁` : '未记录'),
       ...(!isFuta && normalizeDerivedTransformLog(record.derivedTransforms).length
         ? [metaRow('转化经历', normalizeDerivedTransformLog(record.derivedTransforms).slice(-2).map((item) => `${item.time ? `${item.time} ` : ''}${describeDerivedTransform(item)}`).join('；'))]
         : []),
@@ -8340,7 +8734,7 @@ function renderSireCycleSections(chatState, name) {
         <div class="bs-bt-sire-marker" style="left:${pct(state.seasonDay / state.seasonTotal)};"></div>
       </div>
       <div class="bs-bt-sire-scale"><span>繁殖季 ${Math.round(state.seasonActive)} 天</span><span>乏情 ${Math.round(state.seasonTotal - state.seasonActive)} 天</span></div>`,
-      '非繁殖季精力较弱，品质 ×0.6；交界前后各 1.5 天渐变',
+      `非繁殖季精力较弱，品质 ×0.6；交界前后各 1.5 天渐变${state.seasonAnchored ? '。照历法：每年从同一天进繁殖季，同族一起' : ''}`,
     ));
   } else if (state.inSeason !== null) {
     gauges.push(gauge(state.inSeason ? '繁殖季' : '非繁殖季', '随卵方周期', ''));
@@ -8370,7 +8764,7 @@ function renderSireCycleSections(chatState, name) {
         <div class="bs-bt-sire-wave-dot" style="left:${pct(cyclePos)};top:${(toY(state.cycle) / 24 * 100).toFixed(1)}%;"></div>
       </div>`,
     peakMode
-      ? `这位约 ${Math.round(state.cycleDays)} 天一轮（照精子品质与经期倍率）；平时持平，中间约 ${state.cycleShape.peakDays} 天冲高，最高品质 ×${(1 + state.cycleShape.amplitude).toFixed(2)}（看衍生类型，百科可调）`
+      ? `${state.cycleAnchored ? `照历法每年一轮（${Math.round(state.cycleDays)} 天），从定好的那天起高峰，同型一起` : `这位约 ${Math.round(state.cycleDays)} 天一轮（照精子品质与经期倍率）`}；平时持平，中间约 ${state.cycleShape.peakDays} 天冲高，最高品质 ×${(1 + state.cycleShape.amplitude).toFixed(2)}（看衍生类型，百科可调）`
       : amplitudePct > 0
         ? `这位约 ${Math.round(state.cycleDays)} 天一轮（照精子品质与经期倍率），品质随之起伏约 ±${amplitudePct}%（看衍生类型，百科可调）`
         : '这个衍生类型没有精力周期，品质恒定（百科可调）',
@@ -9209,6 +9603,7 @@ function showFullStateSire(ctx, name) {
   }
   selectedFullStateName = name;
   selectedFullStateKind = 'sire';
+  fullStateFocused = true;
   renderFullStatePage(ctx);
   setView('full-state');
 }
@@ -9218,6 +9613,19 @@ const SIRE_CHEATS = Object.freeze([
   { key: 'alwaysPeak', label: '品质锁定', title: '作弊：当下精子品质恒等于档案品质，不受繁殖季、精力周期、存量与禁欲影响。要改品质就到变量分页改档案' },
   { key: 'fetalGuard', label: '胎儿守护', title: '作弊：这位精方在场（母体也在场）时，他的胎儿健康每小时回复 2%，回到平稳为止；不会让胎儿长得更大。嵌合胎有一位父方在场就算' },
 ]);
+
+/** 扶她（1.5.2）：精方的作弊开关并进卵方的快捷调试，分隔线下另成一组、按钮标上「精」 */
+function renderFutaSireCheats(record) {
+  if (!record) return '';
+  const buttons = SIRE_CHEATS.map(({ key, label, title }) => `
+        <button type="button" class="bs-bt-track-debug-button is-sire${record?.[key] ? ' is-active' : ''}" data-debug-sire-cheat="${key}" title="${escapeHtml(`精方档：${title}`)}">
+          <span class="bs-bt-track-debug-title"><span class="bs-bt-track-debug-tag">精</span>${label}</span>
+          <span class="bs-bt-track-debug-state">${record?.[key] ? 'ON' : 'OFF'}</span>
+        </button>`).join('');
+  return `<div class="bs-bt-track-debug-subtitle">精方（扶她）</div>
+      <div class="bs-bt-track-debug-list">${buttons}
+      </div>`;
+}
 
 function renderSireDebug(record) {
   const buttons = SIRE_CHEATS.map(({ key, label, title }) => `
@@ -9277,6 +9685,7 @@ function showFullState(ctx, name) {
   }
   selectedFullStateName = name;
   selectedFullStateKind = 'character';
+  fullStateFocused = true;
   selectedFullStateSubpage = ['variables', 'debug', 'appearance'].includes(selectedFullStateSubpage) ? selectedFullStateSubpage : 'variables';
   renderFullStatePage(ctx);
   setView('full-state');
@@ -9284,6 +9693,7 @@ function showFullState(ctx, name) {
 }
 
 function openFullStateMenu(ctx) {
+  fullStateFocused = false;
   selectedFullStateName = '';
   selectedFullStateKind = 'character';
   selectedFullStateSubpage = 'variables';
@@ -9477,6 +9887,174 @@ function bindFetalTalentDebugControls(ctx, panel) {
   });
 }
 
+// ---------- 日历页（1.5.2）：首页「日历」格 ----------
+// 月曆格：选角色（可多选），每格画她那天在哪一段；往前用楼层快照回推（纪录），今天以后照现在的阶段推算。
+// 没设历法时一个月当 30 天（「故事第 N 月」）。只读，不改状态。
+let storyCalendarCursor = null; // { year, month }（有历法）或 { index }（没历法，第几个 30 天）
+const storyCalendarPeople = new Set();
+let storyCalendarPeoplePicked = false; // 使用者勾过之后不再套预设
+const STORY_CALENDAR_MAX_PEOPLE = 4;
+const STORY_MONTH_DAYS = 30;
+
+function getStoryCalendarCandidates(chatState) {
+  return Object.entries(chatState?.characters || {})
+    .filter(([, item]) => String(item?.profile?.base?.stage || '').trim())
+    .map(([name]) => name);
+}
+
+function storyCalendarMonthOf(calendar, minutes) {
+  if (!calendar) return { index: Math.max(0, Math.floor(minutes / 1440 / STORY_MONTH_DAYS)) };
+  const date = dateAt(calendar, minutes);
+  return { year: date.year, month: date.month };
+}
+
+function shiftStoryCalendarMonth(calendar, cursor, delta) {
+  if (!calendar) return { index: Math.max(0, cursor.index + delta) };
+  let { year, month } = cursor;
+  month += delta;
+  while (month < 1) { year -= 1; month += monthCount(calendar); }
+  while (month > monthCount(calendar)) { month -= monthCount(calendar); year += 1; }
+  return { year, month };
+}
+
+const sameStoryMonth = (a, b) => (a?.index !== undefined ? a.index === b?.index : a?.year === b?.year && a?.month === b?.month);
+
+/** 一个月的格子：每格 { label, start（minutesPassed）} 与前面空几格、一列几格 */
+function buildStoryCalendarMonth(calendar, cursor) {
+  if (!calendar) {
+    const first = cursor.index * STORY_MONTH_DAYS;
+    return {
+      title: `故事第 ${cursor.index + 1} 月`,
+      subtitle: `第 ${first + 1}～${first + STORY_MONTH_DAYS} 天`,
+      columns: 7, lead: 0, weekdayNames: [],
+      days: Array.from({ length: STORY_MONTH_DAYS }, (_, i) => ({ label: String(first + i + 1), start: (first + i) * 1440 })),
+    };
+  }
+  const count = monthDays(calendar, cursor.year, cursor.month);
+  const firstStart = minutesAtDate(calendar, cursor.year, cursor.month, 1);
+  const week = calendar.weekdays.length;
+  const aligned = week >= 2 && week <= 10;
+  const firstWeekday = aligned ? dateAt(calendar, firstStart).weekday : 0;
+  return {
+    title: `${calendar.era ? `${calendar.era} ` : ''}${cursor.year}年 ${monthName(calendar, cursor.month)}`,
+    // 这个月经过的季节（月初那季→月中换的季）
+    subtitle: [`${count} 天`, [...new Set(Array.from({ length: count }, (_, i) => dateAt(calendar, firstStart + i * 1440).season).filter(Boolean))].join('→')].filter(Boolean).join('・'),
+    columns: aligned ? week : 7,
+    lead: aligned ? firstWeekday || 0 : 0,
+    weekdayNames: aligned ? calendar.weekdays : [],
+    days: Array.from({ length: count }, (_, i) => ({ label: String(i + 1), start: firstStart + i * 1440 })),
+  };
+}
+
+function renderStoryCalendarPage(ctx = getContextSafe()) {
+  const grid = document.getElementById('bs-bt-story-calendar-grid');
+  if (!grid || !ctx) return;
+  const settings = getSettings(ctx);
+  const chatState = getChatState(ctx, settings);
+  const calendar = getActiveCalendar();
+  const now = Math.max(0, Number(chatState?.minutesPassed) || 0);
+  const todayStart = calendar ? minutesAtDate(calendar, dateAt(calendar, now).year, dateAt(calendar, now).month, dateAt(calendar, now).day) : Math.floor(now / 1440) * 1440;
+  const firstMonth = storyCalendarMonthOf(calendar, 0);
+  if (!storyCalendarCursor || (calendar ? storyCalendarCursor.index !== undefined : storyCalendarCursor.index === undefined)) storyCalendarCursor = storyCalendarMonthOf(calendar, now);
+
+  // 角色：预设选前几位；角色不在了就拿掉
+  const candidates = getStoryCalendarCandidates(chatState);
+  for (const name of [...storyCalendarPeople]) if (!candidates.includes(name)) storyCalendarPeople.delete(name);
+  if (!storyCalendarPeoplePicked && !storyCalendarPeople.size) candidates.slice(0, STORY_CALENDAR_MAX_PEOPLE).forEach((name) => storyCalendarPeople.add(name));
+  const people = candidates.filter((name) => storyCalendarPeople.has(name));
+
+  const month = buildStoryCalendarMonth(calendar, storyCalendarCursor);
+  const monthEnd = (month.days.at(-1)?.start ?? now) + 1440;
+  const timelines = new Map(people.map((name) => [name, buildStageTimeline(
+    listSnapshotCharacterTimeline(chatState, name),
+    { minutes: now, profile: chatState.characters[name].profile },
+    Math.max(monthEnd, now),
+  )]));
+
+  const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value; };
+  setText('bs-bt-story-calendar-title', month.title);
+  setText('bs-bt-story-calendar-subtitle', calendar ? month.subtitle : `${month.subtitle}（没设历法，一个月当 ${STORY_MONTH_DAYS} 天）`);
+  setText('bs-bt-story-calendar-people-summary', people.length ? `角色：${people.map((name, index) => `${index + 1}.${name}`).join(' ')}` : '角色：没选');
+  const prev = document.getElementById('bs-bt-story-calendar-prev');
+  if (prev) prev.disabled = sameStoryMonth(storyCalendarCursor, firstMonth);
+
+  const peopleNode = document.getElementById('bs-bt-story-calendar-people');
+  if (peopleNode) {
+    peopleNode.innerHTML = candidates.length
+      ? candidates.map((name) => {
+        const order = people.indexOf(name);
+        return `<label class="bs-bt-story-calendar__person${order >= 0 ? ' is-picked' : ''}"><input type="checkbox" data-story-calendar-person="${escapeHtml(name)}"${order >= 0 ? ' checked' : ''}${order < 0 && people.length >= STORY_CALENDAR_MAX_PEOPLE ? ' disabled' : ''} />${order >= 0 ? `<span class="bs-bt-story-calendar__order">${order + 1}</span>` : ''}${escapeHtml(name)}</label>`;
+      }).join('')
+      : '<div class="bs-bt-inline-status">还没有有生理周期的角色。</div>';
+  }
+
+  grid.style.setProperty('--bsbt-calendar-columns', String(month.columns));
+  const head = month.weekdayNames.map((name) => `<div class="bs-bt-story-calendar__weekday">${escapeHtml(name)}</div>`).join('');
+  const blanks = Array.from({ length: month.lead }, () => '<div class="bs-bt-story-calendar__blank"></div>').join('');
+  // 扶她的双周期：卵方阶段画色条，精方的精力高峰另标 ☿（照衍生幅度，接近波峰的日子）
+  const futaPeak = (name, dayStart) => {
+    if (!getSireRecord(chatState, name)) return null;
+    const state = getSireQualityState(chatState, name, { minutesPassed: dayStart + 720 });
+    const amplitude = Number(state?.cycleShape?.amplitude) || 0;
+    if (!state || state.alwaysPeak || amplitude <= 0) return null;
+    return state.cycle >= 1 + amplitude * 0.8 ? state.cycle : null;
+  };
+  const cells = month.days.map((day) => {
+    const infos = people.map((name) => stageOnDay(timelines.get(name), day.start));
+    const peaks = people.filter((name) => futaPeak(name, day.start));
+    // 只画重点阶段；看机率、画不出结束的推算（今天以后的逾期）不画，今天与纪录照画
+    const bars = infos.map((info, index) => (info?.stage && info.group && (!(info.open && info.predicted) || day.start === todayStart)
+      ? `<span class="bs-bt-story-calendar__bar bs-bt-cal-stage--${info.group}" title="${escapeHtml(`${people[index]}：${info.stage}`)}"></span>`
+      : '<span class="bs-bt-story-calendar__bar is-empty"></span>')).join('');
+    const due = infos.some((info) => info?.marks?.includes('due'));
+    const extensionEnd = infos.some((info) => info?.marks?.includes('extension'));
+    const classes = ['bs-bt-story-calendar__day'];
+    if (day.start === todayStart) classes.push('is-today');
+    if (day.start + 1440 <= 0) classes.push('is-before-story');
+    return `<div class="${classes.join(' ')}" data-story-calendar-day="${day.start}"><span class="bs-bt-story-calendar__num">${escapeHtml(day.label)}${due ? '<span class="bs-bt-story-calendar__due" title="预产期">☉</span>' : ''}${extensionEnd ? '<span class="bs-bt-story-calendar__due" title="延产期限">⧗</span>' : ''}${peaks.length ? `<span class="bs-bt-story-calendar__due" title="${escapeHtml(`精力高峰：${peaks.join('、')}`)}">☿</span>` : ''}</span><span class="bs-bt-story-calendar__bars">${bars}</span></div>`;
+  }).join('');
+  grid.innerHTML = head + blanks + cells;
+
+  const legend = document.getElementById('bs-bt-story-calendar-legend');
+  if (legend) {
+    legend.innerHTML = CALENDAR_STAGE_GROUPS.map((group) => `<span class="bs-bt-story-calendar__key"><span class="bs-bt-story-calendar__swatch bs-bt-cal-stage--${group.key}"></span>${escapeHtml(group.label)}</span>`).join('')
+      + '<span class="bs-bt-story-calendar__key">☉ 预产期</span><span class="bs-bt-story-calendar__key">⧗ 延产期限</span><span class="bs-bt-story-calendar__key">☿ 扶她的精力高峰</span>';
+  }
+
+}
+
+function bindStoryCalendarPage(ctx) {
+  const view = document.getElementById('bs-bt-view-story-calendar');
+  if (!view) return;
+  const move = (delta) => {
+    const calendar = getActiveCalendar();
+    if (!storyCalendarCursor) return;
+    storyCalendarCursor = shiftStoryCalendarMonth(calendar, storyCalendarCursor, delta);
+    renderStoryCalendarPage(ctx);
+  };
+  document.getElementById('bs-bt-story-calendar-prev')?.addEventListener('click', () => move(-1));
+  document.getElementById('bs-bt-story-calendar-next')?.addEventListener('click', () => move(1));
+  document.getElementById('bs-bt-story-calendar-today')?.addEventListener('click', () => {
+    storyCalendarCursor = null;
+    renderStoryCalendarPage(ctx);
+  });
+  document.getElementById('bs-bt-story-calendar-settings')?.addEventListener('click', () => {
+    renderRaceEncyclopediaPage(ctx);
+    setEncyclopediaSubpage('calendar');
+    setView('race-encyclopedia');
+  });
+  document.getElementById('bs-bt-story-calendar-vars')?.addEventListener('click', () => openFullStateMenu(ctx));
+  view.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.dataset.storyCalendarPerson) return;
+    const name = input.dataset.storyCalendarPerson;
+    if (input.checked) storyCalendarPeople.add(name);
+    else storyCalendarPeople.delete(name);
+    storyCalendarPeoplePicked = true;
+    renderStoryCalendarPage(ctx);
+  });
+}
+
 function renderFullStatePage(ctx) {
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
@@ -9507,7 +10085,9 @@ function renderFullStatePage(ctx) {
     selectedFullStateKind = 'character';
   }
 
-  for (const name of names) {
+  if (fullStateFocused && selectedFullStateName) {
+    renderFullStateFocusHeader(ctx, list, chatState);
+  } else for (const name of names) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `bs-bt-theme-option${name === selectedFullStateName && selectedFullStateKind === 'character' ? ' is-active' : ''}`;
@@ -9515,13 +10095,13 @@ function renderFullStatePage(ctx) {
     button.addEventListener('click', () => showFullState(ctx, name));
     list.appendChild(button);
   }
-  if (sireNames.length > 0) {
+  if (sireNames.length > 0 && !(fullStateFocused && selectedFullStateName)) {
     const title = document.createElement('div');
     title.className = 'bs-bt-full-state-group-title';
     title.textContent = '精方';
     list.appendChild(title);
   }
-  for (const name of sireNames) {
+  for (const name of fullStateFocused && selectedFullStateName ? [] : sireNames) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `bs-bt-theme-option${name === selectedFullStateName && selectedFullStateKind === 'sire' ? ' is-active' : ''}`;
@@ -9545,7 +10125,11 @@ function renderFullStatePage(ctx) {
     output.value = getFullStateEditorText(current);
     setFullStateEditStatus('可直接编辑 JSON，应用前会检查格式与基础结构。');
     if (debugPanel) {
-      debugPanel.innerHTML = renderTrackDebug(buildTrackCharacterViewModel(current), renderFetalTalentDebugEditor(chatState, current));
+      const futaSire = getSireRecord(chatState, selectedFullStateName);
+      debugPanel.innerHTML = renderTrackDebug(buildTrackCharacterViewModel(current), renderFetalTalentDebugEditor(chatState, current), renderFutaSireCheats(futaSire));
+      const futaName = selectedFullStateName;
+      debugPanel.querySelectorAll('[data-debug-sire-cheat]').forEach((node) =>
+        node.addEventListener('click', () => toggleSireCheat(ctx, futaName, String(node.dataset.debugSireCheat || ''))));
       bindFetalTalentDebugControls(ctx, debugPanel);
       bindDebugPanelControls(ctx, debugPanel, () => renderFullStatePage(ctx));
     }
@@ -9556,9 +10140,74 @@ function renderFullStatePage(ctx) {
     if (debugPanel) debugPanel.innerHTML = '<div class="bs-bt-connect-status">请选择角色后使用调试工具。</div>';
   }
   renderChildMoveControls(ctx);
+  collapseFullStateSections(document.getElementById('bs-bt-view-full-state'));
   updateFullStateControls(ctx);
   updateFullStateSubpage();
   closeFullStateConfirm();
+}
+
+/** 聚焦模式的标题列：名字、扶她的卵方／精方切换、返回追踪页 */
+function renderFullStateFocusHeader(ctx, list, chatState) {
+  const name = selectedFullStateName;
+  const isFuta = Boolean(chatState.characters?.[name]) && Boolean(getSireRecord(chatState, name));
+  const kindLabel = selectedFullStateKind === 'sire' ? (isFuta ? '扶她' : '精方') : (isFuta ? '扶她' : '卵方');
+  const head = document.createElement('div');
+  head.className = 'bs-bt-full-state-focus';
+  head.innerHTML = `<div class="bs-bt-full-state-focus__name"><b>${escapeHtml(name)}</b><span>${kindLabel}</span></div>`
+    + (isFuta ? `<div class="bs-bt-track-tabs bs-bt-full-state-focus__kinds">
+        <button type="button" class="bs-bt-track-tab${selectedFullStateKind === 'character' ? ' is-active' : ''}" data-full-state-kind="character">卵方</button>
+        <button type="button" class="bs-bt-track-tab${selectedFullStateKind === 'sire' ? ' is-active' : ''}" data-full-state-kind="sire">精方</button>
+      </div>` : '')
+    + `<div class="bs-bt-full-state-focus__actions">
+        <button type="button" class="menu_button" data-full-state-back>返回追踪</button>
+        <button type="button" class="menu_button" data-full-state-all>所有角色</button>
+      </div>`;
+  head.querySelectorAll('[data-full-state-kind]').forEach((node) => node.addEventListener('click', () => {
+    if (node.dataset.fullStateKind === 'sire') showFullStateSire(ctx, name);
+    else showFullState(ctx, name);
+  }));
+  head.querySelector('[data-full-state-back]')?.addEventListener('click', () => {
+    // 扶她的精方档也回卵方页（1.5.1 起精方并在卵方的分页里）
+    if (selectedFullStateKind === 'sire' && !chatState.characters?.[name]) {
+      selectedTrackSireName = name;
+      renderStatusPanel(ctx);
+      setView('track-sire');
+      return;
+    }
+    selectedTrackName = name;
+    renderStatusPanel(ctx);
+    setView('track-char');
+  });
+  head.querySelector('[data-full-state-all]')?.addEventListener('click', () => {
+    fullStateFocused = false;
+    renderFullStatePage(ctx);
+  });
+  list.appendChild(head);
+}
+
+/** 把变量页里有标题的区块改成可折叠（预设收起，展开过的记着）；区块本身不换掉，绑在上面的事件照旧 */
+function collapseFullStateSections(root) {
+  if (!root) return;
+  root.querySelectorAll('#bs-bt-full-state-debug-panel .bs-bt-track-section, #bs-bt-full-state-appearance .bs-bt-track-section').forEach((section) => {
+    if (section.querySelector(':scope > details.bs-bt-full-state-fold')) return;
+    const title = section.querySelector(':scope > .bs-bt-track-section-title');
+    if (!title) return;
+    const key = title.textContent.trim();
+    const details = document.createElement('details');
+    details.className = 'bs-bt-full-state-fold';
+    details.open = fullStateOpenSections.has(key);
+    const summary = document.createElement('summary');
+    summary.className = 'bs-bt-track-section-title';
+    summary.innerHTML = title.innerHTML;
+    title.remove();
+    details.appendChild(summary);
+    while (section.firstChild) details.appendChild(section.firstChild);
+    section.appendChild(details);
+    details.addEventListener('toggle', () => {
+      if (details.open) fullStateOpenSections.add(key);
+      else fullStateOpenSections.delete(key);
+    });
+  });
 }
 
 function updateClock(settings) {
@@ -9569,6 +10218,17 @@ function updateClock(settings) {
   const currentSettings = settings || getSettings(ctx);
   const chatState = getChatState(ctx, currentSettings);
   const totalMins = Math.max(0, Number(chatState?.minutesPassed) || 0);
+  // 日历页开着时跟着时间与状态重画
+  if (document.getElementById(PANEL_ID)?.dataset.view === 'story-calendar') renderStoryCalendarPage(ctx);
+  // 对话历法（1.5.2）：有历法就显示故事日期，滑鼠提示是经过的时间
+  const calendar = getActiveCalendar();
+  timeEl.title = '';
+  if (calendar) {
+    const date = dateAt(calendar, totalMins);
+    timeEl.textContent = calendar.mode === 'custom' ? `${date.monthName}${date.day}日` : `${date.month}/${date.day}`;
+    timeEl.title = `${formatCalendarDate(calendar, date, { withTime: true, withWeekday: true })}（故事第 ${Math.floor(totalMins / 1440) + 1} 天）`;
+    return;
+  }
 
   let days = Math.floor(totalMins / 1440);
   const hrs = Math.floor((totalMins % 1440) / 60);
@@ -9719,11 +10379,11 @@ function applyTheme(settings) {
 function setView(view) {
   const root = document.getElementById(PANEL_ID);
   if (!root) return;
-  const requestedView = view === 'time-lapse' ? 'full-state' : view;
+  const requestedView = view === 'time-lapse' ? 'story-calendar' : view;
   const normalizedView = (requestedView === 'wardrobe' && !extensionSystems.wardrobe) || (requestedView === 'skill-catalog' && !extensionSystems.skill)
     ? 'home'
     : requestedView;
-  const next = ['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'track-sire', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog', 'edit-gate'].includes(normalizedView) ? normalizedView : 'home';
+  const next = ['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'track-sire', 'full-state', 'story-calendar', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog', 'edit-gate'].includes(normalizedView) ? normalizedView : 'home';
   if (root.dataset.view !== next && racePaletteState.isOpen) {
     closeRacePalettePopover();
     refreshRegisterRacePalette();
@@ -9745,7 +10405,7 @@ function setView(view) {
     if (viewport) viewport.scrollTop = 0;
   }
   const title = document.getElementById('bs-bt-title');
-  if (title) title.textContent = next === 'help' ? 'HELP' : next === 'theme' ? 'THEME' : next === 'system' ? 'SYSTEM' : next === 'register' ? 'REGISTRY' : next === 'worldbook-filter' ? 'WORLDBOOK' : next === 'track-list' ? 'TRACK LIST' : next === 'track-char' ? 'TRACK CHAR' : next === 'track-sire' ? 'TRACK SIRE' : next === 'full-state' ? 'FULL STATE' : next === 'race-encyclopedia' ? 'RACE DATA' : next === 'tracker-preset' ? 'PRESET' : next === 'wardrobe' ? 'WARDROBE' : next === 'skill-catalog' ? 'SKILLS' : next === 'edit-gate' ? 'EDIT CHECK' : 'HOME';
+  if (title) title.textContent = next === 'help' ? 'HELP' : next === 'theme' ? 'THEME' : next === 'system' ? 'SYSTEM' : next === 'register' ? 'REGISTRY' : next === 'worldbook-filter' ? 'WORLDBOOK' : next === 'track-list' ? 'TRACK LIST' : next === 'track-char' ? 'TRACK CHAR' : next === 'track-sire' ? 'TRACK SIRE' : next === 'full-state' ? 'FULL STATE' : next === 'story-calendar' ? 'CALENDAR' : next === 'race-encyclopedia' ? 'RACE DATA' : next === 'tracker-preset' ? 'PRESET' : next === 'wardrobe' ? 'WARDROBE' : next === 'skill-catalog' ? 'SKILLS' : next === 'edit-gate' ? 'EDIT CHECK' : 'HOME';
 }
 
 /** 追踪页的修改后重追判断：勾上才显示设置入口；重追判断页与系统页的状态行提示决策接口填好没有 */
@@ -9769,8 +10429,8 @@ function renderEditGateStatus(settings) {
 function getLastPagerView() {
   try {
     const value = String(globalThis.localStorage?.getItem(LAST_VIEW_STORAGE_KEY) || '').trim();
-    if (value === 'time-lapse') return 'full-state';
-    if (['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'track-sire', 'full-state', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog', 'edit-gate'].includes(value)) {
+    if (value === 'time-lapse') return 'story-calendar';
+    if (['home', 'help', 'theme', 'system', 'register', 'worldbook-filter', 'track-list', 'track-char', 'track-sire', 'full-state', 'story-calendar', 'race-encyclopedia', 'tracker-preset', 'wardrobe', 'skill-catalog', 'edit-gate'].includes(value)) {
       return value;
     }
   } catch {}
@@ -10803,6 +11463,10 @@ async function ensureModal(ctx) {
         return;
       }
       if (nextView === 'race-encyclopedia') renderRaceEncyclopediaPage(ctx);
+      if (nextView === 'story-calendar') {
+        storyCalendarCursor = null;
+            renderStoryCalendarPage(ctx);
+      }
       if (nextView === 'wardrobe') renderWardrobePage(ctx);
       if (nextView === 'skill-catalog') renderSkillCatalogPage(ctx);
       if (nextView === 'register') renderRegisterChildSourceOptions(ctx);
@@ -11312,13 +11976,17 @@ async function ensureModal(ctx) {
     racePhysiologyEditorOpen = false;
     renderRaceEncyclopediaPage(ctx);
   });
+  bindCalendarEditor(ctx);
+  bindStoryCalendarPage(ctx);
   document.getElementById('bs-bt-world-setting-target')?.addEventListener('change', () => {
+    calendarEditorDirty = false;
     closeRacePhysiologyEditor();
     closeDerivedTypeEditor();
     renderRaceEncyclopediaPage(ctx);
   });
   document.getElementById('bs-bt-card-baseline-reset')?.addEventListener('click', () => runWorldSettingAction(ctx, async () => {
-    await saveEncyclopediaPatch(ctx, { worldBaselinePrompt: undefined, raceCatalogSelection: undefined, reproductiveSettings: undefined, realisticWorld: undefined, specialTools: undefined });
+    calendarEditorDirty = false;
+    await saveEncyclopediaPatch(ctx, { worldBaselinePrompt: undefined, raceCatalogSelection: undefined, reproductiveSettings: undefined, realisticWorld: undefined, specialTools: undefined, calendar: undefined });
     globalThis.toastr?.success?.('已清除卡片基准覆盖，沿用全域。');
   }));
   document.getElementById('bs-bt-catalog-checklist')?.addEventListener('change', (event) => {
@@ -11669,7 +12337,6 @@ async function ensureModal(ctx) {
   });
   document.getElementById('bs-bt-skill-preset-development')?.addEventListener('click', () => importSkillPreset(ctx, 'development'));
   document.getElementById('bs-bt-skill-preset-behavior')?.addEventListener('click', () => importSkillPreset(ctx, 'behavior'));
-  document.getElementById('bs-bt-skill-preset-sword')?.addEventListener('click', () => importSkillPreset(ctx, 'sword'));
   document.getElementById('bs-bt-skill-baseline-save')?.addEventListener('click', () => saveSkillBaselinePrompt(ctx));
   document.getElementById('bs-bt-skill-catalog-list')?.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -12599,6 +13266,8 @@ async function bootstrap() {
   if (globalThis[BOOTSTRAP_RUNTIME_KEY]) return;
   globalThis[BOOTSTRAP_RUNTIME_KEY] = true;
   installThemedTooltips();
+  // 对话历法（1.5.2）：引擎推进时间（bsPassedTime 的月、年）与画面读目前生效的历法：角色卡优先，再来全域
+  setCalendarProvider(() => getEffectiveSettings(getContextSafe() || ctx, getSettings(getContextSafe() || ctx)).calendar);
   try {
     // 载入当下记忆体里的各聊天都视为与宿主同步，之后的改动才算这个分页的新改动
     markChatStatesSynced(ctx);

@@ -54,9 +54,9 @@
                 <span class="bs-bt-home-tile__icon bs-bt-home-tile__icon--wardrobe" aria-hidden="true"></span>
                 <span class="bs-bt-home-tile__label">衣柜</span>
               </button>
-              <button class="bs-bt-home-tile" type="button" data-nav-view="full-state">
-                <span class="bs-bt-home-tile__icon bs-bt-home-tile__icon--json" aria-hidden="true"></span>
-                <span class="bs-bt-home-tile__label">变量</span>
+              <button class="bs-bt-home-tile" type="button" data-nav-view="story-calendar">
+                <span class="bs-bt-home-tile__icon bs-bt-home-tile__icon--calendar" aria-hidden="true"></span>
+                <span class="bs-bt-home-tile__label">日历</span>
               </button>
               <button class="bs-bt-home-tile" type="button" data-nav-view="race-encyclopedia">
                 <span class="bs-bt-home-tile__icon bs-bt-home-tile__icon--dna" aria-hidden="true"></span>
@@ -97,7 +97,7 @@
             <details>
               <summary>日常查看与时间推进</summary>
               <p>「追踪」的角色页面有概览、描述、妊娠、经历和心情分栏。异步追踪会在 SYSTEM 设定的触发时机分析新对话，也可随时手动分析。</p>
-              <p>需要让生理时间前进时，进入「变量」填写年、月、周、天、时、分，再执行全角色时间推进。推进前请确认输入的时间跨度。</p>
+              <p>需要让生理时间前进时，进入「日历」页底部填写年、月、周、天、时、分，再执行全角色时间推进。推进前请确认输入的时间跨度。</p>
             </details>
 
             <details>
@@ -105,7 +105,7 @@
               <ul>
                 <li>「预设」管理追踪器使用的预设；「排除」控制送给追踪器的世界书条目。</li>
                 <li>「技能」管理技能图鉴；「衣柜」管理角色的衣物和穿着，也能让模型备装。两者可在系统页整个关闭，关闭后入口隐藏，LLM 也看不到相关工具。</li>
-                <li>「变量」可查看状态、历史与调试工具；「百科」提供种族资料与计算工具；「主题」调整界面。</li>
+                <li>「日历」看各角色的周期与孕期（往后是推算），页底可推进全角色时间；完整变量（状态、历史与调试工具）从追踪页角色的「变量」进入；「百科」提供种族资料与计算工具；「主题」调整界面。</li>
               </ul>
             </details>
 
@@ -141,19 +141,14 @@
                 <div class="bs-bt-section-title">可选预设技能 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/wardrobe-and-skills.md#技能目錄角色技能與天賦" target="_blank" rel="noopener noreferrer" title="预设技能说明" aria-label="预设技能说明">?</a></div>
                 <div class="bs-bt-skill-preset-grid">
                   <article class="bs-bt-skill-card">
-                    <div class="bs-bt-skill-card__title">部位开发（6）</div>
-                    <div class="bs-bt-skill-card__description">口腔、胸部、性器、子宫、后庭、尿道（性器、子宫为卵方专属）</div>
+                    <div class="bs-bt-skill-card__title">部位开发（8）</div>
+                    <div class="bs-bt-skill-card__description">口腔、胸部、外阴、子宫、阴茎、阴囊、后庭、尿道（外阴、子宫要有子宫；阴茎、阴囊要有阴茎，扶她两边都能练）</div>
                     <button id="bs-bt-skill-preset-development" class="menu_button" type="button">导入部位开发</button>
                   </article>
                   <article class="bs-bt-skill-card">
                     <div class="bs-bt-skill-card__title">行为与倾向（9）</div>
                     <div class="bs-bt-skill-card__description">前戏、侍奉、自慰、露出、拘束、M/S倾向、情趣玩具、多人行为（两方通用）</div>
                     <button id="bs-bt-skill-preset-behavior" class="menu_button" type="button">导入行为与倾向</button>
-                  </article>
-                  <article class="bs-bt-skill-card">
-                    <div class="bs-bt-skill-card__title">精方专属（1）</div>
-                    <div class="bs-bt-skill-card__description">阴茎开发（要有阴茎：精方与扶她）</div>
-                    <button id="bs-bt-skill-preset-sword" class="menu_button" type="button">导入精方专属</button>
                   </article>
                 </div>
               </div>
@@ -1097,8 +1092,32 @@
           </div>
         </section>
 
-        <section id="bs-bt-view-full-state" class="bs-bt-view" data-view="full-state">
+        <section id="bs-bt-view-story-calendar" class="bs-bt-view" data-view="story-calendar">
           <div class="bs-bt-panel">
+            <div class="settings_section bs-bt-story-calendar">
+              <div class="bs-bt-story-calendar__head">
+                <button id="bs-bt-story-calendar-prev" class="menu_button" type="button" aria-label="上个月">◂</button>
+                <div class="bs-bt-story-calendar__title">
+                  <div id="bs-bt-story-calendar-title" class="bs-bt-status-title"></div>
+                  <div id="bs-bt-story-calendar-subtitle" class="bs-bt-inline-status"></div>
+                </div>
+                <button id="bs-bt-story-calendar-next" class="menu_button" type="button" aria-label="下个月">▸</button>
+              </div>
+              <details class="bs-bt-story-calendar__picker">
+                <summary id="bs-bt-story-calendar-people-summary">角色</summary>
+                <div id="bs-bt-story-calendar-people" class="bs-bt-story-calendar__people"></div>
+              </details>
+              <div id="bs-bt-story-calendar-grid" class="bs-bt-story-calendar__grid" role="grid"></div>
+              <div id="bs-bt-story-calendar-legend" class="bs-bt-story-calendar__legend"></div>
+              <div class="settings_section bs-bt-action-row">
+                <button id="bs-bt-story-calendar-today" class="menu_button" type="button">回到今天</button>
+                <button id="bs-bt-story-calendar-settings" class="menu_button" type="button">设定历法</button>
+                <button id="bs-bt-story-calendar-vars" class="menu_button" type="button">完整变量</button>
+              </div>
+            </div>
+
+            <hr class="sysHR" />
+
             <div class="settings_section">
               <div class="bs-bt-status-title">全角色时间推进</div>
 
@@ -1147,7 +1166,11 @@
                 style="margin-top:12px;">准备就绪：这里会推进当前聊天内所有已注册角色的生理时间。</pre>
             </div>
 
-            <hr class="sysHR" />
+          </div>
+        </section>
+
+        <section id="bs-bt-view-full-state" class="bs-bt-view" data-view="full-state">
+          <div class="bs-bt-panel">
 
             <div class="settings_section">
               <div class="bs-bt-status-title">完整变量</div>
@@ -1158,9 +1181,9 @@
 
             <div class="settings_section">
               <div class="bs-bt-track-tabs bs-bt-full-state-tabs" id="bs-bt-full-state-tabs">
-                <button type="button" class="bs-bt-track-tab" data-full-state-tab="variables">变量内容</button>
-                <button type="button" class="bs-bt-track-tab" data-full-state-tab="debug">调试工具</button>
-                <button type="button" class="bs-bt-track-tab" data-full-state-tab="history">快照历史</button>
+                <button type="button" class="bs-bt-track-tab" data-full-state-tab="variables">变量</button>
+                <button type="button" class="bs-bt-track-tab" data-full-state-tab="debug">调试</button>
+                <button type="button" class="bs-bt-track-tab" data-full-state-tab="history">快照</button>
                 <button type="button" class="bs-bt-track-tab" data-full-state-tab="appearance">外观</button>
               </div>
             </div>
@@ -1243,8 +1266,8 @@
             <div class="settings_section">
               <div class="bs-bt-track-tabs" id="bs-bt-encyclopedia-tabs">
                 <button type="button" class="bs-bt-track-tab is-active" data-encyclopedia-tab="race">物种</button>
-                <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="derived">衍生</button>
                 <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="world">基准</button>
+                <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="calendar">历法</button>
                 <button type="button" class="bs-bt-track-tab" data-encyclopedia-tab="calculator">计算</button>
               </div>
             </div>
@@ -1317,6 +1340,7 @@
             </div>
 
             <div class="bs-bt-encyclopedia-page" data-encyclopedia-page="derived" hidden>
+            <hr class="sysHR" />
             <div class="settings_section">
               <label for="bs-bt-derived-select">选择衍生</label>
               <select id="bs-bt-derived-select" class="text_pole">
@@ -1398,6 +1422,80 @@
               </div>
             </div>
 
+            <div class="bs-bt-encyclopedia-page" data-encyclopedia-page="calendar" hidden>
+              <div class="settings_section bs-bt-calendar-editor">
+                <div class="bs-bt-status-title">对话历法 <a class="bs-bt-doc-link" href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/settings-and-encyclopedia.md#對話曆法" target="_blank" rel="noopener noreferrer" title="对话历法说明" aria-label="对话历法说明">?</a></div>
+                <div class="bs-bt-inline-status">历法只管日期怎么写；生理照真实时间算（一天 24 小时）。设了历法后，标题列显示故事日期，年龄照这个历法的年显示并送给模型。</div>
+                <label for="bs-bt-calendar-generate-rules" class="bs-bt-calendar-label">拟定时的补充规矩（选填，送给模型）</label>
+                <textarea id="bs-bt-calendar-generate-rules" class="text_pole bs-bt-textarea" rows="3" placeholder="例如：一年 13 个月、冬天多一个月；兽人族都在初雪后发情；月兔照满月；星期用北欧神名。"></textarea>
+                <div class="settings_section bs-bt-action-row">
+                  <button id="bs-bt-calendar-generate" class="menu_button" type="button">从角色卡拟定</button>
+                </div>
+                <div id="bs-bt-calendar-generate-status" class="bs-bt-inline-status" hidden></div>
+                <div class="bs-bt-calculator-grid">
+                  <label><span>历法</span><select id="bs-bt-calendar-mode" class="text_pole">
+                    <option value="">不设（显示第 N 天）</option>
+                    <option value="gregorian">公历</option>
+                    <option value="custom">自订历</option>
+                  </select></label>
+                  <label data-calendar-when="gregorian custom"><span>纪年（可留空）</span><input id="bs-bt-calendar-era" class="text_pole" type="text" maxlength="24" placeholder="例如：帝国历" /></label>
+                </div>
+                <div data-calendar-when="custom">
+                  <label for="bs-bt-calendar-months" class="bs-bt-calendar-label">月份（每行「月名 天数」，最多 24 个月）</label>
+                  <textarea id="bs-bt-calendar-months" class="text_pole bs-bt-textarea" rows="6" placeholder="霜月 40&#10;雪月 40&#10;萌月 45"></textarea>
+                  <div class="bs-bt-calendar-quick">
+                    <span>快速产生</span>
+                    <input id="bs-bt-calendar-quick-count" class="text_pole" type="number" min="1" max="24" step="1" value="12" aria-label="月数" />
+                    <span>个月 ×</span>
+                    <input id="bs-bt-calendar-quick-days" class="text_pole" type="number" min="1" max="999" step="1" value="30" aria-label="每月天数" />
+                    <span>天</span>
+                    <button id="bs-bt-calendar-quick-fill" class="menu_button" type="button">产生</button>
+                  </div>
+                  <label for="bs-bt-calendar-weekdays" class="bs-bt-calendar-label">星期（以空格或逗号分隔；留空＝不分周）</label>
+                  <input id="bs-bt-calendar-weekdays" class="text_pole" type="text" placeholder="日 月 火 水 木 金 土" />
+                </div>
+                <div data-calendar-when="gregorian custom">
+                  <label class="bs-bt-calendar-label" for="bs-bt-calendar-anchor">下面这个日期是</label>
+                  <select id="bs-bt-calendar-anchor" class="text_pole">
+                    <option value="start">故事开始的那一刻</option>
+                    <option value="now">现在（对话目前的进度）</option>
+                  </select>
+                  <div class="bs-bt-calendar-start">
+                    <label><span>年</span><input id="bs-bt-calendar-start-year" class="text_pole" type="number" step="1" /></label>
+                    <label><span>月</span><select id="bs-bt-calendar-start-month" class="text_pole"></select></label>
+                    <label><span>日</span><input id="bs-bt-calendar-start-day" class="text_pole" type="number" min="1" step="1" /></label>
+                    <label><span>时</span><input id="bs-bt-calendar-start-hour" class="text_pole" type="number" min="0" max="23" step="1" /></label>
+                    <label><span>分</span><input id="bs-bt-calendar-start-minute" class="text_pole" type="number" min="0" max="59" step="1" /></label>
+                    <label data-calendar-when="custom"><span>星期</span><select id="bs-bt-calendar-start-weekday" class="text_pole"></select></label>
+                  </div>
+                </div>
+                <div data-calendar-when="gregorian custom">
+                  <label for="bs-bt-calendar-seasons" class="bs-bt-calendar-label">季节（每行「季名 月 日」，月写数字或月名；每年固定，季数与长短自订；留空＝不分季）</label>
+                  <textarea id="bs-bt-calendar-seasons" class="text_pole bs-bt-textarea" rows="4" placeholder="春 3 1&#10;夏 6 1&#10;秋 9 1&#10;冬 12 1"></textarea>
+                  <details class="bs-bt-calendar-breeding-box">
+                    <summary id="bs-bt-calendar-breeding-summary">繁殖季</summary>
+                    <div class="bs-bt-inline-status">列出提示词名录里与已注册角色中有乏情期的物种。定了开始日的，每年到那天进繁殖季，跑完季内的轮数就乏情到明年那天，同族的人一起；不定锚的照物种的乏情天数。</div>
+                    <div class="bs-bt-calendar-breeding__pick">
+                      <select id="bs-bt-calendar-breeding-bulk" class="text_pole" aria-label="一次套用到全部物种"></select>
+                      <button id="bs-bt-calendar-breeding-bulk-apply" class="menu_button" type="button">全部套用</button>
+                    </div>
+                    <div id="bs-bt-calendar-breeding" class="bs-bt-calendar-breeding"></div>
+                  </details>
+                  <details class="bs-bt-calendar-breeding-box">
+                    <summary id="bs-bt-calendar-peaks-summary">衍生的精力高峰</summary>
+                    <div class="bs-bt-inline-status">列出有峰期的衍生类型（易感期、发情期这类）。定了开始日的，精力高峰改成每年从那天起一次，同型的精方一起；不定锚的照旧约每 57～71 天一轮（照精子品质）。</div>
+                    <div id="bs-bt-calendar-peaks" class="bs-bt-calendar-breeding"></div>
+                  </details>
+                </div>
+                <div id="bs-bt-calendar-preview" class="bs-bt-status-box bs-bt-calendar-preview"></div>
+                <div class="settings_section bs-bt-action-row">
+                  <button id="bs-bt-calendar-save" class="menu_button" type="button">保存历法</button>
+                  <button id="bs-bt-calendar-clear" class="menu_button" type="button">清除历法</button>
+                </div>
+                <div id="bs-bt-calendar-source" class="bs-bt-inline-status"></div>
+              </div>
+            </div>
+
             <div class="bs-bt-encyclopedia-page" data-encyclopedia-page="calculator" hidden>
               <div class="settings_section">
                 <div class="bs-bt-track-tabs bs-bt-calculator-tabs" id="bs-bt-calculator-tabs">
@@ -1474,7 +1572,7 @@
         <div class="bs-bt-doc-viewer-head">
           <button class="bs-bt-race-close-button" type="button" data-doc-viewer-back aria-label="返回上一篇" title="返回上一篇" hidden>‹</button>
           <span class="bs-bt-doc-viewer-title" data-doc-viewer-title>机制说明</span>
-          <a class="bs-bt-race-close-button bs-bt-doc-viewer-external" data-doc-viewer-external href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/README.md" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开" title="在 GitHub 打开">↗</a>
+          <a class="bs-bt-race-close-button bs-bt-doc-viewer-external" data-doc-viewer-external href="https://github.com/Liuuuu54/st_bs_biotracker/blob/main/docs/mechanics/README.md" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开" title="在 GitHub 打开">⇗</a>
           <button class="bs-bt-race-close-button" type="button" data-doc-viewer-close aria-label="关闭说明" title="关闭说明">×</button>
         </div>
         <div class="bs-bt-doc-viewer-body" data-doc-viewer-body></div>

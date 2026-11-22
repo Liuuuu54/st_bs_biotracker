@@ -191,6 +191,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   raceCatalogSelection: null,
   worldBaselinePrompt: '',
   realisticWorld: false,
+  // 对话历法（1.5.2）：null＝没设，照旧显示「第 N 天」；角色卡可以覆盖
+  calendar: null,
   specialTools: { implantEmbryo: true, wombReturn: true, extendPregnancy: true },
   reproductiveSettings: normalizeReproductiveSettings(),
   pollMs: 1800,
@@ -2664,6 +2666,19 @@ export function getSnapshotCharacter(chatState, index, name) {
   const characters = unpackSnapshotCharacters(payload.characters);
   const character = characters?.[name];
   return character ? cloneValue(character) : null;
+}
+
+/** 日历页（1.5.2）：每份快照当时的故事分钟与某角色的档案（复本），旧到新；那时还没有这个角色的快照略过 */
+export function listSnapshotCharacterTimeline(chatState, name) {
+  const snapshots = Array.isArray(chatState?.snapshots) ? chatState.snapshots : [];
+  const cache = new Map();
+  const result = [];
+  for (let index = 0; index < snapshots.length; index += 1) {
+    const payload = materializeSnapshotPayloadAt(snapshots, index, cache);
+    const character = unpackSnapshotCharacters(payload.characters)?.[name];
+    if (character?.profile) result.push({ minutes: Number(payload.minutesPassed) || 0, profile: cloneValue(character.profile) });
+  }
+  return result;
 }
 
 /** 某份快照当时的精方档案；旧快照没有精方表时回传 null */

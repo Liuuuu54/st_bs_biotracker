@@ -358,3 +358,30 @@ test('状态视图省略空值与非妊娠期的孕态描述；outfit.mainItemId
   const pregnant = buildTrackerPayload(ctx, settings).existing_state['艾拉'].profile;
   assert.deepEqual(pregnant.descriptions.pregnantDescription, { 孕态: '隆起' });
 });
+
+test('1.5.2 对话历法：送今天的日期与历法说明、年龄换成当地的岁；推进时间的 year 照历法', async () => {
+  const { setCalendarProvider } = await import('../scripts/calendar.js');
+  const { applyToolCall } = await import('../scripts/tools.js');
+  const calendar = { mode: 'custom', era: '帝国历', months: Array.from({ length: 10 }, (_, i) => ({ name: `第${i + 1}月`, days: 50 })), start: { year: 312, month: 3, day: 9 } };
+  setCalendarProvider(() => calendar);
+  try {
+    const ctx = makeContext();
+    const settings = state.getSettings(ctx);
+    const payload = buildTrackerPayload(ctx, settings);
+    assert.match(payload.calendar_note, /今天是 帝国历 312年 第3月9日/);
+    assert.equal(payload.existing_state['贝拉'].profile.base.age, 19.7, '27 个地球年 = 9855 天 ≈ 19.7 个 500 天的年');
+    const prompt = buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, payload);
+    assert.match(prompt, /\[对话历法\]/);
+    assert.match(prompt, /bsPassedTime 的 month、year 照这个历法换算/);
+    const chatState = settings.chatStates[CHAT_KEY];
+    const before = Number(chatState.minutesPassed) || 0;
+    applyToolCall(chatState, { name: 'bsPassedTime', arguments: { year: 1 } });
+    assert.equal(chatState.minutesPassed - before, 500 * 24 * 60, '一个当地年 = 500 天');
+  } finally {
+    setCalendarProvider(null);
+  }
+  const ctx = makeContext();
+  const plain = buildTrackerPayload(ctx, state.getSettings(ctx));
+  assert.equal(plain.calendar_note, undefined, '没设历法不送');
+  assert.equal(plain.existing_state['贝拉'].profile.base.age, 27);
+});

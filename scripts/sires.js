@@ -5,7 +5,8 @@
 // 精方档案只留精方专属栏位（精子品质）；描述也放在卵方那份。
 import { descriptionListToObject, getStaleDescriptionFields, normalizeDescriptionList, parseDescriptionGuideFields } from './descriptions.js';
 import { clampIndividualBodySize, describeSwordOffset, normalizeSwordOffset } from './body_size.js';
-import { getBloodlineInfo, getDerivedTypeSireCycleProfile, getMergedRacePhysiologyProfile, parseRaceDescriptor } from './race_config.js';
+import { getBaseDerivedTypeName, getBaseRaceName, getBloodlineInfo, getDerivedTypeSireCycleProfile, getMergedRacePhysiologyProfile, parseRaceDescriptor } from './race_config.js';
+import { getActiveCalendar, getBreedingAnchor, getDerivedPeakAnchor, nextAnchorMinutes, previousAnchorMinutes } from './calendar.js';
 import { normalizeReproductiveSettings } from './reproductive.js';
 import { getRaceSeasonShape, getSireSeasonPhase, hashPhase, hasSeasonOrigin, resolveSireSeasonOrigin } from './season_phase.js';
 import { DORMANCY_STAGE } from './stage_config.js';
@@ -108,6 +109,16 @@ function getSeasonFactorAt(shape, phase) {
   };
 }
 
+/** 定锚的一年：上一次到锚点起已过几天、这一轮（到下一次锚点）共几天；没有锚点回传 null */
+function getAnchoredWindow(anchor, now) {
+  if (!anchor) return null;
+  const calendar = getActiveCalendar();
+  const previous = previousAnchorMinutes(calendar, anchor, now);
+  const next = nextAnchorMinutes(calendar, anchor, now);
+  if (previous === null || next === null || next <= previous) return null;
+  return { elapsed: (now - previous) / MINUTES_PER_DAY, total: (next - previous) / MINUTES_PER_DAY, anchored: true };
+}
+
 /**
  * 精方当下的有效精子品质与分项。没有精方档案（一次性对象）回传 null，呼叫端按品质 1。
  * 有效品质 ＝ 档案品质 × 季节 × 精力周期 × 存量 × 禁欲，夹在 0.25～4。
@@ -127,6 +138,7 @@ export function getSireQualityState(chatState, name, { minutesPassed = null } = 
   const ratio = Math.max(0.1, Math.min(20, Number(character?.profile?.bio?.menstrualLengthRatio
     ?? getMergedRacePhysiologyProfile(race || '人类', bloodline)?.menstrualLengthRatio) || 1));
   const config = normalizeReproductiveSettings(chatState?.reproductiveSettings);
+  const calendar = getActiveCalendar();
 
   let season = { factor: 1, inSeason: null, daysLeft: null, elapsed: null, length: null };
   if (character) {
@@ -138,16 +150,28 @@ export function getSireQualityState(chatState, name, { minutesPassed = null } = 
     }
   } else {
     const shape = getRaceSeasonShape(race, bloodline);
-    const phase = shape ? getSireSeasonPhase(record, now) : null;
-    if (shape && phase !== null) season = getSeasonFactorAt(shape, phase);
+    // 繁殖季定锚（1.5.2）：历法给这族设了开始日，就从每年那天起跑活动季，之后非繁殖季到明年那天，同族一起
+    const window = shape ? getAnchoredWindow(getBreedingAnchor(calendar, getBaseRaceName(race || '')), now) : null;
+    if (window) {
+      const active = Math.min(shape.active, window.total);
+      season = { ...getSeasonFactorAt({ active, total: window.total, dormancy: window.total - active }, window.elapsed / window.total), anchored: true };
+    } else {
+      const phase = shape ? getSireSeasonPhase(record, now) : null;
+      if (shape && phase !== null) season = getSeasonFactorAt(shape, phase);
+    }
   }
 
   // 起点：有季节起点就跟着它（同族一起），再按名字错开，免得每位精方一建档就在同一个位置
   const cycleOrigin = hasSeasonOrigin(record) ? Number(record.seasonOrigin) : (Number(record.createdAt) || 0);
-  const cycleDays = getSireCycleBaseDays(record.spermQuality) * ratio;
-  const cycleElapsed = (now - cycleOrigin) / MINUTES_PER_DAY + hashPhase(key) * cycleDays;
-  const cycleDay = ((cycleElapsed % cycleDays) + cycleDays) % cycleDays;
   const cycleProfile = getDerivedTypeSireCycleProfile(derivedType);
+  // 衍生的精力高峰定锚（1.5.2）：有峰期的衍生，历法给它设了开始日，高峰改成每年从那天起（一年一轮，同型一起）
+  const peakWindow = cycleProfile.sireCyclePeakDays > 0 ? getAnchoredWindow(getDerivedPeakAnchor(calendar, getBaseDerivedTypeName(derivedType) || ''), now) : null;
+  const cycleDays = peakWindow ? peakWindow.total : getSireCycleBaseDays(record.spermQuality) * ratio;
+  // 波峰在一轮正中间：定锚时把开始日对到峰期的起点
+  const cycleElapsed = peakWindow
+    ? peakWindow.elapsed - cycleProfile.sireCyclePeakDays / 2 + cycleDays / 2
+    : (now - cycleOrigin) / MINUTES_PER_DAY + hashPhase(key) * cycleDays;
+  const cycleDay = ((cycleElapsed % cycleDays) + cycleDays) % cycleDays;
   const cycleShape = {
     amplitude: cycleProfile.sireCycleAmplitude,
     peakDays: cycleProfile.sireCyclePeakDays,
@@ -205,6 +229,9 @@ export function getSireQualityState(chatState, name, { minutesPassed = null } = 
     cycleDay,
     cycleDays,
     cycleShape,
+    // 历法定锚：季节或精力高峰改成每年固定日期（画面说明用）
+    seasonAnchored: Boolean(!character && season.anchored),
+    cycleAnchored: Boolean(peakWindow),
     reserve,
     freshness,
     abstinence,

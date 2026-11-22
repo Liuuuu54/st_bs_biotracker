@@ -7,6 +7,7 @@ import { normalizeReproductiveSettings } from './reproductive.js';
 import { normalizeSkillCatalog, registerSkillDefinition } from './skill_config.js';
 import { getHostKind, getHostContext } from './host.js';
 import { SPECIAL_TOOLS, normalizeSpecialTools } from './world_mode.js';
+import { normalizeCalendar } from './calendar.js';
 
 export const CARD_SETTINGS_KEY = 'bs_biotracker';
 export const CARD_SETTINGS_VERSION = 1;
@@ -79,6 +80,11 @@ export function sanitizeCardSettings(value) {
   }
   if (typeof value.worldBaselinePrompt === 'string') result.worldBaselinePrompt = text(value.worldBaselinePrompt, 12000);
   if (typeof value.realisticWorld === 'boolean') result.realisticWorld = value.realisticWorld;
+  // 对话历法（1.5.2）：世界基准，绑卡
+  if (object(value.calendar)) {
+    const calendar = normalizeCalendar(value.calendar);
+    if (calendar) result.calendar = calendar;
+  }
   if (object(value.specialTools)) {
     const tools = {};
     for (const key of Object.keys(SPECIAL_TOOLS)) if (typeof value.specialTools[key] === 'boolean') tools[key] = value.specialTools[key];
@@ -129,6 +135,7 @@ export function getEffectiveSettings(ctx, settings) {
     raceCatalogSelection: card && own(card, 'raceCatalogSelection') ? card.raceCatalogSelection : settings?.raceCatalogSelection,
     worldBaselinePrompt: card && own(card, 'worldBaselinePrompt') ? card.worldBaselinePrompt : settings?.worldBaselinePrompt,
     realisticWorld: card && own(card, 'realisticWorld') ? card.realisticWorld : settings?.realisticWorld === true,
+    calendar: card && own(card, 'calendar') ? card.calendar : normalizeCalendar(settings?.calendar),
     specialTools: normalizeSpecialTools({ ...normalizeSpecialTools(settings?.specialTools), ...card?.specialTools }),
     reproductiveSettings: normalizeReproductiveSettings({ ...settings?.reproductiveSettings, ...card?.reproductiveSettings }),
   };

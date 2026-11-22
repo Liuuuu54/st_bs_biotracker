@@ -10,10 +10,11 @@ import {
 } from '../scripts/skill_config.js';
 import { buildRegistryBundlePrompt, buildRegistrySkillSystemPrompt } from '../scripts/registry.js';
 
-const DEVELOPMENT_NAMES = ['口腔开发', '胸部开发', '性器开发', '子宫开发', '后庭开发', '尿道开发'];
+const DEVELOPMENT_NAMES = ['口腔开发', '胸部开发', '外阴开发', '子宫开发', '阴茎开发', '阴囊开发', '后庭开发', '尿道开发'];
 const BEHAVIOR_NAMES = ['前戏', '侍奉', '自慰', '露出', '拘束', 'M倾向', 'S倾向', '情趣玩具', '多人行为'];
 
-test('skill presets contain the intended independent 6 + 9 groups', () => {
+test('skill presets contain the intended independent 8 + 9 groups', () => {
+  assert.deepEqual(Object.keys(SKILL_PRESET_GROUPS), ['development', 'behavior'], '预设技能组只有两组');
   assert.deepEqual(SKILL_PRESET_GROUPS.development.entries.map((entry) => entry.name), DEVELOPMENT_NAMES);
   assert.deepEqual(SKILL_PRESET_GROUPS.behavior.entries.map((entry) => entry.name), BEHAVIOR_NAMES);
 });
@@ -22,15 +23,15 @@ test('skill preset import reuses the catalog IDs and preserves custom skills', (
   const custom = [{ id: 4, name: '自定义技能', description: '保留。', body: 'any' }];
   const development = importSkillPresetGroup(custom, 9, 'development');
 
-  assert.equal(development.created, 6);
+  assert.equal(development.created, 8);
   assert.deepEqual(development.catalog.slice(0, 1), custom);
-  assert.deepEqual(development.catalog.slice(1).map((entry) => entry.id), [9, 10, 11, 12, 13, 14]);
-  assert.equal(development.nextSkillId, 15);
+  assert.deepEqual(development.catalog.slice(1).map((entry) => entry.id), [9, 10, 11, 12, 13, 14, 15, 16]);
+  assert.equal(development.nextSkillId, 17);
 
   const behavior = importSkillPresetGroup(development.catalog, development.nextSkillId, 'behavior');
   assert.equal(behavior.created, 9);
-  assert.equal(behavior.catalog.length, 16);
-  assert.equal(behavior.nextSkillId, 24);
+  assert.equal(behavior.catalog.length, 18);
+  assert.equal(behavior.nextSkillId, 26);
 });
 
 test('reimporting a skill preset is idempotent by skill name', () => {
@@ -92,11 +93,12 @@ test('有技能基准时，一次注册与技能页都把它当最高优先规�
 test('1.4.2 技能分适用身体：预设照部位分类，新增「精方专属」一组；纯卵方练不了精方专属，扶她可以', async () => {
   const { canBodyHaveSkill, getPresetSkillBody, SKILL_PRESET_GROUPS } = await import('../scripts/skill_config.js');
   assert.equal(getPresetSkillBody('子宫开发'), 'womb');
-  assert.equal(getPresetSkillBody('性器开发'), 'womb');
+  assert.equal(getPresetSkillBody('外阴开发'), 'womb');
+  assert.equal(getPresetSkillBody('性器开发'), 'womb', '旧名照认');
+  assert.equal(getPresetSkillBody('阴囊开发'), 'sword');
   assert.equal(getPresetSkillBody('胸部开发'), 'any');
   assert.equal(getPresetSkillBody('前戏'), 'any');
   assert.equal(getPresetSkillBody('阴茎开发'), 'sword');
-  assert.deepEqual(SKILL_PRESET_GROUPS.sword.entries.map((entry) => entry.name), ['阴茎开发']);
   const sword = { body: 'sword' };
   const womb = { body: 'womb' };
   assert.equal(canBodyHaveSkill(sword, { hasWomb: true, hasSword: false }), false, '纯卵方');
@@ -109,7 +111,7 @@ test('1.4.2 技能分适用身体：预设照部位分类，新增「精方专�
   const chatState = state.createEmptyChatState();
   chatState.characters.A = state.createDefaultFemaleState('A');
   chatState.characters.A.initialized = true;
-  chatState.skillCatalog = importSkillPresetGroup([], 1, 'sword').catalog;
+  chatState.skillCatalog = importSkillPresetGroup([], 1, 'development').catalog;
   const train = () => applyToolCall(chatState, { name: 'bsTrainSkill', arguments: { female: 'A', skill: '阴茎开发', skillExp: 50, reason: '练习', awaken: true } });
   assert.equal(train().applied, false);
   chatState.sires = { A: { race: '人类' } };

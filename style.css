@@ -5013,10 +5013,10 @@
   background:
     repeating-linear-gradient(
       135deg,
-      color-mix(in srgb, var(--bsbt-lcd-text) 62%, transparent) 0 2px,
+      var(--bsbt-alert-ink, color-mix(in srgb, var(--bsbt-lcd-text) 62%, transparent)) 0 2px,
       transparent 2px 5px
     ),
-    rgba(226, 52, 108, 0.62);
+    color-mix(in srgb, var(--bsbt-alert, #e2346c) 62%, transparent);
 }
 
 #bs-biotracker-settings .bs-bt-pregfit__tick {
@@ -5064,7 +5064,7 @@
       color-mix(in srgb, var(--bsbt-lcd-text) 30%, transparent) 0 2px,
       transparent 2px 5px
     ),
-    rgba(226, 52, 108, 0.45);
+    color-mix(in srgb, var(--bsbt-alert, #e2346c) 45%, transparent);
 }
 
 #bs-biotracker-settings .bs-bt-pregfit__legend {
@@ -7014,3 +7014,504 @@
 #bs-biotracker-settings .bs-bt-color-chip { width: 22px; height: 22px; border-radius: 3px; display: inline-block; }
 #bs-biotracker-settings .bs-bt-color-gap { width: 10px; }
 #bs-biotracker-settings .bs-bt-option-chip { padding: 2px 10px; border-radius: 12px; border: 1px solid var(--bsbt-border-color, currentColor); background: transparent; color: inherit; cursor: pointer; font-size: 0.9em; }
+
+/* 对话历法（1.5.2）：百科「历法」分页 */
+#bs-biotracker-settings .bs-bt-calendar-editor {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+#bs-biotracker-settings .bs-bt-calendar-editor [hidden] {
+  display: none !important;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.84em;
+  font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-quick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 0.88em;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-quick input {
+  width: 4.5em;
+  margin: 0;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-quick .menu_button {
+  margin: 0;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-start {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-start label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-start label > span {
+  font-size: 0.84em;
+  font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-start .text_pole {
+  margin: 0;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-preview {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+#bs-biotracker-settings .bs-bt-home-tile__icon--calendar {
+  mask-image: url('./assets/icons/calendar.svg');
+  -webkit-mask-image: url('./assets/icons/calendar.svg');
+}
+
+/* 日历页（1.5.2） */
+#bs-biotracker-settings .bs-bt-story-calendar {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__head .menu_button {
+  margin: 0;
+  min-width: 2.2em;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__title {
+  text-align: center;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.88em;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__person {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0.7;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__person.is-picked {
+  opacity: 1;
+  font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__order {
+  display: inline-grid;
+  place-items: center;
+  width: 1.3em;
+  height: 1.3em;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font-size: 0.8em;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(var(--bsbt-calendar-columns, 7), minmax(0, 1fr));
+  gap: 3px;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__weekday {
+  text-align: center;
+  font-size: 0.75em;
+  font-weight: 700;
+  opacity: 0.75;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__day {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 2px;
+  min-height: 38px;
+  min-width: 0;
+  padding: 2px 2px 3px;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 4%, transparent);
+  color: inherit;
+  font: inherit;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__day.is-today {
+  border: 2px solid currentColor;
+  font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__day.is-before-story {
+  opacity: 0.45;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__num {
+  font-size: 0.78em;
+  line-height: 1.1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__due {
+  margin-left: 1px;
+  font-size: 0.95em;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__bars {
+  display: grid;
+  align-content: end;
+  gap: 2px;
+}
+
+/* 色条：各阶段一个颜色，再叠一种纹理（用主题的文字色画），外加一圈细框；
+   单色、深色、青色这些主题上颜色分不开时，靠纹理与框认 */
+#bs-biotracker-settings .bs-bt-story-calendar__bar,
+#bs-biotracker-settings .bs-bt-story-calendar__swatch {
+  --bsbt-cal-ink: color-mix(in srgb, var(--bsbt-lcd-text) 78%, transparent);
+  display: block;
+  height: 7px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bsbt-lcd-text) 70%, transparent);
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__bar.is-empty {
+  background: transparent;
+  box-shadow: none;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  font-size: 0.78em;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__swatch {
+  width: 18px;
+  height: 8px;
+}
+
+/* 月经：实心（最重）；排卵／发情：圆点；孕期：中线；逾期／延产：交叉网；产后恢复：直纹；假孕：斜纹 */
+#bs-biotracker-settings .bs-bt-cal-stage--menses { background-color: var(--bsbt-cal-menses, #c0392b); }
+#bs-biotracker-settings .bs-bt-cal-stage--ovulation {
+  background-color: var(--bsbt-cal-ovulation, #e67e22);
+  background-image: radial-gradient(circle, var(--bsbt-cal-ink-ovulation, var(--bsbt-cal-ink)) 0 1.1px, transparent 1.4px);
+  background-size: 4px 4px;
+  background-position: 0 1.5px;
+}
+#bs-biotracker-settings .bs-bt-cal-stage--pregnancy {
+  background-color: var(--bsbt-cal-pregnancy, #3b7dd8);
+  background-image: linear-gradient(to bottom, transparent 0 40%, var(--bsbt-cal-ink-pregnancy, var(--bsbt-cal-ink)) 40% 60%, transparent 60%);
+}
+#bs-biotracker-settings .bs-bt-cal-stage--overdue {
+  background-color: var(--bsbt-cal-overdue, #7d4cc2);
+  background-image:
+    repeating-linear-gradient(45deg, var(--bsbt-cal-ink-overdue, var(--bsbt-cal-ink)) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(-45deg, var(--bsbt-cal-ink-overdue, var(--bsbt-cal-ink)) 0 1px, transparent 1px 4px);
+}
+#bs-biotracker-settings .bs-bt-cal-stage--postpartum {
+  background-color: var(--bsbt-cal-postpartum, #1aa39a);
+  background-image: repeating-linear-gradient(90deg, var(--bsbt-cal-ink-postpartum, var(--bsbt-cal-ink)) 0 1px, transparent 1px 4px);
+}
+#bs-biotracker-settings .bs-bt-cal-stage--pseudo {
+  background-color: var(--bsbt-cal-pseudo, #a98bb0);
+  background-image: repeating-linear-gradient(135deg, var(--bsbt-cal-ink-pseudo, var(--bsbt-cal-ink)) 0 1.5px, transparent 1.5px 5px);
+}
+
+
+/* 告警色（衣服合身的缺口、爆表徽章）跟着主题：用该主题日历的月经色（各主题的红）；
+   复古、废土这类单色主题的「红」就是墨色本身，斜纹改用底色画才看得见 */
+#bs-biotracker-settings { --bsbt-alert: var(--bsbt-cal-menses, #e2346c); }
+#bs-biotracker-settings.theme-retro, #bs-biotracker-settings.theme-wasteland { --bsbt-alert-ink: color-mix(in srgb, var(--bsbt-lcd-bg) 70%, transparent); }
+/* 樱花的本文色就是玫红，与告警色同色：斜纹改白 */
+#bs-biotracker-settings.theme-sakura { --bsbt-alert-ink: rgba(255, 255, 255, 0.85); }
+
+/* 日历色票跟着主题（1.5.2）：每个主题从自己的色盘挑六个阶段色；单色主题用同一种墨分深浅，纹理补足分辨 */
+#bs-biotracker-settings.theme-retro {
+  --bsbt-cal-menses: var(--bsbt-lcd-text);
+  --bsbt-cal-overdue: color-mix(in srgb, var(--bsbt-lcd-text) 82%, var(--bsbt-lcd-bg));
+  --bsbt-cal-pregnancy: color-mix(in srgb, var(--bsbt-lcd-text) 64%, var(--bsbt-lcd-bg));
+  --bsbt-cal-ovulation: color-mix(in srgb, var(--bsbt-lcd-text) 46%, var(--bsbt-lcd-bg));
+  --bsbt-cal-postpartum: color-mix(in srgb, var(--bsbt-lcd-text) 32%, var(--bsbt-lcd-bg));
+  --bsbt-cal-pseudo: color-mix(in srgb, var(--bsbt-lcd-text) 20%, var(--bsbt-lcd-bg));
+  --bsbt-cal-ink-overdue: var(--bsbt-lcd-bg);
+  --bsbt-cal-ink-pregnancy: var(--bsbt-lcd-bg);
+}
+#bs-biotracker-settings.theme-wasteland {
+  --bsbt-cal-menses: var(--bsbt-lcd-text);
+  --bsbt-cal-overdue: color-mix(in srgb, var(--bsbt-lcd-text) 82%, var(--bsbt-lcd-bg));
+  --bsbt-cal-pregnancy: color-mix(in srgb, var(--bsbt-lcd-text) 64%, var(--bsbt-lcd-bg));
+  --bsbt-cal-ovulation: color-mix(in srgb, var(--bsbt-lcd-text) 46%, var(--bsbt-lcd-bg));
+  --bsbt-cal-postpartum: color-mix(in srgb, var(--bsbt-lcd-text) 32%, var(--bsbt-lcd-bg));
+  --bsbt-cal-pseudo: color-mix(in srgb, var(--bsbt-lcd-text) 20%, var(--bsbt-lcd-bg));
+  --bsbt-cal-ink-overdue: var(--bsbt-lcd-bg);
+  --bsbt-cal-ink-pregnancy: var(--bsbt-lcd-bg);
+}
+#bs-biotracker-settings.theme-ink {
+  --bsbt-cal-menses: #a8322a;
+  --bsbt-cal-overdue: color-mix(in srgb, var(--bsbt-lcd-text) 82%, var(--bsbt-lcd-bg));
+  --bsbt-cal-pregnancy: color-mix(in srgb, var(--bsbt-lcd-text) 64%, var(--bsbt-lcd-bg));
+  --bsbt-cal-ovulation: color-mix(in srgb, var(--bsbt-lcd-text) 46%, var(--bsbt-lcd-bg));
+  --bsbt-cal-postpartum: color-mix(in srgb, var(--bsbt-lcd-text) 32%, var(--bsbt-lcd-bg));
+  --bsbt-cal-pseudo: color-mix(in srgb, var(--bsbt-lcd-text) 20%, var(--bsbt-lcd-bg));
+  --bsbt-cal-ink-overdue: var(--bsbt-lcd-bg);
+  --bsbt-cal-ink-pregnancy: var(--bsbt-lcd-bg);
+}
+#bs-biotracker-settings.theme-constructivism {
+  --bsbt-cal-menses: #c8102e;
+  --bsbt-cal-overdue: color-mix(in srgb, var(--bsbt-lcd-text) 82%, var(--bsbt-lcd-bg));
+  --bsbt-cal-pregnancy: color-mix(in srgb, var(--bsbt-lcd-text) 64%, var(--bsbt-lcd-bg));
+  --bsbt-cal-ovulation: color-mix(in srgb, var(--bsbt-lcd-text) 46%, var(--bsbt-lcd-bg));
+  --bsbt-cal-postpartum: color-mix(in srgb, var(--bsbt-lcd-text) 32%, var(--bsbt-lcd-bg));
+  --bsbt-cal-pseudo: color-mix(in srgb, var(--bsbt-lcd-text) 20%, var(--bsbt-lcd-bg));
+  --bsbt-cal-ink-overdue: var(--bsbt-lcd-bg);
+  --bsbt-cal-ink-pregnancy: var(--bsbt-lcd-bg);
+}
+#bs-biotracker-settings.theme-cultivation {
+  --bsbt-cal-menses: #b71c1c;
+  --bsbt-cal-ovulation: #e0a526;
+  --bsbt-cal-pregnancy: #00796b;
+  --bsbt-cal-overdue: #4a3a8c;
+  --bsbt-cal-postpartum: #7cab4a;
+  --bsbt-cal-pseudo: #9fb7b3;
+}
+#bs-biotracker-settings.theme-fantasy {
+  --bsbt-cal-menses: #8e1b1b;
+  --bsbt-cal-ovulation: #c7801f;
+  --bsbt-cal-pregnancy: #35628f;
+  --bsbt-cal-overdue: #5d3a7a;
+  --bsbt-cal-postpartum: #4f7d53;
+  --bsbt-cal-pseudo: #a48a7a;
+}
+#bs-biotracker-settings.theme-cyber-egypt {
+  --bsbt-cal-menses: #b0242a;
+  --bsbt-cal-ovulation: #d4af37;
+  --bsbt-cal-pregnancy: #1f3a93;
+  --bsbt-cal-overdue: #5b2c6f;
+  --bsbt-cal-postpartum: #0b6e4f;
+  --bsbt-cal-pseudo: #7c6fb0;
+}
+#bs-biotracker-settings.theme-sakura {
+  --bsbt-cal-menses: #c2185b;
+  --bsbt-cal-ovulation: #ff8a65;
+  --bsbt-cal-pregnancy: #ab6fc7;
+  --bsbt-cal-overdue: #7b1f8a;
+  --bsbt-cal-postpartum: #5fb8a8;
+  --bsbt-cal-pseudo: #f4aac5;
+}
+#bs-biotracker-settings.theme-holo {
+  --bsbt-cal-menses: #ff4d7d;
+  --bsbt-cal-ovulation: #ffc15e;
+  --bsbt-cal-pregnancy: #5f8bff;
+  --bsbt-cal-overdue: #c77dff;
+  --bsbt-cal-postpartum: #2affc5;
+  --bsbt-cal-pseudo: #ff9ff3;
+}
+#bs-biotracker-settings.theme-gothic {
+  --bsbt-cal-menses: #9e1b32;
+  --bsbt-cal-ovulation: #c9a227;
+  --bsbt-cal-pregnancy: #6a4c9c;
+  --bsbt-cal-overdue: #b0306a;
+  --bsbt-cal-postpartum: #4f8a8b;
+  --bsbt-cal-pseudo: #8c7480;
+}
+#bs-biotracker-settings.theme-steampunk {
+  --bsbt-cal-menses: #8b2e1a;
+  --bsbt-cal-ovulation: #c8902e;
+  --bsbt-cal-pregnancy: #2f6a6e;
+  --bsbt-cal-overdue: #5c3a5e;
+  --bsbt-cal-postpartum: #6b8e23;
+  --bsbt-cal-pseudo: #a68a64;
+}
+#bs-biotracker-settings.theme-eldritch {
+  --bsbt-cal-menses: #b23a48;
+  --bsbt-cal-ovulation: #d9b44a;
+  --bsbt-cal-pregnancy: #6f9bd6;
+  --bsbt-cal-overdue: #9b6fc9;
+  --bsbt-cal-postpartum: #79c18f;
+  --bsbt-cal-pseudo: #a99bc8;
+}
+#bs-biotracker-settings.theme-iphone {
+  --bsbt-cal-menses: #ff3b30;
+  --bsbt-cal-ovulation: #ff9500;
+  --bsbt-cal-pregnancy: #007aff;
+  --bsbt-cal-overdue: #af52de;
+  --bsbt-cal-postpartum: #30b0c7;
+  --bsbt-cal-pseudo: #ff2d55;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__picker > summary {
+  cursor: pointer;
+  font-size: 0.88em;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#bs-biotracker-settings .bs-bt-story-calendar__picker[open] > summary {
+  margin-bottom: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding {
+  display: grid;
+  gap: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding__row {
+  display: grid;
+  gap: 3px;
+  padding: 4px 6px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding__name {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: baseline;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding__name span {
+  font-size: 0.8em;
+  opacity: 0.8;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding__pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 4px;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding__pick .text_pole {
+  margin: 0;
+  min-width: 0;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding__pick [data-breeding-day] {
+  width: 4em;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding-box {
+  display: grid;
+  gap: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding-box > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding-box[open] {
+  display: grid;
+}
+
+#bs-biotracker-settings .bs-bt-calendar-breeding-box .menu_button {
+  margin: 0;
+}
+
+/* 变量页（1.5.2）：聚焦单一角色的标题列与可折叠区块 */
+#bs-biotracker-settings .bs-bt-full-state-focus {
+  display: grid;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+
+#bs-biotracker-settings .bs-bt-full-state-focus__name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 1.05em;
+}
+
+#bs-biotracker-settings .bs-bt-full-state-focus__name span {
+  font-size: 0.8em;
+  opacity: 0.75;
+}
+
+#bs-biotracker-settings .bs-bt-full-state-focus__actions {
+  display: flex;
+  gap: 6px;
+}
+
+#bs-biotracker-settings .bs-bt-full-state-focus__actions .menu_button {
+  margin: 0;
+  flex: 1;
+}
+
+#bs-biotracker-settings details.bs-bt-full-state-fold > summary {
+  cursor: pointer;
+  margin-bottom: 0;
+}
+
+#bs-biotracker-settings details.bs-bt-full-state-fold[open] > summary {
+  margin-bottom: 8px;
+}
+
+#bs-biotracker-settings .bs-bt-full-state-focus__kinds {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* 扶她的精方作弊并进卵方快捷调试（1.5.2）：分隔线下另成一组，按钮虚线框加「精」字 */
+#bs-biotracker-settings .bs-bt-track-debug-subtitle {
+  margin: 10px 0 6px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, currentColor 45%, transparent);
+  font-size: 0.85em;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+#bs-biotracker-settings .bs-bt-track-debug-button.is-sire {
+  border-style: dashed;
+}
+
+#bs-biotracker-settings .bs-bt-track-debug-tag {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4em;
+  height: 1.4em;
+  margin-right: 6px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: 0.75em;
+  font-weight: 700;
+}

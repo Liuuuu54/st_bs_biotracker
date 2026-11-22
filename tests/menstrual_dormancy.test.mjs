@@ -198,3 +198,66 @@ test('追踪页进度：有乏情期的物种标出本季第几轮、这一轮�
   assert.deepEqual([getStageProgress(angel).label, getStageProgress(angel).max, getStageProgress(angel).season], ['乏情进度', 322, undefined]);
   assert.equal(getStageProgress(setup('人类', '卵泡期').characters.A.profile).season, undefined);
 });
+
+test('繁殖季定锚（1.5.2）：设了繁殖季开始日的物种，乏情到下一个开始日为止；没设的照物种天数', async () => {
+  const { setCalendarProvider, dateAt, normalizeCalendar } = await import('../scripts/calendar.js');
+  const raw = { mode: 'custom', months: Array.from({ length: 10 }, (_, i) => ({ name: `${i + 1}月`, days: 50 })),
+    start: { year: 1, month: 1, day: 1 }, breedingSeasons: { 天使: { month: 3, day: 1 } } };
+  setCalendarProvider(() => raw);
+  try {
+    // 月经期第 0 天起推 8 天：天使月经 7.5 天（倍率 1.5），在第 7.5 天进乏情
+    const angel = setup('天使');
+    pass(angel, 8);
+    assert.equal(base(angel).stage, '乏情期');
+    assert.equal(getStageLimit(angel.characters.A.profile, '乏情期'), 100 - 7.5, '3月1日＝第 100 天');
+    pass(angel, 93);
+    assert.equal(base(angel).stage, '卵泡期', '3月1日 进繁殖季');
+    assert.equal(base(angel).days, 1, '现在 3月2日，卵泡期第 1 天');
+    assert.deepEqual([dateAt(normalizeCalendar(raw), angel.minutesPassed).month, dateAt(normalizeCalendar(raw), angel.minutesPassed).day], [3, 2]);
+    assert.equal(base(angel).seasonDormancyDays, undefined, '离开乏情拿掉覆盖');
+
+    // 设历法时已在乏情：从乏情开始那刻对齐
+    const resting = setup('天使', '乏情期', 10);
+    pass(resting, 1);
+    assert.equal(getStageLimit(resting.characters.A.profile, '乏情期'), 110, '乏情开始在第 -10 天，到 3月1日（第 100 天）共 110 天');
+
+    // 没锚点的物种照旧
+    raw.breedingSeasons = {};
+    const plain = setup('天使');
+    pass(plain, 8);
+    assert.equal(getStageLimit(plain.characters.A.profile, '乏情期'), 322);
+  } finally {
+    setCalendarProvider(null);
+  }
+});
+
+test('繁殖季定锚（1.5.2）：实验性混合池（pooled-v1）的角色同样乏情到开始日', async () => {
+  const { setCalendarProvider } = await import('../scripts/calendar.js');
+  const { enablePooledConception } = await import('../scripts/pooled_reproduction.js');
+  setCalendarProvider(() => ({ mode: 'custom', months: Array.from({ length: 10 }, (_, i) => ({ name: `${i + 1}月`, days: 50 })),
+    start: { year: 1, month: 1, day: 1 }, breedingSeasons: { 天使: { month: 3, day: 1 } } }));
+  try {
+    const angel = setup('天使');
+    enablePooledConception(angel.characters.A.profile.base, 0, { seed: 1 });
+    pass(angel, 8);
+    assert.equal(base(angel).stage, '乏情期');
+    assert.equal(getStageLimit(angel.characters.A.profile, '乏情期'), 100 - 7.5);
+    pass(angel, 93);
+    assert.equal(base(angel).stage, '卵泡期', '3月1日 进繁殖季');
+  } finally {
+    setCalendarProvider(null);
+  }
+});
+
+test('繁殖季定锚：种族子项（兽耳族-狼）照基种族的锚点', async () => {
+  const { setCalendarProvider } = await import('../scripts/calendar.js');
+  setCalendarProvider(() => ({ mode: 'custom', months: Array.from({ length: 10 }, (_, i) => ({ name: `${i + 1}月`, days: 50 })),
+    start: { year: 1, month: 1, day: 1 }, breedingSeasons: { 兽耳族: { month: 2, day: 1 } } }));
+  try {
+    const wolf = setup('兽耳族-狼', '乏情期', 60);
+    pass(wolf, 1);
+    assert.equal(getStageLimit(wolf.characters.A.profile, '乏情期'), 110, '乏情开始在第 -60 天，到 2月1日（第 50 天）共 110 天');
+  } finally {
+    setCalendarProvider(null);
+  }
+});

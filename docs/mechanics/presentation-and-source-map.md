@@ -35,6 +35,8 @@ PDA 從聊天狀態讀資料；部分欄位會經過解釋、裁切或視覺化�
 | [registry_psy_config.js](../../scripts/registry_psy_config.js) | 心理欄位、階段及解釋。 |
 | [tools.js](../../scripts/tools.js) | 工具分派，生理、時間、代謝及分娩狀態轉換。 |
 | [calculator.js](../../scripts/calculator.js) | 精源暴露、受精／著床預覽、後代及衍生類型計算。 |
+| [calendar.js](../../scripts/calendar.js) | 對話曆法：公曆與自訂曆、從故事經過的分鐘讀出日期、當地的歲與月年長度。 |
+| [story_calendar.js](../../scripts/story_calendar.js) | 日曆頁：生理階段排到故事時間軸（快照回推與往後推算）。 |
 | [stage_config.js](../../scripts/stage_config.js) | 月經、孕期、產程基準常數。 |
 | [race_config.js](../../scripts/race_config.js) | 種族生理合成、遺傳、胚胎型態與伴生卵。 |
 | [skill_config.js](../../scripts/skill_config.js) | 技能定義、等級、經驗、天賦與歷史。 |

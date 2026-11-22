@@ -32,8 +32,11 @@ export const SKILL_PRESET_GROUPS = Object.freeze({
     entries: Object.freeze([
       { name: '口腔开发', description: '口腔、舌与咽喉对相关刺激的经验与身体熟悉度。' },
       { name: '胸部开发', description: '胸部与乳首对相关刺激的经验与身体熟悉度。' },
-      { name: '性器开发', description: '外阴、阴蒂与阴道对相关刺激的经验与身体熟悉度。', body: 'womb' },
+      // 1.5.2：卵方的「性器开发」改名「外阴开发」；精方的阴茎、阴囊并进这一组（照适用身体分，扶她两边都能练）
+      { name: '外阴开发', description: '外阴、阴蒂与阴道对相关刺激的经验与身体熟悉度。', body: 'womb' },
       { name: '子宫开发', description: '子宫与宫颈深处对相关刺激的经验与身体熟悉度。', body: 'womb' },
+      { name: '阴茎开发', description: '阴茎与龟头对相关刺激的经验与身体熟悉度。', body: 'sword' },
+      { name: '阴囊开发', description: '阴囊与睾丸对相关刺激的经验与身体熟悉度。', body: 'sword' },
       { name: '后庭开发', description: '后庭对相关刺激的经验与身体熟悉度。' },
       { name: '尿道开发', description: '尿道对相关刺激的经验与身体熟悉度。' },
     ]),
@@ -52,13 +55,10 @@ export const SKILL_PRESET_GROUPS = Object.freeze({
       { name: '多人行为', description: '同一情境中有三人或以上参与的性互动经验。' },
     ]),
   }),
-  sword: Object.freeze({
-    label: '精方专属',
-    entries: Object.freeze([
-      { name: '阴茎开发', description: '阴茎与龟头对相关刺激的经验与身体熟悉度。', body: 'sword' },
-    ]),
-  }),
 });
+
+/** 旧版预设的名字（已改名）：旧图鉴迁移时照样认得出适用身体 */
+const LEGACY_PRESET_BODIES = Object.freeze({ 性器开发: 'womb' });
 
 /** 内置预设的适用身体（照名字对）：迁移旧图鉴时补上 */
 export function getPresetSkillBody(name) {
@@ -67,7 +67,7 @@ export function getPresetSkillBody(name) {
     const entry = group.entries.find((item) => item.name === key);
     if (entry) return normalizeSkillBody(entry.body);
   }
-  return null;
+  return LEGACY_PRESET_BODIES[key] ? normalizeSkillBody(LEGACY_PRESET_BODIES[key]) : null;
 }
 
 function cleanText(value, maxLength) {

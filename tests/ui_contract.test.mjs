@@ -16,7 +16,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.deepEqual(views, [
     'tracker-preset', 'worldbook-filter', 'register',
     'skill-catalog', 'track-list', 'wardrobe',
-    'full-state', 'race-encyclopedia', 'theme',
+    'story-calendar', 'race-encyclopedia', 'theme',
   ]);
   for (const id of [
     'bs-bt-skill-catalog-list', 'bs-bt-skill-definition-detail', 'bs-bt-skill-detail-characters',
@@ -43,11 +43,11 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.match(html, /id="bs-bt-register-skill-result"/);
   assert.deepEqual(
     [...html.matchAll(/data-encyclopedia-tab="([^"]+)"/g)].map((match) => match[1]),
-    ['race', 'derived', 'world', 'calculator'],
+    ['race', 'world', 'calendar', 'calculator'],
   );
   assert.deepEqual(
     [...html.matchAll(/data-encyclopedia-tab="[^"]+">([^<]+)<\/button>/g)].map((match) => match[1]),
-    ['物种', '衍生', '基准', '计算'],
+    ['物种', '基准', '历法', '计算'],
   );
   assert.match(html, /data-encyclopedia-page="world"[\s\S]*?id="bs-bt-world-baseline-prompt"/);
   assert.match(html, /data-encyclopedia-page="calculator"[\s\S]*?id="bs-bt-calculator-tabs"/);
@@ -72,7 +72,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.doesNotMatch(html, /id="bs-bt-calc-implant-/);
   assert.doesNotMatch(html, /id="bs-bt-calc-derived-modifier"/);
   assert.match(html, /id="bs-bt-calc-offspring-stage"/);
-  assert.match(controller, /selectedEncyclopediaSubpage = \['race', 'derived', 'world', 'calculator'\]\.includes\(page\)/);
+  assert.match(controller, /selectedEncyclopediaSubpage = \['race', 'world', 'calendar', 'calculator'\]\.includes\(page\)/);
   assert.match(controller, /bs-bt-race-open-editor'[\s\S]*?scrollEncyclopediaToTop\(\)[\s\S]*?openRacePhysiologyEditor/);
   assert.doesNotMatch(html, /id="bs-bt-register-skill-load-child"/);
   assert.doesNotMatch(html, /用自然语言描述角色注册时应具备的技能与天赋/);
@@ -113,7 +113,7 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.doesNotMatch(controller, /bs-bt-wardrobe-item-\$\{key\}[\s\S]*?type="number"/);
   assert.match(controller, /function updateWardrobeAddTypeFields\(\)/);
   assert.match(controller, /function renderFetalTalentDebugEditor\(/);
-  assert.match(controller, /function renderTrackDebug\(viewModel, fetalTalentHtml = ''\)/);
+  assert.match(controller, /function renderTrackDebug\(viewModel, fetalTalentHtml = '', sireCheatHtml = ''\)/);
   assert.match(controller, /function renderSpermShareSection\(sperms, \{ badge = '', badgeClass = '', conceptionChance = null, capacity = null, previewNote = '' \} = \{\}\)/);
   assert.match(controller, /实验性混合池：24h数值是当前已有卵的单卵静态预览/);
   assert.match(controller, /renderSpermShareSection\(data\.sperms, \{/);

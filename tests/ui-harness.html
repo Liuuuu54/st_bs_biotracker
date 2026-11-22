@@ -24,7 +24,7 @@
 <script type="module">
   const CHAT_KEY = 'ui-harness-chat';
   const { createDefaultFemaleState } = await import('/scripts/state.js');
-  const { buildRoster, applyRosterTools, ROSTER_NOTES, USER_NAME } = await import('/tests/ui-harness-roster.mjs');
+  const { buildRoster, applyRosterTools, ROSTER_NOTES, USER_NAME, HARNESS_CALENDAR } = await import('/tests/ui-harness-roster.mjs');
 
   // 族谱／写实世界展示用的简单角色（以预设状态为底，栏位齐全）
   const makeCharacter = (name, overrides = {}) => {
@@ -63,6 +63,8 @@
         fontSize: 'standard',
         targetNames: '',
         chatStates: { [CHAT_KEY]: chatState },
+        // 对话历法：真机拟定的样本，百科「历法」与首页「日历」看得到
+        calendar: structuredClone(HARNESS_CALENDAR),
       },
     },
     saveSettingsDebounced() {},

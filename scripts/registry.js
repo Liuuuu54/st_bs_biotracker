@@ -1,3 +1,12 @@
+import { dateAt, describeCalendarForPrompt, fromLocalYears, getActiveCalendar } from './calendar.js';
+
+/** 对话历法（1.5.2）：注册与日记请求也要知道今天是哪天，没指定日期的日记照历法写今天 */
+function calendarDiaryDate(chatState) {
+  const calendar = getActiveCalendar();
+  if (!calendar) return '';
+  const date = dateAt(calendar, Number(chatState?.minutesPassed) || 0);
+  return calendar.mode === 'custom' ? `${date.monthName}${date.day}日` : `${date.month}月${date.day}日`;
+}
 import { normalizeExperience, initializeCognitionRecords, normalizePaternityClaims, normalizeReproductiveSettings, psychologySide } from './reproductive.js';
 import { getWorldbookEntryActivationMode, worldbookEntryKeywordsMatch } from './worldbook_match.js';
 import { callOpenAICompatible } from './api.js';
@@ -578,6 +587,7 @@ async function buildRegistryPayload(ctx, settings, chatState, options = {}) {
     declared_race: declaredRace || null,
     source_child: sourceChild,
     user_instruction: String(options.userInstruction || '').trim(),
+    ...(getActiveCalendar() ? { calendar_note: describeCalendarForPrompt(getActiveCalendar(), Number(chatState.minutesPassed) || 0) } : {}),
   };
 }
 
@@ -624,7 +634,7 @@ export function sanitizeSireExtractionResult(result) {
     : [];
   return {
     // 0 岁有效（刚出生的孩子注册成精方）；没填才是未知
-    age: value.age !== null && value.age !== undefined && value.age !== '' && Number.isFinite(age) && age >= 0 ? Math.round(age) : null,
+    age: value.age !== null && value.age !== undefined && value.age !== '' && Number.isFinite(age) && age >= 0 ? (getActiveCalendar() ? Math.round(fromLocalYears(age, getActiveCalendar()) * 100) / 100 : Math.round(age)) : null,
     bodySize: clampIndividualBodySize(value.bodySize),
     swordOffset: value.swordOffset === null || value.swordOffset === undefined || value.swordOffset === '' || !Number.isFinite(Number(value.swordOffset))
       ? null
@@ -684,7 +694,7 @@ export async function runRegistryDiaryInference(ctx, options = {}) {
   const targetName = resolveRegisteredCharacterName(chatState, requestedTargetName);
   if (!targetName) throw new Error(`日记生成需要已注册角色：${requestedTargetName}`);
   const diaryWritingPrompt = String(options.diaryWritingPrompt || settings.diaryWritingPrompt || DEFAULT_DIARY_WRITING_PROMPT).trim();
-  const requestedDate = String(options.requestedDate || '').trim();
+  const requestedDate = String(options.requestedDate || '').trim() || calendarDiaryDate(chatState);
   const payload = await buildRegistryPayload(ctx, settings, chatState, {
     ...options,
     targetName,
@@ -1398,7 +1408,8 @@ function sanitizeRegistryProfile(profile, baseProfile) {
     if (profile.base.bloodline !== undefined) Object.assign(nextBase, getBloodlineInfo(nextBase.race ?? baseProfile.base.race, profile.base.bloodline, profile.base.bloodlineSource));
     if (profile.base.derivedType !== undefined) nextBase.derivedType = profile.base.derivedType === null ? null : String(profile.base.derivedType || '').trim() || null;
     if (profile.base.age !== undefined) {
-      const age = Number(profile.base.age);
+      // 模型照角色卡写的是这个世界的岁；有历法时换成地球年存（1.5.2）
+      const age = fromLocalYears(Number(profile.base.age), getActiveCalendar());
       if (Number.isFinite(age)) nextBase.age = age;
     }
     if (profile.base.bodySize !== undefined) {
@@ -2206,7 +2217,7 @@ export async function runRegistry(ctx, options = {}) {
   }
   if (bundle) {
     payload.diary_writing_prompt = String(bundle.diaryWritingPrompt || settings.diaryWritingPrompt || DEFAULT_DIARY_WRITING_PROMPT).trim();
-    payload.requested_diary_date = String(bundle.requestedDate || '').trim() || null;
+    payload.requested_diary_date = String(bundle.requestedDate || '').trim() || calendarDiaryDate(chatState) || null;
   }
   try {
     const currentCharacterText = JSON.stringify(payload.current_character) || '';
@@ -2408,4 +2419,53 @@ async function callBreedingWithStageRetry(settings, payload, systemPrompt, optio
     `stageProfiles 必须写成 {"${side}":{${fields.map((axis) => `"${axis}":{${PSY_STAGE_KEYS.map((key) => `"${key}":"……"`).join(',')}}`).join(',')}}}，三轴 × 六阶段全部填写，键名逐字一致。`,
   ].join('\n');
   return ask(`${systemPrompt}\n${correction}`);
+}
+
+/**
+ * 从角色卡拟定对话历法（1.5.2）：照角色卡、世界书与最近对话拟出历法、季节、开始日期与繁殖季，
+ * 设定没写的自行补完。只回传草稿，由画面填进表单给使用者改，不直接保存。
+ * breedingRaces：[{ race, dormancyDays, seasonCycles, seasonDays }]（有乏情期、可以定繁殖季的物种）
+ */
+export async function runCalendarInference(ctx, options = {}) {
+  const settings = getEffectiveSettings(ctx, getSettings(ctx));
+  const chatState = getChatState(ctx, settings);
+  const card = getCharacterCard(ctx);
+  const payload = await buildRegistryPayload(ctx, settings, chatState, {
+    targetName: String(card?.name || '').trim() || '历法',
+    reason: 'calendar_inference',
+    customNotes: '',
+    userInstruction: String(options.userInstruction || '').trim(),
+  });
+  payload.existing_state = null;
+  payload.story_days_passed = Math.floor((Number(chatState.minutesPassed) || 0) / 1440);
+  payload.existing_calendar = options.existingCalendar || null;
+  payload.breeding_races = Array.isArray(options.breedingRaces) ? options.breedingRaces : [];
+  payload.peak_derived_types = Array.isArray(options.peakTypes) ? options.peakTypes : [];
+  payload.world_baseline_prompt = String(settings.worldBaselinePrompt || '').trim() || null;
+  const systemPrompt = [
+    '你是 AIRP 世界设定整理者，替这个故事拟定对话历法。依据：角色卡、世界书、世界基准、最近对话。',
+    '- user_instruction 是使用者的补充规矩（可能是空的）：有写就照它，优先于设定的补完与下面的预设做法；与角色卡明文冲突时照使用者。',
+    '- 设定写明的照写（月名、每月天数、纪年、星期、季节、故事日期）；没写的照世界观自行补完，合理、好用即可，不要留空。',
+    '- 现代或现实背景用公历（mode "gregorian"，不必写 months）；架空世界用自订历（mode "custom"，1～24 个月、每月 1～999 天）。',
+    '- weekdays 是星期名称（自订历用；不分周给 []）；公历不必写。',
+    '- seasons 是每年固定的季节：[{ "name", "month", "day" }]，month 从 1 起算，季数照世界观（可以 2～8 季，不一定四季）；季节不规律、没有季节的世界给 []。',
+    '- 开始日期：设定写明故事开始的日期就给 anchor "start" 与那天；对话已经进行（story_days_passed > 0）且对话里看得出今天是哪天，给 anchor "now" 与今天的日期；都没有就自己定一个合理的开始日，anchor "start"。',
+    '- breedingSeasons：只能用 breeding_races 里的物种（这些物种有乏情期，每年发情一季；nature 是这族的短叙述，seasonDays 是季内大约几天）。每一族都要给，照这族的天性与栖地各自挑：设定写了何时发情照写；寒地、冰雪系偏冬末或早春，植物、花妖系随花期，喜热、火系、沙漠系偏夏，靠秋收、迁徙、储粮的偏秋，夜行或月相相关的可挑特定日子，水族随雨季或汛期。不要整批放同一季，同季的也可以错开日子（给 { "month", "day" }）。有季节就优先给 { "season": "季名" } 或季内的月日。',
+    '- derivedPeaks：只能用 peak_derived_types 里的衍生类型（它们有易感期、发情期这类短高峰）。设定写明它每年固定某季或某日发作才写，格式同 breedingSeasons；没写就不写（照旧约两个月一轮）。',
+    '- existing_calendar 是使用者目前的历法（可能是 null），在它上面修正与补完。',
+    '只输出 JSON：{"mode":"gregorian|custom","era":"纪年，可空","months":[{"name":"","days":30}],"weekdays":[],"seasons":[{"name":"","month":1,"day":1}],"anchor":"start|now","start":{"year":1,"month":1,"day":1,"hour":8,"minute":0,"weekday":0},"breedingSeasons":{"种族":{"season":"季名"}},"derivedPeaks":{},"notes":"一两句：哪些照设定、哪些是补的"}',
+  ].join('\n');
+  // 使用者的补充规矩放进系统提示词最后、单独一段：只放在 payload 里会被整份角色卡与世界书盖过（实测星期名照旧）
+  const rules = String(options.userInstruction || '').trim();
+  const finalPrompt = rules ? [
+    systemPrompt,
+    '',
+    '[使用者的补充规矩——最优先，逐条照做]',
+    rules,
+    '- 规矩写到的项目（月数、每月天数、季节、星期名称、各族发情日……）一律照规矩，覆盖角色卡、世界书与 existing_calendar；规矩没写到的才照设定补完。',
+    '- notes 逐条交代每一条规矩落实成什么（例如「星期：照规矩用北欧神名，奥丁日……」）。',
+  ].join('\n') : systemPrompt;
+  const result = await callOpenAICompatible(settings, payload, finalPrompt, { flow: 'registry' });
+  if (!result || typeof result !== 'object') throw new Error('历法拟定没有回传 JSON');
+  return result;
 }

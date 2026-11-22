@@ -164,7 +164,8 @@ export function advancePooledTimeline(profile, { fromMinute, toMinute, dayCarryM
         const age = stage === '假孕期' ? nonnegative(pregnant.pregnantDays) : nonnegative(base.days);
         if (Number.isFinite(limit) && reached(age, limit)) {
           // 阶段后继、季节计数及零天跳过只由默认模式共用策略决定，不在时间轴复制规则。
-          const next = isNatural(stage) ? hooks.nextMenstrualStage(profile, stage) : '月经期';
+          // 第三个参数是这个阶段结束的那一刻（繁殖季定锚用）
+          const next = isNatural(stage) ? hooks.nextMenstrualStage(profile, stage, now - Math.max(0, age - limit) * DAY) : '月经期';
           changePhase(next, Math.max(0, age - limit));
           continue;
         }

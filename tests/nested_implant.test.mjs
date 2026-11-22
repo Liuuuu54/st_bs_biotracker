@@ -51,10 +51,11 @@ test('炉蚜把自己的胚胎嵌进代孕胎儿：成为那一胎的孕中孕�
   assert.equal(host.weight, 1, '宿主胎重 1.0 也行，自然孕中孕要 1.5');
 });
 
-test('hostFetusIndex 的限制：只在孕早期的异期窗口、宿主要进得去、序号要有效；不给就是一般代孕', () => {
+test('hostFetusIndex 的限制：只在孕早期的异期窗口、序号要有效；不给就是一般代孕', () => {
+  // 1.5.2：五种胚型都能当宿主，卵胎生的胎儿也植得进去（内胎封在宿主里）
   const egg = state.createEmptyChatState();
   egg.characters['蜜蜜'] = carrier('蜜蜜', '炉蚜', [surrogateFetus({ embryoType: '卵胎生' })]);
-  assert.match(implant(egg, { provider: '蜜蜜', race: '炉蚜', hostFetusIndex: 0 }).message, /不能当孕中孕宿主/);
+  assert.equal(implant(egg, { provider: '蜜蜜', race: '炉蚜', hostFetusIndex: 0 }).applied, true);
 
   const wrong = state.createEmptyChatState();
   wrong.characters['蜜蜜'] = carrier('蜜蜜', '炉蚜', [surrogateFetus()]);
