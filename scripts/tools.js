@@ -703,7 +703,7 @@ function applyGrowSire(chatState, args, male) {
   if (!Number.isFinite(Number(record.bodyChangedAtAge))) record.bodyChangedAtAge = age;
   const wait = getGrowthWaitYears({ age, bodyChangedAtAge: record.bodyChangedAtAge });
   if (wait > 1e-9) return skip(`no birthday has passed since the last change (age ${Math.round(age * 100) / 100}, last change at ${Math.round(Number(record.bodyChangedAtAge) * 100) / 100}); next birthday in about ${Math.ceil(wait * 365)} days.`);
-  for (const key of ['vitalityLevel', 'psyStressLevel', 'build', 'bust', 'hip']) {
+  for (const key of ['vitalityLevel', 'psyStressLevel', 'build', 'bust', 'hip', 'eggQuality']) {
     if (args?.[key] !== undefined) return skip(`${key} is a female field; sires take bodySize, swordOffset or spermQuality.`);
   }
   const delta = (key) => {
@@ -773,6 +773,13 @@ function applyGrowBody(chatState, args, sourceId = '') {
     const before = Math.round(clampNumber(base[key], 1, 7, 4));
     base[key] = Math.round(clampNumber(before + d, 1, 7, before));
     changes.push(`${key} ${before}→${base[key]}`);
+  }
+  // 卵子品质（1.5.3）：与精方的精子品质同一把尺、同一种增减；改的是个人基准，下一轮开始掷的卵才跟着变
+  const eggDelta = delta('eggQuality');
+  if (eggDelta !== null) {
+    const before = normalizeEggQuality(base.eggQuality);
+    base.eggQuality = normalizeEggQuality(before + eggDelta);
+    changes.push(`eggQuality ${before}→${base.eggQuality}`);
   }
   const baseline = getBodyBaseline(base);
   for (const key of ['build', 'bust', 'hip']) {

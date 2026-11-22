@@ -371,3 +371,17 @@ test('v14 → v15：海妖改名斯库拉，角色、精方与快照一起换；
   assert.equal(migrated.sires['乙'].race, '斯库拉');
   assert.equal(JSON.stringify(migrated.snapshots).includes('海妖'), false, '快照里也没有旧名');
 });
+
+test('bsGrowBody：卵方也能改卵子品质，与精子品质同一把尺；精方不能用这一栏（1.5.3）', () => {
+  const chatState = setup({ stage: '卵泡期', fetuses: [], base: { age: 41, bodyChangedAtAge: 39.5, eggQuality: 1, cycleEggQuality: 1.1 } });
+  const result = applyToolCall(chatState, { name: 'bsGrowBody', arguments: { female: 'A', time: '某日', reason: '过了四十，身子不比从前', eggQuality: -0.5 } });
+  assert.equal(result.applied, true, result.message);
+  assert.equal(P(chatState).base.eggQuality, 0.5);
+  assert.equal(P(chatState).base.cycleEggQuality, 1.1, '这一轮已经掷好，下一轮才跟着变');
+  P(chatState).base.age = 43;
+  applyToolCall(chatState, { name: 'bsGrowBody', arguments: { female: 'A', time: '某日', reason: '长年调养', eggQuality: -9 } });
+  assert.equal(P(chatState).base.eggQuality, 0.25, '夹在 0.25～4');
+  const sire = growSire(withSire({ age: 40, bodyChangedAtAge: 30 }), { eggQuality: 1 });
+  assert.equal(sire.applied, false);
+  assert.match(sire.message, /female field/);
+});
