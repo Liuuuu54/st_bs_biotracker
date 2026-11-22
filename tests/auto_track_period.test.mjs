@@ -39,7 +39,11 @@ test('接线：自动追踪的轮询闸门、系统页输入框与读写都在�
   const tracker = read('scripts/tracker.js');
   assert.match(tracker, /normalizeAutoTrackEveryReplies\(settings\.autoTrackEveryReplies\)/);
   assert.match(tracker, /waiting_track_period/);
-  assert.match(tracker, /countPendingAssistantReplies\(ctx, chatState\)/);
+  // 计数判据必须与逐层分析用的 shouldTriggerForMessage 一致（系统／旁白楼层也算）
+  assert.match(tracker, /countPendingTrackableFloors\(ctx, chatState\)/);
+  assert.match(tracker, /if \(shouldTriggerForMessage\(chat\[index\]\)\) count \+= 1;/);
+  // 状态提示必须写明「触发后逐层分析」：这个设置不减少请求数，别让人以为省了额度
+  assert.match(tracker, /触发后逐层分析/);
   // 只挡自动轮询：手动分析不该被周期拦住
   assert.match(tracker, /if \(reason === 'poll'\) \{\n\s*\/\/ 追踪周期/);
 

@@ -2111,27 +2111,28 @@ export function clearPollWaitStatus(ctx) {
 }
 
 /**
- * 追踪周期：自上次分析以来新增的 AI 回复条数。
+ * 追踪周期：自上次分析以来新增的「会被追踪」的楼层数。
+ * 判据与逐楼分析用的 shouldTriggerForMessage 完全一致（非使用者楼层都算，系统／旁白也算——
+ * 那些楼层本来也会各发一次请求），所以计数不会出现「算了却不分析」的偏差。
  * 续跑点用 lastProcessedSignature 定位（与重放逻辑同一把尺），找不到就退回最近一次实质分析的快照。
  */
-function countPendingAssistantReplies(ctx, chatState) {
+function countPendingTrackableFloors(ctx, chatState) {
   const chat = getHostChat(ctx);
   const chatLength = chat.length;
   const resumeCount = findProcessedResumeCount(ctx, chatState, chatLength);
   const start = Number.isInteger(resumeCount) ? resumeCount : getLastAnalyzedMessageCount(chatState, chatLength);
   let count = 0;
   for (let index = Math.max(0, start); index < chatLength; index += 1) {
-    // is_user === false 才是 AI 楼层；系统/旁白楼既不算也不该拉动周期
-    if (chat[index]?.is_user === false) count += 1;
+    if (shouldTriggerForMessage(chat[index])) count += 1;
   }
   return count;
 }
 
-/** 还差几条 AI 回复才够一个周期；够了回 0（1 = 每条回复后都追踪，因此总是 0） */
-export function resolveTrackPeriodShortfall(pendingAssistantReplies, everyReplies) {
+/** 还差几条楼层才够一个周期；够了回 0（1 = 每条回复后都追踪，因此总是 0） */
+export function resolveTrackPeriodShortfall(pendingFloors, everyReplies) {
   const every = normalizeAutoTrackEveryReplies(everyReplies);
   if (every <= 1) return 0;
-  const pending = Math.max(0, Math.floor(Number(pendingAssistantReplies) || 0));
+  const pending = Math.max(0, Math.floor(Number(pendingFloors) || 0));
   return Math.max(0, every - pending);
 }
 
@@ -2259,18 +2260,19 @@ export async function runTracker(ctx, deps, reason = 'manual') {
     return recordPollSkip(ctx, deps, 'no_pending_history', '没有新的可追踪内容，自动追踪待命中。');
   }
   if (reason === 'poll') {
-    // 追踪周期（预设 1 = 每条 AI 回复后都追踪）：设成 N 时攒够 N 条才发请求，
-    // 中间的轮询只待命。手动分析不经过这里，随时可以插队
+    // 追踪周期（预设 1 = 每条 AI 回复后都追踪）：设成 N 时攒够 N 层才触发，
+    // 中间只待命。注意这不减少请求数——触发后仍是逐层分析，只是延后并集中处理；
+    // 手动分析不经过这里，随时可以插队
     const everyReplies = normalizeAutoTrackEveryReplies(settings.autoTrackEveryReplies);
     if (everyReplies > 1) {
-      const pending = countPendingAssistantReplies(ctx, chatState);
+      const pending = countPendingTrackableFloors(ctx, chatState);
       const shortfall = resolveTrackPeriodShortfall(pending, everyReplies);
       if (shortfall > 0) {
         return recordPollSkip(
           ctx,
           deps,
           'waiting_track_period',
-          `追踪周期为每 ${everyReplies} 条 AI 回复一次，还差 ${shortfall} 条（现有 ${pending} 条待追踪）。`,
+          `追踪周期为每 ${everyReplies} 条楼层一次，还差 ${shortfall} 条（现有 ${pending} 条待追踪，触发后逐层分析）。`,
         );
       }
     }

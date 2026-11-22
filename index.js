@@ -9844,7 +9844,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-tracker-preset-list', settings.useStPresetForAsync ? CURRENT_PRESET_OPTION_VALUE : (settings.trackerPresetName || NO_PRESET_OPTION_VALUE));
   setValue('bs-bt-api-url', settings.apiUrl);
   setValue('bs-bt-api-format', normalizeApiFormat(settings.apiFormat));
-  setValue('bs-bt-host-fallback', settings.hostFallbackEnabled !== false);
+  setValue('bs-bt-host-fallback', settings.hostFallbackEnabled === true);
   setValue('bs-bt-api-key', settings.apiKey);
   renderApiProfileSelect(settings);
   setValue('bs-bt-model', settings.model);
@@ -10430,7 +10430,7 @@ function readSettingsFromForm(ctx) {
   settings.apiFormat = normalizeApiFormat(getValue('bs-bt-api-format'));
   settings.hostFallbackEnabled = document.getElementById('bs-bt-host-fallback')
     ? Boolean(document.getElementById('bs-bt-host-fallback').checked)
-    : settings.hostFallbackEnabled !== false;
+    : settings.hostFallbackEnabled === true;
   settings.apiKey = String(getValue('bs-bt-api-key')).trim();
   settings.model = String(getValue('bs-bt-model')).trim();
   settings.temperatureMode = normalizeTemperatureMode(getValue('bs-bt-temperature-mode'));

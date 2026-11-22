@@ -2418,6 +2418,15 @@ export function canUseHostGeneration() {
   return Boolean(getHostGenerationApi());
 }
 
+/**
+ * 自动兜底只认 generateRaw。
+ * 旧版退回的 generateQuietPrompt 会把角色卡与聊天记录一起送上去，请求比主连接大得多，
+ * 不能当成「主连接失败时」的默认退路；只有使用者自己把格式选成「跟随酒馆设定」时才走它。
+ */
+export function canUseHostFallback() {
+  return Boolean(getHostGenerationApi()?.raw);
+}
+
 async function generateThroughHost({ systemPrompt, payloadText }) {
   const api = getHostGenerationApi();
   if (!api) {
@@ -2463,11 +2472,14 @@ async function runHostGeneration({ systemPrompt, payloadText, retryOnBadJson = f
 
 let hostFallbackNotified = false;
 
-/** 最后兜底：主连接彻底失败时借酒馆设定再试一次；救不回来就返回 null，让调用方照原错误抛出 */
+/**
+ * 最后兜底：主连接彻底失败时借酒馆设定再试一次；救不回来就返回 null，让调用方照原错误抛出。
+ * 只在使用者明确打开这个开关、且宿主有 generateRaw 时才会走到这里。
+ */
 async function tryHostFallback({ settings, systemPrompt, payloadText, originalError }) {
   if (isFollowHostFormat(settings?.apiFormat)) return null;
   if (!isHostFallbackEnabled(settings)) return null;
-  if (!canUseHostGeneration()) return null;
+  if (!canUseHostFallback()) return null;
   try {
     const result = await runHostGeneration({ systemPrompt, payloadText });
     console.warn('[BS BioTracker] 主连接失败，已改用酒馆设定完成这次请求', originalError);
@@ -2679,9 +2691,12 @@ export async function callOpenAICompatible(settings, payload, systemPrompt = DEF
   } catch (error) {
     // 使用者按下终止时，底层会以「总时限」的形式中断；这里改回正确的原因
     if (requestEntry?.userAborted) throw createApiUserAbortError(requestEntry.label);
-    // 最后兜底：主连接彻底失败（连不上、401、被拦、模型一直不回 JSON…）时，
-    // 借酒馆自己在用的连接与模型再跑一次文本协议，救得回来就用它的结果
     if (runContext.signal?.aborted) throw error;
+    // 逾时与总时限直接照原错误抛出，不换道：使用者已经设了上限，兜底那条路不受它控制，
+    // 换过去就成了「设了上限却还能无限等」，还可能撞上看门狗被判死后又开新一轮
+    if (isApiTimeoutError(error) || isApiDeadlineError(error)) throw error;
+    // 最后兜底（默认关，需要使用者自己打开）：主连接彻底失败（连不上、401、被拦、一直不回 JSON…）时，
+    // 借酒馆自己在用的连接与模型再跑一次文本协议，救得回来就用它的结果
     const rescued = await tryHostFallback({
       settings,
       systemPrompt: safeSystemPrompt,

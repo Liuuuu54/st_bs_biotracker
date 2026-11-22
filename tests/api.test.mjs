@@ -892,6 +892,7 @@ test('最后兜底：主连接 401 时改借酒馆设定完成，返回酒馆那
     apiKey: 'bad-key',
     model: 'gemini-2.5-pro',
     apiFormat: 'gemini_generate_content',
+    hostFallbackEnabled: true,
   }, { recent_messages: [] }, 'Return JSON.');
 
   assert.deepEqual(result, { operations: [{ rescued: true }] });
@@ -900,7 +901,7 @@ test('最后兜底：主连接 401 时改借酒馆设定完成，返回酒馆那
   assert.equal(rawCalls.length, 1, '然后用酒馆设定跑了一次');
 });
 
-test('最后兜底：关掉开关时不再借酒馆设定，照原错误抛出', async () => {
+test('最后兜底：默认关（opt-in），主连接失败也不换道', async () => {
   installBrowserHost(async () => jsonResponse({ error: { message: 'invalid api key' } }, 401));
   const rawCalls = [];
   installHostGeneration({
@@ -916,11 +917,63 @@ test('最后兜底：关掉开关时不再借酒馆设定，照原错误抛出',
       apiKey: 'bad-key',
       model: 'gemini-2.5-pro',
       apiFormat: 'gemini_generate_content',
-      hostFallbackEnabled: false,
     }, { recent_messages: [] }, 'Return JSON.'),
     /API 401/,
   );
-  assert.equal(rawCalls.length, 0);
+  assert.equal(rawCalls.length, 0, '默认不动用主聊天的模型与额度');
+});
+
+test('最后兜底：请求逾时不换道（兜底那条路不受本页超时控制）', async () => {
+  installBrowserHost((url, options) => new Promise((_resolve, reject) => {
+    options.signal?.addEventListener('abort', () => {
+      const error = new Error('The operation was aborted.');
+      error.name = 'AbortError';
+      reject(error);
+    });
+  }));
+  const rawCalls = [];
+  installHostGeneration({
+    generateRaw: async (args) => {
+      rawCalls.push(args);
+      return JSON.stringify({ operations: [] });
+    },
+  });
+
+  await assert.rejects(
+    callOpenAICompatible({
+      apiUrl: 'https://relay.example/v1beta',
+      apiKey: 'k',
+      model: 'gemini-2.5-pro',
+      apiFormat: 'gemini_generate_content',
+      hostFallbackEnabled: true,
+      apiTimeoutMs: 1000,
+    }, { recent_messages: [] }, 'Return JSON.'),
+    (error) => isApiTimeoutError(error),
+  );
+  assert.equal(rawCalls.length, 0, '设了上限就不该换成一条不受上限约束的路');
+});
+
+test('最后兜底：宿主只有 generateQuietPrompt 时不兜底（那条路会连角色卡一起送）', async () => {
+  installBrowserHost(async () => jsonResponse({ error: { message: 'invalid api key' } }, 401));
+  const quietCalls = [];
+  installHostGeneration({
+    generateQuietPrompt: async (args) => {
+      quietCalls.push(args);
+      return JSON.stringify({ operations: [] });
+    },
+  });
+
+  await assert.rejects(
+    callOpenAICompatible({
+      apiUrl: 'https://relay.example/v1beta',
+      apiKey: 'bad-key',
+      model: 'gemini-2.5-pro',
+      apiFormat: 'gemini_generate_content',
+      hostFallbackEnabled: true,
+    }, { recent_messages: [] }, 'Return JSON.'),
+    /API 401/,
+  );
+  assert.equal(quietCalls.length, 0, '自动兜底只认 generateRaw');
 });
 
 test('Google AI Studio 原生协议：Base URL 留空就用官方主机', async () => {

@@ -130,9 +130,12 @@ export function isFollowHostFormat(value) {
   return normalizeApiFormat(value) === API_FORMATS.FOLLOW_HOST;
 }
 
-/** 主连接彻底失败时，要不要最后再用酒馆设定试一次（默认开） */
+/**
+ * 主连接彻底失败时，要不要最后再用酒馆设定试一次。
+ * 默认关：主聊天常是比较贵的模型，失败后自动改用它会花掉使用者没预期的额度，所以做成 opt-in。
+ */
 export function isHostFallbackEnabled(settings) {
-  return settings?.hostFallbackEnabled !== false;
+  return settings?.hostFallbackEnabled === true;
 }
 
 // 思考强度（reasoning_effort）档位：'auto'（默认）与非法值都省略该参数、
@@ -282,8 +285,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   apiUrl: '',
   apiFormat: API_FORMATS.OPENAI_COMPAT,
   apiKey: '',
-  // 主连接彻底失败时最后改用酒馆设定（跟随主聊天的来源与模型）再试一次
-  hostFallbackEnabled: true,
+  // 主连接彻底失败时最后改用酒馆设定（跟随主聊天的来源与模型）再试一次；默认关，见 isHostFallbackEnabled
+  hostFallbackEnabled: false,
   apiProfiles: [],
   model: 'gpt-4.1-mini',
   modelOptions: [],
