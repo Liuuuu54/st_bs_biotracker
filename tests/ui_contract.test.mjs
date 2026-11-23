@@ -79,7 +79,8 @@ test('home grid and manual skill/wardrobe controls stay wired in markup and cont
   assert.doesNotMatch(html, /选择已备装角色后，可直接调整衣物、当前穿着与穿着状态/);
   assert.deepEqual([...html.matchAll(/data-wardrobe-tab="([^"]+)"/g)].map((match) => match[1]), ['characters', 'prep']);
   assert.match(controller, /skillPrompt/);
-  assert.match(controller.slice(0, 500), /applyInitialSkillTalentConfig/);
+  // 只在前段的 import 表里找：500 字太贴边，加一行 import 就会把第一个识别字挤出窗口
+  assert.match(controller.slice(0, 900), /applyInitialSkillTalentConfig/);
   assert.doesNotMatch(controller, />查看<\/button>/);
   assert.doesNotMatch(controller, /data-character-skill-save/);
   assert.doesNotMatch(controller, /data-character-skill-remove/);

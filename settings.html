@@ -312,9 +312,10 @@
             </div>
 
             <div class="settings_section">
-              <label for="bs-bt-api-url">OpenAI 兼容 API Base URL</label>
-              <input id="bs-bt-api-url" class="text_pole" type="text" placeholder="https://api.example.com/v1" />
+              <label for="bs-bt-api-url">API Base URL</label>
+              <input id="bs-bt-api-url" class="text_pole" type="text" placeholder="https://api.example.com/v1（Google AI Studio 可留空）" />
               <small id="bs-bt-api-endpoint-preview" class="bs-bt-inline-status" style="display:block;margin-top:4px;opacity:0.85;">端点预览：<code id="bs-bt-api-endpoint-preview-code">—</code></small>
+              <small style="display:block;margin-top:4px;opacity:0.75;">选「Google AI Studio」时留空就是官方主机，填反代主机则走反代；已带 <code>/v1</code> 或 <code>/v1beta</code> 的网址也认得。</small>
             </div>
 
             <div class="settings_section">
@@ -324,12 +325,19 @@
                 <option value="openai_responses">自定义（兼容 OpenAI Responses） /responses</option>
                 <option value="claude_messages">自定义（兼容 Claude Messages） /messages</option>
                 <option value="gemini_interactions">自定义（兼容 Gemini Interactions） /interactions</option>
+                <option value="gemini_generate_content">Google AI Studio（Gemini 原生） /v1beta/models/{模型}:generateContent</option>
+                <option value="follow_host">跟随酒馆设定</option>
               </select>
+              <div class="bs-bt-setting-toggle-row" style="margin-top:6px;">
+                <input type="checkbox" id="bs-bt-host-fallback" />
+                <label for="bs-bt-host-fallback">主连接失败时最后改用酒馆设定</label>
+              </div>
+              <small style="display:block;margin-top:2px;opacity:0.75;">默认关。开启后，主连接彻底失败（连不上、401/403 被拦、一直拿不到 JSON）时会借酒馆主聊天正在用的来源、模型、代理与密钥再跑一次；主聊天常是比较贵的模型，这笔额度不会事先问你，所以请按需开启。请求超时与总时限错误不触发兜底（兜底那条路不受本页「请求超时」控制，换过去等于设了上限还能无限等）；旧版酒馆没有 generateRaw 时不提供兜底。选「跟随酒馆设定」为格式时，这个勾选框无意义。</small>
             </div>
 
             <div class="settings_section">
               <label for="bs-bt-api-key">API Key</label>
-              <input id="bs-bt-api-key" class="text_pole" type="password" placeholder="sk-..." />
+              <input id="bs-bt-api-key" class="text_pole" type="password" placeholder="sk-... 或 Google 的 AIza..." />
             </div>
 
             <div class="settings_section flex-container gap8 bs-bt-connect-row">
@@ -414,6 +422,12 @@
             <div class="settings_section">
               <label for="bs-bt-poll-ms">轮询间隔（毫秒）</label>
               <input id="bs-bt-poll-ms" class="text_pole" type="number" min="800" step="100" />
+            </div>
+
+            <div class="settings_section">
+              <label for="bs-bt-auto-track-every">追踪周期（每 N 条 AI 回复自动追踪一次）</label>
+              <input id="bs-bt-auto-track-every" class="text_pole" type="number" min="1" max="20" step="1" />
+              <small>1 = 每次 AI 回复后都更新（预设，等同旧行为）。设成 N 时，攒够 N 条新的非使用者楼层（AI 回复、旁白）才触发一次追踪；追踪仍是逐层分析的，请求数不变，只是延后并集中处理，适合不想每一轮都立刻更新状态的情况（例如连续几条短回复后再一并结算）。「立即分析当前对话」不受限制，随时可以插队。</small>
             </div>
 
             <div class="settings_section">
