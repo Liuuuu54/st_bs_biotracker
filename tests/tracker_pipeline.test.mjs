@@ -260,7 +260,9 @@ test('priority names focus the tracker without excluding other registered charac
 
   const prompt = buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, payload);
   assert.match(prompt, /\[优先追踪角色\]/);
-  assert.match(prompt, /艾拉、幕外子/);
+  // 名字只在 payload（1.5.4）：系统提示词逐字不变才吃得到快取
+  assert.match(prompt, /payload\.priority_character_names/);
+  assert.doesNotMatch(prompt, /艾拉、幕外子/);
   assert.match(prompt, /不是过滤器/);
   assert.match(prompt, /\[逐角色检查清单\]/);
   assert.match(prompt, /每名恰好一笔/);
@@ -385,4 +387,37 @@ test('1.5.2 对话历法：送今天的日期与历法说明、年龄换成当�
   const plain = buildTrackerPayload(ctx, state.getSettings(ctx));
   assert.equal(plain.calendar_note, undefined, '没设历法不送');
   assert.equal(plain.existing_state['贝拉'].profile.base.age, 27);
+});
+
+test('追踪请求的快取顺序（1.5.4）：系统提示词每轮逐字不变，payload 先放不变的、最后才是状态与对话；卡片描述与世界书不重复', async () => {
+  const calendar = await import('../scripts/calendar.js');
+  const cal = calendar.normalizeCalendar({ mode: 'custom', era: '星历', months: [{ name: '霜月', days: 40 }, { name: '雪月', days: 40 }], start: { year: 1, month: 1, day: 1 } });
+  calendar.setCalendarProvider(() => cal);
+  try {
+    const ctx = { chatId: 'cache-order', name1: 'U', name2: 'N', characterId: 0, characters: [{ name: 'N', description: '卡片描述', avatar: 'n.png' }], chat: [{ is_user: false, name: 'N', mes: '午后。' }], extensionSettings: {}, saveSettingsDebounced() {} };
+    globalThis.SillyTavern = { getContext: () => ctx };
+    const settings = state.getSettings(ctx);
+    const chatState = state.getChatState(ctx, settings);
+    const ch = state.createDefaultFemaleState('甲');
+    ch.initialized = true;
+    Object.assign(ch.profile.base, { stage: '卵泡期', age: 24 });
+    chatState.characters['甲'] = ch;
+    const first = buildTrackerPayload(ctx, settings, 'manual');
+    const { applyToolCall } = await import('../scripts/tools.js');
+    applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: 30 } });
+    const second = buildTrackerPayload(ctx, settings, 'poll');
+    assert.equal(buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, first), buildTrackerSystemPrompt(state.DEFAULT_SYSTEM_PROMPT, null, second), '过了一天多，系统提示词一字不差');
+    const keys = Object.keys(second);
+    const at = (key) => keys.indexOf(key);
+    assert.ok(at('available_tools') < at('existing_state') && at('character_description') < at('existing_state'), '工具与角色卡在状态之前');
+    assert.ok(at('existing_state') < at('recent_messages') && at('calendar_today') > at('existing_state'), '今天与最近对话在最后');
+    assert.equal(at('recent_messages'), keys.length - 1);
+    assert.notEqual(first.calendar_today, second.calendar_today);
+    assert.equal(first.calendar_rules, second.calendar_rules);
+    assert.equal(second.current_character.description, undefined, '描述只送一份');
+    assert.equal(second.current_character.worldBook, undefined, '世界书只送一份');
+    assert.equal(second.character_description, '卡片描述');
+  } finally {
+    calendar.setCalendarProvider(() => null);
+  }
 });

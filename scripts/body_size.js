@@ -89,6 +89,16 @@ export function getBodySizeSigma(base) {
  * 体型的容积倍率：人类 4 级为 1，每差一级翻倍（1 级 0.125 … 7 级 8）。
  * 子宫装得下多少精液、每天排掉多少，以及一次射精的建议量都按它缩放。
  */
+/**
+ * 体型的代谢系数（1.5.4）：愈大的动物每单位体重代谢愈慢，约与体重的 1/4 次方成反比；
+ * 体型每升一级体积翻倍，所以系数＝2^(−(体型−4)/4)：掌上 1.68、人类 1、巨兽 0.59。只乘吃、喝、尿、便。
+ */
+export function getBodySizePaceFactor(size) {
+  const value = Number(size);
+  if (!Number.isFinite(value)) return 1;
+  return 2 ** (-(Math.min(BODY_SIZE_MAX, Math.max(BODY_SIZE_MIN, value)) - 4) / 4);
+}
+
 export function getBodySizeVolumeFactor(size) {
   const value = Number(size);
   if (!Number.isFinite(value)) return 1;

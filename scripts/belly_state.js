@@ -154,6 +154,8 @@ export function buildBellyCloseupState(input) {
     hunger: percent(needs.hunger),
     sleep: percent(needs.sleep),
     excretion: percent(needs.excretion),
+    // 尿池（1.5.4）：湿痕只看它；旧呼叫没给就照泄意
+    urine: needs.urine ? percent(needs.urine) : percent(needs.excretion),
     odor: percent(needs.odor),
     milk: percent(needs.milk),
     // 免除乳意的类型（不死等）与代谢免疫：不变色、不涨、不漏

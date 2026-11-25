@@ -34,7 +34,7 @@
 
 | 類別 | 工具 |
 | --- | --- |
-| 時間與身體 | `bsPassedTime`、`bsUpdateCharacterStatus`、`bsExcreteMetabolism`、`bsReproductiveIntervention`、`bsSetCharacterPresence` |
+| 時間與身體 | `bsPassedTime`、`bsUpdateCharacterStatus`、`bsAdjustMetabolism`、`bsReproductiveIntervention`、`bsSetCharacterPresence` |
 | 生殖與分娩 | `bsAddSperm`、`bsDrainSperm`、`bsImplantEmbryo`、`bsAbortion`、`bsChildbirth`、`bsAssistFetalPosition`、`bsFetalEvent`、`bsWombReturn` |
 | 記錄與描述 | `bsWriteDiary`、`bsRecordExperience`（心理變化也由它的 `psychology` 帶）、`bsSetDescription` |
 | 技能與衣物 | `bsTrainSkill`（含 `define` 登記新技能）、`bsAddWardrobeItem`、`bsChangeOutfit`（含 `discardItemIds` 刪衣物） |
@@ -75,8 +75,13 @@
 | 孕肚大小 | 平坦、微隆、明顯隆起、渾圓、足月大小、碩大、巨大 |
 | 胎兒個頭、母胎親密度 | 偏小／適中／偏大；親近、略親、一般、疏離、排斥 |
 | 用力疲勞 | 還有餘力、疲憊、力竭 |
+| 生效中的藥 | 「避孕藥·一般（剩 29 天）」這種文字（追蹤模型也一樣，1.5.4） |
 
 拿掉的：卵子品質、這一輪的卵子品質、週期長度係數、胎兒的卵子品質、可受精卵數、受精天數、季內輪數、活力與情壓的等級數字（已有文字）、有文字版的胎位角度、有效孕日。留下的數字是讀得懂的：階段第幾天、年齡、孕齡天數、經歷次數、血統比例。
+
+### 追蹤請求的順序與提示快取
+
+DeepSeek、Gemini 等服務會自動快取「從開頭起完全相同」的提示內容，命中的部分計價便宜得多。所以追蹤請求的順序是刻意排的（1.5.4）：系統提示詞只放同一個聊天裡不變的規則（今天的日期、優先角色的名字改放 payload），payload 先放工具定義、設定、藥物名錄、曆法本身與角色卡，接著是會隨關鍵字變的世界書，最後才是在場精方、角色狀態、今天（`calendar_today`）與最近對話。連續兩輪之間從開頭起相同的部分約 97%。角色卡的描述與世界書只送一份。[buildTrackerPayload](../../scripts/tracker.js)。
 
 ## 快照與宿主保存
 

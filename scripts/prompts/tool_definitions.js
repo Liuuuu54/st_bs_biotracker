@@ -3,6 +3,9 @@
 // 这里只放「模型看到什么」；工具的执行逻辑在 tools.js，原生工具的转换与解析在 native_tools.js。
 import { FETAL_EVENT_CHANGES, FETAL_EVENT_KINDS } from '../fetal_health.js';
 
+/** 八意的分级（1.5.4）：加减同一种写法 */
+const GRADES = Object.freeze(['slight_increase', 'significant_increase', 'severe_increase', 'slight_decrease', 'significant_decrease', 'severe_decrease']);
+
 // ── 追踪工具 ─────────────────────────────────────────
 
 /** 生殖干预（1.5.3）每种效果给模型的说明；工具只送开放的那几种 */
@@ -16,6 +19,7 @@ export const REPRO_EFFECT_TOOL_TEXT = Object.freeze({
   twinning: 'twinning 促分裂（同卵多胞胎机率提高）',
   chimera: 'chimera 促嵌合（同一次受孕的胚胎融合成嵌合体的机率提高，要先有两颗以上胚胎，常配促排卵）',
   amnion: 'amnion 固膜（孕期中羊膜每天修复一点、受宫压与排斥的磨损减轻，进产程时胎膜比较完整；产程中无效）',
+  cleanse: 'cleanse 解药（一次清掉身上所有生效中的药：解毒奶、净化术之类；强度不影响）',
   abortifacient: 'abortifacient 堕胎（只对已着床、还没发动的妊娠；每一胎各自掷成败，孕期越后越难；没流掉的胎儿照样受伤，她多半以为已经流掉了。结果由系统结算）',
   induce: 'induce 催产（孕晚期起；照强度与离足月多远掷会不会发动，成了就进入产兆前驱，未足月就是早产；没成只是宫缩几阵又停。结果由系统结算）',
 });
@@ -24,6 +28,7 @@ export function describeReproductiveInterventionTool(allowed = Object.keys(REPRO
   const keys = allowed.filter((key) => REPRO_EFFECT_TOOL_TEXT[key]);
   const lasting = keys.filter((key) => !['phase', 'emergency', 'abortifacient', 'induce'].includes(key));
   return '生殖干预：剧情里吃了药、用了法术或外力改变生殖状态，或照正文对齐月经阶段时调用。只有世界观里存在、剧情确实使用了才调用，不得引入世界观没有的药或手段。'
+    + 'stop=true 是停药：剧情写到她停了某种药，drug 填药名（或 effect 填效果）就提早结束那一笔；不算药，随时可用。'
     + 'payload.drug_catalog 有列药时，drug 只能填名录里的药名，效果照名录（不必再给 effect）；名录是空的才直接给 effect。'
     + `\neffect：${keys.map((key) => REPRO_EFFECT_TOOL_TEXT[key]).join('；')}。`
     + '\nstrength：light、normal、strong（省略为 normal）。'
@@ -321,6 +326,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       properties: {
         female: { type: 'string' },
         drug: { type: 'string', description: '药物名录的药名；名录是空的时可写剧情里的药名当标签' },
+        stop: { type: 'boolean', description: 'true＝停药：提早结束 drug（或 effect）那一笔生效中的药' },
         effect: { type: 'string', enum: Object.keys(REPRO_EFFECT_TOOL_TEXT) },
         stage: { type: 'string', description: 'effect=phase 时要切到的阶段' },
         strength: { type: 'string', enum: ['light', 'normal', 'strong'] },
@@ -332,8 +338,13 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
-    name: 'bsExcreteMetabolism',
-    description: '缓解角色的生理需求。普通种族用于处理泄意、饿意、困意、乳意、臭意与伴意；其中 excretion（泄意）同时包含排尿与排便需求。乳意在普通周期表示乳房胀敏，在妊娠、假孕或产后恢复则可表示乳胀与泌乳需求；性欲波动会自然产生乳意，不由伴意解除额外转化。进食缓解 hunger 会增加 excretion 与少量 sleep，睡眠缓解 sleep 会增加少量 hunger，高 odor 会降低 companionship 的社交缓解效果。带 derivedType 的角色以 flux 进行极性解放，并处理未抵免需求；要解放 flux 时请传 flux，或不传 options 使用默认释放量。pregnant.blockage 会降低排解效果，pregnant.acceleration 会加快累积并让刚缓解的对应需求较快回升，pregnant.expansion 会使对应需求容量由 150 扩为 200。清洁可缓解 odor；若也支持体内冲洗，可另用 bsDrainSperm，但不自动排精。',
+    name: 'bsAdjustMetabolism',
+    description: '增减角色的生理需求（八意），加减同一种写法：每一项给分级 slight／significant／severe 加 _increase 或 _decrease（小、明显、大，约这一项当下容量的 15%／40%／80%），没写的项不动。'
+      + 'urine 尿意、stool 便意、food 饿意、thirst 渴意、sleep 困意、milk 乳意、odor 臭意、companionship 伴意；泄意＝尿与便、食意＝饿与渴，只是合计，这里写子项。'
+      + '降：小解、大号、吃、喝、睡、哺乳或挤奶、清洗、陪伴；汤、粥这种带料的算吃也算喝，food 与 thirst 都降。吃饱一顿、尿干净、睡饱一觉用 severe_decrease；只解出一点、只吃几口也要记（slight_decrease），阻塞症状会自动打折。升：只在剧情写到身体上的原因时用（喝了大量的水、吃坏肚子、劳动奔波、吃太咸、熬夜、乳房被刺激、弄脏、被冷落），单纯过时间由系统累积，不要加；胀、渗、饿得咕噜叫只是累积的表现，也不要加；同一项一轮只调一次。水栖角色离水太久会干渴（thirst 升），泡回水里再降。'
+      + '连锁由系统算：降渴会加尿、降饿会加便与少量困意、睡觉会加少量饿与渴、排泄与产乳会加臭意，高臭意会降低陪伴的缓解效果。'
+      + 'pregnant.blockage 会让降的效果打折，pregnant.acceleration 会加快自然累积并让刚降的对应需求较快回升，pregnant.expansion 会使对应需求容量由 150 扩为 200。'
+      + '带 derivedType 的角色以 options.flux（数值）进行极性解放，并处理未抵免的普通需求。清洁可缓解 odor；若也支持体内冲洗，可另用 bsDrainSperm，但不自动排精。',
     input_schema: {
       type: 'object',
       properties: {
@@ -341,18 +352,21 @@ export const TOOL_DEFINITIONS = Object.freeze([
         options: {
           type: 'object',
           properties: {
-            excretion: { type: 'number', minimum: 0, maximum: 200 },
-            hunger: { type: 'number', minimum: 0, maximum: 200 },
-            sleep: { type: 'number', minimum: 0, maximum: 200 },
-            milk: { type: 'number', minimum: 0, maximum: 200 },
-            odor: { type: 'number', minimum: 0, maximum: 200 },
-            companionship: { type: 'number', minimum: 0, maximum: 200 },
+            urine: { type: 'string', enum: GRADES },
+            stool: { type: 'string', enum: GRADES },
+            food: { type: 'string', enum: GRADES },
+            thirst: { type: 'string', enum: GRADES },
+            sleep: { type: 'string', enum: GRADES },
+            milk: { type: 'string', enum: GRADES },
+            odor: { type: 'string', enum: GRADES },
+            companionship: { type: 'string', enum: GRADES },
             flux: { type: 'number', minimum: 0, maximum: 400 },
           },
           additionalProperties: false,
         },
+        reason: { type: 'string', description: '一句话写剧情里的原因，例如「烈日下劳动一整天，灌了五杯茶」' },
       },
-      required: ['female'],
+      required: ['female', 'options', 'reason'],
       additionalProperties: false,
     },
   },

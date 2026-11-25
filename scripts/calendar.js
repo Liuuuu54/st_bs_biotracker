@@ -400,18 +400,27 @@ export function registrationEarthAge(localAge, cal, nowMinutes = 0, { birthday =
 }
 
 /** 一句给模型看的历法说明；没有历法回传空字串 */
-export function describeCalendarForPrompt(cal, minutesPassed) {
+/** 历法本身（月份、一年几天、星期、季节）：同一个聊天里不变，放进提示词的固定段才吃得到快取（1.5.4） */
+export function describeCalendarStructure(cal) {
   if (!cal) return '';
-  const date = dateAt(cal, minutesPassed);
   const months = cal.mode === 'custom'
     ? cal.months.map((item) => `${item.name}${item.days}天`).join('、')
     : '公历（12 个月，平年 365 天，有闰年）';
   const week = cal.weekdays.length ? `；一周 ${cal.weekdays.length} 天（${cal.weekdays.join('、')}）` : '';
   const seasons = cal.seasons?.length ? `；季节：${cal.seasons.map((item) => `${item.name}（${monthName(cal, item.month)}${item.day}日起）`).join('、')}` : '';
-  return [
-    `今天是 ${formatCalendarDate(cal, date, { withTime: true, withWeekday: true })}${date.season ? `，${date.season}` : ''}。`,
-    `本聊天的历法：${cal.era ? `${cal.era}，` : ''}${months}，一年约 ${Math.round(averageYearDays(cal) * 100) / 100} 天${week}${seasons}。`,
-  ].join('');
+  return `本聊天的历法：${cal.era ? `${cal.era}，` : ''}${months}，一年约 ${Math.round(averageYearDays(cal) * 100) / 100} 天${week}${seasons}。`;
+}
+
+/** 今天是哪天（每轮都变） */
+export function describeCalendarToday(cal, minutesPassed) {
+  if (!cal) return '';
+  const date = dateAt(cal, minutesPassed);
+  return `今天是 ${formatCalendarDate(cal, date, { withTime: true, withWeekday: true })}${date.season ? `，${date.season}` : ''}。`;
+}
+
+export function describeCalendarForPrompt(cal, minutesPassed) {
+  if (!cal) return '';
+  return describeCalendarToday(cal, minutesPassed) + describeCalendarStructure(cal);
 }
 
 // 目前生效的历法：呼叫端（index.js 依角色卡与全域设定）提供；测试可以换掉

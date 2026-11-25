@@ -26,11 +26,12 @@ test('high needs reach the narrator as a neutral body state, not as a tool order
   const { ctx, settings, chatState } = setup([['甲', '卵泡期', (p) => { p.metabolism = { ...p.metabolism, excretion: 149, hunger: 120 }; }]]);
   assert.equal(applyToolCall(chatState, { name: 'bsPassedTime', arguments: { minute: 10 } }).applied, true);
   const original = chatState.characters['甲'].profile.notify.thirdly;
-  assert.match(original, /应优先使用 bsExcreteMetabolism/);
+  assert.match(original, /应优先使用 bsAdjustMetabolism/);
 
   const prompt = buildMainFlowPrompt(ctx, settings);
-  assert.doesNotMatch(prompt, /bsExcreteMetabolism|应优先/);
-  assert.match(prompt, /甲有明显的生理需求（泄意:爆、饿意:满）：可自然体现身体状态，不要求本轮处理/);
+  assert.doesNotMatch(prompt, /bs(?:Adjust|Excrete)Metabolism|应优先/);
+  // 1.5.4 拆池：写主导的那一池（旧值整个落在尿池）
+  assert.match(prompt, /甲有明显的生理需求（尿意:爆、饿意:满）：可自然体现身体状态，不要求本轮处理/);
   // 追踪模型仍要知道该用哪个工具
   assert.equal(buildTrackerPayload(ctx, settings, 'manual').existing_state['甲'].profile.notify.thirdly, original);
 });

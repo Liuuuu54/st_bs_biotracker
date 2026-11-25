@@ -592,9 +592,14 @@ export function normalizeCharacterPsychologyState(characterState) {
   }
   if (metabolism && typeof metabolism === 'object' && !Array.isArray(metabolism)) {
     const expansionKey = String(pregnant?.expansion?.key || '');
-    for (const key of ['excretion', 'hunger', 'sleep', 'milk', 'odor', 'companionship']) {
+    for (const key of ['sleep', 'milk', 'odor', 'companionship']) {
       if (metabolism[key] === undefined) continue;
       metabolism[key] = sanitizeNumber(metabolism[key], { min: 0, max: expansionKey === key ? 200 : 150 }) ?? 0;
+    }
+    // 泄意、食意与底下的两池（1.5.4）：这里只挡坏值，真正的容量（扩容、宫压压缩膀胱）由引擎按各池算
+    for (const key of ['excretion', 'hunger', 'urine', 'stool', 'food', 'thirst']) {
+      if (metabolism[key] === undefined) continue;
+      metabolism[key] = sanitizeNumber(metabolism[key], { min: 0, max: 200 }) ?? 0;
     }
     if (metabolism.flux !== undefined) {
       const flux = Number(metabolism.flux) || 0;
@@ -1021,6 +1026,8 @@ export function createDefaultFemaleState(name = '') {
         crossSpecies: false,
         // 痛即为爽（1.4.2）：天生把分娩、妊娠、月经的痛感受为快感，只改描写
         painPleasure: false,
+        // 产乳体质（1.5.4）：不怀孕也能产奶，与孕期、产后叠加
+        lactating: false,
       },
       // 显示用的外观（1.4.3）：孕体特写的肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设；只给画面用，不送提示词
       display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null },
@@ -2394,6 +2401,8 @@ function createSnapshotCharacterBaseline(name = '') {
         crossSpecies: false,
         // 痛即为爽（1.4.2）：天生把分娩、妊娠、月经的痛感受为快感，只改描写
         painPleasure: false,
+        // 产乳体质（1.5.4）：不怀孕也能产奶，与孕期、产后叠加
+        lactating: false,
       },
       // 显示用的外观（1.4.3）：孕体特写的肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设；只给画面用，不送提示词
       display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null },

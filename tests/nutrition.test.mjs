@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 
 import * as state from '../scripts/state.js';
-import { applyToolCall } from '../scripts/tools.js';
+import { applyToolCall, syncNeedTotals } from '../scripts/tools.js';
 import { FETAL_CARE_GAIN_SCALE as G, FETAL_CARE_LOSS_SCALE as L } from '../scripts/fetal_health.js';
 import { buildRacePhysiologyPrompt } from '../scripts/prompts/rules.js';
 import { getFetalGrowthRate } from '../scripts/fetal_growth.js';
@@ -91,13 +91,22 @@ test('进入「爆」扣一次；停在爆不重复扣；降下来再爆才会�
   near0(total(chatState), -2 * L, '降到爆以下后重新上膛');
 });
 
-test('停在爆每满 24 小时再扣一次；长时间跳跃按天数扣', () => {
+test('停在爆每满 24 小时再扣一次（分段推进、每段不到 12 小时）', () => {
   // 钉死随机：妊娠扩容若抽中伴意，容量升到 200、爆的门槛随之升到 166，141 会掉回满
   Math.random = () => 0.99;
   const chatState = one({ immune: {}, metabolism: { companionship: 140 } });
   touch(chatState);
   near0(total(chatState), -L);
-  const passHours = (hour) => applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour } });
+  // 1.5.4：一次推进 12 小时以上算照常生活，需求会降到「中」；要写一直没处理就分段推进
+  // 其他需求也会随时间累积：每段 6 小时后清掉，只看伴意
+  const passHours = (hours) => {
+    for (let left = hours; left > 0; left -= 6) {
+      applyToolCall(chatState, { name: 'bsPassedTime', arguments: { hour: Math.min(6, left) } });
+      const m = P(chatState).metabolism;
+      for (const key of ['urine', 'stool', 'food', 'thirst', 'sleep', 'odor', 'milk']) m[key] = 0;
+      syncNeedTotals(P(chatState));
+    }
+  };
   passHours(23);
   near0(total(chatState), -L, '未满 24 小时不重复扣');
   passHours(1);
@@ -106,18 +115,15 @@ test('停在爆每满 24 小时再扣一次；长时间跳跃按天数扣', () =
   near0(total(chatState), -5 * L);
 });
 
-test('单次推进超过 7 天，停在爆的扣分最多算 7 天份', () => {
+test('一次跳过 12 小时以上算照常生活：停在爆的需求降到中，不再按天扣', () => {
   Math.random = () => 0.99;
   const chatState = one({ immune: {}, metabolism: { companionship: 140 }, pregnant: { pregnantDays: 112.5, effectivePregnantDays: 112.5 } });
   touch(chatState);
+  const before = P(chatState).pregnant.fetuses[0].health;
   applyToolCall(chatState, { name: 'bsPassedTime', arguments: { day: 6 } });
-  // 6 天里没跨周结算：建档 −L，再 6 天 −6L
-  near0(P(chatState).pregnant.fetuses[0].health - 50, -7 * L);
-  const long = one({ immune: {}, metabolism: { companionship: 140 }, pregnant: { pregnantDays: 112.5, effectivePregnantDays: 112.5 } });
-  touch(long);
-  const before = P(long).pregnant.fetuses[0].health;
-  applyToolCall(long, { name: 'bsPassedTime', arguments: { day: 30 } });
-  assert.ok(P(long).pregnant.fetuses[0].health > before - 8 * L, '一次跳 30 天没有扣 30 天份');
+  assert.ok(P(chatState).metabolism.companionship <= 60, '伴意压到中');
+  assert.deepEqual(P(chatState).pregnant.nutritionBurst, {}, '不再停在爆');
+  assert.ok(P(chatState).pregnant.fetuses[0].health > before - L, '一次跳 6 天没有按天扣');
 });
 
 test('从未同步过的角色：当下已在爆的需求不追扣', () => {
@@ -128,7 +134,8 @@ test('从未同步过的角色：当下已在爆的需求不追扣', () => {
 });
 
 test('进食连带把泄意推上爆：同一次处理内一加一扣', () => {
-  const chatState = one({ metabolism: { hunger: 80, excretion: 120 } });
+  // 1.5.4 起吃东西加的是便池：便池本来就快满了，吃一顿就爆
+  const chatState = one({ metabolism: { hunger: 80, excretion: 120, urine: 0, stool: 120, food: 80, thirst: 0 } });
   excrete(chatState, { hunger: 60 });
   assert.equal(P(chatState).metabolism.excretion >= 125, true);
   near0(total(chatState), G - L, '一加一扣：扣分比加分重');
@@ -290,4 +297,16 @@ test('分池：三胎以上时中间最差、两端最好（中间 0.9、两端 
 test('分池：双胎没有中间，左右位置不影响分配', () => {
   const [a, b] = P(gainOnce([fetusAt({ embryoId: 1 }), fetusAt({ embryoId: 2 })])).pregnant.fetuses;
   near(got(a), got(b), '双胎平分');
+});
+
+test('照料加分除以胎儿胃口，不看承载耐受：同样的胎，耐受低的母亲加分一样多（1.5.4）', () => {
+  // 胃口 1.3：耐受 1 时耗能 1.3；耐受 0.32 时耗能 1.3 / 0.32 ≈ 4.06（精灵怀双胎那种）
+  const sturdy = one({ metabolism: { hunger: 80 }, pregnant: { fetalEnergyDrain: 1.3 } });
+  const frail = one({ metabolism: { hunger: 80 }, pregnant: { fetalEnergyDrain: 1.3 / 0.32 } });
+  P(frail).bio.breedTolerance = 0.32;
+  excrete(sturdy, { hunger: 60 });
+  excrete(frail, { hunger: 60 });
+  assert.ok(total(sturdy) > 0);
+  near0(total(frail), total(sturdy), '耐受低的母亲');
+  near0(total(sturdy), G / 2.3, '除以 1 + 胃口');
 });

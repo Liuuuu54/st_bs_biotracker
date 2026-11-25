@@ -2612,6 +2612,13 @@
   display: none;
 }
 
+/* 水栖、独居（1.5.4）：勾选框不拉满整栏 */
+#bs-biotracker-settings .bs-bt-race-editor-check {
+  justify-self: start;
+  width: auto;
+  margin: 0;
+}
+
 #bs-biotracker-settings .bs-bt-race-introduction-input {
   min-height: 56px;
   resize: vertical;
@@ -3286,9 +3293,10 @@
   -webkit-mask-image: url('./assets/icons/toilet-paper-svgrepo-com.svg');
 }
 
+/* 饿意（1.5.4 起底下分饿与渴两池）：浓汤，吃与喝同一个图示 */
 #bs-biotracker-settings .bs-bt-need-icon--hunger {
-  mask-image: url('./assets/icons/food-meat-chicken-svgrepo-com.svg');
-  -webkit-mask-image: url('./assets/icons/food-meat-chicken-svgrepo-com.svg');
+  mask-image: url('./assets/icons/soup-svgrepo-com.svg');
+  -webkit-mask-image: url('./assets/icons/soup-svgrepo-com.svg');
 }
 
 #bs-biotracker-settings .bs-bt-need-icon--sleep {
@@ -3671,7 +3679,7 @@
 
 #bs-biotracker-settings .bs-bt-physical-buttons {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   gap: 10px;
   padding: 25px 5px 5px 5px;
   flex: 0 0 auto;
@@ -7642,4 +7650,450 @@
 .bs-bt-birthday-row .menu_button {
   flex: 0 0 auto;
   margin: 0;
+}
+
+/* 变量页的生殖药物（1.5.4）：一行一笔，药名在左、按钮在右 */
+#bs-biotracker-settings .bs-bt-drug-debug-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+#bs-biotracker-settings .bs-bt-drug-debug-row > span,
+#bs-biotracker-settings .bs-bt-drug-debug-row > select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#bs-biotracker-settings .bs-bt-drug-debug-row > .menu_button {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+}
+
+/* 状态值标题旁的药效小圆饼（1.5.4）：扇形＝还剩多少，用主题的文字色画；圆心是药名第一个字 */
+#bs-biotracker-settings .bs-bt-track-section-title--with-pies {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+#bs-biotracker-settings .bs-bt-drug-pies {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+#bs-biotracker-settings .bs-bt-drug-pie {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: conic-gradient(color-mix(in srgb, var(--bsbt-lcd-text) 55%, transparent) calc(var(--bsbt-pie, 100) * 1%), color-mix(in srgb, var(--bsbt-lcd-text) 12%, transparent) 0);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bsbt-lcd-text) 70%, transparent);
+  cursor: help;
+}
+#bs-biotracker-settings .bs-bt-drug-pie > span {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bsbt-lcd-bg);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ── 单键机身（1.5.4）：底部只留 Home；SYSTEM 是右上角的讯号格；电源是右侧侧键 ── */
+
+/* 讯号格：四格逐级变高，颜色跟着状态列；点它进 SYSTEM */
+#bs-biotracker-settings .bs-bt-signal-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  min-height: 22px;
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+#bs-biotracker-settings .bs-bt-signal-button svg {
+  width: 20px;
+  height: 14px;
+  overflow: visible;
+}
+#bs-biotracker-settings .bs-bt-signal-bar {
+  fill: currentColor;
+  opacity: 0.22;
+}
+#bs-biotracker-settings .bs-bt-signal-cross {
+  fill: none;
+  stroke: var(--bsbt-alert, currentColor);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0;
+}
+#bs-biotracker-settings .bs-bt-signal-button[data-signal='ok'] .bs-bt-signal-bar { opacity: 1; }
+#bs-biotracker-settings .bs-bt-signal-button[data-signal='unknown'] .bs-bt-signal-bar:nth-child(-n + 3) { opacity: 0.75; }
+#bs-biotracker-settings .bs-bt-signal-button[data-signal='fail'] .bs-bt-signal-bar:first-child { opacity: 1; }
+#bs-biotracker-settings .bs-bt-signal-button[data-signal='fail'] { color: var(--bsbt-alert, currentColor); }
+#bs-biotracker-settings .bs-bt-signal-button[data-signal='none'] .bs-bt-signal-cross { opacity: 1; }
+#bs-biotracker-settings .bs-bt-signal-button[data-signal='none'] { animation: bsbt-signal-blink 1.4s ease-in-out infinite; }
+@keyframes bsbt-signal-blink { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  #bs-biotracker-settings .bs-bt-signal-button[data-signal='none'] { animation: none; }
+}
+#bs-biotracker-settings .bs-bt-signal-button:hover,
+#bs-biotracker-settings .bs-bt-signal-button:focus-visible {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  outline: none;
+}
+
+/* 电源侧键：机身外框 overflow: hidden，所以一律收在右侧边框里面（边框 25px），
+   看得到的是细长一条，实际可点范围 18×56px。歪的机身（哥德、克系）用三个变量把键往内收、顺着边缘斜放 */
+#bs-biotracker-settings.bs-bt-device > .bs-bt-side-key.bs-bt-side-key {
+  position: absolute;
+  z-index: 3;
+  top: var(--bsbt-side-key-top, 30%);
+  right: var(--bsbt-side-key-inset, 3px);
+  width: 18px;
+  height: 56px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transform: rotate(var(--bsbt-side-key-tilt, 0deg));
+  transform-origin: right center;
+}
+#bs-biotracker-settings.bs-bt-device > .bs-bt-side-key::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--bsbt-btn-grad-2), var(--bsbt-btn-grad-1));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 35%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--bsbt-btn-text) 25%, transparent);
+  transition: width 0.12s ease;
+}
+#bs-biotracker-settings.bs-bt-device > .bs-bt-side-key:hover::before,
+#bs-biotracker-settings.bs-bt-device > .bs-bt-side-key:focus-visible::before {
+  width: 7px;
+}
+#bs-biotracker-settings.bs-bt-device > .bs-bt-side-key:focus-visible {
+  outline: none;
+}
+#bs-biotracker-settings.bs-bt-device > .bs-bt-side-key:active::before {
+  width: 4px;
+}
+
+/* 哥德：右缘从角落往中间收进 2.2%，这一段约斜 1.7°；键往内收、跟着斜 */
+#bs-biotracker-settings.theme-gothic.bs-bt-device {
+  --bsbt-side-key-top: 26%;
+  --bsbt-side-key-inset: 10px;
+  --bsbt-side-key-tilt: 1.7deg;
+}
+/* 克系：放在 30%～40%，那一段右缘从 100% 收到 98.2%，约斜 3.4° */
+#bs-biotracker-settings.theme-eldritch.bs-bt-device {
+  --bsbt-side-key-top: 31%;
+  --bsbt-side-key-inset: 10px;
+  --bsbt-side-key-tilt: 3.4deg;
+}
+
+/* ── 单键机身的两颗键跟着主题（1.5.4）：Home 是整台机器的招牌，侧键用同一个材质、细长版 ──
+   形状只改外观，可点范围不小于 44px。#bs-bt-home-button 的选择器比各主题的 .bs-bt-physical-button 规则高一级 */
+#bs-biotracker-settings #bs-bt-home-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  padding: 0;
+  min-height: 44px;
+}
+/* 这几个主题的屏幕框贴着按键区上缘，Home 往下让出约 16px，别黏在屏幕底边 */
+#bs-biotracker-settings.theme-retro #bs-bt-home-button,
+#bs-biotracker-settings.theme-cultivation #bs-bt-home-button,
+#bs-biotracker-settings.theme-fantasy #bs-bt-home-button,
+#bs-biotracker-settings.theme-cyber-egypt #bs-bt-home-button,
+#bs-biotracker-settings.theme-wasteland #bs-bt-home-button {
+  margin-top: 15px;
+}
+#bs-biotracker-settings.theme-steampunk #bs-bt-home-button {
+  margin-top: 7px;
+}
+#bs-biotracker-settings #bs-bt-home-button svg {
+  position: relative;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+}
+
+/* 1 仿真：呼叫器那种宽扁的实体键 */
+#bs-biotracker-settings.theme-retro #bs-bt-home-button {
+  width: 124px;
+  height: 44px;
+  border-radius: 6px;
+  border: 2px solid #1a1a1a;
+  background: linear-gradient(180deg, #4d5456, #282e30);
+  box-shadow: 0 4px 0 #111, inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+#bs-biotracker-settings.theme-retro.bs-bt-device > .bs-bt-side-key::before {
+  border-radius: 2px;
+  background: linear-gradient(90deg, #282e30, #4d5456);
+  box-shadow: 0 0 0 1px #1a1a1a;
+}
+
+/* 2 修仙：圆形玉佩 */
+#bs-biotracker-settings.theme-cultivation #bs-bt-home-button {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid #0d3d34;
+  background: radial-gradient(circle at 38% 32%, #c4f5e6, #5fb3a1 42%, #2b7565 72%, #1a4d42);
+  color: #e8fff8;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.35), inset 0 0 0 5px rgba(255, 255, 255, 0.14), inset 0 0 0 6px rgba(13, 61, 52, 0.35);
+}
+#bs-biotracker-settings.theme-cultivation.bs-bt-device > .bs-bt-side-key::before {
+  border-radius: 3px;
+  background: linear-gradient(90deg, #2b7565, #8fd8c4, #2b7565);
+  box-shadow: 0 0 0 1px #0d3d34;
+}
+
+/* 3 奇幻：嵌在金框里的宝石（菱形） */
+#bs-biotracker-settings.theme-fantasy #bs-bt-home-button {
+  width: 66px;
+  height: 58px;
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  background: linear-gradient(135deg, #f4d58d, #b8860b 45%, #6b4a12);
+  box-shadow: none;
+  color: #fff1e0;
+  filter: drop-shadow(0 3px 0 #3e2723);
+}
+#bs-biotracker-settings.theme-fantasy #bs-bt-home-button::before {
+  content: '';
+  position: absolute;
+  inset: 6px 7px;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  background: radial-gradient(circle at 42% 34%, #ff9a9a, #b3122a 48%, #5c0614);
+}
+#bs-biotracker-settings.theme-fantasy.bs-bt-device > .bs-bt-side-key::before {
+  border-radius: 2px;
+  background: linear-gradient(90deg, #6b4a12, #f4d58d, #6b4a12);
+  box-shadow: 0 0 0 1px #3e2723;
+}
+
+/* 4 埃及：椭圆的王名圈（cartouche），金边，一端一道横杠 */
+#bs-biotracker-settings.theme-cyber-egypt #bs-bt-home-button {
+  width: 124px;
+  height: 46px;
+  border-radius: 999px;
+  border: 3px solid #daa520;
+  background: linear-gradient(180deg, #0b4a4a, #002b2b);
+  color: #daa520;
+  box-shadow: 0 3px 0 #8b4513, inset 0 0 10px rgba(0, 242, 255, 0.25);
+}
+#bs-biotracker-settings.theme-cyber-egypt #bs-bt-home-button::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  right: 13px;
+  width: 3px;
+  border-radius: 2px;
+  background: #daa520;
+}
+#bs-biotracker-settings.theme-cyber-egypt.bs-bt-device > .bs-bt-side-key::before {
+  border-radius: 3px;
+  background: linear-gradient(90deg, #8b4513, #daa520, #8b4513);
+  box-shadow: 0 0 0 1px #002b2b;
+}
+
+/* 5 废土：磨损的方键，缺角 */
+#bs-biotracker-settings.theme-wasteland #bs-bt-home-button {
+  width: 112px;
+  height: 46px;
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 8px);
+  background: linear-gradient(180deg, #6b7a3f, #2d3516);
+  color: #18ff62;
+  box-shadow: none;
+  filter: drop-shadow(0 3px 0 #1a1f0c);
+}
+#bs-biotracker-settings.theme-wasteland.bs-bt-device > .bs-bt-side-key::before {
+  border-radius: 0;
+  clip-path: polygon(0 4px, 100% 0, 100% 100%, 0 calc(100% - 5px));
+  background: linear-gradient(90deg, #2d3516, #6b7a3f);
+  box-shadow: none;
+}
+
+/* 6 樱花：翻盖机下壳的胶囊形键盘键 */
+#bs-biotracker-settings.theme-sakura #bs-bt-home-button {
+  width: 132px;
+  height: 44px;
+  border-radius: 999px;
+}
+#bs-biotracker-settings.theme-sakura.bs-bt-device > .bs-bt-side-key::before {
+  width: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f48fb1, #ffffff);
+  box-shadow: 0 1px 2px rgba(173, 20, 87, 0.35), 0 0 0 1px #f8bbd0;
+}
+
+/* 7 全息：发光的空心圆环 */
+#bs-biotracker-settings.theme-holo #bs-bt-home-button {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid rgba(141, 247, 255, 0.85);
+  background: radial-gradient(circle, rgba(78, 222, 255, 0.12), transparent 65%);
+  color: #b8fbff;
+  box-shadow: 0 0 14px rgba(78, 222, 255, 0.45), inset 0 0 12px rgba(141, 247, 255, 0.25);
+}
+#bs-biotracker-settings.theme-holo.bs-bt-device > .bs-bt-side-key::before {
+  width: 3px;
+  border-radius: 2px;
+  background: #8df7ff;
+  box-shadow: 0 0 8px rgba(78, 222, 255, 0.7);
+}
+
+/* 8 哥特：水晶切面，两端尖 */
+#bs-biotracker-settings.theme-gothic #bs-bt-home-button {
+  width: 116px;
+  height: 46px;
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(0 50%, 18% 0, 82% 0, 100% 50%, 82% 100%, 18% 100%);
+  background: linear-gradient(135deg, #a85a66, #5c2734 35%, #160a10 70%, #5c2734);
+  color: #eadbd2;
+  box-shadow: none;
+  filter: drop-shadow(0 4px 0 rgba(6, 2, 5, 0.7));
+}
+#bs-biotracker-settings.theme-gothic.bs-bt-device > .bs-bt-side-key::before {
+  width: 6px;
+  border-radius: 0;
+  clip-path: polygon(50% 0, 100% 10%, 100% 90%, 50% 100%, 0 90%, 0 10%);
+  background: linear-gradient(90deg, #160a10, #a85a66, #160a10);
+  box-shadow: none;
+}
+
+/* 9 蒸汽：圆形黄铜旋钮，外圈四颗铆钉 */
+#bs-biotracker-settings.theme-steampunk #bs-bt-home-button {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 3px solid #4a2f1f;
+  background: radial-gradient(circle at 38% 32%, #f3d27a, #b88a3d 45%, #6b4420 80%);
+  color: #2a1b12;
+  box-shadow: 0 4px 0 #2a1b12, inset 0 0 0 5px rgba(42, 27, 18, 0.22);
+}
+#bs-biotracker-settings.theme-steampunk #bs-bt-home-button::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 7%, #f4e4c2 0 2px, #4a2f1f 2.5px 3px, transparent 3.5px),
+    radial-gradient(circle at 93% 50%, #f4e4c2 0 2px, #4a2f1f 2.5px 3px, transparent 3.5px),
+    radial-gradient(circle at 50% 93%, #f4e4c2 0 2px, #4a2f1f 2.5px 3px, transparent 3.5px),
+    radial-gradient(circle at 7% 50%, #f4e4c2 0 2px, #4a2f1f 2.5px 3px, transparent 3.5px);
+}
+#bs-biotracker-settings.theme-steampunk.bs-bt-device > .bs-bt-side-key::before {
+  width: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #6b4420, #f3d27a, #6b4420);
+  box-shadow: 0 0 0 1px #2a1b12;
+}
+
+/* 10 克系：闭着的眼——两端尖的有机杏仁形 */
+#bs-biotracker-settings.theme-eldritch #bs-bt-home-button {
+  width: 116px;
+  height: 46px;
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(0 50%, 9% 31%, 23% 15%, 50% 6%, 77% 15%, 91% 31%, 100% 50%, 91% 69%, 77% 85%, 50% 94%, 23% 85%, 9% 69%);
+  background: radial-gradient(ellipse at 50% 62%, #3f7d73, #12302f 52%, #3b2430);
+  color: #d7efe8;
+  box-shadow: none;
+  filter: drop-shadow(0 3px 0 rgba(3, 7, 6, 0.75));
+}
+#bs-biotracker-settings.theme-eldritch.bs-bt-device > .bs-bt-side-key::before {
+  width: 6px;
+  border-radius: 5px 2px 6px 3px;
+  background: linear-gradient(90deg, #101714, #5c8f83, #3b2430);
+  box-shadow: 0 0 6px rgba(104, 214, 194, 0.25);
+}
+
+/* 11 水墨：朱红方印 */
+#bs-biotracker-settings.theme-ink #bs-bt-home-button {
+  width: 54px;
+  height: 54px;
+  border-radius: 4px 3px 5px 2px;
+  border: 2px solid #7d221c;
+  background:
+    radial-gradient(circle at 25% 30%, rgba(255, 255, 255, 0.14), transparent 30%),
+    radial-gradient(circle at 75% 78%, rgba(0, 0, 0, 0.18), transparent 35%),
+    #a8322a;
+  color: #f3ead8;
+  box-shadow: 0 0 0 2px rgba(168, 50, 42, 0.22);
+}
+#bs-biotracker-settings.theme-ink.bs-bt-device > .bs-bt-side-key::before {
+  border-radius: 3px 1px 4px 2px;
+  background: linear-gradient(90deg, #7d221c, #a8322a);
+  box-shadow: none;
+}
+
+/* 12 建构：红黑对角的正方键，粗黑框 */
+#bs-biotracker-settings.theme-constructivism #bs-bt-home-button {
+  width: 56px;
+  height: 56px;
+  border-radius: 0;
+  border: 3px solid #141414;
+  background: linear-gradient(135deg, #b62525 0 50%, #141414 50% 100%);
+  color: #ece3cf;
+  box-shadow: 4px 4px 0 rgba(20, 20, 20, 0.6);
+}
+#bs-biotracker-settings.theme-constructivism.bs-bt-device > .bs-bt-side-key::before {
+  width: 6px;
+  border-radius: 0;
+  background: #141414;
+  box-shadow: none;
+}
+
+/* 13 果机：圆形 Home 键，中间一个圆角方框 */
+#bs-biotracker-settings.theme-iphone #bs-bt-home-button {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 1px solid rgba(60, 60, 67, 0.28);
+  background: radial-gradient(circle at 50% 35%, #ffffff, #e5e5ea);
+  color: rgba(60, 60, 67, 0.6);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), inset 0 -1px 2px rgba(0, 0, 0, 0.06);
+}
+#bs-biotracker-settings.theme-iphone #bs-bt-home-button svg {
+  visibility: hidden;
+}
+#bs-biotracker-settings.theme-iphone #bs-bt-home-button::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+}
+#bs-biotracker-settings.theme-iphone.bs-bt-device > .bs-bt-side-key::before {
+  width: 4px;
+  border-radius: 2px;
+  background: #d1d1d6;
+  box-shadow: 0 0 0 1px rgba(60, 60, 67, 0.18);
 }

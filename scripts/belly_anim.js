@@ -3,9 +3,9 @@
 // tick(now) 回传画框大小的像素阵列，贴到 canvas 与排程（requestAnimationFrame）由呼叫端做。
 //
 // 条件在就一直循环的：
-//   呼吸（活力、性欲、饿意、困意调节奏与深度）、胎动（每胎依份量、活力档、健康自己动）、
+//   呼吸（活力、性欲、食意、困意调节奏与深度）、胎动（每胎依份量、活力档、健康自己动）、
 //   产程宫缩与用力（laborPhase 在产程各阶段时照间隔反复来）、产后宫缩痛、
-//   哈欠与打瞌睡（困意）、扭动与短裤湿痕（泄意）、咕噜波纹（饿意）、漏奶与胸衣湿斑（乳意）、臭烟（臭意）。
+//   哈欠与打瞌睡（困意）、扭动与短裤湿痕（泄意）、咕噜波纹（食意）、漏奶与胸衣湿斑（乳意）、臭烟（臭意）。
 // 由事件触发的（trigger）：
 //   kick／big／roll：指定某一胎踢一下、用力一踢、翻身；
 //   sibling：两胎互动（kick 踢、shove 推挤、cuddle 依偎），两胎的位置先后有动静；
@@ -634,7 +634,7 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
       }
     }
 
-    // 咕噜（饿意）：肚脐上方一小块椭圆里，几道斜的波纹往背侧跑过去；孕肚越大这一块越往胸下、往侧腹移
+    // 咕噜（食意）：肚脐上方一小块椭圆里，几道斜的波纹往背侧跑过去；孕肚越大这一块越往胸下、往侧腹移
     if (m.ripples.length) {
       const fig = rest.fig;
       const gnx = (fig.navel[0] - X0) / STEP;
@@ -705,8 +705,10 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
 
     // 短裤湿痕（泄意过「爆」）：胯下一块深色，越急越大
     const groin = rest.fig.restGroin;
-    if (effects && state.showShorts !== false && groin && state.excretion / 100 >= NEED_BURST) {
-      const r = 1 + 4 * needPast(state.excretion, NEED_BURST);
+    // 湿痕只看尿意（1.5.4 拆池）：便意爆表是扭动与捂肚子，不会湿
+    const urine = state.urine ?? state.excretion;
+    if (effects && state.showShorts !== false && groin && urine / 100 >= NEED_BURST) {
+      const r = 1 + 4 * needPast(urine, NEED_BURST);
       const tip = groin.points.reduce((a, p) => (p[1] > a[1] ? p : a));
       const [gx, gy] = rest.fig.warpPoint([(tip[0] - X0) / STEP, (tip[1] - Y0) / STEP]);
       const [cx, cy] = framed(gx, gy - 1);

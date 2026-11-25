@@ -1,4 +1,4 @@
-import { describeCalendarForPrompt, formatBirthday, getActiveCalendar, legalAge, toLocalYears } from './calendar.js';
+import { describeCalendarForPrompt, describeCalendarStructure, describeCalendarToday, formatBirthday, getActiveCalendar, legalAge, toLocalYears } from './calendar.js';
 import { describeSheathOffset, normalizeSheathOffset } from './body_size.js';
 import { inferPendingPsychology } from './registry.js';
 import { findWorldInfoMissingFromSnapshot, resolveHostWorldInfo, stripExcludedFromSnapshot } from './worldinfo_resolve.js';
@@ -9,8 +9,8 @@ import { BASIC_REPRO_EFFECTS, REPRO_EFFECTS, REPRO_EFFECT_KEYS, getActiveDrugCat
 import { describeReproductiveInterventionTool } from './prompts/tool_definitions.js';
 import { describeMovementCue } from './fetal_activity.js';
 import { describeCycleCondition, describeFertility } from './egg_quality.js';
-import { fertilityMultiplier } from './repro_effects.js';
-import { getLibidoCap, getNarrativeNeedLevels, getUterinePressureCap } from './tools.js';
+import { describeReproEffects, fertilityMultiplier } from './repro_effects.js';
+import { describePregnancySymptoms, getLibidoCap, getNarrativeNeedLevels, getUterinePressureCap } from './tools.js';
 import { syncCardSettings } from './card_settings.js';
 import { contraceptionLevels, naturalNoticeDays, psychologySide } from './reproductive.js';
 import { buildSirePromptEntries, getGuardingSire } from './sires.js';
@@ -1024,19 +1024,10 @@ function shouldSendPregnantState(base = {}, pregnant = {}) {
     || stage === '假孕期';
 }
 
+/** 妊娠症状（1.5.4）：{key, severity} 模型读不出是什么，改送「便秘：上了厕所也只清得掉一部分」这种文字 */
 function getPromptFacingMetabolismSymptoms(pregnant = {}) {
-  const result = {};
-  for (const symptomType of ['blockage', 'acceleration', 'expansion']) {
-    const symptom = pregnant[symptomType];
-    if (!symptom || typeof symptom !== 'object') continue;
-    const key = String(symptom.key || '').trim();
-    if (!key) continue;
-    result[symptomType] = {
-      key,
-      severity: Number.isFinite(Number(symptom.severity)) ? Number(symptom.severity) : 0,
-    };
-  }
-  return result;
+  const symptoms = describePregnancySymptoms(pregnant);
+  return symptoms.length ? { symptoms } : {};
 }
 
 function getAmnionTag(durability) {
@@ -1224,6 +1215,10 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
     ...(fertility ? { fertility } : {}),
     ...(cycleCondition ? { cycleCondition } : {}),
   };
+  // 生效中的药（1.5.4）：原始纪录（分钟戳）模型读不懂，改送「避孕药（避孕药·一般，剩 29 天）」这种文字
+  delete profile.base.reproEffects;
+  const activeDrugs = describeReproEffects(item.profile, minutesPassed);
+  if (activeDrugs.length) profile.base.activeDrugs = activeDrugs;
   // 聚合 view 会继承 contact 元数据；pooled 提示词只取叙事字段，阻断历史/审计旁路。
   // next 已深拷贝，权威 contacts 与持久化聚合 view 均保持原样；legacy 不改。
   if (base.spermPool?.model === 'pooled-v1' && Array.isArray(base.sperms)) {
@@ -1316,10 +1311,13 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   if (base.derivedType) {
     const exemptions = new Set(getDerivedTypeMetabolismExemptions(base.derivedType));
     const includeNeed = (key) => (exemptions.has(key) ? {} : { [key]: metabolism[key] ?? 0 });
+    const includePools = (key) => (exemptions.has(key) ? {} : poolView(metabolism, key));
     profile.metabolism = {
       flux: Number.isFinite(Number(metabolism.flux)) ? Number(metabolism.flux) : 0,
       ...includeNeed('excretion'),
+      ...includePools('excretion'),
       ...includeNeed('hunger'),
+      ...includePools('hunger'),
       ...includeNeed('sleep'),
       ...includeNeed('milk'),
       ...includeNeed('odor'),
@@ -1328,7 +1326,9 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   } else {
     profile.metabolism = {
       excretion: metabolism.excretion ?? 0,
+      ...poolView(metabolism, 'excretion'),
       hunger: metabolism.hunger ?? 0,
+      ...poolView(metabolism, 'hunger'),
       sleep: metabolism.sleep ?? 0,
       milk: metabolism.milk ?? 0,
       odor: metabolism.odor ?? 0,
@@ -1431,7 +1431,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   delete profile.bio;
   // immune 只留 metabolism 与 crossSpecies：前者让 prompt 不发本人的需求与衍生需求说明，
   // 后者让异种精液的核型判定照免疫写
-  const promptImmune = { ...(immune.metabolism ? { metabolism: true } : {}), ...(immune.crossSpecies ? { crossSpecies: true } : {}) };
+  // 产乳体质（1.5.4）：让模型知道她不怀孕也会产奶
+  const promptImmune = { ...(immune.metabolism ? { metabolism: true } : {}), ...(immune.crossSpecies ? { crossSpecies: true } : {}), ...(immune.lactating ? { lactating: true } : {}) };
   if (Object.keys(promptImmune).length > 0) profile.immune = promptImmune;
   else delete profile.immune;
   delete profile.cooldown;
@@ -1504,7 +1505,7 @@ function buildOffscreenCharacterState(item, diaryLimit = 0, wardrobeOn = true) {
           ...(metabolismImmune ? {} : getPromptFacingMetabolismSymptoms(pregnant)),
         },
       } : {}),
-      ...(metabolismImmune || profile.immune?.crossSpecies ? { immune: { ...(metabolismImmune ? { metabolism: true } : {}), ...(profile.immune?.crossSpecies ? { crossSpecies: true } : {}) } } : {}),
+      ...(metabolismImmune || profile.immune?.crossSpecies || profile.immune?.lactating ? { immune: { ...(metabolismImmune ? { metabolism: true } : {}), ...(profile.immune?.crossSpecies ? { crossSpecies: true } : {}), ...(profile.immune?.lactating ? { lactating: true } : {}) } } : {}),
       ...(wardrobeOn && profile.wardrobe?.enabled ? {
         wardrobe: {
           enabled: true,
@@ -1625,6 +1626,7 @@ function narrateProfileNumbers(view, source) {
     if (Array.isArray(base.sperms)) base.sperms = base.sperms.map((sperm) => (sperm && typeof sperm === 'object' && sperm.value !== undefined ? { ...sperm, value: describeSpermAmount(sperm.value) } : sperm));
   }
   if (view.metabolism && typeof view.metabolism === 'object') {
+    // 两池数值只给追踪模型；主线看合并后的分级，主导的那一池已经写在括号里
     const levels = getNarrativeNeedLevels(source);
     view.metabolism = Object.fromEntries(Object.entries(levels).filter(([, level]) => level !== '无'));
     if (!Object.keys(view.metabolism).length) delete view.metabolism;
@@ -1661,6 +1663,12 @@ export function narrateStateNumbers(state, sourceCharacters = {}) {
     if (item?.profile && source) narrateProfileNumbers(item.profile, source);
   }
   return state;
+}
+
+/** 追踪模型看两池的数值（1.5.4）：才判断得出该写小便还是大号、吃东西还是喝水 */
+function poolView(metabolism = {}, parent) {
+  const pools = parent === 'excretion' ? ['urine', 'stool'] : ['food', 'thirst'];
+  return Object.fromEntries(pools.map((pool) => [pool, Math.round(Number(metabolism[pool]) || 0)]));
 }
 
 /** 胎父认定纪录只增不改，模型只需要最近几笔的时间与白描，来源与系统分钟数不外露 */
@@ -1878,31 +1886,12 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
   const payloadWorldBook = mainflowContextSnapshot ? null : filteredWorldBook;
   const diaryEnabled = getDiaryRecentLimit(settings, Object.keys(existingState || {}).length) > 0;
   const psychologyEnabled = hasBreedingPsychology(existingState);
+  // 栏位顺序就是送出的顺序（1.5.4）：服务商的提示快取只认「从开头起完全相同」的那一段，
+  // 所以同一个聊天里不变的放前面（工具定义、设定、角色卡），每轮会变的放最后（状态、今天、最近对话）
+  const { description: _cardDescription, worldBook: _cardWorldBook, ...cardRest } = currentCharacter;
   return {
-    reason,
     chat_id: getChatKey(ctx),
-    current_character: {
-      ...currentCharacter,
-      worldBook: payloadWorldBook,
-    },
-    character_description: currentCharacter.description || '',
-    character_worldbook_name: getCharacterWorldBookName(ctx) || null,
-    character_worldbook: payloadWorldBook,
-    mainflow_context_snapshot: mainflowContextSnapshot,
-    tracked_females: getRegisteredTargetNames(ctx, settings, chatState),
-    registered_sires: localizeSireAges(buildSirePromptEntries(chatState, {
-      recentText: recentMessages.map((message) => message.text).join('\n'),
-      guide: settings?.registryDescriptionGuides?.sireDescription ?? DEFAULT_REGISTRY_DESCRIPTION_GUIDES.sireDescription,
-    }), getActiveCalendar()),
-    priority_character_names: getPriorityCharacterNames(ctx, settings, chatState),
-    skill_enabled: isSkillSystemEnabled(settings),
-    ...(isSkillSystemEnabled(settings) ? {
-      skill_baseline_prompt: String(chatState.skillBaselinePrompt || '').trim(),
-      skill_catalog: Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [],
-    } : {}),
-    existing_state: (reason === 'mainflow' ? narrateStateNumbers : (state) => state)(localizeStateAges(buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus)), getActiveCalendar(), Number(chatState.minutesPassed) || 0), existingState),
-    // 对话历法（1.5.2）：今天是哪天、这个世界的月与年多长；没设历法时不送
-    ...(getActiveCalendar() ? { calendar_note: describeCalendarForPrompt(getActiveCalendar(), Number(chatState.minutesPassed) || 0) } : {}),
+    // ── 同一个聊天里不变 ──
     available_tools: getTrackerToolDefinitions(settings, existingState),
     diary_enabled: diaryEnabled,
     race_catalog_selection: settings?.raceCatalogSelection || null,
@@ -1920,11 +1909,38 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
       };
     })(),
     ...(settings?.timeFlowEnabled === false ? { time_frozen: true } : {}),
-    recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => (['bsAddSperm', 'bsAbortion'].includes(log.name) || (log.name === 'bsReproductiveIntervention' && String(log.message || '').includes('事后避孕'))) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),
     world_baseline_prompt: String(settings?.worldBaselinePrompt || '').trim(),
     contraception_levels: contraceptionLevels(settings?.reproductiveSettings),
     ...(psychologyEnabled ? { breeding_psychology_enabled: true } : {}),
     wardrobe_enabled: isWardrobeSystemEnabled(settings),
+    skill_enabled: isSkillSystemEnabled(settings),
+    ...(isSkillSystemEnabled(settings) ? {
+      skill_baseline_prompt: String(chatState.skillBaselinePrompt || '').trim(),
+      skill_catalog: Array.isArray(chatState.skillCatalog) ? chatState.skillCatalog : [],
+    } : {}),
+    // 对话历法本身（1.5.4 拆开）：今天是哪天放在最后的 calendar_today
+    ...(getActiveCalendar() ? { calendar_rules: describeCalendarStructure(getActiveCalendar()) } : {}),
+    // 角色卡：描述与世界书只送一份（以前 current_character 里还夹着同样的两份）
+    current_character: cardRest,
+    character_description: currentCharacter.description || '',
+    character_worldbook_name: getCharacterWorldBookName(ctx) || null,
+    // ── 跟着关键字变（世界书按最近对话筛条目）；附加书与全局书稍后才填，先占好位置 ──
+    character_worldbook: payloadWorldBook,
+    character_additional_worldbook_names: [],
+    global_worldbooks: [],
+    // ── 每轮都变 ──
+    reason,
+    mainflow_context_snapshot: mainflowContextSnapshot,
+    tracked_females: getRegisteredTargetNames(ctx, settings, chatState),
+    priority_character_names: getPriorityCharacterNames(ctx, settings, chatState),
+    registered_sires: localizeSireAges(buildSirePromptEntries(chatState, {
+      recentText: recentMessages.map((message) => message.text).join('\n'),
+      guide: settings?.registryDescriptionGuides?.sireDescription ?? DEFAULT_REGISTRY_DESCRIPTION_GUIDES.sireDescription,
+    }), getActiveCalendar()),
+    existing_state: (reason === 'mainflow' ? narrateStateNumbers : (state) => state)(localizeStateAges(buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus)), getActiveCalendar(), Number(chatState.minutesPassed) || 0), existingState),
+    // 主线用：今天＋历法本身（主线提示词不在这里拼快取顺序）
+    ...(getActiveCalendar() ? { calendar_note: describeCalendarForPrompt(getActiveCalendar(), Number(chatState.minutesPassed) || 0), calendar_today: describeCalendarToday(getActiveCalendar(), Number(chatState.minutesPassed) || 0) } : {}),
+    recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => (['bsAddSperm', 'bsAbortion'].includes(log.name) || (log.name === 'bsReproductiveIntervention' && String(log.message || '').includes('事后避孕'))) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),
     recent_messages: recentMessages,
   };
 }

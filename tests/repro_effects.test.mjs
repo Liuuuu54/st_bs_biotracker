@@ -244,3 +244,52 @@ test('固膜：孕期中羊膜每天修复、宫压磨损减轻；名录里有�
   setDrugCatalogProvider(null);
   assert.match(act(pregnantSetup('孕中期', 120), { effect: 'amnion' }).message, /药物名录里定义/);
 });
+
+test('停药（1.5.4）：照药名或效果提早结束那一笔；不算药，开关关着也能停', () => {
+  Math.random = () => 0;
+  const chat = setup('卵泡期', 2);
+  assert.equal(act(chat, { effect: 'pill' }).applied, true);
+  assert.equal(act(chat, { effect: 'regulate' }).applied, true);
+  const stopped = act(chat, { stop: true, effect: 'pill' });
+  assert.equal(stopped.applied, true, stopped.message);
+  assert.deepEqual(base(chat).reproEffects.map((item) => item.effect), ['regulate']);
+  assert.match(act(chat, { stop: true, effect: 'pill' }).message, /没有生效中/);
+  assert.match(act(chat, { stop: true }).message, /要填 drug/);
+  chat.settings = undefined;
+});
+
+test('解药（1.5.4）：一次清掉所有药效；拿掉助孕时这一轮的卵照比例还原', () => {
+  setDrugCatalogProvider(() => [
+    { name: '月神露', effects: [{ effect: 'fertility', strength: 'strong' }], days: 7 },
+    { name: '解毒奶', effects: [{ effect: 'cleanse', strength: 'normal' }], days: 0 },
+  ]);
+  const chat = setup('卵泡期', 2, { eggQuality: 1, cycleEggQuality: 1 });
+  act(chat, { drug: '月神露' });
+  assert.equal(base(chat).cycleEggQuality, 2);
+  const result = act(chat, { drug: '解毒奶' });
+  assert.equal(result.applied, true, result.message);
+  assert.match(result.message, /清掉 1 种药效/);
+  assert.deepEqual(base(chat).reproEffects, []);
+  assert.equal(base(chat).cycleEggQuality, 1, '助孕拉高的那一截还原');
+  setDrugCatalogProvider(null);
+  assert.match(act(setup(), { effect: 'cleanse' }).message, /药物名录里定义/);
+});
+
+test('提示词送生效中的药的文字，不送原始纪录（1.5.4）', async () => {
+  const { buildTrackerPayload, buildMainFlowPrompt } = await import('../scripts/tracker.js');
+  const ctx = { chatId: 'drug-text', chat: [{ is_user: false, name: 'N', mes: '午后。' }], characters: [], name1: 'U', name2: 'N', extensionSettings: {}, saveSettingsDebounced() {} };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const settings = state.getSettings(ctx);
+  const chat = state.getChatState(ctx, settings);
+  const ch = state.createDefaultFemaleState('甲');
+  ch.initialized = true;
+  Object.assign(ch.profile.base, { stage: '卵泡期', age: 24 });
+  chat.characters['甲'] = ch;
+  applyToolCall(chat, { name: 'bsReproductiveIntervention', arguments: { female: '甲', effect: 'pill' } });
+  const tracked = buildTrackerPayload(ctx, settings, 'manual').existing_state['甲'].profile.base;
+  assert.equal(tracked.reproEffects, undefined);
+  assert.deepEqual(tracked.activeDrugs, ['避孕药·一般（剩 30 天）']);
+  const narrated = JSON.parse(buildMainFlowPrompt(ctx, settings).match(/\[当前已注册角色状态\]\n(.+)/)[1].split('<\/').join('</'))['甲'].profile.base;
+  assert.deepEqual(narrated.activeDrugs, tracked.activeDrugs);
+  assert.equal(chat.characters['甲'].profile.base.reproEffects.length, 1, '不碰存档');
+});

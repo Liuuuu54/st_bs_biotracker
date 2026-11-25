@@ -1223,6 +1223,64 @@ const RACE_DEFINITIONS = Object.freeze({
 
 export const ALL_BUILTIN_RACES = Object.freeze(Object.keys(RACE_DEFINITIONS));
 
+/**
+ * 代谢步调（1.5.4）：吃、喝、尿、便、困随时间累积的快慢，人类（恒温）为 1。
+ * 种族不豁免需求（只有衍生类型能豁免），只调快慢；体型另乘系数（见 getBodySizePaceFactor）。
+ * 臭意跟着排泄的连锁自然变，乳意归生殖、伴意归社会性，都不在这里。
+ */
+export const RACE_METABOLISM_FIELD = "metabolismType";
+/** 水栖：一直泡在水里，渴慢下来（×0.3） */
+export const RACE_AQUATIC_FIELD = "aquatic";
+export const AQUATIC_THIRST_FACTOR = 0.3;
+/** 独居：天性独来独往，伴意慢下来（×0.3，约 23 天才满） */
+export const RACE_SOLITARY_FIELD = "solitary";
+export const SOLITARY_COMPANIONSHIP_FACTOR = 0.3;
+export const METABOLISM_TYPES = Object.freeze({
+  warm: Object.freeze({ label: "恒温", pace: Object.freeze({ food: 1, thirst: 1, urine: 1, stool: 1, sleep: 1 }), hint: "" }),
+  fast: Object.freeze({ label: "高代谢", pace: Object.freeze({ food: 1.5, thirst: 1.5, urine: 1.3, stool: 1.3, sleep: 1 }), hint: "代谢快，饿与渴来得比人类快" }),
+  cold: Object.freeze({ label: "冷血", pace: Object.freeze({ food: 0.15, thirst: 0.5, urine: 0.5, stool: 0.15, sleep: 1.2 }), hint: "一次吃饱能撑四五天，便意十天左右才来，常晒太阳打盹" }),
+  absorb: Object.freeze({ label: "光合／吸收", pace: Object.freeze({ food: 0.2, thirst: 1, urine: 0.8, stool: 0.1, sleep: 0.8 }), hint: "靠光合或吸收养分，很少进食但要水，几乎不排便" }),
+  spirit: Object.freeze({ label: "灵养", pace: Object.freeze({ food: 0.3, thirst: 0.5, urine: 0.5, stool: 0.3, sleep: 0.7 }), hint: "以灵气、神性或梦、情绪、精气为食，两三天才需要进食" }),
+  inert: Object.freeze({ label: "非生物", pace: Object.freeze({ food: 0.1, thirst: 0.1, urine: 0.1, stool: 0.05, sleep: 0.5 }), hint: "饿意是魔力或燃料补给、渴意是冷却润滑或元素补充、尿意便意是排出废料残渣、困意是休眠充能，都来得很慢" }),
+});
+export const METABOLISM_TYPE_KEYS = Object.freeze(Object.keys(METABOLISM_TYPES));
+export const METABOLISM_PACE_KEYS = Object.freeze(["food", "thirst", "urine", "stool", "sleep"]);
+/** 内置种族的代谢型：没列的是恒温 */
+const BUILTIN_METABOLISM_GROUPS = Object.freeze({
+  fast: ["鸟族", "怪鸟类", "雷鸟", "狗头人", "月兔", "镰鼬", "卡玛佐兹", "天狗", "鸡蛇族", "半身人", "蝇魔", "炉蚜"],
+  cold: ["蜥蜴人", "怪爬虫类", "蛇人", "梅杜莎", "龟族", "蛙族", "蝾螈族", "河童", "鱼人", "人鱼", "鲛人", "怪鱼类", "斯库拉", "甲壳族", "海马族", "棘皮族", "群居虫人", "独居虫人", "怪虫类", "双生螳螂", "阿拉克涅", "百足氏", "蝎罗氏", "绒虫族", "星繭族", "宝箱怪", "沙虫族"],
+  absorb: ["妖精", "怪植类", "爱那温", "怪蕈类", "玛坦戈", "华根蕴桃", "米戈", "史萊姆", "修格斯", "菌毒族", "海蛞蝓族", "水母族", "触手怪"],
+  spirit: ["西方龙", "海德拉", "东方龙", "羽蛇", "麒麟", "凤凰", "白泽", "帝江", "圣甲虫", "天使", "恶魔", "宁芙", "夢貘", "心魇", "媚魔", "夢魔", "夺心魔", "眼魔"],
+  inert: ["石像鬼", "烛灵", "人偶", "魔像", "墨灵", "宝石人", "奈米丛族", "元素灵", "灯神", "影魔", "活体铠甲", "核焰族"],
+});
+const BUILTIN_METABOLISM_TYPE = Object.freeze(Object.fromEntries(Object.entries(BUILTIN_METABOLISM_GROUPS).flatMap(([type, races]) => races.map((race) => [race, type]))));
+const BUILTIN_SOLITARY_RACES = Object.freeze(new Set(["独居虫人", "阿拉克涅", "蝎罗氏", "百足氏", "双生螳螂", "圣甲虫", "怪虫类", "蛇人", "梅杜莎", "龟族", "鸡蛇族", "怪爬虫类", "熊人族", "斯库拉", "西方龙", "海德拉", "沙虫族", "雷鸟", "宝箱怪", "眼魔", "影魔", "灯神", "独角兽", "凤凰", "斯芬克斯", "鵺", "雪族", "夢貘", "石像鬼", "怪植类", "爱那温", "华根蕴桃"]));
+const BUILTIN_AQUATIC_RACES = Object.freeze(new Set(["赛尔克族", "赛壬", "蛙族", "蝾螈族", "河童", "鱼人", "人鱼", "鲛人", "怪鱼类", "斯库拉", "甲壳族", "海马族", "棘皮族", "海蛞蝓族", "水母族", "宁芙"]));
+
+/**
+ * 泌乳量（1.5.4）：乳意累积的倍率，与承载耐受脱钩，只看胚型（不是种族栏位，不进百科、不进提示词）——
+ * 生下来要不要吃奶主要看胚型：胎生最高，再来卵胎生、不定型、胎转卵生，卵生最低。
+ */
+export const LACTATION_BY_EMBRYO_TYPE = Object.freeze({ "胎生": 1, "卵胎生": 0.6, "不定型": 0.5, "胎转卵生": 0.4, "卵生": 0.3 });
+
+/** 混血的泌乳量：各成分照自己的胚型，按血统加权；没收录的成分当 1 */
+export function getMergedLactation(race, bloodline = null) {
+  const parts = getWeightedRaceParts(race, bloodline);
+  let total = 0;
+  let sum = 0;
+  for (const part of parts) {
+    const profile = getRacePhysiologyProfile(part.name);
+    sum += part.weight * (profile ? (LACTATION_BY_EMBRYO_TYPE[profile[RACE_EMBRYO_TYPE_FIELD]] ?? 1) : 1);
+    total += part.weight;
+  }
+  return total > 0 ? roundTo(sum / total, 4) : 1;
+}
+
+export function normalizeMetabolismType(value) {
+  const key = String(value || "").trim();
+  return METABOLISM_TYPE_KEYS.includes(key) ? key : null;
+}
+
 /** 自订物种缺栏位时的底：人类的内置值（不含短敘述） */
 const HUMAN_TEMPLATE_PROFILE = (() => {
   const { [RACE_INTRODUCTION_FIELD]: _line, ...profile } = RACE_DEFINITIONS['人类'];
@@ -1621,6 +1679,12 @@ export function sanitizeRacePhysiologyProfilePatch(profile) {
   if (Object.prototype.hasOwnProperty.call(profile, 'bodyPlan') && RACE_BODY_PLANS.includes(profile.bodyPlan)) {
     result.bodyPlan = profile.bodyPlan;
   }
+  if (Object.prototype.hasOwnProperty.call(profile, RACE_METABOLISM_FIELD)) {
+    const type = normalizeMetabolismType(profile[RACE_METABOLISM_FIELD]);
+    if (type) result[RACE_METABOLISM_FIELD] = type;
+  }
+  if (typeof profile[RACE_AQUATIC_FIELD] === 'boolean') result[RACE_AQUATIC_FIELD] = profile[RACE_AQUATIC_FIELD];
+  if (typeof profile[RACE_SOLITARY_FIELD] === 'boolean') result[RACE_SOLITARY_FIELD] = profile[RACE_SOLITARY_FIELD];
   if (Object.prototype.hasOwnProperty.call(profile, 'altFormBodySize')) {
     if (profile.altFormBodySize === null) result.altFormBodySize = null;
     else {
@@ -1796,7 +1860,13 @@ export function getBuiltinRacePhysiologyProfile(race) {
   if (!definition) return null;
   // 短敘述走 getRaceIntroductionLine，不混进生理资料
   const { [RACE_INTRODUCTION_FIELD]: _introductionLine, ...profile } = definition;
-  return { ...PHYSIOLOGY_FIELD_DEFAULTS, ...profile };
+  return {
+    ...PHYSIOLOGY_FIELD_DEFAULTS,
+    ...profile,
+    [RACE_METABOLISM_FIELD]: BUILTIN_METABOLISM_TYPE[key] || "warm",
+    [RACE_AQUATIC_FIELD]: BUILTIN_AQUATIC_RACES.has(key),
+    [RACE_SOLITARY_FIELD]: BUILTIN_SOLITARY_RACES.has(key),
+  };
 }
 
 /** 只看内置的短敘述，不含百科覆写；百科编辑器用来预填与比对差异 */
@@ -2236,6 +2306,35 @@ export function getMergedRaceBodyPlan(race, bloodline = null) {
     .reduce((best, plan) => (totals.get(plan) > totals.get(best) + 1e-9 ? plan : best));
 }
 
+/**
+ * 混血的代谢步调：吃、喝、尿、便、困的倍率按血统加权；没收录的成分当恒温。
+ * 水栖、独居两个标签不加权，取血统占比最大那一族（平手随母，见 pickDominantRaceName）：
+ * 水栖的渴 ×0.3、独居的伴 ×0.3。回传 { food, thirst, urine, stool, sleep, companionship, type, aquatic, solitary }，
+ * type 是占比最高的代谢型。
+ */
+export function getMergedMetabolismPace(race, bloodline = null, motherRace = null, motherBloodline = null) {
+  const parts = getWeightedRaceParts(race, bloodline);
+  const pace = Object.fromEntries(METABOLISM_PACE_KEYS.map((key) => [key, 0]));
+  const typeWeights = new Map();
+  let total = 0;
+  for (const part of parts) {
+    const profile = getRacePhysiologyProfile(part.name) || {};
+    const type = normalizeMetabolismType(profile[RACE_METABOLISM_FIELD]) || "warm";
+    const base = METABOLISM_TYPES[type].pace;
+    for (const key of METABOLISM_PACE_KEYS) pace[key] += part.weight * base[key];
+    typeWeights.set(type, (typeWeights.get(type) || 0) + part.weight);
+    total += part.weight;
+  }
+  if (total <= 0) return { ...METABOLISM_TYPES.warm.pace, companionship: 1, type: "warm", aquatic: false, solitary: false };
+  for (const key of METABOLISM_PACE_KEYS) pace[key] = roundTo(pace[key] / total, 4);
+  const type = [...typeWeights].reduce((best, entry) => (entry[1] > best[1] + 1e-9 ? entry : best))[0];
+  const dominant = getRacePhysiologyProfile(pickDominantRaceName(race, bloodline, motherRace, motherBloodline)) || {};
+  const aquatic = dominant[RACE_AQUATIC_FIELD] === true;
+  const solitary = dominant[RACE_SOLITARY_FIELD] === true;
+  if (aquatic) pace.thirst = roundTo(pace.thirst * AQUATIC_THIRST_FACTOR, 4);
+  return { ...pace, companionship: solitary ? SOLITARY_COMPANIONSHIP_FACTOR : 1, type, aquatic, solitary };
+}
+
 export function getMergedRacePhysiologyProfile(race, bloodline = null) {
   const parts = getWeightedRaceParts(race, bloodline);
   if (parts.length === 0) return null;
@@ -2378,24 +2477,32 @@ export function getBuiltinFetalGrowthShape(race) {
  * 取并列的族里在母体血统中占比较高的那一族；并列的族都不在母体血统里时，用母体自己（占比最大那一族）的型。
  * 没给母体时按写法的先后取第一个。
  */
-export function getFetalGrowthShapeByRace(race, bloodline = null, motherRace = null, motherBloodline = null) {
+/**
+ * 取血统占比最大的那一族（不加权）。平手时随母：母方占比较高的那一族；
+ * 不知道母方（已注册的成年角色没有记母亲）或母方也平手，取种族文字里排在前面的。
+ */
+export function pickDominantRaceName(race, bloodline = null, motherRace = null, motherBloodline = null) {
   const parts = getWeightedRaceParts(race, bloodline);
-  if (parts.length === 0) return 'human';
+  if (parts.length === 0) return null;
   const EPSILON = 1e-9;
   const top = Math.max(...parts.map((part) => part.weight));
   const tied = parts.filter((part) => top - part.weight <= EPSILON);
-  if (tied.length === 1) return getSingleRaceGrowthShape(tied[0].name);
+  if (tied.length === 1) return tied[0].name;
   const motherParts = motherRace ? getWeightedRaceParts(motherRace, motherBloodline) : [];
-  if (motherParts.length === 0) return getSingleRaceGrowthShape(tied[0].name);
+  if (motherParts.length === 0) return tied[0].name;
   const motherShare = new Map(motherParts.map((part) => [part.name, part.weight]));
   let pick = null;
   for (const part of tied) {
     const share = motherShare.get(part.name) || 0;
     if (share > EPSILON && (!pick || share > (motherShare.get(pick.name) || 0) + EPSILON)) pick = part;
   }
-  if (pick) return getSingleRaceGrowthShape(pick.name);
-  const motherTop = motherParts.reduce((best, part) => (part.weight > best.weight + EPSILON ? part : best), motherParts[0]);
-  return getSingleRaceGrowthShape(motherTop.name);
+  if (pick) return pick.name;
+  return motherParts.reduce((best, part) => (part.weight > best.weight + EPSILON ? part : best), motherParts[0]).name;
+}
+
+export function getFetalGrowthShapeByRace(race, bloodline = null, motherRace = null, motherBloodline = null) {
+  const name = pickDominantRaceName(race, bloodline, motherRace, motherBloodline);
+  return name ? getSingleRaceGrowthShape(name) : 'human';
 }
 
 /**

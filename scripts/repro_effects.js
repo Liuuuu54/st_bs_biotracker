@@ -16,6 +16,8 @@ export const REPRO_EFFECTS = Object.freeze({
   twinning: Object.freeze({ label: '促分裂', days: 7, realistic: false, catalogOnly: true }),
   chimera: Object.freeze({ label: '促嵌合', days: 3, realistic: false, catalogOnly: true }),
   amnion: Object.freeze({ label: '固膜', days: 14, realistic: false, catalogOnly: true }),
+  // 解药（1.5.4）：一次清掉身上所有生效中的药（解毒奶、净化术）；强度不影响
+  cleanse: Object.freeze({ label: '解药', instant: true, realistic: false, catalogOnly: true }),
   abortifacient: Object.freeze({ label: '堕胎', instant: true, realistic: true, catalogOnly: true }),
   induce: Object.freeze({ label: '催产', instant: true, realistic: true, catalogOnly: true }),
 });

@@ -13,7 +13,7 @@
 //   - 手动改楼后的重追判断（edit_gate.js）：给决策接口的选项说明，按改动内容组句
 //   - 追踪视角里数值换成的文字刻度（健康、亲密度等），在 tracker.js 的视角投影
 import { PSY_MENS_BOOL_FIELDS, PSY_MENS_FIELDS, PSY_PREG_BOOL_FIELDS, PSY_PREG_FIELDS, PSY_STAGE_KEYS } from '../registry_psy_config.js';
-import { BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, computePostpartumRecoveryDays, DERIVED_TYPE_RACES, deriveFetusAncestry, formatBloodline, getAllRaces, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getFetalBulkRatioByRace, getFetalGrowthShapeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection, RACE_BODY_PLAN_LABELS } from '../race_config.js';
+import { BODY_SIZE_INDIVIDUAL, BODY_SIZE_LEVEL_NAMES, computePostpartumRecoveryDays, DERIVED_TYPE_RACES, deriveFetusAncestry, formatBloodline, getAllRaces, getCompanionEggsMeanByRace, getDerivedTypeFluxProfile, getDerivedTypeIntroductionLine, getDerivedTypeMetabolismExemptions, getEmbryoTypeByRace, getMergedMetabolismPace, METABOLISM_TYPES, getFetalBulkRatioByRace, getFetalGrowthShapeByRace, getMergedRacePhysiologyProfile, getRaceComponents, getRaceGroupsByEmbryoType, getRaceInheritanceMode, getRaceIntroductionLine, getRacePhysiologyProfile, getRecoveryCoefficientByRace, isRaceInCatalogSelection, normalizeRaceCatalogSelection, RACE_BODY_PLAN_LABELS } from '../race_config.js';
 import { deriveFetusTags, describeFetusTags } from '../fetus_tags.js';
 import { FETAL_GROWTH_SHAPE_HINTS, FETAL_GROWTH_SHAPE_LABELS, normalizeFetalGrowthShape } from '../fetal_growth.js';
 import { GESTATION_SPEED_MAX, GESTATION_SPEED_MIN, LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGES } from '../stage_config.js';
@@ -48,7 +48,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '心理数值随认知纪录变化：她因为某件事有了新的体会或态度时，用 bsRecordExperience（action=cognition）记下，并在 psychology 给变化程度；没有独立的心理工具。',
   '如果只是描述文字变化，使用 bsSetDescription。',
   '剧情中出现穿上、脱下、更衣、借穿、被脱除、淋湿更换、洗浴后重新着装等衣着变化时，必须用 bsChangeOutfit 同步当前穿着；只更新衣着描述文字而不换装是错误的。角色获得新长期衣物用 bsAddWardrobeItem，永久失去衣物用 bsChangeOutfit 的 discardItemIds。',
-  '可受孕生殖道的插入／精液沉积／拔出用 bsAddSperm 状态机；排出既有残留精液用 bsDrainSperm；缓解生理需求用 bsExcreteMetabolism。',
+  '可受孕生殖道的插入／精液沉积／拔出用 bsAddSperm 状态机；排出既有残留精液用 bsDrainSperm；增减生理需求用 bsAdjustMetabolism。',
   '跨日、重大事件或 notify 提醒时，可用 bsWriteDiary 为角色追加主观日记。',
   '吃药、法术、外力改变生殖状态（事后避孕、避孕药、调经、促排卵、助孕、促分裂、促嵌合），或月经阶段要切换、要照正文对齐时，用 bsReproductiveIntervention；不要用它覆盖正在进行的受精、真妊娠或产程。',
   '剧情以特殊手段让逾期的妊娠延后不生用 bsExtendPregnancy（action=extend），结束延产用 action=induce；延产期间不能用 bsAbortion 或 bsChildbirth。',
@@ -131,7 +131,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- 每个角色结构为 name / initialized / profile。',
   '- profile 主要包含 base、pregnant、experience、psychology、skills、talents、children、metabolism、descriptions、diary、notify，必要时也会附带部分 bio 字段。',
   '- bio 与 immune 大多属于内部运行参数，tracker 默认不会完整发给你；但与剧情表达直接相关的少数 bio 字段可以发送。',
-  '- 若角色带有 immune.metabolism=true，则 metabolism 与 blockage/acceleration/expansion 都不会发给你，需求照料也不影响胎儿健康，本人的衍生需求说明也不发，因为该角色不受代谢累积影响；不要为她调用 bsExcreteMetabolism。',
+  '- 若角色带有 immune.metabolism=true，则 metabolism 与 blockage/acceleration/expansion 都不会发给你，需求照料也不影响胎儿健康，本人的衍生需求说明也不发，因为该角色不受代谢累积影响；不要为她调用 bsAdjustMetabolism。',
   '- 若角色带有 offscreen=true，表示该角色当前不在场，existing_state 只提供精简状态，不代表角色不存在。',
   '- 值为 null、空字串、空列表或空物件的字段一律省略，省略即代表「无」（例如没有 sperms、没有 children、derivedType 不存在）；outfit.mainItemId=null 表示衣着未记录；认知与心理的省略/null 表示未知，不等于未孕或 0。',
   '',
@@ -165,6 +165,7 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- psyStress: 情压/精神压力。',
   '- vitalityLevel / psyStressLevel: 个体等级，决定对应数值上限与体质倾向。',
   '- vitalityLevelText / psyStressLevelText: 系统额外附带的等级文字说明，方便直接理解体质与精神倾向。',
+  '- base.activeDrugs: 身上生效中的药（药名、效果·强度、还剩多久），到期自动消失。同一种效果只取最强的那笔、不叠加；不同效果并存；避孕药压住排卵时，促排卵多排的卵也一起被压住。剧情写到她停药，用 bsReproductiveIntervention 的 stop 提早结束那一笔；吃了解药一类的东西照名录用 cleanse。',
   '- base.fertility / base.cycleCondition（卵子品质的文字）：fertility 是天生的生育力（一般的不写），cycleCondition 是这一轮与平常不同之处与月经准不准；eggQuality／cycleEggQuality 是对应的数值（0.25–4，1 为一般），由系统按周期掷出，不要用工具改。',
   '',
   '[pregnant]',
@@ -183,11 +184,11 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- laborPain: 当前分娩疼痛程度，范围 0-10。描写疼痛反应不得明显超过此等级；刚进入第一产程时不应写成已达到极限痛苦。',
   '- laborEffort / pushFatigue（产程中）：推或休，以及用力疲劳 0-100。推的时候疲劳累积（胎越大越快），60 以上越推越没效果；休的时候疲劳消退，越冷静消退越快。疲劳不随换阶段归零。各阶段效果不同：第二产程的胎体下降与娩出要产妇自己用力，休的时候产程几乎不前进；第三产程娩出胎盘时用力快一倍，不用力也会照常娩出；第一产程宫口还没开全、间歇期下一胎还没开始下降，用力是白费力气，只会累积疲劳，只有剧情写到她提早用力（例如不懂怎么生）才给 push，不要为了加快产程而 push。进入第一产程、间歇期与第三产程时预设休，胎体下降开始时预设推。剧情写到产妇停下来喘气、歇一下时用 bsAssistFetalPosition 给 action=rest，用力时给 action=push；用力消耗的体力照剧情自己扣 vitality，系统不代扣。切换要先于这段时间的 bsPassedTime。',
   '- amnionDurability: 羊膜耐性（0-100）；过低代表接近或已经破水。每一胎有各自的羊膜（同卵共用一个胎囊）：全部胎囊相同时只给这一个数值；不同时不给这个数值，改在对应胎儿上标 fetuses[*].amnion＝膜薄／膜危／已破，没标的就是完整。',
-  '- fetuses[*].health: 胎儿健康刻度（健壮／平稳／虚弱／危急），描写须一致，不写出刻度本身。来源：需求照料（需求在「高」时用 bsExcreteMetabolism 处理到「无」加分，拖到「爆」扣分、越久越重）与 bsFetalEvent 的伤害、照料；没人照料也没人疏忽时回到平稳。危急时周结算先警告，下一周仍危急就流产（多胎只吸收那一胎），孕晚期起早产。fetuses[*].resilience：顽强＝很耐疏忽与伤害（强壮的母体、异种的魔丸与孽种，母体可挺着肚子照样奔波），脆弱＝稍有闪失就出事，没有就是一般。耐受由系统换算：change 一律照这件事对一般胎儿的影响给，不因顽强省略该记的伤害，也不因顽强或脆弱调轻、调重。fetuses[*].guarded＝父方在场庇护：伤害照常记，系统会让它回到平稳，可写胎儿在父亲身边格外安稳、伤后很快平复。',
+  '- fetuses[*].health: 胎儿健康刻度（健壮／平稳／虚弱／危急），描写须一致，不写出刻度本身。来源：需求照料（需求在「高」时用 bsAdjustMetabolism 降到「无」加分，拖到「爆」扣分、越久越重）与 bsFetalEvent 的伤害、照料；没人照料也没人疏忽时回到平稳。危急时周结算先警告，下一周仍危急就流产（多胎只吸收那一胎），孕晚期起早产。fetuses[*].resilience：顽强＝很耐疏忽与伤害（强壮的母体、异种的魔丸与孽种，母体可挺着肚子照样奔波），脆弱＝稍有闪失就出事，没有就是一般。耐受由系统换算：change 一律照这件事对一般胎儿的影响给，不因顽强省略该记的伤害，也不因顽强或脆弱调轻、调重。fetuses[*].guarded＝父方在场庇护：伤害照常记，系统会让它回到平稳，可写胎儿在父亲身边格外安稳、伤后很快平复。',
   '- pregnant.prenatalCare: 镜头外的产前护理（悉心安胎／用心／一般／未察觉／疏忽／虐孕）。还没设定时是「未察觉」：她还不知道自己怀孕，照平常过日子、没有特别照顾。她知道或相信自己怀孕的那条认知（bsRecordExperience 的 cognition）一定要附 prenatalCare，没什么特别就给 normal，否则一直当未察觉；态度改变时再给。它管镜头外的日常养胎，描写她的生活习惯须一致。',
   '- pregnant.fetalEvents: 胎儿事件纪录的窗口。events 每条有 time、kind、change、target（第几胎／全部）、content，pin=true 为钉选，counted=false 表示当天同类已结算、只留纪录；earlier 是更早事件的摘要，「要点」与 events 一样是已发生的事实；countedToday 是今天已结算的 kind，同一胎同一天再记同类无效。不要重复记已有的事件。',
   '- 胎位操作、胎儿自主活动、两胎互动（bsAssistFetalPosition action=sibling）与插入推顶的规则写在各工具说明里（bsAssistFetalPosition、bsAddSperm），胎儿伤害、照料、母胎亲近与疏离用 bsFetalEvent，依工具回传描写。',
-  '- blockage / acceleration / expansion: 当日妊娠症状，格式为 {key, severity}，含义见 [metabolism]。',
+  '- symptoms: 当日妊娠症状（文字），含义见 [metabolism]。',
   '- fetuses: 胎儿列表。',
   '- fetuses[*].fathers: 实际遗传父方（系统真相）。',
   '- fetuses[*].selectedFather / paternityClaims: 角色自己心里认定的父亲（可以与真相不符）与最近几笔认定纪录（她怎么认定、对外怎么说、告诉了谁、对方反应）；对外谎称的对象写在纪录里，不是 selectedFather。不改 fathers，也不代表任何人知道真相；记录用 bsRecordExperience(action=claim)。',
@@ -286,29 +287,29 @@ export const TRACKER_VARIABLE_GUIDE_PROMPT = [
   '- 角色不在场也可以写日记；可根据角色性格、处境与已知生活状态补足合理的日常幕外感受，但不要把未经剧情支持的重大事件写成既成事实，也不要用日记改写客观状态。',
   '',
   '[metabolism]',
-  '- 普通种族使用 excretion / hunger / sleep / milk / odor / companionship，分别对应泄意、饿意、困意、乳意、臭意、伴意；excretion（泄意）同时包含排尿与排便需求。',
-  '- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值；被 pregnant.expansion 命中的方向可扩至 -200 或 200。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsExcreteMetabolism 进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。',
-  '- excretion 会在活力增加时累积；以 bsExcreteMetabolism 处理 hunger（进食）会增加部分泄意与少量困意，处理 sleep（睡眠）会增加少量饿意。milk 代表乳意：普通周期中为乳房胀敏或周期不适，黄体期/月经期会随时间累积，排卵期可因性欲波动少量累积；妊娠时孕早期与孕中期前段是乳房胀痛、敏感（早孕常见），孕中后期起才可能溢出少量初乳，多数到孕晚期或产后才明显；假孕以胀痛为主；产后恢复为泌乳需求。odor 代表需要清理的臭意，companionship 代表渴望陪伴或社交的伴意。',
+  '- 普通种族的需求是八意：urine 尿意、stool 便意、food 饿意、thirst 渴意、sleep 困意、milk 乳意、odor 臭意、companionship 伴意。excretion（泄意）＝尿与便里比较急的那一个，hunger（食意）＝饿与渴里比较急的那一个，只是合计，调整时写子项。需求会随时间自己累积（尿最快、约 8 小时到满；渴、饿、困次之；便要一天多；臭与伴要好几天），时间推进由系统算，不要为了「过了几小时」去加需求。一次推进 12 小时以上时，没写到的时段当作照常生活，需求最多停在「中」；要写她一直没能处理（被关着、昏迷、赶路不停），就分段推进，每段不到 12 小时。',
+  '- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值；被 pregnant.expansion 命中的方向可扩至 -200 或 200。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsAdjustMetabolism（options.flux 给释放量）进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。',
+  '- 剧情里有身体上的原因才用 bsAdjustMetabolism 调整，加减同一种写法：每项给 slight／significant／severe 加 _increase 或 _decrease（小、明显、大，约当下容量的 15%／40%／80%），并写 reason。降：小解 urine、大号 stool、吃东西 food、喝水 thirst、睡觉 sleep、哺乳或挤奶 milk、清洗 odor、陪伴 companionship；尿干净、拉干净、吃饱一顿、喝够、睡饱一觉、洗个澡都用 severe_decrease（吃饱就是吃饱，不要因为份量写得普通就降一级）；吃点心、小睡用 significant_decrease，喝几口、打个盹用 slight_decrease。剧情写到她去了厕所、吃了喝了、睡了，就算只挤出一点、只吃几口，也要用 slight_decrease 记下；便秘、尿不干净这类阻塞会让效果自动打折，照剧情给分级就好，不要因为「没解干净」就不记。她睡了就降 sleep（睡饱一觉 severe、小睡 significant），系统会让睡着那段时间的饿、渴、尿、便少累积一些。汤、粥、带料的饮品算吃也算喝，food 与 thirst 都要降。升：喝了大量的水或利尿的茶（urine）、吃坏肚子（stool）、劳动奔波（food、thirst、sleep）、吃太咸（thirst）、熬夜或被下药（sleep）、乳房被刺激（milk）、流汗打滚弄脏（odor）、被冷落或分离（companionship）。同一项一轮只调一次；不要为了制造剧情张力而加。剧情写的胀、渗、饿得咕噜叫、憋得发慌只是需求本身的表现（时间累积出来的），不是加的理由；要有额外的原因（喝了大量的水、被刺激、吃坏肚子）才加。种族的天性标签是固定的，环境变了照剧情调：水栖角色离水太久（上岸赶路、被关在干燥处）会干渴，用 thirst 的 _increase 表现，泡回水里再降；独居角色被迫长时间待在人群里会烦躁，用 bsUpdateCharacterStatus 加心理压力，不要动伴意。连锁由系统算：喝水降渴会加尿、吃东西降饿会加便、排泄后加一点臭意，不必另外写。milk 代表乳意：普通周期中为乳房胀敏或周期不适，黄体期/月经期会随时间累积，排卵期可因性欲波动少量累积；妊娠时孕早期与孕中期前段是乳房胀痛、敏感（早孕常见），孕中后期起才可能溢出少量初乳，多数到孕晚期或产后才明显；假孕以胀痛为主；产后恢复为泌乳需求。immune.lactating=true 是产乳体质：不怀孕也会产奶，乳意照常累积，怀孕与产后再多一份；胸部增长倾向高的人（一怀孕胸就涨得夸张）奶水也多。odor 代表需要清理的臭意，companionship 代表渴望陪伴或社交的伴意。',
   '- 时间累积满一周时会进行日常生活结算：基本清洁会清除臭意，日常往来会缓解部分伴意；普通周期进入新一轮卵泡期时，周期型乳意会清零。妊娠、假孕或产后恢复的泌乳型乳意不会因跨周自动清除。',
   '- 只有剧情确实发生陪伴或社交时，才用 options.companionship 缓解伴意；臭意达到高等级时会降低陪伴缓解效果。伴意解除不额外转化为乳意；乳意仍由周期、妊娠/假孕/产后恢复与性欲波动等既有来源产生。',
-  '- pregnant.blockage／acceleration／expansion 是当日妊娠症状，格式为 {key, severity}，key 可为上述需求或 fluxPositive/fluxNegative；三者不会同时落在同一项需求上。',
-  '- pregnant.blockage 表示阻塞症状，会降低对应需求的解除效果：',
-  '  - excretion: 便秘。',
-  '  - hunger: 孕吐恶心、消化不良。',
+  '- pregnant.symptoms 是当日妊娠症状（文字），由系统每天掷出；三种症状不会同时落在同一项需求上。阻塞会降低对应需求的解除效果，快积会加快累积、也让刚缓解的需求较快回升，扩容让可承受量从 150 提高到 200。各症状的意思：',
+  '- 阻塞：',
+  '  - 便秘（便意）：上了厕所也只清得掉一部分；尿不干净（尿意）：总有残尿感。',
+  '  - 孕吐、消化不良（饿）：吃了也不太解饿。',
   '  - milk: 乳房胀痛、敏感。',
   '  - sleep: 失眠。',
   '  - odor: 阴道分泌物增生。',
   '  - companionship: 社交回避。',
-  '- pregnant.acceleration 表示快积症状，会加快对应需求累积，也会让刚被缓解的需求较快回升：',
-  '  - excretion: 频尿。',
-  '  - hunger: 容易饿、奇特饮食偏好。',
+  '- 快积：',
+  '  - 频尿（尿意）。另外孕期子宫压着膀胱，宫压越高尿意的容量越小（满宫压剩六成），本来就容易急。',
+  '  - 口渴、一直想喝水（渴）；容易饿（饿）。',
   '  - milk: 乳意快升；孕晚期以前是乳房胀痛、敏感加剧，孕晚期起才可能溢出初乳。',
   '  - sleep: 晕眩、嗜睡。',
   '  - odor: 体温升高、容易排汗。',
   '  - companionship: 黏人。',
-  '- pregnant.expansion 表示扩容症状，会使对应需求可承受量从 150 提高到 200，因而需要更多解除量才能排净：',
-  '  - excretion: 水肿、肠道慢蠕动，排出的量较少。',
-  '  - hunger: 养分母体优先，但使胎儿活动降低。',
+  '- 扩容（尿意不会扩容）：',
+  '  - 肠胃变慢、胀气、容易放屁（便意）：便意来得晚，一来就多。',
+  '  - 孕期怪口味（饿）：特别想吃某些东西、胃口变大；想喝怪东西（渴）：冰的、酸的，喝得比平常多。',
   '  - milk: 乳房储奶量变大，要胀得更满才需排解；只是能装的奶变多，胸部尺寸不变（胸大不等于奶多），也不同于阻塞的压迫疼敏。',
   '  - sleep: 激素使精力旺盛，但属于代偿。',
   '  - odor: 孕妇特有的香气掩盖了需要清理的不适。',
@@ -421,8 +422,8 @@ function buildTrackerMetabolismGuide(payload = null) {
   }
   return fluxNames.length > 0
     ? baseGuide.replace(
-      '- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值；被 pregnant.expansion 命中的方向可扩至 -200 或 200。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsExcreteMetabolism 进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。',
-      `- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值，被 pregnant.expansion 命中的方向可扩至 -200 或 200；在本轮相关衍生种族中，flux 分别表示：${fluxNames.join(' / ')}。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsExcreteMetabolism 进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。`,
+      '- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值；被 pregnant.expansion 命中的方向可扩至 -200 或 200。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsAdjustMetabolism（options.flux 给释放量）进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。',
+      `- 若角色具有 derivedType，则 metabolism 一定包含 flux，并只保留该衍生类型未抵免的普通需求。flux 通常是 -150 到 150 的单一极性需求值，被 pregnant.expansion 命中的方向可扩至 -200 或 200；在本轮相关衍生种族中，flux 分别表示：${fluxNames.join(' / ')}。正值持续走向更正，负值持续走向更负，绝对值越高代表越需要使用 bsAdjustMetabolism（options.flux 给释放量）进行一次“解放”。解放会按释放量抵消当前需求，只有在抵消过头时才会跨过 0 翻转极性。`,
     )
     : baseGuide;
 }
@@ -580,7 +581,7 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
     ].join('\n'),
     dropUnavailableToolMentions(String(basePrompt || '').trim(), payload),
     buildWorldBaselineBlock(payload?.world_baseline_prompt),
-    buildCalendarBlock(payload?.calendar_note, true),
+    buildCalendarBlock(payload?.calendar_rules, true),
     buildContraceptionBlock(payload?.contraception_levels, true),
     metabolismGuide,
     // 名录只给名字：模型写 bsAddSperm.race 时需要词汇表，但每轮都发，不附辨识提示
@@ -602,9 +603,8 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
       '- 它仅用于补足本轮剧情、角色设定、已触发 worldinfo、模板注入、getwi/activewi 等主流背景。',
       '- 不要模仿主流输出风格，不要续写剧情；你的任务仍是根据 recent_messages 与 existing_state 返回 JSON tool_calls 来更新变量。',
       '- 若主流上下文快照与 tracker 工具调用规则、变量语义说明、existing_state 或 available_tools 冲突，必须以后者为准。',
-      ...(Array.isArray(payload?.mainflow_new_worldinfo) && payload.mainflow_new_worldinfo.length > 0
-        ? ['- payload.mainflow_new_worldinfo 是快照之后、由 recent_messages 最新回复才触发的世界书条目（快照里没有），与快照里的 worldinfo 同等看待，例如新登场人物的种族与身份。']
-        : []),
+      // 有快照就固定带着这条说明（每轮有没有新条目都一样），系统提示词才不会时有时无
+      ...['- payload.mainflow_new_worldinfo 是快照之后、由 recent_messages 最新回复才触发的世界书条目（快照里没有），与快照里的 worldinfo 同等看待，例如新登场人物的种族与身份。'],
     ].join('\n'));
   }
   const priorityNames = Array.isArray(payload?.priority_character_names)
@@ -613,7 +613,8 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
   if (priorityNames.length > 0) {
     parts.push([
       '[优先追踪角色]',
-      `- 本轮先检查：${priorityNames.join('、')}。`,
+      // 名字放在 payload（priority_character_names），这里只写规则：系统提示词逐字不变才吃得到快取
+      '- 本轮先检查 payload.priority_character_names 列出的角色。',
       '- 这些名字是优先级，不是过滤器；其余已注册角色仍须依剧情和时间正常检查。',
       '- 若剧情明确显示某角色进入当前场景、开始参与当前互动或重新同行，调用 bsSetCharacterPresence，参数必须为 {"female":"角色名","isPresent":true}；明确离开、失联或转为幕外时才传 false。不要以 isHere 作为参数名，也不要无依据切换。',
     ].join('\n'));
@@ -696,10 +697,10 @@ function buildMainFlowFieldNotes(existingState = {}) {
     '- cognitionRecords 保存角色信念，可以与事实不同；系统结果、真实胎父与胎数不自动成为角色知识。自然线索到点也不强制知孕；产程是系统结果，她认出自己在分娩之前不得写成她知道。',
     ...(profiles.some((profile) => profile.bodyFamiliarity) ? ['- bodyFamiliarity 是身体对各性伴的熟悉度（系统按次数、体型相容与时间算出，前三名）：只描述身体的记忆与反应，例如对谁的触碰更快有反应，不代表感情或爱意。'] : []),
     ...(profiles.some((profile) => profile.lastCondomResult || profile.lastEmergencyResult) ? ['- lastCondomResult/lastEmergencyResult 只在结算后的下一次叙事出现：是系统结果，不等于角色察觉；可据此描写合理可见的后果，不要求本轮处理。'] : []),
-    '- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。描写照这些文字，不写数字。',
+    '- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；activeDrugs 身上生效中的药与还剩多久；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。描写照这些文字，不写数字。',
   ];
   if (profiles.some((profile) => profile.metabolism)) {
-    lines.push('- metabolism：excretion 泄意、hunger 饿意、sleep 困意、milk 乳意（孕晚期以前是乳房胀痛敏感，孕晚期起才可能溢乳）、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；分级为 低／中／高／满／爆（没列的就是没有）。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');
+    lines.push('- metabolism：excretion 泄意、hunger 食意、sleep 困意、milk 乳意（孕晚期以前是乳房胀痛敏感，孕晚期起才可能溢乳）、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；分级为 低／中／高／满／爆（没列的就是没有）；泄意、食意后面的括号是比较急的那一种（尿意／便意、饿意／渴意），写剧情照它分小便、大号、吃东西、喝水。pregnant.symptoms 是当天的妊娠症状（便秘、频尿、胀气、怪口味……），可以自然带进身体描写。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');
   }
   if (profiles.some((profile) => profile.pregnant)) {
     lines.push(
@@ -741,6 +742,8 @@ function buildCalendarBlock(note, forTracker) {
   return [
     '[对话历法]',
     `- ${text}`,
+    // 追踪：今天的日期每轮都变，放在 payload 最后（calendar_today），系统提示词只放历法本身，前面那一大段才吃得到快取
+    ...(forTracker ? ['- 今天是哪天看 payload.calendar_today。'] : []),
     '- 状态里的年龄（age）是这个世界的岁（照这个历法的年算），与角色卡、世界书写的岁数同一把尺。',
     ...(forTracker ? [
       '- 写 time（日记、认知、胎儿事件、经历）时照这个历法写日期。',
@@ -787,13 +790,13 @@ export function buildMainFlowStatePrompt(payload = {}) {
   ].filter((part) => part !== '').join('\n');
 }
 
-// notify.thirdly 是写给追踪模型的工具提示（「应优先使用 bsExcreteMetabolism」、供养力的奖惩），
+// notify.thirdly 是写给追踪模型的工具提示（「应优先使用 bsAdjustMetabolism」、供养力的奖惩），
 // 写剧情的模型读到会以为本轮必须安排角色去处理。这里改写成中性的身体状态，奖惩与操作建议删掉；
 // 破水禁令等限制原样保留。改写依赖 tools.js 产生的固定句式，见 main_flow_narrative 测试。
 const NARRATIVE_REMINDER_RULES = [
-  [/^(.+?)有强烈的生理需求（(.+?)），应优先使用 bsExcreteMetabolism 缓解生理不适$/, '$1有明显的生理需求（$2）：可自然体现身体状态，不要求本轮处理'],
-  [/^(.+?)仍有未被衍生代谢抵免的生理需求（(.+?)），可用 bsExcreteMetabolism 处理$/, '$1仍有生理需求（$2）：可自然体现，不要求本轮处理'],
-  [/^(.+?)已达到(.+?)，应优先使用 bsExcreteMetabolism 进行解放$/, '$1已达到$2：可自然体现，不要求本轮处理'],
+  [/^(.+?)有强烈的生理需求（(.+?)），应优先使用 bs(?:Adjust|Excrete)Metabolism 缓解生理不适$/, '$1有明显的生理需求（$2）：可自然体现身体状态，不要求本轮处理'],
+  [/^(.+?)仍有未被衍生代谢抵免的生理需求（(.+?)），可用 bs(?:Adjust|Excrete)Metabolism 处理$/, '$1仍有生理需求（$2）：可自然体现，不要求本轮处理'],
+  [/^(.+?)已达到(.+?)，应优先使用 bs(?:Adjust|Excrete)Metabolism 进行解放$/, '$1已达到$2：可自然体现，不要求本轮处理'],
   [/^(.+?)渴望陪伴，可优先给予陪伴、交流或安抚$/, '$1渴望陪伴'],
   [/^(.+?)渴望陪伴，但当前臭意会妨碍社交舒适度$/, '$1渴望陪伴，但身上的气味令人在意'],
 ];
@@ -1052,6 +1055,32 @@ function getBodyPlanText(bodyPlan) {
   return label ? `${label}：${BODY_PLAN_DESCRIPTIONS[bodyPlan]}。` : '';
 }
 
+/** 人类（恒温）从零到满的小时数；种族步调是倍率 */
+const BASE_NEED_HOURS = Object.freeze({ food: 16, thirst: 12, urine: 8, stool: 36, sleep: 18, companionship: 168 });
+const PACE_LABELS = Object.freeze({ food: '饿', thirst: '渴', urine: '尿', stool: '便', sleep: '困', companionship: '伴' });
+
+function formatNeedDuration(hours) {
+  return hours >= 48 ? `${formatNumber(hours / 24, 1)} 天` : `${Math.round(hours)} 小时`;
+}
+
+/**
+ * 代谢步调（1.5.4）给模型与百科看：恒温、不水栖、不独居的就是人类，回传空字串省掉这一行。
+ * 混血照血统加权；体型另乘系数（大的慢、小的快），这里不算进去。
+ */
+export function getMetabolismPaceText(race, bloodline = null) {
+  const pace = getMergedMetabolismPace(race || '', bloodline);
+  const keys = Object.keys(BASE_NEED_HOURS);
+  const changed = keys.filter((key) => Math.abs((pace[key] ?? 1) - 1) >= 1e-6);
+  if (pace.type === 'warm' && changed.length === 0) return '';
+  const type = METABOLISM_TYPES[pace.type] || METABOLISM_TYPES.warm;
+  const traits = [];
+  if (pace.type !== 'warm') traits.push(`${type.label}${type.hint ? `（${type.hint}）` : ''}`);
+  if (pace.aquatic) traits.push('水栖，一直泡在水里，不太渴');
+  if (pace.solitary) traits.push('天性独来独往，很少觉得寂寞');
+  const durations = changed.map((key) => `${PACE_LABELS[key]} ${formatNeedDuration(BASE_NEED_HOURS[key] / (pace[key] || 1))}`);
+  return `${traits.length ? `${traits.join('；')}；` : ''}从零到满约：${durations.join('、')}（人类：饿 16 小时、渴 12 小时、尿 8 小时、便 36 小时、困 18 小时、伴 7 天；体型大的再慢一些、小的再快一些）。`;
+}
+
 /** 注册名录的辨识提示后缀：「5级·半人形」，有变化态写「4→7级」 */
 function getRaceCatalogBodyTag(race) {
   const profile = getRacePhysiologyProfile(race) || {};
@@ -1238,6 +1267,14 @@ export function describeRaceFieldValue(field, value, { autoFetalBulkRatio = null
     case 'bodySizeSd': return empty ? '' : num > 0 ? `族内个体约有 ±${formatNumber(num)} 级的高矮差异；注册时按这个分布抽个体体型。` : '族内个体大小一致。';
     case 'altFormBodySize': return empty || value === null ? '没有变化态。' : `变身后 ${formatBodySizeLevel(num)}；以变化态交合时，契合、套子与子宫容量按这个体型算。`;
     case 'bodyPlan': return getBodyPlanText(value);
+    case 'metabolismType': {
+      const type = METABOLISM_TYPES[value];
+      if (!type) return '';
+      const durations = ['food', 'thirst', 'urine', 'stool', 'sleep'].map((key) => `${PACE_LABELS[key]} ${formatNeedDuration(BASE_NEED_HOURS[key] / type.pace[key])}`);
+      return `${type.label}：从零到满约 ${durations.join('、')}。`;
+    }
+    case 'aquatic': return value ? '水栖：一直泡在水里，渴意慢三倍多（人类 12 小时，水栖约 40 小时）。' : '';
+    case 'solitary': return value ? '独居：天性独来独往，伴意慢三倍多（人类 7 天，独居约 23 天）。' : '';
     default: return '';
   }
 }
@@ -1320,6 +1357,7 @@ function buildSingleRacePhysiologyBlock(race, { growthDetail = false } = {}) {
     `- 性别比: ${getGenderRatioText(profile.genderRatio)}`,
     `- 体型: ${getBodySizeText(profile)}`,
     profile.bodyPlan ? `- 体态: ${getBodyPlanText(profile.bodyPlan)}` : '',
+    getMetabolismPaceText(race) ? `- 代谢步调: ${getMetabolismPaceText(race)}` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -1409,6 +1447,20 @@ export function buildRaceEncyclopediaView(race) {
           ...(profile.bodyPlan ? [{ label: '体态', value: RACE_BODY_PLAN_LABELS[profile.bodyPlan] || profile.bodyPlan, note: `${BODY_PLAN_DESCRIPTIONS[profile.bodyPlan] || ''}。` }] : []),
         ],
       },
+      {
+        title: '代谢',
+        rows: (() => {
+          // 代谢步调（1.5.4）：代谢型一行，水栖、独居有才列
+          const pace = getMergedMetabolismPace(race);
+          const type = METABOLISM_TYPES[pace.type] || METABOLISM_TYPES.warm;
+          const hours = ['food', 'thirst', 'urine', 'stool', 'sleep'].map((key) => `${PACE_LABELS[key]} ${formatNeedDuration(BASE_NEED_HOURS[key] / (pace[key] || 1))}`);
+          return [
+            { label: '代谢型', value: type.label, note: `${type.hint ? `${type.hint}。` : ''}从零到满约：${hours.join('、')}；体型大的再慢一些、小的再快一些。` },
+            ...(pace.aquatic ? [{ label: '水栖', value: '是', note: '一直泡在水里，渴意慢三倍多。' }] : []),
+            ...(pace.solitary ? [{ label: '独居', value: '是', note: '天性独来独往，伴意约 23 天才满（人类 7 天）。' }] : []),
+          ];
+        })(),
+      },
     ],
     embryoType,
   };
@@ -1439,6 +1491,7 @@ function buildHybridAverageBlock(race, bloodline = null) {
     `- 平均性别比参考: ${getGenderRatioText(merged.genderRatio)}`,
     `- 平均体型参考: ${getBodySizeText(merged)}`,
     merged.bodyPlan ? `- 体态参考: ${getBodyPlanText(merged.bodyPlan)}` : '',
+    getMetabolismPaceText(race, bloodline) ? `- 代谢步调参考: ${getMetabolismPaceText(race, bloodline)}` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -2023,7 +2076,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- base.latestSexDays: 距最近一次性行为经过的天数。若 experience.latestSexPartner 有意义，建议一并填写；若已超过最近一月经周期或无从判断，可为 null。',
     '- base.penetrationState / penetrationSource: 当前可受孕生殖道的插入状态（idle/inserted/spent）与来源；一般开场为 idle/null，插入不等于射精。',
     '- base.sperms: 体内残留精液来源列表。适用于刚性交结束、仍有精液残留的开局；每项包含 male、race、value，value 以人类精方 10-30 为准，按精方体型每级翻倍（每天自动衰减，人类女方 10，同样按女方体型每级翻倍）。race 可直接写 [衍生]种族，系统会自动拆出 derivedType。',
-    '- metabolism: 初始需求状态。普通种族上限皆為150，包含 excretion、hunger、sleep、milk、odor、companionship，分别表示泄意、饿意、困意、乳意、臭意、伴意；excretion（泄意）同时包含排尿与排便需求；milk 在普通周期表示乳房胀敏或周期不适，在妊娠、假孕或产后恢复阶段也可表示泌乳需求。',
+    '- metabolism: 初始需求状态。普通种族上限皆為150，包含 excretion、hunger、sleep、milk、odor、companionship，分别表示泄意、食意、困意、乳意、臭意、伴意；excretion（泄意）含尿与便、hunger（食意）含饿与渴，这里给合计即可；milk 在普通周期表示乳房胀敏或周期不适，在妊娠、假孕或产后恢复阶段也可表示泌乳需求。',
     '- 若 base.derivedType 不为 null，则 metabolism 可填写 flux（范围 -150 到 150），并保留该衍生类型未抵免的普通需求。flux 是衍生种族专用的单一极性需求值：正值与负值分别代表两种相反的释放需求，绝对值越高需求越强。',
     '- 胎儿健康由系统按需求照料与胎儿事件结算，不必填写，也不作为 metabolism 排解阻塞来源。',
     '注意：vitalityLevel 与 psyStressLevel 是角色内在特质等级，不根据当前疲劳、刚哭过、当下崩溃等暂时状态调整。',

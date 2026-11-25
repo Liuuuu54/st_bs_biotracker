@@ -6,7 +6,7 @@
   <div class="bs-bt-hardware-detail bs-bt-screw bs-bt-screw-bl"></div>
   <div class="bs-bt-hardware-detail bs-bt-screw bs-bt-screw-br"></div>
 
-  <div class="bs-bt-brand" id="bs-bt-brand">Bastneth Pager</div>
+  <div class="bs-bt-brand" id="bs-bt-brand">Bastneth</div>
 
   <div class="bs-bt-screen-shell">
     <div class="bs-bt-screen" id="bs-bt-screen">
@@ -15,6 +15,16 @@
         <span id="bs-bt-title">HOME</span>
         <div class="bs-bt-header-actions">
           <button class="bs-bt-help-button" type="button" data-nav-view="help" title="使用说明" aria-label="打开使用说明">?</button>
+          <!-- 讯号格（1.5.4）：SYSTEM 的入口，同时显示连线状态；id 沿用原本底部的齿轮键 -->
+          <button id="bs-bt-system-button" class="bs-bt-signal-button" type="button" data-signal="unknown" title="SYSTEM" aria-label="SYSTEM">
+            <svg viewBox="0 0 20 14" aria-hidden="true">
+              <rect class="bs-bt-signal-bar" x="1" y="10" width="3" height="3" rx="0.6"></rect>
+              <rect class="bs-bt-signal-bar" x="6" y="7" width="3" height="6" rx="0.6"></rect>
+              <rect class="bs-bt-signal-bar" x="11" y="4" width="3" height="9" rx="0.6"></rect>
+              <rect class="bs-bt-signal-bar" x="16" y="1" width="3" height="12" rx="0.6"></rect>
+              <path class="bs-bt-signal-cross" d="M12 2 L19 9 M19 2 L12 9"></path>
+            </svg>
+          </button>
           <span id="bs-bt-status-icons" class="bs-bt-status-icons" aria-label="battery status" tabindex="0">
           <svg class="bs-bt-battery-icon" viewBox="0 0 30 14" fill="none" xmlns="http://www.w3.org/2000/svg"
             aria-hidden="true">
@@ -79,7 +89,7 @@
             <details>
               <summary>首次设置</summary>
               <ol>
-                <li>按设备下方的齿轮键进入 SYSTEM，填写 API Base URL、API Key 与模型名称，并选择对应的 API 格式。</li>
+                <li>点设备右上角的讯号格进入 SYSTEM，填写 API Base URL、API Key 与模型名称，并选择对应的 API 格式。</li>
                 <li>可按「连接并拉取模型」选择模型；若服务不提供模型列表，直接填写模型名称。</li>
                 <li>勾选「启用异步生理状态追踪」，按「保存设置」。模型应能稳定输出结构化结果。</li>
               </ol>
@@ -1658,29 +1668,14 @@
     </div>
   </div>
 
+  <!-- 电源（1.5.4）：机身右侧的侧键；id 沿用原本底部的电源键 -->
+  <button id="bs-bt-close" class="bs-bt-side-key" type="button" title="CLOSE" aria-label="CLOSE"></button>
   <div class="bs-bt-physical-buttons">
-    <button id="bs-bt-system-button" class="bs-bt-physical-button" type="button" title="SYSTEM" aria-label="SYSTEM">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
-        aria-hidden="true">
-        <circle cx="12" cy="12" r="3"></circle>
-        <path
-          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
-        </path>
-      </svg>
-    </button>
     <button id="bs-bt-home-button" class="bs-bt-physical-button" type="button" title="HOME" aria-label="HOME">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
         aria-hidden="true">
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
         <polyline points="9 22 9 12 15 12 15 22"></polyline>
-      </svg>
-    </button>
-    <button id="bs-bt-close" class="bs-bt-physical-button bs-bt-physical-button-off" type="button" title="CLOSE"
-      aria-label="CLOSE">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
-        aria-hidden="true">
-        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
-        <line x1="12" y1="2" x2="12" y2="12"></line>
       </svg>
     </button>
   </div>

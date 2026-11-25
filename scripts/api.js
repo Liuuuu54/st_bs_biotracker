@@ -2499,7 +2499,30 @@ async function tryHostFallback({ settings, systemPrompt, payloadText, originalEr
   }
 }
 
+// ---- 连线讯号（1.5.4）：机身右上角的讯号格照最近一次请求的结果显示 ----
+export const CONNECTION_SIGNAL_EVENT = 'bs-biotracker-signal';
+let connectionSignal = { state: 'unknown', at: 0, message: '' };
+export function getConnectionSignal() {
+  return connectionSignal;
+}
+function reportConnectionSignal(state, message = '') {
+  connectionSignal = { state, at: Date.now(), message: String(message || '').slice(0, 160) };
+  try { globalThis.dispatchEvent?.(new CustomEvent(CONNECTION_SIGNAL_EVENT, { detail: connectionSignal })); } catch { /* 测试环境没有 CustomEvent */ }
+}
+
+/** 所有请求都走这里：成功＝满格、失败＝一格；使用者自己取消的不算 */
 export async function callOpenAICompatible(settings, payload, systemPrompt = DEFAULT_SYSTEM_PROMPT, options = {}) {
+  try {
+    const result = await callOpenAICompatibleCore(settings, payload, systemPrompt, options);
+    reportConnectionSignal('ok');
+    return result;
+  } catch (error) {
+    if (error?.name !== 'AbortError') reportConnectionSignal('fail', error?.message || error);
+    throw error;
+  }
+}
+
+async function callOpenAICompatibleCore(settings, payload, systemPrompt = DEFAULT_SYSTEM_PROMPT, options = {}) {
   const apiBase = getApiBase(settings);
   const model = String(settings.model || '').trim();
   const stCtx = getSillyTavernContext();

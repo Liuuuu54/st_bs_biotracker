@@ -1,6 +1,6 @@
 import { getStageProgress, formatProgressDays, formatProgressNumber } from './scripts/stage_progress.js';
 import { normalizeReproductiveSettings, COGNITION_METHODS, psychologySide } from './scripts/reproductive.js';
-import { abortActiveApiRequests, describeHostChatConnection, fetchModelList, isApiUserAbortError } from './scripts/api.js';
+import { abortActiveApiRequests, describeHostChatConnection, fetchModelList, isApiUserAbortError, CONNECTION_SIGNAL_EVENT, getConnectionSignal } from './scripts/api.js';
 import { isOwnRequest } from './scripts/own_requests.js';
 import { stripBioTrackerInjection } from './scripts/variable_isolation.js';
 import {
@@ -44,6 +44,8 @@ import {
   BODY_SIZE_SD_MAX,
   RACE_BODY_PLANS,
   RACE_BODY_PLAN_LABELS,
+  METABOLISM_TYPES,
+  METABOLISM_TYPE_KEYS,
   getEmbryoTypeByRace,
   getBuiltinRacePhysiologyProfile,
   computeAutoFetalBulkRatio,
@@ -116,7 +118,7 @@ import {
   getFetusGrowthShape,
   describeBirthRecord,
 } from './scripts/tools.js';
-import { applyToolCall, resolvePersonNameField, writeDiaryEntry } from './scripts/tools.js';
+import { applyToolCall, removeReproEffects, resolvePersonNameField, syncNeedTotals, writeDiaryEntry } from './scripts/tools.js';
 import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
 import { deleteLibraryEntry, importLibraryEntry, listLibraryEntries, saveEggToLibrary, saveSireToLibrary } from './scripts/character_library.js';
 import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
@@ -139,7 +141,7 @@ import { DISPLAY_NAVELS, DISPLAY_NAVEL_SIZES, DISPLAY_NIPPLE_PRESETS, DISPLAY_NI
 import { averageYearDays, birthdayOf, dateAt, earthAgeForBirthday, formatBirthday, formatCalendarDate, getActiveCalendar, legalAge, minutesAtDate, nextBirthdayMinutes, monthCount, monthDays, monthName, normalizeCalendar, randomBirthday, setCalendarProvider, toLocalYears } from './scripts/calendar.js';
 import { CALENDAR_STAGE_GROUPS, buildStageTimeline, stageOnDay } from './scripts/story_calendar.js';
 import { getEggQualityTier } from './scripts/egg_quality.js';
-import { DEFAULT_DRUG_CATALOG, REPRO_EFFECTS, REPRO_EFFECT_KEYS, REPRO_STRENGTHS, REPRO_STRENGTH_LABELS, describeReproEffects, normalizeDrugCatalog, setDrugCatalogProvider } from './scripts/repro_effects.js';
+import { DEFAULT_DRUG_CATALOG, REPRO_EFFECTS, REPRO_EFFECT_KEYS, REPRO_STRENGTHS, REPRO_STRENGTH_LABELS, describeReproEffects, getActiveDrugCatalog, normalizeDrugCatalog, normalizeReproEffects, setDrugCatalogProvider } from './scripts/repro_effects.js';
 import { getAllowedReproEffects } from './scripts/tracker.js';
 import { getFetalDailyActivity } from './scripts/fetal_activity.js';
 import { getPsyStressInitByLevel, listSnapshotCharacterTimeline } from './scripts/state.js';
@@ -418,6 +420,9 @@ const RACE_FIELD_DESCRIPTIONS = Object.freeze({
   bodySizeSd: '同族个体之间的高矮差异（级），人类为 0.4。',
   altFormBodySize: '变身后的大小，例如龙的真身、人鱼化出人腿；没有变化态就选「无」。',
   bodyPlan: '身体的样子与孕肚长在哪：人形、半人形（人身接兽躯或尾身）、非人形、任意。',
+  metabolismType: '吃、喝、尿、便、困随时间累积的快慢。恒温同人类；高代谢饿得快；冷血四五天吃一次；光合／吸收很少吃但要水；灵养以灵气、梦或精气为食；非生物的需求是补给与休眠。混血按血统加权；体型另外调：大的慢、小的快。',
+  aquatic: '一直泡在水里的种族，渴意慢三倍多。混血看血统占比最大的那一族，平手随母。',
+  solitary: '天性独来独往的种族，伴意慢三倍多。混血看血统占比最大的那一族，平手随母。',
 });
 
 /** 编辑器栏位底下的说明与即时换算：改数值就跟着更新 */
@@ -2480,6 +2485,7 @@ function queueHostTokenCount(input, settings) {
         pendingKey: '',
       };
       updateBatteryIndicator(settings);
+      updateSignalIndicator(settings);
     })
     .catch((error) => {
       console.warn('[BS BioTracker] host token count failed; using local estimate', error);
@@ -2492,6 +2498,7 @@ function queueHostTokenCount(input, settings) {
         pendingKey: '',
       };
       updateBatteryIndicator(settings);
+      updateSignalIndicator(settings);
     });
 }
 
@@ -3641,7 +3648,8 @@ function renderRaceBodySizeEditorFields(editorNode, race) {
     label.appendChild(badge);
     const read = field === 'bodySize' ? () => decodeBodySizeOption(control.value)
       : field === 'altFormBodySize' ? () => (control.value === '' ? null : Number(control.value))
-        : () => control.value;
+        : control.type === 'checkbox' ? () => control.checked
+          : () => control.value;
     appendRaceFieldHelp(label, field, control, read);
     editorNode.appendChild(label);
   };
@@ -3693,6 +3701,27 @@ function renderRaceBodySizeEditorFields(editorNode, race) {
   }
   planSelect.value = String(getRaceBodySizeInputValue(race, 'bodyPlan') || 'humanoid');
   appendField('bodyPlan', '体态', planSelect);
+
+  // 代谢步调（1.5.4）：代谢型与水栖、独居两个标签
+  const metabolismSelect = document.createElement('select');
+  metabolismSelect.id = 'bs-bt-race-field-metabolismType';
+  for (const type of METABOLISM_TYPE_KEYS) {
+    const option = document.createElement('option');
+    option.value = type;
+    option.textContent = METABOLISM_TYPES[type].label;
+    metabolismSelect.appendChild(option);
+  }
+  metabolismSelect.value = String(getRaceBodySizeInputValue(race, 'metabolismType') || 'warm');
+  appendField('metabolismType', '代谢型', metabolismSelect);
+
+  for (const [field, text] of [['aquatic', '水栖'], ['solitary', '独居']]) {
+    const box = document.createElement('input');
+    box.id = `bs-bt-race-field-${field}`;
+    box.type = 'checkbox';
+    box.checked = getRaceBodySizeInputValue(race, field) === true;
+    appendField(field, text, box);
+    box.className = 'bs-bt-race-editor-check';
+  }
 }
 
 function readRaceBodySizeEditorValues() {
@@ -3709,6 +3738,12 @@ function readRaceBodySizeEditorValues() {
   if (alt instanceof HTMLSelectElement) values.altFormBodySize = alt.value === '' ? null : Number(alt.value);
   const plan = document.querySelector('[data-race-body-size-field="bodyPlan"]');
   if (plan instanceof HTMLSelectElement && RACE_BODY_PLANS.includes(plan.value)) values.bodyPlan = plan.value;
+  const metabolism = document.querySelector('[data-race-body-size-field="metabolismType"]');
+  if (metabolism instanceof HTMLSelectElement && METABOLISM_TYPE_KEYS.includes(metabolism.value)) values.metabolismType = metabolism.value;
+  for (const field of ['aquatic', 'solitary']) {
+    const box = document.querySelector(`[data-race-body-size-field="${field}"]`);
+    if (box instanceof HTMLInputElement) values[field] = box.checked;
+  }
   return values;
 }
 
@@ -3946,6 +3981,12 @@ function copyHumanPhysiologyToEditor() {
   if (alt instanceof HTMLSelectElement) alt.value = '';
   const plan = document.querySelector('[data-race-body-size-field="bodyPlan"]');
   if (plan instanceof HTMLSelectElement) plan.value = human.bodyPlan || 'humanoid';
+  const metabolism = document.querySelector('[data-race-body-size-field="metabolismType"]');
+  if (metabolism instanceof HTMLSelectElement) metabolism.value = human.metabolismType || 'warm';
+  for (const field of ['aquatic', 'solitary']) {
+    const box = document.querySelector(`[data-race-body-size-field="${field}"]`);
+    if (box instanceof HTMLInputElement) box.checked = human[field] === true;
+  }
 }
 
 function openRacePhysiologyEditor(ctx) {
@@ -4684,7 +4725,7 @@ function getDerivedFluxSummary(value, cap = 150) {
 
 const METABOLISM_NEED_LABELS = Object.freeze({
   excretion: '泄意',
-  hunger: '饿意',
+  hunger: '食意',
   sleep: '困意',
   milk: '乳意',
   odor: '臭意',
@@ -4693,8 +4734,12 @@ const METABOLISM_NEED_LABELS = Object.freeze({
 });
 
 const DEBUG_BLOCKAGE_LABELS = Object.freeze({
+  urine: '尿意',
+  stool: '便意',
+  food: '饿意',
+  thirst: '渴意',
   excretion: '泄意',
-  hunger: '饿意',
+  hunger: '食意',
   sleep: '困意',
   milk: '乳意',
   odor: '臭意',
@@ -4704,6 +4749,10 @@ const DEBUG_BLOCKAGE_LABELS = Object.freeze({
 });
 
 const DEBUG_BLOCKAGE_DEFAULT_SEVERITY = Object.freeze({
+  urine: 0.70,
+  stool: 0.70,
+  food: 0.55,
+  thirst: 0.55,
   excretion: 0.70,
   hunger: 0.55,
   sleep: 0.55,
@@ -4720,13 +4769,21 @@ function clampUiNumber(value, min, max, fallback = 0) {
   return Math.max(min, Math.min(max, next));
 }
 
+/** 泄意、食意底下的两池（1.5.4）：症状落在其中一池也算这一格 */
+const NEED_POOL_KEYS = Object.freeze({ excretion: ['urine', 'stool'], hunger: ['food', 'thirst'] });
+const NEED_POOL_LABELS = Object.freeze({ urine: '尿意', stool: '便意', food: '饿意', thirst: '渴意' });
+const NEED_LEAD_LABELS = Object.freeze({ urine: '尿意', stool: '便意', food: '饿意', thirst: '渴意' });
+const symptomHits = (symptomKey, key) => symptomKey === key || (NEED_POOL_KEYS[key] || []).includes(symptomKey);
+
 function normalizeMetabolismNeed(key, metabolism = {}, blockage = null, acceleration = null, expansion = null) {
   const expansionKey = String(expansion?.key || '');
   const rawValue = Number(metabolism[key]) || 0;
+  const pools = NEED_POOL_KEYS[key];
   const expanded = key === 'flux'
     ? (rawValue > 0 && expansionKey === 'fluxPositive') || (rawValue < 0 && expansionKey === 'fluxNegative')
-    : expansionKey === key;
-  const cap = expanded ? 200 : 150;
+    : symptomHits(expansionKey, key);
+  // 泄意、食意的容量跟着比较急的那一池（引擎同步时记下，膀胱被压时会小于 150）
+  const cap = pools && Number(metabolism[`${key}Cap`]) > 0 ? Number(metabolism[`${key}Cap`]) : (expanded ? 200 : 150);
   const value = key === 'flux'
     ? clampUiNumber(metabolism[key], -cap, cap, 0)
     : clampUiNumber(metabolism[key], 0, cap, 0);
@@ -4734,13 +4791,16 @@ function normalizeMetabolismNeed(key, metabolism = {}, blockage = null, accelera
   const accelerationKey = String(acceleration?.key || '');
   const blocked = key === 'flux'
     ? (value > 0 && blockageKey === 'fluxPositive') || (value < 0 && blockageKey === 'fluxNegative')
-    : blockageKey === key;
+    : symptomHits(blockageKey, key);
   const accelerated = key === 'flux'
     ? (value > 0 && accelerationKey === 'fluxPositive') || (value < 0 && accelerationKey === 'fluxNegative')
-    : accelerationKey === key;
+    : symptomHits(accelerationKey, key);
+  const lead = pools ? String(metabolism[`${key}Lead`] || '') : '';
   return {
     key,
-    label: METABOLISM_NEED_LABELS[key] || key,
+    // 泄意、食意：有明显主导时标出是哪一池（尿意／便意、饿意／渴意）；滑鼠停着看两池
+    label: pools && NEED_LEAD_LABELS[lead] ? NEED_LEAD_LABELS[lead] : (METABOLISM_NEED_LABELS[key] || key),
+    ...(pools ? { poolText: pools.map((pool) => `${NEED_POOL_LABELS[pool]} ${Math.round(Number(metabolism[pool]) || 0)}`).join(' · ') } : {}),
     value,
     cap,
     level: key === 'flux' ? getDerivedFluxSummary(value, cap) : getMetabolismLevel(value, cap),
@@ -4792,18 +4852,20 @@ function getMetabolismNeedItems(summary) {
 function renderMetabolismNeedIcon(item) {
   const key = String(item?.key || '');
   const value = Number(item?.value) || 0;
-  const cap = Number(item?.cap) === 200 ? 200 : 150;
+  // 容量不只 150／200（1.5.4 起膀胱被宫压缩小时尿意会更小）：「满」的门槛照容量比例算
+  const cap = Number(item?.cap) > 0 ? Number(item.cap) : 150;
+  const full = (100 * cap) / 150;
   const fillValue = key === 'flux' ? Math.abs(value) : value;
   const fill = key === 'flux'
     ? Math.max(0, Math.min(100, (fillValue / cap) * 100))
-    : Math.max(0, Math.min(100, (fillValue / 100) * 100));
+    : Math.max(0, Math.min(100, (fillValue / full) * 100));
   const overfill = key === 'flux'
     ? 0
-    : Math.max(0, Math.min(100, ((fillValue - 100) / (cap - 100)) * 100));
+    : Math.max(0, Math.min(100, ((fillValue - full) / Math.max(1, cap - full)) * 100));
   const tone = key === 'flux'
     ? value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral'
-    : value >= 100 ? 'high' : 'normal';
-  const title = `${item.label}: ${item.level}${key === 'flux' ? '' : ` (${Math.round(value)})`}${item.blocked ? `；阻塞 ${Math.round((item.blockageSeverity || 0) * 100)}%` : ''}${item.accelerated ? `；快积 ${Math.round((item.accelerationSeverity || 0) * 100)}%` : ''}${item.expanded ? '；扩容至 200' : ''}`;
+    : value >= full ? 'high' : 'normal';
+  const title = `${item.label}: ${item.level}${key === 'flux' ? '' : ` (${Math.round(value)})`}${item.poolText ? `（${item.poolText}）` : ''}${item.blocked ? `；阻塞 ${Math.round((item.blockageSeverity || 0) * 100)}%` : ''}${item.accelerated ? `；快积 ${Math.round((item.accelerationSeverity || 0) * 100)}%` : ''}${item.expanded ? '；扩容至 200' : ''}`;
   const displayValue = key === 'flux'
     ? (value > 0 ? '正极' : value < 0 ? '负极' : '平衡')
     : String(Math.round(value));
@@ -5484,6 +5546,19 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       ...describeEggQualityOverview(base),
       // 生殖干预（1.5.3）：生效中的药与剩余时间
       reproEffects: describeReproEffects(profile, minutesPassed ?? runtimeChatState?.minutesPassed ?? 0),
+      // 状态值标题旁的药效小圆饼（1.5.4）：每种生效中的药一个，照剩余时间递减
+      drugPies: (() => {
+        const now = Number(minutesPassed ?? runtimeChatState?.minutesPassed) || 0;
+        const labels = describeReproEffects(profile, now);
+        return normalizeReproEffects(base.reproEffects, now).map((item, index) => {
+          const span = Math.max(1, item.untilMinutes - item.fromMinutes);
+          return {
+            label: labels[index] || item.name,
+            glyph: Array.from(String(item.name || REPRO_EFFECTS[item.effect]?.label || '药'))[0],
+            percent: Math.round(Math.max(0, Math.min(1, (item.untilMinutes - now) / span)) * 100),
+          };
+        });
+      })(),
       bodySizeLabel: formatCharacterBodySizeLabel(base),
       altFormBodySizeLabel: formatAltFormBodySizeLabel(base),
       sheathLabel: formatSheathLabel(base, profile.experience || {}),
@@ -5666,11 +5741,22 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
     outfit: outfitView,
     debug: {
       body: { ...getBodyBaseline(base), sheathOffset: normalizeSheathOffset(base.sheathOffset), bodyChangedAtAge: Number(base.bodyChangedAtAge), vitalityLevel: base.vitalityLevel, age: Number(base.age), nowMinutes: Number(minutesPassed ?? runtimeChatState?.minutesPassed) || 0 },
+      // 生殖药物（1.5.4）：生效中的药（文字与辨认用的键）＋名录（手动服用用）
+      drugs: (() => {
+        const now = Number(minutesPassed ?? runtimeChatState?.minutesPassed) || 0;
+        const labels = describeReproEffects(profile, now);
+        return {
+          active: normalizeReproEffects(base.reproEffects, now).map((item, index) => ({ key: `${item.effect}|${item.name}|${item.fromMinutes}`, label: labels[index] || item.name })),
+          catalog: getActiveDrugCatalog().map((drug) => drug.name),
+        };
+      })(),
       immune: {
         metabolism: Boolean(immune.metabolism),
         miscarriage: Boolean(immune.miscarriage),
         realisticLabor: Boolean(immune.realisticLabor),
         crossSpecies: Boolean(immune.crossSpecies),
+        painPleasure: Boolean(immune.painPleasure),
+        lactating: Boolean(immune.lactating),
       },
       isHere: base.isHere !== false,
       gestationModifier: {
@@ -5881,7 +5967,7 @@ function renderTrackOverview(viewModel) {
       ${effortHtml}
     </div>
     <div class="bs-bt-track-section">
-      <div class="bs-bt-track-section-title">状态值</div>
+      <div class="bs-bt-track-section-title bs-bt-track-section-title--with-pies">状态值${renderDrugPies(viewModel.overview.drugPies)}</div>
       <div class="bs-bt-track-progress-list">${renderProgressList(viewModel.overview.stats)}</div>
     </div>
     <div class="bs-bt-track-section">
@@ -6420,7 +6506,9 @@ function getBellyNeeds(profile = {}) {
   const exempt = new Set(profile?.base?.derivedType ? getDerivedTypeMetabolismExemptions(profile.base.derivedType) : []);
   const pregnant = profile?.pregnant || {};
   const read = (key) => (exempt.has(key) ? null : (({ value, cap }) => ({ value, cap }))(normalizeMetabolismNeed(key, profile.metabolism, pregnant.blockage, pregnant.acceleration, pregnant.expansion)));
-  return { hunger: read('hunger'), sleep: read('sleep'), excretion: read('excretion'), milk: read('milk'), odor: read('odor') };
+  // 尿池单独给（1.5.4）：短裤湿痕只看尿意，便意爆表不会湿
+  const urine = exempt.has('excretion') ? null : { value: Number(profile.metabolism?.urine ?? profile.metabolism?.excretion) || 0, cap: 150 };
+  return { hunger: read('hunger'), sleep: read('sleep'), excretion: read('excretion'), urine, milk: read('milk'), odor: read('odor') };
 }
 
 // ---- 孕体特写 ----
@@ -7375,8 +7463,18 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '', sireCheatHtml = '') {
   const currentAccelerationKey = String(viewModel.debug?.acceleration?.key || '');
   const currentExpansionKey = String(viewModel.debug?.expansion?.key || '');
   const blockageExemptions = derivedType ? new Set(getDerivedTypeMetabolismExemptions(derivedType)) : new Set();
-  const blockageKeys = METABOLISM_DISPLAY_ORDER.filter((key) => !blockageExemptions.has(key));
-  if (derivedType) blockageKeys.push('fluxPositive', 'fluxNegative');
+  // 泄意、食意的症状落在底下的池（1.5.4）：每种症状只列它能落的池（扩容没有尿意、快积没有便意）
+  const SYMPTOM_POOLS = { blockage: ['stool', 'urine', 'food'], acceleration: ['urine', 'thirst', 'food'], expansion: ['stool', 'food', 'thirst'] };
+  const POOL_PARENTS = { urine: 'excretion', stool: 'excretion', food: 'hunger', thirst: 'hunger' };
+  const symptomKeysFor = (type) => {
+    const keys = [
+      ...SYMPTOM_POOLS[type].filter((pool) => !blockageExemptions.has(POOL_PARENTS[pool])),
+      ...METABOLISM_DISPLAY_ORDER.filter((key) => !['excretion', 'hunger'].includes(key) && !blockageExemptions.has(key)),
+    ];
+    if (derivedType) keys.push('fluxPositive', 'fluxNegative');
+    return keys;
+  };
+  const blockageKeys = symptomKeysFor('blockage');
   const blockageOptions = [
     `<option value=""${currentBlockageKey ? '' : ' selected'}>无</option>`,
     ...blockageKeys.map((key) =>
@@ -7385,13 +7483,13 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '', sireCheatHtml = '') {
   ].join('');
   const accelerationOptions = [
     `<option value=""${currentAccelerationKey ? '' : ' selected'}>无</option>`,
-    ...blockageKeys.map((key) =>
+    ...symptomKeysFor('acceleration').map((key) =>
       `<option value="${escapeHtml(key)}"${currentAccelerationKey === key ? ' selected' : ''}>${escapeHtml(DEBUG_BLOCKAGE_LABELS[key] || key)}</option>`,
     ),
   ].join('');
   const expansionOptions = [
     `<option value=""${currentExpansionKey ? '' : ' selected'}>无</option>`,
-    ...blockageKeys.map((key) =>
+    ...symptomKeysFor('expansion').map((key) =>
       `<option value="${escapeHtml(key)}"${currentExpansionKey === key ? ' selected' : ''}>${escapeHtml(DEBUG_BLOCKAGE_LABELS[key] || key)}</option>`,
     ),
   ].join('');
@@ -7507,6 +7605,10 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '', sireCheatHtml = '') {
           <span class="bs-bt-track-debug-title">痛即为爽</span>
           <span class="bs-bt-track-debug-state">${immune.painPleasure ? 'ON' : 'OFF'}</span>
         </button>
+        <button type="button" class="bs-bt-track-debug-button${immune.lactating ? ' is-active' : ''}" data-debug-immune="lactating" title="产乳体质：不怀孕也照产后的量产乳，怀孕与产后再叠一份">
+          <span class="bs-bt-track-debug-title">产乳体质</span>
+          <span class="bs-bt-track-debug-state">${immune.lactating ? 'ON' : 'OFF'}</span>
+        </button>
         <button type="button" class="bs-bt-track-debug-button${isHere ? ' is-active' : ''}" data-debug-action="toggle-presence">
           <span class="bs-bt-track-debug-title">在场</span>
           <span class="bs-bt-track-debug-state">${isHere ? 'ON' : 'OFF'}</span>
@@ -7529,6 +7631,7 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '', sireCheatHtml = '') {
     </div>
     ${renderBodyDebugSection(viewModel.debug?.body || {})}
     ${renderBirthdayDebugSection(viewModel.debug?.body || {})}
+    ${renderDrugDebugSection(viewModel.debug?.drugs || {})}
     <div class="bs-bt-track-section" style="margin-top: 10px;">
       <div class="bs-bt-track-section-title">妊娠需求症状调试</div>
       <fieldset class="bs-bt-track-debug-form">
@@ -7830,6 +7933,75 @@ function renderBirthdayDebugSection(body = {}) {
     </div>`;
 }
 
+/** 变量页的生殖药物（1.5.4）：生效中的药可以逐笔停掉或全部清除，也能从名录手动服用 */
+/** 状态值标题旁的药效小圆饼：圆里是药名第一个字，扇形是还剩多少；滑鼠停着看完整文字 */
+function renderDrugPies(pies = []) {
+  if (!Array.isArray(pies) || !pies.length) return '';
+  return `<span class="bs-bt-drug-pies" role="list" aria-label="生效中的药">${pies.map((pie) => `<span class="bs-bt-drug-pie" role="listitem" style="--bsbt-pie:${Number(pie.percent) || 0}" title="${escapeHtml(pie.label)}" aria-label="${escapeHtml(pie.label)}"><span>${escapeHtml(pie.glyph)}</span></span>`).join('')}</span>`;
+}
+
+function renderDrugDebugSection(drugs = {}) {
+  const active = Array.isArray(drugs.active) ? drugs.active : [];
+  const catalog = Array.isArray(drugs.catalog) ? drugs.catalog : [];
+  const rows = active.length
+    ? active.map((item) => `<div class="bs-bt-track-inline-action bs-bt-drug-debug-row"><span>${escapeHtml(item.label)}</span><button type="button" class="menu_button" data-debug-drug-stop="${escapeHtml(item.key)}">停药</button></div>`).join('')
+    : '<div class="bs-bt-track-debug-hint">身上没有生效中的药。</div>';
+  return `
+    <div class="bs-bt-track-section" style="margin-top: 10px;">
+      <div class="bs-bt-track-section-title">生殖药物</div>
+      <fieldset class="bs-bt-track-debug-form">
+        ${rows}
+        ${active.length > 1 ? '<div class="bs-bt-track-inline-action"><button type="button" class="menu_button" data-debug-action="drug-clear">全部清除</button></div>' : ''}
+        ${catalog.length ? `<div class="bs-bt-track-inline-action bs-bt-drug-debug-row">
+          <select class="text_pole" data-debug-drug-pick aria-label="要服用的药">${catalog.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}</select>
+          <button type="button" class="menu_button" data-debug-action="drug-take">服用</button>
+        </div>` : ''}
+      </fieldset>
+      <div class="bs-bt-track-debug-hint">停药与全部清除只拿掉药效，不会倒转已经发生的事（已经排出的卵、已经结算的事后避孕）。服用照名录结算，与追踪模型用的是同一个工具。</div>
+    </div>`;
+}
+
+function bindDrugDebugControls(ctx, root) {
+  if (!root) return;
+  const finish = (chatState, reason, message) => {
+    recordChatStateSnapshot(ctx, chatState, { reason });
+    saveSettings(ctx);
+    renderStatusPanel(ctx);
+    renderFullStatePage(ctx);
+    globalThis.toastr?.success?.(`[BS BioTracker] ${message}`);
+  };
+  const target = () => {
+    if (!selectedTrackName) return null;
+    const chatState = getChatState(ctx, getSettings(ctx));
+    const character = chatState.characters?.[selectedTrackName];
+    return character?.profile?.base ? { chatState, character } : null;
+  };
+  root.querySelectorAll('[data-debug-drug-stop]').forEach((button) => button.addEventListener('click', () => {
+    const found = target();
+    if (!found) return;
+    const key = button.getAttribute('data-debug-drug-stop');
+    const removed = removeReproEffects(found.character.profile, (item) => `${item.effect}|${item.name}|${item.fromMinutes}` === key, Number(found.chatState.minutesPassed) || 0);
+    if (removed) finish(found.chatState, 'debug_drug_stop', `${selectedTrackName} 停了这一笔药`);
+  }));
+  root.querySelectorAll('[data-debug-action="drug-clear"]').forEach((button) => button.addEventListener('click', () => {
+    const found = target();
+    if (!found) return;
+    const removed = removeReproEffects(found.character.profile, () => true, Number(found.chatState.minutesPassed) || 0);
+    if (removed) finish(found.chatState, 'debug_drug_clear', `${selectedTrackName} 身上的药效全部清除（${removed} 笔）`);
+  }));
+  root.querySelectorAll('[data-debug-action="drug-take"]').forEach((button) => button.addEventListener('click', () => {
+    const found = target();
+    const drug = root.querySelector('[data-debug-drug-pick]')?.value;
+    if (!found || !drug) return;
+    const result = applyToolCall(found.chatState, { name: 'bsReproductiveIntervention', arguments: { female: selectedTrackName, drug } });
+    if (!result?.applied) {
+      globalThis.toastr?.warning?.(String(result?.message || '服用失败').replace(/^bsReproductiveIntervention skipped[^:]*: /, ''), '[BS BioTracker]');
+      return;
+    }
+    finish(found.chatState, 'debug_drug_take', `${selectedTrackName} 服用了${drug}`);
+  }));
+}
+
 function bindBirthdayDebugControls(ctx, root) {
   const node = root?.querySelector('[data-birthday-debug]');
   if (!node) return;
@@ -7865,6 +8037,7 @@ function applySelectedTrackBirthday(ctx, node) {
 function bindBodyDebugControls(ctx, root) {
   if (!root) return;
   bindBirthdayDebugControls(ctx, root);
+  bindDrugDebugControls(ctx, root);
   root.querySelectorAll('[data-body-debug]').forEach((node) =>
     node.addEventListener('input', () => {
       const field = BODY_DEBUG_FIELDS.find((item) => item.key === node.dataset.bodyDebug);
@@ -7903,7 +8076,7 @@ function applySelectedTrackBody(ctx, root) {
 
 function toggleSelectedTrackImmune(ctx, immuneKey) {
   if (!selectedTrackName) return;
-  if (!['metabolism', 'miscarriage', 'realisticLabor', 'crossSpecies', 'painPleasure'].includes(immuneKey)) return;
+  if (!['metabolism', 'miscarriage', 'realisticLabor', 'crossSpecies', 'painPleasure', 'lactating'].includes(immuneKey)) return;
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const character = chatState.characters?.[selectedTrackName];
@@ -7919,7 +8092,7 @@ function toggleSelectedTrackImmune(ctx, immuneKey) {
   renderStatusPanel(ctx);
   renderFullStatePage(ctx);
   globalThis.toastr?.success?.(
-    `[BS BioTracker] ${selectedTrackName} 的 ${{ metabolism: '代谢免疫', miscarriage: '流产免疫', realisticLabor: '真实产程', crossSpecies: '万族相容', painPleasure: '痛即为爽' }[immuneKey]}已${nextValue ? '开启' : '关闭'}`,
+    `[BS BioTracker] ${selectedTrackName} 的 ${{ metabolism: '代谢免疫', miscarriage: '流产免疫', realisticLabor: '真实产程', crossSpecies: '万族相容', painPleasure: '痛即为爽', lactating: '产乳体质' }[immuneKey]}已${nextValue ? '开启' : '关闭'}`,
   );
 }
 
@@ -8331,9 +8504,12 @@ function clampSelectedTrackExpansionCapacity(profile) {
   if (!metabolism || typeof metabolism !== 'object') return;
   const expansionKey = String(profile?.pregnant?.expansion?.key || '');
   for (const key of METABOLISM_DISPLAY_ORDER) {
+    // 泄意、食意由引擎按两池重算（扩容落在池上、尿池随宫压缩小）
+    if (key === 'excretion' || key === 'hunger') continue;
     const cap = expansionKey === key ? 200 : 150;
     metabolism[key] = Math.max(0, Math.min(cap, Number(metabolism[key]) || 0));
   }
+  syncNeedTotals(profile);
   const flux = Number(metabolism.flux) || 0;
   const isExpandedFlux = (flux > 0 && expansionKey === 'fluxPositive') || (flux < 0 && expansionKey === 'fluxNegative');
   const fluxCap = isExpandedFlux ? 200 : 150;
@@ -8351,6 +8527,8 @@ function setSelectedTrackBlockage(ctx, key) {
   const derivedType = String(profile?.base?.derivedType || '').trim();
   const exemptions = derivedType ? new Set(getDerivedTypeMetabolismExemptions(derivedType)) : new Set();
   const allowed = new Set(METABOLISM_DISPLAY_ORDER.filter((item) => !exemptions.has(item)));
+  // 1.5.4 拆池：泄意、食意的症状落在底下的池
+  for (const [pool, parent] of Object.entries({ urine: 'excretion', stool: 'excretion', food: 'hunger', thirst: 'hunger' })) if (!exemptions.has(parent)) allowed.add(pool);
   if (derivedType) {
     allowed.add('fluxPositive');
     allowed.add('fluxNegative');
@@ -8395,6 +8573,8 @@ function setSelectedTrackAcceleration(ctx, key) {
   const derivedType = String(profile?.base?.derivedType || '').trim();
   const exemptions = derivedType ? new Set(getDerivedTypeMetabolismExemptions(derivedType)) : new Set();
   const allowed = new Set(METABOLISM_DISPLAY_ORDER.filter((item) => !exemptions.has(item)));
+  // 1.5.4 拆池：泄意、食意的症状落在底下的池
+  for (const [pool, parent] of Object.entries({ urine: 'excretion', stool: 'excretion', food: 'hunger', thirst: 'hunger' })) if (!exemptions.has(parent)) allowed.add(pool);
   if (derivedType) {
     allowed.add('fluxPositive');
     allowed.add('fluxNegative');
@@ -8437,6 +8617,8 @@ function setSelectedTrackExpansion(ctx, key) {
   const derivedType = String(profile?.base?.derivedType || '').trim();
   const exemptions = derivedType ? new Set(getDerivedTypeMetabolismExemptions(derivedType)) : new Set();
   const allowed = new Set(METABOLISM_DISPLAY_ORDER.filter((item) => !exemptions.has(item)));
+  // 1.5.4 拆池：泄意、食意的症状落在底下的池
+  for (const [pool, parent] of Object.entries({ urine: 'excretion', stool: 'excretion', food: 'hunger', thirst: 'hunger' })) if (!exemptions.has(parent)) allowed.add(pool);
   if (derivedType) {
     allowed.add('fluxPositive');
     allowed.add('fluxNegative');
@@ -9146,6 +9328,7 @@ function renderStatusPanel(ctx) {
   const tabs = document.querySelectorAll('#bs-bt-track-tabs .bs-bt-track-tab');
   if (!list) return;
   updateBatteryIndicator(settings);
+  updateSignalIndicator(settings);
 
   list.innerHTML = '';
   const pollWait = document.getElementById('bs-bt-track-poll-wait');
@@ -10736,9 +10919,33 @@ function applyTheme(settings) {
   applyIphoneCustomization(settings);
   syncIphonePanel(settings);
   const brand = document.getElementById('bs-bt-brand');
-  if (brand) brand.textContent = 'Bastneth Pager';
+  if (brand) brand.textContent = 'Bastneth';
   updateBatteryIndicator(settings);
+  updateSignalIndicator(settings);
   updateClock();
+}
+
+/**
+ * 讯号格（1.5.4）：没填好 API 打叉闪烁；还没发过请求三格；最近一次请求成功满格、失败一格。
+ * 「跟随酒馆设定」不必填网址与模型，照请求结果。点它进 SYSTEM。
+ */
+function updateSignalIndicator(settings = getSettings(getContextSafe())) {
+  const button = document.getElementById('bs-bt-system-button');
+  if (!button) return;
+  const followHost = String(settings?.apiFormat || '') === 'follow_host';
+  const configured = followHost || (String(settings?.apiUrl || '').trim() && String(settings?.model || '').trim());
+  const signal = getConnectionSignal();
+  const state = !configured ? 'none' : signal.state;
+  const text = state === 'none'
+    ? '还没设定 API：点这里到 SYSTEM 填写'
+    : state === 'ok'
+      ? '连线正常（最近一次请求成功）'
+      : state === 'fail'
+        ? `最近一次请求失败${signal.message ? `：${signal.message}` : ''}`
+        : '已设定 API，还没发过请求';
+  button.dataset.signal = state;
+  button.title = `SYSTEM · ${text}`;
+  button.setAttribute('aria-label', `SYSTEM，${text}`);
 }
 
 function setView(view) {
@@ -11434,6 +11641,7 @@ function updateMainFlowPrompt(ctx) {
     console.warn('[BS BioTracker] setExtensionPrompt failed', error);
   }
   updateBatteryIndicator(settings);
+  updateSignalIndicator(settings);
 }
 
 function readSettingsFromForm(ctx) {
@@ -12203,6 +12411,8 @@ async function ensureModal(ctx) {
     }),
   );
   document.getElementById('bs-bt-system-button')?.addEventListener('click', () => setView('system'));
+  // 每次请求结束更新讯号格
+  globalThis.addEventListener?.(CONNECTION_SIGNAL_EVENT, () => updateSignalIndicator());
   document.getElementById('bs-bt-home-button')?.addEventListener('click', () => setView('home'));
   document.getElementById('bs-bt-track-back')?.addEventListener('click', () => setView('track-list'));
   document.getElementById('bs-bt-track-sire-back')?.addEventListener('click', () => setView('track-list'));

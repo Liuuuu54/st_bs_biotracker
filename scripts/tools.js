@@ -29,7 +29,7 @@ import { ABORTIFACIENT_CHANCE, ABORTIFACIENT_HARM, INDUCE_CHANCE, REPRO_EFFECTS,
 import { averageMonthDays, averageYearDays, dateAt, formatStoryDate, fromLocalYears, getActiveCalendar, getBreedingAnchor, legalAge, minutesAtDate, monthCount, monthDays, nextAnchorMinutes, previousAnchorMinutes } from './calendar.js';
 import { advanceSireAges, consumeSireReserve, normalizeSireRecord, pruneFutaSireRecord, upsertSireRecord, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, normalizeSpermQuality, resolveSireBase } from './sires.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
-import { clampIndividualBodySize, describeBodySizeFit, normalizeSwordOffset, getAltFormBodySize, getBodySizeSigma, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
+import { clampIndividualBodySize, describeBodySizeFit, getBodySizePaceFactor, normalizeSwordOffset, getAltFormBodySize, getBodySizeSigma, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
   cloneValue,
   createChildId,
@@ -113,6 +113,8 @@ import {
   parseRaceDescriptor,
   getRaceDescriptorComponents,
   canonicalizeDerivedTypeName as canonicalDerivedName,
+  getMergedMetabolismPace,
+  getMergedLactation,
 } from './race_config.js';
 import { getFetalGrowth, getFetalGrowthRate, getFetalKickStrength, getFetalLoadFactor } from './fetal_growth.js';
 import {
@@ -399,6 +401,7 @@ const WOMB_FROZEN_BLOCKED_TOOLS = new Set([
   'bsExtendPregnancy',
   'bsFetalEvent',
   'bsExcreteMetabolism',
+  'bsAdjustMetabolism',
 ]);
 
 function wombReturnProgress(state) {
@@ -2807,6 +2810,8 @@ function isTruePregnancyStage(stage) {
 }
 
 function canProduceMilk(profile) {
+  // 产乳体质（1.5.4，作弊）：不怀孕也能产奶
+  if (profile?.immune?.lactating === true) return true;
   const stage = String(profile?.base?.stage || '');
   return stage === '假孕期' || stage === '产后恢复' || isTruePregnancyStage(stage);
 }
@@ -2820,8 +2825,20 @@ function getMetabolismExemptionSet(profile) {
   return new Set(getDerivedTypeMetabolismExemptions(profile?.base?.derivedType));
 }
 
+// ---- 泄意、食意的隐性两池（1.5.4）----
+// 显示（UI、提示词、照料计分、动画）仍是一池：泄意＝尿池与便池里比较急的那个，食意＝饿池与渴池里比较急的那个；
+// 底下分开累积、分开解除，剧情才写得出「去大号」与「去小便」、「吃饭」与「喝水」的差别。
+export const NEED_POOLS = Object.freeze({ excretion: Object.freeze(['urine', 'stool']), hunger: Object.freeze(['food', 'thirst']) });
+const POOL_PARENT = Object.freeze({ urine: 'excretion', stool: 'excretion', food: 'hunger', thirst: 'hunger' });
+export const POOL_LABELS = Object.freeze({ urine: '尿意', stool: '便意', food: '饿意', thirst: '渴意' });
+/** 两池差不多急时的合称 */
+const POOL_BOTH_LABELS = Object.freeze({ excretion: '泄意', hunger: '食意' });
+/** 两池急迫度（占各自容量）差这么多以上才标主导的那一边，免得每轮跳来跳去 */
+const POOL_LEAD_GAP = 20 / 150;
+
 function isMetabolismExempt(profile, key) {
-  return getMetabolismExemptionSet(profile).has(key);
+  const set = getMetabolismExemptionSet(profile);
+  return set.has(key) || set.has(POOL_PARENT[key]);
 }
 
 function applyDerivedMetabolismExemptions(profile) {
@@ -2829,17 +2846,228 @@ function applyDerivedMetabolismExemptions(profile) {
   const metabolism = profile.metabolism || {};
   for (const key of getMetabolismExemptionSet(profile)) {
     metabolism[key] = 0;
+    for (const pool of NEED_POOLS[key] || []) metabolism[pool] = 0;
   }
   profile.metabolism = metabolism;
 }
 
 const BASE_METABOLISM_CAP = 150;
 const EXPANDED_METABOLISM_CAP = 200;
+/** 子宫压着膀胱（1.5.4）：怀孕到产程，尿池容量随宫压缩小，宫压满时剩六成 */
+const BLADDER_PRESSURE_SQUEEZE = 0.4;
+
+/** 旧存档的症状是挂在整个泄意／食意上：照症状种类换成对应的那一池 */
+function normalizeSymptomKey(type, key) {
+  if (key === 'excretion') return type === 'acceleration' ? 'urine' : 'stool';
+  if (key === 'hunger') return 'food';
+  return key;
+}
+
+function getBladderFactor(profile) {
+  const stage = String(profile?.base?.stage || '');
+  if (!isTruePregnancyStage(stage) && stage !== '产兆前驱' && !LABOR_STAGES.includes(stage)) return 1;
+  const cap = Math.max(1, getUterinePressureCap(profile));
+  const ratio = clampNumber(profile?.base?.uterinePressure, 0, cap, 0) / cap;
+  return 1 - BLADDER_PRESSURE_SQUEEZE * ratio;
+}
+
+/**
+ * 两池的来源：旧存档只有一池时，整个值放进主池（尿池、饥池），另一池从 0 开始，行为与旧版相同；
+ * 有人直接改了合计值（注册、调试页、旧测试）时，也照这个值放进主池，另一池不超过它，改成 X 就真的是 X。
+ */
+const POOL_PRIMARY = Object.freeze({ excretion: 'urine', hunger: 'food' });
+function ensureNeedPools(profile) {
+  const metabolism = profile?.metabolism;
+  if (!metabolism) return;
+  for (const [parent, pools] of Object.entries(NEED_POOLS)) {
+    const total = Number(metabolism[parent]) || 0;
+    const primary = POOL_PRIMARY[parent];
+    const other = pools.find((pool) => pool !== primary);
+    if (metabolism[primary] === undefined && metabolism[other] === undefined) {
+      metabolism[primary] = total;
+      metabolism[other] = 0;
+      continue;
+    }
+    // 只缺一池（不完整的资料）：缺的那池从 0 开始，不动已有的
+    if (metabolism[primary] === undefined) metabolism[primary] = 0;
+    if (metabolism[other] === undefined) metabolism[other] = 0;
+    const synced = metabolism[`${parent}Synced`];
+    if (synced !== undefined && Math.abs(Number(synced) - total) > 1e-6) {
+      metabolism[primary] = total;
+      metabolism[other] = Math.min(Number(metabolism[other]) || 0, total);
+    }
+  }
+}
+
+/**
+ * 两池算回一池：泄意／食意＝比较急（占各自容量比例高）的那一池，容量跟着那一池；
+ * excretionLead／hungerLead 标主导的是哪一池，两池差不多时是 both。
+ */
+export function syncNeedTotals(profile) {
+  const metabolism = profile?.metabolism;
+  if (!metabolism) return;
+  ensureNeedPools(profile);
+  for (const [parent, pools] of Object.entries(NEED_POOLS)) {
+    if (isMetabolismExempt(profile, parent)) {
+      metabolism[parent] = 0;
+      for (const pool of pools) metabolism[pool] = 0;
+      metabolism[`${parent}Cap`] = BASE_METABOLISM_CAP;
+      metabolism[`${parent}Lead`] = 'both';
+      metabolism[`${parent}Synced`] = 0;
+      continue;
+    }
+    const rows = pools.map((pool) => {
+      const cap = getPoolCap(profile, pool);
+      const value = clampNumber(metabolism[pool], 0, cap, 0);
+      metabolism[pool] = value;
+      return { pool, cap, value, ratio: value / cap };
+    });
+    const [a, b] = rows;
+    const top = a.ratio >= b.ratio ? a : b;
+    metabolism[parent] = Math.round(top.value * 100) / 100;
+    metabolism[`${parent}Cap`] = top.cap;
+    metabolism[`${parent}Lead`] = Math.abs(a.ratio - b.ratio) >= POOL_LEAD_GAP ? top.pool : 'both';
+    metabolism[`${parent}Synced`] = metabolism[parent];
+  }
+}
+
+/** 妊娠症状给模型看的文字（1.5.4 拆池）：种类 × 落在哪一项 */
+const SYMPTOM_TEXT = Object.freeze({
+  blockage: Object.freeze({
+    stool: '便秘：上了厕所也只清得掉一部分', urine: '尿不干净、总有残尿感', food: '孕吐、消化不良：吃了也不太解饿',
+    milk: '乳房胀痛、敏感', sleep: '失眠', odor: '分泌物增多', companionship: '社交回避',
+    fluxPositive: '正极需求解放受阻', fluxNegative: '负极需求解放受阻',
+  }),
+  acceleration: Object.freeze({
+    urine: '频尿', thirst: '口渴、一直想喝水', food: '容易饿',
+    milk: '乳房胀得快', sleep: '晕眩、嗜睡', odor: '体温高、容易出汗', companionship: '黏人',
+    fluxPositive: '正极需求累积加快', fluxNegative: '负极需求累积加快',
+  }),
+  expansion: Object.freeze({
+    stool: '肠胃变慢、胀气、容易放屁：便意来得晚，一来就多', food: '孕期怪口味：特别想吃某些东西，胃口变大', thirst: '想喝怪东西（冰的、酸的），喝得比平常多',
+    milk: '储奶量变大', sleep: '精力旺盛（代偿）', odor: '孕期体香盖过了不适', companionship: '胎儿带来陪伴感，较耐孤独',
+    fluxPositive: '正极需求容量变大', fluxNegative: '负极需求容量变大',
+  }),
+});
+
+/** pregnant 上的三种症状换成一句句文字；旧存档的整个泄意／食意照种类换成对应的池 */
+export function describePregnancySymptoms(pregnant = {}) {
+  const lines = [];
+  for (const type of ['blockage', 'acceleration', 'expansion']) {
+    const key = normalizeSymptomKey(type, String(pregnant?.[type]?.key || '').trim());
+    const text = SYMPTOM_TEXT[type]?.[key];
+    if (text) lines.push(text);
+  }
+  return lines;
+}
+
+/** 主导那一池的叫法：尿意／便意／泄意、食意／渴意／食意 */
+export function getNeedLeadLabel(metabolism, parent) {
+  const lead = metabolism?.[`${parent}Lead`];
+  return POOL_LABELS[lead] || POOL_BOTH_LABELS[parent] || parent;
+}
+
+function getPoolCap(profile, pool) {
+  const base = getActiveExpansion(profile, pool) ? EXPANDED_METABOLISM_CAP : BASE_METABOLISM_CAP;
+  return pool === 'urine' ? Math.round(base * getBladderFactor(profile) * 100) / 100 : base;
+}
+
+/**
+ * 某一池加减（会套快积、夹在容量内），之后同步回一池。
+ * accelerate=false：连锁（喝水加尿、吃饭加便、睡觉加饿渴）不套快积——快积只管随时间累积与刚降下来的回弹，
+ * 否则频尿会把「喝下去的水变成尿意」也加速，刚尿干净一喝水就回到爆（1.5.4 实机第六轮）
+ */
+function addPoolValue(profile, pool, delta, { accelerate = true } = {}) {
+  if (!delta || profile?.immune?.metabolism || isMetabolismExempt(profile, pool)) return 0;
+  ensureNeedPools(profile);
+  const metabolism = profile.metabolism;
+  const cap = getPoolCap(profile, pool);
+  const current = clampNumber(metabolism[pool], 0, cap, 0);
+  const adjusted = delta > 0 && accelerate ? delta * getActiveAccelerationMultiplier(profile, pool) : delta;
+  const next = clampNumber(current + adjusted, 0, cap, current);
+  metabolism[pool] = next;
+  syncNeedTotals(profile);
+  return next - current;
+}
+
+/**
+ * 八意（1.5.4）：尿、便、饿、渴、困、乳、臭、伴。bsAdjustMetabolism 加减同一种写法——分级，不给数字；
+ * 幅度照那一项当下的容量算（扩容、膀胱被压时跟着缩放）。
+ */
+export const METABOLISM_NEED_KEYS = Object.freeze(['urine', 'stool', 'food', 'thirst', 'sleep', 'milk', 'odor', 'companionship']);
+export const METABOLISM_GRADE_RATIO = Object.freeze({ slight: 0.15, significant: 0.4, severe: 0.8 });
+const METABOLISM_GRADE_PATTERN = /^(slight|significant|severe)_(increase|decrease)$/;
+
+function parseMetabolismGrade(value) {
+  const match = METABOLISM_GRADE_PATTERN.exec(String(value || '').trim());
+  return match ? { level: match[1], ratio: METABOLISM_GRADE_RATIO[match[1]], sign: match[2] === 'increase' ? 1 : -1 } : null;
+}
+
+/**
+ * 睡着时代谢慢下来（1.5.4）：bsPassedTime 是全域的，不知道谁在睡；模型替她降困（睡了）时，
+ * 把最近一次推进里累积的饿、渴、尿、便、乳退回一部分——睡饱一觉（severe）退一半、小睡（significant）退四分之一，打盹不退；
+ * 睡着时困意本身也不该再涨：那段时间涨的困，睡饱一觉全退、小睡退一半。
+ * 只在同一轮里成立：记录放在 character.runtime，快照不带，下一轮从快照还原时自然清掉。
+ * 先降困、后推进时间也认：先记着，接下来从同一刻开始的那次推进再退。一次推进 12 小时以上已经当作照常生活，不退。
+ */
+const SLEEP_REFUND_RATIO = Object.freeze({ severe: 0.5, significant: 0.25 });
+/** 困意本身的退还：睡着就不再变困 */
+const SLEEP_SELF_REFUND_RATIO = Object.freeze({ 0.5: 1, 0.25: 0.5 });
+const SLEEP_REFUND_KEYS = Object.freeze(['food', 'thirst', 'urine', 'stool', 'milk', 'sleep']);
+
+function readSleepRefundSource(profile) {
+  const metabolism = profile?.metabolism || {};
+  return Object.fromEntries(SLEEP_REFUND_KEYS.map((key) => [key, Number(metabolism[key]) || 0]));
+}
+
+function refundNeedGain(profile, gains, ratio) {
+  if (!gains || !(ratio > 0)) return;
+  for (const key of SLEEP_REFUND_KEYS) {
+    const keyRatio = key === 'sleep' ? (SLEEP_SELF_REFUND_RATIO[ratio] ?? ratio) : ratio;
+    const amount = Math.max(0, Number(gains[key]) || 0) * keyRatio;
+    if (!amount) continue;
+    if (POOL_PARENT[key]) addPoolValue(profile, key, -amount);
+    else addMetabolismValue(profile, key, -amount, 0, 150);
+  }
+  syncNeedTotals(profile);
+}
+
+/** 推进时间后：记下这次累积了多少；有先记着的睡眠退还就套上 */
+function recordNeedGainAfterPass(character, before, fromMinutes, toMinutes) {
+  if (!character?.profile) return;
+  const runtime = character.runtime = character.runtime || {};
+  const pending = runtime.pendingSleepRefund;
+  delete runtime.pendingSleepRefund;
+  if ((toMinutes - fromMinutes) >= ROUTINE_SKIP_HOURS * 60) {
+    delete runtime.needGain;
+    return;
+  }
+  const after = readSleepRefundSource(character.profile);
+  const gains = Object.fromEntries(SLEEP_REFUND_KEYS.map((key) => [key, Math.max(0, after[key] - before[key])]));
+  if (pending && pending.at === fromMinutes) {
+    refundNeedGain(character.profile, gains, pending.ratio);
+    delete runtime.needGain;
+    return;
+  }
+  runtime.needGain = { from: fromMinutes, to: toMinutes, gains };
+}
+
+/** 模型主动加的需求：照分级直接加，不再乘快积（快积只管自然累积与解除后的反弹） */
+function raiseNeed(profile, key, amount) {
+  if (!(amount > 0) || isMetabolismExempt(profile, key)) return 0;
+  ensureNeedPools(profile);
+  const metabolism = profile.metabolism;
+  const cap = getMetabolismCap(profile, key);
+  const current = clampNumber(metabolism[key], 0, cap, 0);
+  metabolism[key] = Math.min(cap, current + amount);
+  if (POOL_PARENT[key]) syncNeedTotals(profile);
+  return metabolism[key] - current;
+}
 
 function getActiveExpansion(profile, key, currentFlux = 0) {
   const expansion = profile?.pregnant?.expansion;
   if (!expansion || typeof expansion !== 'object') return false;
-  const expansionKey = String(expansion.key || '').trim();
+  const expansionKey = normalizeSymptomKey('expansion', String(expansion.key || '').trim());
   const isMatch = expansionKey === key
     || (key === 'flux' && currentFlux > 0 && expansionKey === 'fluxPositive')
     || (key === 'flux' && currentFlux < 0 && expansionKey === 'fluxNegative');
@@ -2847,12 +3075,15 @@ function getActiveExpansion(profile, key, currentFlux = 0) {
 }
 
 function getMetabolismCap(profile, key, currentFlux = 0) {
+  // 泄意、食意：容量跟着主导的那一池（同步时记下）
+  if (NEED_POOLS[key]) return Number(profile?.metabolism?.[`${key}Cap`]) || BASE_METABOLISM_CAP;
+  if (POOL_PARENT[key]) return getPoolCap(profile, key);
   return getActiveExpansion(profile, key, currentFlux) ? EXPANDED_METABOLISM_CAP : BASE_METABOLISM_CAP;
 }
 
 function applyMetabolismCapacityLimits(profile) {
   const metabolism = profile?.metabolism || {};
-  for (const key of ['excretion', 'hunger', 'sleep', 'milk', 'odor', 'companionship']) {
+  for (const key of ['sleep', 'milk', 'odor', 'companionship']) {
     metabolism[key] = isMetabolismExempt(profile, key)
       ? 0
       : clampNumber(metabolism[key], 0, getMetabolismCap(profile, key), 0);
@@ -2863,39 +3094,76 @@ function applyMetabolismCapacityLimits(profile) {
     metabolism.flux = clampNumber(flux, -cap, cap, 0);
   }
   profile.metabolism = metabolism;
+  // 两池各自夹在容量内（尿池会随宫压缩小），再算回一池
+  syncNeedTotals(profile);
 }
 
-function addMetabolismValue(profile, key, delta, min = 0, max = 150) {
+function addMetabolismValue(profile, key, delta, min = 0, max = 150, { accelerate = true } = {}) {
   if (!delta || profile?.immune?.metabolism || isMetabolismExempt(profile, key)) return 0;
   const metabolism = profile.metabolism || {};
   const activeMax = max === BASE_METABOLISM_CAP ? getMetabolismCap(profile, key, Number(metabolism[key]) || 0) : max;
   const current = clampNumber(metabolism[key], min, activeMax, 0);
-  const adjustedDelta = delta > 0 ? delta * getActiveAccelerationMultiplier(profile, key) : delta;
+  const adjustedDelta = delta > 0 && accelerate ? delta * getActiveAccelerationMultiplier(profile, key) : delta;
   const next = clampNumber(current + adjustedDelta, min, activeMax, current);
   metabolism[key] = next;
   profile.metabolism = metabolism;
   return next - current;
 }
 
-function getMilkFetalLoad(profile) {
-  const stage = String(profile?.base?.stage || '');
-  if (stage === '产后恢复') return 1.35;
-  if (stage === '假孕期') return 0.08;
-  if (!isTruePregnancyStage(stage)) return 0;
+/**
+ * 乳意的基本速度（1.5.4 重订，照八意的「多久到满」）：负荷 1＝产后单胎，约 6 小时从 0 到满（哺乳期三四小时喂一次）。
+ * 各阶段的负荷是相对产后的比例：孕早期约一周、孕晚期约两天才满（胀痛、偶尔溢出初乳），假孕约四天，产乳体质约十小时。
+ */
+export const MILK_HOURLY_BASE = 100 / 6;
+const MILK_POSTPARTUM_BASE = 1;
+/** 孕期：0.025 ＋ 0.1 × 孕程进度（孕早期约一周、足月约两天） */
+const MILK_PREGNANCY_FLOOR = 0.025;
+const MILK_PREGNANCY_SLOPE = 0.1;
+const MILK_PSEUDO_BASE = 6 / 96;
+/** 多胎乳量：要喂几个（胎数）的 0.8 次方，双胎约 1.7、三胎约 2.4 倍。看胎数不看胎量：乳量跟着吃奶的嘴，不跟胎儿大小 */
+const MILK_COUNT_EXPONENT = 0.8;
+/** 母体倾向：偏养母（−1）把养分存在自己身上（脂肪、胸），产后化成乳汁，乳量 1.4 倍；偏养宝（＋1）0.6 倍 */
+const MILK_ALLOCATION_WEIGHT = 0.4;
+/** 胸部增长倾向（荷尔蒙体质，平均 1.5）：÷1.5，最少 0.5（非人形的增长倾向是 0，动物照样产奶）、最多 2 */
+const MILK_BUST_GAIN_MEAN = 1.5;
+/** 产乳体质（作弊，immune.lactating）：不怀孕也产乳，约十小时满，与孕期、产后的那一份叠加 */
+const MILK_CONSTITUTION_BASE = 0.6;
 
-  const pregnant = profile?.pregnant || {};
-  const effectiveDays = clampNumber(pregnant.effectivePregnantDays, 0, 9999, 0);
-  const progress = clampNumber(effectiveDays / 280, 0, 1.5, 0);
-  const fetalEnergyDrain = clampNumber(pregnant.fetalEnergyDrain, 0, 9999, 0);
-  const fetusesCount = Math.max(1, clampNumber(pregnant.fetusesCount, 0, 99, 0));
-  return clampNumber((0.15 + progress) * (0.5 + fetalEnergyDrain + (fetusesCount * 0.15)), 0, 12, 0);
+/** 怀着几个要喂的：着床的胎（套在宿主里的内胎跟着宿主，不另算）；伴生卵不吃奶 */
+function getNursingCount(profile) {
+  const stage = String(profile?.base?.stage || '');
+  if (stage === '产后恢复') return Math.max(1, Math.round(clampNumber(profile?.base?.postpartumCount, 0, 99, 1)) || 1);
+  return Math.max(1, getImplantedFetuses(profile).filter((fetus) => !(fetus.nestedInEmbryoId && !fetus.nestedReleased)).length);
 }
 
+/**
+ * 乳意的阶段负荷（1.5.4）：孕程进度 × 胎数，产后看这次生下几个；不再经过含承载耐受的胎儿耗能。
+ * 产乳体质的那一份另外叠上去。
+ */
+function getMilkFetalLoad(profile) {
+  const stage = String(profile?.base?.stage || '');
+  const constitution = profile?.immune?.lactating === true ? MILK_CONSTITUTION_BASE : 0;
+  if (stage === '产后恢复') return MILK_POSTPARTUM_BASE * getNursingCount(profile) ** MILK_COUNT_EXPONENT + constitution;
+  if (stage === '假孕期') return MILK_PSEUDO_BASE + constitution;
+  if (!isTruePregnancyStage(stage)) return constitution;
+  const effectiveDays = clampNumber(profile?.pregnant?.effectivePregnantDays, 0, 9999, 0);
+  const progress = clampNumber(effectiveDays / 280, 0, 1.5, 0);
+  return (MILK_PREGNANCY_FLOOR + MILK_PREGNANCY_SLOPE * progress) * getNursingCount(profile) ** MILK_COUNT_EXPONENT + constitution;
+}
+
+/**
+ * 乳意的倍率（1.5.4 与承载耐受脱钩）：阶段负荷 × 胚型泌乳量（混血加权）× 胸部增长倾向 × 母体倾向。
+ * 牛娘这类高产不靠种族栏位：卡上写一怀孕胸就涨得夸张的，注册时胸部增长倾向本来就高。
+ */
 function getMilkGainMultiplier(profile) {
   const fetalLoad = getMilkFetalLoad(profile);
   if (fetalLoad <= 0) return 0;
-  const breedTolerance = clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1);
-  return fetalLoad * clampNumber(breedTolerance, 0.1, 8, 1);
+  const base = profile?.base || {};
+  const lactation = getMergedLactation(base.race || '', base.bloodline || null);
+  const bustGain = Number.isFinite(Number(base.bustGain)) ? Number(base.bustGain) : MILK_BUST_GAIN_MEAN;
+  const hormone = clampNumber(bustGain / MILK_BUST_GAIN_MEAN, 0.5, 2, 1);
+  const allocation = 1 - MILK_ALLOCATION_WEIGHT * clampNumber(base.allocationBias, -1, 1, 0);
+  return fetalLoad * lactation * hormone * allocation;
 }
 
 function applyRetention(reduction, retentionRate) {
@@ -2934,22 +3202,28 @@ const PREGNANCY_BLOCKAGE_STAGE_SEVERITY = Object.freeze({
   产后恢复: 0.22,
 });
 
+// 各阶段症状落在哪一池的权重（1.5.4 拆池）：孕早期孕吐、频尿；孕中期便秘、口渴；孕晚期起频尿最重；产后便秘、哺乳口渴。
+// 每种症状只在它能落的池里挑（SYMPTOM_POOL_KEYS），这里的权重对三种症状共用
 const PREGNANCY_BLOCKAGE_STAGE_WEIGHTS = Object.freeze({
-  假孕期: { milk: 3, hunger: 3, sleep: 2, companionship: 2, odor: 1 },
-  孕早期: { hunger: 5, excretion: 4, sleep: 3, companionship: 2, odor: 1, milk: 1 },
-  孕中期: { excretion: 5, hunger: 3, sleep: 3, companionship: 2, milk: 2, odor: 1 },
-  孕晚期: { excretion: 6, sleep: 3, milk: 3, hunger: 2, companionship: 2, odor: 2 },
-  临产期: { excretion: 6, sleep: 3, milk: 3, odor: 2, hunger: 2, companionship: 2 },
-  逾期: { excretion: 6, sleep: 4, milk: 3, odor: 2, hunger: 2, companionship: 2 },
-  延产期: { excretion: 6, sleep: 4, milk: 3, odor: 2, hunger: 2, companionship: 2 },
-  产兆前驱: { excretion: 6, sleep: 4, milk: 3, odor: 2, companionship: 2, hunger: 1 },
-  第一产程: { excretion: 6, sleep: 4, odor: 2, milk: 2, companionship: 2, hunger: 1 },
-  第二产程: { excretion: 5, sleep: 4, odor: 2, milk: 2, companionship: 2, hunger: 1 },
-  第三产程: { sleep: 4, odor: 3, milk: 3, companionship: 3, excretion: 2, hunger: 1 },
-  产后恢复: { milk: 5, sleep: 4, companionship: 4, odor: 3, excretion: 2, hunger: 1 },
+  假孕期: { milk: 3, food: 3, sleep: 2, companionship: 2, odor: 1, thirst: 1 },
+  孕早期: { food: 5, urine: 4, sleep: 3, thirst: 2, companionship: 2, odor: 1, milk: 1, stool: 1 },
+  孕中期: { stool: 5, thirst: 3, food: 3, urine: 3, sleep: 3, companionship: 2, milk: 2, odor: 1 },
+  孕晚期: { urine: 6, stool: 4, sleep: 3, milk: 3, food: 2, thirst: 2, companionship: 2, odor: 2 },
+  临产期: { urine: 6, stool: 3, sleep: 3, milk: 3, odor: 2, food: 2, thirst: 2, companionship: 2 },
+  逾期: { urine: 6, stool: 3, sleep: 4, milk: 3, odor: 2, food: 2, thirst: 2, companionship: 2 },
+  延产期: { urine: 6, stool: 3, sleep: 4, milk: 3, odor: 2, food: 2, thirst: 2, companionship: 2 },
+  产兆前驱: { urine: 6, stool: 3, sleep: 4, milk: 3, odor: 2, companionship: 2, thirst: 2, food: 1 },
+  第一产程: { urine: 5, stool: 3, sleep: 4, odor: 2, milk: 2, companionship: 2, thirst: 2, food: 1 },
+  第二产程: { stool: 4, urine: 3, sleep: 4, odor: 2, milk: 2, companionship: 2, thirst: 2, food: 1 },
+  第三产程: { sleep: 4, odor: 3, milk: 3, companionship: 3, urine: 2, thirst: 2, stool: 1, food: 1 },
+  产后恢复: { milk: 5, sleep: 4, companionship: 4, stool: 3, thirst: 3, odor: 3, urine: 2, food: 1 },
 });
 
 const PREGNANCY_BLOCKAGE_KEY_SEVERITY_MULTIPLIER = Object.freeze({
+  urine: 1.35,
+  stool: 1.35,
+  food: 1.15,
+  thirst: 1.15,
   excretion: 1.35,
   sleep: 1.15,
   milk: 1.15,
@@ -2961,6 +3235,10 @@ const PREGNANCY_BLOCKAGE_KEY_SEVERITY_MULTIPLIER = Object.freeze({
 });
 
 const PREGNANCY_BLOCKAGE_KEY_SEVERITY_CAP = Object.freeze({
+  urine: 0.90,
+  stool: 0.90,
+  food: 0.75,
+  thirst: 0.75,
   excretion: 0.90,
   sleep: 0.75,
   milk: 0.75,
@@ -2982,10 +3260,19 @@ function canHavePregnancyBlockage(profile) {
     || stage === '产后恢复';
 }
 
-function getAvailablePregnancySymptomKeys(profile) {
+/**
+ * 每种症状能落在哪几池（1.5.4）：快积＝频尿、口渴、嘴馋；阻塞＝便秘、尿不干净、孕吐；
+ * 扩容＝肠胃变慢胀气、怪口味（饥渴）。尿池不扩容：膀胱被子宫压着只会变小。
+ */
+const SYMPTOM_POOL_KEYS = Object.freeze({
+  blockage: Object.freeze(['stool', 'urine', 'food']),
+  acceleration: Object.freeze(['urine', 'thirst', 'food']),
+  expansion: Object.freeze(['stool', 'food', 'thirst']),
+});
+
+export function getAvailablePregnancySymptomKeys(profile, type = 'blockage') {
   const isDerived = hasDerivedMetabolism(profile);
-  const exemptions = getMetabolismExemptionSet(profile);
-  const keys = ['excretion', 'hunger', 'sleep', 'milk', 'odor', 'companionship'].filter((key) => !exemptions.has(key));
+  const keys = [...(SYMPTOM_POOL_KEYS[type] || []), 'sleep', 'milk', 'odor', 'companionship'].filter((key) => !isMetabolismExempt(profile, key));
   if (isDerived) keys.push('fluxPositive', 'fluxNegative');
   return keys;
 }
@@ -3027,9 +3314,9 @@ function pickWeightedKey(weightMap) {
   return entries[entries.length - 1]?.[0] || null;
 }
 
-function pickPregnancySymptomKey(profile, excludedKeys = []) {
+function pickPregnancySymptomKey(profile, excludedKeys = [], type = 'blockage') {
   const excluded = new Set(Array.isArray(excludedKeys) ? excludedKeys : [excludedKeys]);
-  const available = new Set(getAvailablePregnancySymptomKeys(profile).filter((key) => !excluded.has(key)));
+  const available = new Set(getAvailablePregnancySymptomKeys(profile, type).filter((key) => !excluded.has(key)));
   if (available.size === 0) return null;
   const stage = String(profile?.base?.stage || '');
   const weights = { ...(PREGNANCY_BLOCKAGE_STAGE_WEIGHTS[stage] || {}) };
@@ -3058,15 +3345,15 @@ function refreshPregnancySymptoms(profile, tick) {
     return;
   }
   const chance = getPregnancyBlockageChance(profile);
-  const key = chance > 0 && Math.random() * 100 < chance ? pickPregnancySymptomKey(profile) : null;
+  const key = chance > 0 && Math.random() * 100 < chance ? pickPregnancySymptomKey(profile, [], 'blockage') : null;
   pregnant.blockage = key
     ? { key, severity: getPregnancyBlockageSeverity(profile, key) }
     : null;
-  const acceleratedKey = chance > 0 && Math.random() * 100 < chance ? pickPregnancySymptomKey(profile, [key]) : null;
+  const acceleratedKey = chance > 0 && Math.random() * 100 < chance ? pickPregnancySymptomKey(profile, [key], 'acceleration') : null;
   pregnant.acceleration = acceleratedKey
     ? { key: acceleratedKey, severity: getPregnancyBlockageSeverity(profile, acceleratedKey) }
     : null;
-  const expandedKey = chance > 0 && Math.random() * 100 < chance ? pickPregnancySymptomKey(profile, [key, acceleratedKey]) : null;
+  const expandedKey = chance > 0 && Math.random() * 100 < chance ? pickPregnancySymptomKey(profile, [key, acceleratedKey], 'expansion') : null;
   pregnant.expansion = expandedKey ? { key: expandedKey, severity: 1 } : null;
   profile.pregnant = pregnant;
 }
@@ -3074,7 +3361,7 @@ function refreshPregnancySymptoms(profile, tick) {
 function getActiveBlockageRetention(profile, key, currentFlux = 0) {
   const blockage = profile?.pregnant?.blockage;
   if (!blockage || typeof blockage !== 'object') return 0;
-  const blockageKey = String(blockage.key || '').trim();
+  const blockageKey = normalizeSymptomKey('blockage', String(blockage.key || '').trim());
   if (!blockageKey) return 0;
   if (blockageKey === 'fluxPositive') {
     return hasDerivedMetabolism(profile) && currentFlux > 0 ? clampNumber(blockage.severity, 0, PREGNANCY_BLOCKAGE_KEY_SEVERITY_CAP.fluxPositive, 0) : 0;
@@ -3089,7 +3376,7 @@ function getActiveBlockageRetention(profile, key, currentFlux = 0) {
 function getActiveAccelerationMultiplier(profile, key, currentFlux = 0) {
   const acceleration = profile?.pregnant?.acceleration;
   if (!acceleration || typeof acceleration !== 'object') return 1;
-  const accelerationKey = String(acceleration.key || '').trim();
+  const accelerationKey = normalizeSymptomKey('acceleration', String(acceleration.key || '').trim());
   const isMatch = accelerationKey === key
     || (key === 'flux' && currentFlux > 0 && accelerationKey === 'fluxPositive')
     || (key === 'flux' && currentFlux < 0 && accelerationKey === 'fluxNegative');
@@ -3111,14 +3398,122 @@ function applyCycleBreastNeedGain(profile, hours) {
   return addMetabolismValue(profile, 'milk', hourlyRate * hours, 0, 150);
 }
 
+/**
+ * 八意随时间累积（1.5.4）：每小时加多少，照「从零到满（100）要多久」定——
+ * 尿 8 小时、渴 12 小时、饿 16 小时、便 1.5 天、困 18 小时、臭 4 天、伴 7 天；乳意照周期与泌乳另算。
+ * 怀孕另有额外的负担（applyHourlyPregnancyMetabolism），快积症状照样加速。
+ */
+export const HOURLY_NEED_RATE = Object.freeze({
+  urine: 100 / 8,
+  thirst: 100 / 12,
+  food: 100 / 16,
+  stool: 100 / 36,
+  sleep: 100 / 18,
+  odor: 100 / 96,
+  companionship: 100 / 168,
+});
+/** 一次推进这么久以上，没写到的时段当作照常生活：吃喝拉撒睡都有处理，需求最多停在「中」 */
+export const ROUTINE_SKIP_HOURS = 12;
+const ROUTINE_NEED_RATIO = 60 / 150;
+/**
+ * 照常生活里每一项多久处理一次（人类）：尿 4 小时、渴 3 小时、饿 5 小时、便一天、醒着 16 小时、洗澡一天、见人三天。
+ * 种族步调慢的，间隔照比例拉长（冷血四五天才吃一次）。
+ */
+export const ROUTINE_INTERVAL_HOURS = Object.freeze({ urine: 4, thirst: 3, food: 5, stool: 24, sleep: 16, odor: 24, companionship: 72 });
+/**
+ * 衍生种族的极性需求（1.5.4）：flux 是一种平衡，没解放就沿着目前的方向（正往更正、负往更负，0 时往正）慢慢偏，
+ * 约两天到满；心理压力与快积照样加速。照常生活里约一天解放一次。
+ * 怀胎是否带衍生血脉、转化进度怎么影响 flux 还没做（见 plan）。
+ */
+export const HOURLY_FLUX_RATE = 100 / 48;
+const ROUTINE_FLUX_INTERVAL_HOURS = 24;
+const ROUTINE_MILK_INTERVAL_HOURS = 3;
+
+function getFluxStressMultiplier(profile) {
+  return clampNumber(1 + ((clampNumber(profile?.base?.psyStress, 0, 200, 100) - 100) / 200), 0.5, 1.5, 1.0);
+}
+
+function driftDerivedFlux(profile, amount) {
+  if (!(amount > 0) || !hasDerivedMetabolism(profile)) return;
+  const metabolism = profile.metabolism || {};
+  const direction = getDerivedFluxDirection(metabolism.flux, 1);
+  const acceleration = getActiveAccelerationMultiplier(profile, 'flux', Number(metabolism.flux) || direction);
+  const fluxCap = getMetabolismCap(profile, 'flux', Number(metabolism.flux) || direction);
+  metabolism.flux = clampNumber((Number(metabolism.flux) || 0) + (amount * getFluxStressMultiplier(profile) * direction * acceleration), -fluxCap, fluxCap, metabolism.flux || 0);
+  profile.metabolism = metabolism;
+}
+
+/**
+ * 照常生活（1.5.4）：八意（乳意除外，泌乳另有规则）换成「上次处理之后又过了多久」——
+ * 跳过的总时数除以各自的处理间隔，余数乘上累积速度。跳不同长度落点就不同，不会六项都整整齐齐停在同一格；
+ * 同样的跳跃得到同样的结果（不用乱数）。最后仍压在「中」以下。
+ */
+function settleRoutineNeeds(profile, hours) {
+  if (profile?.immune?.metabolism || !profile?.metabolism) return;
+  ensureNeedPools(profile);
+  const metabolism = profile.metabolism;
+  const pace = getNeedPace(profile);
+  const total = Math.max(0, Number(hours) || 0);
+  for (const [key, rate] of Object.entries(HOURLY_NEED_RATE)) {
+    if (isMetabolismExempt(profile, key)) continue;
+    const speed = pace[key] || 1;
+    const interval = ROUTINE_INTERVAL_HOURS[key] / speed;
+    const since = total % interval;
+    const ceiling = getMetabolismCap(profile, key) * ROUTINE_NEED_RATIO;
+    metabolism[key] = Math.round(Math.min(ceiling, rate * speed * since) * 100) / 100;
+  }
+  // 乳意（1.5.4）：会产奶时照常生活约三小时挤或喂一次；不产奶的不动（周期胀痛另算）
+  if (canProduceMilk(profile) && !isMetabolismExempt(profile, 'milk')) {
+    const milkRate = MILK_HOURLY_BASE * getMilkGainMultiplier(profile);
+    if (milkRate > 0) {
+      const ceiling = getMetabolismCap(profile, 'milk') * ROUTINE_NEED_RATIO;
+      metabolism.milk = Math.round(Math.min(ceiling, milkRate * (total % ROUTINE_MILK_INTERVAL_HOURS)) * 100) / 100;
+    }
+  }
+  if (hasDerivedMetabolism(profile)) {
+    // 极性需求同样换成「上次解放后又过了多久」，方向不变
+    const flux = Number(metabolism.flux) || 0;
+    const direction = getDerivedFluxDirection(flux, 1);
+    const fluxCap = getMetabolismCap(profile, 'flux', flux || direction);
+    const value = Math.min(fluxCap * ROUTINE_NEED_RATIO, HOURLY_FLUX_RATE * (total % ROUTINE_FLUX_INTERVAL_HOURS));
+    metabolism.flux = Math.round(direction * value * 100) / 100;
+  }
+  syncNeedTotals(profile);
+}
+
+/** 吃、喝、尿、便乘体型系数；困只看代谢型 */
+const SIZE_PACED_NEEDS = Object.freeze(new Set(['food', 'thirst', 'urine', 'stool']));
+
+/**
+ * 这个角色每一项需求的步调（1.5.4）：种族代谢型（混血按血统加权、水栖渴慢）× 体型系数（只乘吃喝尿便）。
+ * 臭意、伴意不看种族，回传 1。
+ */
+export function getNeedPace(profile) {
+  const base = profile?.base || {};
+  const pace = getMergedMetabolismPace(base.race || '', base.bloodline || null);
+  const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize });
+  const sizeFactor = resolved.kind === 'fixed' ? getBodySizePaceFactor(resolved.size) : 1;
+  const result = { type: pace.type, sizeFactor };
+  for (const key of Object.keys(HOURLY_NEED_RATE)) {
+    result[key] = (Number(pace[key]) || 1) * (SIZE_PACED_NEEDS.has(key) ? sizeFactor : 1);
+  }
+  return result;
+}
+
 function applyPassiveMetabolism(profile, tick) {
   if (profile?.immune?.metabolism) return;
   const hours = Math.max(0, tick.passedHours);
   if (hours <= 0) return;
   applyCycleBreastNeedGain(profile, hours);
-  applyMilkGain(profile, 0.08 * hours);
-  addMetabolismValue(profile, 'odor', 0.04 * hours, 0, 150);
-  addMetabolismValue(profile, 'companionship', 0.05 * hours, 0, 150);
+  applyMilkGain(profile, MILK_HOURLY_BASE * hours);
+  const pace = getNeedPace(profile);
+  for (const [key, rate] of Object.entries(HOURLY_NEED_RATE)) {
+    const amount = rate * hours * (pace[key] ?? 1);
+    if (POOL_PARENT[key]) addPoolValue(profile, key, amount);
+    else addMetabolismValue(profile, key, amount, 0, 150);
+  }
+  driftDerivedFlux(profile, HOURLY_FLUX_RATE * hours);
+  if (hours >= ROUTINE_SKIP_HOURS) settleRoutineNeeds(profile, hours);
 }
 
 function applyMilkFromLibido(profile, changeValue) {
@@ -3131,8 +3526,8 @@ function applyMilkFromLibido(profile, changeValue) {
   applyMilkGain(profile, delta * 0.18);
 }
 
-function applyOdorGain(profile, amount) {
-  return addMetabolismValue(profile, 'odor', Math.max(0, Number(amount) || 0), 0, 150);
+function applyOdorGain(profile, amount, options = {}) {
+  return addMetabolismValue(profile, 'odor', Math.max(0, Number(amount) || 0), 0, 150, options);
 }
 
 function getOdorCompanionshipReliefMultiplier(odor) {
@@ -3147,6 +3542,7 @@ function applyAccelerationRebound(profile, key, relievedAmount) {
   const released = Math.max(0, Number(relievedAmount) || 0);
   const severity = getActiveAccelerationMultiplier(profile, key) - 1;
   if (released <= 0 || severity <= 0) return 0;
+  if (POOL_PARENT[key]) return addPoolValue(profile, key, released * severity * 0.25);
   return addMetabolismValue(profile, key, released * severity * 0.25, 0, 150);
 }
 
@@ -3192,6 +3588,38 @@ export function getUterinePressureCap(profile) {
   return applyAtonyToCap(profile, Math.round(50 + (150 - 50) * progress), 50);
 }
 
+/**
+ * 孕期负担的节奏（1.5.4）：每一胎照自己种族的代谢步调（混血按血统、标签平手随母），按各胎索取量加权；
+ * 没有着床的胎（或算不出索取量）就各胎平均，一胎也没有时用母亲自己的步调。
+ * 吃、喝、尿、便再乘母亲的体型系数（每单位体重的代谢看母体），困不乘。
+ */
+export function getPregnancyLoadPace(profile) {
+  const mother = getNeedPace(profile);
+  const fetuses = getImplantedFetuses(profile);
+  if (!fetuses.length) return mother;
+  const weights = fetuses.map((fetus) => Math.max(0, Number(getFetusEnergyDrain(profile, fetus)) || 0));
+  const totalWeight = weights.reduce((sum, value) => sum + value, 0);
+  const share = (index) => (totalWeight > 0 ? weights[index] / totalWeight : 1 / fetuses.length);
+  const result = { type: mother.type, sizeFactor: mother.sizeFactor };
+  const keys = ['food', 'thirst', 'urine', 'stool', 'sleep'];
+  for (const key of keys) result[key] = 0;
+  fetuses.forEach((fetus, index) => {
+    const pace = getMergedMetabolismPace(fetus?.race || profile?.base?.race || '', fetus?.bloodline || null, profile?.base?.race || null, profile?.base?.bloodline || null);
+    for (const key of keys) result[key] += share(index) * (Number(pace[key]) || 1);
+  });
+  for (const key of keys) if (SIZE_PACED_NEEDS.has(key)) result[key] *= mother.sizeFactor;
+  return result;
+}
+
+/** 孕期负担占基本速度的比例 ÷ 胎儿胃口（胃口 1 ≈ 单胎足月） */
+export const PREGNANCY_LOAD_FACTOR = 0.3;
+
+/** 胎儿的胃口：胎儿耗能乘回母亲的承载耐受，即「胎儿负荷 × 索取」，不随母体耐受变 */
+export function getPregnancyAppetite(profile) {
+  const drain = clampNumber(profile?.pregnant?.fetalEnergyDrain, 0, 9999, 0);
+  return drain * clampNumber(profile?.bio?.breedTolerance, 0.1, 100, 1.0);
+}
+
 function applyHourlyPregnancyMetabolism(profile, tick) {
   const immune = profile?.immune || {};
   if (immune.metabolism) return;
@@ -3212,9 +3640,14 @@ function applyHourlyPregnancyMetabolism(profile, tick) {
     metabolism.flux = clampNumber((Number(metabolism.flux) || 0) + (delta * stressMultiplier * direction * acceleration), -fluxCap, fluxCap, metabolism.flux || 0);
     profile.metabolism = metabolism;
   }
-  addMetabolismValue(profile, 'excretion', delta, 0, 150);
-  addMetabolismValue(profile, 'hunger', delta, 0, 150);
-  addMetabolismValue(profile, 'sleep', delta, 0, 150);
+  // 孕期多出来的这一份（1.5.4）：基本速度 × 胎儿的代谢步调 × 0.3 × 胎儿的胃口。
+  // 胃口＝胎儿负荷 × 索取，不除以母亲的承载耐受（与孕肚大小同理）：耐受是「扛不扛得住」，
+  // 胎儿要吃多少只看胎儿；单胎足月约 +33%、双胎 28 周约 +60%。耐受怎么让母体扛得住留给供养器官层（plan）。
+  // 节奏照胎儿的代谢型（按各胎索取量加权），不另乘母亲的代谢型；体型系数仍看母亲
+  const pace = getPregnancyLoadPace(profile);
+  const load = PREGNANCY_LOAD_FACTOR * getPregnancyAppetite(profile) * tick.passedHours;
+  for (const key of ['urine', 'stool', 'thirst', 'food']) addPoolValue(profile, key, HOURLY_NEED_RATE[key] * pace[key] * load);
+  addMetabolismValue(profile, 'sleep', HOURLY_NEED_RATE.sleep * pace.sleep * load, 0, 150);
   applyDerivedMetabolismExemptions(profile);
 }
 
@@ -3493,6 +3926,7 @@ function applyNaturalMetabolismRecovery(profile, tick) {
   if (immune.metabolism) {
     metabolism.excretion = 0;
     metabolism.hunger = 0;
+    for (const pool of ['urine', 'stool', 'food', 'thirst']) metabolism[pool] = 0;
     metabolism.sleep = 0;
     metabolism.flux = 0;
     metabolism.milk = 0;
@@ -3503,43 +3937,14 @@ function applyNaturalMetabolismRecovery(profile, tick) {
   }
   applyDerivedMetabolismExemptions(profile);
 
-  const passedDays = Math.max(0, tick.passedDays);
-
-  if (hasDerivedMetabolism(profile)) {
-    if (passedDays > 0) {
-      const fluxCap = getMetabolismCap(profile, 'flux', Number(metabolism.flux) || 0);
-      const currentFlux = clampNumber(metabolism.flux, -fluxCap, fluxCap, 0);
-      const recovery = 14 * passedDays;
-      if (currentFlux > 0) metabolism.flux = Math.max(0, currentFlux - recovery);
-      else if (currentFlux < 0) metabolism.flux = Math.min(0, currentFlux + recovery);
-      else metabolism.flux = 0;
-    }
-    profile.metabolism = metabolism;
-  }
-
-  if (passedDays <= 0) return;
-
-  const dayExcretionRecovery = 12 * passedDays;
-  const dayHungerRecovery = 16 * passedDays;
-  const daySleepRecovery = 18 * passedDays;
-
-  metabolism.excretion = isMetabolismExempt(profile, 'excretion') ? 0 : Math.max(0, clampNumber(metabolism.excretion, 0, getMetabolismCap(profile, 'excretion'), 0) - dayExcretionRecovery);
-  metabolism.hunger = isMetabolismExempt(profile, 'hunger') ? 0 : Math.max(0, clampNumber(metabolism.hunger, 0, getMetabolismCap(profile, 'hunger'), 0) - dayHungerRecovery);
-  metabolism.sleep = isMetabolismExempt(profile, 'sleep') ? 0 : Math.max(0, clampNumber(metabolism.sleep, 0, getMetabolismCap(profile, 'sleep'), 0) - daySleepRecovery);
-  applyDerivedMetabolismExemptions(profile);
-  profile.metabolism = metabolism;
+  // 1.5.4 起需求与极性需求都不再每天自动回落：照常生活交给 settleRoutineNeeds（一次推进很久、或人不在场）
+  void tick;
 }
 
 function applyWeeklyMetabolismRoutine(profile, tick, options = {}) {
   if (profile?.immune?.metabolism) return;
   const metabolism = profile.metabolism || {};
-  const settledWeeks = Math.max(0, Math.floor(Number(tick.passedLifestyleWeeks) || 0));
-  if (settledWeeks > 0) {
-    metabolism.odor = 0;
-    metabolism.companionship = isMetabolismExempt(profile, 'companionship')
-      ? 0
-      : Math.max(0, clampNumber(metabolism.companionship, 0, getMetabolismCap(profile, 'companionship'), 0) - (35 * settledWeeks));
-  }
+  // 1.5.4 起每周不再清臭意、扣伴意：照常生活交给 settleRoutineNeeds
   if (options.enteredFollicular && !canProduceMilk({ ...profile, base: { ...(profile.base || {}), stage: options.stage } })) {
     metabolism.milk = 0;
   }
@@ -3566,9 +3971,11 @@ function applyMetabolismFromVitality(profile, changeValue) {
   }
 
   if (changeValue > 0) {
-    addMetabolismValue(profile, 'excretion', delta, 0, 150);
+    addPoolValue(profile, 'urine', delta);
+    addPoolValue(profile, 'stool', delta * 0.5);
   } else {
-    addMetabolismValue(profile, 'hunger', delta, 0, 150);
+    addPoolValue(profile, 'thirst', delta);
+    addPoolValue(profile, 'food', delta * 0.7);
     addMetabolismValue(profile, 'sleep', delta, 0, 150);
   }
   applyDerivedMetabolismExemptions(profile);
@@ -3594,7 +4001,11 @@ export function getNarrativeNeedLevels(profile) {
   const levels = {};
   for (const key of ['excretion', 'hunger', 'sleep', 'milk', 'odor', 'companionship']) {
     if (metabolism[key] === undefined || isMetabolismExempt(profile, key)) continue;
-    levels[key] = getMetabolismLevel(Number(metabolism[key]) || 0, getMetabolismCap(profile, key));
+    const level = getMetabolismLevel(Number(metabolism[key]) || 0, getMetabolismCap(profile, key));
+    // 泄意、食意（1.5.4）：中以上且有明显主导时标出是哪一池
+    levels[key] = NEED_POOLS[key] && ['中', '高', '满', '爆'].includes(level) && metabolism[`${key}Lead`] && metabolism[`${key}Lead`] !== 'both'
+      ? `${level}（${getNeedLeadLabel(metabolism, key)}）`
+      : level;
   }
   if (hasDerivedMetabolism(profile) && metabolism.flux !== undefined) {
     const flux = Number(metabolism.flux) || 0;
@@ -3638,8 +4049,9 @@ function getNutritionNeedLevels(profile) {
 /**
  * 每次计分的点数先归一化，让不同种族照顾得一样好就得到一样的结果：
  * - 需求项数：衍生类型抵免掉的需求越多，计分机会越少，按 6 项折算；
- * - 加分再除以 (1 + fetalEnergyDrain)：承载力低的母体需求涨得快、处理机会多，
- *   不除的话她反而最容易养出巨胎。扣分按天计，不受需求速度影响，不必再除。
+ * - 加分再除以 (1 + 胎儿胃口)：怀得越重需求涨得越快、处理机会越多，不除的话反而最容易养出巨胎。
+ *   1.5.4 起除的是胃口（胎儿负荷 × 索取），不再含承载耐受：孕期需求的速度已经不看耐受。
+ *   扣分按天计，不受需求速度影响，不必再除。
  */
 function getNutritionPointScale(levels) {
   const count = Math.max(1, Object.keys(levels).length);
@@ -3659,8 +4071,8 @@ function applyNutritionReliefGain(profile, levelsBefore) {
     if (before === '高' && levelsAfter[key] === '无') count += 1;
   }
   if (count === 0) return 0;
-  const drain = clampNumber(profile?.pregnant?.fetalEnergyDrain, 0, 9999, 0);
-  return addNutrition(profile, count * getNutritionPointScale(levelsAfter) / (1 + drain));
+  // 1.5.4：除以胎儿的胃口而不是耗能——孕期需求涨多快看胃口（不含承载耐受），除数跟着它
+  return addNutrition(profile, count * getNutritionPointScale(levelsAfter) / (1 + getPregnancyAppetite(profile)));
 }
 
 /**
@@ -3741,8 +4153,9 @@ function updateAdvisoryNotify(profile, female) {
     if (!isMetabolismExempt(profile, key) && ['高', '满', '爆'].includes(level)) needs.push(`${label}:${level}`);
   };
 
-  maybePushNeed('excretion', '泄意', excretionLevel);
-  maybePushNeed('hunger', '饿意', hungerLevel);
+  // 泄意、食意写主导的那一池（尿意／便意、饿意／渴意），两池差不多时写合称
+  maybePushNeed('excretion', getNeedLeadLabel(metabolism, 'excretion'), excretionLevel);
+  maybePushNeed('hunger', getNeedLeadLabel(metabolism, 'hunger'), hungerLevel);
   maybePushNeed('sleep', '困意', sleepLevel);
   maybePushNeed('milk', '乳意', milkLevel);
   maybePushNeed('odor', '臭意', odorLevel);
@@ -3753,13 +4166,13 @@ function updateAdvisoryNotify(profile, female) {
     const fluxCap = getMetabolismCap(profile, 'flux', Number(metabolism.flux) || 0);
     const flux = clampNumber(metabolism.flux, -fluxCap, fluxCap, 0);
     if (Math.abs(flux) >= 75) {
-      reminders.push(`${female}的${getDerivedFluxNeedLabel(flux)}已达到${getDerivedFluxLevel(flux, fluxCap)}，应优先使用 bsExcreteMetabolism 进行解放；若释放量足够大，需求极性才会跨过 0 翻转`);
+      reminders.push(`${female}的${getDerivedFluxNeedLabel(flux)}已达到${getDerivedFluxLevel(flux, fluxCap)}，应优先使用 bsAdjustMetabolism 进行解放；若释放量足够大，需求极性才会跨过 0 翻转`);
     }
     if (needs.length > 0) {
-      reminders.push(`${female}仍有未被衍生代谢抵免的生理需求（${needs.join('、')}），可用 bsExcreteMetabolism 处理`);
+      reminders.push(`${female}仍有未被衍生代谢抵免的生理需求（${needs.join('、')}），可用 bsAdjustMetabolism 处理`);
     }
   } else if (needs.length > 0) {
-    reminders.push(`${female}有强烈的生理需求（${needs.join('、')}），应优先使用 bsExcreteMetabolism 缓解生理不适`);
+    reminders.push(`${female}有强烈的生理需求（${needs.join('、')}），应优先使用 bsAdjustMetabolism 缓解生理不适`);
   }
   if (!isMetabolismExempt(profile, 'companionship') && ['高', '满', '爆'].includes(companionshipLevel)) {
     reminders.push(odorLevel === '高' || odorLevel === '满' || odorLevel === '爆'
@@ -3843,99 +4256,173 @@ function applyAmnionDurabilityFromPressure(profile, finalPressure, female) {
   profile.notify = notify;
 }
 
-function applyExcreteMetabolism(chatState, args) {
-  const female = String(args?.female || '').trim();
-  const options = args?.options && typeof args.options === 'object' ? args.options : {};
-  const character = chatState.characters?.[female];
-  if (!female || !character) return { applied: false, message: `bsExcreteMetabolism skipped: unknown character ${female || '(empty)'}.` };
+/** 衍生种族的 flux 解放（数值；不传量用预设 40） */
+function releaseDerivedFlux(profile, female, amount) {
+  const metabolism = profile.metabolism || {};
+  const fluxCap = getMetabolismCap(profile, 'flux', Number(metabolism.flux) || 0);
+  const currentFlux = clampNumber(metabolism.flux, -fluxCap, fluxCap, 0);
+  const direction = getDerivedFluxDirection(currentFlux, 1);
+  const blockageRetention = getActiveBlockageRetention(profile, currentFlux > 0 ? 'fluxPositive' : 'fluxNegative', currentFlux);
+  const releasePower = applyRetention(amount !== undefined ? Math.max(0, Number(amount) || 0) : 40, blockageRetention);
+  metabolism.flux = clampNumber(currentFlux - (direction * releasePower), -fluxCap, fluxCap, currentFlux);
+  profile.metabolism = metabolism;
+  const nextFlux = clampNumber(metabolism.flux, -fluxCap, fluxCap, 0);
+  const didFlip = currentFlux !== 0 && Math.sign(currentFlux) !== Math.sign(nextFlux) && nextFlux !== 0;
+  profile.notify = {
+    ...(profile.notify || {}),
+    secondly: didFlip
+      ? `${female}完成了一次${direction > 0 ? '正极' : '负极'}解放，需求强度被压过头，极性翻转为${nextFlux > 0 ? '正极' : '负极'}`
+      : `${female}完成了一次${direction > 0 ? '正极' : '负极'}解放，当前需求降为 ${Math.round(nextFlux)}`,
+  };
+}
 
+/**
+ * 解除需求的共用流程（1.5.4）：reductions 是八意各要降多少（数值）。
+ * 阻塞照样打折；伴意的社交缓解看解完臭意后剩多少。连锁照旧由系统算：
+ * 解渴加尿、解饿加便、吃喝加一点困、睡觉加一点饿与渴、排泄与产乳加臭，快积让刚解的回弹。
+ */
+function relieveNeeds(profile, reductions) {
+  ensureNeedPools(profile);
+  syncNeedTotals(profile);
+  const metabolism = profile.metabolism;
+  const relieved = {};
+  for (const key of METABOLISM_NEED_KEYS) {
+    const amount = Math.max(0, Number(reductions?.[key]) || 0);
+    if (!amount || isMetabolismExempt(profile, key)) continue;
+    const cap = getMetabolismCap(profile, key);
+    const current = clampNumber(metabolism[key], 0, cap, 0);
+    let power = applyRetention(amount, getActiveBlockageRetention(profile, key));
+    if (key === 'companionship') power *= getOdorCompanionshipReliefMultiplier(Number(metabolism.odor) || 0);
+    const done = Math.min(current, power);
+    metabolism[key] = Math.max(0, current - done);
+    relieved[key] = done;
+  }
+  syncNeedTotals(profile);
+  const got = (key) => relieved[key] || 0;
+  // 连锁不套快积（见 addPoolValue）
+  const chain = { accelerate: false };
+  addPoolValue(profile, 'urine', got('thirst') * 0.5, chain);
+  addPoolValue(profile, 'stool', got('food') * 0.5, chain);
+  addMetabolismValue(profile, 'sleep', (got('food') + got('thirst')) * 0.1, 0, 150, chain);
+  addPoolValue(profile, 'food', got('sleep') * 0.1, chain);
+  addPoolValue(profile, 'thirst', got('sleep') * 0.1, chain);
+  applyOdorGain(profile, ((got('urine') + got('stool')) * 0.12) + (canProduceMilk(profile) ? got('milk') * 0.05 : 0), chain);
+  for (const [key, amount] of Object.entries(relieved)) applyAccelerationRebound(profile, key, amount);
+  if (isMetabolismExempt(profile, 'odor')) metabolism.odor = 0;
+  if (isMetabolismExempt(profile, 'companionship')) metabolism.companionship = 0;
+  return relieved;
+}
+
+/** 两个工具共用的前后处理：复制角色、挡免疫、套豁免与容量，结束时算照料分与提醒 */
+function withMetabolismProfile(chatState, female, toolName, work) {
+  const character = chatState.characters?.[female];
+  if (!female || !character) return { applied: false, message: `${toolName} skipped: unknown character ${female || '(empty)'}.` };
   const next = cloneValue(character);
   const profile = next.profile || {};
-  const base = profile.base || {};
-  const metabolism = profile.metabolism || {};
-  const notify = profile.notify || {};
-  const immune = profile.immune || {};
-  if (immune.metabolism) return { applied: false, message: `bsExcreteMetabolism skipped for ${female}: metabolism immune.` };
+  profile.base = profile.base || {};
+  profile.metabolism = profile.metabolism || {};
+  if (profile.immune?.metabolism) return { applied: false, message: `${toolName} skipped for ${female}: metabolism immune.` };
   applyDerivedMetabolismExemptions(profile);
   applyMetabolismCapacityLimits(profile);
   const nutritionLevelsBefore = getNutritionNeedLevels(profile);
-
-  const isDerived = hasDerivedMetabolism(profile);
-  const hasOptions = Object.keys(options).length > 0;
-  const wantsFluxRelease = isDerived && (!hasOptions || options.flux !== undefined);
-  if (wantsFluxRelease) {
-    const fluxCap = getMetabolismCap(profile, 'flux', Number(metabolism.flux) || 0);
-    const currentFlux = clampNumber(metabolism.flux, -fluxCap, fluxCap, 0);
-    const direction = getDerivedFluxDirection(currentFlux, 1);
-    const blockageRetention = getActiveBlockageRetention(profile, currentFlux > 0 ? 'fluxPositive' : 'fluxNegative', currentFlux);
-    const releasePower = applyRetention(options.flux !== undefined ? Math.max(0, Number(options.flux) || 0) : 40, blockageRetention);
-    metabolism.flux = clampNumber(currentFlux - (direction * releasePower), -fluxCap, fluxCap, currentFlux);
-    profile.metabolism = metabolism;
-    const nextFlux = clampNumber(metabolism.flux, -fluxCap, fluxCap, 0);
-    const didFlip = currentFlux !== 0 && Math.sign(currentFlux) !== Math.sign(nextFlux) && nextFlux !== 0;
-    profile.notify = {
-      ...notify,
-      secondly: didFlip
-        ? `${female}完成了一次${direction > 0 ? '正极' : '负极'}解放，需求强度被压过头，极性翻转为${nextFlux > 0 ? '正极' : '负极'}`
-        : `${female}完成了一次${direction > 0 ? '正极' : '负极'}解放，当前需求降为 ${Math.round(nextFlux)}`,
-    };
-  }
-
-  const currentExcretion = clampNumber(metabolism.excretion, 0, getMetabolismCap(profile, 'excretion'), 0);
-  const currentHunger = clampNumber(metabolism.hunger, 0, getMetabolismCap(profile, 'hunger'), 0);
-  const currentSleep = clampNumber(metabolism.sleep, 0, getMetabolismCap(profile, 'sleep'), 0);
-  const currentMilk = clampNumber(metabolism.milk, 0, getMetabolismCap(profile, 'milk'), 0);
-  const currentOdor = clampNumber(metabolism.odor, 0, getMetabolismCap(profile, 'odor'), 0);
-  const currentCompanionship = clampNumber(metabolism.companionship, 0, getMetabolismCap(profile, 'companionship'), 0);
-
-  const optionReduction = (key, fallback = 0) => Math.max(0, options[key] !== undefined ? Number(options[key]) || 0 : fallback);
-  const useDefaults = !hasOptions && !isDerived;
-  const excretionReduction = isMetabolismExempt(profile, 'excretion') ? 0 : optionReduction('excretion', useDefaults ? 30 : 0);
-  const hungerReduction = isMetabolismExempt(profile, 'hunger') ? 0 : optionReduction('hunger', useDefaults ? 40 : 0);
-  const sleepReduction = isMetabolismExempt(profile, 'sleep') ? 0 : optionReduction('sleep', useDefaults ? 40 : 0);
-  const milkReduction = isMetabolismExempt(profile, 'milk') ? 0 : optionReduction('milk', useDefaults ? 30 : 0);
-  const odorReduction = isMetabolismExempt(profile, 'odor') ? 0 : optionReduction('odor');
-  const companionshipReduction = isMetabolismExempt(profile, 'companionship') ? 0 : optionReduction('companionship');
-
-  const relievedExcretion = Math.min(currentExcretion, applyRetention(excretionReduction, getActiveBlockageRetention(profile, 'excretion')));
-  const relievedHunger = Math.min(currentHunger, applyRetention(hungerReduction, getActiveBlockageRetention(profile, 'hunger')));
-  const relievedSleep = Math.min(currentSleep, applyRetention(sleepReduction, getActiveBlockageRetention(profile, 'sleep')));
-  const relievedMilk = Math.min(currentMilk, applyRetention(milkReduction, getActiveBlockageRetention(profile, 'milk')));
-  const relievedOdor = Math.min(currentOdor, applyRetention(odorReduction, getActiveBlockageRetention(profile, 'odor')));
-  const remainingOdor = Math.max(0, currentOdor - relievedOdor);
-  const companionshipRelief = applyRetention(companionshipReduction, getActiveBlockageRetention(profile, 'companionship'))
-    * getOdorCompanionshipReliefMultiplier(remainingOdor);
-  const relievedCompanionship = Math.min(currentCompanionship, companionshipRelief);
-
-  metabolism.excretion = Math.max(0, currentExcretion - relievedExcretion);
-  metabolism.hunger = Math.max(0, currentHunger - relievedHunger);
-  metabolism.sleep = Math.max(0, currentSleep - relievedSleep);
-  metabolism.milk = Math.max(0, currentMilk - relievedMilk);
-  metabolism.odor = isMetabolismExempt(profile, 'odor') ? 0 : remainingOdor;
-  metabolism.companionship = isMetabolismExempt(profile, 'companionship') ? 0 : Math.max(0, currentCompanionship - relievedCompanionship);
-
-  addMetabolismValue(profile, 'excretion', relievedHunger * 0.5, 0, 150);
-  addMetabolismValue(profile, 'sleep', relievedHunger * 0.1, 0, 150);
-  addMetabolismValue(profile, 'hunger', relievedSleep * 0.1, 0, 150);
-  applyOdorGain(profile, (relievedExcretion * 0.12) + (canProduceMilk(profile) ? relievedMilk * 0.05 : 0));
-  for (const [key, amount] of [
-    ['excretion', relievedExcretion],
-    ['hunger', relievedHunger],
-    ['sleep', relievedSleep],
-    ['milk', relievedMilk],
-    ['odor', relievedOdor],
-    ['companionship', relievedCompanionship],
-  ]) {
-    applyAccelerationRebound(profile, key, amount);
-  }
+  const result = work(profile, next);
+  if (result && result.applied === false) return result;
   applyDerivedMetabolismExemptions(profile);
-
-  profile.metabolism = metabolism;
   applyNutritionReliefGain(profile, nutritionLevelsBefore);
   updateAdvisoryNotify(profile, female);
   next.profile = profile;
   chatState.characters[female] = next;
-  return { applied: true, message: `bsExcreteMetabolism applied to ${female}.` };
+  return { applied: true, message: `${toolName} applied to ${female}${result?.summary ? `: ${result.summary}` : ''}.` };
+}
+
+/**
+ * 旧写法（1.5.3 以前的 bsExcreteMetabolism，以及 bsAdjustMetabolism 收到数字时）：options 是各项要降的数值；
+ * 泄意、食意照 excretionKind／hungerKind 解那一池，没给就解比较急的那一池；不传 options 时用预设量。
+ */
+function applyExcreteMetabolism(chatState, args, toolName = 'bsExcreteMetabolism') {
+  const female = String(args?.female || '').trim();
+  const options = args?.options && typeof args.options === 'object' ? args.options : {};
+  return withMetabolismProfile(chatState, female, toolName, (profile) => {
+    const metabolism = profile.metabolism;
+    const isDerived = hasDerivedMetabolism(profile);
+    const hasOptions = Object.keys(options).length > 0;
+    if (isDerived && (!hasOptions || options.flux !== undefined)) releaseDerivedFlux(profile, female, options.flux);
+    ensureNeedPools(profile);
+    syncNeedTotals(profile);
+    const pickPool = (parent, kind, map) => {
+      const chosen = map[String(kind || '').trim()];
+      if (chosen) return chosen;
+      const lead = metabolism[`${parent}Lead`];
+      if (NEED_POOLS[parent].includes(lead)) return lead;
+      const [a, b] = NEED_POOLS[parent];
+      return (Number(metabolism[a]) || 0) / getPoolCap(profile, a) >= (Number(metabolism[b]) || 0) / getPoolCap(profile, b) ? a : b;
+    };
+    const useDefaults = !hasOptions && !isDerived;
+    const amount = (key, fallback = 0) => Math.max(0, options[key] !== undefined ? Number(options[key]) || 0 : (useDefaults ? fallback : 0));
+    const reductions = {
+      sleep: amount('sleep', 40),
+      milk: amount('milk', 30),
+      odor: amount('odor'),
+      companionship: amount('companionship'),
+    };
+    reductions[pickPool('excretion', options.excretionKind, { pee: 'urine', poop: 'stool' })] = amount('excretion', 30);
+    reductions[pickPool('hunger', options.hungerKind, { eat: 'food', drink: 'thirst' })] = amount('hunger', 40);
+    for (const pool of METABOLISM_NEED_KEYS.slice(0, 4)) if (options[pool] !== undefined) reductions[pool] = amount(pool);
+    relieveNeeds(profile, reductions);
+    return {};
+  });
+}
+
+/**
+ * bsAdjustMetabolism（1.5.4）：八意各给一个分级（slight／significant／severe 加 _increase／_decrease），
+ * 加减同一种写法；幅度＝那一项容量的 15%／40%／80%。降照解除的流程（阻塞、连锁、回弹），升直接加。
+ * flux 维持数值（衍生种族的极性解放）。收到旧的数字写法就照旧走排解。
+ */
+function applyAdjustMetabolism(chatState, args) {
+  const female = String(args?.female || '').trim();
+  const options = args?.options && typeof args.options === 'object' ? args.options : {};
+  const legacy = ['excretion', 'hunger', 'excretionKind', 'hungerKind'].some((key) => options[key] !== undefined)
+    || METABOLISM_NEED_KEYS.some((key) => typeof options[key] === 'number');
+  if (legacy) return applyExcreteMetabolism(chatState, args, 'bsAdjustMetabolism');
+  const grades = METABOLISM_NEED_KEYS
+    .map((key) => ({ key, grade: parseMetabolismGrade(options[key]) }))
+    .filter((item) => item.grade);
+  const invalid = METABOLISM_NEED_KEYS.filter((key) => options[key] !== undefined && !parseMetabolismGrade(options[key]));
+  if (!grades.length && options.flux === undefined) {
+    return { applied: false, message: `bsAdjustMetabolism skipped for ${female || '(empty)'}: options 要给八意的分级（例如 urine: "severe_decrease"）${invalid.length ? `；认不出：${invalid.join('、')}` : ''}。` };
+  }
+  const reason = String(args?.reason || '').trim().slice(0, 120);
+  return withMetabolismProfile(chatState, female, 'bsAdjustMetabolism', (profile, next) => {
+    if (options.flux !== undefined) {
+      if (!hasDerivedMetabolism(profile)) return { applied: false, message: `bsAdjustMetabolism skipped for ${female}: flux 只给衍生种族。` };
+      releaseDerivedFlux(profile, female, options.flux);
+    }
+    const reductions = {};
+    for (const { key, grade } of grades) if (grade.sign < 0) reductions[key] = grade.ratio * getMetabolismCap(profile, key);
+    relieveNeeds(profile, reductions);
+    for (const { key, grade } of grades) if (grade.sign > 0) raiseNeed(profile, key, grade.ratio * getMetabolismCap(profile, key));
+    // 睡了：退回最近一次推进的一部分累积（或先记着，等接下来的推进）
+    const sleepGrade = grades.find(({ key, grade }) => key === 'sleep' && grade.sign < 0)?.grade;
+    const refundRatio = sleepGrade ? (SLEEP_REFUND_RATIO[sleepGrade.level] || 0) : 0;
+    let refundNote = '';
+    if (refundRatio > 0) {
+      const runtime = next.runtime = next.runtime || {};
+      const now = Math.max(0, Number(chatState.minutesPassed) || 0);
+      if (runtime.needGain && runtime.needGain.to === now) {
+        refundNeedGain(profile, runtime.needGain.gains, refundRatio);
+        delete runtime.needGain;
+        refundNote = `睡着时代谢变慢，退回这段时间 ${Math.round(refundRatio * 100)}% 的累积`;
+      } else {
+        runtime.pendingSleepRefund = { at: now, ratio: refundRatio };
+        refundNote = `睡着时代谢变慢，接下来推进的时间少累积 ${Math.round(refundRatio * 100)}%`;
+      }
+    }
+    const parts = grades.map(({ key }) => `${key} ${options[key]}`);
+    if (refundNote) parts.push(refundNote);
+    if (invalid.length) parts.push(`认不出：${invalid.join('、')}`);
+    if (reason) parts.push(`原因：${reason}`);
+    return { summary: parts.join('，') };
+  });
 }
 
 function clearPregnancyState(profile) {
@@ -3956,6 +4443,7 @@ function clearPregnancyState(profile) {
   pregnant.laborBirthNumber = 0;
   pregnant.deliveredCount = 0;
   delete pregnant.deliveredBulk;
+  delete pregnant.deliveredNursing;
   pregnant.extensionCount = 0;
   pregnant.extensionUntilDays = null;
   pregnant.presentingEmbryoId = null;
@@ -6463,9 +6951,12 @@ function recordDeliveredBulk(profile, born) {
   if (!pregnant || !Array.isArray(born) || born.length === 0) return;
   const bulk = born.reduce((sum, fetus) => sum + getFetusBulk(profile, fetus), 0);
   pregnant.deliveredBulk = Math.round((clampNumber(pregnant.deliveredBulk, 0, 99, 0) + bulk) * 100) / 100;
+  // 产后要喂几个（1.5.4 泌乳看胎数）
+  pregnant.deliveredNursing = Math.max(0, Math.round(clampNumber(pregnant.deliveredNursing, 0, 99, 0))) + born.length;
   // 就地写入：呼叫端手上还拿着同一个 base
   if (!profile.base || typeof profile.base !== 'object') profile.base = {};
   profile.base.postpartumBulk = pregnant.deliveredBulk;
+  profile.base.postpartumCount = pregnant.deliveredNursing;
 }
 
 /** 假宫缩、胎儿互踢留下的瞬时痛：记来源与强度，每故事小时减半 */
@@ -8043,6 +8534,8 @@ function applyTimeToCharacter(character, tick) {
   }
 
   if (isHere) applyPassiveMetabolism(profile, tick);
+  // 人不在场：不累积，但离开够久就当作照常生活（需求最多停在「中」）
+  else if (tick.passedHours >= ROUTINE_SKIP_HOURS) settleRoutineNeeds(profile, tick.passedHours);
   applyNaturalMetabolismRecovery(profile, tick);
   applyWeeklyMetabolismRoutine(profile, tick, { enteredFollicular, stage });
 
@@ -8245,7 +8738,10 @@ function applyPassedTime(chatState, args) {
     tick.minutesBefore = Math.max(0, Number(chatState.minutesPassed) || 0);
     tick.onDerivedTransformed = (who, type) => syncSireDerivedType(chatState, who, type);
     tick.onBodyTransformDue = (who, record) => dueBodyTransforms.push([who, record]);
-    chatState.characters[name] = applyTimeToCharacter(subject, tick).character;
+    const needsBefore = readSleepRefundSource(subject.profile);
+    const advanced = applyTimeToCharacter(subject, tick).character;
+    recordNeedGainAfterPass(advanced, needsBefore, tick.minutesBefore, tick.nowMinutes);
+    chatState.characters[name] = advanced;
   }
   transferProviderChildren(chatState);
   advanceSireAges(chatState, totalMinutes / 1440);
@@ -9047,11 +9543,42 @@ function applyDrainSperm(chatState, args) {
  * 立即生效的：phase（切换阶段，原 bsSetMenstrualPhases）、emergency（事后避孕，原 bsAbortion purpose=emergency）。
  * 其余留在角色身上（base.reproEffects）到期为止；数值照套用当下的世界基准算好存进去。
  */
+/**
+ * 拿掉身上生效中的药（1.5.4，停药与解药共用）：match 回传 true 的纪录拿掉。
+ * 拿掉的若有助孕，这一轮已经拉高的卵子品质照比例还原，免得药停了效果还留着。回传拿掉几笔。
+ */
+export function removeReproEffects(profile, match, nowMinutes = null) {
+  const base = profile?.base;
+  if (!base) return 0;
+  const now = nowMinutes === null ? null : Number(nowMinutes);
+  const active = normalizeReproEffects(base.reproEffects, now);
+  const kept = active.filter((item) => !match(item));
+  const removed = active.length - kept.length;
+  if (!removed) return 0;
+  const before = fertilityMultiplier(profile, now);
+  base.reproEffects = kept;
+  const after = fertilityMultiplier(profile, now);
+  if (before !== after && base.cycleEggQuality !== undefined) base.cycleEggQuality = normalizeEggQuality(Number(base.cycleEggQuality) * after / before);
+  return removed;
+}
+
 function applyReproductiveIntervention(chatState, args) {
   const female = String(args?.female || '').trim();
   const character = chatState.characters?.[female];
   const skip = (message) => ({ applied: false, message: `bsReproductiveIntervention skipped${female ? ` for ${female}` : ''}: ${message}` });
   if (!character) return skip('未知角色。');
+  // 停药（1.5.4）：不算药，任何世界、开关都能用；照药名或效果找生效中的那一笔
+  if (args?.stop === true) {
+    const name = String(args?.drug || '').trim();
+    const effect = normalizeEffectKey(args?.effect);
+    if (!name && !effect) return skip('停药要填 drug（药名）或 effect。');
+    const now = Math.max(0, Number(chatState.minutesPassed) || 0);
+    const next = cloneValue(character);
+    const removed = removeReproEffects(next.profile, (item) => (name ? item.name === name || REPRO_EFFECTS[item.effect]?.label === name : item.effect === effect), now);
+    if (!removed) return skip(`身上没有生效中的「${name || REPRO_EFFECTS[effect]?.label || effect}」。`);
+    chatState.characters[female] = next;
+    return { applied: true, message: `bsReproductiveIntervention applied to ${female}: 停了${name || REPRO_EFFECTS[effect].label}（${removed} 笔）.` };
+  }
   const catalog = getActiveDrugCatalog();
   const drugName = String(args?.drug || '').trim();
   let label = '';
@@ -9096,6 +9623,13 @@ function applyReproductiveIntervention(chatState, args) {
       const result = applyEmergencyContraception(chatState, { female });
       if (!result.applied) return skip(result.message.replace(/^bsAbortion emergency skipped: /, ''));
       done.push('事后避孕');
+      continue;
+    }
+    if (entry.effect === 'cleanse') {
+      const next = cloneValue(chatState.characters[female]);
+      const removed = removeReproEffects(next.profile, () => true, now);
+      chatState.characters[female] = next;
+      done.push(removed ? `解药（清掉 ${removed} 种药效）` : '解药（身上本来就没有生效中的药）');
       continue;
     }
     if (entry.effect === 'abortifacient') {
@@ -9886,7 +10420,7 @@ export function applyToolCall(chatState, call) {
     const oldStage = oldStages[name];
     const stage = character.profile?.base?.stage;
     if (result.applied && stage === '月经期' && oldStage !== stage && call.name !== 'bsPassedTime') refreshCognition(character.profile);
-    if (result.applied && call.name !== 'bsPassedTime') syncPsychologyLifecycle(character.profile, oldStage); if (result.applied && !['bsPassedTime', 'bsExcreteMetabolism'].includes(call.name) && (oldStage !== stage || oldIntact[name] !== hasIntactPresentingSac(character.profile))) refreshAdvisoryNotify(character.profile, name);
+    if (result.applied && call.name !== 'bsPassedTime') syncPsychologyLifecycle(character.profile, oldStage); if (result.applied && !['bsPassedTime', 'bsExcreteMetabolism', 'bsAdjustMetabolism'].includes(call.name) && (oldStage !== stage || oldIntact[name] !== hasIntactPresentingSac(character.profile))) refreshAdvisoryNotify(character.profile, name);
     if (result.applied && call.name !== 'bsPassedTime') clearResolvedObstructionNotice(character.profile);
     if (result.applied) clearStaleRejectionCrisis(character.profile);
   }
@@ -9940,6 +10474,8 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsDrainSperm') return applyDrainSperm(chatState, args);
   if (name === 'bsSetMenstrualPhases') return applySetMenstrualPhases(chatState, args);
   if (name === 'bsReproductiveIntervention') return applyReproductiveIntervention(chatState, args);
+  if (name === 'bsAdjustMetabolism') return applyAdjustMetabolism(chatState, args);
+  // 1.5.3 以前的旧名：照旧当成数值排解
   if (name === 'bsExcreteMetabolism') return applyExcreteMetabolism(chatState, args);
   if (name === 'bsAbortion') return applyAbortion(chatState, args);
   if (name === 'bsExtendPregnancy') return applyExtendPregnancy(chatState, args);
@@ -9968,7 +10504,8 @@ function getDisabledSystemToolMessage(settings, name, args = null) {
     if (isBody && tools.transformBody === false) return 'bsRecordExperience transform skipped: 身体转化已在特殊妊娠工具里关闭。';
     if (!isBody && tools.transformDerivedType === false) return 'bsRecordExperience transform skipped: 衍生转化已在特殊妊娠工具里关闭。';
   }
-  if (name === 'bsReproductiveIntervention') {
+  // 停药不算吃药：开关、写实世界都不挡
+  if (name === 'bsReproductiveIntervention' && args?.stop !== true) {
     const tools = normalizeSpecialTools(settings?.specialTools);
     const drug = args?.drug ? findDrug(getActiveDrugCatalog(), args.drug) : null;
     const effects = drug ? drug.effects.map((entry) => entry.effect) : [normalizeEffectKey(args?.effect)].filter(Boolean);
