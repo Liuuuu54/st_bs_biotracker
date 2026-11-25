@@ -671,6 +671,70 @@ async function requestHostProxyChatCompletion(apiBase, settings, requestBody, ru
   });
 }
 
+/** 回覆的正文（OpenAI 结构；content 也可能是分段阵列） */
+function readReplyText(data) {
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map((part) => (typeof part?.text === 'string' ? part.text : '')).join('');
+  return '';
+}
+
+/** 回覆的思考内容：各家渠道的栏位名不同 */
+function readReasoningText(data) {
+  const message = data?.choices?.[0]?.message || {};
+  return String(message.reasoning_content || message.reasoning || message.thinking || '');
+}
+
+/**
+ * 从回覆里取 JSON（1.5.4）：先看正文；正文是空的时候，有些渠道把整份答案放在思考内容里，从那里找。
+ * 回传 { parsed, text }：text 是拿来摘要的原文（正文，或用到的思考内容）。
+ */
+export function extractReplyJson(data) {
+  const text = readReplyText(data);
+  const parsed = extractJson(text);
+  if (parsed && typeof parsed === 'object') return { parsed, text };
+  if (!text.trim()) {
+    const reasoning = readReasoningText(data);
+    const fromReasoning = extractJson(reasoning);
+    if (fromReasoning && typeof fromReasoning === 'object') return { parsed: fromReasoning, text: reasoning };
+  }
+  return { parsed: null, text };
+}
+
+/**
+ * 空回的诊断（1.5.4）：正文是空的时候，把 finish_reason、用掉的 token、思考内容长度写出来，
+ * 并照情况给建议——不然使用者只看到「返回为空」，不知道是额度、审查还是上游的问题。
+ */
+export function describeEmptyReply(data) {
+  const choice = data?.choices?.[0] || {};
+  const finish = String(choice.finish_reason || choice.finishReason || '').trim();
+  const usage = data?.usage || {};
+  const completion = Number(usage.completion_tokens ?? usage.output_tokens);
+  const reasoningTokens = Number(usage.completion_tokens_details?.reasoning_tokens);
+  const reasoningLength = readReasoningText(data).trim().length;
+  const facts = [
+    `finish_reason: ${finish || '（没给）'}`,
+    Number.isFinite(completion) ? `输出 ${completion} tokens${Number.isFinite(reasoningTokens) && reasoningTokens > 0 ? `，其中思考 ${reasoningTokens}` : ''}` : '没有用量资料',
+    reasoningLength > 0 ? `思考内容 ${reasoningLength} 字` : '',
+  ].filter(Boolean).join('；');
+  const lowerFinish = finish.toLowerCase();
+  let hint;
+  if (['length', 'max_tokens', 'max_output_tokens'].includes(lowerFinish)) {
+    hint = reasoningLength > 0 || reasoningTokens > 0
+      ? '输出额度被思考用光了：在渠道或模型设定里调高最大输出、降低推理强度，或换不思考的模型。'
+      : '输出额度用光了：在渠道或模型设定里调高最大输出。';
+  } else if (['content_filter', 'safety', 'prohibited_content', 'blocklist', 'recitation'].includes(lowerFinish)) {
+    hint = '被渠道的内容审查挡下（追踪读的是角色扮演原文）：换渠道，或在渠道端调整审查设定。';
+  } else if (reasoningLength > 0) {
+    hint = '思考有内容但正文是空的，思考里也找不到 JSON：可能是思考模型的输出没接回正文，试着降低推理强度或换不思考的模型。';
+  } else if (!Number.isFinite(completion) || completion === 0) {
+    hint = '上游回了空壳（没有生成任何内容）：常见于反代撑不住长请求、不支援 response_format 或工具参数。也可以在「预设」页把「Tracker 专用预设」改成「裸请求（不套用预设）」再试。';
+  } else {
+    hint = '模型有输出但正文是空的：试着在「预设」页把「Tracker 专用预设」改成「裸请求（不套用预设）」，或换一个模型。';
+  }
+  return `模型返回为空字符串（${facts}）。${hint}`;
+}
+
 function summarizeModelText(text) {
   const normalized = String(text || '').replace(/\s+/g, ' ').trim();
   if (!normalized) return '模型返回为空字符串';
@@ -2672,7 +2736,7 @@ async function callOpenAICompatibleCore(settings, payload, systemPrompt = DEFAUL
             console.warn('[BS BioTracker] 工具调用的参数解析不了，这次改用文本 JSON', native.toolCalls);
           } else {
             // 模型没用工具，但正文里照文本协议写了 JSON：直接采用
-            const nativeContent = extractJson(nativeData?.choices?.[0]?.message?.content || '');
+            const nativeContent = extractReplyJson(nativeData).parsed;
             if (nativePlan.acceptsContent(nativeContent)) return nativeContent;
           }
         }
@@ -2684,8 +2748,9 @@ async function callOpenAICompatibleCore(settings, payload, systemPrompt = DEFAUL
         const reason = nativeFallback === 'rejected' ? '上游不接受工具调用参数' : '模型没在一次回复里发完工具调用';
         console.warn(`[BS BioTracker] ${reason}，本次会话里 ${model} 改用文本 JSON`);
       }
-      const content = data?.choices?.[0]?.message?.content || '';
-      let parsed = extractJson(content);
+      const first = extractReplyJson(data);
+      const content = first.text;
+      let parsed = first.parsed;
       if (parsed && typeof parsed === 'object') return parsed;
 
       // 同一轮全局尝试内：先做一次「请只输出 JSON」纠错请求
@@ -2703,12 +2768,17 @@ async function callOpenAICompatibleCore(settings, payload, systemPrompt = DEFAUL
         ...(useFormattedOutputV4 ? { response_format: { type: 'json_object' } } : {}),
       });
       const retryData = await requestChatCompletion(apiBase, settings, retryBody, runContext);
-      const retryContent = retryData?.choices?.[0]?.message?.content || '';
-      parsed = extractJson(retryContent);
+      const retry = extractReplyJson(retryData);
+      const retryContent = retry.text;
+      parsed = retry.parsed;
       if (parsed && typeof parsed === 'object') return parsed;
 
+      // 两次都空：写出为什么空（额度、审查、上游空壳…），而不是只说「返回为空」
+      const emptyDiagnosis = !String(retryContent || '').trim() && !String(content || '').trim()
+        ? describeEmptyReply(retryData || data)
+        : '';
       throw new Error(
-        `模型没有返回可解析的 JSON（全局尝试 ${globalAttempt + 1}/${GLOBAL_API_MAX_RETRIES + 1}）。原始回覆：${summarizeModelText(retryContent || content)}`,
+        `模型没有返回可解析的 JSON（全局尝试 ${globalAttempt + 1}/${GLOBAL_API_MAX_RETRIES + 1}）。${emptyDiagnosis || `原始回覆：${summarizeModelText(retryContent || content)}`}`,
       );
     }, { label: callLabel, overallSignal: overallController?.signal || null, deadlineMs });
   } catch (error) {
