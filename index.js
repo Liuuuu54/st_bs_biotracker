@@ -5547,18 +5547,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       // 生殖干预（1.5.3）：生效中的药与剩余时间
       reproEffects: describeReproEffects(profile, minutesPassed ?? runtimeChatState?.minutesPassed ?? 0),
       // 状态值标题旁的药效小圆饼（1.5.4）：每种生效中的药一个，照剩余时间递减
-      drugPies: (() => {
-        const now = Number(minutesPassed ?? runtimeChatState?.minutesPassed) || 0;
-        const labels = describeReproEffects(profile, now);
-        return normalizeReproEffects(base.reproEffects, now).map((item, index) => {
-          const span = Math.max(1, item.untilMinutes - item.fromMinutes);
-          return {
-            label: labels[index] || item.name,
-            glyph: Array.from(String(item.name || REPRO_EFFECTS[item.effect]?.label || '药'))[0],
-            percent: Math.round(Math.max(0, Math.min(1, (item.untilMinutes - now) / span)) * 100),
-          };
-        });
-      })(),
+      drugPies: buildDrugPies(profile, Number(minutesPassed ?? runtimeChatState?.minutesPassed) || 0),
       bodySizeLabel: formatCharacterBodySizeLabel(base),
       altFormBodySizeLabel: formatAltFormBodySizeLabel(base),
       sheathLabel: formatSheathLabel(base, profile.experience || {}),
@@ -7935,6 +7924,19 @@ function renderBirthdayDebugSection(body = {}) {
 
 /** 变量页的生殖药物（1.5.4）：生效中的药可以逐笔停掉或全部清除，也能从名录手动服用 */
 /** 状态值标题旁的药效小圆饼：圆里是药名第一个字，扇形是还剩多少；滑鼠停着看完整文字 */
+/** 药效小圆饼的资料：每种生效中的药一个，照剩余时间递减。卵方传 profile，精方传 { base: 精方档案 } */
+function buildDrugPies(profile, now = 0) {
+  const labels = describeReproEffects(profile, now);
+  return normalizeReproEffects(profile?.base?.reproEffects, now).map((item, index) => {
+    const span = Math.max(1, item.untilMinutes - item.fromMinutes);
+    return {
+      label: labels[index] || item.name,
+      glyph: Array.from(String(item.name || REPRO_EFFECTS[item.effect]?.label || '药'))[0],
+      percent: Math.round(Math.max(0, Math.min(1, (item.untilMinutes - now) / span)) * 100),
+    };
+  });
+}
+
 function renderDrugPies(pies = []) {
   if (!Array.isArray(pies) || !pies.length) return '';
   return `<span class="bs-bt-drug-pies" role="list" aria-label="生效中的药">${pies.map((pie) => `<span class="bs-bt-drug-pie" role="listitem" style="--bsbt-pie:${Number(pie.percent) || 0}" title="${escapeHtml(pie.label)}" aria-label="${escapeHtml(pie.label)}"><span>${escapeHtml(pie.glyph)}</span></span>`).join('')}</span>`;
@@ -9157,10 +9159,6 @@ function renderTrackSirePage(chatState) {
         : [metaRow('体型', formatCharacterBodySizeLabel(base || {}))]),
       ...(formatAltFormBodySizeLabel(base || {}) ? [metaRow('变化态体型', formatAltFormBodySizeLabel(base || {}))] : []),
       ...renderSireQualityRows(chatState, name, record, metaRow),
-      // 生效中的药（1.5.4）：精方那侧的避孕、强精、催情
-      ...(describeReproEffects({ base: record }, minutesPassed).length
-        ? [metaRow('用药', describeReproEffects({ base: record }, minutesPassed).join('、'), '精方那侧：避孕＝射精照可靠度失去活性；助孕＝当下品质提高、剑暂时变大；催情＝存量补满')]
-        : []),
       ...(record.fetalGuard ? [metaRow('胎儿守护', '作弊开启', '在场（母体也在场）时，他的胎儿健康每小时回复 2%，回到平稳为止。到变量页这位精方的调试分页关闭')] : []),
       // 天赋：会有 25% 先天遗传给孩子；扶她读卵方
       metaRow('天赋', (isFuta ? normalizeTalentList(chatState.characters[name]?.profile?.talents) : (record.talents || []))
@@ -9242,10 +9240,13 @@ function renderSireQualityRows(chatState, name, record, metaRow) {
 function renderSireCycleSections(chatState, name) {
   const state = getSireQualityState(chatState, name);
   if (!state) return '';
+  // 精方那侧的药效小圆饼（1.5.4）：接在「周期与存量」标题后面，样式与卵方的同一个
+  const sireRecord = getSireRecord(chatState, name);
+  const sirePies = sireRecord ? renderDrugPies(buildDrugPies({ base: sireRecord }, Number(chatState?.minutesPassed) || 0)) : '';
   if (state.alwaysPeak) {
     return `
     <div class="bs-bt-track-section bs-bt-track-stage-progress">
-      <div class="bs-bt-track-section-title bs-bt-track-section-title--split"><span class="bs-bt-track-title-left">${renderTrackTitle('周期与存量')}</span><span class="bs-bt-track-title-badge">作弊·品质锁定</span></div>
+      <div class="bs-bt-track-section-title bs-bt-track-section-title--split"><span class="bs-bt-track-title-left">${renderTrackTitle('周期与存量')}${sirePies}</span><span class="bs-bt-track-title-badge">作弊·品质锁定</span></div>
       <div class="bs-bt-track-description-empty">精子品质恒等于档案值，不受繁殖季、精力周期、存量与禁欲影响。到变量页这位精方的调试分页关闭。</div>
     </div>`;
   }
@@ -9316,7 +9317,7 @@ function renderSireCycleSections(chatState, name) {
 
   return `
     <div class="bs-bt-track-section bs-bt-sire-cycle">
-      <div class="bs-bt-track-section-title bs-bt-track-section-title--split"><span class="bs-bt-track-title-left">${renderTrackTitle('周期与存量')}</span><span class="bs-bt-track-title-badge">${escapeHtml(badge)}</span></div>
+      <div class="bs-bt-track-section-title bs-bt-track-section-title--split"><span class="bs-bt-track-title-left">${renderTrackTitle('周期与存量')}${sirePies}</span><span class="bs-bt-track-title-badge">${escapeHtml(badge)}</span></div>
       <div class="bs-bt-sire-gauges">${gauges.join('')}</div>
     </div>`;
 }

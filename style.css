@@ -7677,6 +7677,11 @@
   justify-content: space-between;
   gap: 8px;
 }
+/* 精方「周期与存量」标题：圆饼接在标题文字后面，右边照旧是繁殖季标签 */
+#bs-biotracker-settings .bs-bt-track-title-left > .bs-bt-drug-pies {
+  margin-left: 6px;
+  vertical-align: middle;
+}
 #bs-biotracker-settings .bs-bt-drug-pies {
   display: inline-flex;
   flex-wrap: wrap;
