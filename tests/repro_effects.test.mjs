@@ -293,3 +293,68 @@ test('提示词送生效中的药的文字，不送原始纪录（1.5.4）', asy
   assert.deepEqual(narrated.activeDrugs, tracked.activeDrugs);
   assert.equal(chat.characters['甲'].profile.base.reproEffects.length, 1, '不碰存档');
 });
+
+// ---- 1.5.4：药不分男女（精方那侧）与催情 ----
+import { upsertSireRecord, getSireQualityState, getEffectiveSwordOffset } from '../scripts/sires.js';
+
+const sireChat = () => {
+  const chat = setup('排卵期', 0, { eggs: 1, libido: 0 });
+  upsertSireRecord(chat, 'M', { race: '人类', spermQuality: 1, swordOffset: 0 }, { source: 'manual' });
+  return chat;
+};
+const actOn = (chat, female, args) => applyToolCall(chat, { name: 'bsReproductiveIntervention', arguments: { female, ...args } });
+const sperm = (chat, action, amount = 0) => applyToolCall(chat, { name: 'bsAddSperm', arguments: { female: 'A', male: 'M', race: '人类', action, amount } });
+
+test('男方避孕：女方栏位填精方名字；射精照可靠度失去活性（与事后避孕同一个标记）', () => {
+  const chat = sireChat();
+  const result = actOn(chat, 'M', { effect: 'pill', days: 30 });
+  assert.equal(result.applied, true, result.message);
+  assert.equal(chat.sires.M.reproEffects.length, 1);
+  Math.random = () => 0;
+  sperm(chat, 'insert');
+  const deposit = sperm(chat, 'deposit', 50);
+  assert.match(deposit.message, /精液没有活性/);
+  assert.ok(base(chat).spermContacts.every((contact) => contact.blocked === true));
+});
+
+test('强精：当下精子品质照助孕倍率提高、剑暂时变大；卵方专属的效果对精方没有作用', () => {
+  setDrugCatalogProvider(() => normalizeDrugCatalog([
+    { name: '虎鞭酒', effects: [{ effect: 'fertility', strength: 'strong' }, { effect: 'aphrodisiac', strength: 'light' }], days: 3 },
+    { name: '调经丸', effects: [{ effect: 'regulate', strength: 'normal' }], days: 30 },
+  ]));
+  const chat = sireChat();
+  const before = getSireQualityState(chat, 'M').effective;
+  chat.sires.M.reserve = 0.2;
+  chat.sires.M.reserveAt = 0;
+  assert.equal(actOn(chat, 'M', { drug: '虎鞭酒' }).applied, true);
+  const after = getSireQualityState(chat, 'M');
+  assert.equal(after.reserve, 1, '催情补满存量');
+  assert.ok(Math.abs(after.effective - Math.min(4, before * 2)) < 1e-6, `${before} → ${after.effective}`);
+  assert.equal(getEffectiveSwordOffset(chat.sires.M, 0), 1.5, '强精剑 +1.5');
+  const none = actOn(chat, 'M', { drug: '调经丸' });
+  assert.match(none.message, /对精方没有作用/);
+  // 解药也清精方那侧
+  setDrugCatalogProvider(() => normalizeDrugCatalog([{ name: '解毒奶', effects: [{ effect: 'cleanse', strength: 'normal' }] }]));
+  assert.match(actOn(chat, 'M', { drug: '解毒奶' }).message, /清掉 2 种药效/);
+  assert.equal(getEffectiveSwordOffset(chat.sires.M, 0), 0);
+});
+
+test('卵方催情：不直接加性欲；工具加的放大、减的压住，契合累积另乘倍率', () => {
+  setDrugCatalogProvider(() => normalizeDrugCatalog([{ name: '春药', effects: [{ effect: 'aphrodisiac', strength: 'normal' }], days: 0.25 }]));
+  const chat = sireChat();
+  assert.equal(actOn(chat, 'A', { drug: '春药' }).applied, true);
+  assert.equal(base(chat).libido, 0, '吃下去不直接加性欲');
+  applyToolCall(chat, { name: 'bsUpdateCharacterStatus', arguments: { female: 'A', options: { libido: 10 } } });
+  assert.equal(base(chat).libido, 20, '一般 ×2');
+  applyToolCall(chat, { name: 'bsUpdateCharacterStatus', arguments: { female: 'A', options: { libido: -8 } } });
+  assert.equal(base(chat).libido, 18, '减 ×0.25');
+  sperm(chat, 'insert');
+  const gain = chat.characters.A.profile.intimacy.M.sessionGain;
+  const plain = sireChat();
+  applyToolCall(plain, { name: 'bsAddSperm', arguments: { female: 'A', male: 'M', race: '人类', action: 'insert', amount: 0 } });
+  assert.ok(Math.abs(gain - plain.characters.A.profile.intimacy.M.sessionGain * 1.5) < 1e-9, '契合 ×1.5');
+  // 药效过了照常
+  pass(chat, 1);
+  applyToolCall(chat, { name: 'bsUpdateCharacterStatus', arguments: { female: 'A', options: { libido: 10 } } });
+  assert.equal(base(chat).libido, 28);
+});

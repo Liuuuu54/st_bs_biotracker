@@ -12,10 +12,11 @@ const GRADES = Object.freeze(['slight_increase', 'significant_increase', 'severe
 export const REPRO_EFFECT_TOOL_TEXT = Object.freeze({
   phase: 'phase 切换月经相关阶段（stage 只接受卵泡期、排卵期、黄体期、月经期、乏情期、产后恢复、假孕期；外力催经、被咒假孕、封印进乏情，或正文写她来月经了而状态不符时对齐；已有胎儿或受精进行中、真妊娠、回归期、产兆前驱、产程时会被拒绝）',
   emergency: 'emergency 事后避孕（仅着床前、处理服药前已有的接触；越晚越差、着床后无效；服药不等于成功，结果由系统结算，下一次叙事才提示）',
-  pill: 'pill 避孕药（生效期间抑制排卵，照世界基准的可靠度）',
+  pill: 'pill 避孕药（女方抑制排卵；男方每次射精照可靠度让精液失去活性；照世界基准的可靠度）',
   regulate: 'regulate 调经（这一轮起周期规律）',
   ovulation: 'ovulation 促排卵（下一次排卵多排卵，strong 在卵泡期时直接催到排卵期）',
-  fertility: 'fertility 助孕（受孕难度降低、这一轮卵子品质提高：更容易受精、着床更稳、胎儿起点更好；只在着床前有意义，保胎不是这个工具，走 bsFetalEvent）',
+  fertility: 'fertility 助孕（女方受孕难度降低、这一轮卵子品质提高：更容易受精、着床更稳、胎儿起点更好，只在着床前有意义，保胎不是这个工具，走 bsFetalEvent；男方是强精：当下精子品质提高、剑暂时变大）',
+  aphrodisiac: 'aphrodisiac 催情（女方对刺激更敏感：药效期间你用 bsUpdateCharacterStatus 加的性欲被放大、减的被压住，交合的契合也累积得更多；男方马上补满精液、禁欲重算。不会自己加性欲，剧情写到她被撩起来照样用工具加）',
   twinning: 'twinning 促分裂（同卵多胞胎机率提高）',
   chimera: 'chimera 促嵌合（同一次受孕的胚胎融合成嵌合体的机率提高，要先有两颗以上胚胎，常配促排卵）',
   amnion: 'amnion 固膜（孕期中羊膜每天修复一点、受宫压与排斥的磨损减轻，进产程时胎膜比较完整；产程中无效）',
@@ -28,6 +29,7 @@ export function describeReproductiveInterventionTool(allowed = Object.keys(REPRO
   const keys = allowed.filter((key) => REPRO_EFFECT_TOOL_TEXT[key]);
   const lasting = keys.filter((key) => !['phase', 'emergency', 'abortifacient', 'induce'].includes(key));
   return '生殖干预：剧情里吃了药、用了法术或外力改变生殖状态，或照正文对齐月经阶段时调用。只有世界观里存在、剧情确实使用了才调用，不得引入世界观没有的药或手段。'
+    + '药不分男女：female 填谁吃的药，可以是已注册的卵方，也可以是精方档案的名字；避孕、助孕、催情对男方也有作用，其他效果只作用在女方，扶她两侧都套。'
     + 'stop=true 是停药：剧情写到她停了某种药，drug 填药名（或 effect 填效果）就提早结束那一笔；不算药，随时可用。'
     + 'payload.drug_catalog 有列药时，drug 只能填名录里的药名，效果照名录（不必再给 effect）；名录是空的才直接给 effect。'
     + `\neffect：${keys.map((key) => REPRO_EFFECT_TOOL_TEXT[key]).join('；')}。`
@@ -324,7 +326,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     input_schema: {
       type: 'object',
       properties: {
-        female: { type: 'string' },
+        female: { type: 'string', description: '谁吃的药：已注册的卵方，或精方档案的名字' },
         drug: { type: 'string', description: '药物名录的药名；名录是空的时可写剧情里的药名当标签' },
         stop: { type: 'boolean', description: 'true＝停药：提早结束 drug（或 effect）那一笔生效中的药' },
         effect: { type: 'string', enum: Object.keys(REPRO_EFFECT_TOOL_TEXT) },

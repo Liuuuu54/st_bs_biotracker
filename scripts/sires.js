@@ -10,6 +10,7 @@ import { getActiveCalendar, getBreedingAnchor, getDerivedPeakAnchor, nextAnchorM
 import { normalizeReproductiveSettings } from './reproductive.js';
 import { getRaceSeasonShape, getSireSeasonPhase, hashPhase, hasSeasonOrigin, resolveSireSeasonOrigin } from './season_phase.js';
 import { DORMANCY_STAGE } from './stage_config.js';
+import { describeReproEffects, fertilityMultiplier, fertilitySwordBoost, normalizeReproEffects } from './repro_effects.js';
 import { describeDerivedTransform, normalizeDerivedTransformLog } from './derived_transform.js';
 import { canBodyHaveSkill, getTalentLabel, normalizeSkillList, normalizeTalentList, resolveSkillDefinition } from './skill_config.js';
 
@@ -210,7 +211,9 @@ export function getSireQualityState(chatState, name, { minutesPassed = null } = 
       restDays,
     };
   }
-  const effective = normalizeSpermQuality(quality * season.factor * cycle * freshness * abstinence);
+  // 助孕（强精，1.5.4）：当下品质乘同样的倍率
+  const drug = fertilityMultiplier({ base: record }, now);
+  const effective = normalizeSpermQuality(quality * season.factor * cycle * freshness * abstinence * drug);
   return {
     quality,
     alwaysPeak: false,
@@ -237,6 +240,11 @@ export function getSireQualityState(chatState, name, { minutesPassed = null } = 
     abstinence,
     restDays,
   };
+}
+
+/** 剑偏移加上强精暂时的加大（1.5.4），夹在 −2～+2 */
+export function getEffectiveSwordOffset(record, nowMinutes = null) {
+  return normalizeSwordOffset(Number(normalizeSwordOffset(record?.swordOffset)) + fertilitySwordBoost({ base: record }, nowMinutes));
 }
 
 /** 射精：存量扣掉一部分，从这一刻重新起算回复。没有档案回传 null */
@@ -330,6 +338,8 @@ export function normalizeSireRecord(raw, minutesPassed = 0) {
       : Math.max(0, Number(value.createdAt) || 0),
     // 作弊：当下品质恒等于档案品质，不受季节、精力周期、存量与禁欲影响；只有使用者在注册页能开。要改品质到变量页改档案
     alwaysPeak: value.alwaysPeak === true,
+    // 生效中的药（1.5.4，精方那侧：避孕、助孕、催情）；结构同卵方的 base.reproEffects，到期在读的时候滤掉
+    reproEffects: normalizeReproEffects(value.reproEffects),
     // 作弊：胎儿守护。这位精方在场时，他的胎儿健康慢慢回到平稳（见 isSireGuarding）；只有使用者在注册页能开
     fetalGuard: value.fetalGuard === true,
     // 季节时钟起点（分钟）；没有季节的种族与扶她为 null
@@ -527,8 +537,10 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
       ...(record.bodySize ? { bodySize: record.bodySize } : {}),
       ...(virility ? { virility } : {}),
       ...(condition ? { condition } : {}),
-      // 剑只送文字：模型看不懂偏移数字
-      ...(record.swordOffset ? { sword: describeSwordOffset(record.swordOffset) } : {}),
+      // 剑只送文字：模型看不懂偏移数字。强精中照暂时加大后的尺寸
+      ...(getEffectiveSwordOffset(record, now) ? { sword: `${describeSwordOffset(getEffectiveSwordOffset(record, now))}${getEffectiveSwordOffset(record, now) !== normalizeSwordOffset(record.swordOffset) ? '（强精，暂时变大）' : ''}` } : {}),
+      // 生效中的药（1.5.4）：药名、效果与剩多久
+      ...(describeReproEffects({ base: record }, now).length ? { activeDrugs: describeReproEffects({ base: record }, now) } : {}),
     };
     if (record.isHere !== false) {
       const list = record.descriptions?.normalDescription || [];

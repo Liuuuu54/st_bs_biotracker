@@ -18,6 +18,8 @@ export const REPRO_EFFECTS = Object.freeze({
   amnion: Object.freeze({ label: '固膜', days: 14, realistic: false, catalogOnly: true }),
   // 解药（1.5.4）：一次清掉身上所有生效中的药（解毒奶、净化术）；强度不影响
   cleanse: Object.freeze({ label: '解药', instant: true, realistic: false, catalogOnly: true }),
+  // 催情（1.5.4）：卵方对刺激的反应变大（性欲的增减与契合）；精方存量补满、禁欲重算（回精）。持续时间通常一个晚上
+  aphrodisiac: Object.freeze({ label: '催情', days: 0.25, realistic: false, catalogOnly: true }),
   abortifacient: Object.freeze({ label: '堕胎', instant: true, realistic: true, catalogOnly: true }),
   induce: Object.freeze({ label: '催产', instant: true, realistic: true, catalogOnly: true }),
 });
@@ -42,6 +44,21 @@ export const ABORTIFACIENT_HARM = Object.freeze({ light: 8, normal: 12, strong: 
 /** 催产：发动的机率（孕晚期未足月再乘离足月多远的系数） */
 export const INDUCE_CHANCE = Object.freeze({ light: 0.4, normal: 0.7, strong: 0.95 });
 export const REPRO_EFFECT_KEYS = Object.freeze(Object.keys(REPRO_EFFECTS));
+/**
+ * 药不分男女（1.5.4）：看是谁吃下去，作用在她／他身上有的那一侧。精方那侧只有这三种：
+ * 避孕＝每次射精照可靠度掷，掷中那一次的精液没有活性；助孕＝当下精子品质乘同样的倍率、剑暂时变大；
+ * 催情＝存量补满、禁欲重算。其余效果只有卵方那侧。扶她两侧都有，两侧都套。
+ */
+export const SIRE_REPRO_EFFECTS = Object.freeze(['pill', 'fertility', 'aphrodisiac']);
+/**
+ * 催情的卵方那侧：不直接改性欲（四值只走 bsUpdateCharacterStatus），改的是身体对刺激的反应——
+ * 工具加性欲时放大、减性欲时打折（强效挡掉）；交合时的契合累积另乘一个独立的倍率（不动体型契合本身）。
+ */
+export const APHRODISIAC_LIBIDO_GAIN = Object.freeze({ light: 1.5, normal: 2, strong: 3 });
+export const APHRODISIAC_LIBIDO_DROP = Object.freeze({ light: 0.5, normal: 0.25, strong: 0 });
+export const APHRODISIAC_COMPAT = Object.freeze({ light: 1.25, normal: 1.5, strong: 2 });
+/** 助孕（强精）：剑暂时变大多少（剑偏移 −2～+2，每 0.5 一级） */
+export const FERTILITY_SWORD_BOOST = Object.freeze({ light: 0.5, normal: 1, strong: 1.5 });
 /** 「生殖药物」开关关掉时只留原本就有的两项 */
 export const BASIC_REPRO_EFFECTS = Object.freeze(['phase', 'emergency']);
 
@@ -132,6 +149,27 @@ export function chanceMultiplier(profile, effect, nowMinutes = null) {
 export function extraOvulationEggs(profile, nowMinutes = null) {
   const active = getActiveReproEffect(profile, 'ovulation', nowMinutes);
   return active ? Math.max(0, Math.floor(Number(active.value) || 0)) : 0;
+}
+
+/** 催情：工具给的性欲增减怎么调（增放大、减打折）；没有时原样 */
+export function scaleLibidoDelta(profile, delta, nowMinutes = null) {
+  const value = Number(delta) || 0;
+  const active = getActiveReproEffect(profile, 'aphrodisiac', nowMinutes);
+  if (!active || value === 0) return value;
+  const table = value > 0 ? APHRODISIAC_LIBIDO_GAIN : APHRODISIAC_LIBIDO_DROP;
+  return value * (table[active.strength] ?? table.normal);
+}
+
+/** 催情：交合时契合累积的独立倍率（没有时 1） */
+export function aphrodisiacCompatMultiplier(profile, nowMinutes = null) {
+  const active = getActiveReproEffect(profile, 'aphrodisiac', nowMinutes);
+  return active ? APHRODISIAC_COMPAT[active.strength] ?? APHRODISIAC_COMPAT.normal : 1;
+}
+
+/** 助孕（强精）：剑暂时加大多少（没有时 0） */
+export function fertilitySwordBoost(profile, nowMinutes = null) {
+  const active = getActiveReproEffect(profile, 'fertility', nowMinutes);
+  return active ? FERTILITY_SWORD_BOOST[active.strength] ?? FERTILITY_SWORD_BOOST.normal : 0;
 }
 
 /** 避孕药：这次排卵被压住的机率（没有吃时 0） */
@@ -225,7 +263,7 @@ export function findDrug(catalog, name) {
  * 世界观里的等效草药、法术也算这几种；助孕、促分裂、促嵌合这类奇幻药要卡片或使用者在名录里定义。
  */
 export const DEFAULT_DRUG_CATALOG = Object.freeze([
-  { name: '避孕药', description: '每日服用、抑制排卵的避孕药（或世界观里的等效草药、法术）。', effects: [{ effect: 'pill', strength: 'normal' }], days: 30 },
+  { name: '避孕药', description: '每日服用的避孕药（或世界观里的等效草药、法术）：女方抑制排卵，男方让精液失去活性。', effects: [{ effect: 'pill', strength: 'normal' }], days: 30 },
   { name: '事后避孕药', description: '性行为后尽快服用的紧急避孕药（或世界观里的等效草药、法术）。', effects: [{ effect: 'emergency', strength: 'normal' }], days: 0 },
   { name: '促排卵药', description: '排卵诱导药，可能多排出一颗卵（或世界观里的等效草药、法术）。', effects: [{ effect: 'ovulation', strength: 'normal' }], days: 5 },
   { name: '调经药', description: '调整月经周期，让周期回到规律（或世界观里的等效草药、法术）。', effects: [{ effect: 'regulate', strength: 'normal' }], days: 30 },

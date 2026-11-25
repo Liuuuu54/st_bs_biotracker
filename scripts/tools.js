@@ -25,9 +25,9 @@ import { sanitizeFetusTagList } from './fetus_tags.js';
 import { DESCRIPTION_FIELDS, applyDescriptionPatch } from './descriptions.js';
 import { applyRegistryResult } from './registry.js';
 import { eggWeightFactor, implantationFailChance, normalizeEggQuality, rollCycleEgg } from './egg_quality.js';
-import { ABORTIFACIENT_CHANCE, ABORTIFACIENT_HARM, INDUCE_CHANCE, REPRO_EFFECTS, amnionProtection, chanceMultiplier, extraOvulationEggs, fertilityMultiplier, findDrug, getActiveDrugCatalog, getActiveReproEffect, normalizeEffectKey, normalizeReproEffects, normalizeStrength, pillSuppression, resolveEffectValue } from './repro_effects.js';
+import { ABORTIFACIENT_CHANCE, ABORTIFACIENT_HARM, INDUCE_CHANCE, REPRO_EFFECTS, amnionProtection, chanceMultiplier, extraOvulationEggs, fertilityMultiplier, findDrug, getActiveDrugCatalog, getActiveReproEffect, normalizeEffectKey, normalizeReproEffects, normalizeStrength, pillSuppression, SIRE_REPRO_EFFECTS, scaleLibidoDelta, aphrodisiacCompatMultiplier, resolveEffectValue } from './repro_effects.js';
 import { averageMonthDays, averageYearDays, dateAt, formatStoryDate, fromLocalYears, getActiveCalendar, getBreedingAnchor, legalAge, minutesAtDate, monthCount, monthDays, nextAnchorMinutes, previousAnchorMinutes } from './calendar.js';
-import { advanceSireAges, consumeSireReserve, normalizeSireRecord, pruneFutaSireRecord, upsertSireRecord, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getSpermQualityFactors, normalizeSpermQuality, resolveSireBase } from './sires.js';
+import { advanceSireAges, consumeSireReserve, normalizeSireRecord, pruneFutaSireRecord, upsertSireRecord, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getEffectiveSwordOffset, getSpermQualityFactors, normalizeSpermQuality, resolveSireBase } from './sires.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
 import { clampIndividualBodySize, describeBodySizeFit, getBodySizePaceFactor, normalizeSwordOffset, getAltFormBodySize, getBodySizeSigma, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
@@ -8778,7 +8778,8 @@ function applyCharacterStatus(chatState, args) {
   }
   if (options.psyStress !== undefined) base.psyStress = clampNumber((base.psyStress || 0) + Number(options.psyStress || 0), 0, stressCap, base.psyStress || 0);
   if (options.libido !== undefined) {
-    const libidoDelta = Number(options.libido || 0);
+    // 催情（1.5.4）：增放大、减打折；四值照样只从这里改
+    const libidoDelta = scaleLibidoDelta(profile, Number(options.libido || 0), Number(chatState.minutesPassed) || 0);
     base.libido = clampNumber((base.libido || 0) + libidoDelta, 0, libidoCap, base.libido || 0);
     applyMilkFromLibido(profile, libidoDelta);
   }
@@ -9380,13 +9381,15 @@ function applyAddSperm(chatState, args) {
     const fit = buildPenetrationFit(base, {
       male, race, bloodline: ancestry.bloodline, fatherBase, args,
       femaleStretch: getSheathStretch(next.profile?.experience),
-      swordOffset: sireInfo?.swordOffset ?? 0,
+      // 强精（1.5.4）：剑暂时加大
+      swordOffset: getSireRecord(chatState, male) ? getEffectiveSwordOffset(getSireRecord(chatState, male), Number(chatState.minutesPassed) || 0) : (sireInfo?.swordOffset ?? 0),
     });
     base.penetrationFit = fit.record;
     // 性爱纪录：相容倍率照体型契合（含经产扩张）；同一场重复 insert 不重算
     recordIntimacyInsert(next.profile, male, {
       minutesPassed: Number(chatState.minutesPassed) || 0,
-      compat: getCompatMultiplier(fit.fit),
+      // 催情（1.5.4）：独立的契合倍率，乘在体型契合之外
+      compat: getCompatMultiplier(fit.fit) * aphrodisiacCompatMultiplier(next.profile, Number(chatState.minutesPassed) || 0),
       compatLabel: fit.fit?.label ?? null,
       reproductiveSettings: chatState.reproductiveSettings,
     });
@@ -9452,6 +9455,10 @@ function applyAddSperm(chatState, args) {
   const nowMinutes = Number(chatState.minutesPassed) || 0;
   const qualityState = getSireQualityState(chatState, male, { minutesPassed: nowMinutes });
   const quality = qualityState ? qualityState.effective : (sireInfo ? sireInfo.spermQuality : 1);
+  // 男方避孕（1.5.4）：照可靠度掷，掷中这一次的精液进去了但没有活性（与事后避孕失活同一个标记）
+  const sireRecordNow = getSireRecord(chatState, male);
+  const malePill = sireRecordNow ? pillSuppression({ base: sireRecordNow }, nowMinutes) : 0;
+  const inert = malePill > 0 && Math.random() < malePill;
   consumeSireReserve(chatState, male, { minutesPassed: nowMinutes });
   const pooled = isPooledConception(base);
   let pooledSpilled = 0;
@@ -9460,7 +9467,7 @@ function applyAddSperm(chatState, args) {
     if (enteredAmount > 0) {
       pooledSpilled = depositPooledSource(base, {
         male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality,
-        minutesPassed: now, value: enteredAmount, blocked: false,
+        minutesPassed: now, value: enteredAmount, blocked: inert,
       }, getCharacterSemenCapacity(femaleFormSize === null ? next.profile
         : { ...next.profile, base: { ...base, bodySize: femaleFormSize } }), now).spilled;
       delete base.spermPool.capacitySignature; // 下次生殖推进先按恢复常态后的容量检查。
@@ -9469,7 +9476,7 @@ function applyAddSperm(chatState, args) {
     base.nextSpermContactId = (Number(base.nextSpermContactId) || 0) + 1;
     sources.push({
       id: base.nextSpermContactId, male, race, ...ancestry, derivedType: maleDerivedType, bodySize: maleBodySize, quality,
-      minutesPassed: Number(chatState.minutesPassed) || 0, value: enteredAmount, blocked: false,
+      minutesPassed: Number(chatState.minutesPassed) || 0, value: enteredAmount, blocked: inert,
     });
     setSpermSources(base, sources);
   }
@@ -9497,7 +9504,7 @@ function applyAddSperm(chatState, args) {
   const ripening = enteredAmount > 0 ? applyProdromalSemenRipening(next.profile, female) : null;
   if (ripening) next.profile.notify = { ...(next.profile.notify || {}), secondly: ripening };
   chatState.characters[female] = ripening ? syncCharacterStageFromProfile(next) : next;
-  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}${condomFailReason ? ` (${condomFailReason === 'overflow' ? '超过容量撑破' : '套子破裂'})` : ''}, enteredAmount=${enteredAmount}${spilled > 0 ? `，超过子宫容量当场流出 ${Math.round(spilled)}` : ''}（系统结算，不代表角色知情；下轮承接）.${ripening ? ` ${ripening}。` : ''}${raceNote ? ` ${raceNote}` : ''}` };
+  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}${condomFailReason ? ` (${condomFailReason === 'overflow' ? '超过容量撑破' : '套子破裂'})` : ''}, enteredAmount=${enteredAmount}${inert && enteredAmount > 0 ? '，男方服了避孕药：这次的精液没有活性' : ''}${spilled > 0 ? `，超过子宫容量当场流出 ${Math.round(spilled)}` : ''}（系统结算，不代表角色知情；下轮承接）.${ripening ? ` ${ripening}。` : ''}${raceNote ? ` ${raceNote}` : ''}` };
 }
 
 function applyDrainSperm(chatState, args) {
@@ -9565,18 +9572,25 @@ export function removeReproEffects(profile, match, nowMinutes = null) {
 function applyReproductiveIntervention(chatState, args) {
   const female = String(args?.female || '').trim();
   const character = chatState.characters?.[female];
+  // 药不分男女（1.5.4）：female 也可以填精方的名字；扶她两侧都有
+  const sireRecord = getSireRecord(chatState, female);
   const skip = (message) => ({ applied: false, message: `bsReproductiveIntervention skipped${female ? ` for ${female}` : ''}: ${message}` });
-  if (!character) return skip('未知角色。');
+  if (!character && !sireRecord) return skip('未知角色（不是已注册的卵方，也不是精方档案）。');
   // 停药（1.5.4）：不算药，任何世界、开关都能用；照药名或效果找生效中的那一笔
   if (args?.stop === true) {
     const name = String(args?.drug || '').trim();
     const effect = normalizeEffectKey(args?.effect);
     if (!name && !effect) return skip('停药要填 drug（药名）或 effect。');
     const now = Math.max(0, Number(chatState.minutesPassed) || 0);
-    const next = cloneValue(character);
-    const removed = removeReproEffects(next.profile, (item) => (name ? item.name === name || REPRO_EFFECTS[item.effect]?.label === name : item.effect === effect), now);
+    const match = (item) => (name ? item.name === name || REPRO_EFFECTS[item.effect]?.label === name : item.effect === effect);
+    let removed = 0;
+    if (character) {
+      const next = cloneValue(character);
+      removed += removeReproEffects(next.profile, match, now);
+      chatState.characters[female] = next;
+    }
+    if (sireRecord) removed += removeReproEffects({ base: sireRecord }, match, now);
     if (!removed) return skip(`身上没有生效中的「${name || REPRO_EFFECTS[effect]?.label || effect}」。`);
-    chatState.characters[female] = next;
     return { applied: true, message: `bsReproductiveIntervention applied to ${female}: 停了${name || REPRO_EFFECTS[effect].label}（${removed} 笔）.` };
   }
   const catalog = getActiveDrugCatalog();
@@ -9608,8 +9622,34 @@ function applyReproductiveIntervention(chatState, args) {
   const world = normalizeReproductiveSettings(chatState.reproductiveSettings);
   const explicitMinutes = (Number(args?.days) || 0) * 1440 + (Number(args?.hours) || 0) * 60;
   const done = [];
+  const minutesOf = (meta) => (explicitMinutes > 0 ? explicitMinutes : (Number(drugDays) || meta.days || 1) * 1440);
   for (const entry of entries) {
     const meta = REPRO_EFFECTS[entry.effect];
+    // 精方那侧（1.5.4）：避孕、助孕、催情记在精方档案；催情另外马上补满存量、禁欲重算
+    const sireSide = sireRecord && SIRE_REPRO_EFFECTS.includes(entry.effect);
+    if (sireSide) {
+      const minutes = minutesOf(meta);
+      sireRecord.reproEffects = [...normalizeReproEffects(sireRecord.reproEffects, now), {
+        name: label || meta.label,
+        effect: entry.effect,
+        strength: normalizeStrength(entry.strength),
+        fromMinutes: now,
+        untilMinutes: now + minutes,
+        value: resolveEffectValue(entry.effect, entry.strength, world),
+      }];
+      if (entry.effect === 'aphrodisiac') {
+        sireRecord.reserve = 1;
+        sireRecord.reserveAt = now;
+      }
+    }
+    // 解药也清精方那侧的药
+    const sireCleansed = sireRecord && entry.effect === 'cleanse' ? removeReproEffects({ base: sireRecord }, () => true, now) : 0;
+    // 没有卵方那侧（纯精方）：精方的效果记好就结束，卵方专属的效果对他没有作用
+    if (!character) {
+      if (entry.effect === 'cleanse') done.push(sireCleansed ? `解药（清掉 ${sireCleansed} 种药效）` : '解药（身上本来就没有生效中的药）');
+      else done.push(sireSide ? `${meta.label}（精方，${Math.round(minutesOf(meta) / 144) / 10} 天）` : `${meta.label}对精方没有作用`);
+      continue;
+    }
     if (entry.effect === 'phase') {
       const stage = String(entry.stage || args?.stage || '').trim();
       const result = applySetMenstrualPhases(chatState, { female, stage });
@@ -9644,7 +9684,7 @@ function applyReproductiveIntervention(chatState, args) {
       done.push(result.summary);
       continue;
     }
-    const minutes = explicitMinutes > 0 ? explicitMinutes : (Number(drugDays) || meta.days || 1) * 1440;
+    const minutes = minutesOf(meta);
     const next = cloneValue(chatState.characters[female]);
     const base = next.profile.base;
     const record = {

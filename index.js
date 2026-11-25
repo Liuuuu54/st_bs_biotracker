@@ -3122,7 +3122,7 @@ function renderDrugRow(drug = {}, { open = false } = {}) {
     <summary class="bs-bt-drug-row__summary"><span data-drug-summary-name>${escapeHtml(summary.name)}</span><small data-drug-summary-detail>${escapeHtml(summary.detail)}</small></summary>
     <div class="bs-bt-drug-row__head">
       <input class="text_pole" type="text" maxlength="24" data-drug-name placeholder="药名" value="${escapeHtml(drug.name || '')}" />
-      <label class="bs-bt-drug-days"><input class="text_pole" type="number" min="0" max="365" step="1" data-drug-days value="${Number(drug.days) || 0}" />天</label>
+      <label class="bs-bt-drug-days"><input class="text_pole" type="number" min="0" max="365" step="0.25" data-drug-days value="${Number(drug.days) || 0}" />天</label>
       <button type="button" class="menu_button" data-drug-remove title="删除这种药">删除</button>
     </div>
     <textarea class="text_pole bs-bt-textarea" rows="2" maxlength="200" data-drug-description placeholder="给追踪模型看的说明：是什么、怎么用、代价">${escapeHtml(drug.description || '')}</textarea>
@@ -9157,6 +9157,10 @@ function renderTrackSirePage(chatState) {
         : [metaRow('体型', formatCharacterBodySizeLabel(base || {}))]),
       ...(formatAltFormBodySizeLabel(base || {}) ? [metaRow('变化态体型', formatAltFormBodySizeLabel(base || {}))] : []),
       ...renderSireQualityRows(chatState, name, record, metaRow),
+      // 生效中的药（1.5.4）：精方那侧的避孕、强精、催情
+      ...(describeReproEffects({ base: record }, minutesPassed).length
+        ? [metaRow('用药', describeReproEffects({ base: record }, minutesPassed).join('、'), '精方那侧：避孕＝射精照可靠度失去活性；助孕＝当下品质提高、剑暂时变大；催情＝存量补满')]
+        : []),
       ...(record.fetalGuard ? [metaRow('胎儿守护', '作弊开启', '在场（母体也在场）时，他的胎儿健康每小时回复 2%，回到平稳为止。到变量页这位精方的调试分页关闭')] : []),
       // 天赋：会有 25% 先天遗传给孩子；扶她读卵方
       metaRow('天赋', (isFuta ? normalizeTalentList(chatState.characters[name]?.profile?.talents) : (record.talents || []))
