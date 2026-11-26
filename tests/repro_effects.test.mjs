@@ -358,3 +358,12 @@ test('卵方催情：不直接加性欲；工具加的放大、减的压住，�
   applyToolCall(chat, { name: 'bsUpdateCharacterStatus', arguments: { female: 'A', options: { libido: 10 } } });
   assert.equal(base(chat).libido, 28);
 });
+
+test('名录里的药：天数照名录，模型给的 days 不算（实机：虎鞭酒被写成 1 天）', () => {
+  setDrugCatalogProvider(() => normalizeDrugCatalog([{ name: '虎鞭酒', effects: [{ effect: 'fertility', strength: 'strong' }], days: 3 }]));
+  const chat = sireChat();
+  actOn(chat, 'M', { drug: '虎鞭酒', days: 1, strength: 'light' });
+  const effect = chat.sires.M.reproEffects[0];
+  assert.equal(effect.untilMinutes - effect.fromMinutes, 3 * 1440);
+  assert.equal(effect.strength, 'strong');
+});

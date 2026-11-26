@@ -9620,7 +9620,9 @@ function applyReproductiveIntervention(chatState, args) {
   }
   const now = Math.max(0, Number(chatState.minutesPassed) || 0);
   const world = normalizeReproductiveSettings(chatState.reproductiveSettings);
-  const explicitMinutes = (Number(args?.days) || 0) * 1440 + (Number(args?.hours) || 0) * 60;
+  // 名录里的药：天数照名录，模型不能自己改（与效果、强度同一个规矩）；名录空着才看模型给的天数
+  const fromCatalog = Boolean(drugName && findDrug(catalog, drugName));
+  const explicitMinutes = fromCatalog ? 0 : (Number(args?.days) || 0) * 1440 + (Number(args?.hours) || 0) * 60;
   const done = [];
   const minutesOf = (meta) => (explicitMinutes > 0 ? explicitMinutes : (Number(drugDays) || meta.days || 1) * 1440);
   for (const entry of entries) {
