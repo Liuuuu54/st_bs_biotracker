@@ -3141,8 +3141,8 @@ function renderDrugEditor(ctx, globalSettings, settings) {
   const realistic = isRealisticWorld(settings);
   const own = Array.isArray(settings?.drugCatalog) ? settings.drugCatalog : null;
   const defaultNote = realistic
-    ? '（没设名录：用通用的四种现实药物）'
-    : '（没设名录：用通用的四种，世界观里的等效草药、法术也算；助孕、促分裂、促嵌合这类奇幻药要按「从角色卡拟定」或手动新增，名录里有才能用）';
+    ? '（没设名录：用通用的六种现实药物）'
+    : '（没设名录：用通用的六种，世界观里的等效草药、法术也算；助孕、促分裂、促嵌合这类奇幻药要按「从角色卡拟定」或手动新增，名录里有才能用）';
   if (source) source.textContent = `名录来源：${getSettingSource(ctx, globalSettings, 'drugCatalog')}${own ? '' : defaultNote}。可以绑在角色卡上。`;
   if (drugEditorDirty) return;
   const catalog = own || DEFAULT_DRUG_CATALOG;

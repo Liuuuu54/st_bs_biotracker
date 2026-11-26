@@ -19,7 +19,7 @@ export const REPRO_EFFECTS = Object.freeze({
   // 解药（1.5.4）：一次清掉身上所有生效中的药（解毒奶、净化术）；强度不影响
   cleanse: Object.freeze({ label: '解药', instant: true, realistic: false, catalogOnly: true }),
   // 催情（1.5.4）：卵方对刺激的反应变大（性欲的增减与契合）；精方存量补满、禁欲重算（回精）。持续时间通常一个晚上
-  aphrodisiac: Object.freeze({ label: '催情', days: 0.25, realistic: false, catalogOnly: true }),
+  aphrodisiac: Object.freeze({ label: '催情', days: 0.25, realistic: true, catalogOnly: true }),
   abortifacient: Object.freeze({ label: '堕胎', instant: true, realistic: true, catalogOnly: true }),
   induce: Object.freeze({ label: '催产', instant: true, realistic: true, catalogOnly: true }),
 });
@@ -267,6 +267,9 @@ export const DEFAULT_DRUG_CATALOG = Object.freeze([
   { name: '事后避孕药', description: '性行为后尽快服用的紧急避孕药（或世界观里的等效草药、法术）。', effects: [{ effect: 'emergency', strength: 'normal' }], days: 0 },
   { name: '促排卵药', description: '排卵诱导药，可能多排出一颗卵（或世界观里的等效草药、法术）。', effects: [{ effect: 'ovulation', strength: 'normal' }], days: 5 },
   { name: '调经药', description: '调整月经周期，让周期回到规律（或世界观里的等效草药、法术）。', effects: [{ effect: 'regulate', strength: 'normal' }], days: 30 },
+  // 1.5.4：春药与堕胎药现实都有，也放进通用名录
+  { name: '春药', description: '催情药（或世界观里的等效药物、法术）：女方对刺激更敏感、更容易动情；男方很快又硬起来、精液也补了回来。药效约一个晚上。', effects: [{ effect: 'aphrodisiac', strength: 'light' }], days: 0.25 },
+  { name: '堕胎药', description: '药物流产（或世界观里的等效草药、法术）：只对已着床的妊娠，孕期越后越难，可能没流干净。', effects: [{ effect: 'abortifacient', strength: 'normal' }], days: 0 },
 ]);
 /** 旧名：1.5.3 开发中写实世界专用，现在所有世界共用 */
 export const REALISTIC_DRUG_CATALOG = DEFAULT_DRUG_CATALOG;

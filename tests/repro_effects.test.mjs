@@ -100,7 +100,8 @@ test('可用效果：没设名录时奇幻效果不开放，名录里有才开�
   const { getAllowedReproEffects } = await import('../scripts/tracker.js');
   const { DEFAULT_DRUG_CATALOG } = await import('../scripts/repro_effects.js');
   setDrugCatalogProvider(() => DEFAULT_DRUG_CATALOG);
-  assert.deepEqual(getAllowedReproEffects({}), ['phase', 'emergency', 'pill', 'regulate', 'ovulation']);
+  // 1.5.4 起通用名录多了春药（催情）与堕胎药
+  assert.deepEqual(getAllowedReproEffects({}), ['phase', 'emergency', 'pill', 'regulate', 'ovulation', 'aphrodisiac', 'abortifacient']);
   setDrugCatalogProvider(() => [{ name: '双生丹', effects: [{ effect: 'twinning', strength: 'normal' }] }]);
   assert.deepEqual(getAllowedReproEffects({}), ['phase', 'emergency', 'pill', 'regulate', 'ovulation', 'twinning']);
   assert.deepEqual(getAllowedReproEffects({ realisticWorld: true }), ['phase', 'emergency', 'pill', 'regulate', 'ovulation'], '写实世界照样不给');
