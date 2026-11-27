@@ -22,10 +22,11 @@ const base = (chat, name = 'A') => chat.characters[name].profile.base;
 const sperm = (chat, args) => applyToolCall(chat, { name: 'bsAddSperm', arguments: { female: 'A', male: '乙', race: '人类', amount: 0, ...args } });
 const vaginalTotal = (chat) => (base(chat).sperms || []).reduce((sum, source) => sum + (Number(source.value) || 0), 0);
 
-test('种族预设：分离 67、泄殖腔 49、管状 13；孕夫的两种没有种族预设', () => {
+test('种族预设：分离 60、泄殖腔 56、管状 13；孕夫的两种没有种族预设', () => {
   const counts = {};
   for (const race of ALL_BUILTIN_RACES) counts[getRaceOutletLayout(race)] = (counts[getRaceOutletLayout(race)] || 0) + 1;
-  assert.deepEqual(counts, { separate: 67, cloaca: 49, tube: 13 });
+  assert.deepEqual(counts, { separate: 60, cloaca: 56, tube: 13 });
+  assert.equal(getRaceOutletLayout('奇美拉'), 'cloaca', '奇美拉系照袋鼠型');
   assert.equal(getRaceOutletLayout('鸟族'), 'cloaca');
   assert.equal(getRaceOutletLayout('鬣狗族'), 'tube');
   assert.equal(getRaceOutletLayout('鳥族'), 'cloaca', '繁体也认得');
