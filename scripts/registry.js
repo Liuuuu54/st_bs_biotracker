@@ -18,7 +18,7 @@ import { clampIndividualBodySize, getExpectedBodySize, normalizeSheathOffset, no
 import { findSeasonReference } from './season_phase.js';
 import { BUST_GAIN_MAX, HIP_GAIN_MAX, sampleBodyTraits } from './maternal_body.js';
 import { descriptionListToObject, normalizeDescriptionList } from './descriptions.js';
-import { SWORD_TIPS, getSireRecord, normalizeSpermQuality, pruneFutaSireRecord } from './sires.js';
+import { SWORD_SHAFTS, SWORD_TIPS, getSireRecord, normalizeSpermQuality, pruneFutaSireRecord } from './sires.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -622,11 +622,12 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
   return sanitizeWardrobePrepResult(result);
 }
 
-/** 模型回传的剑（{ tip, knot, barbs, twin, lock, scrotum }）→ 精方档案栏位；认不得的项丢掉，什么都没有回传 null */
+/** 模型回传的剑（{ tip, shaft, knot, barbs, twin, lock, scrotum }）→ 精方档案栏位；认不得的项丢掉，什么都没有回传 null */
 export function sanitizeSwordExtraction(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const fields = {};
   if (SWORD_TIPS.includes(raw.tip)) fields.swordTip = raw.tip;
+  if (SWORD_SHAFTS.includes(raw.shaft)) fields.swordShaft = raw.shaft;
   for (const [key, field] of [['knot', 'swordKnot'], ['barbs', 'swordBarbs'], ['twin', 'swordTwin'], ['lock', 'swordLock'], ['scrotum', 'swordScrotum']]) {
     if (typeof raw[key] === 'boolean') fields[field] = raw[key];
   }

@@ -128,7 +128,7 @@ import { FETAL_EVENT_KINDS, describeFetalEventKind, describeFetalEventSummary, d
 import { PSY_AXIS_LABELS } from './scripts/registry_psy_config.js';
 import { computeUterusLayout, getFetusSpriteSpec, getUterusGaugeColumns } from './scripts/uterus_layout.js';
 import { getBodySizeSigma } from './scripts/body_size.js';
-import { getFetalBulkRatioByRace } from './scripts/race_config.js';
+import { getFetalBulkRatioByRace, getRaceSwordSuggestion } from './scripts/race_config.js';
 import { FETAL_GROWTH_SHAPES, FETAL_GROWTH_SHAPE_LABELS, getDefaultFetalGrowthShape, getFetalGrowth, normalizeFetalGrowthShape } from './scripts/fetal_growth.js';
 import { buildGrowthThumbSvg } from './scripts/growth_chart.js';
 import { renderRaceSheetHtml, renderSheetHtml } from './scripts/encyclopedia_sheet.js';
@@ -1838,7 +1838,8 @@ async function registerSireFromForm(ctx) {
       bodySize: extracted.bodySize ?? current?.bodySize ?? prefill?.bodySize ?? null,
       spermQuality: typedQuality ?? extracted.spermQuality ?? current?.spermQuality ?? 1,
       swordOffset: typedSword ?? extracted.swordOffset ?? current?.swordOffset ?? 0,
-      // 剑的外形与锁住（1.6.0）：模型照设定判断，没写到的项保留档案原本的
+      // 剑的外形与锁住（1.6.0）：模型照设定判断；新建档时没写到的项照种族建议补，已有档案的保留原本的
+      ...(current ? {} : getRaceSwordSuggestion(race)),
       ...(extracted.sword || {}),
       isHere: extracted.isHere,
       // 天赋与技能：技能系统关着时模型不判断（null），保留原本的

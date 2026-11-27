@@ -5,7 +5,7 @@
 // 精方档案只留精方专属栏位（精子品质）；描述也放在卵方那份。
 import { descriptionListToObject, getStaleDescriptionFields, normalizeDescriptionList, parseDescriptionGuideFields } from './descriptions.js';
 import { clampIndividualBodySize, describeSwordOffset, normalizeSwordOffset } from './body_size.js';
-import { getBaseDerivedTypeName, getBaseRaceName, getBloodlineInfo, getDerivedTypeSireCycleProfile, getMergedRacePhysiologyProfile, parseRaceDescriptor } from './race_config.js';
+import { getBaseDerivedTypeName, getBaseRaceName, getBloodlineInfo, getDerivedTypeSireCycleProfile, getMergedRacePhysiologyProfile, getRaceCanalTexture, parseRaceDescriptor } from './race_config.js';
 import { getActiveCalendar, getBreedingAnchor, getDerivedPeakAnchor, nextAnchorMinutes, previousAnchorMinutes } from './calendar.js';
 import { normalizeReproductiveSettings } from './reproductive.js';
 import { getRaceSeasonShape, getSireSeasonPhase, hashPhase, hasSeasonOrigin, resolveSireSeasonOrigin } from './season_phase.js';
@@ -242,11 +242,16 @@ export function getSireQualityState(chatState, name, { minutesPassed = null } = 
   };
 }
 
-/** 剑写成一句（给提示词）：偏移只送文字，强精中照暂时加大后的尺寸，再接外形；都是预设值回传空字串 */
-export function describeSireSword(record, nowMinutes = null) {
+/**
+ * 剑写成一句（给提示词）：偏移只送文字，强精中照暂时加大后的尺寸，再接外形；
+ * 精方种族的产道不是血肉时（晶面、金属格……），剑也是那种质感。都是预设值回传空字串。
+ * race 给扶她、孕夫用（她们的精方档案不存种族，照卵方）。
+ */
+export function describeSireSword(record, nowMinutes = null, race = record?.race) {
   const offset = getEffectiveSwordOffset(record, nowMinutes);
   const size = offset ? `${describeSwordOffset(offset)}${offset !== normalizeSwordOffset(record?.swordOffset) ? '（强精，暂时变大）' : ''}` : '';
-  return [size, describeSwordTraits(record)].filter(Boolean).join('，');
+  const texture = race ? getRaceCanalTexture(race, record?.bloodline || null) : null;
+  return [size, describeSwordTraits(record), texture ? `质感：${texture}` : ''].filter(Boolean).join('，');
 }
 
 /** 剑偏移加上强精暂时的加大（1.5.4），夹在 −2～+2 */
@@ -308,14 +313,18 @@ export function getSpermQualityTier(value) {
  */
 export const SWORD_TIPS = Object.freeze(['rounded', 'rimmed', 'covered', 'tapered', 'flared']);
 export const SWORD_TIP_LABELS = Object.freeze({ rounded: '圆钝', rimmed: '冠缘明显', covered: '包皮覆盖', tapered: '尖锥', flared: '喇叭头（射精时胀开）' });
+/** 剑身（1.6.0）：头形之外的整根形状。质感另外照精方种族的非血肉纹理（晶面、金属格……），不另存 */
+export const SWORD_SHAFTS = Object.freeze(['smooth', 'veined', 'ridged', 'spiral', 'tentacle']);
+export const SWORD_SHAFT_LABELS = Object.freeze({ smooth: '平滑', veined: '青筋浮凸', ridged: '一节节的棱环', spiral: '螺旋', tentacle: '触手（能弯、会自己动）' });
 const SWORD_TRAIT_DEFAULTS = Object.freeze({ swordKnot: false, swordBarbs: false, swordTwin: false, swordLock: false, swordScrotum: true });
-export const SWORD_TRAIT_FIELDS = Object.freeze(['swordTip', ...Object.keys(SWORD_TRAIT_DEFAULTS)]);
+export const SWORD_TRAIT_FIELDS = Object.freeze(['swordTip', 'swordShaft', ...Object.keys(SWORD_TRAIT_DEFAULTS)]);
 
-/** 只回传不是预设值的栏位（圆钝、无球结、无倒刺、单剑、不锁、有阴囊都不存） */
+/** 只回传不是预设值的栏位（圆钝、平滑、无球结、无倒刺、单剑、不锁、有阴囊都不存） */
 export function normalizeSwordTraits(value) {
   const source = value && typeof value === 'object' ? value : {};
   const traits = {};
   if (SWORD_TIPS.includes(source.swordTip) && source.swordTip !== 'rounded') traits.swordTip = source.swordTip;
+  if (SWORD_SHAFTS.includes(source.swordShaft) && source.swordShaft !== 'smooth') traits.swordShaft = source.swordShaft;
   for (const [key, fallback] of Object.entries(SWORD_TRAIT_DEFAULTS)) {
     if (typeof source[key] === 'boolean' && source[key] !== fallback) traits[key] = source[key];
   }
@@ -327,6 +336,7 @@ export function describeSwordTraits(record) {
   const traits = normalizeSwordTraits(record);
   return [
     traits.swordTip ? `${SWORD_TIP_LABELS[traits.swordTip]}头` : '',
+    traits.swordShaft ? `剑身${SWORD_SHAFT_LABELS[traits.swordShaft]}` : '',
     traits.swordTwin ? '一对双剑（可以一根插产道、一根插肛门）' : '',
     traits.swordKnot ? '根部球结' : '',
     traits.swordBarbs ? '冠下一圈倒刺' : '',

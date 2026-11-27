@@ -159,3 +159,29 @@ test('双剑锁住后硬拔：产道加重宫脱，肛门也拉伤', () => {
   assert.match(forced.message, /肛门也被拉伤/);
   assert.ok(Number(base(chat).prolapse) > 0);
 });
+
+test('剑身五种：平滑不存；描述接在头形后面；非血肉种族的剑带质感', () => {
+  assert.equal('swordShaft' in normalizeSireRecord({ swordShaft: 'smooth' }), false);
+  assert.equal(normalizeSireRecord({ swordShaft: 'spiral' }).swordShaft, 'spiral');
+  assert.equal('swordShaft' in normalizeSireRecord({ swordShaft: 'banana' }), false);
+  assert.equal(describeSireSword(normalizeSireRecord({ swordTip: 'tapered', swordShaft: 'tentacle' })), '尖锥头、剑身触手（能弯、会自己动）');
+  assert.match(describeSireSword(normalizeSireRecord({ race: '宝石人' })), /^质感：晶面/);
+  assert.match(describeSireSword(normalizeSireRecord({}), 0, '魔像'), /晶面/, '扶她照卵方种族');
+  assert.deepEqual(sanitizeSwordExtraction({ shaft: 'ridged' }), { swordShaft: 'ridged' });
+});
+
+test('种族建议：只补模型判断不出来的项，子项照基种族、没列的不补', async () => {
+  const { getRaceSwordSuggestion } = await import('../scripts/race_config.js');
+  assert.deepEqual(getRaceSwordSuggestion('地狱犬'), { swordTip: 'tapered', swordKnot: true, swordLock: true });
+  assert.deepEqual(getRaceSwordSuggestion('原兽族-针鼹'), { swordTwin: true, swordScrotum: false });
+  assert.deepEqual(getRaceSwordSuggestion('人类'), {});
+  assert.deepEqual(getRaceSwordSuggestion('1/4蛇人x3/4人类'), {}, '混血取占比最大的那一族');
+});
+
+test('卵方长出阴茎（变扶她）：剑的外形照她的种族建议', () => {
+  const chat = setup();
+  base(chat).race = '蛇人';
+  const result = applyToolCall(chat, { name: 'bsRecordExperience', arguments: { female: 'A', action: 'transform', time: 'x', body: 'gainSword', content: '禁术' } });
+  assert.equal(result.applied, true, result.message);
+  assert.deepEqual([chat.sires.A.swordTwin, chat.sires.A.swordScrotum], [true, false]);
+});

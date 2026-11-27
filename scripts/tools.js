@@ -119,6 +119,7 @@ import {
   ANAL_BIRTH_CANAL_LAYOUTS,
   getCharacterOutletLayout,
   getRaceOutletLayout,
+  getRaceSwordSuggestion,
 } from './race_config.js';
 import { getFetalGrowth, getFetalGrowthRate, getFetalKickStrength, getFetalLoadFactor } from './fetal_growth.js';
 import {
@@ -7607,7 +7608,8 @@ function completeBodyTransform(chatState, name, record) {
       chatState.sires[name] = normalizeSireRecord({ ...dormant.sires[name], isHere: base.isHere !== false }, minutesPassed);
       delete dormant.sires[name];
     } else {
-      upsertSireRecord(chatState, name, { race: base.race, age: base.age, bodySize: base.bodySize, spermQuality: 1, swordOffset: 0, isHere: base.isHere !== false, descriptions: [] }, { source: 'manual' });
+      // 剑的外形照她的种族建议（1.6.0），之后可在注册页或变量页改
+      upsertSireRecord(chatState, name, { race: base.race, age: base.age, bodySize: base.bodySize, spermQuality: 1, swordOffset: 0, ...getRaceSwordSuggestion(base.race || '人类', base.bloodline || null), isHere: base.isHere !== false, descriptions: [] }, { source: 'manual' });
     }
     pruneFutaSireRecord(chatState, name);
     logOn(egg.profile);

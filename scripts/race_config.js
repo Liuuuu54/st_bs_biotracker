@@ -1384,6 +1384,46 @@ export function getCharacterOutletLayout(base) {
   return normalizeOutletLayout(base?.outletLayout) || getRaceOutletLayout(base?.race || "人类", base?.bloodline || null);
 }
 
+/**
+ * 剑外形的种族建议（1.6.0）：注册精方或长出阴茎时，模型照设定判断不出来的项才拿来补，使用者之后可改。
+ * 种族不决定剑的外形；子项不带专属建议（照基种族）；没列的种族不补。栏位同 sires.js 的 SWORD_TRAIT_FIELDS。
+ */
+const TWIN_HIDDEN = Object.freeze({ swordTwin: true, swordScrotum: false });
+const BUILTIN_SWORD_SUGGESTIONS = Object.freeze({
+  // 犬科：尖锥头＋根部球结，射精后结住
+  地狱犬: { swordTip: "tapered", swordKnot: true, swordLock: true },
+  // 马科：喇叭头
+  半人马: { swordTip: "flared" }, 天马: { swordTip: "flared" }, 独角兽: { swordTip: "flared" },
+  // 鹿、牛：细长尖锥
+  半人鹿: { swordTip: "tapered" }, 米诺陶族: { swordTip: "tapered" },
+  // 猫科：冠下倒刺
+  貓又: { swordBarbs: true }, 斯芬克斯: { swordBarbs: true },
+  // 兽人、巨魔：青筋
+  欧克: { swordShaft: "veined" }, 巨魔: { swordShaft: "veined" },
+  // 有袋类：分叉成两个头；单孔目：藏在泄殖腔里的双头剑，没有阴囊
+  袋兽族: { swordTwin: true }, 原兽族: TWIN_HIDDEN,
+  // 爬虫、鲨：一对半阴茎（鲨是一对鳍脚），没有阴囊
+  蜥蜴人: TWIN_HIDDEN, 怪爬虫类: TWIN_HIDDEN, 蛇人: TWIN_HIDDEN, 梅杜莎: TWIN_HIDDEN, 鸡蛇族: TWIN_HIDDEN, 狗头人: TWIN_HIDDEN, 鲛人: TWIN_HIDDEN,
+  // 龟、恐龙、鸟、鱼、两栖：睾丸在体内
+  龟族: { swordScrotum: false }, 恐龙族: { swordScrotum: false }, 鸟族: { swordScrotum: false }, 怪鸟类: { swordScrotum: false },
+  仙鹤: { swordScrotum: false }, 夜枭: { swordScrotum: false }, 天狗: { swordScrotum: false }, 赛壬: { swordScrotum: false },
+  人鱼: { swordScrotum: false }, 鱼人: { swordScrotum: false }, 怪鱼类: { swordScrotum: false }, 深潜者: { swordScrotum: false },
+  蛙族: { swordScrotum: false }, 蝾螈族: { swordScrotum: false }, 河童: { swordScrotum: false },
+  // 龙：一节节的棱环，鳞下藏着
+  西方龙: { swordShaft: "ridged", swordScrotum: false }, 东方龙: { swordShaft: "ridged", swordScrotum: false }, 海德拉: { swordShaft: "ridged", swordScrotum: false },
+  // 触手：能弯、会自己动的尖剑
+  触手怪: { swordTip: "tapered", swordShaft: "tentacle", swordScrotum: false }, 斯库拉: { swordTip: "tapered", swordShaft: "tentacle", swordScrotum: false },
+  // 虫：分节的棱环
+  群居虫人: { swordShaft: "ridged", swordScrotum: false }, 独居虫人: { swordShaft: "ridged", swordScrotum: false }, 怪虫类: { swordShaft: "ridged", swordScrotum: false },
+  蜚蠊族: { swordShaft: "ridged", swordScrotum: false }, 蝇魔: { swordShaft: "ridged", swordScrotum: false }, 双生螳螂: { swordShaft: "ridged", swordScrotum: false },
+});
+
+/** 种族的剑外形建议；混血取占比最大的那一族，没有建议回传空物件 */
+export function getRaceSwordSuggestion(race, bloodline = null) {
+  const dominant = pickDominantRaceName(race, bloodline);
+  return { ...(BUILTIN_SWORD_SUGGESTIONS[getBaseRaceName(dominant || race)] || {}) };
+}
+
 /** 种族的非血肉通道纹理（给提示词的一句），血肉的种族回传 null；混血取占比最大的那一族 */
 export function getRaceCanalTexture(race, bloodline = null) {
   const dominant = pickDominantRaceName(race, bloodline);
