@@ -1,3 +1,4 @@
+import { describeProlapse } from './prolapse.js';
 import { describeCalendarForPrompt, describeCalendarStructure, describeCalendarToday, formatBirthday, getActiveCalendar, legalAge, toLocalYears } from './calendar.js';
 import { describeSheathOffset, normalizeSheathOffset } from './body_size.js';
 import { inferPendingPsychology } from './registry.js';
@@ -1238,6 +1239,10 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   delete profile.base.spermPool;
   // 子宫乏力只在反复延产后才有；没有就不送
   if (!(Number(base.uterineAtony) > 0)) delete profile.base.uterineAtony;
+  // 宫脱（1.6.0）只送文字，0 度不送
+  for (const key of ['prolapse', 'prolapseSupportUntil', 'prolapseRestUntil']) delete profile.base[key];
+  const prolapseText = describeProlapse(item.profile, minutesPassed);
+  if (prolapseText) profile.base.prolapse = prolapseText;
   // 鞘偏移只送文字（偏浅、很深…），适中不送；模型看不懂偏移数字
   delete profile.base.sheathOffset;
   if (normalizeSheathOffset(base.sheathOffset) !== 0) profile.base.sheath = describeSheathOffset(base.sheathOffset);

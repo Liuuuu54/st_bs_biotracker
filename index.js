@@ -5746,6 +5746,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
         crossSpecies: Boolean(immune.crossSpecies),
         painPleasure: Boolean(immune.painPleasure),
         lactating: Boolean(immune.lactating),
+        prolapse: Boolean(immune.prolapse),
       },
       isHere: base.isHere !== false,
       gestationModifier: {
@@ -7598,6 +7599,10 @@ function renderTrackDebug(viewModel, fetalTalentHtml = '', sireCheatHtml = '') {
           <span class="bs-bt-track-debug-title">产乳体质</span>
           <span class="bs-bt-track-debug-state">${immune.lactating ? 'ON' : 'OFF'}</span>
         </button>
+        <button type="button" class="bs-bt-track-debug-button${immune.prolapse ? ' is-active' : ''}" data-debug-immune="prolapse" title="宫脱免疫：宫压、产程、插入、剧情都不会让子宫脱垂；已经脱的照常回复">
+          <span class="bs-bt-track-debug-title">宫脱免疫</span>
+          <span class="bs-bt-track-debug-state">${immune.prolapse ? 'ON' : 'OFF'}</span>
+        </button>
         <button type="button" class="bs-bt-track-debug-button${isHere ? ' is-active' : ''}" data-debug-action="toggle-presence">
           <span class="bs-bt-track-debug-title">在场</span>
           <span class="bs-bt-track-debug-state">${isHere ? 'ON' : 'OFF'}</span>
@@ -8078,7 +8083,7 @@ function applySelectedTrackBody(ctx, root) {
 
 function toggleSelectedTrackImmune(ctx, immuneKey) {
   if (!selectedTrackName) return;
-  if (!['metabolism', 'miscarriage', 'realisticLabor', 'crossSpecies', 'painPleasure', 'lactating'].includes(immuneKey)) return;
+  if (!['metabolism', 'miscarriage', 'realisticLabor', 'crossSpecies', 'painPleasure', 'lactating', 'prolapse'].includes(immuneKey)) return;
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const character = chatState.characters?.[selectedTrackName];
@@ -8094,7 +8099,7 @@ function toggleSelectedTrackImmune(ctx, immuneKey) {
   renderStatusPanel(ctx);
   renderFullStatePage(ctx);
   globalThis.toastr?.success?.(
-    `[BS BioTracker] ${selectedTrackName} 的 ${{ metabolism: '代谢免疫', miscarriage: '流产免疫', realisticLabor: '真实产程', crossSpecies: '万族相容', painPleasure: '痛即为爽', lactating: '产乳体质' }[immuneKey]}已${nextValue ? '开启' : '关闭'}`,
+    `[BS BioTracker] ${selectedTrackName} 的 ${{ metabolism: '代谢免疫', miscarriage: '流产免疫', realisticLabor: '真实产程', crossSpecies: '万族相容', painPleasure: '痛即为爽', lactating: '产乳体质', prolapse: '宫脱免疫' }[immuneKey]}已${nextValue ? '开启' : '关闭'}`,
   );
 }
 

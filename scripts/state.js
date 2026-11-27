@@ -924,6 +924,8 @@ export function createDefaultFemaleState(name = '') {
         vitalityLevel,
         psyStressLevel,
         uterineAtony: 0,
+        // 宫脱（1.6.0，prolapse.js）：0–4，整数部分是分级
+        prolapse: 0,
         seasonCycle: 0,
         // 鞘偏移（1.2.4）：实际舒适的深度，−1～+1
         sheathOffset: 0,
@@ -1028,6 +1030,8 @@ export function createDefaultFemaleState(name = '') {
         painPleasure: false,
         // 产乳体质（1.5.4）：不怀孕也能产奶，与孕期、产后叠加
         lactating: false,
+        // 宫脱免疫（1.6.0）：宫压、产程、插入、剧情都不会让子宫脱垂
+        prolapse: false,
       },
       // 显示用的外观（1.4.3）：孕体特写的肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设；只给画面用，不送提示词
       display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null },
@@ -2299,6 +2303,8 @@ function createSnapshotCharacterBaseline(name = '') {
         vitalityLevel: 4,
         psyStressLevel: 4,
         uterineAtony: 0,
+        // 宫脱（1.6.0，prolapse.js）：0–4，整数部分是分级
+        prolapse: 0,
         seasonCycle: 0,
         // 鞘偏移（1.2.4）：实际舒适的深度，−1～+1
         sheathOffset: 0,
@@ -2403,6 +2409,8 @@ function createSnapshotCharacterBaseline(name = '') {
         painPleasure: false,
         // 产乳体质（1.5.4）：不怀孕也能产奶，与孕期、产后叠加
         lactating: false,
+        // 宫脱免疫（1.6.0）：宫压、产程、插入、剧情都不会让子宫脱垂
+        prolapse: false,
       },
       // 显示用的外观（1.4.3）：孕体特写的肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设；只给画面用，不送提示词
       display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null },

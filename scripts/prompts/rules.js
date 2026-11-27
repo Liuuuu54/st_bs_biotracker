@@ -697,7 +697,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
     '- cognitionRecords 保存角色信念，可以与事实不同；系统结果、真实胎父与胎数不自动成为角色知识。自然线索到点也不强制知孕；产程是系统结果，她认出自己在分娩之前不得写成她知道。',
     ...(profiles.some((profile) => profile.bodyFamiliarity) ? ['- bodyFamiliarity 是身体对各性伴的熟悉度（系统按次数、体型相容与时间算出，前三名）：只描述身体的记忆与反应，例如对谁的触碰更快有反应，不代表感情或爱意。'] : []),
     ...(profiles.some((profile) => profile.lastCondomResult || profile.lastEmergencyResult) ? ['- lastCondomResult/lastEmergencyResult 只在结算后的下一次叙事出现：是系统结果，不等于角色察觉；可据此描写合理可见的后果，不要求本轮处理。'] : []),
-    '- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；activeDrugs 身上生效中的药与还剩多久；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精。描写照这些文字，不写数字。',
+    '- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；activeDrugs 身上生效中的药与还剩多久；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精；prolapse 宫脱（有才送：几度、怎么描写、有没有托住）。描写照这些文字，不写数字。',
   ];
   if (profiles.some((profile) => profile.metabolism)) {
     lines.push('- metabolism：excretion 泄意、hunger 食意、sleep 困意、milk 乳意（孕晚期以前是乳房胀痛敏感，孕晚期起才可能溢乳）、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；分级为 低／中／高／满／爆（没列的就是没有）；泄意、食意后面的括号是比较急的那一种（尿意／便意、饿意／渴意），写剧情照它分小便、大号、吃东西、喝水。pregnant.symptoms 是当天的妊娠症状（便秘、频尿、胀气、怪口味……），可以自然带进身体描写。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');

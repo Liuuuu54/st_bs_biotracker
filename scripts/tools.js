@@ -28,6 +28,7 @@ import { eggWeightFactor, implantationFailChance, normalizeEggQuality, rollCycle
 import { ABORTIFACIENT_CHANCE, ABORTIFACIENT_HARM, INDUCE_CHANCE, REPRO_EFFECTS, amnionProtection, chanceMultiplier, extraOvulationEggs, fertilityMultiplier, findDrug, getActiveDrugCatalog, getActiveReproEffect, normalizeEffectKey, normalizeReproEffects, normalizeStrength, pillSuppression, SIRE_REPRO_EFFECTS, scaleLibidoDelta, aphrodisiacCompatMultiplier, resolveEffectValue } from './repro_effects.js';
 import { averageMonthDays, averageYearDays, dateAt, formatStoryDate, fromLocalYears, getActiveCalendar, getBreedingAnchor, legalAge, minutesAtDate, monthCount, monthDays, nextAnchorMinutes, previousAnchorMinutes } from './calendar.js';
 import { advanceSireAges, consumeSireReserve, normalizeSireRecord, pruneFutaSireRecord, upsertSireRecord, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getEffectiveSwordOffset, getSpermQualityFactors, normalizeSpermQuality, resolveSireBase } from './sires.js';
+import { addProlapse, applyDeliveryProlapse, applyProlapseAction, applyProlapseTick, getProlapseFirstStageFactor, getProlapseGrade, getProlapsePregnancyHealthDrain, getProlapseUrineFactor, getSwordProlapseStrain, PROLAPSE_ACTIONS, PROLAPSE_LABELS } from './prolapse.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
 import { clampIndividualBodySize, describeBodySizeFit, getBodySizePaceFactor, normalizeSwordOffset, getAltFormBodySize, getBodySizeSigma, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
@@ -2864,11 +2865,13 @@ function normalizeSymptomKey(type, key) {
 }
 
 function getBladderFactor(profile) {
+  // 宫脱（1.6.0）：II 度起每级少一成（压力性尿失禁），与孕期子宫压膀胱叠乘
+  const prolapse = getProlapseUrineFactor(profile);
   const stage = String(profile?.base?.stage || '');
-  if (!isTruePregnancyStage(stage) && stage !== '产兆前驱' && !LABOR_STAGES.includes(stage)) return 1;
+  if (!isTruePregnancyStage(stage) && stage !== '产兆前驱' && !LABOR_STAGES.includes(stage)) return prolapse;
   const cap = Math.max(1, getUterinePressureCap(profile));
   const ratio = clampNumber(profile?.base?.uterinePressure, 0, cap, 0) / cap;
-  return 1 - BLADDER_PRESSURE_SQUEEZE * ratio;
+  return (1 - BLADDER_PRESSURE_SQUEEZE * ratio) * prolapse;
 }
 
 /**
@@ -4627,8 +4630,11 @@ function applyChildbirthInternal(profile, female, isNatural) {
     .map(({ fetus }) => fetus);
   const companionEggs = remainingFetuses.reduce((sum, fetus) => sum + getCompanionEggCount(fetus), 0);
   const companionNote = companionEggs > 0 ? `，并排出${companionEggs}枚伴生卵` : '';
+  const prolapseBefore = getProlapseGrade(profile);
   if (remainingFetuses.length > 0) {
     recordDeliveredBulk(profile, remainingFetuses);
+    // 阴道娩出才会把子宫往下带；手术产不算
+    if (isNatural) applyDeliveryProlapse(profile, remainingFetuses);
     const deliveredBefore = clampNumber(pregnant.deliveredCount, 0, 99, 0);
     appendChildrenFromFetuses(profile, remainingFetuses, {
       mode: isNatural ? 'natural' : 'surgical',
@@ -4657,6 +4663,7 @@ function applyChildbirthInternal(profile, female, isNatural) {
         : `${female}完成了手术分娩，进入产后恢复`),
   };
   profile.base = base;
+  noteProlapseWorsened(profile, female, prolapseBefore);
   return true;
 }
 
@@ -5397,6 +5404,8 @@ function deliverPresentingFetus(profile, female, notify, { lead = '' } = {}) {
   const companionEggs = born.reduce((sum, fetus) => sum + getCompanionEggCount(fetus), 0);
   const enclosedNote = `${describeEnclosedBirths(born)}${companionEggs > 0 ? `，同时排出${companionEggs}枚伴生卵` : ''}`;
   recordDeliveredBulk(profile, born);
+  const prolapseBefore = getProlapseGrade(profile);
+  applyDeliveryProlapse(profile, born);
   appendChildrenFromFetuses(profile, born, birthOrderOf(pregnant, born));
   updateFetalEnergyDrain(profile);
   const remaining = pregnant.fetuses;
@@ -5419,7 +5428,55 @@ function deliverPresentingFetus(profile, female, notify, { lead = '' } = {}) {
       secondly: `${lead}${female}生下了${father}的孩子，性别为${gender}${enclosedNote}，仍有${remaining.length}胎待产`,
     };
   }
+  noteProlapseWorsened(profile, female, prolapseBefore);
   return true;
+}
+
+/** 宫脱分级（画面上看到的）比 before 高时，在次级提示补一句 */
+function noteProlapseWorsened(profile, female, before) {
+  const after = getProlapseGrade(profile);
+  if (after <= before) return '';
+  const text = `${female}的子宫下垂加重到${PROLAPSE_LABELS[after]}`;
+  const notify = profile.notify || {};
+  profile.notify = { ...notify, secondly: [notify.secondly, text].filter(Boolean).join('；') };
+  return text;
+}
+
+/** 时间推进：第二产程高宫压用力会加重，没在用力时自然回复；孕早期脱出外口会伤胎（prolapse.js） */
+function applyProlapseTimeTick(profile, tick, female) {
+  const hours = Math.max(0, Number(tick?.passedHours) || 0);
+  if (hours <= 0 || !profile?.base) return;
+  const before = getProlapseGrade(profile);
+  const stage = String(profile.base.stage || '');
+  const cap = Math.max(1, getUterinePressureCap(profile));
+  const pregnant = profile.pregnant || {};
+  applyProlapseTick(profile, {
+    hours,
+    now: Number(tick.nowMinutes) || 0,
+    pressureRatio: clampNumber(profile.base.uterinePressure, 0, cap, 0) / cap,
+    pushing: stage === '第二产程' && pregnant.laborPhase !== '间歇期',
+    pushFatigue: getPushFatigue(pregnant),
+    recoveryCoefficient: getRecoveryCoefficientByRace(profile.base.race, profile.base.bloodline),
+  });
+  noteProlapseWorsened(profile, female, before);
+  // 孕早期 III 度以上：宫颈外露，每天扣一点胎儿健康；见底才会流产（由胎儿健康危机结算）
+  const drain = getProlapsePregnancyHealthDrain(profile, hours);
+  if (drain > 0) {
+    const floor = FETAL_HEALTH_BASE * FETAL_HEALTH_FLOOR_RATIO;
+    let hurt = 0;
+    for (const fetus of Array.isArray(pregnant.fetuses) ? pregnant.fetuses : []) {
+      if (!isImplantedFetus(fetus)) continue;
+      normalizeFetalHealthFields(fetus);
+      const previous = Number(fetus.health) || 0;
+      fetus.health = Math.round(Math.max(floor, previous - drain) * 10000) / 10000;
+      if (fetus.health < previous) hurt += 1;
+    }
+    if (hurt > 0) {
+      const notify = profile.notify || {};
+      const text = `${female}的子宫脱出外口，宫颈外露容易受伤，胎儿正在受损`;
+      if (!String(notify.secondly || '').includes(text)) profile.notify = { ...notify, secondly: [notify.secondly, text].filter(Boolean).join('；') };
+    }
+  }
 }
 
 /** 一起娩出的孕中孕内胎（胎囊没破）写进通知：先露胎之外的每一胎 */
@@ -5773,7 +5830,9 @@ export function resolveLaborPhaseHours(profile, stage, phase, fetuses = profile?
   const birthDifficulty = clampNumber(profile?.bio?.birthDifficulty, 0.1, 100, 1);
   if (stage === '第一产程') {
     const total = resolveLaborStageHours('第一产程', Math.max(fetuses.length, 1), birthDifficulty)
-      * resolveFirstStageExperienceMultiplier(profile);
+      * resolveFirstStageExperienceMultiplier(profile)
+      // 宫脱 III 度以上：宫颈外露水肿，扩张变慢
+      * getProlapseFirstStageFactor(profile);
     if (fullStage) return total;
     if (phase === '活跃期') return total * 0.35;
     if (phase === '过渡期') return total * 0.15;
@@ -8538,6 +8597,7 @@ function applyTimeToCharacter(character, tick) {
   else if (tick.passedHours >= ROUTINE_SKIP_HOURS) settleRoutineNeeds(profile, tick.passedHours);
   applyNaturalMetabolismRecovery(profile, tick);
   applyWeeklyMetabolismRoutine(profile, tick, { enteredFollicular, stage });
+  applyProlapseTimeTick(profile, tick, next.name);
 
   base.age = clampNumber(base.age, 0, 99999, 15) + (deltaDays / 365);
   if (Array.isArray(profile.children) && profile.children.length > 0) {
@@ -9378,6 +9438,7 @@ function applyAddSperm(chatState, args) {
     const experience = { ...(next.profile?.experience || {}), latestSexPartner: male };
     if (experience.virginity === null || experience.virginity === undefined) experience.virginity = male;
     next.profile.experience = experience;
+    const prolapseBefore = getProlapseGrade(next.profile);
     const fit = buildPenetrationFit(base, {
       male, race, bloodline: ancestry.bloodline, fatherBase, args,
       femaleStretch: getSheathStretch(next.profile?.experience),
@@ -9386,15 +9447,20 @@ function applyAddSperm(chatState, args) {
     });
     base.penetrationFit = fit.record;
     // 性爱纪录：相容倍率照体型契合（含经产扩张）；同一场重复 insert 不重算
-    recordIntimacyInsert(next.profile, male, {
+    const newSession = recordIntimacyInsert(next.profile, male, {
       minutesPassed: Number(chatState.minutesPassed) || 0,
       // 催情（1.5.4）：独立的契合倍率，乘在体型契合之外
       compat: getCompatMultiplier(fit.fit) * aphrodisiacCompatMultiplier(next.profile, Number(chatState.minutesPassed) || 0),
       compatLabel: fit.fit?.label ?? null,
       reproductiveSettings: chatState.reproductiveSettings,
     });
+    // 宫脱（1.6.0）：剑比鞘大到明显不合起，每一场（不是每次重插）往下拖一点
+    if (newSession && !fit.fit?.bridged && !fit.fit?.variable) {
+      addProlapse(next.profile, getSwordProlapseStrain(fit.fit?.diff), { now: Number(chatState.minutesPassed) || 0 });
+    }
+    const prolapseNotice = noteProlapseWorsened({ base: next.profile.base, notify: {} }, female, prolapseBefore);
     const pushback = applyInsertionPushback(next.profile, female);
-    const secondly = [pushback, fit.notice].filter(Boolean).join('；');
+    const secondly = [pushback, fit.notice, prolapseNotice].filter(Boolean).join('；');
     if (secondly) next.profile.notify = { ...(next.profile.notify || {}), secondly };
     chatState.characters[female] = pushback ? syncCharacterStageFromProfile(next) : next;
     const handoff = currentState !== 'idle' && currentSource && currentSource !== male;
@@ -10439,6 +10505,30 @@ function applyDebugSetProdromal(chatState, args) {
   return { applied: true, message: `bsDebugSetProdromal applied to ${female}.` };
 }
 
+/**
+ * 宫脱的剧情处理（1.6.0，bsRecordExperience action=prolapse）：加重、推回、托住、修复。
+ * 宫压、产程、插入造成的由系统自己算，不必呼叫。
+ */
+function applyProlapseExperience(chatState, args) {
+  const female = String(args?.female || '').trim();
+  const action = String(args?.prolapse || '').trim();
+  const skip = (reason) => ({ applied: false, message: `bsRecordExperience prolapse skipped for ${female || '(empty)'}: ${reason}` });
+  const character = chatState.characters?.[female];
+  if (!character) return skip('unknown character.');
+  if (!PROLAPSE_ACTIONS.includes(action)) return skip(`prolapse 必须是 ${PROLAPSE_ACTIONS.join('、')}。`);
+  const allowed = new Set(['female', 'action', 'time', 'prolapse', 'content', 'hours']);
+  const extra = Object.keys(args || {}).filter((key) => !allowed.has(key));
+  if (extra.length) return skip(`含不属于 prolapse 的参数：${extra.join('、')}。`);
+  if (args.hours !== undefined && (action !== 'support' || !(Number(args.hours) > 0))) return skip('hours 只给 support，且要大于 0。');
+  const next = cloneValue(character);
+  next.profile.base = next.profile.base || {};
+  const result = applyProlapseAction(next.profile, action, { now: Number(chatState.minutesPassed) || 0, hours: args.hours });
+  if (!result.ok) return skip(`${result.message}。`);
+  chatState.characters[female] = next;
+  const content = String(args?.content || '').trim().slice(0, 120);
+  return { applied: true, message: `bsRecordExperience prolapse ${action} applied to ${female}: ${result.message}${content ? `（${content}）` : ''}。` };
+}
+
 export function applyToolCall(chatState, call) {
   // 先让每个母体的编号计数器越过现存号码，再执行可能移除胎儿的操作；
   // 否则从未发过号的母体减胎后，会把被移除那胎的号码重发给下一个新胎
@@ -10509,6 +10599,7 @@ function dispatchToolCall(chatState, call) {
   if (name === 'bsGrowBody') return applyGrowBody(chatState, args, call.sourceId || '');
   // 衍生转化（1.5.0）走 bsRecordExperience 的 action=transform，套用在这里（会动到孕期与时间推进）
   if (name === 'bsRecordExperience' && String(args?.action || '') === 'transform') return applyDerivedTransform(chatState, args);
+  if (name === 'bsRecordExperience' && String(args?.action || '') === 'prolapse') return applyProlapseExperience(chatState, args);
   if (name === 'bsRecordExperience') return recordExperience(chatState, args, call.sourceId || '', { resolveFetus: resolveVisibleFetus, shiftPsychology: shiftCognitionPsychology });
   if (name === 'bsRegisterSkillDefinition') return applyRegisterSkillDefinition(chatState, args);
   if (name === 'bsTrainSkill') return applyTrainSkill(chatState, args);
