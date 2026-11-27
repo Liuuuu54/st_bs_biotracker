@@ -399,6 +399,15 @@ const RACE_DEFINITIONS = Object.freeze({
     bodySize: 3, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
 
+  "原兽族": {
+    embryoType: "卵生",
+    introductionLine: "Monotreme-folk，原兽亚纲（单孔目）的亚人，下蛋却以乳哺育的哺乳类，排泄与生殖共用泄殖腔；一年一季、一窝一两颗蛋，孵化很快。子项写作原兽族-鸭嘴兽（扁喙蹼足、半水栖，雄性后脚带毒刺）、原兽族-针鼹（背生棘刺、形似刺猬，蛋直接产进腹部育儿袋里孵）。针鼹英名 Echidna 取自希腊神话生下奇美拉、海德拉、刻耳柏洛斯与斯芬克斯的「万妖之母」。刺猬娘写作兽耳族-刺猬，不归此类。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, dormancyDays: 253, gestationSpeciesSpeed: 5, birthDifficulty: 0.3, breedTolerance: 1,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 1, identicalProbability: 1, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 1.5,
+    bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },
   "鸟族": {
     embryoType: "卵生",
     introductionLine: "Harpy，典型形象为哈比，带翼的鸟类亚人；现代创作已性别比正常化。",
@@ -1317,7 +1326,7 @@ const BUILTIN_METABOLISM_GROUPS = Object.freeze({
   inert: ["石像鬼", "烛灵", "人偶", "魔像", "墨灵", "宝石人", "奈米丛族", "元素灵", "灯神", "影魔", "活体铠甲", "核焰族", "电子幽灵"],
 });
 const BUILTIN_METABOLISM_TYPE = Object.freeze(Object.fromEntries(Object.entries(BUILTIN_METABOLISM_GROUPS).flatMap(([type, races]) => races.map((race) => [race, type]))));
-const BUILTIN_SOLITARY_RACES = Object.freeze(new Set(["独居虫人", "阿拉克涅", "蝎罗氏", "百足氏", "双生螳螂", "圣甲虫", "怪虫类", "蛇人", "梅杜莎", "龟族", "鸡蛇族", "怪爬虫类", "熊人族", "斯库拉", "西方龙", "海德拉", "沙虫族", "雷鸟", "宝箱怪", "眼魔", "影魔", "灯神", "独角兽", "凤凰", "斯芬克斯", "鵺", "雪族", "夢貘", "石像鬼", "怪植类", "爱那温", "华根蕴桃", "夜枭", "枭熊"]));
+const BUILTIN_SOLITARY_RACES = Object.freeze(new Set(["原兽族", "独居虫人", "阿拉克涅", "蝎罗氏", "百足氏", "双生螳螂", "圣甲虫", "怪虫类", "蛇人", "梅杜莎", "龟族", "鸡蛇族", "怪爬虫类", "熊人族", "斯库拉", "西方龙", "海德拉", "沙虫族", "雷鸟", "宝箱怪", "眼魔", "影魔", "灯神", "独角兽", "凤凰", "斯芬克斯", "鵺", "雪族", "夢貘", "石像鬼", "怪植类", "爱那温", "华根蕴桃", "夜枭", "枭熊"]));
 const BUILTIN_AQUATIC_RACES = Object.freeze(new Set(["赛尔克族", "赛壬", "蛙族", "蝾螈族", "河童", "鱼人", "人鱼", "鲛人", "怪鱼类", "斯库拉", "甲壳族", "海马族", "棘皮族", "海蛞蝓族", "水母族", "宁芙"]));
 
 /**
@@ -1822,7 +1831,7 @@ export function isCustomRace(race) {
   return customRaceNames.includes(key);
 }
 
-/** 内置 128 族加上目前生效的自订物种 */
+/** 内置 129 族加上目前生效的自订物种 */
 export function getAllRaces() {
   return [...ALL_BUILTIN_RACES, ...customRaceNames];
 }

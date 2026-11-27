@@ -26,14 +26,15 @@ function makeHost(name, race) {
   };
 }
 
-test('内建名录共 128 个物种，新增种族进入正确胚胎分组', () => {
-  assert.equal(ALL_BUILTIN_RACES.length, 128);
-  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 127);
+test('内建名录共 129 个物种，新增种族进入正确胚胎分组', () => {
+  assert.equal(ALL_BUILTIN_RACES.length, 129);
+  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 128);
   const expected = {
     卡玛佐兹: '胎生',
     熊人族: '胎生',
     夢貘: '胎生',
     玛坦戈: '卵生',
+    原兽族: '卵生',
     雷鸟: '胎转卵生',
     双生螳螂: '卵胎生',
     棘皮族: '卵胎生',
