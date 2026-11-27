@@ -1243,6 +1243,9 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   for (const key of ['prolapse', 'prolapseSupportUntil', 'prolapseRestUntil']) delete profile.base[key];
   const prolapseText = describeProlapse(item.profile, minutesPassed);
   if (prolapseText) profile.base.prolapse = prolapseText;
+  // 肛内残精（1.6.0）：取整，没有就不送
+  if (Number(base.analSemen) >= 1) profile.base.analSemen = Math.round(Number(base.analSemen));
+  else delete profile.base.analSemen;
   // 鞘偏移只送文字（偏浅、很深…），适中不送；模型看不懂偏移数字
   delete profile.base.sheathOffset;
   if (normalizeSheathOffset(base.sheathOffset) !== 0) profile.base.sheath = describeSheathOffset(base.sheathOffset);

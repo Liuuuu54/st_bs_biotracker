@@ -282,13 +282,13 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'bsAddSperm',
-    description: '记录可受孕生殖道内的插入、精液沉积与拔出；口交、肛交、体外射精、手淫或单纯体表接触一律不要调用。戴套生殖道行为仍用本工具，hasCondom 决定本次 deposit 是否阻隔；省略沿用本次 insert 的设置，旧调用默认未戴套。'
+    description: '记录生殖道或肛门内的插入、精液沉积与拔出；口交、体外射精、手淫或单纯体表接触一律不要调用。肛交照样用本工具，insert 时给 channel=anal：射进直肠不会受孕，只有约 1% 从体外流进产道（套子照挡），肛内残精约 3 小时减半、排便时一起排出；肛交的剑太大不算宫脱，也不算破处。戴套生殖道行为仍用本工具，hasCondom 决定本次 deposit 是否阻隔；省略沿用本次 insert 的设置，旧调用默认未戴套。'
       + 'action=insert／withdraw 时 amount=0；只有 insert 后才能以 action=deposit 沉积正数精液，沉积后若要再次射精须重新 insert。不同来源 insert 会直接交棒。'
       + 'amount 以人类精方 10-30 为准，按精方体型每级翻倍（体型 5 约 20-60、6 约 40-120、7 约 80-240、3 约 5-15、2 约 2.5-7.5），精方以变化态进行时按变化态的体型；残留每天自动衰减，人类女方每天 10、同样按女方体型每级翻倍，所以同体型的一次射精约 1-3 天内自然消失；剧情写得特别多或特别少时可以偏离。当下有效量越高，本次受孕越容易且高产物种的伴生卵可能越多，但受精成功不会扣除或清空可见残留。给过大的值会让正文连续多日描写残留。扣除/排出既有精液请用 bsDrainSperm。'
       + 'race 使用 [derivedType-装饰子项]race-装饰子项 格式，混血种族以 X 分隔；父系 derivedType 直接从这个字符串解析。'
       + 'male 是已注册精方或同名卵方（扶她）时，种族、血脉、衍生类型、体型与精子品质一律以档案为准，race 照填档案种族、maleBodySize 省略。'
       + 'insert 会按双方体型结算体型契合（只影响叙述，不限制交合与受孕），结果写在回传讯息与次级提示；体型参数见 maleBodySize、femaleAltForm、maleAltForm、sizeBridge。'
-      + '产兆前驱与产程中插入会顶到最前面的胎儿：前驱时把领头胎儿往上顶、延后前驱；第二产程把产道里的先露胎往回顶、产程进度倒退，着冠时倒退更多且可能顶破胎膜；第一产程只会痛。被顶的胎儿亲和下降。产兆前驱中射精则会缩短前驱。结果写在回传讯息里，供下一次回复承接，不要求重写当轮正文。',
+      + '产兆前驱与产程中插入产道会顶到最前面的胎儿：前驱时把领头胎儿往上顶、延后前驱；第二产程把产道里的先露胎往回顶、产程进度倒退，着冠时倒退更多且可能顶破胎膜；第一产程只会痛。被顶的胎儿亲和下降。产兆前驱中射精则会缩短前驱。结果写在回传讯息里，供下一次回复承接，不要求重写当轮正文。',
     input_schema: {
       type: 'object',
       properties: {
@@ -297,6 +297,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         race: { type: 'string' },
         bloodline: { type: 'object', additionalProperties: { type: 'number' }, description: '已知血脉比例，键为race中的成分，值为0到1；不明时省略，不猜比例。race也可写精灵25%x人类75%。' },
         action: { type: 'string', enum: ['insert', 'deposit', 'withdraw'] },
+        channel: { type: 'string', enum: ['vaginal', 'anal'], description: '插入哪里：vaginal 产道（省略即是）、anal 肛门。insert 设置，deposit 沿用；要换地方先重新 insert。' },
         hasCondom: { type: 'boolean', description: '本次是否使用屏障式避孕（套子，或世界观中的等效手段，如羊肠套、魔法屏障）；只有剧情确实使用时才为 true，不得引入世界观没有的器具。insert 设置、deposit 可显式更新、省略沿用，withdraw 不结算。' },
         amount: { type: 'number', description: 'insert／withdraw 必须为 0；deposit 必须为正数。' },
         maleBodySize: { type: 'number', description: '精方常态（人态）的个体体型，1–7 级（人类 4，可带小数，约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7）。insert 时给出。精方是已注册角色时省略；种族为依个体（名单见追踪提示的 [体型参数] 段）或未收录的自订种族时必须按剧情填写，例如一人高的大蟑螂填 4；其余种族只在剧情写明对方比同族明显高大或矮小时填写。' },

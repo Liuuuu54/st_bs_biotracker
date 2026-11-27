@@ -544,6 +544,14 @@ export function normalizeCharacterPsychologyState(characterState) {
     || !penetrationFit || typeof penetrationFit !== 'object' || penetrationFit.male !== characterState.profile.base.penetrationSource)) {
     characterState.profile.base.penetrationFit = null;
   }
+  // 肛交（1.6.0）：插入通道只在插入期间留着；肛内残精是非负数，没有就不存
+  if (characterState.profile.base.penetrationState === 'idle' || characterState.profile.base.penetrationChannel !== 'anal') {
+    delete characterState.profile.base.penetrationChannel;
+  }
+  const analSemen = Number(characterState.profile.base.analSemen);
+  if (characterState.profile.base.analSemen !== undefined && !(Number.isFinite(analSemen) && analSemen > 0)) {
+    delete characterState.profile.base.analSemen;
+  }
   if (characterState.profile.childSource && typeof characterState.profile.childSource === 'object' && !Array.isArray(characterState.profile.childSource)) {
     const motherName = String(characterState.profile.childSource.motherName || '').trim();
     const childIndex = Number(characterState.profile.childSource.childIndex);
