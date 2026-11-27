@@ -28,7 +28,7 @@ import { eggWeightFactor, implantationFailChance, normalizeEggQuality, rollCycle
 import { ABORTIFACIENT_CHANCE, ABORTIFACIENT_HARM, INDUCE_CHANCE, REPRO_EFFECTS, amnionProtection, chanceMultiplier, extraOvulationEggs, fertilityMultiplier, findDrug, getActiveDrugCatalog, getActiveReproEffect, normalizeEffectKey, normalizeReproEffects, normalizeStrength, pillSuppression, SIRE_REPRO_EFFECTS, scaleLibidoDelta, aphrodisiacCompatMultiplier, resolveEffectValue } from './repro_effects.js';
 import { averageMonthDays, averageYearDays, dateAt, formatStoryDate, fromLocalYears, getActiveCalendar, getBreedingAnchor, legalAge, minutesAtDate, monthCount, monthDays, nextAnchorMinutes, previousAnchorMinutes } from './calendar.js';
 import { advanceSireAges, consumeSireReserve, normalizeSireRecord, pruneFutaSireRecord, upsertSireRecord, getGuardingSire, getParentTalents, getSireQualityState, getSireRecord, getEffectiveSwordOffset, getSpermQualityFactors, normalizeSpermQuality, resolveSireBase } from './sires.js';
-import { addProlapse, applyDeliveryProlapse, applyProlapseAction, applyProlapseTick, getProlapseFirstStageFactor, getProlapseGrade, getProlapsePregnancyHealthDrain, getProlapseUrineFactor, getSwordProlapseStrain, PROLAPSE_ACTIONS, PROLAPSE_LABELS } from './prolapse.js';
+import { FORCED_UNLOCK_STRAIN, addProlapse, applyDeliveryProlapse, applyProlapseAction, applyProlapseTick, getProlapseFirstStageFactor, getProlapseGrade, getProlapsePregnancyHealthDrain, getProlapseUrineFactor, getSwordProlapseStrain, PROLAPSE_ACTIONS, PROLAPSE_LABELS } from './prolapse.js';
 import { getCompatMultiplier, getIntimacyRanking, getSheathStretch, recordIntimacyInsert, recordIntimacySemen } from './intimacy.js';
 import { clampIndividualBodySize, describeBodySizeFit, getBodySizePaceFactor, normalizeSwordOffset, getAltFormBodySize, getBodySizeSigma, getBodySizeVolumeFactor, getUterusVolumeFactor, resolveBodySize, resolveConceptionWeightRatio } from './body_size.js';
 import {
@@ -9405,7 +9405,8 @@ function buildPenetrationFit(base, { male, race, bloodline, fatherBase, args, fe
 // 肛内残精约 3 小时减半，排便一次清空。外口布局表做好前，所有角色都当分离开口
 const ANAL_LEAK_TO_VAGINA = 0.01;
 const ANAL_SEMEN_HALF_LIFE_HOURS = 3;
-const SPERM_CHANNELS = Object.freeze(['vaginal', 'anal']);
+// both（1.6.0）：双剑精方一根插产道、一根插肛门，同一个人同时进两个穴
+const SPERM_CHANNELS = Object.freeze(['vaginal', 'anal', 'both']);
 
 function decayAnalSemen(base, hours) {
   const value = Number(base?.analSemen) || 0;
@@ -9467,7 +9468,7 @@ function applyAddSperm(chatState, args) {
 
   if (args.hasCondom !== undefined && typeof args.hasCondom !== 'boolean') return { applied: false, message: 'hasCondom 必须为 boolean。' };
   if (args.channel !== undefined && !SPERM_CHANNELS.includes(args.channel)) {
-    return { applied: false, message: `bsAddSperm skipped for ${female}: channel 只能是 vaginal（产道）或 anal（肛门）。` };
+    return { applied: false, message: `bsAddSperm skipped for ${female}: channel 只能是 vaginal（产道）、anal（肛门）或 both（双剑同时插产道与肛门）。` };
   }
   const next = cloneValue(character);
   const base = next.profile?.base || {};
@@ -9478,17 +9479,30 @@ function applyAddSperm(chatState, args) {
 
   if (action === 'insert') {
     if (amount !== 0) return { applied: false, message: `bsAddSperm skipped for ${female}: insert 的 amount 必须为 0。` };
+    // 剑锁住（1.6.0）：那个口整段被占着，别人插不进来
+    if (base.penetrationLocked === true && currentSource && currentSource !== male) {
+      return { applied: false, message: `bsAddSperm skipped for ${female}: 正被 ${currentSource} 的剑锁住，别人插不进来；先 withdraw（消退后拔出，或 forced=true 硬拔）。` };
+    }
+    // 双剑同时插两个穴（1.6.0）：只有精方档案开了 swordTwin 的才行
+    if (args.channel === 'both' && getSireRecord(chatState, male)?.swordTwin !== true) {
+      return { applied: false, message: `bsAddSperm skipped for ${female}: channel=both 只给双剑（swordTwin）的精方，${male} 一次只能插一个地方。` };
+    }
+    delete base.penetrationLocked;
     // 外口布局（1.6.0）：泄殖腔只有一个外口、孕夫的产道通到肛门，这两种的肛交就是插进产道
     const layout = getCharacterOutletLayout(base);
-    const anal = args.channel === 'anal' && !ANAL_BIRTH_CANAL_LAYOUTS.has(layout);
-    const routedNote = args.channel === 'anal' && !anal
-      ? (layout === 'cloaca' ? `${female}是泄殖腔，只有一个外口，肛交就是插进产道，照产道算。` : `${female}是孕夫，肛门就是产道，照产道算。`)
-      : '';
+    const singleCanal = ANAL_BIRTH_CANAL_LAYOUTS.has(layout);
+    const anal = args.channel === 'anal' && !singleCanal;
+    const both = args.channel === 'both' && !singleCanal;
+    const singleCanalName = layout === 'cloaca' ? `${female}是泄殖腔，只有一个外口` : `${female}是孕夫，肛门就是产道`;
+    const routedNote = args.channel === 'anal' && !anal ? `${singleCanalName}，肛交就是插进产道，照产道算。`
+      : args.channel === 'both' && !both ? `${singleCanalName}，双剑两根挤进同一条产道，照产道算。`
+        : '';
     const singleOutletNote = describeSingleOutletConflict(chatState, female, male);
     base.penetrationState = 'inserted';
     base.penetrationCondom = args.hasCondom ?? false;
     base.penetrationSource = male;
     if (anal) base.penetrationChannel = 'anal';
+    else if (both) base.penetrationChannel = 'both';
     else delete base.penetrationChannel;
     base.latestSexDays = 0;
     next.profile.base = base;
@@ -9528,7 +9542,7 @@ function applyAddSperm(chatState, args) {
     const handoff = currentState !== 'idle' && currentSource && currentSource !== male;
     return {
       applied: true,
-      message: `bsAddSperm insert applied to ${female}: ${handoff ? `${currentSource} → ${male} handoff, ` : ''}penetrationState=inserted${anal ? ', channel=anal（肛门，不会受孕）' : ''}.${routedNote ? ` ${routedNote}` : ''}${pushback ? ` ${pushback}。` : ''}${fit.message ? ` ${fit.message}` : ''}${singleOutletNote ? ` ${singleOutletNote}` : ''}${raceNote ? ` ${raceNote}` : ''}`,
+      message: `bsAddSperm insert applied to ${female}: ${handoff ? `${currentSource} → ${male} handoff, ` : ''}penetrationState=inserted${anal ? ', channel=anal（肛门，不会受孕）' : ''}${both ? ', channel=both（双剑一根插产道、一根插肛门）' : ''}.${routedNote ? ` ${routedNote}` : ''}${pushback ? ` ${pushback}。` : ''}${fit.message ? ` ${fit.message}` : ''}${singleOutletNote ? ` ${singleOutletNote}` : ''}${raceNote ? ` ${raceNote}` : ''}`,
     };
   }
 
@@ -9537,6 +9551,20 @@ function applyAddSperm(chatState, args) {
     if (currentState !== 'idle' && currentSource && currentSource !== male) {
       return { applied: false, message: `bsAddSperm skipped for ${female}: 当前插入来源是 ${currentSource}，不是 ${male}。` };
     }
+    // 剑锁住（1.6.0）：消退后拔出照常；forced=true 是还没消退就硬拔，产道往外拖一把（肛门不算宫脱）
+    const wasLocked = base.penetrationLocked === true;
+    const forced = wasLocked && args.forced === true;
+    const lockedAnal = base.penetrationChannel === 'anal';
+    const lockedBoth = base.penetrationChannel === 'both';
+    let unlockNote = '';
+    if (forced) {
+      const prolapseBefore = getProlapseGrade(next.profile);
+      if (!lockedAnal) addProlapse(next.profile, FORCED_UNLOCK_STRAIN, { now: Number(chatState.minutesPassed) || 0 });
+      const prolapseNotice = lockedAnal ? '' : noteProlapseWorsened({ base: next.profile.base, notify: {} }, female, prolapseBefore);
+      if (prolapseNotice) next.profile.notify = { ...(next.profile.notify || {}), secondly: prolapseNotice };
+      unlockNote = ` 锁还没消退就硬拔：${lockedAnal ? '肛门被拉伤' : lockedBoth ? '产道被往外拖了一把（加重宫脱），肛门也被拉伤' : '产道被往外拖了一把（加重宫脱）'}，很痛${prolapseNotice ? `；${prolapseNotice}` : ''}。`;
+    } else if (wasLocked) unlockNote = ' 锁已消退，顺利拔出。';
+    delete base.penetrationLocked;
     base.penetrationState = 'idle';
     base.penetrationSource = null;
     base.penetrationCondom = false;
@@ -9544,7 +9572,7 @@ function applyAddSperm(chatState, args) {
     delete base.penetrationChannel;
     next.profile.base = base;
     chatState.characters[female] = next;
-    return { applied: true, message: `bsAddSperm withdraw applied to ${female}: penetrationState=idle.` };
+    return { applied: true, message: `bsAddSperm withdraw applied to ${female}: penetrationState=idle.${unlockNote}` };
   }
 
   if (amount <= 0) return { applied: false, message: `bsAddSperm skipped for ${female}: deposit 的 amount 必须为正数。` };
@@ -9555,10 +9583,12 @@ function applyAddSperm(chatState, args) {
     return { applied: false, message: `bsAddSperm skipped for ${female}: 当前插入来源是 ${currentSource}，不是 ${male}。` };
   }
   const anal = base.penetrationChannel === 'anal';
-  // 泄殖腔与孕夫的 anal 在 insert 时已改走产道，deposit 再写 anal 也认
-  const requestedChannel = args.channel === 'anal' && ANAL_BIRTH_CANAL_LAYOUTS.has(getCharacterOutletLayout(base)) ? 'vaginal' : args.channel;
-  if (requestedChannel !== undefined && requestedChannel !== (anal ? 'anal' : 'vaginal')) {
-    return { applied: false, message: `bsAddSperm skipped for ${female}: 这次插入的是${anal ? '肛门' : '产道'}，要换地方先重新 insert。` };
+  const both = base.penetrationChannel === 'both';
+  const insertedChannel = anal ? 'anal' : both ? 'both' : 'vaginal';
+  // 泄殖腔与孕夫的 anal、both 在 insert 时已改走产道，deposit 再写一次也认
+  const requestedChannel = ['anal', 'both'].includes(args.channel) && ANAL_BIRTH_CANAL_LAYOUTS.has(getCharacterOutletLayout(base)) ? 'vaginal' : args.channel;
+  if (requestedChannel !== undefined && requestedChannel !== insertedChannel) {
+    return { applied: false, message: `bsAddSperm skipped for ${female}: 这次插入的是${{ anal: '肛门', both: '产道与肛门（双剑）', vaginal: '产道' }[insertedChannel]}，要换地方先重新 insert。` };
   }
 
   // 只记个体已知的体型（已注册角色或本次插入给过）；种族平均不必存，受孕时再查
@@ -9581,9 +9611,11 @@ function applyAddSperm(chatState, args) {
   const condomOverflow = hasCondom && amount > condomCapacity; const condomFailed = condomOverflow || (hasCondom && Math.random() >= config.condomReliability); const condomFailReason = condomFailed ? (condomOverflow ? 'overflow' : 'tear') : null;
   const enteredAmount = hasCondom && !condomFailed ? 0 : amount;
   // 肛交：射进直肠，只有外流的一点进产道
-  const leakedAmount = anal ? Math.round(enteredAmount * ANAL_LEAK_TO_VAGINA * 100) / 100 : 0;
-  const vaginalAmount = anal ? leakedAmount : enteredAmount;
-  if (anal && enteredAmount > 0) base.analSemen = Math.round(((Number(base.analSemen) || 0) + enteredAmount - leakedAmount) * 100) / 100;
+  // 双剑（both）：两根各射一半，进直肠的那一半照肛交算
+  const analPart = anal ? enteredAmount : both ? enteredAmount / 2 : 0;
+  const leakedAmount = Math.round(analPart * ANAL_LEAK_TO_VAGINA * 100) / 100;
+  const vaginalAmount = enteredAmount - analPart + leakedAmount;
+  if (analPart > 0) base.analSemen = Math.round(((Number(base.analSemen) || 0) + analPart - leakedAmount) * 100) / 100;
   base.penetrationCondom = hasCondom;
   // 先保留旧存档尚无接触时间的余量快照，避免新沉积覆盖它的品质或遗传资料。
   const sources = getSpermSources(base);
@@ -9619,10 +9651,14 @@ function applyAddSperm(chatState, args) {
     });
     setSpermSources(base, sources);
   }
-  next.profile.lastCondomResult = { hasCondom, condomFailed, condomFailReason, enteredAmount, ...(anal ? { channel: 'anal' } : {}), minutesPassed: Number(chatState.minutesPassed) || 0 };
+  next.profile.lastCondomResult = { hasCondom, condomFailed, condomFailReason, enteredAmount, ...(anal || both ? { channel: insertedChannel } : {}), minutesPassed: Number(chatState.minutesPassed) || 0 };
   base.penetrationState = 'spent';
   base.penetrationSource = male;
   base.latestSexDays = 0;
+  // 剑锁住（1.6.0）：精方档案开了 swordLock，射精后锁住，拔出前精液排不出来、别人插不进来
+  const locked = getSireRecord(chatState, male)?.swordLock === true;
+  if (locked) base.penetrationLocked = true;
+  else delete base.penetrationLocked;
   next.profile.base = base;
   const spilled = pooled ? pooledSpilled : (vaginalAmount > 0
     ? spillSpermOverflow(next.profile, { formBodySize: femaleFormSize }) : 0);
@@ -9645,7 +9681,7 @@ function applyAddSperm(chatState, args) {
   const ripening = vaginalAmount > 0 ? applyProdromalSemenRipening(next.profile, female) : null;
   if (ripening) next.profile.notify = { ...(next.profile.notify || {}), secondly: ripening };
   chatState.characters[female] = ripening ? syncCharacterStageFromProfile(next) : next;
-  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}${condomFailReason ? ` (${condomFailReason === 'overflow' ? '超过容量撑破' : '套子破裂'})` : ''}, enteredAmount=${enteredAmount}${anal ? `, channel=anal（射进直肠，不会受孕；外流进产道 ${leakedAmount}，肛内残精约 ${Math.round(Number(base.analSemen) || 0)}，约 3 小时减半、排便清空）` : ''}${inert && enteredAmount > 0 ? '，男方服了避孕药：这次的精液没有活性' : ''}${spilled > 0 ? `，超过子宫容量当场流出 ${Math.round(spilled)}` : ''}（系统结算，不代表角色知情；下轮承接）.${ripening ? ` ${ripening}。` : ''}${raceNote ? ` ${raceNote}` : ''}` };
+  return { applied: true, message: `bsAddSperm deposit applied to ${female}: penetrationState=spent, hasCondom=${hasCondom}, condomFailed=${condomFailed}${condomFailReason ? ` (${condomFailReason === 'overflow' ? '超过容量撑破' : '套子破裂'})` : ''}, enteredAmount=${enteredAmount}${anal ? `, channel=anal（射进直肠，不会受孕；外流进产道 ${leakedAmount}，肛内残精约 ${Math.round(Number(base.analSemen) || 0)}，约 3 小时减半、排便清空）` : ''}${both ? `, channel=both（双剑各射一半：产道 ${Math.round((enteredAmount - analPart) * 100) / 100}、直肠 ${Math.round(analPart * 100) / 100}，直肠外流进产道 ${leakedAmount}，肛内残精约 ${Math.round(Number(base.analSemen) || 0)}）` : ''}${inert && enteredAmount > 0 ? '，男方服了避孕药：这次的精液没有活性' : ''}${spilled > 0 ? `，超过子宫容量当场流出 ${Math.round(spilled)}` : ''}（系统结算，不代表角色知情；下轮承接）.${locked ? ` ${male} 的剑射精后锁住了（penetrationLocked）：约 10–30 分钟消退前拔不出来，这段时间精液排不出来、别人也插不进来；消退后照常 withdraw，还没消退就硬拔给 forced=true（${anal ? '会拉伤肛门' : '会加重宫脱'}）。` : ''}${ripening ? ` ${ripening}。` : ''}${raceNote ? ` ${raceNote}` : ''}` };
 }
 
 function applyDrainSperm(chatState, args) {
@@ -9654,6 +9690,10 @@ function applyDrainSperm(chatState, args) {
   const character = chatState.characters?.[female];
   if (!female || !character) return { applied: false, message: `bsDrainSperm skipped: unknown character ${female || '(empty)'}.` };
   if (!Number.isFinite(amount) || amount <= 0) return { applied: false, message: 'bsDrainSperm skipped: invalid amount.' };
+  // 剑锁住（1.6.0）：堵着，拔出前排不出来
+  if (character.profile?.base?.penetrationLocked === true) {
+    return { applied: false, message: `bsDrainSperm skipped for ${female}: 正被 ${character.profile.base.penetrationSource || '精方'} 的剑锁住，拔出前排不出来。` };
+  }
 
   const next = cloneValue(character);
   const base = next.profile?.base || {};

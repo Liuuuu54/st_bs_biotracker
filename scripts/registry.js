@@ -18,7 +18,7 @@ import { clampIndividualBodySize, getExpectedBodySize, normalizeSheathOffset, no
 import { findSeasonReference } from './season_phase.js';
 import { BUST_GAIN_MAX, HIP_GAIN_MAX, sampleBodyTraits } from './maternal_body.js';
 import { descriptionListToObject, normalizeDescriptionList } from './descriptions.js';
-import { getSireRecord, normalizeSpermQuality, pruneFutaSireRecord } from './sires.js';
+import { SWORD_TIPS, getSireRecord, normalizeSpermQuality, pruneFutaSireRecord } from './sires.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -622,6 +622,17 @@ export async function runRegistryWardrobeInference(ctx, options = {}) {
   return sanitizeWardrobePrepResult(result);
 }
 
+/** 模型回传的剑（{ tip, knot, barbs, twin, lock, scrotum }）→ 精方档案栏位；认不得的项丢掉，什么都没有回传 null */
+export function sanitizeSwordExtraction(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const fields = {};
+  if (SWORD_TIPS.includes(raw.tip)) fields.swordTip = raw.tip;
+  for (const [key, field] of [['knot', 'swordKnot'], ['barbs', 'swordBarbs'], ['twin', 'swordTwin'], ['lock', 'swordLock'], ['scrotum', 'swordScrotum']]) {
+    if (typeof raw[key] === 'boolean') fields[field] = raw[key];
+  }
+  return Object.keys(fields).length ? fields : null;
+}
+
 /** 模型回传的精方档案 → 精方表单的值；数值不合理就当没给 */
 export function sanitizeSireExtractionResult(result) {
   const value = result && typeof result === 'object' && !Array.isArray(result) ? result : {};
@@ -641,6 +652,8 @@ export function sanitizeSireExtractionResult(result) {
       ? null
       : normalizeSwordOffset(value.swordOffset),
     spermQuality: Number.isFinite(quality) && quality > 0 ? normalizeSpermQuality(quality) : null,
+    // 剑的外形与锁住（1.6.0）：只收设定写到的项，没写的留给档案原本的值
+    sword: sanitizeSwordExtraction(value.sword),
     isHere: value.isHere !== false,
     descriptions,
   };

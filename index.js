@@ -1838,6 +1838,8 @@ async function registerSireFromForm(ctx) {
       bodySize: extracted.bodySize ?? current?.bodySize ?? prefill?.bodySize ?? null,
       spermQuality: typedQuality ?? extracted.spermQuality ?? current?.spermQuality ?? 1,
       swordOffset: typedSword ?? extracted.swordOffset ?? current?.swordOffset ?? 0,
+      // 剑的外形与锁住（1.6.0）：模型照设定判断，没写到的项保留档案原本的
+      ...(extracted.sword || {}),
       isHere: extracted.isHere,
       // 天赋与技能：技能系统关着时模型不判断（null），保留原本的
       ...(extracted.talents !== null ? { talents: extracted.talents } : {}),

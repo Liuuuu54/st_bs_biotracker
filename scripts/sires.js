@@ -242,6 +242,13 @@ export function getSireQualityState(chatState, name, { minutesPassed = null } = 
   };
 }
 
+/** 剑写成一句（给提示词）：偏移只送文字，强精中照暂时加大后的尺寸，再接外形；都是预设值回传空字串 */
+export function describeSireSword(record, nowMinutes = null) {
+  const offset = getEffectiveSwordOffset(record, nowMinutes);
+  const size = offset ? `${describeSwordOffset(offset)}${offset !== normalizeSwordOffset(record?.swordOffset) ? '（强精，暂时变大）' : ''}` : '';
+  return [size, describeSwordTraits(record)].filter(Boolean).join('，');
+}
+
 /** 剑偏移加上强精暂时的加大（1.5.4），夹在 −2～+2 */
 export function getEffectiveSwordOffset(record, nowMinutes = null) {
   return normalizeSwordOffset(Number(normalizeSwordOffset(record?.swordOffset)) + fertilitySwordBoost({ base: record }, nowMinutes));
@@ -294,6 +301,40 @@ export function getSpermQualityTier(value) {
   return '极旺';
 }
 
+/**
+ * 剑的外形与锁住（1.6.0）：精方属性，不限种族，扶她与孕夫的剑也存在精方这份。彼此独立（真实的犬是「尖锥头＋根部球结」）。
+ * 只有 swordLock 有机制（射精后锁住，见 bsAddSperm）；外形不绑机制，任何剑都能锁（魔法、触手），有球结也可以不锁。
+ * 阴囊大小不另存：跟着档案精子品质，饱满度跟着存量。都是选填，预设值不存。
+ */
+export const SWORD_TIPS = Object.freeze(['rounded', 'rimmed', 'covered', 'tapered', 'flared']);
+export const SWORD_TIP_LABELS = Object.freeze({ rounded: '圆钝', rimmed: '冠缘明显', covered: '包皮覆盖', tapered: '尖锥', flared: '喇叭头（射精时胀开）' });
+const SWORD_TRAIT_DEFAULTS = Object.freeze({ swordKnot: false, swordBarbs: false, swordTwin: false, swordLock: false, swordScrotum: true });
+export const SWORD_TRAIT_FIELDS = Object.freeze(['swordTip', ...Object.keys(SWORD_TRAIT_DEFAULTS)]);
+
+/** 只回传不是预设值的栏位（圆钝、无球结、无倒刺、单剑、不锁、有阴囊都不存） */
+export function normalizeSwordTraits(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const traits = {};
+  if (SWORD_TIPS.includes(source.swordTip) && source.swordTip !== 'rounded') traits.swordTip = source.swordTip;
+  for (const [key, fallback] of Object.entries(SWORD_TRAIT_DEFAULTS)) {
+    if (typeof source[key] === 'boolean' && source[key] !== fallback) traits[key] = source[key];
+  }
+  return traits;
+}
+
+/** 剑的外形写成一句（给提示词）；全是预设值回传空字串 */
+export function describeSwordTraits(record) {
+  const traits = normalizeSwordTraits(record);
+  return [
+    traits.swordTip ? `${SWORD_TIP_LABELS[traits.swordTip]}头` : '',
+    traits.swordTwin ? '一对双剑（可以一根插产道、一根插肛门）' : '',
+    traits.swordKnot ? '根部球结' : '',
+    traits.swordBarbs ? '冠下一圈倒刺' : '',
+    traits.swordLock ? '射精后会锁住' : '',
+    traits.swordScrotum === false ? '没有外露的阴囊' : '',
+  ].filter(Boolean).join('、');
+}
+
 export function normalizeSpermQuality(value) {
   const quality = Number(value);
   if (!Number.isFinite(quality) || quality <= 0) return 1;
@@ -342,6 +383,8 @@ export function normalizeSireRecord(raw, minutesPassed = 0) {
     reproEffects: normalizeReproEffects(value.reproEffects),
     // 作弊：胎儿守护。这位精方在场时，他的胎儿健康慢慢回到平稳（见 isSireGuarding）；只有使用者在注册页能开
     fetalGuard: value.fetalGuard === true,
+    // 剑的外形与锁住（1.6.0）：只存不是预设值的
+    ...normalizeSwordTraits(value),
     // 季节时钟起点（分钟）；没有季节的种族与扶她为 null
     seasonOrigin: hasSeasonOrigin(value) ? Math.round(Number(value.seasonOrigin)) : null,
     talents: normalizeTalentList(value.talents),
@@ -451,6 +494,7 @@ export function pruneFutaSireRecord(chatState, name) {
     swordOffset: sire.swordOffset,
     alwaysPeak: sire.alwaysPeak,
     fetalGuard: sire.fetalGuard,
+    ...normalizeSwordTraits(sire),
     reserve: sire.reserve,
     reserveAt: sire.reserveAt,
     source: sire.source,
@@ -538,7 +582,7 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
       ...(virility ? { virility } : {}),
       ...(condition ? { condition } : {}),
       // 剑只送文字：模型看不懂偏移数字。强精中照暂时加大后的尺寸
-      ...(getEffectiveSwordOffset(record, now) ? { sword: `${describeSwordOffset(getEffectiveSwordOffset(record, now))}${getEffectiveSwordOffset(record, now) !== normalizeSwordOffset(record.swordOffset) ? '（强精，暂时变大）' : ''}` } : {}),
+      ...(describeSireSword(record, now) ? { sword: describeSireSword(record, now) } : {}),
       // 生效中的药（1.5.4）：药名、效果与剩多久
       ...(describeReproEffects({ base: record }, now).length ? { activeDrugs: describeReproEffects({ base: record }, now) } : {}),
     };
@@ -592,6 +636,8 @@ export function upsertSireRecord(chatState, name, fields = {}, { source = 'manua
     ...(fields.swordOffset !== undefined && fields.swordOffset !== null ? { swordOffset: fields.swordOffset } : {}),
     ...(typeof fields.alwaysPeak === 'boolean' ? { alwaysPeak: fields.alwaysPeak } : {}),
     ...(typeof fields.fetalGuard === 'boolean' ? { fetalGuard: fields.fetalGuard } : {}),
+    // 剑的外形：有给才改（给了预设值就是改回预设）
+    ...Object.fromEntries(SWORD_TRAIT_FIELDS.filter((key) => fields[key] !== undefined && fields[key] !== null).map((key) => [key, fields[key]])),
     ...(isFuta ? {} : {
       race: fields.race || previous?.race || '人类',
       bloodline: fields.race ? null : previous?.bloodline,

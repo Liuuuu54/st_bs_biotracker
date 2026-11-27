@@ -14,7 +14,7 @@ import { describeReproEffects, fertilityMultiplier } from './repro_effects.js';
 import { describePregnancySymptoms, getLibidoCap, getNarrativeNeedLevels, getUterinePressureCap } from './tools.js';
 import { syncCardSettings } from './card_settings.js';
 import { contraceptionLevels, naturalNoticeDays, psychologySide } from './reproductive.js';
-import { buildSirePromptEntries, getGuardingSire } from './sires.js';
+import { buildSirePromptEntries, describeSireSword, getGuardingSire, getSireRecord } from './sires.js';
 import { formatIntimacyPromptLine, getIntimacyRanking } from './intimacy.js';
 import { buildMainFlowStatePrompt, buildTrackerSystemPrompt, DEFAULT_REGISTRY_DESCRIPTION_GUIDES, NATURAL_PREGNANCY_CUE } from './prompts/rules.js';
 import { summarizePendingRecords } from './record_notes.js';
@@ -1701,7 +1701,7 @@ function trimPaternityClaims(view) {
   return view;
 }
 
-function buildTrackerStateView(existingState, settings = null, minutesPassed = 0, reproductiveSettings = null, guardingSireOf = () => '') {
+function buildTrackerStateView(existingState, settings = null, minutesPassed = 0, reproductiveSettings = null, guardingSireOf = () => '', swordOf = () => '') {
   const characterCount = Object.keys(existingState || {}).length;
   const diaryLimit = getDiaryRecentLimit(settings, characterCount);
   const wardrobeOn = isWardrobeSystemEnabled(settings);
@@ -1711,6 +1711,9 @@ function buildTrackerStateView(existingState, settings = null, minutesPassed = 0
       const view = item?.profile?.base?.isHere === false
         ? buildOffscreenCharacterState(item, diaryLimit, wardrobeOn)
         : buildPromptFacingCharacterState(item, diaryLimit, wardrobeOn, minutesPassed, reproductiveSettings, guardingSireOf);
+      // 扶她、孕夫自己的剑（1.6.0）：大小与外形，同名精方档案才有
+      const sword = item?.profile?.base?.isHere === false ? '' : swordOf(name);
+      if (sword && view?.profile?.base) view.profile.base.sword = sword;
       return [name, pruneEmptyFields(trimPaternityClaims(skillOn ? view : stripSkillFields(view)))];
     }),
   );
@@ -1951,7 +1954,7 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
       recentText: recentMessages.map((message) => message.text).join('\n'),
       guide: settings?.registryDescriptionGuides?.sireDescription ?? DEFAULT_REGISTRY_DESCRIPTION_GUIDES.sireDescription,
     }), getActiveCalendar()),
-    existing_state: (reason === 'mainflow' ? narrateStateNumbers : (state) => state)(localizeStateAges(buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus)), getActiveCalendar(), Number(chatState.minutesPassed) || 0), existingState),
+    existing_state: (reason === 'mainflow' ? narrateStateNumbers : (state) => state)(localizeStateAges(buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus), (name) => (getSireRecord(chatState, name) ? describeSireSword(getSireRecord(chatState, name), Number(chatState.minutesPassed) || 0) : '')), getActiveCalendar(), Number(chatState.minutesPassed) || 0), existingState),
     // 主线用：今天＋历法本身（主线提示词不在这里拼快取顺序）
     ...(getActiveCalendar() ? { calendar_note: describeCalendarForPrompt(getActiveCalendar(), Number(chatState.minutesPassed) || 0), calendar_today: describeCalendarToday(getActiveCalendar(), Number(chatState.minutesPassed) || 0) } : {}),
     recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => (['bsAddSperm', 'bsAbortion'].includes(log.name) || (log.name === 'bsReproductiveIntervention' && String(log.message || '').includes('事后避孕'))) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),

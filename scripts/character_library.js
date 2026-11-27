@@ -5,12 +5,12 @@
 import { applyRegistryResult } from './registry.js';
 import { parseDescriptionGuideFields } from './descriptions.js';
 import { DEFAULT_REGISTRY_DESCRIPTION_GUIDES } from './prompts/rules.js';
-import { getSireRecord, normalizeSireRecord, upsertSireRecord } from './sires.js';
+import { SWORD_TRAIT_FIELDS, getSireRecord, normalizeSireRecord, normalizeSwordTraits, upsertSireRecord } from './sires.js';
 import { normalizeNextSkillId, normalizeSkillCatalog, normalizeTalentList, registerSkillDefinition, resolveSkillDefinition, talentPointsToState, talentStateToPoints } from './skill_config.js';
 
 const EGG_BASE_FIELDS = Object.freeze(['race', 'bloodline', 'bloodlineSource', 'derivedType', 'age', 'bodySize', 'sheathOffset', 'vitalityLevel', 'psyStressLevel']);
 const EGG_IMMUNE_FIELDS = Object.freeze(['metabolism', 'miscarriage', 'realisticLabor', 'crossSpecies']);
-const SIRE_FIELDS = Object.freeze(['race', 'bloodline', 'bloodlineSource', 'derivedType', 'age', 'bodySize', 'spermQuality', 'swordOffset', 'alwaysPeak', 'fetalGuard']);
+const SIRE_FIELDS = Object.freeze(['race', 'bloodline', 'bloodlineSource', 'derivedType', 'age', 'bodySize', 'spermQuality', 'swordOffset', 'alwaysPeak', 'fetalGuard', ...SWORD_TRAIT_FIELDS]);
 
 const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
 
@@ -170,6 +170,7 @@ export function importLibraryEntry(chatState, settings, name, { random = Math.ra
         swordOffset: source.swordOffset ?? 0,
         alwaysPeak: source.alwaysPeak === true,
         fetalGuard: source.fetalGuard === true,
+        ...normalizeSwordTraits(source),
         isHere: true,
         descriptions: clone(source.descriptions?.normalDescription) || [],
         talents: talentsFromPortable(source.talents, chatState),

@@ -545,8 +545,13 @@ export function normalizeCharacterPsychologyState(characterState) {
     || !penetrationFit || typeof penetrationFit !== 'object' || penetrationFit.male !== characterState.profile.base.penetrationSource)) {
     characterState.profile.base.penetrationFit = null;
   }
+  // 剑锁住（1.6.0）：只在射精后、还没拔出时留着
+  if (characterState.profile.base.penetrationLocked !== undefined
+    && !(characterState.profile.base.penetrationLocked === true && characterState.profile.base.penetrationState === 'spent')) {
+    delete characterState.profile.base.penetrationLocked;
+  }
   // 肛交（1.6.0）：插入通道只在插入期间留着；肛内残精是非负数，没有就不存
-  if (characterState.profile.base.penetrationState === 'idle' || characterState.profile.base.penetrationChannel !== 'anal') {
+  if (characterState.profile.base.penetrationState === 'idle' || !['anal', 'both'].includes(characterState.profile.base.penetrationChannel)) {
     delete characterState.profile.base.penetrationChannel;
   }
   const analSemen = Number(characterState.profile.base.analSemen);

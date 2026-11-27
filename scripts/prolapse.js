@@ -15,6 +15,8 @@ const DELIVERY_STRAIN = 0.2; // 每阴道娩出一胎 × 胎重倍率
 const DELIVERY_INJURY_STRAIN = Object.freeze({ stuck: 0.5, rushed: 0.3 });
 const BIG_FETUS_WEIGHT = 1.3;
 const BIG_FETUS_STRAIN = 0.3;
+/** 剑锁住（1.6.0）还没消退就硬拔，往外拖一把，比照极不相称的剑 */
+export const FORCED_UNLOCK_STRAIN = 0.3;
 const SWORD_STRAIN = Object.freeze([[4, 0.6], [2.5, 0.3], [1.5, 0.1]]); // 剑比鞘大多少级 → 加多少：明显不合 0.1、极不相称 0.3、体型悬殊 0.6
 const DAILY_RECOVERY = 0.15;
 const REDUCE_TO = 2.5;

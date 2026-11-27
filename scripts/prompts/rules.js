@@ -697,7 +697,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
     '- cognitionRecords 保存角色信念，可以与事实不同；系统结果、真实胎父与胎数不自动成为角色知识。自然线索到点也不强制知孕；产程是系统结果，她认出自己在分娩之前不得写成她知道。',
     ...(profiles.some((profile) => profile.bodyFamiliarity) ? ['- bodyFamiliarity 是身体对各性伴的熟悉度（系统按次数、体型相容与时间算出，前三名）：只描述身体的记忆与反应，例如对谁的触碰更快有反应，不代表感情或爱意。'] : []),
     ...(profiles.some((profile) => profile.lastCondomResult || profile.lastEmergencyResult) ? ['- lastCondomResult/lastEmergencyResult 只在结算后的下一次叙事出现：是系统结果，不等于角色察觉；可据此描写合理可见的后果，不要求本轮处理。'] : []),
-    '- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；activeDrugs 身上生效中的药与还剩多久；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精，penetrationChannel=anal 表示这次插的是肛门；analSemen 肛内残精（有才送，几小时内慢慢流出，排便时一起排出）；prolapse 宫脱（有才送：几度、怎么描写、有没有托住）；outletLayout 外口布局（有才送，没送就是阴道、尿道、肛门分开）：泄殖腔只有一个外口、没有独立的肛门，她若兼有阴茎，那是收在泄殖腔旁鞘里的鞘内剑，只在插入别人时整根翻出，被插入时收着；管状是产道末端的一根管，生产也从管口出，兼有阴茎时同一根管既是产道也是剑，不另长阴茎；阴茎分娩是孕夫从阴茎的尿道口生；肛门分娩是孕夫的肛门就是产道；canalTexture 产道内壁的质感（有才送），写内壁照它，不写成湿热的肉壁。描写照这些文字，不写数字。',
+    '- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；activeDrugs 身上生效中的药与还剩多久；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精，penetrationChannel=anal 表示这次插的是肛门、both 表示双剑一根插产道一根插肛门；analSemen 肛内残精（有才送，几小时内慢慢流出，排便时一起排出）；prolapse 宫脱（有才送：几度、怎么描写、有没有托住）；penetrationLocked 为 true 表示精方的剑射精后锁住了（结住），消退前拔不出来、精液排不出来、别人也插不进来；sword 是她自己（扶她、孕夫）的剑：大小与外形；outletLayout 外口布局（有才送，没送就是阴道、尿道、肛门分开）：泄殖腔只有一个外口、没有独立的肛门，她若兼有阴茎，那是收在泄殖腔旁鞘里的鞘内剑，只在插入别人时整根翻出，被插入时收着；管状是产道末端的一根管，生产也从管口出，兼有阴茎时同一根管既是产道也是剑，不另长阴茎；阴茎分娩是孕夫从阴茎的尿道口生；肛门分娩是孕夫的肛门就是产道；canalTexture 产道内壁的质感（有才送），写内壁照它，不写成湿热的肉壁。描写照这些文字，不写数字。',
   ];
   if (profiles.some((profile) => profile.metabolism)) {
     lines.push('- metabolism：excretion 泄意、hunger 食意、sleep 困意、milk 乳意（孕晚期以前是乳房胀痛敏感，孕晚期起才可能溢乳）、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；分级为 低／中／高／满／爆（没列的就是没有）；泄意、食意后面的括号是比较急的那一种（尿意／便意、饿意／渴意），写剧情照它分小便、大号、吃东西、喝水。pregnant.symptoms 是当天的妊娠症状（便秘、频尿、胀气、怪口味……），可以自然带进身体描写。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');
@@ -1976,11 +1976,12 @@ export function buildSireExtractionSystemPrompt(settings, options = {}) {
     '- payload.source_child 若有，这个精方是由已有角色的孩子长大后注册的：种族、血脉、衍生与天赋由系统照孩子继承，不必再判断 talents（给空阵列即可）。' + CHILD_SOURCE_BACKGROUND_RULE,
     '- swordOffset: 剑（阳物）的个人偏移，−2～+2，步长 0.5，一般为 0。剑的大小 ＝ 体型 ＋ 偏移，体型已由 bodySize 决定，这里只写比同体型的人大或小多少：设定写明阳物特别粗大（小个子巨根）约 +1～+2，偏小约 −0.5～−1。设定没有着墨填 null。要与描述里性器的写法一致。',
     '- spermQuality: 精子品质倍率 0.25–4，一般人为 1。依设定里对精力、精液浓度、繁殖力的描写推估：精力衰退、不易使人受孕约 0.25–0.5；一般 1；精力旺盛、精液浓稠约 2；精力极旺、传说级的繁殖力或种马设定约 3–4。只看体能与繁殖力，不看阳物大小（那是 swordOffset）、身分、性格或受欢迎程度；设定没有着墨填 null。',
+    '- sword: 剑的外形与锁住，物件，只写设定里明确写到的项，没写的省略、整个没写就给 null：tip 头形（rounded 圆钝、rimmed 冠缘明显、covered 包皮覆盖、tapered 尖锥（犬科、触手之类）、flared 喇叭头（马科，射精时胀开））；knot 根部球结（犬科、狼）；barbs 冠下倒刺（猫科）；twin 一对双剑（蛇、蜥蜴、鲨）；lock 射精后锁住拔不出来（犬科的结，或魔法、触手的设定）；scrotum 有没有外露的阴囊（鸟、爬虫、鱼这类藏在体内的给 false）。外形与锁住各自判断：有球结不一定写到锁住，没有球结也可能被魔法锁住。',
     '- descriptions: 以字段名为键的物件，字段名照下方规则每行「字段名|写作指引」的字段名；没有资料的字段省略。每栏一到三句白描，写当下状态，不写剧情摘要。',
     '[描述规则]',
     guide,
     ...(instruction ? ['[使用者补充]', sanitizePromptText(instruction)] : []),
-    `只输出 JSON：{"age":数字或null,"bodySize":数字或null,"swordOffset":数字或null,"spermQuality":数字或null,"isHere":true,${options.withTalents ? '"talents":[],"skills":[],' : ''}"descriptions":{"字段名":"内容"}}`,
+    `只输出 JSON：{"age":数字或null,"bodySize":数字或null,"swordOffset":数字或null,"spermQuality":数字或null,"sword":{"tip":"tapered","knot":true,"lock":true}或null,"isHere":true,${options.withTalents ? '"talents":[],"skills":[],' : ''}"descriptions":{"字段名":"内容"}}`,
   ].join('\n');
 }
 
