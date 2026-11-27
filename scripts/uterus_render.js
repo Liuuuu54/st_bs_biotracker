@@ -1107,17 +1107,22 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     const width = fit?.swordWidth ?? 9;
     const half = (width - 1) >> 1;
     const cx = womb.cx + sway;
+    // 剑画成黑影加 1 px 亮边（1.6.0）：与先露黑影同一套象征，不随精方种族或子宫材质染色；
+    // 产道中央本来就暗，只画黑影会消失，所以一定带亮边
+    const silhouette = mixColor(P.cavityDeep, '#0b0710', 0.65);
     if (fit && fit.direction < 0 && fit.tier >= 4) {
       // 体型悬殊（鞘大得多）：像一根细针，碰不到任何一边的壁
-      pen.px(cx, headY + 1, 1, bottom - headY - 1, P.wallLight);
+      pen.px(cx, headY + 1, 1, bottom - headY - 1, mixColor(P.shine, silhouette, 0.45));
       pen.px(cx, headY, 1, 1, P.shine);
       return headY;
     }
-    pen.px(cx - half, headY + 2, width, bottom - headY - 2, P.wallDark);
-    if (width > 2) pen.px(cx - half + 1, headY + 3, width - 2, bottom - headY - 3, P.wallLight);
-    pen.ellipse(cx, headY + 2, half, Math.max(1, Math.min(3, half)), P.fetusLight);
-    // 头顶的高光置中（宽度一律是奇数，左右对称）
-    if (half >= 2) pen.px(cx - 1, headY, 3, 1, P.shine); else pen.px(cx, headY, 1, 1, P.shine);
+    const headRy = Math.max(1, Math.min(3, half));
+    pen.px(cx - half, headY + 2, width, bottom - headY - 2, P.shine);
+    pen.ellipse(cx, headY + 2, half, headRy, P.shine);
+    if (width > 2) {
+      pen.px(cx - half + 1, headY + 2, width - 2, bottom - headY - 2, silhouette);
+      if (half >= 2 && headRy >= 2) pen.ellipse(cx, headY + 2, half - 1, headRy - 1, silhouette);
+    }
     if (condom && width !== 9) {
       // 尺寸不相称时套子照剑的宽度贴着画
       pen.px(cx - half - 1, headY + 3, 1, bottom - headY - 3, condomTones().latex);
