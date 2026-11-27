@@ -192,9 +192,9 @@ test('内置种族都有代谢型；分布照定稿表', () => {
     const type = getBuiltinRacePhysiologyProfile(race).metabolismType;
     counts[type] = (counts[type] || 0) + 1;
   }
-  assert.deepEqual(counts, { warm: 39, fast: 12, cold: 27, absorb: 13, spirit: 18, inert: 12 });
+  assert.deepEqual(counts, { warm: 41, fast: 13, cold: 28, absorb: 13, spirit: 20, inert: 13 });
   assert.equal(ALL_BUILTIN_RACES.filter((race) => getBuiltinRacePhysiologyProfile(race).aquatic).length, 16);
-  assert.equal(ALL_BUILTIN_RACES.filter((race) => getBuiltinRacePhysiologyProfile(race).solitary).length, 32);
+  assert.equal(ALL_BUILTIN_RACES.filter((race) => getBuiltinRacePhysiologyProfile(race).solitary).length, 34);
 });
 
 test('冷血吃得慢、水栖渴得慢、独居伴意慢', () => {

@@ -381,7 +381,24 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 1.5, orgasmOvulationAmount: 0, identicalProbability: 1, genderRatio: 50,
     companionEggsMean: 0, fetalBulkRatio: 1.4, recoveryCoefficient: 2,
     bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },  "地狱犬": {
+    embryoType: "胎生",
+    introductionLine: "Hellhound，冥界的黑犬，浑身燃着地狱之火，可在人态与完全犬形之间转换；三头犬刻耳柏洛斯亦归此类，族中多胞胎常见。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.75, dormancyDays: 161, gestationSpeciesSpeed: 2, birthDifficulty: 1, breedTolerance: 2,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 3, identicalProbability: 15, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 1,
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 5, bodyPlan: "humanoid",
+  },  "鼠人": {
+    embryoType: "胎生",
+    introductionLine: "Ratfolk，鼠头覆毛、拖着长尾的直立鼠类亚人，十二生肖之首；民间「老鼠娶亲」以鼠喻婚嫁多子，族群一窝接一窝地繁衍，周期短、无乏情，孕期短、产后很快又能再怀。人脸只带鼠耳鼠尾的写作兽耳族-鼠。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.25, gestationSpeciesSpeed: 3, birthDifficulty: 0.4, breedTolerance: 3,
+    impregnationDifficulty: 0.4, orgasmOvulationAmount: 3, identicalProbability: 10, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 0.2,
+    bodySize: 3, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
+
   "鸟族": {
     embryoType: "卵生",
     introductionLine: "Harpy，典型形象为哈比，带翼的鸟类亚人；现代创作已性别比正常化。",
@@ -399,16 +416,26 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 0.4, orgasmOvulationAmount: 3, identicalProbability: 1, genderRatio: 50,
     companionEggsMean: 3, recoveryCoefficient: 0.25,
     bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "beast",
-  },
-  "雷鸟": {
+  },  "仙鹤": {
     embryoType: "卵生",
-    introductionLine: "Thunderbird，北美原住民传说中振翅成雷、目放闪电的神鸟；人态为生有羽翼的雷鸟娘，真身是遮天的巨鸟。",
+    introductionLine: "Immortal Crane，道家仙人的坐骑，鹤寿千年、餐风饮露，一年一季、一季一两颗蛋，一生只认一个伴侣；化为女子嫁人报恩、夜里拔羽织布的「鹤的报恩」亦归此类。真身是能载人的仙鹤。鹤娘归此类，不写作鸟族-鹤。",
     inheritanceMode: "normal",
-    menstrualLengthRatio: 1, dormancyDays: 253, seasonCycles: 4, gestationSpeciesSpeed: 1, birthDifficulty: 1.5, breedTolerance: 1.5,
-    impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
-    companionEggsMean: 1, recoveryCoefficient: 1,
-    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 7, bodyPlan: "humanoid",
+    menstrualLengthRatio: 1, dormancyDays: 253, gestationSpeciesSpeed: 0.8, birthDifficulty: 0.5, breedTolerance: 1,
+    impregnationDifficulty: 2, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 2,
+    bodySize: 4, bodySizeSd: 0.4, altFormBodySize: 5, bodyPlan: "humanoid",
   },
+  "夜枭": {
+    embryoType: "卵生",
+    introductionLine: "Strix，夜行独居的鸮羽亚人，飞行无声、转头近乎半圈，一窝数蛋；罗马传说的斯忒里克斯是夜里吸食婴儿之血的鸮形魔女，「女巫（strega）」一词即由此而来。猫头鹰娘归此类，不写作鸟族-鸮。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, dormancyDays: 253, gestationSpeciesSpeed: 1.5, birthDifficulty: 0.5, breedTolerance: 1.2,
+    impregnationDifficulty: 1, orgasmOvulationAmount: 2, identicalProbability: 10, genderRatio: 50,
+    companionEggsMean: 1, recoveryCoefficient: 0.6,
+    bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },
+
+
   "鸡蛇族": {
     embryoType: "卵生",
     introductionLine: "Cockatrice，鸡翼鸡爪、拖着蛇尾的魔物娘，传说由公鸡所下的蛋孵出，凝视能使人石化。",
@@ -492,7 +519,16 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 3, identicalProbability: 1, genderRatio: 50,
     companionEggsMean: 6, recoveryCoefficient: 0.25,
     bodySize: "individual", bodySizeSd: null, altFormBodySize: null, bodyPlan: "beast",
+  },  "恐龙族": {
+    embryoType: "卵生",
+    introductionLine: "Dinosaur Folk，古代巨兽的后裔，恒温、可生羽毛的鳞甲亚人，真身是完整的恐龙；一年两窝，一窝蛋多。没有龙血与龙力：冷血、偏小的鳞甲亚人写作蜥蜴人，有龙血、龙息的写作龙与他族的混血。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, dormancyDays: 200, seasonCycles: 2, gestationSpeciesSpeed: 0.8, birthDifficulty: 1.2, breedTolerance: 2.5,
+    impregnationDifficulty: 1.5, orgasmOvulationAmount: 2, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 2, recoveryCoefficient: 1,
+    bodySize: 5, bodySizeSd: 0.6, altFormBodySize: 7, bodyPlan: "humanoid",
   },
+
   "触手怪": {
     embryoType: "卵生",
     fetalGrowthShape: "even",
@@ -736,7 +772,16 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 0.5, orgasmOvulationAmount: 1, identicalProbability: 0, genderRatio: 0,
     companionEggsMean: 0, recoveryCoefficient: 3.8,
     bodySize: 3, bodySizeSd: 0.4, altFormBodySize: null, bodyPlan: "humanoid",
+  },  "蜚蠊族": {
+    embryoType: "卵胎生",
+    introductionLine: "Roachfolk，打不死、什么都吃的蟑螂亚人，甲翅油亮、触角修长；卵鞘留在体内孵化，一次产下一窝。现实中的硬蠊多为卵胎生，太平洋折翅蠊更会分泌乳汁哺育胚胎。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 0.5, gestationSpeciesSpeed: 2.5, birthDifficulty: 0.6, breedTolerance: 2,
+    impregnationDifficulty: 0.4, orgasmOvulationAmount: 2, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 6, recoveryCoefficient: 0.3,
+    bodySize: 3, bodySizeSd: 0.5, altFormBodySize: null, bodyPlan: "humanoid",
   },
+
   "绒虫族": {
     embryoType: "卵胎生",
     introductionLine: "Velvet Worm-folk，外形像陆生蛞蝓的柔软虫娘：天鹅绒般湿软的身躯、下身成排短肉足，能喷黏液缠住猎物；蛞蝓、鼻涕虫一类的陆生软体人外归此。原型是栉蚕：胎盘胎生、孕期长达一年多，常同时怀着不同大小的数胎，雌多雄少。可借魔法化出人腿。",
@@ -930,16 +975,17 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 4, orgasmOvulationAmount: 1, identicalProbability: 20, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 4.2,
     bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 5, bodyPlan: "humanoid",
-  },
-  "地狱犬": {
+  },  "枭熊": {
     embryoType: "胎转卵生",
-    introductionLine: "Hellhound，冥界的黑犬，浑身燃着地狱之火，可在人态与完全犬形之间转换；三头犬刻耳柏洛斯亦归此类，族中多胞胎常见。",
+    introductionLine: "Owlbear，枭首熊身的魔兽，传说是疯狂法师的杂交实验；以熊的身体怀胎，却生下枭的蛋。人态是带羽冠与熊爪的枭熊娘，真身是巨大的枭熊。",
     inheritanceMode: "normal",
-    menstrualLengthRatio: 0.75, dormancyDays: 161, gestationSpeciesSpeed: 0.5, birthDifficulty: 3, breedTolerance: 2,
-    impregnationDifficulty: 2, orgasmOvulationAmount: 2, identicalProbability: 30, genderRatio: 50,
+    menstrualLengthRatio: 1, dormancyDays: 300, gestationSpeciesSpeed: 0.5, birthDifficulty: 3, breedTolerance: 2.5,
+    impregnationDifficulty: 2.5, orgasmOvulationAmount: 1, identicalProbability: 10, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 3,
-    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 5, bodyPlan: "humanoid",
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 6, bodyPlan: "humanoid",
   },
+
+
   "麒麟": {
     embryoType: "胎转卵生",
     introductionLine: "Qilin，东方上位神兽，汲取环境灵气孕育，自身承载耐受偏低；可拟人化。",
@@ -958,6 +1004,14 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 3.5, orgasmOvulationAmount: 0, identicalProbability: 5, genderRatio: 50,
     companionEggsMean: 0, recoveryCoefficient: 3,
     bodySize: 4, bodySizeSd: 0.4, altFormBodySize: 6, bodyPlan: "humanoid",
+  },  "雷鸟": {
+    embryoType: "胎转卵生",
+    introductionLine: "Thunderbird，北美原住民传说中振翅成雷、目放闪电的神鸟；人态为生有羽翼的雷鸟娘，真身是遮天的巨鸟。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1.25, dormancyDays: 63, gestationSpeciesSpeed: 0.33, birthDifficulty: 3, breedTolerance: 1.8,
+    impregnationDifficulty: 3.5, orgasmOvulationAmount: 1, identicalProbability: 5, genderRatio: 50,
+    companionEggsMean: 0, recoveryCoefficient: 3,
+    bodySize: 4, bodySizeSd: 0.5, altFormBodySize: 7, bodyPlan: "humanoid",
   },
   "圣甲虫": {
     embryoType: "胎转卵生",
@@ -1143,7 +1197,16 @@ const RACE_DEFINITIONS = Object.freeze({
     impregnationDifficulty: 7, orgasmOvulationAmount: 0, identicalProbability: 1, genderRatio: null,
     companionEggsMean: 0, recoveryCoefficient: 0.3,
     bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
+  },  "电子幽灵": {
+    embryoType: "不定型",
+    introductionLine: "Cyber Ghost，寄宿在网络与装置里的电子意识（AI、虚拟伴侣、「电子老婆」），以投影、义体或附身的肉身显形，没有固定形体；饿是电力与算力，困是待机与重开机。要让资料写进现实很难，一旦成孕常复制分叉出同卵。",
+    inheritanceMode: "normal",
+    menstrualLengthRatio: 1, gestationSpeciesSpeed: 2, birthDifficulty: 1, breedTolerance: 1.5,
+    impregnationDifficulty: 6, orgasmOvulationAmount: 0, identicalProbability: 50, genderRatio: 25,
+    companionEggsMean: 0, recoveryCoefficient: 0.5,
+    bodySize: null, bodySizeSd: null, altFormBodySize: null, bodyPlan: "any",
   },
+
   "元素灵": {
     embryoType: "不定型",
     introductionLine: "Elemental，自然元素的拟人体，如水元素温蒂妮。",
@@ -1247,14 +1310,14 @@ export const METABOLISM_TYPE_KEYS = Object.freeze(Object.keys(METABOLISM_TYPES))
 export const METABOLISM_PACE_KEYS = Object.freeze(["food", "thirst", "urine", "stool", "sleep"]);
 /** 内置种族的代谢型：没列的是恒温 */
 const BUILTIN_METABOLISM_GROUPS = Object.freeze({
-  fast: ["鸟族", "怪鸟类", "雷鸟", "狗头人", "月兔", "镰鼬", "卡玛佐兹", "天狗", "鸡蛇族", "半身人", "蝇魔", "炉蚜"],
-  cold: ["蜥蜴人", "怪爬虫类", "蛇人", "梅杜莎", "龟族", "蛙族", "蝾螈族", "河童", "鱼人", "人鱼", "鲛人", "怪鱼类", "斯库拉", "甲壳族", "海马族", "棘皮族", "群居虫人", "独居虫人", "怪虫类", "双生螳螂", "阿拉克涅", "百足氏", "蝎罗氏", "绒虫族", "星繭族", "宝箱怪", "沙虫族"],
+  fast: ["鸟族", "怪鸟类", "夜枭", "鼠人", "狗头人", "月兔", "镰鼬", "卡玛佐兹", "天狗", "鸡蛇族", "半身人", "蝇魔", "炉蚜"],
+  cold: ["蜥蜴人", "怪爬虫类", "蛇人", "梅杜莎", "龟族", "蛙族", "蝾螈族", "河童", "鱼人", "人鱼", "鲛人", "怪鱼类", "斯库拉", "甲壳族", "海马族", "棘皮族", "群居虫人", "独居虫人", "怪虫类", "双生螳螂", "阿拉克涅", "百足氏", "蝎罗氏", "绒虫族", "星繭族", "宝箱怪", "沙虫族", "蜚蠊族"],
   absorb: ["妖精", "怪植类", "爱那温", "怪蕈类", "玛坦戈", "华根蕴桃", "米戈", "史萊姆", "修格斯", "菌毒族", "海蛞蝓族", "水母族", "触手怪"],
-  spirit: ["西方龙", "海德拉", "东方龙", "羽蛇", "麒麟", "凤凰", "白泽", "帝江", "圣甲虫", "天使", "恶魔", "宁芙", "夢貘", "心魇", "媚魔", "夢魔", "夺心魔", "眼魔"],
-  inert: ["石像鬼", "烛灵", "人偶", "魔像", "墨灵", "宝石人", "奈米丛族", "元素灵", "灯神", "影魔", "活体铠甲", "核焰族"],
+  spirit: ["仙鹤", "雷鸟", "西方龙", "海德拉", "东方龙", "羽蛇", "麒麟", "凤凰", "白泽", "帝江", "圣甲虫", "天使", "恶魔", "宁芙", "夢貘", "心魇", "媚魔", "夢魔", "夺心魔", "眼魔"],
+  inert: ["石像鬼", "烛灵", "人偶", "魔像", "墨灵", "宝石人", "奈米丛族", "元素灵", "灯神", "影魔", "活体铠甲", "核焰族", "电子幽灵"],
 });
 const BUILTIN_METABOLISM_TYPE = Object.freeze(Object.fromEntries(Object.entries(BUILTIN_METABOLISM_GROUPS).flatMap(([type, races]) => races.map((race) => [race, type]))));
-const BUILTIN_SOLITARY_RACES = Object.freeze(new Set(["独居虫人", "阿拉克涅", "蝎罗氏", "百足氏", "双生螳螂", "圣甲虫", "怪虫类", "蛇人", "梅杜莎", "龟族", "鸡蛇族", "怪爬虫类", "熊人族", "斯库拉", "西方龙", "海德拉", "沙虫族", "雷鸟", "宝箱怪", "眼魔", "影魔", "灯神", "独角兽", "凤凰", "斯芬克斯", "鵺", "雪族", "夢貘", "石像鬼", "怪植类", "爱那温", "华根蕴桃"]));
+const BUILTIN_SOLITARY_RACES = Object.freeze(new Set(["独居虫人", "阿拉克涅", "蝎罗氏", "百足氏", "双生螳螂", "圣甲虫", "怪虫类", "蛇人", "梅杜莎", "龟族", "鸡蛇族", "怪爬虫类", "熊人族", "斯库拉", "西方龙", "海德拉", "沙虫族", "雷鸟", "宝箱怪", "眼魔", "影魔", "灯神", "独角兽", "凤凰", "斯芬克斯", "鵺", "雪族", "夢貘", "石像鬼", "怪植类", "爱那温", "华根蕴桃", "夜枭", "枭熊"]));
 const BUILTIN_AQUATIC_RACES = Object.freeze(new Set(["赛尔克族", "赛壬", "蛙族", "蝾螈族", "河童", "鱼人", "人鱼", "鲛人", "怪鱼类", "斯库拉", "甲壳族", "海马族", "棘皮族", "海蛞蝓族", "水母族", "宁芙"]));
 
 /**
@@ -1759,7 +1822,7 @@ export function isCustomRace(race) {
   return customRaceNames.includes(key);
 }
 
-/** 内置 121 族加上目前生效的自订物种 */
+/** 内置 128 族加上目前生效的自订物种 */
 export function getAllRaces() {
   return [...ALL_BUILTIN_RACES, ...customRaceNames];
 }

@@ -26,15 +26,15 @@ function makeHost(name, race) {
   };
 }
 
-test('内建名录共 121 个物种，新增种族进入正确胚胎分组', () => {
-  assert.equal(ALL_BUILTIN_RACES.length, 121);
-  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 120);
+test('内建名录共 128 个物种，新增种族进入正确胚胎分组', () => {
+  assert.equal(ALL_BUILTIN_RACES.length, 128);
+  assert.equal(ALL_BUILTIN_RACES.filter((race) => race !== '人类').length, 127);
   const expected = {
     卡玛佐兹: '胎生',
     熊人族: '胎生',
     夢貘: '胎生',
     玛坦戈: '卵生',
-    雷鸟: '卵生',
+    雷鸟: '胎转卵生',
     双生螳螂: '卵胎生',
     棘皮族: '卵胎生',
     圣甲虫: '胎转卵生',
@@ -64,7 +64,14 @@ test('内建名录共 121 个物种，新增种族进入正确胚胎分组', () 
     炉蚜: '卵胎生',
     蝇魔: '卵胎生',
     独居虫人: '卵生',
-    地狱犬: '胎转卵生',
+    地狱犬: '胎生',
+    鼠人: '胎生',
+    仙鹤: '卵生',
+    夜枭: '卵生',
+    恐龙族: '卵生',
+    蜚蠊族: '卵胎生',
+    枭熊: '胎转卵生',
+    电子幽灵: '不定型',
     天马: '胎转卵生',
     烧瓶小人: '不定型',
     墨灵: '不定型',
