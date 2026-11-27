@@ -1330,6 +1330,67 @@ const BUILTIN_SOLITARY_RACES = Object.freeze(new Set(["原兽族", "独居虫人
 const BUILTIN_AQUATIC_RACES = Object.freeze(new Set(["赛尔克族", "赛壬", "蛙族", "蝾螈族", "河童", "鱼人", "人鱼", "鲛人", "怪鱼类", "斯库拉", "甲壳族", "海马族", "棘皮族", "海蛞蝓族", "水母族", "宁芙"]));
 
 /**
+ * 外口布局（1.6.0）：产道从哪个口出来。只决定外阴画面、肛交算不算产道、提示词里的一句话，不改子宫与产道的形状（各族共用）。
+ * - separate 分离开口：阴道、尿道、肛门各自分开（人类，没列的种族都是这个）
+ * - cloaca 泄殖腔：只有一个外口，没有独立的肛门，所以肛交就是插进产道
+ * - tube 管状：产道末端是一根管（鬣狗的伪阴茎、花蕊、产卵管）；肛门另外分开
+ * - penile 阴茎分娩：孕夫从阴茎尿道口生；肛门另外分开
+ * - anal 孕夫・肛门分娩：精方长出子宫，产道通到肛门，所以肛门就是产道
+ * penile 与 anal 只给孕夫（没有种族预设）；角色的 base.outletLayout 有填就照填，没填照种族。
+ */
+export const OUTLET_LAYOUTS = Object.freeze(["separate", "cloaca", "tube", "penile", "anal"]);
+export const OUTLET_LAYOUT_LABELS = Object.freeze({
+  separate: "分离开口", cloaca: "泄殖腔（单一外口）", tube: "管状（产道末端是一根管）", penile: "阴茎分娩（孕夫）", anal: "肛门分娩（孕夫）",
+});
+/** 这两种布局的肛门就是产道：肛交照产道算（会受孕、算宫脱与顶胎） */
+export const ANAL_BIRTH_CANAL_LAYOUTS = Object.freeze(new Set(["cloaca", "anal"]));
+const BUILTIN_OUTLET_LAYOUT_GROUPS = Object.freeze({
+  cloaca: ["袋兽族", "原兽族", "鸟族", "怪鸟类", "仙鹤", "夜枭", "鸡蛇族", "赛壬", "沙虫族", "蜥蜴人", "怪爬虫类", "恐龙族", "怪蕈类", "海蛞蝓族", "龟族", "甲壳族", "宝箱怪", "阿拉克涅", "百足氏", "天狗", "深潜者", "拜亚基", "修格斯", "狗头人", "人鱼", "鱼人", "鲛人", "怪鱼类", "斯库拉", "绒虫族", "蛇人", "蛙族", "蝾螈族", "眼魔", "水母族", "棘皮族", "河童", "梅杜莎", "蝎罗氏", "帝江", "史萊姆", "菌毒族", "烛灵", "心魇", "奈米丛族", "元素灵", "影魔", "活体铠甲", "灰人"],
+  tube: ["鬣狗族", "怪植类", "爱那温", "群居虫人", "怪虫类", "独居虫人", "双生螳螂", "蝇魔", "蜚蠊族", "触手怪", "米戈", "炉蚜", "海马族"],
+});
+const BUILTIN_OUTLET_LAYOUT = Object.freeze(Object.fromEntries(Object.entries(BUILTIN_OUTLET_LAYOUT_GROUPS).flatMap(([layout, races]) => races.map((race) => [race, layout]))));
+
+/**
+ * 非血肉的通道纹理（1.6.0）：这几族的产道内壁不是湿热的肉，模型照常写成肉壁会和画面冲突，提示词附一句；
+ * 皱襞、环褶、光滑、纵纹、经络都接近血肉，不送。
+ */
+const BUILTIN_CANAL_TEXTURE_GROUPS = Object.freeze({
+  "叶脉（植物的叶脉与纤维）": ["怪植类", "爱那温", "华根蕴桃"],
+  "菌褶（蕈伞下的菌褶）": ["怪蕈类", "玛坦戈", "菌毒族"],
+  "鳞衬（内壁衬着细鳞）": ["西方龙", "东方龙", "海德拉", "麒麟"],
+  "晶面（矿物晶面，坚硬冰凉）": ["石像鬼", "魔像", "宝石人"],
+  "蜡滴（温热的蜡质）": ["烛灵"],
+  "接缝（人造的拼接缝）": ["人偶", "活体铠甲"],
+  "墨晕（晕开的墨色）": ["墨灵"],
+  "金属格（细密的金属网格）": ["奈米丛族"],
+  "像素（数据化的像素与扫描线）": ["电子幽灵"],
+  "影纹（流动的影子）": ["影魔"],
+});
+const BUILTIN_CANAL_TEXTURE = Object.freeze(Object.fromEntries(Object.entries(BUILTIN_CANAL_TEXTURE_GROUPS).flatMap(([texture, races]) => races.map((race) => [race, texture]))));
+
+export function normalizeOutletLayout(value) {
+  const key = String(value || "").trim();
+  return OUTLET_LAYOUTS.includes(key) ? key : null;
+}
+
+/** 种族预设的外口布局；混血取血统占比最大的那一族（平手随母），名录外的自订种族当分离开口 */
+export function getRaceOutletLayout(race, bloodline = null, motherRace = null, motherBloodline = null) {
+  const dominant = pickDominantRaceName(race, bloodline, motherRace, motherBloodline);
+  return BUILTIN_OUTLET_LAYOUT[getBaseRaceName(dominant || race)] || "separate";
+}
+
+/** 角色当下的外口布局：base.outletLayout 有填就照填，没填照种族 */
+export function getCharacterOutletLayout(base) {
+  return normalizeOutletLayout(base?.outletLayout) || getRaceOutletLayout(base?.race || "人类", base?.bloodline || null);
+}
+
+/** 种族的非血肉通道纹理（给提示词的一句），血肉的种族回传 null；混血取占比最大的那一族 */
+export function getRaceCanalTexture(race, bloodline = null) {
+  const dominant = pickDominantRaceName(race, bloodline);
+  return BUILTIN_CANAL_TEXTURE[getBaseRaceName(dominant || race)] || null;
+}
+
+/**
  * 泌乳量（1.5.4）：乳意累积的倍率，与承载耐受脱钩，只看胚型（不是种族栏位，不进百科、不进提示词）——
  * 生下来要不要吃奶主要看胚型：胎生最高，再来卵胎生、不定型、胎转卵生，卵生最低。
  */

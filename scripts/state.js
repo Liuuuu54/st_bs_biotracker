@@ -18,6 +18,7 @@ import { createEmptySires, normalizeSires, pruneFutaSireRecord } from './sires.j
 import { assignMissingSireSeasonOrigins, startMissingSireReserveClocks } from './season_phase.js';
 import { normalizeFetalEventList, normalizeFetalHealthFields } from './fetal_health.js';
 import { createBodyBaseFields } from './maternal_body.js';
+import { normalizeOutletLayout } from './race_config.js';
 import { announceSavedRevisions, claimChatRevision, clearHostSettingsPendingUpTo, markHostSettingsPending, queueRevisionAnnouncement, readLatestChatRevision } from './save_sync.js';
 import {
   createDefaultWardrobeItem,
@@ -551,6 +552,12 @@ export function normalizeCharacterPsychologyState(characterState) {
   const analSemen = Number(characterState.profile.base.analSemen);
   if (characterState.profile.base.analSemen !== undefined && !(Number.isFinite(analSemen) && analSemen > 0)) {
     delete characterState.profile.base.analSemen;
+  }
+  // 外口布局（1.6.0）：选填，没填照种族；认不得的值不存
+  if (characterState.profile.base.outletLayout !== undefined) {
+    const outletLayout = normalizeOutletLayout(characterState.profile.base.outletLayout);
+    if (outletLayout) characterState.profile.base.outletLayout = outletLayout;
+    else delete characterState.profile.base.outletLayout;
   }
   if (characterState.profile.childSource && typeof characterState.profile.childSource === 'object' && !Array.isArray(characterState.profile.childSource)) {
     const motherName = String(characterState.profile.childSource.motherName || '').trim();

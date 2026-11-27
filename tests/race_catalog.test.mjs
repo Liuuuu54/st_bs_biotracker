@@ -304,3 +304,9 @@ test('蝇魔：卵胎生、一次一胎（采采蝇式），繁体名也认得�
   assert.match(getRaceIntroductionLine('蝇魔'), /采采蝇/);
   assert.match(buildRaceCatalogBlock(), /蝇魔/);
 });
+
+test('1.6.0 新增的种族繁体名也认得', async () => {
+  const { canonicalizeRaceName } = await import('../scripts/race_config.js');
+  const expected = { 仙鶴: '仙鹤', 夜梟: '夜枭', 梟熊: '枭熊', 電子幽靈: '电子幽灵', 恐龍族: '恐龙族', 原獸族: '原兽族', 鼠人: '鼠人', 蜚蠊族: '蜚蠊族' };
+  for (const [written, race] of Object.entries(expected)) assert.equal(canonicalizeRaceName(written), race, written);
+});

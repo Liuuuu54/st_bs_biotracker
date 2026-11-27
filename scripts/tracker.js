@@ -60,7 +60,7 @@ import {
   getVitalityInitByLevel,
   normalizeAutoTrackEveryReplies,
 } from './state.js';
-import { getDerivedTypeMetabolismExemptions } from './race_config.js';
+import { OUTLET_LAYOUT_LABELS, getCharacterOutletLayout, getDerivedTypeMetabolismExemptions, getRaceCanalTexture } from './race_config.js';
 import { LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGES } from './stage_config.js';
 import { DESCRIPTION_FIELDS, descriptionListToObject, getStaleDescriptionFields } from './descriptions.js';
 import { canLoadHostWorldInfo, getHostAgentRunBarrier, getHostChat, getHostExtensionSettings, getHostKind, loadHostWorldInfo, refreshHostChatView } from './host.js';
@@ -1246,6 +1246,12 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   // 肛内残精（1.6.0）：取整，没有就不送
   if (Number(base.analSemen) >= 1) profile.base.analSemen = Math.round(Number(base.analSemen));
   else delete profile.base.analSemen;
+  // 外口布局（1.6.0）：分离开口不送，其他送文字；非血肉的通道纹理才送，免得模型写成湿热肉壁
+  delete profile.base.outletLayout;
+  const outletLayout = getCharacterOutletLayout(base);
+  if (outletLayout !== 'separate') profile.base.outletLayout = OUTLET_LAYOUT_LABELS[outletLayout];
+  const canalTexture = getRaceCanalTexture(base.race || '人类', base.bloodline || null);
+  if (canalTexture) profile.base.canalTexture = canalTexture;
   // 鞘偏移只送文字（偏浅、很深…），适中不送；模型看不懂偏移数字
   delete profile.base.sheathOffset;
   if (normalizeSheathOffset(base.sheathOffset) !== 0) profile.base.sheath = describeSheathOffset(base.sheathOffset);

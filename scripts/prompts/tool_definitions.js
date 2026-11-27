@@ -297,7 +297,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         race: { type: 'string' },
         bloodline: { type: 'object', additionalProperties: { type: 'number' }, description: '已知血脉比例，键为race中的成分，值为0到1；不明时省略，不猜比例。race也可写精灵25%x人类75%。' },
         action: { type: 'string', enum: ['insert', 'deposit', 'withdraw'] },
-        channel: { type: 'string', enum: ['vaginal', 'anal'], description: '插入哪里：vaginal 产道（省略即是）、anal 肛门。insert 设置，deposit 沿用；要换地方先重新 insert。' },
+        channel: { type: 'string', enum: ['vaginal', 'anal'], description: '插入哪里：vaginal 产道（省略即是）、anal 肛门。insert 设置，deposit 沿用；要换地方先重新 insert。泄殖腔（只有一个外口）与孕夫（肛门就是产道）给 anal 也照产道算。' },
         hasCondom: { type: 'boolean', description: '本次是否使用屏障式避孕（套子，或世界观中的等效手段，如羊肠套、魔法屏障）；只有剧情确实使用时才为 true，不得引入世界观没有的器具。insert 设置、deposit 可显式更新、省略沿用，withdraw 不结算。' },
         amount: { type: 'number', description: 'insert／withdraw 必须为 0；deposit 必须为正数。' },
         maleBodySize: { type: 'number', description: '精方常态（人态）的个体体型，1–7 级（人类 4，可带小数，约 120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7）。insert 时给出。精方是已注册角色时省略；种族为依个体（名单见追踪提示的 [体型参数] 段）或未收录的自订种族时必须按剧情填写，例如一人高的大蟑螂填 4；其余种族只在剧情写明对方比同族明显高大或矮小时填写。' },
