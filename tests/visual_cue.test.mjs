@@ -200,3 +200,10 @@ test('第一次插进产道演破处，之后照一般插入；肛交不算', ()
   assert.equal(P(anal).experience.virginity ?? null, null);
   assert.notEqual(cue(anal)?.type, 'deflower');
 });
+
+test('同一轮里第一次插入又射精：留破处，不被射精盖掉', () => {
+  const virgin = setup('卵泡期', { experience: { virginity: null } });
+  assert.equal(call(virgin, 'bsAddSperm', { male: 'M', race: '人类', action: 'insert', amount: 0 }).applied, true);
+  assert.equal(call(virgin, 'bsAddSperm', { male: 'M', race: '人类', action: 'deposit', amount: 20 }).applied, true);
+  assert.equal(cue(virgin).type, 'deflower');
+});

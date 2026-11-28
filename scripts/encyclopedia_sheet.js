@@ -2,7 +2,7 @@
 import { buildGrowthChartSvg } from './growth_chart.js';
 import { buildRaceEncyclopediaView, getEmbryoTypeReferenceText } from './prompts/rules.js';
 import { raceIconSvg } from './race_icons.js';
-import { OUTLET_LAYOUT_LABELS, getRaceCanalTexture, getRaceOutletLayout, getRaceOutletOptions, getRaceSwordSuggestion } from './race_config.js';
+import { METABOLISM_TYPES, OUTLET_LAYOUT_LABELS, getRaceCanalTexture, getRaceOutletOptions, getRacePhysiologyProfile, getRaceSwordSuggestion } from './race_config.js';
 import { describeOutletLook } from './outlet_look.js';
 import { describeSwordTraits } from './sires.js';
 import { getPouchDefault } from './belly_pouch.js';
@@ -89,6 +89,34 @@ export function buildGenitalSection(race) {
   return { title: '生殖器', rows };
 }
 
+/**
+ * 标签（1.6.0 起多几个）：一眼要知道的身体特征。跟人类一样的不标（恒温、分离开口、无乏情、男女各半、人类体型）。
+ */
+export function buildRaceTraitTags(race) {
+  const profile = getRacePhysiologyProfile(race) || {};
+  const tags = [];
+  const layout = getRaceOutletOptions(race)[0];
+  if (layout === 'cloaca') tags.push('泄殖腔');
+  else if (layout === 'tube') tags.push('管状外口');
+  if (getPouchDefault(race) === 'on') tags.push('育儿袋');
+  const texture = getRaceCanalTexture(race);
+  if (texture) tags.push(`${texture.replace(/（.*）$/, '')}产道`);
+  const metabolism = METABOLISM_TYPES[profile.metabolismType];
+  if (metabolism && profile.metabolismType !== 'warm') tags.push(metabolism.label);
+  if (profile.aquatic) tags.push('水栖');
+  if (profile.solitary) tags.push('独居');
+  if (Number(profile.dormancyDays) > 0) tags.push(Number(profile.seasonCycles) > 1 ? '繁殖季' : '有乏情');
+  if (profile.genderRatio === null) tags.push('雌雄同体');
+  else if (profile.genderRatio === -1) tags.push('无性');
+  else if (Number(profile.genderRatio) === 0) tags.push('全雌');
+  else if (Number(profile.genderRatio) === 100) tags.push('全雄');
+  const size = Number(profile.bodySize);
+  if (profile.bodySize === null || profile.bodySize === undefined) tags.push('体型可变');
+  else if (Number.isFinite(size) && size >= 5.5) tags.push('大型');
+  else if (Number.isFinite(size) && size <= 3) tags.push('小型');
+  return tags;
+}
+
 /** 物种资料卡；生长型那一栏附胎量曲线，胚型的长篇设定收在折叠段落 */
 export function renderRaceSheetHtml(race) {
   const view = buildRaceEncyclopediaView(race);
@@ -102,7 +130,7 @@ export function renderRaceSheetHtml(race) {
   return renderSheetHtml({
     title: race,
     icon: raceIconSvg({ race }),
-    tags: view.tags,
+    tags: [...view.tags, ...buildRaceTraitTags(race)],
     introduction: view.introduction,
     sections: view.sections.map((section) => ({
       ...section,

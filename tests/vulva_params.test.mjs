@@ -151,6 +151,8 @@ test('流出：破水后续流＞经血＞浸满＞灌满；肛内残精只在�
   const womb = (extra) => buildVulvaParams(setup(), 'A', undefined, { womb: extra }).flow;
   assert.equal(womb({ semenFull: true }), 'full');
   assert.equal(womb({ semenFull: true, semenSoaked: true }), 'soaked');
+  const locked = setup({ penetrationState: 'spent', penetrationSource: '乙', penetrationLocked: true });
+  assert.equal(buildVulvaParams(locked, 'A', undefined, { womb: { semenFull: true } }).flow, 'none', '锁住时排不出来');
   const labor = setup({ stage: '第一产程' });
   labor.characters.A.profile.pregnant = { ...(labor.characters.A.profile.pregnant || {}), fetuses: [{ embryoId: 'e1', amnionDurability: 0 }] };
   assert.equal(params(labor).flow, 'water-flow');

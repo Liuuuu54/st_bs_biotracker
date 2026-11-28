@@ -18,7 +18,7 @@ import { createEmptySires, normalizeSires, pruneFutaSireRecord } from './sires.j
 import { assignMissingSireSeasonOrigins, startMissingSireReserveClocks } from './season_phase.js';
 import { normalizeFetalEventList, normalizeFetalHealthFields } from './fetal_health.js';
 import { createBodyBaseFields } from './maternal_body.js';
-import { normalizeOutletLayout } from './race_config.js';
+import { getRaceOutletLayout, normalizeOutletLayout } from './race_config.js';
 import { announceSavedRevisions, claimChatRevision, clearHostSettingsPendingUpTo, markHostSettingsPending, queueRevisionAnnouncement, readLatestChatRevision } from './save_sync.js';
 import {
   createDefaultWardrobeItem,
@@ -467,13 +467,13 @@ export const VISUAL_CUE_TYPES = Object.freeze([
 ]);
 
 // 一轮追踪可能连发好几个事件，但只留一个：同一轮里顺位低的不盖掉顺位高的（数字大的优先）。
-// 破水 ＞ 套子破裂、撑爆 ＞ 射精 ＞ 插入 ＞ 排卵、受精、着床等 ＞ 高潮 ＞ 两胎互动 ＞ 假宫缩。
+// 破水 ＞ 套子破裂、撑爆 ＞ 破处 ＞ 射精 ＞ 插入 ＞ 排卵、受精、着床等 ＞ 高潮 ＞ 两胎互动 ＞ 假宫缩。
 const VISUAL_CUE_PRIORITY = Object.freeze({
   rupture: 8,
   condomBreak: 7, condomOverflow: 7,
   ejaculate: 6, ejaculateCondom: 6,
-  // 破处是一次插入，盖过一般插入（1.6.0）
-  deflower: 5.5,
+  // 破处（1.6.0）一辈子只有一次，同一轮又射精时也留破处（实机：插入与射精几乎总在同一轮）
+  deflower: 6.5,
   insert: 5, insertCondom: 5,
   ovulation: 4, fertilization: 4, surrogacy: 4, chimera: 4, rebirth: 4, implantation: 4, implantationFailed: 4,
   orgasm: 3,
@@ -562,9 +562,24 @@ export function normalizeCharacterPsychologyState(characterState) {
     && Number(pouchBrood.count) >= 1 && ['fetus', 'egg', 'blob'].includes(pouchBrood.kind))) {
     delete characterState.profile.base.pouchBrood;
   }
-  // 肛交（1.6.0）：插入通道只在插入期间留着；肛内残精是非负数，没有就不存
-  if (characterState.profile.base.penetrationState === 'idle' || !['anal', 'both'].includes(characterState.profile.base.penetrationChannel)) {
-    delete characterState.profile.base.penetrationChannel;
+  // 肛门那一格（1.6.0）：肛门分开的布局才有；开发中用过的 penetrationChannel=anal（产道那一格插着肛门）搬过来
+  const pbase = characterState.profile.base;
+  if (pbase.penetrationChannel === 'anal' && pbase.penetrationState !== 'idle' && pbase.penetrationSource && !pbase.analPenetration) {
+    pbase.analPenetration = {
+      state: pbase.penetrationState, source: pbase.penetrationSource, condom: pbase.penetrationCondom === true,
+      ...(pbase.penetrationLocked === true ? { locked: true } : {}), ...(pbase.penetrationFit ? { fit: pbase.penetrationFit } : {}),
+    };
+    Object.assign(pbase, { penetrationState: 'idle', penetrationSource: null, penetrationCondom: false, penetrationFit: null });
+    delete pbase.penetrationLocked;
+  }
+  const slot = pbase.analPenetration;
+  if (slot !== undefined && !(slot && typeof slot === 'object' && ['inserted', 'spent'].includes(slot.state) && String(slot.source || '').trim()
+    && !['cloaca', 'anal'].includes(normalizeOutletLayout(pbase.outletLayout) || getRaceOutletLayout(pbase.race || '人类', pbase.bloodline || null)))) {
+    delete pbase.analPenetration;
+  }
+  // 产道那一格的通道只剩双剑双穴（both），只在插入期间留着；肛内残精是非负数，没有就不存
+  if (pbase.penetrationState === 'idle' || pbase.penetrationChannel !== 'both') {
+    delete pbase.penetrationChannel;
   }
   const analSemen = Number(characterState.profile.base.analSemen);
   if (characterState.profile.base.analSemen !== undefined && !(Number.isFinite(analSemen) && analSemen > 0)) {

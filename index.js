@@ -5654,7 +5654,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
       }),
       visualCue: profile.visualCue || null,
       // 外阴分页看插入状态的变化（spent → idle 是刚拔出来，播流出）
-      vulvaPenetration: { state: base.penetrationState || 'idle', channel: base.penetrationChannel || 'vaginal' },
+      vulvaPenetration: { state: base.penetrationState || 'idle', channel: base.penetrationChannel || 'vaginal', anal: base.analPenetration?.state || 'idle' },
       // 鞘的级数标在子宫图旁；插入中另附这次的体型契合
       sheathLabel: formatSheathLabel(base, experience),
       sheathValue: getSheathLevel(base, experience),
@@ -6799,10 +6799,9 @@ function noteVulvaFlowEvents(key, viewModel, cueType) {
   const womb = viewModel.pregnancy.womb || {};
   if (cueType === 'rupture') queueVulvaFlow(key, 'rupture');
   else if (['ejaculate', 'condomBreak', 'condomOverflow'].includes(cueType) && womb.semenOverflow > 0) queueVulvaFlow(key, 'spill');
-  else if (last?.state === 'spent' && base.state === 'idle') {
-    // 肛交拔出：肛门撑开再回缩、留下殘精；产道（含双穴）：拔出后精液流出
-    queueVulvaFlow(key, last.channel === 'anal' ? 'anal-fit' : 'withdrawal');
-  }
+  else if (last?.state === 'spent' && base.state === 'idle') queueVulvaFlow(key, 'withdrawal');
+  // 肛门那一格拔出：肛门撑开再回缩、留下殘精
+  else if (last?.anal === 'spent' && base.anal === 'idle') queueVulvaFlow(key, 'anal-fit');
 }
 
 /**

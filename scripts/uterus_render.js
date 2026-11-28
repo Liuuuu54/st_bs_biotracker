@@ -941,7 +941,8 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     const drops = 1 + Math.round(layout.semenOverflow * (soaked ? 1 : 2));
     const { womb, tract } = layout;
     const start = womb.bottom + 1;
-    const end = Math.min(119, tract.canalBottom + 5);
+    // 剑锁住时被球结与剑堵着，只渗到入口内侧，不滴出体外（1.6.0）
+    const end = layout.lock ? Math.min(119, tract.canalBottom) - 7 : Math.min(119, tract.canalBottom + 5);
     for (let i = 0; i < drops; i += 1) {
       const travel = ((wantsMotion() ? tick : 0) / period + i / drops) % 1;
       // 先慢后快：黏稠的液体在宫口积一下才往下掉

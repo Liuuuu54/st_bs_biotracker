@@ -45,3 +45,13 @@ test('曲线图：每一型都画得出来，非人类型附人类型虚线对�
     assert.ok(!/NaN/.test(svg) && !/NaN/.test(buildGrowthThumbSvg(shape)), shape);
   }
 });
+
+test('标签：身体特征只标跟人类不同的', async () => {
+  const { buildRaceTraitTags } = await import('../scripts/encyclopedia_sheet.js');
+  assert.deepEqual(buildRaceTraitTags('人类'), []);
+  assert.deepEqual(buildRaceTraitTags('奇美拉'), ['泄殖腔', '育儿袋']);
+  assert.ok(buildRaceTraitTags('蛇人').includes('冷血') && buildRaceTraitTags('蛇人').includes('独居'));
+  assert.ok(buildRaceTraitTags('宝石人').includes('晶面产道'));
+  assert.ok(buildRaceTraitTags('人鱼').includes('水栖'));
+  assert.ok(buildRaceTraitTags('史萊姆').includes('雌雄同体'));
+});

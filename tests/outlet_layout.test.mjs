@@ -74,7 +74,7 @@ test('孕夫（肛门分娩）的肛门就是产道；分离开口的人照旧�
   assert.equal(vaginalTotal(male), 10);
   const human = setup();
   sperm(human, { action: 'insert', channel: 'anal' });
-  assert.equal(base(human).penetrationChannel, 'anal');
+  assert.equal(base(human).analPenetration?.source, '乙');
 });
 
 test('肛交射精不算破处（insert 与 deposit 都不算）', () => {
@@ -220,4 +220,16 @@ test('百科的生殖器区块：外口、外观、产道、雄性、育儿袋�
   const all = buildGenitalSection('奇美拉').rows.map((row) => `${row.value}${row.note || ''}`).join('');
   assert.doesNotMatch(all, /提示词|注册|锁住|系统/, '百科不讲系统怎么用');
   assert.match(renderRaceSheetHtml('人类'), /生殖器/);
+});
+
+test('混血的外观：占比最大的那一族，平手从母（写法父x母，取后面的）', async () => {
+  const { getVulvaRacePreset } = await import('../scripts/vulva_params.js');
+  const { getPouchDefault } = await import('../scripts/belly_pouch.js');
+  assert.equal(getRaceOutletLayout('3/4蛇人x1/4人类'), 'cloaca');
+  assert.equal(getRaceOutletLayout('1/4蛇人x3/4人类'), 'separate');
+  assert.equal(getRaceOutletLayout('1/2人类x1/2蛇人'), 'cloaca', '平手从母（后面的蛇人）');
+  assert.equal(getRaceOutletLayout('1/2蛇人x1/2人类'), 'separate');
+  assert.equal(getRaceOutletLayout('1/2人类x1/2蛇人', null, '人类'), 'separate', '知道母亲就照母亲');
+  assert.equal(getVulvaRacePreset('1/2人类x1/2蛇人').layout, 'single');
+  assert.equal(getPouchDefault('1/2人类x1/2奇美拉'), 'on');
 });

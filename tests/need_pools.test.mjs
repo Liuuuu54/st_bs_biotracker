@@ -224,9 +224,9 @@ test('混血：倍率按血统加权，水栖与独居取占比最大的那一�
   assert.ok(Math.abs(half.food - 0.575) < 1e-6);
   assert.equal(getMergedMetabolismPace('3/4人鱼x1/4人类').aquatic, true);
   assert.equal(getMergedMetabolismPace('1/4人鱼x3/4人类').aquatic, false);
-  // 平手：不知道母方就取种族文字里排在前面的
-  assert.equal(getMergedMetabolismPace('1/2人类x1/2熊人族').solitary, false);
-  assert.equal(getMergedMetabolismPace('1/2熊人族x1/2人类').solitary, true);
+  // 平手：不知道母方时混血写法是「父x母」，取排在后面的母系
+  assert.equal(getMergedMetabolismPace('1/2人类x1/2熊人族').solitary, true);
+  assert.equal(getMergedMetabolismPace('1/2熊人族x1/2人类').solitary, false);
   // 知道母方就随母
   assert.equal(getMergedMetabolismPace('1/2人类x1/2熊人族', null, '熊人族').solitary, true);
 });

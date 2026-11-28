@@ -136,7 +136,9 @@ export function buildVulvaParams(chatState, name, character = chatState?.charact
     params['lock-phase'] = sire.swordLock && target?.profile?.base?.penetrationLocked === true ? 'locked' : 'idle';
   }
   // 双穴：这次是双剑同时插产道与肛门
-  params.channel = base.penetrationChannel === 'both' ? 'both' : 'vaginal';
+  // 3P（1.6.0）：产道与肛门同时被插着（不同人），画面跟双剑双穴一样两边都撑开
+  const analBusy = ['inserted', 'spent'].includes(base.analPenetration?.state);
+  params.channel = base.penetrationChannel === 'both' || (analBusy && receiving) ? 'both' : 'vaginal';
   if (params.channel === 'both') params.swordTwin = 'on';
 
   // 孕期、性欲、需求、宫脱
@@ -188,6 +190,8 @@ export function getSteadyFlow(profile, womb = null) {
   const amnion = fetuses.length > 0 ? getPresentingAmnionDurability(pregnant) : null;
   if (amnion !== null && Number(amnion) <= 0) return 'water-flow';
   if (String(base.stage || '') === '月经期') return 'period';
+  // 剑射精后锁住：精液排不出来，不往外滴（1.6.0）
+  if (base.penetrationLocked === true) return 'none';
   if (womb?.semenSoaked) return 'soaked';
   if (womb?.semenFull) return 'full';
   return 'none';

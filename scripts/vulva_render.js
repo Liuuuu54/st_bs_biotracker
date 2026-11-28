@@ -2932,6 +2932,8 @@ export function createVulvaRenderer(canvas, options = {}) {
   // ── 對外介面 ──
   const EXTRA = { 'sword-offset': swordOffset, 'ovary-shape': ovaryShape, 'ovary-color': ovaryColor, 'uterus-color': uterusColor, 'labor-condition': laborCondition };
   let loop = 0;
+  // 有没有在显示：start 后为真、stop 后为假（play 靠它决定要不要重新开始迴圈）
+  let active = false;
   let lastFrameTick = -1;
   // 主题：基础色表可换（子宫图的主题色表对应过来）；画完可再处理一次整张（水墨的笔触）
   const BASE_PALETTE = { ...basePalette };
@@ -2980,7 +2982,8 @@ export function createVulvaRenderer(canvas, options = {}) {
     else if (kind === 'flow') flowStart = now;
     else if (kind === 'recovery') recoveryStart = now;
     else if (kind === 'deflower') { deflowerStart = now; startCombine(now); }
-    if (loop) start();
+    // 画面静止时动画迴圈已经停了，只要还在显示（start 过、没 stop）就重新开始，演出才播得出来
+    if (active) start();
   }
   function paint(now = clock()) { return render(now); }
   function tick(now) {
@@ -2991,12 +2994,13 @@ export function createVulvaRenderer(canvas, options = {}) {
   }
   /** 畫一次；還在動就排下一格（90 ms 一格，同預覽頁） */
   function start() {
+    active = true;
     if (loop) cancelAnimationFrame(loop);
     loop = 0;
     lastFrameTick = -1;
     if (render(clock())) loop = requestAnimationFrame(tick);
   }
-  function stop() { if (loop) cancelAnimationFrame(loop); loop = 0; }
+  function stop() { active = false; if (loop) cancelAnimationFrame(loop); loop = 0; }
   // ── 借给子宫剖面用的画法（1.6.0）：卵巢造型与通道纹理照预览，子宫图那边只负责贴上去 ──
   /** 卵巢小图：画在离屏剖面画布 (48,60)，裁 32×32 回传，卵巢中心在 (16,16)。color 没给照预览的预设色 */
   function ovarySprite(shape, side = 1, heat = 0, color = null) {

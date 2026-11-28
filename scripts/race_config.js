@@ -2670,11 +2670,11 @@ export function getBuiltinFetalGrowthShape(race) {
 /**
  * 胎儿的生长型：取血统占比最大那一族的型，不加权。占比相同时随母：
  * 取并列的族里在母体血统中占比较高的那一族；并列的族都不在母体血统里时，用母体自己（占比最大那一族）的型。
- * 没给母体时按写法的先后取第一个。
+ * 没给母体时取写在后面的（混血写法是「父x母」）。
  */
 /**
  * 取血统占比最大的那一族（不加权）。平手时随母：母方占比较高的那一族；
- * 不知道母方（已注册的成年角色没有记母亲）或母方也平手，取种族文字里排在前面的。
+ * 不知道母方（已注册的成年角色没有记母亲）时，混血写法是「父x母」，取种族文字里排在后面的（母系）。
  */
 export function pickDominantRaceName(race, bloodline = null, motherRace = null, motherBloodline = null) {
   const parts = getWeightedRaceParts(race, bloodline);
@@ -2684,7 +2684,8 @@ export function pickDominantRaceName(race, bloodline = null, motherRace = null, 
   const tied = parts.filter((part) => top - part.weight <= EPSILON);
   if (tied.length === 1) return tied[0].name;
   const motherParts = motherRace ? getWeightedRaceParts(motherRace, motherBloodline) : [];
-  if (motherParts.length === 0) return tied[0].name;
+  // 不知道母亲是谁时：混血写法是「父x母」（孩子的种族由系统照这个顺序写），平手取写在后面的母系（1.6.0，使用者定案）
+  if (motherParts.length === 0) return tied[tied.length - 1].name;
   const motherShare = new Map(motherParts.map((part) => [part.name, part.weight]));
   let pick = null;
   for (const part of tied) {
