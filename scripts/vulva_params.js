@@ -89,7 +89,8 @@ export function buildVulvaParams(chatState, name, character = chatState?.charact
     if (display[key] !== null && display[key] !== undefined && Number.isFinite(value)) params[field] = String(Math.max(0, Math.min(100, Math.round(value))));
   }
   if (!params['material-light']) params['material-light'] = mixHex(params.tone, BASE_SHINE, 0.34);
-  if (display.anusShape) params['anus-shape'] = display.anusShape;
+  // 肛门造型不绑布局（1.6.0）：没选就是小型，孕夫的肛门产道也一样
+  params['anus-shape'] = display.anusShape && display.anusShape !== 'auto' ? display.anusShape : 'small';
 
   // 布局：外口布局（角色覆写＞种族）；扶她（同名精方档）在分离开口叠阴茎、管状变共管、泄殖腔是鞘内剑
   const sire = chatState?.sires && Object.prototype.hasOwnProperty.call(chatState.sires, name) ? getSireRecord(chatState, name) : null;

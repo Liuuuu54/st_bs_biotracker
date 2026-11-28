@@ -185,3 +185,11 @@ test('处女膜：分离开口、泄殖腔、管状都画，孕夫不画；处�
   assert.equal(getHymenState(setup({ race: '蛇人' }).characters.A.profile), 'intact', '泄殖腔也有');
   assert.equal(getHymenState(setup({ outletLayout: 'anal' }).characters.A.profile), 'none', '孕夫不画');
 });
+
+test('肛门造型不绑布局：没选是小型，孕夫的肛门产道也一样；选了照选的', () => {
+  assert.equal(params(setup())['anus-shape'], 'small');
+  assert.equal(params(setup({ outletLayout: 'anal' }))['anus-shape'], 'small');
+  const chat = setup({ outletLayout: 'anal' });
+  chat.characters.A.profile.display = { anusShape: 'large' };
+  assert.equal(params(chat)['anus-shape'], 'large');
+});

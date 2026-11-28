@@ -72,9 +72,11 @@ export const DISPLAY_NAVEL_SIZES = Object.freeze([
   Object.freeze({ value: 'large', label: '大' }),
 ]);
 
-/** 肛门造型（1.6.0，外阴分页）：预设依布局（null）；只影响画面，不送提示词，所以随时可改 */
+/**
+ * 肛门造型（1.6.0，外阴分页）：自选外观，不绑布局（孕夫的肛门产道也不会自动变大型）。预设小型（存 null）；
+ * 只影响画面，不送提示词，所以随时可改
+ */
 export const DISPLAY_ANUS_SHAPES = Object.freeze([
-  Object.freeze({ value: 'auto', label: '依布局' }),
   Object.freeze({ value: 'small', label: '小型' }),
   Object.freeze({ value: 'large', label: '大型・厚口缘' }),
   Object.freeze({ value: 'claude', label: '放射褶' }),
@@ -116,7 +118,8 @@ export function normalizeDisplay(display) {
     navelSize: pick(DISPLAY_NAVEL_SIZES, source.navelSize),
     // 1.4.3 开发中用过的 auto 当成下腹
     stretchMarks: pick(DISPLAY_STRETCH_MARKS, source.stretchMarks === 'auto' ? 'lower' : source.stretchMarks),
-    anusShape: source.anusShape === 'auto' ? null : pick(DISPLAY_ANUS_SHAPES, source.anusShape),
+    // 开发中用过的「依布局」（auto）与预设的小型都存 null
+    anusShape: source.anusShape === 'auto' || source.anusShape === 'small' ? null : pick(DISPLAY_ANUS_SHAPES, source.anusShape),
     vulvaMaturity: normalizeScale(source.vulvaMaturity),
     vulvaTraces: normalizeScale(source.vulvaTraces),
   };

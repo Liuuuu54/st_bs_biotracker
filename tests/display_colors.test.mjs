@@ -114,7 +114,8 @@ test('特写：乳晕大小、肚脐、妊娠纹照外观设定画；妊娠纹�
 
 test('肛门造型：五款可选，依布局存 null', () => {
   assert.equal(normalizeDisplay({ anusShape: 'gpt' }).anusShape, 'gpt');
-  assert.equal(normalizeDisplay({ anusShape: 'auto' }).anusShape, null);
+  assert.equal(normalizeDisplay({ anusShape: 'auto' }).anusShape, null, '开发中的依布局不再有');
+  assert.equal(normalizeDisplay({ anusShape: 'small' }).anusShape, null, '小型是预设');
   assert.equal(normalizeDisplay({ anusShape: 'x' }).anusShape, null);
 });
 

@@ -9948,7 +9948,7 @@ function renderFullStateAppearance(ctx, name, character) {
       return `<div class="bs-bt-color-group"><div class="bs-bt-color-title">${escapeHtml(label)}<span class="bs-bt-inline-status">外阴分页：${escapeHtml(low)} ↔ ${escapeHtml(high)}，现在 ${value}</span></div>
         <input type="range" min="0" max="100" step="5" value="${value}" data-display-scale="${key}" aria-label="${escapeHtml(label)}" style="width:100%" /></div>`;
     }).join('')}
-    ${choices('anusShape', '肛门造型', DISPLAY_ANUS_SHAPES, '外阴分页的肛门；泄殖腔与孕夫（肛门分娩）没有独立的肛门')}
+    ${choices('anusShape', '肛门造型', DISPLAY_ANUS_SHAPES, '外阴分页的肛门，自选、不绑布局；泄殖腔没有独立的肛门')}
     ${renderLockedBodyRows(ctx, name, character)}
     <div class="bs-bt-color-group">
       <div class="bs-bt-color-title">目前主题的实际颜色</div>
