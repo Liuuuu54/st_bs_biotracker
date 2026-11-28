@@ -689,7 +689,28 @@ export function buildTrackerSystemPrompt(basePrompt = '', descriptionGuides = nu
  * 主流模型看得到状态 JSON 却没有 tracker 那份变量说明：这里只补它容易读错的数值与标记，
  * 且只附本轮真的出现的部分（有妊娠才讲胎儿、有衣柜才讲穿着、有心理才讲心理）
  */
+/**
+ * base 里生殖相关的栏位说明（1.6.0）：只附本轮真的出现的栏位。生殖器细节关着时这些栏位不会送，说明也就不送。
+ */
+const BASE_FIELD_NOTES = Object.freeze([
+  ['penetrationChannel', 'penetrationChannel=both 表示双剑一根插产道一根插肛门'],
+  ['analPenetration', 'analPenetration 是肛门那一格（谁插着、inserted／spent、locked 锁住），可以跟产道那一格是不同的人（3P）'],
+  ['analSemen', 'analSemen 肛内残精（几小时内慢慢流出，排便时一起排出）'],
+  ['prolapse', 'prolapse 宫脱（几度、怎么描写、有没有托住）'],
+  ['penetrationLocked', 'penetrationLocked 为 true 表示精方的剑射精后锁住了（结住），消退前拔不出来、精液排不出来、别人也插不进来'],
+  ['sword', 'sword 是她自己（扶她、孕夫）的剑'],
+  ['outletLayout', 'outletLayout 外口布局（没送就是阴道、尿道、肛门分开）：泄殖腔只有一个外口、没有独立的肛门，她若兼有阴茎，那是收在泄殖腔旁鞘里的鞘内剑，只在插入别人时整根翻出，被插入时收着；管状是产道末端的一根管，生产也从管口出，兼有阴茎时同一根管既是产道也是剑，不另长阴茎；阴茎分娩是孕夫从阴茎的尿道口生；肛门分娩是孕夫的肛门就是产道'],
+  ['canalTexture', 'canalTexture 产道内壁的质感，写内壁照它，不写成湿热的肉壁'],
+  ['outletLook', 'outletLook 外口的样子（口缘、口上方与外缘的鳞、羽、软褶等），写到外阴照它'],
+  ['pouch', 'pouch 育儿袋：下腹有袋口、没有肚脐，产后恢复期写着袋里有几个幼体或蛋时，下腹是鼓的，描写照它'],
+]);
+function baseFieldNotes(bases) {
+  const notes = BASE_FIELD_NOTES.filter(([key]) => bases.some((base) => base && base[key] !== undefined && base[key] !== null && base[key] !== '')).map(([, text]) => text);
+  return notes.length ? `，${notes.join('；')}` : '';
+}
+
 function buildMainFlowFieldNotes(existingState = {}) {
+  const bases = Object.values(existingState || {}).map((item) => item?.profile?.base);
   const profiles = Object.values(existingState || {}).map((item) => item?.profile || {});
   const lines = [
     '[状态字段速读]',
@@ -697,7 +718,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
     '- cognitionRecords 保存角色信念，可以与事实不同；系统结果、真实胎父与胎数不自动成为角色知识。自然线索到点也不强制知孕；产程是系统结果，她认出自己在分娩之前不得写成她知道。',
     ...(profiles.some((profile) => profile.bodyFamiliarity) ? ['- bodyFamiliarity 是身体对各性伴的熟悉度（系统按次数、体型相容与时间算出，前三名）：只描述身体的记忆与反应，例如对谁的触碰更快有反应，不代表感情或爱意。'] : []),
     ...(profiles.some((profile) => profile.lastCondomResult || profile.lastEmergencyResult) ? ['- lastCondomResult/lastEmergencyResult 只在结算后的下一次叙事出现：是系统结果，不等于角色察觉；可据此描写合理可见的后果，不要求本轮处理。'] : []),
-    '- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；activeDrugs 身上生效中的药与还剩多久；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精，penetrationChannel=both 表示双剑一根插产道一根插肛门；analPenetration 是肛门那一格（有才送：谁插着、inserted／spent、locked 锁住），可以跟产道那一格是不同的人（3P）；analSemen 肛内残精（有才送，几小时内慢慢流出，排便时一起排出）；prolapse 宫脱（有才送：几度、怎么描写、有没有托住）；penetrationLocked 为 true 表示精方的剑射精后锁住了（结住），消退前拔不出来、精液排不出来、别人也插不进来；sword 是她自己（扶她、孕夫）的剑：大小与外形；outletLayout 外口布局（有才送，没送就是阴道、尿道、肛门分开）：泄殖腔只有一个外口、没有独立的肛门，她若兼有阴茎，那是收在泄殖腔旁鞘里的鞘内剑，只在插入别人时整根翻出，被插入时收着；管状是产道末端的一根管，生产也从管口出，兼有阴茎时同一根管既是产道也是剑，不另长阴茎；阴茎分娩是孕夫从阴茎的尿道口生；肛门分娩是孕夫的肛门就是产道；canalTexture 产道内壁的质感（有才送），写内壁照它，不写成湿热的肉壁；outletLook 外口的样子（有才送：口缘、口上方与外缘的鳞、羽、软褶等），写到外阴照它；pouch 育儿袋（有才送）：下腹有袋口、没有肚脐，产后恢复期写着袋里有几个幼体或蛋时，下腹是鼓的，描写照它。描写照这些文字，不写数字。',
+    `- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；activeDrugs 身上生效中的药与还剩多久；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精${baseFieldNotes(bases)}。描写照这些文字，不写数字。`,
   ];
   if (profiles.some((profile) => profile.metabolism)) {
     lines.push('- metabolism：excretion 泄意、hunger 食意、sleep 困意、milk 乳意（孕晚期以前是乳房胀痛敏感，孕晚期起才可能溢乳）、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；分级为 低／中／高／满／爆（没列的就是没有）；泄意、食意后面的括号是比较急的那一种（尿意／便意、饿意／渴意），写剧情照它分小便、大号、吃东西、喝水。pregnant.symptoms 是当天的妊娠症状（便秘、频尿、胀气、怪口味……），可以自然带进身体描写。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');

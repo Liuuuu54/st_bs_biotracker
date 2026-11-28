@@ -964,11 +964,24 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
   const transformOff = derivedOff || bodyOff;
   const allowedEffects = getAllowedReproEffects(settings);
   return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name)).map((tool) => {
-    if (transformOff && tool.name === 'bsRecordExperience') return withoutTransformAction(tool, { derivedOff, bodyOff });
+    if (transformOff && tool.name === 'bsRecordExperience' && settings?.genitalDetail === true) return withoutTransformAction(tool, { derivedOff, bodyOff });
     if (tool.name === 'bsReproductiveIntervention') return withAllowedEffects(tool, allowedEffects);
     if (tool.name === 'bsAddSperm' && settings?.genitalDetail !== true) return withoutGenitalDetail(tool);
+    // 生殖器细节关着：身体转化不给指定外口（从肛门、阴茎尿道口生的那些说法）
+    if (tool.name === 'bsRecordExperience' && settings?.genitalDetail !== true) return withoutOutletChoice(withoutTransformOrSelf(tool, transformOff, derivedOff, bodyOff));
     return tool;
   });
+}
+
+function withoutTransformOrSelf(tool, transformOff, derivedOff, bodyOff) {
+  return transformOff ? withoutTransformAction(tool, { derivedOff, bodyOff }) : tool;
+}
+
+/** 生殖器细节关着（1.6.0）：身体转化的 outletLayout 参数不给 */
+function withoutOutletChoice(tool) {
+  const properties = { ...(tool.input_schema?.properties || {}) };
+  delete properties.outletLayout;
+  return { ...tool, input_schema: { ...tool.input_schema, properties } };
 }
 
 /** 生殖器细节关着（1.6.0）：bsAddSperm 只记产道，不给肛交、双穴与硬拔 */

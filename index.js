@@ -6839,6 +6839,7 @@ function mountVulvaView(ctx, host, viewModel, animated) {
       theme: wombThemeColors.name, modes: BELLY_THEME_MODES, tint: halfTint(getUterusPalette(wombThemeColors).wall), rampThemes: VULVA_RAMP_THEMES,
     });
     vulvaRenderer.setPalette(theme.palette);
+    vulvaRenderer.setLiquids(theme.liquids || {});
     vulvaRenderer.setPostProcess(theme.brush ? (context) => {
       const image = context.getImageData(0, 0, context.canvas.width, context.canvas.height);
       applyBellyInkBrush(image.data, image.width, image.height, theme.brush);

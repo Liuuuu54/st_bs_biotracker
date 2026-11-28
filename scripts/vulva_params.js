@@ -212,11 +212,18 @@ const COLOR_PARAMS = ['skin', 'tone', 'anus-color', 'material-light'];
  * 回传 { palette, params(原参数) → 新参数, brush }；womb 没给就照预览的原色。
  */
 export function buildVulvaTheme(womb, { theme = '', modes = {}, tint = null, rampThemes = new Set() } = {}) {
-  if (!womb) return { palette: { ...VULVA_BASE_PALETTE }, recolor: (params) => params, brush: null };
+  if (!womb) return { palette: { ...VULVA_BASE_PALETTE }, recolor: (params) => params, brush: null, liquids: null };
+  // 液体（1.6.0）：经血、精液、羊水照子宫图同一个主题的液体色；尿滴单色照色带、半彩打色光
+  const themedLiquids = (urine) => ({
+    blood: [womb.blood, mixHex(womb.blood, womb.shine, 0.45)],
+    semen: [womb.fluid, womb.fluidLight],
+    water: [womb.water, womb.waterLight],
+    urine,
+  });
   const mode = modes[theme] || 'half';
   const frame = womb.tick || womb.frame || womb.void || VULVA_BASE_PALETTE.frame;
   if (mode === 'full') {
-    return { palette: { ...VULVA_BASE_PALETTE, background: womb.bg, frame }, recolor: (params) => params, brush: null };
+    return { palette: { ...VULVA_BASE_PALETTE, background: womb.bg, frame }, recolor: (params) => params, brush: null, liquids: null };
   }
   if (mode === 'mono') {
     let flesh;
@@ -232,7 +239,8 @@ export function buildVulvaTheme(womb, { theme = '', modes = {}, tint = null, ram
     const palette = { background: womb.bg, frame, ...flesh };
     const recolor = (params) => ({ ...params, skin: flesh.wall, tone: flesh.wallLight, 'anus-color': flesh.wall,
       'material-light': mixHex(flesh.wallLight, flesh.shine, 0.34) });
-    return { palette, recolor, brush: womb.brush ? { paper: womb.bg, ink: womb.ink || flesh.cavityDeep } : null };
+    return { palette, recolor, brush: womb.brush ? { paper: womb.bg, ink: womb.ink || flesh.cavityDeep } : null,
+      liquids: themedLiquids([mixHex(flesh.wallLight, flesh.shine, 0.2), flesh.shine]) };
   }
   // 半彩：写实色打上主题色光
   const light = typeof tint === 'function' ? tint : (color) => color;
@@ -243,7 +251,7 @@ export function buildVulvaTheme(womb, { theme = '', modes = {}, tint = null, ram
     for (const key of COLOR_PARAMS) if (isHex(next[key])) next[key] = light(next[key]);
     return next;
   };
-  return { palette, recolor, brush: null };
+  return { palette, recolor, brush: null, liquids: themedLiquids([light('#d9a44a'), light('#ffe3a2')]) };
 }
 
 /**

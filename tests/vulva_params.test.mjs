@@ -123,6 +123,11 @@ test('主题配色：全彩只换背景、半彩打色光、单色整张换成�
   assert.notEqual(half.recolor(params).skin, '#7e4e35', '半彩打上主题色光');
   assert.equal(half.recolor(params).layout, 'human');
   assert.equal(buildVulvaTheme(null).palette.wall, '#c85f78', '没有主题色表照预览原色');
+  assert.equal(full.liquids, null, '全彩的液体照原色');
+  assert.deepEqual(mono.liquids.semen, [retro.fluid, retro.fluidLight], '单色的精液照子宫图的液体色');
+  assert.equal(mono.liquids.blood[0], retro.blood);
+  assert.equal(mono.liquids.urine.length, 2);
+  assert.ok(half.liquids.water && half.liquids.urine[0] !== '#d9a44a', '半彩的尿打上色光');
 });
 
 test('子宫剖面的种族外观：卵巢、产道质感、叠色；肛门分娩不画卵巢', () => {

@@ -942,9 +942,9 @@ export function createVulvaRenderer(canvas, options = {}) {
       const fall = elapsed / fallSpan;
       const x = 48 + Math.round((12 + i * 4) * fall);
       const y = top + Math.round((exitY - top) * fall * (.42 + .58 * fall));
-      frontContext.fillStyle = '#d9a44a';
+      frontContext.fillStyle = liquidColors.urine[0];
       frontContext.fillRect(x - 1, y, 2, 1);
-      frontContext.fillStyle = '#ffe3a2';
+      frontContext.fillStyle = liquidColors.urine[1];
       frontContext.fillRect(x, y - 1, 1, 1);
     }
   }
@@ -2932,6 +2932,8 @@ export function createVulvaRenderer(canvas, options = {}) {
   // ── 對外介面 ──
   const EXTRA = { 'sword-offset': swordOffset, 'ovary-shape': ovaryShape, 'ovary-color': ovaryColor, 'uterus-color': uterusColor, 'labor-condition': laborCondition };
   let loop = 0;
+  // 尿滴颜色（setLiquids 可换）
+  let liquidColors = { urine: ['#d9a44a', '#ffe3a2'] };
   // 有没有在显示：start 后为真、stop 后为假（play 靠它决定要不要重新开始迴圈）
   let active = false;
   let lastFrameTick = -1;
@@ -2940,6 +2942,19 @@ export function createVulvaRenderer(canvas, options = {}) {
   let postProcess = null;
   function setPalette(values = {}) { Object.assign(basePalette, BASE_PALETTE, values); }
   function setPostProcess(fn) { postProcess = typeof fn === 'function' ? fn : null; }
+  // 液体色（1.6.0）：经血、精液、羊水、破处的血、尿滴。单色与半彩主题照子宫图的液体色换，全彩照预览原色
+  const LIQUID_GROUPS = { blood: ['period', 'hymen'], semen: ['withdrawal', 'full', 'soaked', 'spill'], water: ['rupture', 'water-flow'] };
+  const LIQUID_DEFAULTS = Object.fromEntries(Object.entries(flowEffects).map(([key, effect]) => [key, [effect.color, effect.highlight]]));
+  /** map：{ blood: [主色, 亮色], semen: [...], water: [...], urine: [...] }，没给的照原色；不给参数就还原 */
+  function setLiquids(map = {}) {
+    for (const [key, [color, highlight]] of Object.entries(LIQUID_DEFAULTS)) Object.assign(flowEffects[key], { color, highlight });
+    for (const [group, keys] of Object.entries(LIQUID_GROUPS)) {
+      const pair = map?.[group];
+      if (!Array.isArray(pair) || pair.length < 2) continue;
+      for (const key of keys) if (flowEffects[key]) Object.assign(flowEffects[key], { color: pair[0], highlight: pair[1] });
+    }
+    liquidColors = { urine: Array.isArray(map?.urine) && map.urine.length >= 2 ? map.urine : ['#d9a44a', '#ffe3a2'] };
+  }
   function render(now) {
     const active = draw(now);
     if (postProcess) postProcess(frontContext);
@@ -3020,6 +3035,6 @@ export function createVulvaRenderer(canvas, options = {}) {
     texturePixels(context, points, material, color, strength, false);
   }
   function setReducedMotion(value) { reducedMotion.matches = Boolean(value); }
-  return { setState, setPalette, setPostProcess, ovarySprite, texture, play, paint, start, stop, setReducedMotion, getState: () => Object.fromEntries(Object.entries(fields).map(([id, field]) => [id, field.value])) };
+  return { setState, setPalette, setPostProcess, setLiquids, ovarySprite, texture, play, paint, start, stop, setReducedMotion, getState: () => Object.fromEntries(Object.entries(fields).map(([id, field]) => [id, field.value])) };
 
 }

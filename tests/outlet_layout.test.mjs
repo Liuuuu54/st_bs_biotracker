@@ -263,3 +263,21 @@ test('生殖器细节没开（预设）：不送外口、外观与剑外形，bs
   sperm(chat, { male: '犬', race: '地狱犬', action: 'deposit', amount: 10 });
   assert.equal(base(chat).penetrationLocked, undefined, '不锁');
 });
+
+test('主线的栏位说明只附本轮出现的栏位：生殖器细节关着时不讲外口、肛门那一格与锁住', async () => {
+  const { buildMainFlowStatePrompt } = await import('../scripts/prompts/rules.js');
+  const chat = setup({ race: '奇美拉', isHere: true });
+  const make = (genitalDetail) => {
+    const ctx = {
+      chatId: 'notes-chat', characters: [], chat: [{ name: '用户', is_user: true, mes: '……' }], name1: '用户', name2: 'A',
+      extensionSettings: { bs_biotracker: { enabled: true, genitalDetail, chatStates: { 'notes-chat': chat } } },
+      saveSettingsDebounced() {},
+    };
+    globalThis.SillyTavern = { getContext: () => ctx };
+    return buildMainFlowStatePrompt({ ...buildTrackerPayload(ctx, state.getSettings(ctx)), reason: 'mainflow' });
+  };
+  const off = make(false);
+  assert.doesNotMatch(off, /outletLayout 外口布局|analPenetration|penetrationLocked/);
+  assert.match(off, /pouch 育儿袋/, '育儿袋照讲');
+  assert.match(make(true), /outletLayout 外口布局/);
+});
