@@ -6,7 +6,7 @@ import * as state from '../scripts/state.js';
 import { normalizeSireRecord } from '../scripts/sires.js';
 import { VULVA_DEFAULTS } from '../scripts/vulva_render.js';
 import { VULVA_RACE_PRESETS } from '../scripts/vulva_race_presets.js';
-import { buildVulvaParams, fitTierFromDiff, getVulvaRacePreset, mixHex } from '../scripts/vulva_params.js';
+import { buildVulvaParams, buildWombAppearance, fitTierFromDiff, getLockKnot, getVulvaRacePreset, mixHex } from '../scripts/vulva_params.js';
 
 function setup(extra = {}) {
   const chat = state.createEmptyChatState();
@@ -123,4 +123,24 @@ test('主题配色：全彩只换背景、半彩打色光、单色整张换成�
   assert.notEqual(half.recolor(params).skin, '#7e4e35', '半彩打上主题色光');
   assert.equal(half.recolor(params).layout, 'human');
   assert.equal(buildVulvaTheme(null).palette.wall, '#c85f78', '没有主题色表照预览原色');
+});
+
+test('子宫剖面的种族外观：卵巢、产道质感、叠色；肛门分娩不画卵巢', () => {
+  const human = buildWombAppearance(setup().characters.A);
+  assert.deepEqual([human.ovary, human.canalMaterial, human.overlay], ['compact', 'folds', null]);
+  const crystal = buildWombAppearance(setup({ race: '宝石人' }).characters.A);
+  assert.equal(crystal.ovary, getVulvaRacePreset('宝石人').ovary);
+  assert.equal(crystal.canalMaterial, getVulvaRacePreset('宝石人')['canal-material'] || 'folds');
+  assert.equal(buildWombAppearance(setup({ outletLayout: 'anal' }).characters.A).ovary, 'none');
+});
+
+test('锁住的球结照插着的那位精方', () => {
+  const chat = setup({ penetrationState: 'spent', penetrationSource: '乙', penetrationLocked: true });
+  chat.sires = { 乙: normalizeSireRecord({ swordKnot: true }) };
+  assert.equal(getLockKnot(chat, chat.characters.A), true);
+  chat.sires.乙 = normalizeSireRecord({ swordKnot: false });
+  assert.equal(getLockKnot(chat, chat.characters.A), false);
+  delete chat.characters.A.profile.base.penetrationLocked;
+  chat.sires.乙 = normalizeSireRecord({ swordKnot: true });
+  assert.equal(getLockKnot(chat, chat.characters.A), false, '没锁住就不画');
 });

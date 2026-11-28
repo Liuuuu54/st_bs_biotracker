@@ -518,8 +518,9 @@ export function createVulvaRenderer(canvas, options = {}) {
     const projectPoints = points => points.map(([x, y]) => {
       const t = Math.max(0, y) / 28;
       const fork = side * (1 + (sword.forkSpan ?? 12) * t ** 1.24);
-      const lean = sword.lean ?? (tip === 'tapered' && !paired ? 4 : 0);
-      const curve = shaft === 'tentacle' ? (side || 1) * t * (2 + 7 * Math.sin(t * 2.5)) : 0;
+      const lean = sword.lean ?? 0;
+      // 单剑的触手左右各摆一次、尖端回到中线；双剑照旧往外弯
+      const curve = shaft !== 'tentacle' ? 0 : paired ? side * t * (2 + 7 * Math.sin(t * 2.5)) : 2.6 * Math.sin(t * Math.PI * 2);
       return [(sword.centerX ?? 48) + fork + x * girth * tipWidth(y) * (paired ? .8 : 1) + lean * t * t + curve,
         anchorY + y * (y < 0 ? Math.min(1.35, reach) : reach)];
     });
@@ -597,8 +598,11 @@ export function createVulvaRenderer(canvas, options = {}) {
       for (side of (paired ? [-1, 1] : [0])) {
         paintOne();
         if (look.barbs) {
-          for (const [x, y] of [[-6,19],[-3,18],[0,17],[3,18],[6,19]]) {
-            project(highlight, [[x,y],[x+1.25,y],[x+1.25,y+1.3],[x,y+1.3]]);
+          // 冠缘下一圈往根部倒钩的尖刺：暗色底再叠亮面，两侧的刺伸出轮廓外
+          for (const [x, y] of [[-6.6,19.6],[-3.4,17.6],[0,17],[3.4,17.6],[6.6,19.6]]) {
+            const dir = Math.sign(x);
+            project(shade, [[x - 1.8, y + .6], [x + 1.8, y + .6], [x + dir * 1.9, y - 4]]);
+            project(highlight, [[x - 1.1, y], [x + 1.1, y], [x + dir * 1.5, y - 3]]);
           }
         }
       }
@@ -2903,7 +2907,25 @@ export function createVulvaRenderer(canvas, options = {}) {
     if (render(clock())) loop = requestAnimationFrame(tick);
   }
   function stop() { if (loop) cancelAnimationFrame(loop); loop = 0; }
+  // ── 借给子宫剖面用的画法（1.6.0）：卵巢造型与通道纹理照预览，子宫图那边只负责贴上去 ──
+  /** 卵巢小图：画在离屏剖面画布 (48,60)，裁 32×32 回传，卵巢中心在 (16,16)。color 没给照预览的预设色 */
+  function ovarySprite(shape, side = 1, heat = 0, color = null) {
+    sectionContext.clearRect(0, 0, sectionContext.canvas.width, sectionContext.canvas.height);
+    materialHeat = heat;
+    drawOvary(shape, 48, 60, side, heat, color || selectedOvaryColor(shape));
+    const out = document.createElement('canvas');
+    out.width = 32;
+    out.height = 32;
+    out.getContext('2d').drawImage(sectionContext.canvas, 32, 44, 32, 32, 0, 0, 32, 32);
+    return out;
+  }
+  /** 通道纹理画到任一画布的多边形里（预览的 texturePixels）；light 是材质反光色 */
+  function texture(context, points, material, color, strength = 1, light = null, heat = 0) {
+    if (light) fields['material-light'].value = light;
+    materialHeat = heat;
+    texturePixels(context, points, material, color, strength, false);
+  }
   function setReducedMotion(value) { reducedMotion.matches = Boolean(value); }
-  return { setState, setPalette, setPostProcess, play, paint, start, stop, setReducedMotion, getState: () => Object.fromEntries(Object.entries(fields).map(([id, field]) => [id, field.value])) };
+  return { setState, setPalette, setPostProcess, ovarySprite, texture, play, paint, start, stop, setReducedMotion, getState: () => Object.fromEntries(Object.entries(fields).map(([id, field]) => [id, field.value])) };
 
 }

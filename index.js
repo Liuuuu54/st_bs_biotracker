@@ -147,7 +147,7 @@ import { getFetalDailyActivity } from './scripts/fetal_activity.js';
 import { getPsyStressInitByLevel, listSnapshotCharacterTimeline } from './scripts/state.js';
 import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
 import { createVulvaRenderer } from './scripts/vulva_render.js';
-import { buildVulvaParams, buildVulvaTheme } from './scripts/vulva_params.js';
+import { buildVulvaParams, buildVulvaTheme, buildWombAppearance, getLockKnot } from './scripts/vulva_params.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
 import { appendSkillHistory, canBodyHaveSkill, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeSkillBody, normalizeSkillList, normalizeTalentList, SKILL_BODY_LABELS, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
@@ -5631,6 +5631,9 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
         libidoCap: getLibidoCap(stage, profile),
         pressureCap: getUterinePressureCap(stage, profile),
         stageProgress: getStageProgressRatio(profile),
+        // 种族外观与锁住（1.6.0）
+        appearance: buildWombAppearance(character),
+        lockKnot: getLockKnot(runtimeChatState || chatState, character),
       }),
       visualCue: profile.visualCue || null,
       // 鞘的级数标在子宫图旁；插入中另附这次的体型契合
@@ -6700,6 +6703,52 @@ function mountBellyView(ctx, content, viewModel) {
 }
 
 let pendingVulvaCue = '';
+// 子宫剖面借外阴图的画法画卵巢造型与通道纹理（1.6.0）：另开一个不显示的绘图器，配色跟主题
+let wombArtRenderer = null;
+let wombArtTheme = '';
+let wombArt = null;
+
+function vulvaThemeFor(themeColors) {
+  const womb = getUterusPalette(themeColors);
+  return buildVulvaTheme(womb, { theme: themeColors.name, modes: BELLY_THEME_MODES, tint: halfTint(womb.wall), rampThemes: VULVA_RAMP_THEMES });
+}
+
+/** 种族外观的颜色照主题换：单色主题卵巢用肉色、不叠色；半彩打色光；全彩照种族 */
+function themeWombAppearance(layout, themeColors) {
+  const appearance = layout?.appearance;
+  if (!appearance) return layout;
+  const mode = BELLY_THEME_MODES[themeColors.name] || 'half';
+  const recolor = (color) => (color ? vulvaThemeFor(themeColors).recolor({ skin: color }).skin : null);
+  return {
+    ...layout,
+    appearance: {
+      ...appearance,
+      // 单色主题：有造型的卵巢也用主题的肉色（不然会退回预览的预设色，晶核、流核这类会带出别的色相）
+      ovaryColor: mode === 'mono' ? (appearance.ovary !== 'compact' ? vulvaThemeFor(themeColors).palette.wall : null) : recolor(appearance.ovaryColor),
+      overlay: mode === 'mono' ? null : recolor(appearance.overlay),
+      light: mode === 'mono' ? null : recolor(appearance.light),
+    },
+  };
+}
+
+function getWombArt(themeColors) {
+  const key = JSON.stringify(themeColors);
+  if (wombArt && wombArtTheme === key) return wombArt;
+  if (!wombArtRenderer) wombArtRenderer = createVulvaRenderer(Object.assign(document.createElement('canvas'), { width: 96, height: 120 }), { reducedMotion: true });
+  wombArtRenderer.setPalette(vulvaThemeFor(themeColors).palette);
+  wombArtTheme = key;
+  const sprites = new Map();
+  wombArt = {
+    // 同样的卵巢每格都要贴，照造型、方向、热度（十段）与颜色快取
+    ovarySprite(shape, side, heat, color) {
+      const id = `${shape}|${side}|${Math.round((Number(heat) || 0) * 10)}|${color || ''}`;
+      if (!sprites.has(id)) sprites.set(id, wombArtRenderer.ovarySprite(shape, side, Math.round((Number(heat) || 0) * 10) / 10, color));
+      return sprites.get(id);
+    },
+    texture: (...args) => wombArtRenderer.texture(...args),
+  };
+  return wombArt;
+}
 // 单色主题里用深到浅一条色带的（同孕体特写）
 const VULVA_RAMP_THEMES = new Set(['ink', 'constructivism']);
 // 子宫图的视觉提示 → 外阴正面的动画：插入播剑鞘契合（含双穴），射精与套子的事件播射精脉冲
@@ -6784,7 +6833,8 @@ function mountWombView(ctx, content, viewModel) {
   { const womb = getUterusPalette(themeColors); document.getElementById('bs-biotracker-settings')?.style.setProperty('--bsbt-gauge-color', getGaugeLabelColor(womb.tick, womb.bg)); }
   const layout = viewModel.pregnancy.womb;
   wombCanvas.setAttribute('aria-label', layout.summary);
-  wombRenderer.setLayout(layout);
+  wombRenderer.setArt(getWombArt(themeColors));
+  wombRenderer.setLayout(themeWombAppearance(layout, themeColors));
 
   const cue = viewModel.pregnancy.visualCue;
   if (cue?.seq) {

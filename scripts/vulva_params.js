@@ -216,3 +216,28 @@ export function buildVulvaTheme(womb, { theme = '', modes = {}, tint = null, ram
   };
   return { palette, recolor, brush: null };
 }
+
+/**
+ * 子宫剖面的种族外观（1.6.0）：卵巢造型与底色、产道纹理、子宫叠色、材质反光（照种族表）。
+ * 孕夫（肛门分娩）没有卵巢。回传给 computeUterusLayout 的 appearance；颜色再由页面照主题换。
+ */
+export function buildWombAppearance(character) {
+  const base = character?.profile?.base || {};
+  const preset = getVulvaRacePreset(base.race, base.bloodline);
+  const anal = getCharacterOutletLayout(base) === 'anal';
+  return {
+    ovary: anal ? 'none' : (preset?.ovary || 'compact'),
+    ovaryColor: preset?.ovaryColor || null,
+    canalMaterial: preset?.['canal-material'] || 'folds',
+    overlay: preset?.overlay || null,
+    light: preset?.highlight || null,
+  };
+}
+
+/** 插在她身上、射精后锁住的那位精方有没有根部球结（画锁住时入口要不要画球） */
+export function getLockKnot(chatState, character) {
+  const base = character?.profile?.base || {};
+  if (base.penetrationLocked !== true) return false;
+  const source = String(base.penetrationSource || '').trim();
+  return Boolean(source && getSireRecord(chatState, source)?.swordKnot === true);
+}

@@ -341,6 +341,10 @@ export function computeUterusLayout(profile, options = {}) {
     womb,
     tract,
     penetrationFit: getPenetrationFitView(base.penetrationFit),
+    // 种族外观（1.6.0）：卵巢造型与底色、产道纹理、子宫叠色；由呼叫端照种族表与外观设定给，没有就照原本的画法
+    appearance: options.appearance || null,
+    // 精方的剑射精后锁住（1.6.0）：{ knot } 有球结时入口卡一颗黑影球，没有时入口一圈收紧的亮边
+    lock: base.penetrationLocked === true ? { knot: options.lockKnot === true } : null,
     wallInset,
     pressureRatio,
     pressureLevel,

@@ -532,6 +532,11 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   ctx.imageSmoothingEnabled = false;
 
   let P = getUterusPalette(theme);
+  // 主题色表；种族有子宫叠色时每格从它推出叠了色的那一份（overlayFor）
+  let baseP = P;
+  let overlayCache = { key: '', palette: null };
+  // 借来的画法（1.6.0）：{ ovarySprite(shape, side, heat, color), texture(ctx, points, material, color, strength, light) }，由页面注入
+  let art = null;
   let pen = makePen(ctx, P);
   let spriteOf = createSpriteCache(P);
   let layout = null;
@@ -546,6 +551,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   function frame(tick = performance.now()) {
     lastTick = tick;
     if (!layout) return;
+    usePalette(overlayFor(layout.appearance?.overlay));
     const { px } = pen;
     px(0, 0, UTERUS_CANVAS.width, UTERUS_CANVAS.height, P.bg);
     // 明显不合的剑顶到宫颈口时，整个子宫被顶高 1 像素（剑本身不跟着动）
@@ -567,6 +573,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     drawObstruction(tick);
     ctx.restore();
     drawCue(tick);
+    if (!cue && layout.lock) drawLock();
     // 刻度与超出显示数
     for (let i = 0; i < 8; i += 1) {
       // (左边那排刻度拿掉了：位置让给精液容量的量尺)
@@ -574,6 +581,49 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     }
     if (layout.hiddenCount > 0) pen.glyphs(`+${layout.hiddenCount}`, 80 - String(layout.hiddenCount).length * 4, 112, P.signal);
     if (P.brush) inkBrush(ctx, P);
+  }
+
+  /** 换这一格用的色表（叠色只改肉的颜色，背景、刻度、信号色照主题） */
+  function usePalette(next) {
+    if (next === P) return;
+    P = next;
+    pen = makePen(ctx, P);
+  }
+
+  /**
+   * 子宫叠色（1.6.0）：非血肉的种族（宝石人、核焰族…）把肉色往种族的主题色混约三成，水墨这类有笔触的主题不叠
+   */
+  function overlayFor(color) {
+    if (!color || !/^#[0-9a-f]{6}$/i.test(color) || baseP.brush) return baseP;
+    if (overlayCache.key === color && overlayCache.base === baseP) return overlayCache.palette;
+    const palette = { ...baseP };
+    for (const key of ['wall', 'wallDark', 'wallLight', 'wallTense', 'lining', 'cavity', 'cavityDeep', 'frame']) {
+      if (palette[key]) palette[key] = mixColor(palette[key], color, 0.3);
+    }
+    overlayCache = { key: color, base: baseP, palette };
+    return palette;
+  }
+
+  /**
+   * 锁住（1.6.0）：射精后剑还卡在里面。剑停在最深处；有球结时入口卡一颗黑影球（剑宽再胖 2 格），
+   * 没有球结时入口两侧各一道收紧的亮边。
+   */
+  function drawLock() {
+    const { womb, tract } = layout;
+    const headY = shaft(reachOf());
+    const fit = layout.penetrationFit;
+    const half = ((fit?.swordWidth ?? 9) - 1) >> 1;
+    const mouth = Math.min(UTERUS_CANVAS.height, tract.canalBottom) - 4;
+    const silhouette = mixColor(P.cavityDeep, '#0b0710', 0.65);
+    if (layout.lock.knot) {
+      const rx = half + 2;
+      pen.ellipse(womb.cx, mouth, rx + 1, 3, P.shine);
+      pen.ellipse(womb.cx, mouth, rx, 2, silhouette);
+    } else {
+      pen.px(womb.cx - half - 2, mouth - 1, 2, 3, P.shine);
+      pen.px(womb.cx + half + 1, mouth - 1, 2, 3, P.shine);
+    }
+    return headY;
   }
 
   /**
@@ -689,11 +739,19 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     const heat = dormant ? libidoHeat * 0.3 : libidoHeat;
     const ovaryOuter = mixColor(dormant ? mixColor(P.wallDark, DORMANT_TINT, 0.4) : P.wallDark, P.ovaryHot, heat);
     const ovaryInner = dormant ? mixColor(P.wallDark, P.wall, 0.5) : mixColor(P.wallLight, P.ovaryGlow, heat);
+    // 种族的卵巢造型（1.6.0）：照预览的画法贴上去；橢圓（compact）又没有种族底色时照原本的画法；none（孕夫）不画卵巢
+    const ovaryShape = layout.appearance?.ovary || 'compact';
     for (const side of [-1, 1]) {
       const start = cx + side * wombRadius(womb, tubeY);
       const end = cx + side * Math.min(42, rx + 10);
       line(start, tubeY, end, tubeY - 5, P.wallDark);
       line(start, tubeY - 1, end, tubeY - 6, P.wallLight);
+      if (ovaryShape === 'none') continue;
+      if ((ovaryShape !== 'compact' || layout.appearance?.ovaryColor) && art?.ovarySprite) {
+        // 单侧发达的造型只在那一侧画全尺寸（cluster-right 右边、compact-left 左边）
+        const sprite = art.ovarySprite(ovaryShape, side, heat, layout.appearance?.ovaryColor || null);
+        if (sprite) { ctx.drawImage(sprite, end - 16, tubeY - 6 - 16); continue; }
+      }
       ellipse(end, tubeY - 6, dormant ? 3 : 4, dormant ? 4 : 5, ovaryOuter);
       ellipse(end - side, tubeY - 7, dormant ? 1 : 2, dormant ? 2 : 3, ovaryInner);
       if (!dormant) px(end - side, tubeY - 8, 1, 1, P.shine);
@@ -707,6 +765,16 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     px(cx - 3 - canal.flare, tract.canalTop, 6 + canal.loose + 2 * canal.flare, canal.length - 1, P.cavityDeep);
     px(cx - 6 - canal.flare, tract.canalTop + 4, 2, Math.max(1, canal.length - 9), P.wallLight);
     px(cx + 4 + canal.loose + canal.flare, tract.canalTop + 4, 2, Math.max(1, canal.length - 9), P.wallLight);
+    // 种族的产道纹理（1.6.0）：内壁两条与管腔照预览的画法铺纹理；皱襞（人类预设）照原本的素色
+    const material = layout.appearance?.canalMaterial;
+    if (material && material !== 'folds' && art?.texture) {
+      const top = tract.canalTop;
+      const bottom = top + canal.length - 1;
+      const rect = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+      art.texture(ctx, rect(cx - 6 - canal.flare, top + 4, 2, Math.max(1, canal.length - 9)), material, P.wallLight, 1, layout.appearance.light || null, heat);
+      art.texture(ctx, rect(cx + 4 + canal.loose + canal.flare, top + 4, 2, Math.max(1, canal.length - 9)), material, P.wallLight, 1, layout.appearance.light || null, heat);
+      art.texture(ctx, rect(cx - 3 - canal.flare, top, 6 + canal.loose + 2 * canal.flare, Math.max(1, bottom - top)), material, P.cavityDeep, 0.43, layout.appearance.light || null, heat);
+    }
     // 子宫壁与宫腔
     paintWomb(3, 0, P.frame);
     paintWomb(1, 0, P.wallDark);
@@ -1581,8 +1649,14 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       layout = next;
       kick();
     },
+    /** 借来的画法（卵巢造型、通道纹理），页面用外阴图的绘图器提供 */
+    setArt(next) {
+      art = next || null;
+      kick();
+    },
     setTheme(next) {
       P = getUterusPalette(next);
+      baseP = P;
       condomPalette = null;
       pen = makePen(ctx, P);
       spriteOf = createSpriteCache(P);
