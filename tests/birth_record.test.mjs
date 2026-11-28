@@ -58,6 +58,7 @@ test('手术产：孩子带出生纪录（方式、孕周、顺位）与固定�
   assert.doesNotMatch(second.prenatalLog, /被巫婆诅咒/, '只收跟这一胎有关的事件');
   assert.equal(first.prenatalLogPending, true);
   assert.ok(P(chatState).base.postpartumBulk > 1, '生下的胎量记在母体上，产后宫缩痛照它放大');
+  assert.deepEqual(P(chatState).base.pouchBrood, { count: 2, kind: 'fetus' }, '育儿袋：这次活产了两个胎');
 });
 
 test('孕期 log：下一轮的纪录整理改写成通顺一段；模型没回的留固定格式', () => {

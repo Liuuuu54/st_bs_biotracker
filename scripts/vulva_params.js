@@ -6,7 +6,7 @@ import { getBaseRaceName, getCharacterOutletLayout, pickDominantRaceName } from 
 import { toTraditionalName } from './race_names.js';
 import { getSireQualityState, getSireRecord } from './sires.js';
 import { getProlapseGrade } from './prolapse.js';
-import { getExcretionUrgency, getLaborEffort, getLibidoCap } from './tools.js';
+import { getExcretionUrgency, getLaborEffort, getLibidoCap, getPresentingAmnionDurability } from './tools.js';
 import { getStageProgress } from './stage_progress.js';
 
 // 预览页的基础色（没有种族肤色时）
@@ -54,8 +54,9 @@ function insertingInto(chatState, name) {
 /**
  * 角色 → 外阴正面图的参数。character 是 chatState.characters[name]。
  * 只决定「现在长什么样」；插入、射精、拔出的动画由呼叫端照视觉提示另外 play。
+ * options.womb 是子宫图的布局（computeUterusLayout），拿它的精液灌满／浸满，与子宫图一致。
  */
-export function buildVulvaParams(chatState, name, character = chatState?.characters?.[name]) {
+export function buildVulvaParams(chatState, name, character = chatState?.characters?.[name], options = {}) {
   const profile = character?.profile || {};
   const base = profile.base || {};
   const pregnant = profile.pregnant || {};
@@ -165,7 +166,25 @@ export function buildVulvaParams(chatState, name, character = chatState?.charact
 
   // 插入中的体型契合（播契合动画时用）
   params.fit = String(fitTierFromDiff(base.penetrationFit?.diff));
+
+  // 流出（会一直滴的那几种）：破水后羊水续流 ＞ 经血 ＞ 怀孕浸满 ＞ 灌满；一次性的（拔出、溢出、破水）由呼叫端照事件另播
+  params.flow = getSteadyFlow(profile, options.womb);
+  // 肛内残精：分开的肛门才看得到（泄殖腔、孕夫的肛门就是产道，照产道算）
+  params['anal-residue'] = Number(base.analSemen) >= 1 && ['human', 'tube'].includes(params.layout) ? 'on' : 'off';
   return params;
+}
+
+/** 会一直滴的流出状态：water-flow／period／soaked／full／none */
+export function getSteadyFlow(profile, womb = null) {
+  const base = profile?.base || {};
+  const pregnant = profile?.pregnant || {};
+  const fetuses = Array.isArray(pregnant.fetuses) ? pregnant.fetuses : [];
+  const amnion = fetuses.length > 0 ? getPresentingAmnionDurability(pregnant) : null;
+  if (amnion !== null && Number(amnion) <= 0) return 'water-flow';
+  if (String(base.stage || '') === '月经期') return 'period';
+  if (womb?.semenSoaked) return 'soaked';
+  if (womb?.semenFull) return 'full';
+  return 'none';
 }
 
 // ── 主题配色（1.6.0）：照孕体特写的做法（belly_render.js 的 BELLY_THEME_MODES）──

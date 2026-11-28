@@ -550,6 +550,12 @@ export function normalizeCharacterPsychologyState(characterState) {
     && !(characterState.profile.base.penetrationLocked === true && characterState.profile.base.penetrationState === 'spent')) {
     delete characterState.profile.base.penetrationLocked;
   }
+  // 育儿袋里的幼体（1.6.0）：只在产后恢复期留着，格式不对就不存
+  const pouchBrood = characterState.profile.base.pouchBrood;
+  if (pouchBrood !== undefined && !(characterState.profile.base.stage === '产后恢复' && pouchBrood && typeof pouchBrood === 'object'
+    && Number(pouchBrood.count) >= 1 && ['fetus', 'egg', 'blob'].includes(pouchBrood.kind))) {
+    delete characterState.profile.base.pouchBrood;
+  }
   // 肛交（1.6.0）：插入通道只在插入期间留着；肛内残精是非负数，没有就不存
   if (characterState.profile.base.penetrationState === 'idle' || !['anal', 'both'].includes(characterState.profile.base.penetrationChannel)) {
     delete characterState.profile.base.penetrationChannel;
@@ -1054,7 +1060,7 @@ export function createDefaultFemaleState(name = '') {
         prolapse: false,
       },
       // 显示用的外观（1.4.3）：孕体特写的肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设；只给画面用，不送提示词
-      display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null },
+      display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, pouch: null },
     },
   };
   return syncCharacterStageFromProfile(normalizeCharacterPsychologyState(character));
@@ -2433,7 +2439,7 @@ function createSnapshotCharacterBaseline(name = '') {
         prolapse: false,
       },
       // 显示用的外观（1.4.3）：孕体特写的肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设；只给画面用，不送提示词
-      display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null },
+      display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, pouch: null },
     },
   };
 }

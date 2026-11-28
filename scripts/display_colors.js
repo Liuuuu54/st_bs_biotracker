@@ -58,6 +58,12 @@ export const DISPLAY_NAVEL_SIZES = Object.freeze([
   Object.freeze({ value: 'large', label: '大' }),
 ]);
 
+/** 育儿袋（1.6.0）：预设照种族（getPouchDefault），选回种族预设就存 null */
+export const DISPLAY_POUCH = Object.freeze([
+  Object.freeze({ value: 'on', label: '有' }),
+  Object.freeze({ value: 'off', label: '没有' }),
+]);
+
 /**
  * 妊娠纹（预设关）。长在哪里因人而异，分两种：
  *   lower 下腹——沿腹下摺痕平行排开的细弧；navel 脐周——从肚脐往外放射、沿着脐中线两侧冒出来；both 两种都有。
@@ -92,5 +98,6 @@ export function normalizeDisplay(display) {
     navelSize: pick(DISPLAY_NAVEL_SIZES, source.navelSize),
     // 1.4.3 开发中用过的 auto 当成下腹
     stretchMarks: pick(DISPLAY_STRETCH_MARKS, source.stretchMarks === 'auto' ? 'lower' : source.stretchMarks),
+    pouch: pick(DISPLAY_POUCH, source.pouch),
   };
 }

@@ -15,6 +15,7 @@
 // 节奏、幅度的数值移植自预览页 PREGNANCY_TRACE_NUDE.html。
 
 import { getFetalGrowth, getFetalKickStrength } from './fetal_growth.js';
+import { buildPouchScene, paintPouchPeek } from './belly_pouch.js';
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const NEED_FULL = 100 / 150;
@@ -53,7 +54,7 @@ const nodCurve = (t) => (t < 0.9 ? (t / 0.9) ** 2 : 1 - (t - 0.9) / 0.1);
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 // 决定静止画面的状态栏位：这些变了才重算成图
 const SHAPE_KEYS = ['sigma', 'cup', 'build', 'hip', 'days', 'count', 'weight', 'pressure', 'showBra', 'showShorts', 'strapless', 'release', 'nippleScale', 'navel', 'navelLarge', 'stretchMarks', 'pastBulk',
-  'hormStage', 'stageProgress', 'births', 'milk', 'libido', 'noMilk', 'laborPhase', 'ghost'];
+  'hormStage', 'stageProgress', 'births', 'milk', 'libido', 'noMilk', 'laborPhase', 'ghost', 'pouch'];
 const STILL = Object.freeze({ lift: 0, nippleLift: 0, steady: 0, wob: 0, nippleWob: 0, jiggle: 0, nod: 0, squirm: 0, contraction: 0, push: 0, bumps: [], ripples: [] });
 
 /**
@@ -111,14 +112,16 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
   }
 
   function buildScene() {
-    const rest = layout.layout(state);
-    const layers = painter.paintLayers(rest, palette);
+    // 育儿袋（1.6.0）：袋口画进静止画面，袋里有幼体时下腹换成鼓起的那张
+    const pouched = state.pouch ? buildPouchScene(layout, painter, state, palette) : null;
+    const rest = pouched ? pouched.rest : layout.layout(state);
+    const layers = pouched ? pouched.layers : painter.paintLayers(rest, palette);
     let top = -1;
     let bottom = -1;
     for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) if (rest.visibleBelly[y * W + x]) { if (top < 0) top = y; bottom = y; break; }
     // 每列孕肚看得见的前后缘（胎动的位置用）
     const span = Array.from({ length: H }, (_, y) => { let l = -1; let r = -1; for (let x = 0; x < W; x += 1) if (rest.visibleBelly[y * W + x]) { if (l < 0) l = x; r = x; } return l < 0 ? null : [l, r]; });
-    scene = { rest, layers, rows: rest.fig.rows, bellyTop: top, bellyBottom: bottom, span, firm: null, ghost: ghostOutline(rest), ubCol: underbustColumns(rest.fig.underbust) };
+    scene = { pouch: pouched?.pouch || null, rest, layers, rows: rest.fig.rows, bellyTop: top, bellyBottom: bottom, span, firm: null, ghost: ghostOutline(rest), ubCol: underbustColumns(rest.fig.underbust) };
     motion.drops = [];
     stats.scenes += 1;
   }
@@ -764,6 +767,13 @@ export function createBellyAnimator(layout, painter, { random = Math.random } = 
           }
         }
       }
+    }
+    // 育儿袋的探头：跟着袋口那一列的孕肚一起动；静止画面不画
+    if (scene.pouch?.peek && m !== STILL) {
+      const row = clamp(scene.pouch.row, 0, H - 1);
+      const dx = bellyShiftX[row] + offsetX;
+      const dy = Math.round(moveYAt[row] + bellyMove(row)[1]) + offsetY;
+      paintPouchPeek(scene.pouch.peek, now, (x, y) => [x + dx, y + dy], put);
     }
     return hits;
   }

@@ -7035,6 +7035,10 @@ function recordDeliveredBulk(profile, born) {
   if (!profile.base || typeof profile.base !== 'object') profile.base = {};
   profile.base.postpartumBulk = pregnant.deliveredBulk;
   profile.base.postpartumCount = pregnant.deliveredNursing;
+  // 育儿袋（1.6.0，只给孕体特写）：这次活产了几个、生下来是胎、蛋还是不定型；产后恢复结束就清掉，流产不记
+  const first = born[0];
+  const kind = isShelledAtBirth(first) ? 'egg' : String(first?.embryoType || '') === '不定型' ? 'blob' : 'fetus';
+  profile.base.pouchBrood = { count: pregnant.deliveredNursing, kind };
 }
 
 /** 假宫缩、胎儿互踢留下的瞬时痛：记来源与强度，每故事小时减半 */

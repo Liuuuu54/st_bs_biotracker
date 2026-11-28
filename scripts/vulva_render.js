@@ -32,6 +32,7 @@ export const VULVA_DEFAULTS = Object.freeze({
   "material-light": "#f3a891",
   "translucent": "off",
   "anal-sword-size": "2",
+  "anal-residue": "off",
   "play-anal-fit": "",
   "tube-diameter": "standard",
   "tube-texture": "rings",
@@ -84,7 +85,7 @@ export const VULVA_DEFAULTS = Object.freeze({
   "sword-offset": "0"
 });
 const DEFAULTS = VULVA_DEFAULTS;
-const FIELD_IDS = ["layout","human-sire","single-sire","single-role","sire-form","swordScrotum","swordTip","swordShaft","swordKnot","swordBarbs","swordTwin","swordLock","lock-phase","channel","sword-pulse","anus-shape","anus-color","race-preset","chimera-outlet","pouchBrood","canvas-background","edge-decoration","uterus-overlay","uterus-overlay-color","canal-material","material-light","translucent","anal-sword-size","play-anal-fit","tube-diameter","tube-texture","tube-tip","outlet-body","cloacal-rim","outlet-shape","outlet-decoration","shape","outer-shape","clitoral-length","skin","tone","libido","libido-value","sire-reserve","sire-reserve-value","sperm-quality","sperm-quality-value","pregnancy","flow","urine","stool","fit","descent","weight","weight-value","effort","fatigue","fatigue-value","parity","recovery","recovery-value","play-recovery","replay","combine","readout","presenting-position","presenting-style","presenting-angle","prolapse","section-preset","section-variant","chamber-fill","vaginal-septum"];
+const FIELD_IDS = ["layout","human-sire","single-sire","single-role","sire-form","swordScrotum","swordTip","swordShaft","swordKnot","swordBarbs","swordTwin","swordLock","lock-phase","channel","sword-pulse","anus-shape","anus-color","race-preset","chimera-outlet","pouchBrood","canvas-background","edge-decoration","uterus-overlay","uterus-overlay-color","canal-material","material-light","translucent","anal-sword-size","anal-residue","play-anal-fit","tube-diameter","tube-texture","tube-tip","outlet-body","cloacal-rim","outlet-shape","outlet-decoration","shape","outer-shape","clitoral-length","skin","tone","libido","libido-value","sire-reserve","sire-reserve-value","sperm-quality","sperm-quality-value","pregnancy","flow","urine","stool","fit","descent","weight","weight-value","effort","fatigue","fatigue-value","parity","recovery","recovery-value","play-recovery","replay","combine","readout","presenting-position","presenting-style","presenting-angle","prolapse","section-preset","section-variant","chamber-fill","vaginal-septum"];
 
 /**
  * 建一個外陰正面的繪圖器。canvas 是 96×120 的畫布；options.reducedMotion 為 true 時動畫停在代表格。
@@ -756,6 +757,7 @@ export function createVulvaRenderer(canvas, options = {}) {
   const ANAL_HOLD_END_MS = 1420;
   const ANAL_FIT_END_MS = 2950;
   const ANAL_RESIDUE_MS = 2800;
+  const ANAL_RESIDUE_STATIC_MS = 900;
   const LABOR_RELEASE_MS = 850;
   const RECOVERY_PREVIEW_MS = 4800;
   const flowEffects = {
@@ -2793,7 +2795,9 @@ export function createVulvaRenderer(canvas, options = {}) {
     const frontScale = separateAnus ? compactFrontHeight / canvas.height : 1;
     const analExpansion = twinScene && twinOpening > 0 ? analFitExpansion(620, 2) * twinOpening
       : analFitStart !== null && analElapsed < ANAL_FIT_END_MS ? analFitExpansion(analElapsed, Number(fields['anal-sword-size'].value)) : null;
-    const analResidueElapsed = twinScene ? twinElapsed - COMBINE_MS : analFitStart !== null ? analElapsed - ANAL_HOLD_END_MS : null;
+    // 肛內還有殘精時，沒在播擴張也留一道靜態痕跡（等於擴張後殘精剛滴下兩格、還沒淡掉的那一幀）
+    const analResidueElapsed = twinScene ? twinElapsed - COMBINE_MS : analFitStart !== null ? analElapsed - ANAL_HOLD_END_MS
+      : fields['anal-residue'].value === 'on' ? ANAL_RESIDUE_STATIC_MS : null;
     drawFrontView(separateAnus, analExpansion, needs.stool, analResidueElapsed);
     if (twinScene) {
       if (!separateAnus) drawAnalResidue({ centerX: outlet.centerX + 5, centerY: flowOrigin - 1, width: 3, depth: 2 },

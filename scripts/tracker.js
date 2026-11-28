@@ -1243,6 +1243,8 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   for (const key of ['prolapse', 'prolapseSupportUntil', 'prolapseRestUntil']) delete profile.base[key];
   const prolapseText = describeProlapse(item.profile, minutesPassed);
   if (prolapseText) profile.base.prolapse = prolapseText;
+  // 育儿袋里的幼体（1.6.0）只给孕体特写画，不送
+  delete profile.base.pouchBrood;
   // 肛内残精（1.6.0）：取整，没有就不送
   if (Number(base.analSemen) >= 1) profile.base.analSemen = Math.round(Number(base.analSemen));
   else delete profile.base.analSemen;

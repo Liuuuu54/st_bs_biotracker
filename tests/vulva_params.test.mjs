@@ -144,3 +144,19 @@ test('锁住的球结照插着的那位精方', () => {
   chat.sires.乙 = normalizeSireRecord({ swordKnot: true });
   assert.equal(getLockKnot(chat, chat.characters.A), false, '没锁住就不画');
 });
+
+test('流出：破水后续流＞经血＞浸满＞灌满；肛内残精只在分开的肛门画', () => {
+  assert.equal(params(setup()).flow, 'none');
+  assert.equal(params(setup({ stage: '月经期' })).flow, 'period');
+  const womb = (extra) => buildVulvaParams(setup(), 'A', undefined, { womb: extra }).flow;
+  assert.equal(womb({ semenFull: true }), 'full');
+  assert.equal(womb({ semenFull: true, semenSoaked: true }), 'soaked');
+  const labor = setup({ stage: '第一产程' });
+  labor.characters.A.profile.pregnant = { ...(labor.characters.A.profile.pregnant || {}), fetuses: [{ embryoId: 'e1', amnionDurability: 0 }] };
+  assert.equal(params(labor).flow, 'water-flow');
+  labor.characters.A.profile.pregnant.fetuses[0].amnionDurability = 60;
+  assert.equal(params(labor).flow, 'none');
+  assert.equal(params(setup({ analSemen: 12 }))['anal-residue'], 'on');
+  assert.equal(params(setup({ analSemen: 12, race: '蛇人' }))['anal-residue'], 'off', '泄殖腔的肛门就是产道');
+  assert.equal(params(setup())['anal-residue'], 'off');
+});

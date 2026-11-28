@@ -147,6 +147,8 @@ export function buildBellyCloseupState(input) {
     navelLarge: input.display?.navelSize === 'large',
     stretchMarks: input.display?.stretchMarks || 'off',
     pastBulk: Math.max(0, Number(input.pastBulk) || 0),
+    // 育儿袋（1.6.0）：有袋才给；袋里有幼体时随产后恢复长大（belly_pouch.js）
+    ...(input.pouch ? { pouch: { brood: input.pouch.brood || null, recovery: input.pouch.brood ? clamp(Number(input.stageProgress) || 0, 0, 1) : 0 } } : {}),
     vitality: percent(stats.vitality),
     libido: percent(stats.libido),
     stress: percent(stats.stress),

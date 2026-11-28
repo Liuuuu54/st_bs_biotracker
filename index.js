@@ -135,9 +135,10 @@ import { renderRaceSheetHtml, renderSheetHtml } from './scripts/encyclopedia_she
 import { createBellyAnimator } from './scripts/belly_anim.js';
 import { loadBellyData } from './scripts/belly_data.js';
 import { createBellyLayout } from './scripts/belly_layout.js';
+import { getPouchDefault, getPouchView } from './scripts/belly_pouch.js';
 import { BELLY_THEME_MODES, applyBellyInkBrush, createBellyPainter, createBellyThemePalette, halfTint } from './scripts/belly_render.js';
 import { describeDerivedTransform, normalizeDerivedTransformLog } from './scripts/derived_transform.js';
-import { DISPLAY_NAVELS, DISPLAY_NAVEL_SIZES, DISPLAY_NIPPLE_PRESETS, DISPLAY_NIPPLE_SIZES, DISPLAY_SKIN_PRESETS, DISPLAY_STRETCH_MARKS, normalizeDisplay, normalizeDisplayColor } from './scripts/display_colors.js';
+import { DISPLAY_NAVELS, DISPLAY_NAVEL_SIZES, DISPLAY_NIPPLE_PRESETS, DISPLAY_NIPPLE_SIZES, DISPLAY_POUCH, DISPLAY_SKIN_PRESETS, DISPLAY_STRETCH_MARKS, normalizeDisplay, normalizeDisplayColor } from './scripts/display_colors.js';
 import { averageYearDays, birthdayOf, dateAt, earthAgeForBirthday, formatBirthday, formatCalendarDate, getActiveCalendar, legalAge, minutesAtDate, nextBirthdayMinutes, monthCount, monthDays, monthName, normalizeCalendar, randomBirthday, setCalendarProvider, toLocalYears } from './scripts/calendar.js';
 import { CALENDAR_STAGE_GROUPS, buildStageTimeline, stageOnDay } from './scripts/story_calendar.js';
 import { getEggQualityTier } from './scripts/egg_quality.js';
@@ -5636,6 +5637,8 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
         lockKnot: getLockKnot(runtimeChatState || chatState, character),
       }),
       visualCue: profile.visualCue || null,
+      // 外阴分页看插入状态的变化（spent → idle 是刚拔出来，播流出）
+      vulvaPenetration: { state: base.penetrationState || 'idle', channel: base.penetrationChannel || 'vaginal' },
       // 鞘的级数标在子宫图旁；插入中另附这次的体型契合
       sheathLabel: formatSheathLabel(base, experience),
       sheathValue: getSheathLevel(base, experience),
@@ -5649,6 +5652,8 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
         display: normalizeDisplay(profile.display),
         // 上一次生下的胎量（妊娠纹的旧纹照它）
         pastBulk: Number(base.postpartumBulk) || 0,
+        // 育儿袋（外观子页，预设照种族）与袋里的幼体（产后恢复期）
+        pouch: getPouchView(base, normalizeDisplay(profile.display)),
         // 体型等级（量尺旁的数字）；可变或未知时没有
         bodySizeValue: (() => { const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize }); return resolved.kind === 'fixed' ? resolved.size : null; })(),
         sigma: getBodySizeSigma(base),
@@ -6759,6 +6764,31 @@ function playVulvaCue(type) {
   if (kind && vulvaRenderer && wombTab === 'vulva') vulvaRenderer.play(kind);
 }
 
+// 一次性的流出（1.6.0）：破水、超容量溢出、拔出后流出。播的这段时间流出状态先换成它，
+// 中途重绘也不会被「一直滴」的状态盖掉；时间到了回到照状态算的那种
+const VULVA_FLOW_ONCE_MS = Object.freeze({ rupture: 2800, spill: 2300, withdrawal: 4300, 'anal-fit': 5800 });
+let vulvaFlowOnce = null;
+// 每个角色上一次看到的插入状态：spent → idle 就是刚拔出来
+const vulvaLastPenetration = new Map();
+
+function queueVulvaFlow(key, flow) {
+  vulvaFlowOnce = { key, flow, until: Date.now() + (VULVA_FLOW_ONCE_MS[flow] || 2400), played: false };
+}
+
+/** 照这一轮的事件与插入状态的变化，决定要不要播一次性的流出 */
+function noteVulvaFlowEvents(key, viewModel, cueType) {
+  const base = viewModel.pregnancy.vulvaPenetration || {};
+  const last = vulvaLastPenetration.get(key);
+  vulvaLastPenetration.set(key, base);
+  const womb = viewModel.pregnancy.womb || {};
+  if (cueType === 'rupture') queueVulvaFlow(key, 'rupture');
+  else if (['ejaculate', 'condomBreak', 'condomOverflow'].includes(cueType) && womb.semenOverflow > 0) queueVulvaFlow(key, 'spill');
+  else if (last?.state === 'spent' && base.state === 'idle') {
+    // 肛交拔出：肛门撑开再回缩、留下殘精；产道（含双穴）：拔出后精液流出
+    queueVulvaFlow(key, last.channel === 'anal' ? 'anal-fit' : 'withdrawal');
+  }
+}
+
 /**
  * 外阴分页：切到外阴时把外阴画布换进子宫画布的位置，照角色状态设参数；切回子宫就换回来。
  * 画法全在 vulva_render.js（由预览页汇出），这里只管换画布与参数。
@@ -6791,7 +6821,16 @@ function mountVulvaView(ctx, host, viewModel, animated) {
       applyBellyInkBrush(image.data, image.width, image.height, theme.brush);
       context.putImageData(image, 0, 0);
     } : null);
-    vulvaRenderer.setState(theme.recolor(buildVulvaParams(chatState, viewModel.name)));
+    const params = buildVulvaParams(chatState, viewModel.name, undefined, { womb: viewModel.pregnancy.womb });
+    const key = `${getChatKey(ctx)}::${viewModel.name}`;
+    const once = vulvaFlowOnce?.key === key && Date.now() < vulvaFlowOnce.until ? vulvaFlowOnce : null;
+    if (once && once.flow !== 'anal-fit') params.flow = once.flow;
+    vulvaRenderer.setState(theme.recolor(params));
+    if (once && !once.played) {
+      once.played = true;
+      // 拔出后流出接在剑鞘契合（拔出）后面；其余直接播
+      vulvaRenderer.play(once.flow === 'withdrawal' ? 'combine' : once.flow === 'anal-fit' ? 'anal-fit' : 'flow');
+    }
     vulvaCanvas.setAttribute('aria-label', `${viewModel.name}的外阴正面像素图`);
   } catch (error) {
     console.warn('[BioTracker] vulva view failed', error);
@@ -6837,14 +6876,17 @@ function mountWombView(ctx, content, viewModel) {
   wombRenderer.setLayout(themeWombAppearance(layout, themeColors));
 
   const cue = viewModel.pregnancy.visualCue;
+  const cueKey = `${getChatKey(ctx)}::${viewModel.name}`;
+  let freshCue = '';
   if (cue?.seq) {
-    const key = `${getChatKey(ctx)}::${viewModel.name}`;
-    if (!(Number(readSeenWombCues()[key]) >= cue.seq)) {
-      markWombCueSeen(key, cue.seq);
+    if (!(Number(readSeenWombCues()[cueKey]) >= cue.seq)) {
+      markWombCueSeen(cueKey, cue.seq);
       wombRenderer.playCue(cue.type);
       pendingVulvaCue = cue.type;
+      freshCue = cue.type;
     }
   }
+  noteVulvaFlowEvents(cueKey, viewModel, freshCue);
   host.querySelector('[data-womb-replay]')?.addEventListener('click', (event) => {
     const cueType = String(event.currentTarget.dataset.wombReplay || '');
     wombRenderer?.playCue(cueType, { userRequested: true });
@@ -9840,6 +9882,7 @@ function renderFullStateAppearance(ctx, name, character) {
     ${choices('navel', '肚脐', DISPLAY_NAVELS, '照她自己怎么被生出来：卵生的可选淡疤或没有')}
     ${choices('navelSize', '肚脐大小', DISPLAY_NAVEL_SIZES)}
     ${choices('stretchMarks', '妊娠纹', DISPLAY_STRETCH_MARKS, '长在哪里因人而异：下腹沿腹下摺痕、脐周从肚脐往外；照胎量长，产后淡成银白')}
+    ${choices('pouch', '育儿袋', DISPLAY_POUCH, '下腹一道袋口、不画肚脐；产后恢复期幼体在袋里时下腹鼓起。预设照种族', getPouchDefault(character?.profile?.base?.race, character?.profile?.base?.bloodline))}
     <div class="bs-bt-color-group">
       <div class="bs-bt-color-title">目前主题的实际颜色</div>
       <div class="bs-bt-color-strip">${strip(palette.skin)}<span class="bs-bt-color-gap"></span>${strip([...palette.areolaPale, ...palette.areolaDark])}</div>
@@ -9855,7 +9898,7 @@ function renderFullStateAppearance(ctx, name, character) {
 }
 
 function setDisplayColor(ctx, name, key, value) {
-  if (!['skinColor', 'nippleColor', 'nippleSize', 'navel', 'navelSize', 'stretchMarks'].includes(key)) return;
+  if (!['skinColor', 'nippleColor', 'nippleSize', 'navel', 'navelSize', 'stretchMarks', 'pouch'].includes(key)) return;
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const character = chatState.characters?.[name];
