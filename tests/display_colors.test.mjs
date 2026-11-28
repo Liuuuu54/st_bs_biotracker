@@ -12,11 +12,11 @@ test('正规化：颜色认 #rgb 与大写，选项只认列表里的值，其�
   assert.equal(normalizeDisplayColor('#ABC'), '#aabbcc');
   assert.equal(normalizeDisplayColor(' #D4907F '), '#d4907f');
   for (const bad of ['red', '#12345', '', null, undefined, 12]) assert.equal(normalizeDisplayColor(bad), null);
-  assert.deepEqual(normalizeDisplay({ skinColor: '#fff', nippleColor: 'x', hairColor: '#000', extra: 1 }), { ...{ skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, pouch: null }, skinColor: '#ffffff' });
-  assert.deepEqual(normalizeDisplay(null), { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, pouch: null });
-  assert.deepEqual(normalizeDisplay({ nippleSize: 1.3, navel: 'faint', navelSize: 'large', stretchMarks: 'both' }), { ...{ skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, pouch: null }, nippleSize: 1.3, navel: 'faint', navelSize: 'large', stretchMarks: 'both' });
+  assert.deepEqual(normalizeDisplay({ skinColor: '#fff', nippleColor: 'x', hairColor: '#000', extra: 1 }), { ...{ skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, anusShape: null, vulvaMaturity: null, vulvaTraces: null }, skinColor: '#ffffff' });
+  assert.deepEqual(normalizeDisplay(null), { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, anusShape: null, vulvaMaturity: null, vulvaTraces: null });
+  assert.deepEqual(normalizeDisplay({ nippleSize: 1.3, navel: 'faint', navelSize: 'large', stretchMarks: 'both' }), { ...{ skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, anusShape: null, vulvaMaturity: null, vulvaTraces: null }, nippleSize: 1.3, navel: 'faint', navelSize: 'large', stretchMarks: 'both' });
   assert.equal(normalizeDisplay({ stretchMarks: 'auto' }).stretchMarks, 'lower');
-  assert.deepEqual(normalizeDisplay({ nippleSize: 7, navel: 'x', navelSize: 3, stretchMarks: 'on' }), { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, pouch: null });
+  assert.deepEqual(normalizeDisplay({ nippleSize: 7, navel: 'x', navelSize: 3, stretchMarks: 'on' }), { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, anusShape: null, vulvaMaturity: null, vulvaTraces: null });
 });
 
 test('色票里的「预设」就是预设色表的基准色', () => {
@@ -28,8 +28,8 @@ test('v17 → v18：角色补上空的 display；已有的颜色正规化后保�
   assert.equal(CHAT_STATE_SCHEMA_VERSION, 19);
   const characters = { A: { profile: { base: {} } }, B: { profile: { base: {}, display: { skinColor: '#ABC' } } } };
   migrateCharacters(characters, 17);
-  assert.deepEqual(characters.A.profile.display, { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, pouch: null });
-  assert.deepEqual(characters.B.profile.display, { ...{ skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, pouch: null }, skinColor: '#aabbcc' });
+  assert.deepEqual(characters.A.profile.display, { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, anusShape: null, vulvaMaturity: null, vulvaTraces: null });
+  assert.deepEqual(characters.B.profile.display, { ...{ skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, anusShape: null, vulvaMaturity: null, vulvaTraces: null }, skinColor: '#aabbcc' });
 });
 
 test('全彩：乳头色给了就只换乳晕与乳头，肤色照肤色；没给乳头色时跟着肤色走', () => {
@@ -110,4 +110,16 @@ test('特写：乳晕大小、肚脐、妊娠纹照外观设定画；妊娠纹�
   // 未孕、没生过：自动也没有纹
   const empty = { ...base, days: 0, count: 1, hormStage: 'cycle', births: 0 };
   assert.equal(diff(paint(empty), paint({ ...empty, stretchMarks: 'lower' })), 0);
+});
+
+test('肛门造型：五款可选，依布局存 null', () => {
+  assert.equal(normalizeDisplay({ anusShape: 'gpt' }).anusShape, 'gpt');
+  assert.equal(normalizeDisplay({ anusShape: 'auto' }).anusShape, null);
+  assert.equal(normalizeDisplay({ anusShape: 'x' }).anusShape, null);
+});
+
+test('外阴拉杆：0–100，50 存 null', () => {
+  assert.equal(normalizeDisplay({ vulvaTraces: 80 }).vulvaTraces, 80);
+  assert.equal(normalizeDisplay({ vulvaTraces: 50 }).vulvaTraces, null);
+  assert.equal(normalizeDisplay({ vulvaMaturity: 140 }).vulvaMaturity, null);
 });

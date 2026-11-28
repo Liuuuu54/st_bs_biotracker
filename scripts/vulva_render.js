@@ -5,6 +5,10 @@
 /** 參數的預設值（照預覽頁控件的預設） */
 export const VULVA_DEFAULTS = Object.freeze({
   "layout": "human",
+  "visual-maturity": "50",
+  "visual-maturity-value": "",
+  "visual-traces": "50",
+  "visual-traces-value": "",
   "human-sire": "off",
   "single-sire": "off",
   "single-role": "idle",
@@ -34,6 +38,8 @@ export const VULVA_DEFAULTS = Object.freeze({
   "anal-sword-size": "2",
   "anal-residue": "off",
   "play-anal-fit": "",
+  "hymen": "none",
+  "play-deflower": "",
   "tube-diameter": "standard",
   "tube-texture": "rings",
   "tube-tip": "rounded",
@@ -85,7 +91,7 @@ export const VULVA_DEFAULTS = Object.freeze({
   "sword-offset": "0"
 });
 const DEFAULTS = VULVA_DEFAULTS;
-const FIELD_IDS = ["layout","human-sire","single-sire","single-role","sire-form","swordScrotum","swordTip","swordShaft","swordKnot","swordBarbs","swordTwin","swordLock","lock-phase","channel","sword-pulse","anus-shape","anus-color","race-preset","chimera-outlet","pouchBrood","canvas-background","edge-decoration","uterus-overlay","uterus-overlay-color","canal-material","material-light","translucent","anal-sword-size","anal-residue","play-anal-fit","tube-diameter","tube-texture","tube-tip","outlet-body","cloacal-rim","outlet-shape","outlet-decoration","shape","outer-shape","clitoral-length","skin","tone","libido","libido-value","sire-reserve","sire-reserve-value","sperm-quality","sperm-quality-value","pregnancy","flow","urine","stool","fit","descent","weight","weight-value","effort","fatigue","fatigue-value","parity","recovery","recovery-value","play-recovery","replay","combine","readout","presenting-position","presenting-style","presenting-angle","prolapse","section-preset","section-variant","chamber-fill","vaginal-septum"];
+const FIELD_IDS = ["layout","visual-maturity","visual-maturity-value","visual-traces","visual-traces-value","human-sire","single-sire","single-role","sire-form","swordScrotum","swordTip","swordShaft","swordKnot","swordBarbs","swordTwin","swordLock","lock-phase","channel","sword-pulse","anus-shape","anus-color","race-preset","chimera-outlet","pouchBrood","canvas-background","edge-decoration","uterus-overlay","uterus-overlay-color","canal-material","material-light","translucent","anal-sword-size","anal-residue","play-anal-fit","hymen","play-deflower","tube-diameter","tube-texture","tube-tip","outlet-body","cloacal-rim","outlet-shape","outlet-decoration","shape","outer-shape","clitoral-length","skin","tone","libido","libido-value","sire-reserve","sire-reserve-value","sperm-quality","sperm-quality-value","pregnancy","flow","urine","stool","fit","descent","weight","weight-value","effort","fatigue","fatigue-value","parity","recovery","recovery-value","play-recovery","replay","combine","readout","presenting-position","presenting-style","presenting-angle","prolapse","section-preset","section-variant","chamber-fill","vaginal-septum"];
 
 /**
  * 建一個外陰正面的繪圖器。canvas 是 96×120 的畫布；options.reducedMotion 為 true 時動畫停在代表格。
@@ -155,6 +161,17 @@ export function createVulvaRenderer(canvas, options = {}) {
       return Math.round(a + (b - a) * fraction).toString(16).padStart(2, '0');
     });
     return `#${channels.join('')}`;
+  }
+
+  function surfaceAccent(base, color, isHighlight = false) {
+    const maturity = Number(fields['visual-maturity'].value) / 50 - 1;
+    return maturity < 0 ? mix(color, base, -.48 * maturity)
+      : mix(color, isHighlight ? basePalette.shine : basePalette.cavityDeep, .30 * maturity);
+  }
+
+  function traceAccent(base, fold) {
+    const traces = Number(fields['visual-traces'].value) / 50 - 1;
+    return traces < 0 ? mix(fold, base, -.66 * traces) : mix(fold, basePalette.cavityDeep, .35 * traces);
   }
 
   function polygon(color, points, context = ctx) {
@@ -261,7 +278,7 @@ export function createVulvaRenderer(canvas, options = {}) {
 
   function drawSmallAnus({ centerX, centerY, width, depth }, color, bulge, context) {
     const outer = mix(color, basePalette.background, .73);
-    const crease = mix(color, basePalette.background, .47 - .11 * bulge);
+    const crease = traceAccent(outer, surfaceAccent(outer, mix(color, basePalette.background, .47 - .11 * bulge), true));
     const project = ([x, y]) => [centerX + x * width / 4, centerY + y * depth / 3];
     const shape = (fill, points) => polygon(fill, points.map(project), context);
     shape(outer, [[-2, -4], [2, -4], [5, -1], [5, 2], [2, 4], [-2, 4], [-5, 2], [-5, -1]]);
@@ -320,11 +337,11 @@ export function createVulvaRenderer(canvas, options = {}) {
     }
     const { centerX, centerY, width, depth } = opening;
     const radial = shape === 'claude';
-    const shadow = mix(color, basePalette.cavityDeep, .56);
-    const light = mix(color, basePalette.shine, .32 + .11 * bulge + .26 * tension);
+    const shadow = surfaceAccent(color, mix(color, basePalette.cavityDeep, .56));
+    const light = surfaceAccent(color, mix(color, basePalette.shine, .32 + .11 * bulge + .26 * tension), true);
     const styled = usesSmallAnusHub(shape);
     const logo = styled && !radial;
-    const base = styled ? mix(shadow, color, .28) : shadow;
+    const base = traceAccent(color, styled ? mix(shadow, color, .28) : shadow);
     const rimLight = styled ? mix(light, '#9c5f5d', .67) : light;
     const smallHub = styled && !delivering;
     const hubWidth = smallHub ? Math.max(1, width * .23) : width;
@@ -638,14 +655,14 @@ export function createVulvaRenderer(canvas, options = {}) {
     const palette = {
       ...basePalette,
       wall: skin,
-      wallDark: skin === basePalette.wall ? basePalette.wallDark : mix(skin, basePalette.cavityDeep, .48),
-      wallLight: mix(tone, basePalette.cavity, tint),
+      wallDark: surfaceAccent(skin, skin === basePalette.wall ? basePalette.wallDark : mix(skin, basePalette.cavityDeep, .48)),
+      wallLight: surfaceAccent(skin, mix(tone, basePalette.cavity, tint), true),
       lining: mix(tone === basePalette.wallLight ? basePalette.lining : mix(tone, basePalette.shine, .25), basePalette.cavity, tint),
     };
     const fold = { band: 0, recessed: -4, leaf: 5, butterfly: 10, slit: -6 }[shape];
     const [outerWidth, outerLength] = { oval: [0, 0], slender: [-5, 4], rounded: [6, -4], shield: [4, 1] }[fields['outer-shape'].value];
     const tissue = mix(tone === basePalette.wallLight ? basePalette.wall : mix(tone, palette.cavity, .32), palette.cavity, tint);
-    const vestibule = mix(tone === basePalette.wallLight ? basePalette.wallDark : mix(tone, palette.cavityDeep, .65), palette.cavity, tint);
+    const vestibule = surfaceAccent(tissue, mix(tone === basePalette.wallLight ? basePalette.wallDark : mix(tone, palette.cavityDeep, .65), palette.cavity, tint));
     const outer = points => points.map(([x, y]) => {
       const distance = Math.min(1, Math.abs(x - 48) / 18);
       const contour = Math.max(0, 1 - Math.abs(y - 61) / 52);
@@ -687,7 +704,7 @@ export function createVulvaRenderer(canvas, options = {}) {
   drawOuter(outerJoinShade, [[34, 22], [40, 18], [47, 16], [54, 17], [61, 20], [57, 23], [52, 21], [47, 21], [42, 22], [38, 25]]);
 
   // The labia minora continue from the hood and frame the vestibule below the glans.
-  inner(vestibule, [[48, 38], [56, 43], [60, 53], [60, 71], [56, 85], [50, 95], [45, 93], [39, 82], [35, 67], [36, 52], [40, 43]]);
+  inner(traceAccent(tissue, vestibule), [[48, 38], [56, 43], [60, 53], [60, 71], [56, 85], [50, 95], [45, 93], [39, 82], [35, 67], [36, 52], [40, 43]]);
   inner(tissue, [[44, 28], [44, 33], [42, 40], [42, 50], [40, 60], [40, 70], [43, 81], [47, 93], [42, 90], [37, 82], [34, 72], [33, 61], [35, 51], [37, 42], [39, 34]]);
   inner(tissue, [[52, 28], [57, 34], [59, 47], [62, 59], [61, 72], [57, 84], [52, 93], [46, 97], [50, 87], [54, 78], [56, 67], [55, 54], [53, 43], [52, 34]]);
   inner(palette.wallLight, [[42, 31], [42, 43], [40, 54], [37, 64], [38, 73], [41, 83], [38, 79], [35, 71], [35, 62], [37, 53], [39, 43], [39, 36]]);
@@ -747,9 +764,53 @@ export function createVulvaRenderer(canvas, options = {}) {
   opening(openingTone, [[44, 71], [49, 69], [53, 73], [54, 79], [52, 85], [49, 89], [45, 87], [42, 82], [41, 77]]);
   opening(palette.cavityDeep, [[45, 74], [49, 73], [52, 76], [52, 81], [49, 86], [46, 85], [43, 80], [43, 77]]);
   opening(palette.cavity, [[45, 80], [47, 82], [50, 81], [49, 85], [46, 84]]);
+  drawHymen(opening, tissue, palette);
   drawDisplacedTissue?.();
   if (sword && !sword.revealOpening) urineOutletY = drawSword();
   return urineOutletY;
+  }
+
+  /**
+   * 处女膜（1.6.0）：完整是盖住阴道口的一层薄膜、中间一个小孔；破了是入口两侧与下缘的小殘痕。
+   * 破处时膜先被撑紧（变亮、小孔撑大），裂开后换成殘痕。跟着阴道口的撑开一起缩放（opening 的座标转换）。
+   */
+  let hymenFrame = { state: 'none', tension: 0 };
+  function drawHymen(opening, tissue, palette) {
+    const { state, tension } = hymenFrame;
+    if (state === 'intact') {
+      const membrane = mix(mix(tissue, palette.wallLight, .45), palette.shine, .35 * tension);
+      opening(mix(membrane, palette.cavityDeep, .35), [[44.5, 74.5], [49, 73.5], [51.5, 76], [51.5, 80.5], [49, 85.5], [46, 84.5], [43.5, 80], [43.5, 77]]);
+      opening(membrane, [[45, 75], [49, 74], [51, 76.5], [51, 80.5], [48.5, 84.5], [46, 84], [44, 80], [44, 77.5]]);
+      const hole = 1 + 1.1 * tension;
+      opening(palette.cavityDeep, [[46.5, 78], [48.5, 77.5], [49.5, 79.5], [48.5, 82], [46.5, 81.5]].map(([x, y]) => [47.9 + (x - 47.9) * hole, 79.8 + (y - 79.8) * hole]));
+      opening(mix(membrane, palette.shine, .45), [[45.5, 75.5], [47.5, 75], [46, 77]]);
+    } else if (state === 'torn') {
+      const remnant = mix(tissue, palette.wallLight, .3);
+      opening(remnant, [[43.5, 77.5], [45, 76.5], [45.5, 79.5], [44, 81]]);
+      opening(remnant, [[51.5, 77.5], [52, 80.5], [50.5, 81.5], [50.5, 78.5]]);
+      opening(remnant, [[46, 84.5], [48.5, 84], [47.5, 86]]);
+    }
+  }
+
+  /** 泄殖腔、管口的处女膜：照开口的椭圆画，完整是一层带小孔的膜，破了是两侧的小殘痕 */
+  function drawOutletHymen(opening, tone) {
+    const { state, tension } = hymenFrame;
+    if (state === 'none') return;
+    const { centerX, centerY, width, depth } = opening;
+    const ellipse = (color, rx, ry, cx = centerX, cy = centerY) => polygon(color, Array.from({ length: 14 }, (_, k) => {
+      const angle = k * Math.PI * 2 / 14;
+      return [cx + Math.cos(angle) * rx, cy + Math.sin(angle) * ry];
+    }));
+    if (state === 'intact') {
+      const membrane = mix(mix(tone, basePalette.shine, .25), basePalette.shine, .35 * tension);
+      ellipse(membrane, Math.max(1.6, width * .78), Math.max(1.4, depth * .78));
+      ellipse(basePalette.cavityDeep, Math.max(.8, width * (.22 + .25 * tension)), Math.max(.8, depth * (.24 + .25 * tension)));
+      ellipse(mix(membrane, basePalette.shine, .45), Math.max(.6, width * .2), .6, centerX - width * .35, centerY - depth * .45);
+    } else if (state === 'torn') {
+      const remnant = mix(tone, basePalette.shine, .18);
+      ellipse(remnant, Math.max(.7, width * .16), Math.max(.8, depth * .26), centerX - width * .72, centerY + depth * .1);
+      ellipse(remnant, Math.max(.7, width * .16), Math.max(.8, depth * .26), centerX + width * .72, centerY + depth * .15);
+    }
   }
 
   const COMBINE_MS = 2400;
@@ -763,6 +824,8 @@ export function createVulvaRenderer(canvas, options = {}) {
   const flowEffects = {
     period: { duration: 1600, repeat: true, count: 2, interval: 800, fall: 940, spread: 5,
       color: '#b94460', highlight: '#ee9290', film: 8 },
+    hymen: { duration: 1700, count: 2, interval: 320, fall: 1150, spread: 3,
+      color: '#b8323e', highlight: '#ee9290', film: 2 },
     withdrawal: { duration: 1850, delay: COMBINE_MS, count: 3, interval: 210, fall: 1180, spread: 8,
       color: '#b980aa', highlight: '#e5adc9', film: 4, strand: 520 },
     full: { duration: 4200, repeat: true, count: 3, interval: 1400, fall: 1500, spread: 6,
@@ -782,6 +845,9 @@ export function createVulvaRenderer(canvas, options = {}) {
   let rapidLaborStart = null;
   let rapidLaborResult = '';
   let recoveryStart = null;
+  // 破处（1.6.0）：从这一刻起播剑鞘契合，膜先被撑紧、HYMEN_TEAR_MS 时裂开滴血，之后留下殘痕
+  let deflowerStart = null;
+  const HYMEN_TEAR_MS = 700;
   let urineStart = 0;
   let stoolStart = 0;
   let lastLaborPush = 0;
@@ -1111,8 +1177,9 @@ export function createVulvaRenderer(canvas, options = {}) {
 
   function drawAnalAnatomy(outlet, libidoHeat, stretch, birthOpening, drawDisplacedTissue, recovery, needs, busy, inletPressure, look) {
     const skin = fields.skin.value;
-    const palette = { ...basePalette, wall: skin, wallDark: mix(skin, basePalette.cavityDeep, .48),
-      wallLight: fields.tone.value };
+    const palette = { ...basePalette, wall: skin,
+      wallDark: surfaceAccent(skin, mix(skin, basePalette.cavityDeep, .48)),
+      wallLight: surfaceAccent(skin, fields.tone.value, true) };
     const depleted = 1 - Number(fields['sire-reserve'].value) / 100;
     const pouch = mix(skin, palette.wallDark, .30 + .08 * depleted);
     const size = scrotumScale();
@@ -1320,10 +1387,10 @@ export function createVulvaRenderer(canvas, options = {}) {
     const tipScale = tubeTipScale[tip];
     const skin = fields.skin.value;
     const stool = tube ? 0 : needs.stool.bulge;
-    const tone = mix(mix(fields.tone.value, basePalette.cavity, pregnancy * .07 + recovery * .25),
-      basePalette.shine, stool * .15 + .30 * inletPressure);
-    const skinShadow = mix(skin, basePalette.cavityDeep, .58);
-    const skinLight = mix(skin, basePalette.shine, .24);
+    const tone = surfaceAccent(skin, mix(mix(fields.tone.value, basePalette.cavity, pregnancy * .07 + recovery * .25),
+      basePalette.shine, stool * .15 + .30 * inletPressure), true);
+    const skinShadow = surfaceAccent(skin, mix(skin, basePalette.cavityDeep, .58));
+    const skinLight = surfaceAccent(skin, mix(skin, basePalette.shine, .24), true);
     const laborSwelling = birthOpening ? birthOpening.width * .023 : descent === 1 ? stretch * .045 : 0;
     const arousalSwelling = tube ? libidoHeat * .22 : 0;
     const swelling = [0, .03, .11, .20][pregnancy] + arousalSwelling + laborSwelling + recovery * .10;
@@ -1341,8 +1408,8 @@ export function createVulvaRenderer(canvas, options = {}) {
 
     if (tube) {
       const tubeColor = mix(skin, tone, .13 + libidoHeat * .21);
-      const tubeShade = mix(tubeColor, basePalette.cavityDeep, .61);
-      const tubeLight = mix(tubeColor, basePalette.shine, .27);
+      const tubeShade = traceAccent(tubeColor, surfaceAccent(tubeColor, mix(tubeColor, basePalette.cavityDeep, .61)));
+      const tubeLight = surfaceAccent(tubeColor, mix(tubeColor, basePalette.shine, .27), true);
       const shaftSwelling = pregnancy * .055 + (birthOpening ? birthOpening.width * .043 : descent === 1 ? stretch * .10 : 0);
       const shaft = (color, points) => polygon(color, points.map(([x, y]) => {
         const along = Math.max(0, (y - 33) / 56);
@@ -1436,12 +1503,15 @@ export function createVulvaRenderer(canvas, options = {}) {
     if (singleShaft && scrotumVisible('single')) {
       drawRootPouch(opening.centerY - 21, { ...basePalette, wall: skin, wallDark: skinShadow, wallLight: tone }, .62, opening.centerY - 3);
     }
-    if (tube && tip === 'flower') drawFlowerOutlet(opening, skinShadow, tone, rim, libidoHeat);
+    const rimShade = traceAccent(skin, skinShadow);
+    if (tube && tip === 'flower') drawFlowerOutlet(opening, rimShade, tone, rim, libidoHeat);
     else if (tube && (tip === 'valves' || (tip === 'hyena' && !birthOpening))) {
-      drawTubeValve(opening, skinShadow, tone, rim, tip, Boolean(birthOpening));
+      drawTubeValve(opening, rimShade, tone, rim, tip, Boolean(birthOpening));
     } else if (rimProfile !== 'default') {
-      drawMammalCloacalRim(rimProfile, opening, skin, skinShadow, tone, rim);
-    } else drawBirthRim(opening, skinShadow, tone, outletY - 20, rim, ctx, true);
+      drawMammalCloacalRim(rimProfile, opening, skin, rimShade, tone, rim);
+    } else drawBirthRim(opening, rimShade, tone, outletY - 20, rim, ctx, true);
+    // 处女膜（1.6.0）：泄殖腔与管状的开口也有（瓣口与花蕊状的管口是闭合的，不画）
+    if (!birthOpening && !(tube && (tip === 'valves' || tip === 'flower'))) drawOutletHymen(opening, tone);
     if (singleShaft) drawSingleShaft(opening, skin, tone, singleShaft.progress, prolapse > 0 || Boolean(birthOpening), needs.urine, look);
     if (!birthOpening) drawDisplacedTissue?.();
     if (!tube) drawStoolGas(ctx, needs.stool.gas, centerX + opening.width * .64, opening.centerY + opening.depth * .45, 1.8);
@@ -2554,6 +2624,7 @@ export function createVulvaRenderer(canvas, options = {}) {
     if (prolapseLevel() === null) fields.prolapse.value = '0';
     combineStart = analFitStart = flowStart = rapidLaborStart = laborRelease = twinSceneStart = null;
     swordPulseStart = null;
+    deflowerStart = null;
     rapidLaborResult = '';
   }
 
@@ -2589,8 +2660,8 @@ export function createVulvaRenderer(canvas, options = {}) {
 
   function drawPouchOutlet(centerY, inflation, race) {
     const skin = fields.skin.value;
-    const shadow = mix(skin, basePalette.cavityDeep, .60);
-    const high = mix(skin, fields.tone.value, .56);
+    const shadow = surfaceAccent(skin, mix(skin, basePalette.cavityDeep, .60));
+    const high = surfaceAccent(skin, mix(skin, fields.tone.value, .56), true);
     const width = 19 + inflation * 6;
     const open = 1.4 + 7 * inflation;
     const y = centerY;
@@ -2608,7 +2679,7 @@ export function createVulvaRenderer(canvas, options = {}) {
     const aperture = [[-.86,-2],[-.60,-open],[-.23,-open-1],[.30,-open-1],[.63,-open],[.88,-2],
       [.65,1],[.25,1+open*.35],[-.25,1+open*.35],[-.66,1]];
     shape(basePalette.cavityDeep, aperture);
-    shape(high, [[-.92,-2],[-.63,1],[-.26,1+open*.35],[.26,1+open*.35],[.63,1],[.92,-2],
+    shape(traceAccent(skin, high), [[-.92,-2],[-.63,1],[-.26,1+open*.35],[.26,1+open*.35],[.63,1],[.92,-2],
       [.72,3],[.28,3+open*.35],[-.28,3+open*.35],[-.72,3]]);
   }
 
@@ -2672,6 +2743,11 @@ export function createVulvaRenderer(canvas, options = {}) {
     const flowEffect = flowEffects[flow];
     const steadyMotion = !reducedMotion.matches && flowEffect?.repeat;
     const combineElapsed = combineStart === null ? Infinity : now - combineStart;
+    const deflowerElapsed = deflowerStart === null ? Infinity : now - deflowerStart;
+    if (deflowerElapsed >= COMBINE_MS + RECOIL_MS) deflowerStart = null;
+    hymenFrame = deflowerStart !== null
+      ? (deflowerElapsed < HYMEN_TEAR_MS ? { state: 'intact', tension: Math.sin(Math.PI / 2 * deflowerElapsed / HYMEN_TEAR_MS) } : { state: 'torn', tension: 0 })
+      : { state: fields.hymen.value, tension: 0 };
     const look = swordLook(now);
     const twinElapsed = twinSceneStart === null ? Infinity : now - twinSceneStart;
     if (twinElapsed >= COMBINE_MS + ANAL_RESIDUE_MS) twinSceneStart = null;
@@ -2696,7 +2772,7 @@ export function createVulvaRenderer(canvas, options = {}) {
     if (!separateAnus || analElapsed >= ANAL_FIT_END_MS + ANAL_RESIDUE_MS) analFitStart = null;
     const needs = needMotion(now, prolapse);
     const busyOpening = descent > 0 || combineStart !== null || prolapse > 0 || rapid !== null;
-    const stateMotion = steadyMotion || needs.active || combineStart !== null || analFitStart !== null ||
+    const stateMotion = steadyMotion || needs.active || combineStart !== null || analFitStart !== null || deflowerStart !== null ||
       flowStart !== null || recoveryStart !== null || rapid !== null || singleShaft?.moving || look.active || twinScene ||
       (!reducedMotion.matches && (movingMaterials.has(fields['canal-material'].value) ||
         movingMaterials.has(fields['edge-decoration'].value) || animatedOvaries.has(selectedOvaryShape()) ||
@@ -2767,8 +2843,13 @@ export function createVulvaRenderer(canvas, options = {}) {
     } else if (layout === 'pouch') {
       const race = fields['race-preset'].value;
       drawPouchOutlet(outlet.centerY, Math.min(1, pregnancy * .24 + (birthOpening ? .44 : 0)), race);
-      if (birthOpening) drawBirthRim(frontRim, mix(fields.skin.value, basePalette.cavityDeep, .56), fields.tone.value,
-        frontRim.centerY - frontRim.depth - 5, frontRim.rimThickness, ctx, true);
+      if (birthOpening) {
+        const skin = fields.skin.value;
+        const shade = surfaceAccent(skin, mix(skin, basePalette.cavityDeep, .56));
+        const light = surfaceAccent(skin, fields.tone.value, true);
+        drawBirthRim(frontRim, traceAccent(skin, shade), light,
+          frontRim.centerY - frontRim.depth - 5, frontRim.rimThickness, ctx, true);
+      }
       drawDisplacedTissue?.();
       urineOutletY = null;
     } else {
@@ -2810,6 +2891,10 @@ export function createVulvaRenderer(canvas, options = {}) {
       drawFlow(flowEffects.withdrawal, twinElapsed - COMBINE_MS, flowOrigin * frontScale, outlet.centerX);
     } else {
       drawFlow(flowEffect, flowTime, flowOrigin * frontScale, outlet.centerX);
+    }
+    // 破处的血：裂开那一刻起从阴道口滴两滴
+    if (deflowerStart !== null && !anal && layout !== 'pouch' && deflowerElapsed >= HYMEN_TEAR_MS) {
+      drawFlow(flowEffects.hymen, deflowerElapsed - HYMEN_TEAR_MS, flowOrigin * frontScale, outlet.centerX);
     }
     if (urineOutletY !== null && needs.urine.drops > 0) {
       drawUrineDrops(needs.urine, urineOutletY * frontScale);
@@ -2887,13 +2972,14 @@ export function createVulvaRenderer(canvas, options = {}) {
       if (id === 'descent' || id === 'fit') combineStart = twinSceneStart = null;
     }
   }
-  /** 播一段動畫：combine 劍鞘契合、anal-fit 肛門擴張、sword-pulse 射精與外形變化、flow 流出、recovery 產後回縮 */
+  /** 播一段動畫：combine 劍鞘契合、anal-fit 肛門擴張、sword-pulse 射精與外形變化、flow 流出、recovery 產後回縮、deflower 破處 */
   function play(kind, now = clock()) {
     if (kind === 'combine') startCombine(now);
     else if (kind === 'anal-fit') analFitStart = now;
     else if (kind === 'sword-pulse') swordPulseStart = now;
     else if (kind === 'flow') flowStart = now;
     else if (kind === 'recovery') recoveryStart = now;
+    else if (kind === 'deflower') { deflowerStart = now; startCombine(now); }
     if (loop) start();
   }
   function paint(now = clock()) { return render(now); }

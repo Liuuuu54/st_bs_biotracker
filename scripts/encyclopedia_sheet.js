@@ -2,6 +2,10 @@
 import { buildGrowthChartSvg } from './growth_chart.js';
 import { buildRaceEncyclopediaView, getEmbryoTypeReferenceText } from './prompts/rules.js';
 import { raceIconSvg } from './race_icons.js';
+import { OUTLET_LAYOUT_LABELS, getRaceCanalTexture, getRaceOutletLayout, getRaceOutletOptions, getRaceSwordSuggestion } from './race_config.js';
+import { describeOutletLook } from './outlet_look.js';
+import { describeSwordTraits } from './sires.js';
+import { getPouchDefault } from './belly_pouch.js';
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -53,6 +57,38 @@ export function renderSheetHtml({ title, icon = '', tags = [], introduction = ''
     ${extra}`;
 }
 
+// 外口布局写成百科的说法（这一族本来长什么样，不讲系统怎么用）
+const LAYOUT_LORE = Object.freeze({
+  separate: '阴道、尿道与肛门各自分开，与人类相同。',
+  cloaca: '泄殖腔：排泄与生殖共用一个外口，没有独立的肛门。',
+  tube: '产道末端延伸成一根管，交配与生产都经过管口；肛门另外分开。',
+});
+const VARIANT_LORE = Object.freeze({
+  separate: '下身化为人形的个体，外口与人类一样分开。',
+  cloaca: '以鸟、爬虫或虫的真身示人时，外口是泄殖腔。',
+  tube: '带产卵管的个体，产道末端是一根管。',
+});
+
+/**
+ * 生殖器（1.6.0）：这一族的外口、外观、产道、雄性的剑与育儿袋，照外阴分页与子宫剖面用的同一份种族表写成百科的说法。
+ */
+export function buildGenitalSection(race) {
+  const options = getRaceOutletOptions(race);
+  const layout = options[0];
+  const variants = options.slice(1).map((value) => VARIANT_LORE[value]).filter(Boolean);
+  const look = describeOutletLook({ race });
+  const texture = getRaceCanalTexture(race);
+  const sword = describeSwordTraits(getRaceSwordSuggestion(race));
+  const rows = [
+    { label: '外口', value: OUTLET_LAYOUT_LABELS[layout], note: [LAYOUT_LORE[layout], ...variants].join('') },
+    ...(look ? [{ label: '外观', value: `${look}。` }] : []),
+    { label: '产道', value: texture ? texture.replace(/（.*）$/, '') : '血肉', note: texture ? `内壁是${texture.replace(/^[^（]*（|）$/g, '')}，不是湿热的肉壁。` : '内壁是柔软的肉褶。' },
+    { label: '雄性', value: sword ? `${sword}。` : '与人类相仿。' },
+    ...(getPouchDefault(race) === 'on' ? [{ label: '育儿袋', value: '有', note: '雌性下腹有一道袋口，幼体出生后在袋里长大，到能离袋为止。' }] : []),
+  ];
+  return { title: '生殖器', rows };
+}
+
 /** 物种资料卡；生长型那一栏附胎量曲线，胚型的长篇设定收在折叠段落 */
 export function renderRaceSheetHtml(race) {
   const view = buildRaceEncyclopediaView(race);
@@ -73,7 +109,7 @@ export function renderRaceSheetHtml(race) {
       rows: section.rows.map((row) => (row.chart === 'growth'
         ? { ...row, chartHtml: `<div class="bs-bt-sheet-chart">${buildGrowthChartSvg(view.growthShape)}<small class="bs-bt-sheet-note">实线是这一族，虚线是人类型；横线是足月的胎量。</small></div>` }
         : row)),
-    })),
+    })).concat([buildGenitalSection(race)]),
     extra: loreHtml,
   });
 }

@@ -127,7 +127,7 @@ export const BODY_TRANSFORMS = Object.freeze(['gainSword', 'loseSword', 'gainWom
 const BODY_TRANSFORM_TEXT = Object.freeze({ gainSword: '长出了阴茎', loseSword: '失去了阴茎', gainWomb: '长出了子宫', loseWomb: '失去了子宫' });
 
 /** 转化经历一笔：{ time, from, to, kind, source, sourceKind, method }；身体转化 kind='body' 另带 body */
-export function buildDerivedTransformRecord({ time = '', from = null, to = null, kind, body = null, partner = '', content = '', minutesPassed = 0 } = {}) {
+export function buildDerivedTransformRecord({ time = '', from = null, to = null, kind, body = null, partner = '', content = '', minutesPassed = 0, outletLayout = null } = {}) {
   const source = String(partner || '').trim();
   return {
     time: String(time || '').trim(),
@@ -136,6 +136,8 @@ export function buildDerivedTransformRecord({ time = '', from = null, to = null,
     to: to || null,
     kind,
     ...(kind === 'body' && BODY_TRANSFORMS.includes(body) ? { body } : {}),
+    // 长出子宫时剧情写明的外口布局（1.6.0）
+    ...(kind === 'body' && body === 'gainWomb' && outletLayout ? { outletLayout } : {}),
     ...(source ? { source, sourceKind: 'person' } : { sourceKind: 'other' }),
     method: String(content || '').trim(),
   };

@@ -31,7 +31,7 @@ test('资料卡 HTML：附胎量曲线与胚型设定，文字经过跳脱', () 
   assert.match(html, /胚型设定：胎生/);
   assert.match(html, /<svg/, '族谱图示');
   // 每一组都是折叠段落，预设收起
-  assert.equal((html.match(/<details/g) || []).length, 6);
+  assert.equal((html.match(/<details/g) || []).length, 7, '五组参数、生殖器、胚型设定');
   assert.ok(!/<details[^>]* open/.test(html), '预设都不展开');
   const escaped = renderSheetHtml({ title: '<b>x</b>', tags: ['"q"'], sections: [{ title: 's', rows: [{ label: 'a', value: '<i>', note: '&' }] }] });
   assert.ok(!escaped.includes('<b>x</b>') && escaped.includes('&lt;b&gt;') && escaped.includes('&amp;'));

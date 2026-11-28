@@ -24,13 +24,16 @@ export function getPouchDefault(race, bloodline = null) {
   return POUCH_DEFAULT_RACES.has(name) ? 'on' : 'off';
 }
 
+/** 角色有没有育儿袋：注册时决定的 base.pouch（布林），没填照种族 */
+export function hasPouch(base = {}) {
+  return typeof base?.pouch === 'boolean' ? base.pouch : getPouchDefault(base?.race, base?.bloodline) === 'on';
+}
+
 /**
- * 特写要不要画育儿袋、袋里有什么。display.pouch 是外观子页的选择（null 照种族）；
- * 只有产后恢复期、这次有活产（base.pouchBrood）时袋里有幼体。没有袋回传 null。
+ * 特写要不要画育儿袋、袋里有什么。只有产后恢复期、这次有活产（base.pouchBrood）时袋里有幼体。没有袋回传 null。
  */
-export function getPouchView(base = {}, display = {}) {
-  const choice = display?.pouch === 'on' || display?.pouch === 'off' ? display.pouch : getPouchDefault(base.race, base.bloodline);
-  if (choice !== 'on') return null;
+export function getPouchView(base = {}) {
+  if (!hasPouch(base)) return null;
   const brood = base.stage === '产后恢复' && base.pouchBrood && Number(base.pouchBrood.count) >= 1
     ? { count: Math.round(Number(base.pouchBrood.count)), kind: ['fetus', 'egg', 'blob'].includes(base.pouchBrood.kind) ? base.pouchBrood.kind : 'fetus' }
     : null;

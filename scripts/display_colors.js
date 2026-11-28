@@ -34,6 +34,20 @@ export const DISPLAY_NIPPLE_PRESETS = Object.freeze([
   Object.freeze({ color: '#b8323e', label: '血红' }),
 ]);
 
+/**
+ * 外阴的两条外观拉杆（1.6.0，外阴分页）：0–100，50 是预设（存 null）。只影响画面，不送提示词，不跟状态走。
+ * 成熟度：未熟感（亮暗往底色收，淡而平）↔ 熟成（亮处更亮、暗处更深）；外观痕迹：未经人事（褶线淡）↔ 千人斩（褶线深）。
+ */
+export const DISPLAY_VULVA_SCALES = Object.freeze([
+  Object.freeze({ key: 'vulvaMaturity', label: '成熟度', low: '未熟感', high: '熟成' }),
+  Object.freeze({ key: 'vulvaTraces', label: '外观痕迹', low: '未经人事', high: '千人斩' }),
+]);
+const normalizeScale = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Math.round(Number(value));
+  return Number.isFinite(number) && number >= 0 && number <= 100 && number !== 50 ? number : null;
+};
+
 /** 乳晕与乳头的大小（一起缩放）：倍率 */
 export const DISPLAY_NIPPLE_SIZES = Object.freeze([
   Object.freeze({ value: 0.75, label: '小' }),
@@ -58,10 +72,14 @@ export const DISPLAY_NAVEL_SIZES = Object.freeze([
   Object.freeze({ value: 'large', label: '大' }),
 ]);
 
-/** 育儿袋（1.6.0）：预设照种族（getPouchDefault），选回种族预设就存 null */
-export const DISPLAY_POUCH = Object.freeze([
-  Object.freeze({ value: 'on', label: '有' }),
-  Object.freeze({ value: 'off', label: '没有' }),
+/** 肛门造型（1.6.0，外阴分页）：预设依布局（null）；只影响画面，不送提示词，所以随时可改 */
+export const DISPLAY_ANUS_SHAPES = Object.freeze([
+  Object.freeze({ value: 'auto', label: '依布局' }),
+  Object.freeze({ value: 'small', label: '小型' }),
+  Object.freeze({ value: 'large', label: '大型・厚口缘' }),
+  Object.freeze({ value: 'claude', label: '放射褶' }),
+  Object.freeze({ value: 'gpt', label: '六股结环褶' }),
+  Object.freeze({ value: 'gemini', label: '四芒褶' }),
 ]);
 
 /**
@@ -98,6 +116,8 @@ export function normalizeDisplay(display) {
     navelSize: pick(DISPLAY_NAVEL_SIZES, source.navelSize),
     // 1.4.3 开发中用过的 auto 当成下腹
     stretchMarks: pick(DISPLAY_STRETCH_MARKS, source.stretchMarks === 'auto' ? 'lower' : source.stretchMarks),
-    pouch: pick(DISPLAY_POUCH, source.pouch),
+    anusShape: source.anusShape === 'auto' ? null : pick(DISPLAY_ANUS_SHAPES, source.anusShape),
+    vulvaMaturity: normalizeScale(source.vulvaMaturity),
+    vulvaTraces: normalizeScale(source.vulvaTraces),
   };
 }

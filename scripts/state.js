@@ -461,7 +461,7 @@ function normalizeOutfitState(value, wardrobe) {
 export const VISUAL_CUE_TYPES = Object.freeze([
   'insert', 'insertCondom', 'ejaculate', 'ejaculateCondom', 'condomBreak', 'condomOverflow', 'ovulation',
   'fertilization', 'surrogacy', 'chimera', 'rebirth',
-  'implantation', 'implantationFailed', 'rupture', 'falseContraction',
+  'implantation', 'implantationFailed', 'rupture', 'falseContraction', 'deflower',
   // 只在孕体特写上演的（子宫图不演）：高潮、两胎互动
   'orgasm', 'siblingKick', 'siblingShove', 'siblingCuddle',
 ]);
@@ -472,6 +472,8 @@ const VISUAL_CUE_PRIORITY = Object.freeze({
   rupture: 8,
   condomBreak: 7, condomOverflow: 7,
   ejaculate: 6, ejaculateCondom: 6,
+  // 破处是一次插入，盖过一般插入（1.6.0）
+  deflower: 5.5,
   insert: 5, insertCondom: 5,
   ovulation: 4, fertilization: 4, surrogacy: 4, chimera: 4, rebirth: 4, implantation: 4, implantationFailed: 4,
   orgasm: 3,
@@ -549,6 +551,10 @@ export function normalizeCharacterPsychologyState(characterState) {
   if (characterState.profile.base.penetrationLocked !== undefined
     && !(characterState.profile.base.penetrationLocked === true && characterState.profile.base.penetrationState === 'spent')) {
     delete characterState.profile.base.penetrationLocked;
+  }
+  // 育儿袋（1.6.0）：注册时决定的布林，没填照种族
+  if (characterState.profile.base.pouch !== undefined && typeof characterState.profile.base.pouch !== 'boolean') {
+    delete characterState.profile.base.pouch;
   }
   // 育儿袋里的幼体（1.6.0）：只在产后恢复期留着，格式不对就不存
   const pouchBrood = characterState.profile.base.pouchBrood;
@@ -1060,7 +1066,7 @@ export function createDefaultFemaleState(name = '') {
         prolapse: false,
       },
       // 显示用的外观（1.4.3）：孕体特写的肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设；只给画面用，不送提示词
-      display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, pouch: null },
+      display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, anusShape: null, vulvaMaturity: null, vulvaTraces: null },
     },
   };
   return syncCharacterStageFromProfile(normalizeCharacterPsychologyState(character));
@@ -2439,7 +2445,7 @@ function createSnapshotCharacterBaseline(name = '') {
         prolapse: false,
       },
       // 显示用的外观（1.4.3）：孕体特写的肤色、乳头色、乳晕大小、肚脐、妊娠纹，null 照预设；只给画面用，不送提示词
-      display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, pouch: null },
+      display: { skinColor: null, nippleColor: null, nippleSize: null, navel: null, navelSize: null, stretchMarks: null, anusShape: null, vulvaMaturity: null, vulvaTraces: null },
     },
   };
 }

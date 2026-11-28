@@ -18,7 +18,7 @@ import { clampIndividualBodySize, getExpectedBodySize, normalizeSheathOffset, no
 import { findSeasonReference } from './season_phase.js';
 import { BUST_GAIN_MAX, HIP_GAIN_MAX, sampleBodyTraits } from './maternal_body.js';
 import { descriptionListToObject, normalizeDescriptionList } from './descriptions.js';
-import { SWORD_SHAFTS, SWORD_TIPS, getSireRecord, normalizeSpermQuality, pruneFutaSireRecord } from './sires.js';
+import { SEMEN_VOLUMES, SWORD_SHAFTS, SWORD_TIPS, getSireRecord, normalizeSpermQuality, pruneFutaSireRecord } from './sires.js';
 import {
   buildEmptyPsychologyGroup,
   normalizePsychologyGroup,
@@ -39,6 +39,7 @@ import {
   getRecoveryCoefficientByRace,
   getRaceComponents,
   getRaceDescriptorComponents,
+  getRaceOutletOptions,
   parseRaceDescriptor,
   rollCompanionEggCount,
 } from './race_config.js';
@@ -653,6 +654,8 @@ export function sanitizeSireExtractionResult(result) {
       ? null
       : normalizeSwordOffset(value.swordOffset),
     spermQuality: Number.isFinite(quality) && quality > 0 ? normalizeSpermQuality(quality) : null,
+    // 精量（1.6.0）：只收五档，没写给 null（保留档案原本的）
+    semenVolume: SEMEN_VOLUMES.includes(Number(value.semenVolume)) ? Number(value.semenVolume) : null,
     // 剑的外形与锁住（1.6.0）：只收设定写到的项，没写的留给档案原本的值
     sword: sanitizeSwordExtraction(value.sword),
     isHere: value.isHere !== false,
@@ -1442,6 +1445,17 @@ function sanitizeRegistryProfile(profile, baseProfile, nowMinutes = 0, { previou
     if (profile.base.sheathOffset !== undefined && profile.base.sheathOffset !== null) {
       nextBase.sheathOffset = normalizeSheathOffset(profile.base.sheathOffset);
     }
+    // 外口布局与育儿袋（1.6.0）：注册时决定、之后锁住；布局只收种族的可选范围，选到预设就不存（照种族）
+    if (profile.base.outletLayout !== undefined && profile.base.outletLayout !== null) {
+      const options = getRaceOutletOptions(nextBase.race ?? baseProfile.base.race, nextBase.bloodline ?? baseProfile.base.bloodline ?? null);
+      const layout = String(profile.base.outletLayout).trim();
+      if (options.includes(layout)) {
+        // 选回预设给 null：重新注册时把旧的覆写清掉，正规化时删掉
+        if (layout === options[0]) nextBase.outletLayout = null;
+        else nextBase.outletLayout = layout;
+      }
+    }
+    if (typeof profile.base.pouch === 'boolean') nextBase.pouch = profile.base.pouch;
     // 身材（1.3.1）：模型照角色卡填，没写就省略；给了就夹值
     for (const [key, min, max] of REGISTRY_BODY_FIELDS) {
       const value = profile.base[key];
@@ -2353,6 +2367,13 @@ export async function runRegistry(ctx, options = {}) {
       result.profile = result.profile && typeof result.profile === 'object' ? result.profile : {};
       result.profile.base = result.profile.base && typeof result.profile.base === 'object' ? result.profile.base : {};
       result.profile.base.sheathOffset = Number(options.sheathOffset);
+    }
+    // 外口布局与育儿袋（1.6.0）：注册页选了就以使用者为准（布局照样只收种族的可选范围）
+    if (options.outletLayout || typeof options.pouch === 'boolean') {
+      result.profile = result.profile && typeof result.profile === 'object' ? result.profile : {};
+      result.profile.base = result.profile.base && typeof result.profile.base === 'object' ? result.profile.base : {};
+      if (options.outletLayout) result.profile.base.outletLayout = String(options.outletLayout);
+      if (typeof options.pouch === 'boolean') result.profile.base.pouch = options.pouch;
     }
     // 卵子品质拉杆（1.5.3）：勾了就盖过模型
     if (options.eggQuality !== null && options.eggQuality !== undefined && Number.isFinite(Number(options.eggQuality))) {

@@ -345,6 +345,8 @@ export function computeUterusLayout(profile, options = {}) {
     appearance: options.appearance || null,
     // 精方的剑射精后锁住（1.6.0）：{ knot } 有球结时入口卡一颗黑影球，没有时入口一圈收紧的亮边
     lock: base.penetrationLocked === true ? { knot: options.lockKnot === true } : null,
+    // 处女膜（1.6.0）：'intact' 完整、'torn' 殘痕、null 不画（孕夫不画，照 experience.virginity）
+    hymen: options.hymen === 'intact' || options.hymen === 'torn' ? options.hymen : null,
     wallInset,
     pressureRatio,
     pressureLevel,

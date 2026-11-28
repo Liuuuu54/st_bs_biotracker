@@ -20,7 +20,8 @@ function setup(stage, over = {}) {
       },
       bio: { birthDifficulty: 1, breedTolerance: 1, gestationSpeciesSpeed: 1, orgasmOvulationAmount: 2, impregnationDifficulty: 1, ...over.bio },
       pregnant: { pregnantDays: 0, effectivePregnantDays: 0, fetusesCount: 0, fetuses: [], ...over.pregnant },
-      cooldown: {}, experience: {}, immune: {}, metabolism: {}, skills: [], talents: [], children: [], notify: {},
+      // 预设不是处女（第一次插入会演破处，见下面那条测试）
+      cooldown: {}, experience: { virginity: '前任', ...over.experience }, immune: {}, metabolism: {}, skills: [], talents: [], children: [], notify: {},
     },
   };
   return chatState;
@@ -182,4 +183,20 @@ test('同一轮里顺位低的画面事件不盖掉顺位高的；隔了一轮�
   const old = { visualCue: { type: 'rupture', seq: 7 } };
   setVisualCue(old, 'orgasm', { now: 5 });
   assert.deepEqual(old.visualCue, { type: 'orgasm', seq: 8, at: 5 });
+});
+
+test('第一次插进产道演破处，之后照一般插入；肛交不算', () => {
+  const virgin = setup('卵泡期', { experience: { virginity: null } });
+  assert.equal(call(virgin, 'bsAddSperm', { male: 'M', race: '人类', action: 'insert', amount: 0 }).applied, true);
+  assert.equal(cue(virgin).type, 'deflower');
+  assert.equal(P(virgin).experience.virginity, 'M');
+  assert.equal(call(virgin, 'bsAddSperm', { male: 'M', race: '人类', action: 'withdraw', amount: 0 }).applied, true);
+  // 同一轮里顺位低的事件不盖掉破处，这里当成下一轮
+  delete P(virgin).visualCue;
+  assert.equal(call(virgin, 'bsAddSperm', { male: 'M', race: '人类', action: 'insert', amount: 0 }).applied, true);
+  assert.equal(cue(virgin).type, 'insert');
+  const anal = setup('卵泡期', { experience: { virginity: null } });
+  assert.equal(call(anal, 'bsAddSperm', { male: 'M', race: '人类', action: 'insert', amount: 0, channel: 'anal' }).applied, true);
+  assert.equal(P(anal).experience.virginity ?? null, null);
+  assert.notEqual(cue(anal)?.type, 'deflower');
 });

@@ -1381,6 +1381,26 @@ export function getRaceOutletLayout(race, bloodline = null, motherRace = null, m
   return BUILTIN_OUTLET_LAYOUT[getBaseRaceName(dominant || race)] || "separate";
 }
 
+/**
+ * 注册时可选的外口布局（1.6.0，使用者 2026-11-28）：种族预设，加上少数个体差异。
+ * - 分离开口每族都能选（角色卡写明下身是人形，例如拉弥亚化出人腿）。
+ * - 下面这几族另可选泄殖腔或管状（真身是鸟、爬虫或虫的形态，见 plan/REPRODUCTIVE_LAYOUT_RACE_MATRIX.md）。
+ * 阴茎分娩与肛门分娩只给孕夫（身体转化），注册时不能选。范围外的组合等使用者要求再开。
+ */
+const EXTRA_OUTLET_OPTIONS = Object.freeze({
+  cloaca: ["雷鸟", "凤凰", "西方龙", "东方龙", "羽蛇", "海德拉", "群居虫人", "独居虫人", "怪虫类", "双生螳螂"],
+  tube: ["怪虫类", "独居虫人"],
+});
+export const REGISTRY_OUTLET_LAYOUTS = Object.freeze(["separate", "cloaca", "tube"]);
+
+/** 这个种族注册时可选的外口布局，第一个是预设 */
+export function getRaceOutletOptions(race, bloodline = null) {
+  const preset = getRaceOutletLayout(race || "人类", bloodline);
+  const name = getBaseRaceName(pickDominantRaceName(race || "人类", bloodline) || race || "人类");
+  const options = [preset, "separate", ...Object.entries(EXTRA_OUTLET_OPTIONS).filter(([, races]) => races.includes(name)).map(([layout]) => layout)];
+  return [...new Set(options)];
+}
+
 /** 角色当下的外口布局：base.outletLayout 有填就照填，没填照种族 */
 export function getCharacterOutletLayout(base) {
   return normalizeOutletLayout(base?.outletLayout) || getRaceOutletLayout(base?.race || "人类", base?.bloodline || null);

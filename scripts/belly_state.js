@@ -188,7 +188,7 @@ export function resolveBellyCuePair(cue, fetuses) {
 
 export function getBellyCueAction(type) {
   if (type === 'falseContraction') return { trigger: 'falseContraction' };
-  if (type === 'insert' || type === 'insertCondom') return { trigger: 'thrust', options: { count: 3 } };
+  if (type === 'insert' || type === 'insertCondom' || type === 'deflower') return { trigger: 'thrust', options: { count: 3 } };
   if (type === 'ejaculate' || type === 'ejaculateCondom' || type === 'condomBreak' || type === 'condomOverflow') return { trigger: 'thrust', options: { count: 1 } };
   if (type === 'orgasm') return { trigger: 'orgasm' };
   // 两胎互动：事件记了是哪两胎就照着演（见 resolveBellyCuePair），没记时由呼叫端挑两胎

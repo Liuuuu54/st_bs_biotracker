@@ -618,6 +618,14 @@
                   <input type="range" data-role="range" min="-1" max="1" step="0.25" value="0" disabled aria-label="手动指定鞘偏移" />
                   <div class="bs-bt-gestation-slider-scale"><span>浅 −1</span><span>0</span><span>深 +1</span></div>
                 </div>
+                <div class="settings_section" title="产道从哪个口出来。注册后锁住（会影响正文描写），之后只有重新注册或剧情里的身体转化会改。选项照种族的可选范围">
+                  <label for="bs-bt-register-outlet">外口布局</label>
+                  <select id="bs-bt-register-outlet" class="text_pole"></select>
+                </div>
+                <div class="settings_section" title="下腹的育儿袋：产后恢复期幼体在袋里时下腹鼓起。注册后锁住">
+                  <label for="bs-bt-register-pouch">育儿袋</label>
+                  <select id="bs-bt-register-pouch" class="text_pole"></select>
+                </div>
                 <div id="bs-bt-register-egg-quality" class="settings_section bs-bt-gestation-slider" data-override-slider data-scale="log2" title="卵子品质的个人基准：每开一轮周期在这附近掷一次；这一轮的品质决定着床、胎儿起始健康与胎重、周期乱不乱。不勾就交给模型照角色卡判断（没写照活力等级）">
                   <div class="bs-bt-gestation-slider-head">
                     <label class="bs-bt-gestation-slider-freeze"><input type="checkbox" data-role="manual" /> 手动指定卵子品质</label>
@@ -837,6 +845,18 @@
                 </div>
                 <input type="range" data-role="range" min="-2" max="2" step="0.5" value="0" disabled aria-label="手动指定剑偏移" />
                 <div class="bs-bt-gestation-slider-scale"><span>小 −2</span><span>0</span><span>大 +2</span></div>
+              </div>
+
+              <div class="settings_section" title="每次射精量是同体型的人的几倍（体型大的本来就射得多）。模型照平常给量，系统乘上这个倍率；之后可在变量页改">
+                <label for="bs-bt-sire-volume">精量</label>
+                <select id="bs-bt-sire-volume" class="text_pole">
+                  <option value="">交给模型</option>
+                  <option value="0.5">少 ×0.5</option>
+                  <option value="1">一般 ×1</option>
+                  <option value="2">多 ×2</option>
+                  <option value="4">很多 ×4</option>
+                  <option value="8">夸张 ×8</option>
+                </select>
               </div>
 
               <div id="bs-bt-sire-birthday" class="settings_section bs-bt-gestation-slider bs-bt-birthday-picker" data-birthday-picker hidden title="生日（设了对话历法才有）：不勾就照角色卡，卡上没写由系统在这一岁里随机落一天；勾了预填一个掷出来的日子，可重掷或自己改；扶她的生日在卵方那份">

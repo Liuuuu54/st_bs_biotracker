@@ -19,20 +19,19 @@ const layout = createBellyLayout(data);
 const painter = createBellyPainter(layout);
 const BODY = { sigma: 0, cup: 50, build: 50, hip: 50, count: 1, weight: 1, births: 1, milk: 40, libido: 10, laborPhase: 'none', showBra: true, showShorts: true, strapless: true, navel: 'pop' };
 
-test('种族预设：袋兽族、甲壳族与奇美拉系有袋，子项照基种族；外观子页可以改', () => {
+test('种族预设：袋兽族、甲壳族与奇美拉系有袋，子项照基种族；注册时可以改', () => {
   for (const race of ['袋兽族', '袋兽族-袋鼠', '奇美拉', '白泽', '枭熊', '甲壳族']) assert.equal(getPouchDefault(race), 'on', race);
   for (const race of ['人类', '原兽族', '梦貘', '东方龙']) assert.equal(getPouchDefault(race), 'off', race);
-  assert.equal(getPouchView({ race: '人类' }, {}), null);
-  assert.deepEqual(getPouchView({ race: '人类' }, { pouch: 'on' }), { brood: null });
-  assert.equal(getPouchView({ race: '奇美拉' }, { pouch: 'off' }), null);
-  assert.equal(normalizeDisplay({ pouch: 'on' }).pouch, 'on');
-  assert.equal(normalizeDisplay({ pouch: true }).pouch, null);
+  assert.equal(getPouchView({ race: '人类' }), null);
+  assert.deepEqual(getPouchView({ race: '人类', pouch: true }), { brood: null });
+  assert.equal(getPouchView({ race: '奇美拉', pouch: false }), null);
+  assert.equal('pouch' in normalizeDisplay({ pouch: 'on' }), false, '育儿袋不在外观子页');
 });
 
 test('袋里的幼体只在产后恢复期；格式不对或不在产后恢复就清掉', () => {
   const brood = { count: 2, kind: 'egg' };
-  assert.deepEqual(getPouchView({ race: '奇美拉', stage: '产后恢复', pouchBrood: brood }, {}).brood, brood);
-  assert.equal(getPouchView({ race: '奇美拉', stage: '卵泡期', pouchBrood: brood }, {}).brood, null);
+  assert.deepEqual(getPouchView({ race: '奇美拉', stage: '产后恢复', pouchBrood: brood }).brood, brood);
+  assert.equal(getPouchView({ race: '奇美拉', stage: '卵泡期', pouchBrood: brood }).brood, null);
   const ch = state.createDefaultFemaleState('A');
   Object.assign(ch.profile.base, { stage: '产后恢复', pouchBrood: brood });
   state.normalizeCharacterPsychologyState(ch);

@@ -160,3 +160,21 @@ test('流出：破水后续流＞经血＞浸满＞灌满；肛内残精只在�
   assert.equal(params(setup({ analSemen: 12, race: '蛇人' }))['anal-residue'], 'off', '泄殖腔的肛门就是产道');
   assert.equal(params(setup())['anal-residue'], 'off');
 });
+
+test('外阴的两条外观拉杆：成熟度与外观痕迹照外观子页，没设是 50', () => {
+  const chat = setup();
+  assert.deepEqual([params(chat)['visual-maturity'], params(chat)['visual-traces']], ['50', '50']);
+  chat.characters.A.profile.display = { vulvaMaturity: 20, vulvaTraces: 95 };
+  assert.deepEqual([params(chat)['visual-maturity'], params(chat)['visual-traces']], ['20', '95']);
+});
+
+test('处女膜：分离开口、泄殖腔、管状都画，孕夫不画；处女完整、有初次对象剩殘痕', async () => {
+  const { getHymenState } = await import('../scripts/vulva_params.js');
+  const chat = setup();
+  chat.characters.A.profile.experience = { ...(chat.characters.A.profile.experience || {}), virginity: null };
+  assert.equal(params(chat).hymen, 'intact');
+  chat.characters.A.profile.experience.virginity = '乙';
+  assert.equal(params(chat).hymen, 'torn');
+  assert.equal(getHymenState(setup({ race: '蛇人' }).characters.A.profile), 'intact', '泄殖腔也有');
+  assert.equal(getHymenState(setup({ outletLayout: 'anal' }).characters.A.profile), 'none', '孕夫不画');
+});

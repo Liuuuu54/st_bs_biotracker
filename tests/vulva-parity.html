@@ -58,6 +58,12 @@ for (const shape of ['small', 'large', 'claude', 'gpt', 'gemini']) cases.push({ 
 for (const shape of ['claude', 'gpt', 'gemini']) cases.push({ label: `男孕 肛門 ${shape} 宮脫2`, values: { 'race-preset': '人類', layout: 'anal', 'anus-shape': shape, prolapse: '2' } });
 cases.push({ label: '男孕 管狀尿道分娩', values: { 'race-preset': '人類', layout: 'tube', 'sire-form': 'urethral' } });
 cases.push({ label: '自然分娩 3 次 恢復 30%', values: { 'race-preset': '人類', parity: '3', recovery: '30' } });
+cases.push({ label: '處女膜 完整', values: { 'race-preset': '人類', hymen: 'intact' } });
+cases.push({ label: '處女膜 殘痕', values: { 'race-preset': '人類', hymen: 'torn' } });
+cases.push({ label: '泄殖腔 處女膜 完整', values: { 'race-preset': '蛇人', hymen: 'intact' } });
+cases.push({ label: '袋獸口 處女膜 殘痕', values: { 'race-preset': '奇美拉', hymen: 'torn' } });
+cases.push({ label: '管狀 處女膜 完整', values: { 'race-preset': '鬣狗族', hymen: 'intact' } });
+cases.push({ label: '成熟度低 痕跡高', values: { 'race-preset': '人類', 'visual-maturity': '10', 'visual-traces': '95' } });
 
 let pass = 0;
 const lines = [];

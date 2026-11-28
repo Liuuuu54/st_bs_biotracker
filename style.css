@@ -7028,8 +7028,11 @@
 #bs-biotracker-settings .bs-bt-color-title { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; margin-bottom: 6px; font-weight: 600; white-space: nowrap; }
 #bs-biotracker-settings .bs-bt-color-title .bs-bt-inline-status { white-space: normal; }
 #bs-biotracker-settings .bs-bt-color-title .bs-bt-inline-status { font-weight: normal; margin: 0; }
-#bs-biotracker-settings .bs-bt-color-swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-#bs-biotracker-settings .bs-bt-color-swatch { width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 2px solid var(--bsbt-border-color, currentColor); cursor: pointer; }
+/* 色票一列放不下就换行；外层都不撑宽（窄萤幕、字体放大时最右边那颗不会被裁掉） */
+#bs-biotracker-settings #bs-bt-full-state-appearance,
+#bs-biotracker-settings .bs-bt-color-group { min-width: 0; max-width: 100%; box-sizing: border-box; }
+#bs-biotracker-settings .bs-bt-color-swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; max-width: 100%; padding: 3px; box-sizing: border-box; }
+#bs-biotracker-settings .bs-bt-color-swatch { flex: 0 0 auto; width: 28px; height: 28px; min-width: 0; margin: 0; padding: 0; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--bsbt-border-color, currentColor); cursor: pointer; }
 #bs-biotracker-settings .bs-bt-color-swatch.is-active { outline: 2px solid var(--bsbt-lcd-text, currentColor); outline-offset: 2px; }
 #bs-biotracker-settings .bs-bt-color-custom { display: inline-flex; gap: 4px; align-items: center; font-size: 0.85em; cursor: pointer; }
 #bs-biotracker-settings .bs-bt-color-custom input[type="color"] { width: 30px; height: 30px; padding: 0; border: none; background: none; cursor: pointer; }

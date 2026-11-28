@@ -20,6 +20,10 @@ export const EMOTE_MS = 1400;
 const RUPTURE_MS = 2800;
 /** 子宫图不演的画面事件：假宫缩交给 1.4.0 孕体特写（子宫图已随宫压反映收缩） */
 const UTERUS_SILENT_CUES = new Set(['falseContraction', 'orgasm', 'siblingKick', 'siblingShove', 'siblingCuddle']);
+// 会让剑插进产道的演出（破处也是一次插入）
+const INSERT_CUES = new Set(['insert', 'insertCondom', 'deflower']);
+// 破处：剑头先顶着膜（膜绷亮），这时裂开，之后剑照常插进去、膜剩殘痕、入口滴两三滴血
+const HYMEN_TEAR_MS = 420;
 
 function hexToRgb(hex) {
   const value = String(hex || '').trim().replace('#', '');
@@ -574,6 +578,8 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     ctx.restore();
     drawCue(tick);
     if (!cue && layout.lock) drawLock();
+    // 处女膜（1.6.0）：插入与破处的演出自己画，其余时候照状态（完整或殘痕）
+    if (layout.hymen && !(cue && INSERT_CUES.has(cue.type))) drawHymen(layout.hymen);
     // 刻度与超出显示数
     for (let i = 0; i < 8; i += 1) {
       // (左边那排刻度拿掉了：位置让给精液容量的量尺)
@@ -624,6 +630,46 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       pen.px(womb.cx + half + 1, mouth - 1, 2, 3, P.shine);
     }
     return headY;
+  }
+
+  /** 处女膜那一列：阴道口往里 6 格（剑头顶在入口时就在它下面） */
+  function hymenRow() {
+    return Math.min(UTERUS_CANVAS.height - 1, layout.tract.canalBottom) - 6;
+  }
+
+  /**
+   * 处女膜（1.6.0）：intact 横过产道的一层薄膜、中间一格小孔；tense 被剑头顶着往里鼓、绷亮；torn 两侧各剩一点殘痕。
+   */
+  function drawHymen(state) {
+    const { womb, tract } = layout;
+    const row = hymenRow();
+    const left = womb.cx - 3;
+    const width = 6 + (tract.canalLoose || 0);
+    const membrane = mixColor(P.wallLight, P.shine, 0.3);
+    if (state === 'intact') {
+      pen.px(left, row, width, 1, membrane);
+      pen.px(womb.cx, row, 1, 1, P.cavityDeep);
+    } else if (state === 'tense') {
+      pen.px(left, row, 1, 1, membrane);
+      pen.px(left + width - 1, row, 1, 1, membrane);
+      pen.px(left + 1, row - 1, width - 2, 1, P.shine);
+    } else if (state === 'torn') {
+      pen.px(left, row, 1, 1, P.wallLight);
+      pen.px(left + width - 1, row, 1, 1, P.wallLight);
+    }
+  }
+
+  /** 破处的血：从膜那一列往阴道口外滴两三滴 */
+  function drawHymenBlood(elapsed) {
+    const { womb, tract } = layout;
+    const row = hymenRow();
+    const end = Math.min(119, tract.canalBottom + 6);
+    for (let i = 0; i < 3; i += 1) {
+      const age = elapsed - i * 260;
+      if (age < 0 || age > 1200) continue;
+      const y = Math.round(row + 1 + (end - row - 1) * Math.min(1, age / 1000));
+      pen.px(womb.cx - 2 + i * 2, y, 1, 2, P.blood);
+    }
   }
 
   /**
@@ -1132,7 +1178,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
    * 极不相称以上、或鞘比剑大时够不到。
    */
   function cervixTouch(tick) {
-    if (!cue || (cue.type !== 'insert' && cue.type !== 'insertCondom')) return false;
+    if (!cue || !INSERT_CUES.has(cue.type)) return false;
     const fit = layout.penetrationFit;
     const elapsed = tick - cue.start;
     if (elapsed < 0 || elapsed > CUE_MS) return false;
@@ -1150,7 +1196,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
   /** 明显不合（剑大）的插入，三段挤进去之后每次顶到底的那几格 */
   function cervixHit(tick) {
     const fit = layout.penetrationFit;
-    if (!cue || (cue.type !== 'insert' && cue.type !== 'insertCondom') || !fit || fit.direction <= 0 || fit.tier !== 2) return false;
+    if (!cue || !INSERT_CUES.has(cue.type) || !fit || fit.direction <= 0 || fit.tier !== 2) return false;
     const elapsed = tick - cue.start;
     const phase = Math.floor(elapsed / 180) % 4;
     return elapsed >= 3 * 420 && elapsed <= CUE_MS && (phase === 1 || phase === 2);
@@ -1521,7 +1567,19 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
     if (elapsed > limit) { cue = null; return; }
     const { womb, tract } = layout;
     if (cue.type === 'rupture') drawRupture(elapsed);
-    else if (cue.type === 'insert' || cue.type === 'insertCondom') {
+    else if (cue.type === 'deflower' && elapsed < HYMEN_TEAR_MS + 600) {
+      // 破处：先顶着膜，裂开后剑一路送到最深处
+      const row = hymenRow();
+      if (elapsed < HYMEN_TEAR_MS) {
+        shaft(row + 1);
+        drawHymen('tense');
+      } else {
+        const progress = Math.min(1, (elapsed - HYMEN_TEAR_MS) / 600);
+        shaft(row + 1 + (reachOf() - row - 1) * progress);
+        drawHymen('torn');
+      }
+      if (elapsed >= HYMEN_TEAR_MS) drawHymenBlood(elapsed - HYMEN_TEAR_MS);
+    } else if (INSERT_CUES.has(cue.type)) {
       const phase = Math.floor(elapsed / 180) % 4;
       const fit = layout.penetrationFit;
       const condom = cue.type === 'insertCondom';
@@ -1606,6 +1664,11 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       }
       if (elapsed < CONDOM_INSET_MS) cueInset('condomOverflow', elapsed);
     } else cueInset(cue.type, elapsed);
+    // 破处的后半段照一般插入抽送，膜的殘痕与血一直画到演出结束
+    if (cue.type === 'deflower' && elapsed >= HYMEN_TEAR_MS + 600) {
+      drawHymen('torn');
+      drawHymenBlood(elapsed - HYMEN_TEAR_MS);
+    }
   }
 
   // ---- 播放控制 ----
@@ -1677,7 +1740,7 @@ export function createUterusRenderer(canvas, { theme = {}, animated = true } = {
       cue = { type, start: performance.now() };
       // 剑比鞘大的插入把产道撑开，演完后慢慢缩回
       const fit = layout?.penetrationFit;
-      if ((type === 'insert' || type === 'insertCondom') && fit && fit.direction > 0 && fit.tier >= 2) {
+      if (INSERT_CUES.has(type) && fit && fit.direction > 0 && fit.tier >= 2) {
         stretch.amount = fit.tier === 3 ? 2 : 1;
         if (fit.tier >= 4) stretch.amount = 0;   // 体型悬殊进不去，只有入口被撑开
         stretch.endAt = cue.start + CUE_MS;

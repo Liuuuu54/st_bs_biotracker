@@ -61,6 +61,8 @@ import {
   normalizeAutoTrackEveryReplies,
 } from './state.js';
 import { OUTLET_LAYOUT_LABELS, getCharacterOutletLayout, getDerivedTypeMetabolismExemptions, getRaceCanalTexture } from './race_config.js';
+import { describeOutletLook, describePouch } from './outlet_look.js';
+import { getPouchView } from './belly_pouch.js';
 import { LABOR_STAGES, MENSTRUAL_STAGES, PREGNANCY_STAGES } from './stage_config.js';
 import { DESCRIPTION_FIELDS, descriptionListToObject, getStaleDescriptionFields } from './descriptions.js';
 import { canLoadHostWorldInfo, getHostAgentRunBarrier, getHostChat, getHostExtensionSettings, getHostKind, loadHostWorldInfo, refreshHostChatView } from './host.js';
@@ -1243,8 +1245,11 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   for (const key of ['prolapse', 'prolapseSupportUntil', 'prolapseRestUntil']) delete profile.base[key];
   const prolapseText = describeProlapse(item.profile, minutesPassed);
   if (prolapseText) profile.base.prolapse = prolapseText;
-  // 育儿袋里的幼体（1.6.0）只给孕体特写画，不送
+  // 育儿袋（1.6.0）：有袋才送一句（含袋里的幼体），原始栏位不送
+  const pouchText = describePouch(getPouchView(base));
   delete profile.base.pouchBrood;
+  delete profile.base.pouch;
+  if (pouchText) profile.base.pouch = pouchText;
   // 肛内残精（1.6.0）：取整，没有就不送
   if (Number(base.analSemen) >= 1) profile.base.analSemen = Math.round(Number(base.analSemen));
   else delete profile.base.analSemen;
@@ -1254,6 +1259,9 @@ function buildPromptFacingCharacterState(item, diaryLimit = 0, wardrobeOn = true
   if (outletLayout !== 'separate') profile.base.outletLayout = OUTLET_LAYOUT_LABELS[outletLayout];
   const canalTexture = getRaceCanalTexture(base.race || '人类', base.bloodline || null);
   if (canalTexture) profile.base.canalTexture = canalTexture;
+  // 外口的样子（1.6.0）：外阴分页画出来、跟人类明显不同的才送（口缘、口上方与外缘的装饰）
+  const outletLook = describeOutletLook(base);
+  if (outletLook) profile.base.outletLook = outletLook;
   // 鞘偏移只送文字（偏浅、很深…），适中不送；模型看不懂偏移数字
   delete profile.base.sheathOffset;
   if (normalizeSheathOffset(base.sheathOffset) !== 0) profile.base.sheath = describeSheathOffset(base.sheathOffset);

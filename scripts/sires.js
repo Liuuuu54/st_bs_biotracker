@@ -251,7 +251,7 @@ export function describeSireSword(record, nowMinutes = null, race = record?.race
   const offset = getEffectiveSwordOffset(record, nowMinutes);
   const size = offset ? `${describeSwordOffset(offset)}${offset !== normalizeSwordOffset(record?.swordOffset) ? '（强精，暂时变大）' : ''}` : '';
   const texture = race ? getRaceCanalTexture(race, record?.bloodline || null) : null;
-  return [size, describeSwordTraits(record), texture ? `质感：${texture}` : ''].filter(Boolean).join('，');
+  return [size, describeSwordTraits(record), texture ? `质感：${texture}` : '', describeSemenVolume(record?.semenVolume)].filter(Boolean).join('，');
 }
 
 /** 剑偏移加上强精暂时的加大（1.5.4），夹在 −2～+2 */
@@ -319,6 +319,24 @@ export const SWORD_SHAFT_LABELS = Object.freeze({ smooth: '平滑', veined: '青
 const SWORD_TRAIT_DEFAULTS = Object.freeze({ swordKnot: false, swordBarbs: false, swordTwin: false, swordLock: false, swordScrotum: true });
 export const SWORD_TRAIT_FIELDS = Object.freeze(['swordTip', 'swordShaft', ...Object.keys(SWORD_TRAIT_DEFAULTS)]);
 
+/**
+ * 注册后锁住的栏位（1.6.0，使用者 2026-11-28）：剑的大小与外形会影响正文描写，注册时决定，
+ * 之后变量页手改不算数（剧情里的强化照 bsGrowBody，长出／失去阴茎照身体转化）。
+ */
+export const LOCKED_SIRE_FIELDS = Object.freeze(['swordOffset', ...SWORD_TRAIT_FIELDS]);
+/** 把手改后的档案里锁住的栏位换回原本的；回传有没有被改过 */
+export function keepLockedFields(previous, next, fields) {
+  let changed = false;
+  for (const key of fields) {
+    const had = previous && Object.prototype.hasOwnProperty.call(previous, key);
+    const has = next && Object.prototype.hasOwnProperty.call(next, key);
+    if (had !== has || (had && JSON.stringify(previous[key]) !== JSON.stringify(next[key]))) changed = true;
+    if (had) next[key] = previous[key];
+    else delete next[key];
+  }
+  return changed;
+}
+
 /** 只回传不是预设值的栏位（圆钝、平滑、无球结、无倒刺、单剑、不锁、有阴囊都不存） */
 export function normalizeSwordTraits(value) {
   const source = value && typeof value === 'object' ? value : {};
@@ -343,6 +361,22 @@ export function describeSwordTraits(record) {
     traits.swordLock ? '射精后会锁住' : '',
     traits.swordScrotum === false ? '没有外露的阴囊' : '',
   ].filter(Boolean).join('、');
+}
+
+/**
+ * 精量（1.6.0，使用者 2026-11-28）：每次射精量的个人倍率，叠在体型的基准量上（人类 10–30、体型每级翻倍）。
+ * 模型照平常给 bsAddSperm 的 amount，系统再乘这个倍率；提示词只送文字给模型描写。一般（×1）不存。
+ */
+export const SEMEN_VOLUMES = Object.freeze([0.5, 1, 2, 4, 8]);
+export const SEMEN_VOLUME_LABELS = Object.freeze({ 0.5: '少', 1: '一般', 2: '多', 4: '很多', 8: '夸张' });
+export function normalizeSemenVolume(value) {
+  const volume = Number(value);
+  return SEMEN_VOLUMES.includes(volume) ? volume : 1;
+}
+/** 给提示词的一句；一般回传空字串 */
+export function describeSemenVolume(value) {
+  const volume = normalizeSemenVolume(value);
+  return volume === 1 ? '' : `精量${SEMEN_VOLUME_LABELS[volume]}（每次约平时的 ${volume} 倍）`;
 }
 
 export function normalizeSpermQuality(value) {
@@ -380,6 +414,8 @@ export function normalizeSireRecord(raw, minutesPassed = 0) {
     },
     source: SIRE_SOURCES.includes(value.source) ? value.source : 'manual',
     spermQuality: normalizeSpermQuality(value.spermQuality),
+    // 精量（1.6.0）：一般不存
+    ...(normalizeSemenVolume(value.semenVolume) !== 1 ? { semenVolume: normalizeSemenVolume(value.semenVolume) } : {}),
     // 剑偏移（1.2.4）：剑 ＝ 体型 ＋ 偏移；扶她也存在精方这份
     swordOffset: normalizeSwordOffset(value.swordOffset),
     // 存量：上次射精后剩下的比例与记下它的分钟数，目前存量按时间惰性推算（getSireQualityState）
@@ -502,6 +538,7 @@ export function pruneFutaSireRecord(chatState, name) {
   chatState.sires[key] = normalizeSireRecord({
     spermQuality: sire.spermQuality,
     swordOffset: sire.swordOffset,
+    semenVolume: sire.semenVolume,
     alwaysPeak: sire.alwaysPeak,
     fetalGuard: sire.fetalGuard,
     ...normalizeSwordTraits(sire),
@@ -644,6 +681,7 @@ export function upsertSireRecord(chatState, name, fields = {}, { source = 'manua
     ...(previous || {}),
     ...(fields.spermQuality !== undefined && fields.spermQuality !== null ? { spermQuality: fields.spermQuality } : {}),
     ...(fields.swordOffset !== undefined && fields.swordOffset !== null ? { swordOffset: fields.swordOffset } : {}),
+    ...(fields.semenVolume !== undefined && fields.semenVolume !== null ? { semenVolume: fields.semenVolume } : {}),
     ...(typeof fields.alwaysPeak === 'boolean' ? { alwaysPeak: fields.alwaysPeak } : {}),
     ...(typeof fields.fetalGuard === 'boolean' ? { fetalGuard: fields.fetalGuard } : {}),
     // 剑的外形：有给才改（给了预设值就是改回预设）

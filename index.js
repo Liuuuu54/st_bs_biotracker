@@ -81,6 +81,9 @@ import {
   isCustomRace,
   sanitizeRacePhysiologyProfilePatch,
   validateCustomRaceName,
+  OUTLET_LAYOUT_LABELS,
+  getCharacterOutletLayout,
+  getRaceOutletOptions,
 } from './scripts/race_config.js';
 import { clampIndividualBodySize, describeSheathOffset, describeSwordOffset, getAltFormBodySize, getSheathSize, getSwordSize, getUterusVolumeFactor, normalizeSheathOffset, normalizeSwordOffset, resolveBodySize } from './scripts/body_size.js';
 import { normalizeDescriptionList } from './scripts/descriptions.js';
@@ -121,7 +124,7 @@ import {
 import { applyToolCall, removeReproEffects, resolvePersonNameField, syncNeedTotals, writeDiaryEntry } from './scripts/tools.js';
 import { getIntimacyLevel, getIntimacyRanking, getSheathStretch } from './scripts/intimacy.js';
 import { deleteLibraryEntry, importLibraryEntry, listLibraryEntries, saveEggToLibrary, saveSireToLibrary } from './scripts/character_library.js';
-import { deleteSireRecord, describeSireCondition, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
+import { LOCKED_SIRE_FIELDS, SEMEN_VOLUMES, SEMEN_VOLUME_LABELS, normalizeSemenVolume, deleteSireRecord, describeSireCondition, describeSireSword, keepLockedFields, describeSpermQuality, formatSireRaceDescriptor, getGuardingSire, getSireQualityState, getSpermCycleFactor, getSpermQualityTier, getSireRecord, normalizeSireRecord, upsertSireRecord } from './scripts/sires.js';
 import { buildRaceCatalogHint, describeRaceFieldValue } from './scripts/prompts/rules.js';
 import { getAllocationAlpha, getAllocationText, getBodyBaseline, getBuildText, getCupLabel, getHipText, hasHumanFigure, shiftCareTarget } from './scripts/maternal_body.js';
 import { FETAL_EVENT_KINDS, describeFetalEventKind, describeFetalEventSummary, describePrenatalSummary, describeFetalResilience, describeCognitionSummary, getFetalHarmBreakdown, getFetalHealthRatio, getFetalHealthTier, getPrenatalCareKey, normalizeFetalEventList, PRENATAL_CARE_LEVELS } from './scripts/fetal_health.js';
@@ -135,10 +138,10 @@ import { renderRaceSheetHtml, renderSheetHtml } from './scripts/encyclopedia_she
 import { createBellyAnimator } from './scripts/belly_anim.js';
 import { loadBellyData } from './scripts/belly_data.js';
 import { createBellyLayout } from './scripts/belly_layout.js';
-import { getPouchDefault, getPouchView } from './scripts/belly_pouch.js';
+import { getPouchDefault, getPouchView, hasPouch } from './scripts/belly_pouch.js';
 import { BELLY_THEME_MODES, applyBellyInkBrush, createBellyPainter, createBellyThemePalette, halfTint } from './scripts/belly_render.js';
 import { describeDerivedTransform, normalizeDerivedTransformLog } from './scripts/derived_transform.js';
-import { DISPLAY_NAVELS, DISPLAY_NAVEL_SIZES, DISPLAY_NIPPLE_PRESETS, DISPLAY_NIPPLE_SIZES, DISPLAY_POUCH, DISPLAY_SKIN_PRESETS, DISPLAY_STRETCH_MARKS, normalizeDisplay, normalizeDisplayColor } from './scripts/display_colors.js';
+import { DISPLAY_NAVELS, DISPLAY_NAVEL_SIZES, DISPLAY_NIPPLE_PRESETS, DISPLAY_ANUS_SHAPES, DISPLAY_NIPPLE_SIZES, DISPLAY_SKIN_PRESETS, DISPLAY_VULVA_SCALES, DISPLAY_STRETCH_MARKS, normalizeDisplay, normalizeDisplayColor } from './scripts/display_colors.js';
 import { averageYearDays, birthdayOf, dateAt, earthAgeForBirthday, formatBirthday, formatCalendarDate, getActiveCalendar, legalAge, minutesAtDate, nextBirthdayMinutes, monthCount, monthDays, monthName, normalizeCalendar, randomBirthday, setCalendarProvider, toLocalYears } from './scripts/calendar.js';
 import { CALENDAR_STAGE_GROUPS, buildStageTimeline, stageOnDay } from './scripts/story_calendar.js';
 import { getEggQualityTier } from './scripts/egg_quality.js';
@@ -148,7 +151,7 @@ import { getFetalDailyActivity } from './scripts/fetal_activity.js';
 import { getPsyStressInitByLevel, listSnapshotCharacterTimeline } from './scripts/state.js';
 import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
 import { createVulvaRenderer } from './scripts/vulva_render.js';
-import { buildVulvaParams, buildVulvaTheme, buildWombAppearance, getLockKnot } from './scripts/vulva_params.js';
+import { buildVulvaParams, buildVulvaTheme, buildWombAppearance, getHymenState, getLockKnot } from './scripts/vulva_params.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
 import { appendSkillHistory, canBodyHaveSkill, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeSkillBody, normalizeSkillList, normalizeTalentList, SKILL_BODY_LABELS, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
@@ -1658,6 +1661,8 @@ let sireControlsName = '';
 function applySireRecordToControls(record) {
   setOverrideSlider('bs-bt-sire-quality', record && record.spermQuality !== 1 ? record.spermQuality : null);
   setOverrideSlider('bs-bt-sire-sword', record && record.swordOffset ? record.swordOffset : null);
+  const volume = document.getElementById('bs-bt-sire-volume');
+  if (volume) volume.value = record?.semenVolume ? String(record.semenVolume) : '';
 }
 
 /** 精方分页的名字栏被改：换成另一个名字就照那人的档案（没有就交给模型）重设拉杆 */
@@ -1805,12 +1810,19 @@ async function registerSireFromForm(ctx) {
   const race = String(document.getElementById('bs-bt-register-race')?.value || '').trim() || '人类';
   const typedQuality = readOverrideSlider('bs-bt-sire-quality');
   const typedSword = readOverrideSlider('bs-bt-sire-sword');
+  // 精量（1.6.0）：选了就照选的，「交给模型」照模型判断，没判断保留原本的
+  const volumeChoice = String(document.getElementById('bs-bt-sire-volume')?.value || '');
+  const typedVolume = volumeChoice ? Number(volumeChoice) : null;
   // 作弊开关不在注册页：重新注册保留档案原本的开关，到变量页的调试分页切换
   const previous = getSireRecord(chatState, name);
   if (Object.prototype.hasOwnProperty.call(chatState.characters || {}, name)) {
+    const herBase = chatState.characters[name]?.profile?.base || {};
     const result = upsertSireRecord(chatState, name, {
       spermQuality: typedQuality ?? previous?.spermQuality ?? 1,
       swordOffset: typedSword ?? previous?.swordOffset ?? 0,
+      semenVolume: typedVolume ?? previous?.semenVolume ?? 1,
+      // 扶她第一次建精方档：剑的外形照她的种族建议（同长出阴茎）
+      ...(previous ? {} : getRaceSwordSuggestion(herBase.race || '人类', herBase.bloodline || null)),
     });
     if (!result.applied) return setSireStatus(result.message, true);
     finishSireRegistration(ctx, chatState, name, result);
@@ -1841,6 +1853,7 @@ async function registerSireFromForm(ctx) {
       bodySize: extracted.bodySize ?? current?.bodySize ?? prefill?.bodySize ?? null,
       spermQuality: typedQuality ?? extracted.spermQuality ?? current?.spermQuality ?? 1,
       swordOffset: typedSword ?? extracted.swordOffset ?? current?.swordOffset ?? 0,
+      semenVolume: typedVolume ?? extracted.semenVolume ?? current?.semenVolume ?? 1,
       // 剑的外形与锁住（1.6.0）：模型照设定判断；新建档时没写到的项照种族建议补，已有档案的保留原本的
       ...(current ? {} : getRaceSwordSuggestion(race)),
       ...(extracted.sword || {}),
@@ -2025,6 +2038,8 @@ function getRegisterFormValues(ctx = getContextSafe()) {
     useGestationModifier: Boolean(document.getElementById('bs-bt-register-gestation-modifier')?.checked),
     gestationModifierMultiplier: Number(document.getElementById('bs-bt-register-gestation-multiplier')?.value ?? 1),
     sheathOffset: readOverrideSlider('bs-bt-register-sheath'),
+    outletLayout: String(document.getElementById('bs-bt-register-outlet')?.value || '') || null,
+    pouch: ({ on: true, off: false })[String(document.getElementById('bs-bt-register-pouch')?.value || '')] ?? null,
     eggQuality: readOverrideSlider('bs-bt-register-egg-quality'),
     birthday: readBirthdayPicker('bs-bt-register-birthday'),
     bodyOverrides: readRegisterBodyOverrides(),
@@ -5635,6 +5650,7 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
         // 种族外观与锁住（1.6.0）
         appearance: buildWombAppearance(character),
         lockKnot: getLockKnot(runtimeChatState || chatState, character),
+        hymen: getHymenState(profile),
       }),
       visualCue: profile.visualCue || null,
       // 外阴分页看插入状态的变化（spent → idle 是刚拔出来，播流出）
@@ -5652,8 +5668,8 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
         display: normalizeDisplay(profile.display),
         // 上一次生下的胎量（妊娠纹的旧纹照它）
         pastBulk: Number(base.postpartumBulk) || 0,
-        // 育儿袋（外观子页，预设照种族）与袋里的幼体（产后恢复期）
-        pouch: getPouchView(base, normalizeDisplay(profile.display)),
+        // 育儿袋（注册时决定，预设照种族）与袋里的幼体（产后恢复期）
+        pouch: getPouchView(base),
         // 体型等级（量尺旁的数字）；可变或未知时没有
         bodySizeValue: (() => { const resolved = resolveBodySize({ race: base.race, bloodline: base.bloodline, bodySize: base.bodySize }); return resolved.kind === 'fixed' ? resolved.size : null; })(),
         sigma: getBodySizeSigma(base),
@@ -6757,7 +6773,7 @@ function getWombArt(themeColors) {
 // 单色主题里用深到浅一条色带的（同孕体特写）
 const VULVA_RAMP_THEMES = new Set(['ink', 'constructivism']);
 // 子宫图的视觉提示 → 外阴正面的动画：插入播剑鞘契合（含双穴），射精与套子的事件播射精脉冲
-const VULVA_CUE_PLAYS = Object.freeze({ insert: 'combine', insertCondom: 'combine', ejaculate: 'sword-pulse', ejaculateCondom: 'sword-pulse', condomBreak: 'sword-pulse', condomOverflow: 'sword-pulse' });
+const VULVA_CUE_PLAYS = Object.freeze({ insert: 'combine', insertCondom: 'combine', deflower: 'deflower', ejaculate: 'sword-pulse', ejaculateCondom: 'sword-pulse', condomBreak: 'sword-pulse', condomOverflow: 'sword-pulse' });
 
 function playVulvaCue(type) {
   const kind = VULVA_CUE_PLAYS[type];
@@ -8520,6 +8536,39 @@ function setupRegisterGestationSlider() {
   sync();
 }
 
+/**
+ * 注册页的外口布局与育儿袋（1.6.0）：预设「交给模型」（照角色卡，没写照种族）；选了就以使用者为准。
+ * 外口布局只列这个种族的可选范围，种族栏改了就重列。注册后两项都锁住。
+ */
+function setupRegisterOutletSelects() {
+  const outlet = document.getElementById('bs-bt-register-outlet');
+  const pouch = document.getElementById('bs-bt-register-pouch');
+  if (!outlet || !pouch || outlet.dataset.ready === 'true') return;
+  outlet.dataset.ready = 'true';
+  const raceInput = document.getElementById('bs-bt-register-race');
+  const sync = () => {
+    const race = String(raceInput?.value || '').trim() || '人类';
+    const options = getRaceOutletOptions(race);
+    const keep = outlet.value;
+    outlet.innerHTML = [`<option value="">交给模型（种族预设：${escapeHtml(OUTLET_LAYOUT_LABELS[options[0]])}）</option>`,
+      ...options.map((layout) => `<option value="${layout}">${escapeHtml(OUTLET_LAYOUT_LABELS[layout])}</option>`)].join('');
+    outlet.value = options.includes(keep) ? keep : '';
+    // 这一族只有一种外口就不给选（固定照种族）
+    const section = outlet.closest('.settings_section');
+    if (section) section.hidden = options.length < 2;
+    if (options.length < 2) outlet.value = '';
+    const keepPouch = pouch.value;
+    pouch.innerHTML = `<option value="">交给模型（种族预设：${getPouchDefault(race) === 'on' ? '有' : '没有'}）</option><option value="on">有</option><option value="off">没有</option>`;
+    pouch.value = keepPouch;
+  };
+  raceInput?.addEventListener('input', sync);
+  raceInput?.addEventListener('change', sync);
+  // 种族调色盘改值不一定发事件：打开选单前再对一次
+  outlet.addEventListener('focus', sync);
+  pouch.addEventListener('focus', sync);
+  sync();
+}
+
 function applySelectedTrackGestationModifier(ctx, clear = false) {
   if (!selectedTrackName) return;
   const settings = getSettings(ctx);
@@ -9007,6 +9056,8 @@ function bindDebugPanelControls(ctx, root, refresh = () => renderFullStatePage(c
     if (!target) return;
     const current = String(target.value || '').trim();
     target.value = isRegisterRaceTarget(racePaletteState.targetInputId) ? descriptor : (current ? `${current},${descriptor}` : descriptor);
+    // 注册页的外口、育儿袋与剑外形选单照种族重列
+    if (isRegisterRaceTarget(racePaletteState.targetInputId)) target.dispatchEvent(new Event('change', { bubbles: true }));
     const draftRaceKey = {
       'bs-bt-debug-race': 'race',
       'bs-bt-debug-provider-race': 'providerRace',
@@ -9783,6 +9834,8 @@ function renderStatusPanel(ctx) {
     if (!target) return;
     const current = String(target.value || '').trim();
     target.value = isRegisterRaceTarget(racePaletteState.targetInputId) ? descriptor : (current ? `${current},${descriptor}` : descriptor);
+    // 注册页的外口、育儿袋与剑外形选单照种族重列
+    if (isRegisterRaceTarget(racePaletteState.targetInputId)) target.dispatchEvent(new Event('change', { bubbles: true }));
     const draftRaceKey = {
       'bs-bt-debug-race': 'race',
       'bs-bt-debug-provider-race': 'providerRace',
@@ -9882,14 +9935,21 @@ function renderFullStateAppearance(ctx, name, character) {
     ${choices('navel', '肚脐', DISPLAY_NAVELS, '照她自己怎么被生出来：卵生的可选淡疤或没有')}
     ${choices('navelSize', '肚脐大小', DISPLAY_NAVEL_SIZES)}
     ${choices('stretchMarks', '妊娠纹', DISPLAY_STRETCH_MARKS, '长在哪里因人而异：下腹沿腹下摺痕、脐周从肚脐往外；照胎量长，产后淡成银白')}
-    ${choices('pouch', '育儿袋', DISPLAY_POUCH, '下腹一道袋口、不画肚脐；产后恢复期幼体在袋里时下腹鼓起。预设照种族', getPouchDefault(character?.profile?.base?.race, character?.profile?.base?.bloodline))}
+    ${DISPLAY_VULVA_SCALES.map(({ key, label, low, high }) => {
+      const value = colors[key] ?? 50;
+      return `<div class="bs-bt-color-group"><div class="bs-bt-color-title">${escapeHtml(label)}<span class="bs-bt-inline-status">外阴分页：${escapeHtml(low)} ↔ ${escapeHtml(high)}，现在 ${value}</span></div>
+        <input type="range" min="0" max="100" step="5" value="${value}" data-display-scale="${key}" aria-label="${escapeHtml(label)}" style="width:100%" /></div>`;
+    }).join('')}
+    ${choices('anusShape', '肛门造型', DISPLAY_ANUS_SHAPES, '外阴分页的肛门；泄殖腔与孕夫（肛门分娩）没有独立的肛门')}
+    ${renderLockedBodyRows(ctx, name, character)}
     <div class="bs-bt-color-group">
       <div class="bs-bt-color-title">目前主题的实际颜色</div>
       <div class="bs-bt-color-strip">${strip(palette.skin)}<span class="bs-bt-color-gap"></span>${strip([...palette.areolaPale, ...palette.areolaDark])}</div>
     </div>
-    <div class="bs-bt-inline-status">只用于孕体特写的画面，不会送进提示词。颜色：全彩主题照所选颜色；半彩主题是所选颜色打上主题的色光（色相往主题色靠七成、明暗照所选）${mono ? '；目前是单色主题，整张一个色调，不套自订色' : '；单色主题不套自订色'}。乳晕、乳头怀孕时照常变深。</div>`;
+    <div class="bs-bt-inline-status">只用于孕体特写与外阴分页的画面，不会送进提示词。颜色：全彩主题照所选颜色；半彩主题是所选颜色打上主题的色光（色相往主题色靠七成、明暗照所选）${mono ? '；目前是单色主题，整张一个色调，不套自订色' : '；单色主题不套自订色'}。乳晕、乳头怀孕时照常变深。</div>`;
   host.querySelectorAll('button[data-display-key]').forEach((node) => node.addEventListener('click', () => setDisplayColor(ctx, name, node.dataset.displayKey, node.dataset.displayColor || null)));
   host.querySelectorAll('input[type="color"][data-display-key]').forEach((node) => node.addEventListener('change', () => setDisplayColor(ctx, name, node.dataset.displayKey, node.value)));
+  host.querySelectorAll('input[data-display-scale]').forEach((node) => node.addEventListener('change', () => setDisplayColor(ctx, name, node.dataset.displayScale, Number(node.value))));
   host.querySelectorAll('button[data-display-option]').forEach((node) => node.addEventListener('click', () => {
     const key = node.dataset.displayOption;
     const raw = node.dataset.displayValue || null;
@@ -9897,13 +9957,29 @@ function renderFullStateAppearance(ctx, name, character) {
   }));
 }
 
+/** 外观子页底下：注册后锁住的身体构造，只显示不给改（会影响正文描写） */
+function renderLockedBodyRows(ctx, name, character) {
+  const base = character?.profile?.base || {};
+  const chatState = getChatState(ctx, getSettings(ctx));
+  const sire = getSireRecord(chatState, name);
+  const rows = [
+    ['外口布局', OUTLET_LAYOUT_LABELS[getCharacterOutletLayout(base)] || ''],
+    ['育儿袋', hasPouch(base) ? '有' : '没有'],
+    ...(sire ? [['剑', describeSireSword(sire, Number(chatState.minutesPassed) || 0, base.race || '人类') || '与体型相称、圆钝、平滑']] : []),
+  ];
+  return `<div class="bs-bt-color-group">
+    <div class="bs-bt-color-title">身体构造<span class="bs-bt-inline-status">注册时决定，会影响正文描写所以锁住；重新注册或剧情里的身体转化才会改</span></div>
+    ${rows.map(([label, value]) => `<div class="bs-bt-inline-status">${escapeHtml(label)}：${escapeHtml(value)}</div>`).join('')}
+  </div>`;
+}
+
 function setDisplayColor(ctx, name, key, value) {
-  if (!['skinColor', 'nippleColor', 'nippleSize', 'navel', 'navelSize', 'stretchMarks', 'pouch'].includes(key)) return;
+  if (!['skinColor', 'nippleColor', 'nippleSize', 'navel', 'navelSize', 'stretchMarks', 'anusShape', 'vulvaMaturity', 'vulvaTraces'].includes(key)) return;
   const settings = getSettings(ctx);
   const chatState = getChatState(ctx, settings);
   const character = chatState.characters?.[name];
   if (!character?.profile) return;
-  const isColor = key === 'skinColor' || key === 'nippleColor';
+  const isColor = ['skinColor', 'nippleColor'].includes(key);
   const next = normalizeDisplay({ ...normalizeDisplay(character.profile.display), [key]: isColor ? normalizeDisplayColor(value) : value });
   character.profile.display = next;
   recordChatStateSnapshot(ctx, chatState, { reason: 'display_color' });
@@ -10023,7 +10099,7 @@ function renderSelectedFullStateEditor(ctx) {
   const selected = getSelectedFullStateRecord(chatState);
   if (selected) {
     output.value = getFullStateEditorText(selected);
-    setFullStateEditStatus('可直接编辑 JSON，应用前会检查格式与基础结构。');
+    setFullStateEditStatus('可直接编辑 JSON，应用前会检查格式与基础结构。外口布局与育儿袋注册后锁住，改了不算数。');
   } else {
     output.value = '请选择角色查看完整变量。';
     setFullStateEditStatus('请选择角色后再编辑。');
@@ -10246,6 +10322,10 @@ function enableSelectedPooledConception(ctx) {
   }
 }
 
+// 注册后锁住的栏位（1.6.0）：会影响正文描写，注册时决定，之后只有剧情里的身体转化会改
+const LOCKED_BODY_FIELDS = Object.freeze(['outletLayout', 'pouch']);
+const LOCKED_FIELDS_NOTE = '外口布局、育儿袋与剑的大小、外形是注册时决定的，手改不算数，已换回原本的（重新注册或剧情里的身体转化才会改）。';
+
 function applyFullStateManualEdit(ctx) {
   if (!selectedFullStateName) {
     globalThis.toastr?.warning?.('[BS BioTracker] 请先选择角色');
@@ -10282,6 +10362,8 @@ function applyFullStateManualEdit(ctx) {
     renderFullStatePage(ctx);
     return;
   }
+  // 外口布局与育儿袋注册后锁住（1.6.0）：手改不算数，换回原本的
+  const lockedChanged = keepLockedFields(chatState.characters[selectedFullStateName].profile?.base, result.value.profile?.base, LOCKED_BODY_FIELDS);
   chatState.characters[selectedFullStateName] = result.value;
   recordChatStateSnapshot(ctx, chatState, { reason: 'manual_full_state_edit' });
   saveSettings(ctx);
@@ -10289,7 +10371,7 @@ function applyFullStateManualEdit(ctx) {
   renderFullStatePage(ctx);
   updateMainFlowPrompt(ctx);
   resetPoller(ctx, trackerDeps);
-  setFullStateEditStatus(`已应用 ${selectedFullStateName} 的变量修改。`, 'success');
+  setFullStateEditStatus(`已应用 ${selectedFullStateName} 的变量修改。${lockedChanged ? LOCKED_FIELDS_NOTE : ''}`, 'success');
   globalThis.toastr?.success?.(`[BS BioTracker] 已应用 ${selectedFullStateName} 的变量修改`);
 }
 
@@ -10307,6 +10389,8 @@ function applySireManualEdit(ctx, parsed) {
     renderFullStatePage(ctx);
     return;
   }
+  // 剑的大小与外形注册后锁住（1.6.0）：手改不算数，换回原本的
+  const lockedChanged = keepLockedFields(getSireRecord(chatState, name), parsed, LOCKED_SIRE_FIELDS);
   chatState.sires[name] = normalizeSireRecord(parsed, Number(chatState.minutesPassed) || 0);
   recordChatStateSnapshot(ctx, chatState, { reason: 'manual_sire_edit' });
   saveSettings(ctx);
@@ -10314,7 +10398,7 @@ function applySireManualEdit(ctx, parsed) {
   renderFullStatePage(ctx);
   updateMainFlowPrompt(ctx);
   resetPoller(ctx, trackerDeps);
-  setFullStateEditStatus(`已应用精方 ${name} 的变量修改。`, 'success');
+  setFullStateEditStatus(`已应用精方 ${name} 的变量修改。${lockedChanged ? LOCKED_FIELDS_NOTE : ''}`, 'success');
   globalThis.toastr?.success?.(`[BS BioTracker] 已应用精方 ${name} 的变量修改`);
 }
 
@@ -10346,7 +10430,7 @@ function renderFutaSireCheats(record) {
         </button>`).join('');
   return `<div class="bs-bt-track-debug-subtitle">精方（扶她）</div>
       <div class="bs-bt-track-debug-list">${buttons}
-      </div>`;
+      </div>${renderSireVolumeChips(record)}`;
 }
 
 function renderSireDebug(record) {
@@ -10360,7 +10444,29 @@ function renderSireDebug(record) {
       <div class="bs-bt-track-section-title">作弊</div>
       <div class="bs-bt-track-debug-list">${buttons}
       </div>
+      ${renderSireVolumeChips(record)}
     </div>`;
+}
+
+/** 精量（1.6.0）：每次射精量的倍率，口味设定、不影响身体构造，所以调试页随时可改 */
+function renderSireVolumeChips(record) {
+  if (!record) return '';
+  const current = normalizeSemenVolume(record.semenVolume);
+  const chips = SEMEN_VOLUMES.map((value) => `<button type="button" class="bs-bt-option-chip${value === current ? ' is-active' : ''}" data-debug-sire-volume="${value}">${SEMEN_VOLUME_LABELS[value]} ×${value}</button>`).join('');
+  return `<div class="bs-bt-track-debug-subtitle" title="每次射精量是同体型的人的几倍；模型照平常给量，系统乘上倍率">精量</div>
+      <div class="bs-bt-color-swatches">${chips}</div>`;
+}
+
+function setSireVolume(ctx, name, value) {
+  const chatState = getChatState(ctx, getSettings(ctx));
+  const record = getSireRecord(chatState, name);
+  if (!record) return;
+  chatState.sires[name] = normalizeSireRecord({ ...record, semenVolume: Number(value) }, Number(chatState.minutesPassed) || 0);
+  recordChatStateSnapshot(ctx, chatState, { reason: 'debug_sire_volume' });
+  saveSettings(ctx);
+  renderStatusPanel(ctx);
+  renderFullStatePage(ctx);
+  updateMainFlowPrompt(ctx);
 }
 
 function toggleSireCheat(ctx, name, key) {
@@ -10851,24 +10957,28 @@ function renderFullStatePage(ctx) {
 
   if (selectedFullStateKind === 'sire' && selectedFullStateName) {
     output.value = getFullStateEditorText(getSireRecord(chatState, selectedFullStateName));
-    setFullStateEditStatus('精方档案：可直接编辑 JSON，应用时会正规化，格式不对的栏位改回预设。');
+    setFullStateEditStatus('精方档案：可直接编辑 JSON，应用时会正规化，格式不对的栏位改回预设。剑的大小与外形注册后锁住，改了不算数。');
     if (debugPanel) {
       const sireName = selectedFullStateName;
       debugPanel.innerHTML = renderSireDebug(getSireRecord(chatState, sireName));
       debugPanel.querySelectorAll('[data-debug-sire-cheat]').forEach((node) =>
         node.addEventListener('click', () => toggleSireCheat(ctx, sireName, String(node.dataset.debugSireCheat || ''))));
+      debugPanel.querySelectorAll('[data-debug-sire-volume]').forEach((node) =>
+        node.addEventListener('click', () => setSireVolume(ctx, sireName, node.dataset.debugSireVolume)));
     }
   } else if (selectedFullStateName && chatState.characters[selectedFullStateName]) {
     const current = chatState.characters[selectedFullStateName];
     selectedTrackName = selectedFullStateName;
     output.value = getFullStateEditorText(current);
-    setFullStateEditStatus('可直接编辑 JSON，应用前会检查格式与基础结构。');
+    setFullStateEditStatus('可直接编辑 JSON，应用前会检查格式与基础结构。外口布局与育儿袋注册后锁住，改了不算数。');
     if (debugPanel) {
       const futaSire = getSireRecord(chatState, selectedFullStateName);
       debugPanel.innerHTML = renderTrackDebug(buildTrackCharacterViewModel(current), renderFetalTalentDebugEditor(chatState, current), renderFutaSireCheats(futaSire));
       const futaName = selectedFullStateName;
       debugPanel.querySelectorAll('[data-debug-sire-cheat]').forEach((node) =>
         node.addEventListener('click', () => toggleSireCheat(ctx, futaName, String(node.dataset.debugSireCheat || ''))));
+      debugPanel.querySelectorAll('[data-debug-sire-volume]').forEach((node) =>
+        node.addEventListener('click', () => setSireVolume(ctx, futaName, node.dataset.debugSireVolume)));
       bindFetalTalentDebugControls(ctx, debugPanel);
       bindDebugPanelControls(ctx, debugPanel, () => renderFullStatePage(ctx));
     }
@@ -13192,6 +13302,7 @@ async function ensureModal(ctx) {
   document.getElementById('bs-bt-register-outfit-write')?.addEventListener('click', () => writeRegistryOutfit(ctx));
   document.getElementById('bs-bt-register-source')?.addEventListener('change', () => syncRegisterChildSourceFields(ctx));
   setupRegisterGestationSlider();
+  setupRegisterOutletSelects();
   bindOverrideSliders();
   // 改角色名后，上一个角色的推演结果就不再适用；留着会被误认为是这个角色的结果。
   // 以「编辑器内容属于谁」为准而不是 draft 是否存在——使用者看到的是编辑器内容。
@@ -13321,7 +13432,7 @@ async function ensureModal(ctx) {
       globalThis.toastr?.info?.('[BS BioTracker] 注册请求正在进行中，请等待完成');
       return;
     }
-    const { targetName, declaredRace, customNotes, initialCognitionRecords, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier, sheathOffset, eggQuality, birthday, bodyOverrides } = getRegisterFormValues();
+    const { targetName, declaredRace, customNotes, initialCognitionRecords, sourceChild, specialFetus, useGestationModifier, gestationModifierMultiplier, sheathOffset, outletLayout, pouch, eggQuality, birthday, bodyOverrides } = getRegisterFormValues();
     if (specialFetus?.error) {
       setRegisterStatus(specialFetus.error, true);
       globalThis.toastr?.warning?.(specialFetus.error, '[BS BioTracker]');
@@ -13361,7 +13472,7 @@ async function ensureModal(ctx) {
     const bundleReport = {};
     try {
       const character = await runRegistry(ctx, {
-        targetName, customNotes, initialCognitionRecords, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier, sheathOffset, eggQuality, birthday, bodyOverrides, bodyOnly,
+        targetName, customNotes, initialCognitionRecords, declaredRace, breedingInference, sourceChild, specialFetus: specialFetusRequest, useGestationModifier, sheathOffset, outletLayout, pouch, eggQuality, birthday, bodyOverrides, bodyOnly,
         ...(useGestationModifier ? { gestationModifierMultiplier } : {}),
         ...(bundleOptions ? { bundle: bundleOptions, bundleReport } : {}),
       });
@@ -13462,7 +13573,7 @@ async function ensureModal(ctx) {
         return;
       }
       const input = document.getElementById('bs-bt-register-race');
-      if (input) input.value = descriptor;
+      if (input) { input.value = descriptor; input.dispatchEvent(new Event('change', { bubbles: true })); }
       closeRacePalettePopover();
       refreshRegisterRacePalette();
     }

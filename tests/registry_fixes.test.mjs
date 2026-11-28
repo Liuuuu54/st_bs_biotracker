@@ -594,3 +594,30 @@ test('注册页指定的卵子品质与生日盖过模型（1.5.3）', async () 
     calendarModule.setCalendarProvider(() => null);
   }
 });
+
+test('注册的外口布局只收种族的可选范围、选到预设不存；育儿袋只收布林', () => {
+  const register = (base, chatState = state.createEmptyChatState()) => {
+    registry.applyRegistryResult(chatState, { name: '甲', profile: { base: { age: 20, ...base } } });
+    return chatState;
+  };
+  const base = (chat) => chat.characters['甲'].profile.base;
+  assert.equal(base(register({ race: '奇美拉', outletLayout: 'separate' })).outletLayout, 'separate');
+  assert.equal(base(register({ race: '奇美拉', outletLayout: 'cloaca' })).outletLayout, undefined, '预设不存');
+  assert.equal(base(register({ race: '人类', outletLayout: 'cloaca' })).outletLayout, undefined, '范围外丢掉');
+  assert.equal(base(register({ race: '人类', outletLayout: 'anal' })).outletLayout, undefined, '孕夫的不能注册');
+  assert.equal(base(register({ race: '人类', pouch: true })).pouch, true);
+  assert.equal(base(register({ race: '人类', pouch: 'yes' })).pouch, undefined);
+  // 重新注册选回预设：清掉旧的
+  const chat = register({ race: '奇美拉', outletLayout: 'separate' });
+  register({ race: '奇美拉', outletLayout: 'cloaca' }, chat);
+  assert.equal(base(chat).outletLayout, undefined);
+});
+
+test('注册页指定的外口布局与育儿袋盖过模型（布局照样只收种族范围）', async () => {
+  const chatState = state.createEmptyChatState();
+  const result = { name: '乙', profile: { base: { age: 20, race: '奇美拉', outletLayout: 'cloaca' } } };
+  // 照 runRegistry 的做法：选了就写进结果再交给注册
+  Object.assign(result.profile.base, { outletLayout: 'separate', pouch: false });
+  registry.applyRegistryResult(chatState, result);
+  assert.deepEqual([chatState.characters['乙'].profile.base.outletLayout, chatState.characters['乙'].profile.base.pouch], ['separate', false]);
+});

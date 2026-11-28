@@ -83,6 +83,11 @@ export function buildVulvaParams(chatState, name, character = chatState?.charact
     params.tone = BASE_WALL_LIGHT;
     params['anus-color'] = BASE_WALL;
   }
+  // 外阴的两条外观拉杆（外观子页，1.6.0）：成熟度与外观痕迹，没设是 50
+  for (const [key, field] of [['vulvaMaturity', 'visual-maturity'], ['vulvaTraces', 'visual-traces']]) {
+    const value = Number(display[key]);
+    if (display[key] !== null && display[key] !== undefined && Number.isFinite(value)) params[field] = String(Math.max(0, Math.min(100, Math.round(value))));
+  }
   if (!params['material-light']) params['material-light'] = mixHex(params.tone, BASE_SHINE, 0.34);
   if (display.anusShape) params['anus-shape'] = display.anusShape;
 
@@ -164,6 +169,7 @@ export function buildVulvaParams(chatState, name, character = chatState?.charact
     params.descent = '0';
   }
 
+  params.hymen = getHymenState(profile);
   // 插入中的体型契合（播契合动画时用）
   params.fit = String(fitTierFromDiff(base.penetrationFit?.diff));
 
@@ -251,6 +257,16 @@ export function buildWombAppearance(character) {
     overlay: preset?.overlay || null,
     light: preset?.highlight || null,
   };
+}
+
+/**
+ * 处女膜（1.6.0）：分离开口、泄殖腔与管状都画（人外娘也有）；孕夫的两种（肛门、阴茎分娩）不画。
+ * experience.virginity 还是 null 就完整，有了初次对象就剩殘痕。回传 'intact'、'torn' 或 'none'。只是画面，没有机制。
+ */
+export function getHymenState(profile) {
+  if (!['separate', 'cloaca', 'tube'].includes(getCharacterOutletLayout(profile?.base || {}))) return 'none';
+  const first = profile?.experience?.virginity;
+  return first === null || first === undefined || first === '' ? 'intact' : 'torn';
 }
 
 /** 插在她身上、射精后锁住的那位精方有没有根部球结（画锁住时入口要不要画球） */

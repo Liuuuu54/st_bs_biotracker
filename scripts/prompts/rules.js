@@ -534,7 +534,7 @@ function buildSireTrackerBlock(payload, descriptionGuides) {
     '[已注册精方]',
     '- payload.registered_sires 是已建档的精方（精液提供者）。isHere=true 为在场，附描述；isHere=false 只是本轮相关者的摘要（当前胎儿的父亲或认定父亲，或最近讯息提到），不送描述。',
     '- bsAddSperm 的 male 写精方名字时，种族、衍生类型、体型与精子品质由档案带入：race 照填档案种族，maleBodySize 省略；传了不同的 race 也以档案为准。',
-    '- virility 是精方天生的体质（精力与繁殖力），condition 是他此刻的状态（刚射过存量偏低、繁殖季与否、精力高峰），都只供叙事参考；精液此刻的稀稠与多寡以 condition 为准，没有 condition 就照常；condition 写存量偏低或很低时，这次射精的 bsAddSperm amount 要比他平时少（偏低约七成、很低约一半），描写也写成较稀；没有这些栏代表一般。sword 是阳物与同体型的人相比（偏大、硕大、偏小、短小；没有这栏代表与体型相称），体型契合由系统按剑对鞘计算。',
+    '- virility 是精方天生的体质（精力与繁殖力），condition 是他此刻的状态（刚射过存量偏低、繁殖季与否、精力高峰），都只供叙事参考；精液此刻的稀稠与多寡以 condition 为准，没有 condition 就照常；condition 写存量偏低或很低时，这次射精的 bsAddSperm amount 要比他平时少（偏低约七成、很低约一半），描写也写成较稀；没有这些栏代表一般。sword 是阳物与同体型的人相比（偏大、硕大、偏小、短小；没有这栏代表与体型相称）与外形，体型契合由系统按剑对鞘计算；sword 里的「精量多／很多…」是他每次射得比一般人多几倍，描写照它，bsAddSperm 的 amount 仍照平常给（系统会乘）。',
     `- 在场精方的描述用 bsSetDescription（female 填精方名字，只有 normalDescription），只传剧情影响到的字段${fieldNames.length > 0 ? `；描述还空着时按这些字段名建立：${fieldNames.join('、')}` : ''}。`,
     '- 精方进出场景照样用 bsSetCharacterPresence（female 填精方名字）：isHere=true 的精方在新讯息里出门、告别或已不在这一幕，就传 {"female":"精方名字","isPresent":false}；在场精方的完整档案每轮都会送，离场不切会一直占用提示词。精方不追踪生理需求、经期或妊娠，不要为精方调用其他工具。',
   ].join('\n');
@@ -697,7 +697,7 @@ function buildMainFlowFieldNotes(existingState = {}) {
     '- cognitionRecords 保存角色信念，可以与事实不同；系统结果、真实胎父与胎数不自动成为角色知识。自然线索到点也不强制知孕；产程是系统结果，她认出自己在分娩之前不得写成她知道。',
     ...(profiles.some((profile) => profile.bodyFamiliarity) ? ['- bodyFamiliarity 是身体对各性伴的熟悉度（系统按次数、体型相容与时间算出，前三名）：只描述身体的记忆与反应，例如对谁的触碰更快有反应，不代表感情或爱意。'] : []),
     ...(profiles.some((profile) => profile.lastCondomResult || profile.lastEmergencyResult) ? ['- lastCondomResult/lastEmergencyResult 只在结算后的下一次叙事出现：是系统结果，不等于角色察觉；可据此描写合理可见的后果，不要求本轮处理。'] : []),
-    '- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；activeDrugs 身上生效中的药与还剩多久；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精，penetrationChannel=anal 表示这次插的是肛门、both 表示双剑一根插产道一根插肛门；analSemen 肛内残精（有才送，几小时内慢慢流出，排便时一起排出）；prolapse 宫脱（有才送：几度、怎么描写、有没有托住）；penetrationLocked 为 true 表示精方的剑射精后锁住了（结住），消退前拔不出来、精液排不出来、别人也插不进来；sword 是她自己（扶她、孕夫）的剑：大小与外形；outletLayout 外口布局（有才送，没送就是阴道、尿道、肛门分开）：泄殖腔只有一个外口、没有独立的肛门，她若兼有阴茎，那是收在泄殖腔旁鞘里的鞘内剑，只在插入别人时整根翻出，被插入时收着；管状是产道末端的一根管，生产也从管口出，兼有阴茎时同一根管既是产道也是剑，不另长阴茎；阴茎分娩是孕夫从阴茎的尿道口生；肛门分娩是孕夫的肛门就是产道；canalTexture 产道内壁的质感（有才送），写内壁照它，不写成湿热的肉壁。描写照这些文字，不写数字。',
+    '- base：vitality 活力、psyStress 情压、libido 性欲、uterinePressure 宫压都已按她自己的上限换成文字（宫压在产程中表示宫缩强弱）；activeDrugs 身上生效中的药与还剩多久；fertility 天生的生育力、cycleCondition 这一轮的状态（她自己察觉得到的只有月经准不准，其余是体质，角色不会知道自己的卵好不好）；体质与精神倾向看 *LevelText；figure 当下身材（含孕期变化，胸部大小与奶量无关）；sperms 为体内残留精液（value 是多寡），每天自然衰减；penetrationState 为 idle 未插入／inserted 插入中／spent 已射精，penetrationChannel=anal 表示这次插的是肛门、both 表示双剑一根插产道一根插肛门；analSemen 肛内残精（有才送，几小时内慢慢流出，排便时一起排出）；prolapse 宫脱（有才送：几度、怎么描写、有没有托住）；penetrationLocked 为 true 表示精方的剑射精后锁住了（结住），消退前拔不出来、精液排不出来、别人也插不进来；sword 是她自己（扶她、孕夫）的剑：大小与外形；outletLayout 外口布局（有才送，没送就是阴道、尿道、肛门分开）：泄殖腔只有一个外口、没有独立的肛门，她若兼有阴茎，那是收在泄殖腔旁鞘里的鞘内剑，只在插入别人时整根翻出，被插入时收着；管状是产道末端的一根管，生产也从管口出，兼有阴茎时同一根管既是产道也是剑，不另长阴茎；阴茎分娩是孕夫从阴茎的尿道口生；肛门分娩是孕夫的肛门就是产道；canalTexture 产道内壁的质感（有才送），写内壁照它，不写成湿热的肉壁；outletLook 外口的样子（有才送：口缘、口上方与外缘的鳞、羽、软褶等），写到外阴照它；pouch 育儿袋（有才送）：下腹有袋口、没有肚脐，产后恢复期写着袋里有几个幼体或蛋时，下腹是鼓的，描写照它。描写照这些文字，不写数字。',
   ];
   if (profiles.some((profile) => profile.metabolism)) {
     lines.push('- metabolism：excretion 泄意、hunger 食意、sleep 困意、milk 乳意（孕晚期以前是乳房胀痛敏感，孕晚期起才可能溢乳）、odor 臭意、companionship 伴意，flux 为衍生种族的正负极需求；分级为 低／中／高／满／爆（没列的就是没有）；泄意、食意后面的括号是比较急的那一种（尿意／便意、饿意／渴意），写剧情照它分小便、大号、吃东西、喝水。pregnant.symptoms 是当天的妊娠症状（便秘、频尿、胀气、怪口味……），可以自然带进身体描写。需求高时可自然体现身体状态，何时处理由剧情决定，不要求每轮安排。');
@@ -1976,12 +1976,13 @@ export function buildSireExtractionSystemPrompt(settings, options = {}) {
     '- payload.source_child 若有，这个精方是由已有角色的孩子长大后注册的：种族、血脉、衍生与天赋由系统照孩子继承，不必再判断 talents（给空阵列即可）。' + CHILD_SOURCE_BACKGROUND_RULE,
     '- swordOffset: 剑（阳物）的个人偏移，−2～+2，步长 0.5，一般为 0。剑的大小 ＝ 体型 ＋ 偏移，体型已由 bodySize 决定，这里只写比同体型的人大或小多少：设定写明阳物特别粗大（小个子巨根）约 +1～+2，偏小约 −0.5～−1。设定没有着墨填 null。要与描述里性器的写法一致。',
     '- spermQuality: 精子品质倍率 0.25–4，一般人为 1。依设定里对精力、精液浓度、繁殖力的描写推估：精力衰退、不易使人受孕约 0.25–0.5；一般 1；精力旺盛、精液浓稠约 2；精力极旺、传说级的繁殖力或种马设定约 3–4。只看体能与繁殖力，不看阳物大小（那是 swordOffset）、身分、性格或受欢迎程度；设定没有着墨填 null。',
+    '- semenVolume: 每次射精量的个人倍率，只能是 0.5（少）、1（一般）、2（多）、4（很多）、8（夸张，例如设定写明射精量惊人、灌满、溢出）。体型大的本来就射得多，这里只写比同体型的人多或少；设定没有着墨填 null。',
     '- sword: 剑的外形与锁住，物件，只写设定里明确写到的项，没写的省略、整个没写就给 null：tip 头形（rounded 圆钝、rimmed 冠缘明显、covered 包皮覆盖、tapered 尖锥（犬科、触手之类）、flared 喇叭头（马科，射精时胀开））；shaft 剑身（smooth 平滑、veined 青筋浮凸、ridged 一节节的棱环（龙、虫）、spiral 螺旋（鸭、猪）、tentacle 触手（能弯、会自己动））；knot 根部球结（犬科、狼）；barbs 冠下倒刺（猫科）；twin 一对双剑（蛇、蜥蜴、鲨）；lock 射精后锁住拔不出来（犬科的结，或魔法、触手的设定）；scrotum 有没有外露的阴囊（鸟、爬虫、鱼这类藏在体内的给 false）。外形与锁住各自判断：有球结不一定写到锁住，没有球结也可能被魔法锁住。',
     '- descriptions: 以字段名为键的物件，字段名照下方规则每行「字段名|写作指引」的字段名；没有资料的字段省略。每栏一到三句白描，写当下状态，不写剧情摘要。',
     '[描述规则]',
     guide,
     ...(instruction ? ['[使用者补充]', sanitizePromptText(instruction)] : []),
-    `只输出 JSON：{"age":数字或null,"bodySize":数字或null,"swordOffset":数字或null,"spermQuality":数字或null,"sword":{"tip":"tapered","knot":true,"lock":true}或null,"isHere":true,${options.withTalents ? '"talents":[],"skills":[],' : ''}"descriptions":{"字段名":"内容"}}`,
+    `只输出 JSON：{"age":数字或null,"bodySize":数字或null,"swordOffset":数字或null,"spermQuality":数字或null,"semenVolume":数字或null,"sword":{"tip":"tapered","knot":true,"lock":true}或null,"isHere":true,${options.withTalents ? '"talents":[],"skills":[],' : ''}"descriptions":{"字段名":"内容"}}`,
   ].join('\n');
 }
 
@@ -2045,7 +2046,7 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '你只需要填写角色注册时真正需要声明的内容，不需要补充其他无关信息。',
     '不要扩写额外分类，不要发散到注册步骤之外的内容。',
     '你只需要填写以下声明内容：',
-    '1. 角色基础注册：base.age、base.race、base.bodySize、base.sheathOffset、base.build、base.bust、base.hip、base.allocationBias、base.bustGain、base.hipGain、base.vitalityLevel、base.eggQuality、base.psyStressLevel、base.libido、base.uterinePressure、base.latestSexDays、base.penetrationState、base.penetrationSource、base.sperms、metabolism',
+    '1. 角色基础注册：base.age、base.race、base.bodySize、base.sheathOffset、base.outletLayout、base.pouch、base.build、base.bust、base.hip、base.allocationBias、base.bustGain、base.hipGain、base.vitalityLevel、base.eggQuality、base.psyStressLevel、base.libido、base.uterinePressure、base.latestSexDays、base.penetrationState、base.penetrationSource、base.sperms、metabolism',
     '2. 情感与妊娠经验：experience',
     ...(includeBreedingPsychology ? ['3. 繁育心理：psychology.mens 或 psychology.preg（二选一，互斥）'] : []),
     '4. 既有孩子记录：children',
@@ -2064,6 +2065,8 @@ export function buildRegistrySystemPrompt(settings, options = {}) {
     '- base.age: 必填，不得省略或填 null。依角色卡、世界书与对话推断实际年龄；长生种只写外表年龄时，按设定推估实际岁数；资料完全没有提到时，按外貌、身分与经历推估一个合理年龄。',
     `- base.bodySize: 常态（人态）的个体体型，1–7 级，人类为 4，可带一位小数。依角色卡写明的身高或身材换算：约 30 cm＝1.5、120 cm＝2.5、150 cm＝3.5、170 cm＝4、190 cm＝4.5、220 cm＝5、250 cm＝5.5、4 m＝6、6 m 以上＝7，锚点之间按比例内插；萝莉体型约 3–3.5，八尺约 5.3。半人马、拉弥亚等大型下半身看整体量体，以种族体型为准再增减。能变形的种族只填常态，变化态由系统按种族推算。未成年角色填当下的体型。卡上没写身材就省略，系统按种族分布抽取；种族体型为依个体时（${getIndividualBodySizeRaces().join('、')}）必须按子项或描述填写；种族体型为可变时省略。`,
     '- base.sheathOffset: 鞘（阴道）的个人偏移，−1～+1，步长 0.25，一般为 0。代表实际舒适的插入深度，不只是解剖长度：鞘长与身高只有弱相关，系统已按体型算好平均，这里只写个人差异。角色卡写明很浅、一顶就到底、子宫后倾或子宫颈偏低、深了会痛，往负填（约 −0.5～−1）；写明很深、吞得下特别大的，往正填（约 +0.5～+1）。卡上没写就省略（视为 0），不要凭身材猜；原因写进私处描述。',
+    '- base.outletLayout: 外口布局，只在角色卡明写下身构造与种族预设不同时才给，没写就省略（照种族预设）：separate 阴道、尿道、肛门分开（人形下身，例如拉弥亚化出人腿）；cloaca 泄殖腔，只有一个外口（鸟、爬虫的真身）；tube 产道末端是一根管（产卵管、伪阴茎）。系统只收这个种族的可选范围（每族都能选 separate；龙、凤凰、雷鸟、羽蛇、海德拉与虫系另可选 cloaca 或 tube），范围外的丢掉。注册后锁住，之后只有身体转化会改。',
+    '- base.pouch: 有没有育儿袋（下腹的袋子，产后幼体在袋里），true／false。只在角色卡明写时给，没写就省略（照种族预设：袋兽族、甲壳族与奇美拉系有）。注册后锁住。',
     '- base.build: 体重比例 0–100，50 匀称、20 纤瘦、80 丰满肥硕。只管身上的量；是肉还是肌肉看 vitalityLevel。卡上没写身材就填 50。',
     '- base.bust: 胸部丰满度 0–100，每 10 一个罩杯：0＝AAA、10＝AA、20＝A、30＝B、40＝C、50＝D、60＝E、70＝F、80＝G、90＝H、100＝I。写明罩杯照换算；只写大小就估（平胸约 15、普通约 40、丰满约 60、巨乳 80 以上）；没写填 40。孕期变化系统自己算，这里填孕前的常态。',
     '- base.hip: 臀部饱满度 0–100（骨盆加臀），50 适中、25 窄、75 丰满。没写填 50。',
