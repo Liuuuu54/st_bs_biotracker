@@ -3998,6 +3998,17 @@ function getMetabolismLevel(value, cap = BASE_METABOLISM_CAP) {
   return '无';
 }
 
+/** 尿意、便意各自的分級（外陰圖用，1.6.0）：0 平常、1 满、2 爆；免除代谢或没有这一池时是 0 */
+export function getExcretionUrgency(profile) {
+  const metabolism = profile?.metabolism || {};
+  const level = (key) => {
+    if (metabolism[key] === undefined || isMetabolismExempt(profile, 'excretion')) return 0;
+    const text = getMetabolismLevel(Number(metabolism[key]) || 0, getMetabolismCap(profile, key));
+    return text === '爆' ? 2 : text === '满' ? 1 : 0;
+  };
+  return { urine: level('urine'), stool: level('stool') };
+}
+
 function getDerivedFluxLevel(value, cap = BASE_METABOLISM_CAP) {
   return getMetabolismLevel(Math.abs(Number(value) || 0), cap);
 }

@@ -146,6 +146,8 @@ import { getAllowedReproEffects } from './scripts/tracker.js';
 import { getFetalDailyActivity } from './scripts/fetal_activity.js';
 import { getPsyStressInitByLevel, listSnapshotCharacterTimeline } from './scripts/state.js';
 import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
+import { createVulvaRenderer } from './scripts/vulva_render.js';
+import { buildVulvaParams } from './scripts/vulva_params.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
 import { appendSkillHistory, canBodyHaveSkill, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeSkillBody, normalizeSkillList, normalizeTalentList, SKILL_BODY_LABELS, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
@@ -6131,6 +6133,11 @@ let wombCanvas = null;
 let wombTheme = '';
 let wombThemeColors = {};
 let wombCardsOpen = false;
+// 外阴分页（1.6.0）：子宫图那一格可以切到外阴正面，两张画布同尺寸
+let vulvaCanvas = null;
+let vulvaRenderer = null;
+const WOMB_TAB_KEY = 'bs-bt-womb-tab';
+let wombTab = (() => { try { return globalThis.localStorage?.getItem(WOMB_TAB_KEY) === 'vulva' ? 'vulva' : 'womb'; } catch { return 'womb'; } })();
 let wombCardsScrollTop = 0;
 let wombThumbEmote = null;
 const wombOpenFetuses = new Set();
@@ -6138,6 +6145,10 @@ const wombOpenTalents = new Set();
 const WOMB_SEEN_CUE_KEY = 'bs-bt-womb-seen-cue';
 const WOMB_EMOTE_FRAME_MS = 120;
 const WOMB_MAGNIFIER_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 1h5v2H4zM2 3h2v6H2zM9 3h2v6H9zM4 9h5v2H4zM9 9h2v2H9zM11 11h2v2h-2zM13 13h3v3h-3z"/></svg>';
+// 子宫／外阴切换钮与胎儿详细钮的像素图示（1.6.0）；放大镜留给之后的放大功能
+const WOMB_UTERUS_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M1 1h2v1h-2zM13 1h2v1h-2zM0 2h1v1h-1zM3 2h1v1h-1zM12 2h1v1h-1zM15 2h1v1h-1zM0 3h1v1h-1zM4 3h2v1h-2zM10 3h2v1h-2zM15 3h1v1h-1zM1 4h1v1h-1zM6 4h4v1h-4zM14 4h1v1h-1zM4 5h8v1h-8zM3 6h10v1h-10zM3 7h10v1h-10zM4 8h8v1h-8zM4 9h8v1h-8zM5 10h6v1h-6zM6 11h4v1h-4zM7 12h2v1h-2zM6 13h4v1h-4z"/></svg>';
+const WOMB_VULVA_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M7 1h2v1h-2zM6 2h1v1h-1zM9 2h1v1h-1zM5 3h1v1h-1zM7 3h2v1h-2zM10 3h1v1h-1zM4 4h1v1h-1zM7 4h2v1h-2zM11 4h1v1h-1zM4 5h1v1h-1zM6 5h1v1h-1zM9 5h1v1h-1zM11 5h1v1h-1zM3 6h1v1h-1zM6 6h1v1h-1zM9 6h1v1h-1zM12 6h1v1h-1zM3 7h1v1h-1zM6 7h1v1h-1zM9 7h1v1h-1zM12 7h1v1h-1zM3 8h1v1h-1zM6 8h1v1h-1zM9 8h1v1h-1zM12 8h1v1h-1zM3 9h1v1h-1zM6 9h1v1h-1zM9 9h1v1h-1zM12 9h1v1h-1zM4 10h1v1h-1zM6 10h1v1h-1zM9 10h1v1h-1zM11 10h1v1h-1zM4 11h1v1h-1zM7 11h2v1h-2zM11 11h1v1h-1zM5 12h1v1h-1zM10 12h1v1h-1zM6 13h1v1h-1zM9 13h1v1h-1zM7 14h2v1h-2z"/></svg>';
+const WOMB_CARDS_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M2 1h10v1h-10zM2 2h1v1h-1zM11 2h1v1h-1zM2 3h1v1h-1zM4 3h4v1h-4zM11 3h1v1h-1zM13 3h2v1h-2zM2 4h1v1h-1zM11 4h1v1h-1zM14 4h1v1h-1zM2 5h1v1h-1zM4 5h6v1h-6zM11 5h1v1h-1zM14 5h1v1h-1zM2 6h1v1h-1zM11 6h1v1h-1zM14 6h1v1h-1zM2 7h1v1h-1zM4 7h4v1h-4zM11 7h1v1h-1zM14 7h1v1h-1zM2 8h1v1h-1zM11 8h1v1h-1zM14 8h1v1h-1zM2 9h10v1h-10zM14 9h1v1h-1zM4 10h1v1h-1zM14 10h1v1h-1zM4 11h11v1h-11z"/></svg>';
 const WOMB_REPLAY_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 2h2v12H4zM6 3h2v10H6zM8 4h2v8H8zM10 5h2v6h-2zM12 7h1v2h-1z"/></svg>';
 /**
  * 子宫图下方的阻塞警告用短版并带胎儿编号（与胎儿详细、图上由左到右一致）：
@@ -6407,11 +6418,18 @@ function renderSheathGauge(data) {
   return sheath + capacity + fit;
 }
 
+/** 子宫／外阴切换钮（右上角）：显示的是「切过去会看到什么」 */
+function renderWombTabToggle() {
+  const toVulva = wombTab !== 'vulva';
+  const label = toVulva ? '切换到外阴正面' : '切换到子宫剖面';
+  return `<button type="button" class="bs-bt-womb-tab" data-womb-tab aria-pressed="${!toVulva}" aria-label="${label}" title="${label}">${toVulva ? WOMB_VULVA_SVG : WOMB_UTERUS_SVG}</button>`;
+}
+
 function renderWombSection(data, badge) {
   const cards = data.showPregnantFields ? data.fetuses : [];
   const cue = data.visualCue;
   const toggle = cards.length > 0
-    ? `<button type="button" class="bs-bt-womb-cards-toggle" data-womb-cards-toggle aria-controls="bs-bt-womb-cards" aria-expanded="${wombCardsOpen}" aria-label="查看胎儿详细" title="胎儿详细">${WOMB_MAGNIFIER_SVG}</button>`
+    ? `<button type="button" class="bs-bt-womb-cards-toggle" data-womb-cards-toggle aria-controls="bs-bt-womb-cards" aria-expanded="${wombCardsOpen}" aria-label="查看胎儿详细" title="胎儿详细">${WOMB_CARDS_SVG}</button>`
     : '';
   const replay = cue?.type && WOMB_CUE_LABELS[cue.type]
     ? `<button type="button" class="bs-bt-womb-replay" data-womb-replay="${escapeHtml(cue.type)}" aria-label="${escapeHtml(`重播最近的特写：${WOMB_CUE_LABELS[cue.type]}`)}" title="${escapeHtml(`重播：${WOMB_CUE_LABELS[cue.type]}`)}">${WOMB_REPLAY_SVG}</button>`
@@ -6421,7 +6439,7 @@ function renderWombSection(data, badge) {
     : '';
   return `<div class="bs-bt-track-section bs-bt-womb-section">
       ${(Array.isArray(badge) ? badge.length > 0 : Boolean(badge)) ? `<div class="bs-bt-track-section-title">${renderTrackTitle('子宫', badge)}</div>` : ''}
-      <div class="bs-bt-womb" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${renderSheathGauge(data)}${toggle}${replay}${panel}</div>
+      <div class="bs-bt-womb${wombTab === 'vulva' ? ' is-vulva' : ''}" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${renderSheathGauge(data)}${toggle}${replay}${renderWombTabToggle()}${panel}</div>
       ${renderWombAlert(data)}
     </div>`;
 }
@@ -6681,6 +6699,46 @@ function mountBellyView(ctx, content, viewModel) {
   });
 }
 
+let pendingVulvaCue = '';
+// 子宫图的视觉提示 → 外阴正面的动画：插入播剑鞘契合（含双穴），射精与套子的事件播射精脉冲
+const VULVA_CUE_PLAYS = Object.freeze({ insert: 'combine', insertCondom: 'combine', ejaculate: 'sword-pulse', ejaculateCondom: 'sword-pulse', condomBreak: 'sword-pulse', condomOverflow: 'sword-pulse' });
+
+function playVulvaCue(type) {
+  const kind = VULVA_CUE_PLAYS[type];
+  if (kind && vulvaRenderer && wombTab === 'vulva') vulvaRenderer.play(kind);
+}
+
+/**
+ * 外阴分页：切到外阴时把外阴画布换进子宫画布的位置，照角色状态设参数；切回子宫就换回来。
+ * 画法全在 vulva_render.js（由预览页汇出），这里只管换画布与参数。
+ */
+function mountVulvaView(ctx, host, viewModel, animated) {
+  if (wombTab !== 'vulva') {
+    pendingVulvaCue = '';
+    vulvaRenderer?.stop();
+    if (vulvaCanvas?.isConnected && wombCanvas) vulvaCanvas.replaceWith(wombCanvas);
+    return;
+  }
+  if (!vulvaCanvas) {
+    vulvaCanvas = Object.assign(document.createElement('canvas'), { width: 96, height: 120 });
+    vulvaCanvas.className = 'bs-bt-womb-canvas bs-bt-vulva-canvas';
+    vulvaCanvas.setAttribute('role', 'img');
+  }
+  if (!vulvaRenderer) vulvaRenderer = createVulvaRenderer(vulvaCanvas, { reducedMotion: !animated });
+  vulvaRenderer.setReducedMotion(!animated);
+  if (wombCanvas?.isConnected) wombCanvas.replaceWith(vulvaCanvas);
+  else if (!vulvaCanvas.isConnected) host.prepend(vulvaCanvas);
+  try {
+    const chatState = getChatState(ctx, getSettings(ctx));
+    vulvaRenderer.setState(buildVulvaParams(chatState, viewModel.name));
+    vulvaCanvas.setAttribute('aria-label', `${viewModel.name}的外阴正面像素图`);
+  } catch (error) {
+    console.warn('[BioTracker] vulva view failed', error);
+  }
+  vulvaRenderer.start();
+  if (pendingVulvaCue) { playVulvaCue(pendingVulvaCue); pendingVulvaCue = ''; }
+}
+
 /** 追踪页重绘后，把子宫画布换进同尺寸占位、画胎儿缩图与性别图标，并在有新事件时播一次特写 */
 function mountWombView(ctx, content, viewModel) {
   const host = content.querySelector('[data-womb-host]');
@@ -6722,11 +6780,26 @@ function mountWombView(ctx, content, viewModel) {
     if (!(Number(readSeenWombCues()[key]) >= cue.seq)) {
       markWombCueSeen(key, cue.seq);
       wombRenderer.playCue(cue.type);
+      pendingVulvaCue = cue.type;
     }
   }
   host.querySelector('[data-womb-replay]')?.addEventListener('click', (event) => {
-    wombRenderer?.playCue(String(event.currentTarget.dataset.wombReplay || ''), { userRequested: true });
+    const cueType = String(event.currentTarget.dataset.wombReplay || '');
+    wombRenderer?.playCue(cueType, { userRequested: true });
+    playVulvaCue(cueType);
   });
+  mountVulvaView(ctx, host, viewModel, animated);
+  const switchTab = () => {
+    wombTab = wombTab === 'vulva' ? 'womb' : 'vulva';
+    try { globalThis.localStorage?.setItem(WOMB_TAB_KEY, wombTab); } catch { /* 无痕模式记不住也没关系 */ }
+    const button = host.querySelector('[data-womb-tab]');
+    if (button) button.outerHTML = renderWombTabToggle();
+    host.classList.toggle('is-vulva', wombTab === 'vulva');
+    mountVulvaView(ctx, host, viewModel, animated);
+    host.querySelector('[data-womb-tab]')?.addEventListener('click', switchTab);
+    host.querySelector('[data-womb-tab]')?.focus();
+  };
+  host.querySelector('[data-womb-tab]')?.addEventListener('click', switchTab);
 
   host.querySelectorAll('canvas[data-sprite-type]').forEach((node) => {
     drawWombThumb(node);

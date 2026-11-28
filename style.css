@@ -6356,6 +6356,7 @@
 }
 
 #bs-biotracker-settings .bs-bt-womb-cards-toggle,
+#bs-biotracker-settings .bs-bt-womb-tab,
 #bs-biotracker-settings .bs-bt-womb-replay {
   position: absolute;
   z-index: 3;
@@ -6382,7 +6383,21 @@
   right: calc(50% - 96px + 6px);
 }
 
+/* 子宫／外阴切换钮（1.6.0）在右上；外阴分页不显示子宫的量尺数字与胎儿卡钮 */
+#bs-biotracker-settings .bs-bt-womb-tab {
+  top: 6px;
+  right: calc(50% - 96px + 6px);
+}
+
+
+#bs-biotracker-settings .bs-bt-womb.is-vulva .bs-bt-womb-label,
+#bs-biotracker-settings .bs-bt-womb.is-vulva .bs-bt-womb-cards-toggle,
+#bs-biotracker-settings .bs-bt-womb.is-vulva .bs-bt-womb-cards {
+  display: none;
+}
+
 #bs-biotracker-settings .bs-bt-womb-cards-toggle svg,
+#bs-biotracker-settings .bs-bt-womb-tab svg,
 #bs-biotracker-settings .bs-bt-womb-replay svg {
   width: 16px;
   height: 16px;
