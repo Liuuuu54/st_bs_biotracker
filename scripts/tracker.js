@@ -966,8 +966,22 @@ export function getTrackerToolDefinitions(settings, existingState = {}) {
   return TOOL_DEFINITIONS.filter((tool) => !hiddenTools.has(tool?.name)).map((tool) => {
     if (transformOff && tool.name === 'bsRecordExperience') return withoutTransformAction(tool, { derivedOff, bodyOff });
     if (tool.name === 'bsReproductiveIntervention') return withAllowedEffects(tool, allowedEffects);
+    if (tool.name === 'bsAddSperm' && settings?.genitalDetail !== true) return withoutGenitalDetail(tool);
     return tool;
   });
+}
+
+/** 生殖器细节关着（1.6.0）：bsAddSperm 只记产道，不给肛交、双穴与硬拔 */
+function withoutGenitalDetail(tool) {
+  const properties = { ...(tool.input_schema?.properties || {}) };
+  delete properties.channel;
+  delete properties.forced;
+  const description = String(tool.description || '')
+    .replace('记录生殖道或肛门内的插入', '记录生殖道内的插入')
+    .replace(/肛交照样用本工具[^]*?也不算破处。/, '')
+    .replace(/；但精方的剑射精后锁住[^]*?肛门照样能插）。/, '。')
+    .replace(/（双剑两处、触手怪不限）/, '');
+  return { ...tool, description, input_schema: { ...tool.input_schema, properties } };
 }
 
 /**
@@ -1724,6 +1738,10 @@ function buildTrackerStateView(existingState, settings = null, minutesPassed = 0
       // 扶她、孕夫自己的剑（1.6.0）：大小与外形，同名精方档案才有
       const sword = item?.profile?.base?.isHere === false ? '' : swordOf(name);
       if (sword && view?.profile?.base) view.profile.base.sword = sword;
+      // 生殖器细节关着（1.6.0）：外口、外观、内壁与肛门那一格都不送
+      if (settings?.genitalDetail !== true && view?.profile?.base) {
+        for (const key of ['outletLayout', 'outletLook', 'canalTexture', 'analPenetration', 'penetrationChannel', 'analSemen', 'penetrationLocked']) delete view.profile.base[key];
+      }
       return [name, pruneEmptyFields(trimPaternityClaims(skillOn ? view : stripSkillFields(view)))];
     }),
   );
@@ -1961,10 +1979,11 @@ export function buildTrackerPayload(ctx, settings, reason = 'manual', endIndexEx
     tracked_females: getRegisteredTargetNames(ctx, settings, chatState),
     priority_character_names: getPriorityCharacterNames(ctx, settings, chatState),
     registered_sires: localizeSireAges(buildSirePromptEntries(chatState, {
+      genitalDetail: settings?.genitalDetail === true,
       recentText: recentMessages.map((message) => message.text).join('\n'),
       guide: settings?.registryDescriptionGuides?.sireDescription ?? DEFAULT_REGISTRY_DESCRIPTION_GUIDES.sireDescription,
     }), getActiveCalendar()),
-    existing_state: (reason === 'mainflow' ? narrateStateNumbers : (state) => state)(localizeStateAges(buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus), (name) => (getSireRecord(chatState, name) ? describeSireSword(getSireRecord(chatState, name), Number(chatState.minutesPassed) || 0, existingState[name]?.profile?.base?.race || '人类') : '')), getActiveCalendar(), Number(chatState.minutesPassed) || 0), existingState),
+    existing_state: (reason === 'mainflow' ? narrateStateNumbers : (state) => state)(localizeStateAges(buildTrackerStateView(existingState, settings, Number(chatState.minutesPassed) || 0, chatState.reproductiveSettings, (fetus) => getGuardingSire(chatState, fetus), (name) => (getSireRecord(chatState, name) ? describeSireSword(getSireRecord(chatState, name), Number(chatState.minutesPassed) || 0, existingState[name]?.profile?.base?.race || '人类', { detail: settings?.genitalDetail === true }) : '')), getActiveCalendar(), Number(chatState.minutesPassed) || 0), existingState),
     // 主线用：今天＋历法本身（主线提示词不在这里拼快取顺序）
     ...(getActiveCalendar() ? { calendar_note: describeCalendarForPrompt(getActiveCalendar(), Number(chatState.minutesPassed) || 0), calendar_today: describeCalendarToday(getActiveCalendar(), Number(chatState.minutesPassed) || 0) } : {}),
     recent_operation_results: (chatState.lastOperationLogs || []).filter((log) => (['bsAddSperm', 'bsAbortion'].includes(log.name) || (log.name === 'bsReproductiveIntervention' && String(log.message || '').includes('事后避孕'))) && Object.entries(existingState).some(([name, item]) => name === String(log.arguments?.female || '').trim() && item.profile?.base?.isHere !== false)).map(({ name, applied, message, arguments: args }) => ({ name, female: String(args?.female || '').trim(), applied, message })),

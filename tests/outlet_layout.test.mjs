@@ -119,7 +119,7 @@ test('提示词：分离开口不送，其他送文字；非血肉纹理才送',
   base(chat).isHere = true;
   const ctx = {
     chatId: 'outlet-chat', characters: [], chat: [{ name: '用户', is_user: true, mes: '……' }], name1: '用户', name2: 'A',
-    extensionSettings: { bs_biotracker: { enabled: true, chatStates: { 'outlet-chat': chat } } },
+    extensionSettings: { bs_biotracker: { enabled: true, genitalDetail: true, chatStates: { 'outlet-chat': chat } } },
     saveSettingsDebounced() {},
   };
   globalThis.SillyTavern = { getContext: () => ctx };
@@ -180,7 +180,7 @@ test('提示词：外口的样子与育儿袋（含袋里的幼体）有才送�
   Object.assign(chat.characters.B.profile.base, { stage: '卵泡期', days: 0, race: '人类', bodySize: 4, isHere: true });
   const ctx = {
     chatId: 'look-chat', characters: [], chat: [{ name: '用户', is_user: true, mes: '……' }], name1: '用户', name2: 'A',
-    extensionSettings: { bs_biotracker: { enabled: true, chatStates: { 'look-chat': chat } } },
+    extensionSettings: { bs_biotracker: { enabled: true, genitalDetail: true, chatStates: { 'look-chat': chat } } },
     saveSettingsDebounced() {},
   };
   globalThis.SillyTavern = { getContext: () => ctx };
@@ -232,4 +232,34 @@ test('混血的外观：占比最大的那一族，平手从母（写法父x母�
   assert.equal(getRaceOutletLayout('1/2人类x1/2蛇人', null, '人类'), 'separate', '知道母亲就照母亲');
   assert.equal(getVulvaRacePreset('1/2人类x1/2蛇人').layout, 'single');
   assert.equal(getPouchDefault('1/2人类x1/2奇美拉'), 'on');
+});
+
+test('生殖器细节没开（预设）：不送外口、外观与剑外形，bsAddSperm 只记产道、不锁、不演破处', async () => {
+  const { getTrackerToolDefinitions } = await import('../scripts/tracker.js');
+  const chat = setup({ race: '奇美拉', isHere: true });
+  chat.sires = { 犬: normalizeSireRecord({ race: '地狱犬', swordTip: 'tapered', swordKnot: true, swordLock: true, semenVolume: 4 }) };
+  const ctx = {
+    chatId: 'off-chat', characters: [], chat: [{ name: '用户', is_user: true, mes: '……' }], name1: '用户', name2: 'A',
+    extensionSettings: { bs_biotracker: { enabled: true, chatStates: { 'off-chat': chat } } },
+    saveSettingsDebounced() {},
+  };
+  globalThis.SillyTavern = { getContext: () => ctx };
+  const payload = buildTrackerPayload(ctx, state.getSettings(ctx));
+  const b = payload.existing_state.A.profile.base;
+  assert.equal('outletLayout' in b || 'outletLook' in b || 'canalTexture' in b, false);
+  assert.match(b.pouch, /育儿袋/, '育儿袋是孕体特写的，照送');
+  const sire = payload.registered_sires.find((entry) => entry.name === '犬');
+  assert.doesNotMatch(sire.sword || '', /尖锥|球结|锁住/);
+  assert.match(sire.sword || '', /精量很多/);
+  const tool = getTrackerToolDefinitions(state.getSettings(ctx), {}).find((item) => item.name === 'bsAddSperm');
+  assert.equal('channel' in tool.input_schema.properties, false);
+  assert.doesNotMatch(tool.description, /肛交照样用本工具|锁住/);
+  // 工具端：开关关着（追踪时照设定写进 chatState）
+  chat.genitalDetail = false;
+  chat.characters.A.profile.experience = { ...(chat.characters.A.profile.experience || {}), virginity: null };
+  assert.equal(sperm(chat, { male: '犬', race: '地狱犬', action: 'insert', channel: 'anal' }).applied, false);
+  assert.equal(sperm(chat, { male: '犬', race: '地狱犬', action: 'insert' }).applied, true);
+  assert.equal(chat.characters.A.profile.visualCue.type, 'insert', '不演破处');
+  sperm(chat, { male: '犬', race: '地狱犬', action: 'deposit', amount: 10 });
+  assert.equal(base(chat).penetrationLocked, undefined, '不锁');
 });

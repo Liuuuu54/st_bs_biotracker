@@ -112,7 +112,7 @@ test('提示词：精方的剑送大小与外形；扶她自己的剑送在她�
   chat.sires.A = normalizeSireRecord({ swordTwin: true });
   const ctx = {
     chatId: 'sword-chat', characters: [], chat: [{ name: '用户', is_user: true, mes: '……' }], name1: '用户', name2: 'A',
-    extensionSettings: { bs_biotracker: { enabled: true, chatStates: { 'sword-chat': chat } } },
+    extensionSettings: { bs_biotracker: { enabled: true, genitalDetail: true, chatStates: { 'sword-chat': chat } } },
     saveSettingsDebounced() {},
   };
   globalThis.SillyTavern = { getContext: () => ctx };

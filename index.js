@@ -5650,7 +5650,8 @@ function buildTrackCharacterViewModel(character, minutesPassed = null, chatState
         // 种族外观与锁住（1.6.0）
         appearance: buildWombAppearance(character),
         lockKnot: getLockKnot(runtimeChatState || chatState, character),
-        hymen: getHymenState(profile),
+        // 处女膜只在生殖器细节打开时画（1.6.0）
+        hymen: runtimeSettings?.genitalDetail === true ? getHymenState(profile) : 'none',
       }),
       visualCue: profile.visualCue || null,
       // 外阴分页看插入状态的变化（spent → idle 是刚拔出来，播流出）
@@ -6443,7 +6444,14 @@ function renderSheathGauge(data) {
 }
 
 /** 子宫／外阴切换钮（右上角）：显示的是「切过去会看到什么」 */
+/** 生殖器细节（系统页，预设关）：关着时没有外阴分页 */
+function isGenitalDetailOn() {
+  const ctx = getContextSafe();
+  return Boolean(ctx && getSettings(ctx)?.genitalDetail === true);
+}
+
 function renderWombTabToggle() {
+  if (!isGenitalDetailOn()) return '';
   const toVulva = wombTab !== 'vulva';
   const label = toVulva ? '切换到外阴正面' : '切换到子宫剖面';
   return `<button type="button" class="bs-bt-womb-tab" data-womb-tab aria-pressed="${!toVulva}" aria-label="${label}" title="${label}">${toVulva ? WOMB_VULVA_SVG : WOMB_UTERUS_SVG}</button>`;
@@ -6463,7 +6471,7 @@ function renderWombSection(data, badge) {
     : '';
   return `<div class="bs-bt-track-section bs-bt-womb-section">
       ${(Array.isArray(badge) ? badge.length > 0 : Boolean(badge)) ? `<div class="bs-bt-track-section-title">${renderTrackTitle('子宫', badge)}</div>` : ''}
-      <div class="bs-bt-womb${wombTab === 'vulva' ? ' is-vulva' : ''}" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${renderSheathGauge(data)}${toggle}${replay}${renderWombTabToggle()}${panel}</div>
+      <div class="bs-bt-womb${wombTab === 'vulva' && isGenitalDetailOn() ? ' is-vulva' : ''}" data-womb-host><div class="bs-bt-womb-slot" data-womb-slot></div>${renderSheathGauge(data)}${toggle}${replay}${renderWombTabToggle()}${panel}</div>
       ${renderWombAlert(data)}
     </div>`;
 }
@@ -6809,7 +6817,7 @@ function noteVulvaFlowEvents(key, viewModel, cueType) {
  * 画法全在 vulva_render.js（由预览页汇出），这里只管换画布与参数。
  */
 function mountVulvaView(ctx, host, viewModel, animated) {
-  if (wombTab !== 'vulva') {
+  if (wombTab !== 'vulva' || getSettings(ctx)?.genitalDetail !== true) {
     pendingVulvaCue = '';
     vulvaRenderer?.stop();
     if (vulvaCanvas?.isConnected && wombCanvas) vulvaCanvas.replaceWith(wombCanvas);
@@ -11390,6 +11398,7 @@ function applySettingsToForm(ctx) {
   setValue('bs-bt-tracker-token-budget', settings.trackerTokenBudget);
   setValue('bs-bt-luker-multi-agent-manual-only', settings.lukerMultiAgentManualOnly);
   setValue('bs-bt-womb-animation', settings.wombAnimation !== false);
+  setValue('bs-bt-genital-detail', settings.genitalDetail === true);
   setValue('bs-bt-belly-closeup', settings.bellyCloseup !== false);
   bellyCloseupEnabled = settings.bellyCloseup !== false;
   setValue('bs-bt-wardrobe-system-enabled', isWardrobeSystemEnabled(settings));
@@ -11980,6 +11989,7 @@ function readSettingsFromForm(ctx) {
   settings.trackerTokenBudget = Math.max(500, Math.min(100000, Math.floor(Number(getValue('bs-bt-tracker-token-budget')) || 4096)));
   settings.lukerMultiAgentManualOnly = Boolean(document.getElementById('bs-bt-luker-multi-agent-manual-only')?.checked);
   settings.wombAnimation = Boolean(document.getElementById('bs-bt-womb-animation')?.checked);
+  settings.genitalDetail = Boolean(document.getElementById('bs-bt-genital-detail')?.checked);
   settings.bellyCloseup = document.getElementById('bs-bt-belly-closeup') ? Boolean(document.getElementById('bs-bt-belly-closeup').checked) : settings.bellyCloseup !== false;
   bellyCloseupEnabled = settings.bellyCloseup !== false;
   settings.wardrobeSystemEnabled = Boolean(document.getElementById('bs-bt-wardrobe-system-enabled')?.checked);

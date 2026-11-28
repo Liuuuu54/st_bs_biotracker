@@ -9550,6 +9550,11 @@ function applyAddSperm(chatState, args) {
   const singleCanal = ANAL_BIRTH_CANAL_LAYOUTS.has(layout);
   const analSlot = base.analPenetration && typeof base.analPenetration === 'object' ? base.analPenetration : null;
   const bodyNote = describeBodyConflicts(chatState, female, male);
+  // 生殖器细节关着（1.6.0，系统页的开关）：只记产道，不记肛交与双穴，剑不锁、不演破处
+  const genitalOff = chatState.genitalDetail === false;
+  if (genitalOff && ['anal', 'both'].includes(args.channel) && action === 'insert') {
+    return { applied: false, message: `bsAddSperm skipped for ${female}: 生殖器细节没开，只记产道的插入（肛交、双穴不记）。` };
+  }
 
   if (action === 'insert') {
     if (amount !== 0) return { applied: false, message: `bsAddSperm skipped for ${female}: insert 的 amount 必须为 0。` };
@@ -9615,7 +9620,7 @@ function applyAddSperm(chatState, args) {
     const experience = { ...(next.profile?.experience || {}), latestSexPartner: male };
     // 子宫图的插入动画只给产道；第一次插进产道演破处（1.6.0，只是画面）
     const deflowered = !anal && (experience.virginity === null || experience.virginity === undefined);
-    if (!anal) setVisualCue(next.profile, deflowered ? 'deflower' : base.penetrationCondom ? 'insertCondom' : 'insert');
+    if (!anal) setVisualCue(next.profile, deflowered && !genitalOff ? 'deflower' : base.penetrationCondom ? 'insertCondom' : 'insert');
     // 肛交不算破处
     if (!anal && (experience.virginity === null || experience.virginity === undefined)) experience.virginity = male;
     next.profile.experience = experience;
@@ -9792,7 +9797,7 @@ function applyAddSperm(chatState, args) {
   next.profile.lastCondomResult = { hasCondom, condomFailed, condomFailReason, enteredAmount, ...(anal || both ? { channel: insertedChannel } : {}), minutesPassed: Number(chatState.minutesPassed) || 0 };
   base.latestSexDays = 0;
   // 剑锁住（1.6.0）：精方档案开了 swordLock，射精后锁住，拔出前精液排不出来、别人插不进来（锁的是他插着的那一格）
-  const locked = getSireRecord(chatState, male)?.swordLock === true;
+  const locked = !genitalOff && getSireRecord(chatState, male)?.swordLock === true;
   if (anal) {
     base.analPenetration = { ...analSlot, state: 'spent', condom: hasCondom };
     if (locked) base.analPenetration.locked = true;
@@ -10995,6 +11000,8 @@ export function applyToolCallsResult(ctx, result, sourceId = '') {
   const toolCalls = Array.isArray(result?.tool_calls) ? result.tool_calls : [];
   const logs = [];
   chatState.reproductiveSettings = normalizeReproductiveSettings(settings.reproductiveSettings);
+  // 生殖器细节（1.6.0，系统页开关）：工具照它决定记不记肛交、双穴与剑锁住
+  chatState.genitalDetail = settings.genitalDetail === true;
   const batchFetusOrder = captureVisibleFetusOrder(chatState);
   const notifyBaseline = readNotifyParts(chatState);
   let notifyPrevious = notifyBaseline;

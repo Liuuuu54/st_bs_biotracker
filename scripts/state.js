@@ -313,6 +313,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   mainflowCopyCharLimit: 400000,
   trackerTokenBudget: 4096,
   wombAnimation: true,
+  // 生殖器细节（1.6.0）：外阴分页、处女膜、外口与剑外形的提示词、肛交／双穴／3P 与剑锁住。预设关，系统页打开才有
+  genitalDetail: false,
   // 孕体特写（身体侧面像素画）
   bellyCloseup: true,
   wardrobeSystemEnabled: true,
@@ -1330,6 +1332,11 @@ export function getSettings(ctx) {
   const wombAnimation = settings.wombAnimation !== false;
   if (settings.wombAnimation !== wombAnimation) {
     settings.wombAnimation = wombAnimation;
+    shouldSave = true;
+  }
+  const genitalDetail = settings.genitalDetail === true;
+  if (settings.genitalDetail !== genitalDetail) {
+    settings.genitalDetail = genitalDetail;
     shouldSave = true;
   }
   const apiProfiles = normalizeApiProfiles(settings.apiProfiles);

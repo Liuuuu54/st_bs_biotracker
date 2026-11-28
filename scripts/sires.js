@@ -247,11 +247,12 @@ export function getSireQualityState(chatState, name, { minutesPassed = null } = 
  * 精方种族的产道不是血肉时（晶面、金属格……），剑也是那种质感。都是预设值回传空字串。
  * race 给扶她、孕夫用（她们的精方档案不存种族，照卵方）。
  */
-export function describeSireSword(record, nowMinutes = null, race = record?.race) {
+export function describeSireSword(record, nowMinutes = null, race = record?.race, { detail = true } = {}) {
   const offset = getEffectiveSwordOffset(record, nowMinutes);
   const size = offset ? `${describeSwordOffset(offset)}${offset !== normalizeSwordOffset(record?.swordOffset) ? '（强精，暂时变大）' : ''}` : '';
-  const texture = race ? getRaceCanalTexture(race, record?.bloodline || null) : null;
-  return [size, describeSwordTraits(record), texture ? `质感：${texture}` : '', describeSemenVolume(record?.semenVolume)].filter(Boolean).join('，');
+  // 生殖器细节关着（1.6.0）：只送大小与精量，不送外形与质感
+  const texture = detail && race ? getRaceCanalTexture(race, record?.bloodline || null) : null;
+  return [size, detail ? describeSwordTraits(record) : '', texture ? `质感：${texture}` : '', describeSemenVolume(record?.semenVolume)].filter(Boolean).join('，');
 }
 
 /** 剑偏移加上强精暂时的加大（1.5.4），夹在 −2～+2 */
@@ -603,7 +604,7 @@ function collectFetusFatherNames(chatState) {
  * - 不在场：只有是当前胎儿的父亲／认定父亲，或最近讯息提到名字时，才送一行摘要（不送描述）
  * 同名卵方（扶她）已在角色状态里，不重复送。
  */
-export function buildSirePromptEntries(chatState, { recentText = '', guide = '', minutesPassed = null } = {}) {
+export function buildSirePromptEntries(chatState, { recentText = '', guide = '', minutesPassed = null, genitalDetail = true } = {}) {
   const sires = chatState?.sires;
   if (!sires || typeof sires !== 'object') return [];
   const now = minutesPassed != null && Number.isFinite(Number(minutesPassed)) ? Number(minutesPassed) : (Number(chatState?.minutesPassed) || 0);
@@ -629,7 +630,7 @@ export function buildSirePromptEntries(chatState, { recentText = '', guide = '',
       ...(virility ? { virility } : {}),
       ...(condition ? { condition } : {}),
       // 剑只送文字：模型看不懂偏移数字。强精中照暂时加大后的尺寸
-      ...(describeSireSword(record, now) ? { sword: describeSireSword(record, now) } : {}),
+      ...(describeSireSword(record, now, record.race, { detail: genitalDetail }) ? { sword: describeSireSword(record, now, record.race, { detail: genitalDetail }) } : {}),
       // 生效中的药（1.5.4）：药名、效果与剩多久
       ...(describeReproEffects({ base: record }, now).length ? { activeDrugs: describeReproEffects({ base: record }, now) } : {}),
     };
