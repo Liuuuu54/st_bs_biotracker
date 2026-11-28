@@ -87,7 +87,7 @@ export function createBellyPalette({ skinBase = BELLY_SKIN_BASE, nippleBase = nu
  * 预设肤色会偏成主题色；冰蓝、苔绿这类奇幻肤色只是染上主题色，不会被转成别的颜色。
  */
 const HALF_TINT = 0.6;
-function halfTint(wall) {
+export function halfTint(wall) {
   const w = hexToRgb(wall);
   const peak = Math.max(1, ...w);
   const filter = w.map((v) => 1 - HALF_TINT + HALF_TINT * (v / peak));

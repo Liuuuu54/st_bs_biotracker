@@ -100,3 +100,27 @@ test('没给的参数照预览预设', () => {
   const p = params(setup());
   for (const key of Object.keys(VULVA_DEFAULTS)) assert.ok(key in p, key);
 });
+
+test('主题配色：全彩只换背景、半彩打色光、单色整张换成子宫图的色带', async () => {
+  const { buildVulvaTheme } = await import('../scripts/vulva_params.js');
+  const { getUterusPalette } = await import('../scripts/uterus_render.js');
+  const { BELLY_THEME_MODES, halfTint } = await import('../scripts/belly_render.js');
+  const params = { skin: '#7e4e35', tone: '#a07060', 'anus-color': '#7e4e35', 'material-light': '#c09080', layout: 'human' };
+  const options = (name, womb) => ({ theme: name, modes: BELLY_THEME_MODES, tint: halfTint(womb.wall), rampThemes: new Set(['ink', 'constructivism']) });
+  const sakura = getUterusPalette({ name: 'sakura' });
+  const full = buildVulvaTheme(sakura, options('sakura', sakura));
+  assert.equal(full.palette.background, sakura.bg);
+  assert.equal(full.palette.wall, '#c85f78', '全彩的肉色照写实');
+  assert.equal(full.recolor(params).skin, '#7e4e35', '全彩保留种族与自订肤色');
+  const retro = getUterusPalette({ name: 'retro' });
+  const mono = buildVulvaTheme(retro, options('retro', retro));
+  assert.equal(mono.palette.wall, retro.wall);
+  assert.equal(mono.recolor(params).skin, retro.wall, '单色不套肤色');
+  const ink = getUterusPalette({ name: 'ink' });
+  assert.ok(buildVulvaTheme(ink, options('ink', ink)).brush, '水墨要做笔触');
+  const fantasy = getUterusPalette({ name: 'fantasy' });
+  const half = buildVulvaTheme(fantasy, options('fantasy', fantasy));
+  assert.notEqual(half.recolor(params).skin, '#7e4e35', '半彩打上主题色光');
+  assert.equal(half.recolor(params).layout, 'human');
+  assert.equal(buildVulvaTheme(null).palette.wall, '#c85f78', '没有主题色表照预览原色');
+});

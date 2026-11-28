@@ -135,7 +135,7 @@ import { renderRaceSheetHtml, renderSheetHtml } from './scripts/encyclopedia_she
 import { createBellyAnimator } from './scripts/belly_anim.js';
 import { loadBellyData } from './scripts/belly_data.js';
 import { createBellyLayout } from './scripts/belly_layout.js';
-import { BELLY_THEME_MODES, applyBellyInkBrush, createBellyPainter, createBellyThemePalette } from './scripts/belly_render.js';
+import { BELLY_THEME_MODES, applyBellyInkBrush, createBellyPainter, createBellyThemePalette, halfTint } from './scripts/belly_render.js';
 import { describeDerivedTransform, normalizeDerivedTransformLog } from './scripts/derived_transform.js';
 import { DISPLAY_NAVELS, DISPLAY_NAVEL_SIZES, DISPLAY_NIPPLE_PRESETS, DISPLAY_NIPPLE_SIZES, DISPLAY_SKIN_PRESETS, DISPLAY_STRETCH_MARKS, normalizeDisplay, normalizeDisplayColor } from './scripts/display_colors.js';
 import { averageYearDays, birthdayOf, dateAt, earthAgeForBirthday, formatBirthday, formatCalendarDate, getActiveCalendar, legalAge, minutesAtDate, nextBirthdayMinutes, monthCount, monthDays, monthName, normalizeCalendar, randomBirthday, setCalendarProvider, toLocalYears } from './scripts/calendar.js';
@@ -147,7 +147,7 @@ import { getFetalDailyActivity } from './scripts/fetal_activity.js';
 import { getPsyStressInitByLevel, listSnapshotCharacterTimeline } from './scripts/state.js';
 import { buildBellyCloseupState, getBellyCueAction, getBellyThrustReach, resolveBellyCuePair } from './scripts/belly_state.js';
 import { createVulvaRenderer } from './scripts/vulva_render.js';
-import { buildVulvaParams } from './scripts/vulva_params.js';
+import { buildVulvaParams, buildVulvaTheme } from './scripts/vulva_params.js';
 import { createUterusRenderer, drawFetusThumb, drawGenderIcon, EMOTE_MS, getAffinityBand, getUterusPalette } from './scripts/uterus_render.js';
 import { isRealisticWorld, normalizeSpecialTools } from './scripts/world_mode.js';
 import { appendSkillHistory, canBodyHaveSkill, fillTrainingSkillBaseline, getTalentLabel, importSkillPresetGroup, normalizeSkillBody, normalizeSkillList, normalizeTalentList, SKILL_BODY_LABELS, removeSkillDefinition, requiredExp, resolveSkillDefinition, SKILL_MAX_LEVEL, TALENT_MAX_LEVEL, updateSkillDefinition } from './scripts/skill_config.js';
@@ -6700,6 +6700,8 @@ function mountBellyView(ctx, content, viewModel) {
 }
 
 let pendingVulvaCue = '';
+// 单色主题里用深到浅一条色带的（同孕体特写）
+const VULVA_RAMP_THEMES = new Set(['ink', 'constructivism']);
 // 子宫图的视觉提示 → 外阴正面的动画：插入播剑鞘契合（含双穴），射精与套子的事件播射精脉冲
 const VULVA_CUE_PLAYS = Object.freeze({ insert: 'combine', insertCondom: 'combine', ejaculate: 'sword-pulse', ejaculateCondom: 'sword-pulse', condomBreak: 'sword-pulse', condomOverflow: 'sword-pulse' });
 
@@ -6730,7 +6732,17 @@ function mountVulvaView(ctx, host, viewModel, animated) {
   else if (!vulvaCanvas.isConnected) host.prepend(vulvaCanvas);
   try {
     const chatState = getChatState(ctx, getSettings(ctx));
-    vulvaRenderer.setState(buildVulvaParams(chatState, viewModel.name));
+    // 配色跟主题走：与子宫图、孕体特写同一套（全彩、半彩、单色）
+    const theme = buildVulvaTheme(getUterusPalette(wombThemeColors), {
+      theme: wombThemeColors.name, modes: BELLY_THEME_MODES, tint: halfTint(getUterusPalette(wombThemeColors).wall), rampThemes: VULVA_RAMP_THEMES,
+    });
+    vulvaRenderer.setPalette(theme.palette);
+    vulvaRenderer.setPostProcess(theme.brush ? (context) => {
+      const image = context.getImageData(0, 0, context.canvas.width, context.canvas.height);
+      applyBellyInkBrush(image.data, image.width, image.height, theme.brush);
+      context.putImageData(image, 0, 0);
+    } : null);
+    vulvaRenderer.setState(theme.recolor(buildVulvaParams(chatState, viewModel.name)));
     vulvaCanvas.setAttribute('aria-label', `${viewModel.name}的外阴正面像素图`);
   } catch (error) {
     console.warn('[BioTracker] vulva view failed', error);

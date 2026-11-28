@@ -54,7 +54,8 @@ cases.push({ label: '扶她 雙劍 尖錐 球結 青筋', values: { 'race-preset
 cases.push({ label: '扶她 喇叭頭 倒刺 無陰囊', values: { 'race-preset': '人類', layout: 'human', 'human-sire': 'on', swordTip: 'flared', swordBarbs: 'on', swordScrotum: 'hidden' } });
 cases.push({ label: '泄殖腔 鞘內劍 插入別人', values: { 'race-preset': '蛇人', 'single-sire': 'on', 'single-role': 'giving', libido: '40' } });
 cases.push({ label: '泄殖腔 鞘內劍 性慾高', values: { 'race-preset': '蛇人', 'single-sire': 'on', 'single-role': 'idle', libido: '95' } });
-for (const shape of ['small', 'large', 'claude']) cases.push({ label: `肛門 ${shape}`, values: { 'race-preset': '人類', 'anus-shape': shape } });
+for (const shape of ['small', 'large', 'claude', 'gpt', 'gemini']) cases.push({ label: `肛門 ${shape}`, values: { 'race-preset': '人類', 'anus-shape': shape } });
+for (const shape of ['claude', 'gpt', 'gemini']) cases.push({ label: `男孕 肛門 ${shape} 宮脫2`, values: { 'race-preset': '人類', layout: 'anal', 'anus-shape': shape, prolapse: '2' } });
 cases.push({ label: '男孕 管狀尿道分娩', values: { 'race-preset': '人類', layout: 'tube', 'sire-form': 'urethral' } });
 cases.push({ label: '自然分娩 3 次 恢復 30%', values: { 'race-preset': '人類', parity: '3', recovery: '30' } });
 

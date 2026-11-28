@@ -167,3 +167,52 @@ export function buildVulvaParams(chatState, name, character = chatState?.charact
   params.fit = String(fitTierFromDiff(base.penetrationFit?.diff));
   return params;
 }
+
+// ── 主题配色（1.6.0）：照孕体特写的做法（belly_render.js 的 BELLY_THEME_MODES）──
+// 全彩：写实肤色，只有背景与框角跟主题；半彩：写实肤色打上主题的色光（halfTint）；
+// 单色：整张换成子宫图那条色带，不套种族与自订肤色（水墨、建构用深到浅的一条色带，水墨另做笔触）。
+const VULVA_BASE_PALETTE = Object.freeze({
+  background: '#1c1726', frame: '#47283d', cavityDeep: '#421d3d', cavity: '#672d51',
+  wallDark: '#803b58', wall: '#c85f78', wallLight: '#ee9290', lining: '#f3a891', shine: '#ffd0a4',
+});
+const FLESH_KEYS = ['cavityDeep', 'cavity', 'wallDark', 'wall', 'wallLight', 'lining', 'shine'];
+const COLOR_PARAMS = ['skin', 'tone', 'anus-color', 'material-light'];
+
+/**
+ * 子宫图的主题色表（getUterusPalette 的结果）→ 外阴图的基础色表与要改的颜色参数。
+ * 回传 { palette, params(原参数) → 新参数, brush }；womb 没给就照预览的原色。
+ */
+export function buildVulvaTheme(womb, { theme = '', modes = {}, tint = null, rampThemes = new Set() } = {}) {
+  if (!womb) return { palette: { ...VULVA_BASE_PALETTE }, recolor: (params) => params, brush: null };
+  const mode = modes[theme] || 'half';
+  const frame = womb.tick || womb.frame || womb.void || VULVA_BASE_PALETTE.frame;
+  if (mode === 'full') {
+    return { palette: { ...VULVA_BASE_PALETTE, background: womb.bg, frame }, recolor: (params) => params, brush: null };
+  }
+  if (mode === 'mono') {
+    let flesh;
+    if (rampThemes.has(theme)) {
+      const dark = womb.ink || womb.wallDark;
+      const light = womb.fetusLight || womb.shine;
+      const at = (t) => mixHex(dark, light, t);
+      flesh = { cavityDeep: at(0.05), cavity: at(0.2), wallDark: at(0.45), wall: at(0.62), wallLight: at(0.8), lining: at(0.88), shine: at(1) };
+    } else {
+      flesh = { cavityDeep: womb.cavityDeep, cavity: womb.cavity, wallDark: womb.wallDark, wall: womb.wall, wallLight: womb.wallLight,
+        lining: mixHex(womb.wallLight, womb.shine, 0.35), shine: womb.shine };
+    }
+    const palette = { background: womb.bg, frame, ...flesh };
+    const recolor = (params) => ({ ...params, skin: flesh.wall, tone: flesh.wallLight, 'anus-color': flesh.wall,
+      'material-light': mixHex(flesh.wallLight, flesh.shine, 0.34) });
+    return { palette, recolor, brush: womb.brush ? { paper: womb.bg, ink: womb.ink || flesh.cavityDeep } : null };
+  }
+  // 半彩：写实色打上主题色光
+  const light = typeof tint === 'function' ? tint : (color) => color;
+  const palette = { ...VULVA_BASE_PALETTE, background: womb.bg, frame };
+  for (const key of FLESH_KEYS) palette[key] = light(VULVA_BASE_PALETTE[key]);
+  const recolor = (params) => {
+    const next = { ...params };
+    for (const key of COLOR_PARAMS) if (isHex(next[key])) next[key] = light(next[key]);
+    return next;
+  };
+  return { palette, recolor, brush: null };
+}

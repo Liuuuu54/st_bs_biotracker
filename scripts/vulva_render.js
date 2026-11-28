@@ -106,7 +106,9 @@ export function createVulvaRenderer(canvas, options = {}) {
   const ctx = frontBuffer.getContext('2d');
   const distanceMark = stub();
   const compactFrontHeight = 100;
+  const compactFrontClip = compactFrontHeight - 3;
   const analDistanceStart = .58;
+  const uterusBodyOffsets = [0, 9, 18, 23];
   const clitoralHoodMarker = stub();
   const clitoralGlansMarker = stub();
   const basePalette = {
@@ -141,7 +143,6 @@ export function createVulvaRenderer(canvas, options = {}) {
   const blankImage = () => ({ complete: false, naturalWidth: 0, width: 0, height: 0, addEventListener() {} });
   const uterusAtlas = blankImage();
   const tintedUterusAtlas = document.createElement('canvas');
-  const uterusBodyOffsets = [0, 9, 18, 23];
   let lastUterusColor;
   const fetalAtlas = blankImage();
   const humanFetalSheet = blankImage();
@@ -270,6 +271,47 @@ export function createVulvaRenderer(canvas, options = {}) {
       [1, 2], [-1, 2], [-1, 1], [-2, 1], [-2, 0], [-1, 0]]);
   }
 
+  function drawLogoAnusFolds(shape, opening, hubWidth, hubDepth, thickness, shadow, light, context) {
+    const { centerX, centerY, width, depth } = opening;
+    const outerX = Math.max(width + 4.6, hubWidth + 6 * thickness + 2);
+    const outerY = Math.max(depth + 3.6, hubDepth + 5 * thickness + 2);
+    if (shape === 'gemini') {
+      const spark = [[0,-1],[.12,-.65],[.27,-.38],[.43,-.22],[.68,-.10],[1,0],
+        [.68,.10],[.43,.22],[.27,.38],[.12,.65],[0,1],[-.12,.65],[-.27,.38],[-.43,.22],
+        [-.68,.10],[-1,0],[-.68,-.10],[-.43,-.22],[-.27,-.38],[-.12,-.65]];
+      const outline = (color, xRadius, yRadius) => polygon(color, spark.map(([x, y]) =>
+        [centerX + x * xRadius, centerY + y * yRadius]), context);
+      outline(shadow, outerX, outerY);
+      outline(light, outerX * .83, outerY * .79);
+      return;
+    }
+
+    const innerX = hubWidth + .6;
+    const innerY = hubDepth + .4;
+    const loop = (color, index, points) => {
+      const angle = index * Math.PI / 3 - Math.PI / 2;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      polygon(color, points.map(([along, across]) => [
+        centerX + cos * (innerX + along * (outerX - innerX)) - sin * across * outerX,
+        centerY + sin * (innerY + along * (outerY - innerY)) + cos * across * outerY,
+      ]), context);
+    };
+    // Draw all six bands before adding the short sections that pass over their neighbors.
+    const ribbon = [[.02,-.25],[.53,-.39],[.84,-.28],[1,-.03],[.98,.23],[.79,.50],
+      [.42,.65],[.15,.58],[.17,.34],[.49,.37],[.71,.24],[.77,.05],[.65,-.12],[.47,-.14],[.02,.01]];
+    const crossing = [[.51,-.37],[.82,-.27],[.90,-.14],[.72,-.05],[.61,-.13],[.40,-.13]];
+    const lobe = ribbon.slice(0, 8);
+    const recess = mix(shadow, basePalette.cavityDeep, .46);
+    for (let index = 0; index < 6; index++) loop(recess, index, lobe);
+    for (let index = 0; index < 6; index++) loop(shadow, index, ribbon);
+    for (let index = 0; index < 6; index++) loop(light, index, crossing);
+  }
+
+  function usesSmallAnusHub(shape) {
+    return shape === 'claude' || shape === 'gpt' || shape === 'gemini';
+  }
+
   function drawAnusOpening(shape, opening, color, bulge, tension, thickness, delivering, context) {
     if (shape === 'small' && !delivering) {
       drawSmallAnus(opening, color, bulge, context);
@@ -279,13 +321,20 @@ export function createVulvaRenderer(canvas, options = {}) {
     const radial = shape === 'claude';
     const shadow = mix(color, basePalette.cavityDeep, .56);
     const light = mix(color, basePalette.shine, .32 + .11 * bulge + .26 * tension);
-    const base = radial ? mix(shadow, color, .28) : shadow;
-    const rimLight = radial ? mix(light, '#9c5f5d', .67) : light;
-    const smallHub = radial && !delivering;
+    const styled = usesSmallAnusHub(shape);
+    const logo = styled && !radial;
+    const base = styled ? mix(shadow, color, .28) : shadow;
+    const rimLight = styled ? mix(light, '#9c5f5d', .67) : light;
+    const smallHub = styled && !delivering;
     const hubWidth = smallHub ? Math.max(1, width * .23) : width;
     const hubDepth = smallHub ? Math.max(.8, depth * .31) : depth;
     const rimThickness = smallHub ? .22 : shape === 'small' ? thickness * .63 : thickness;
+    if (logo) {
+      drawLogoAnusFolds(shape, opening, hubWidth, hubDepth, rimThickness, mix(shadow, color, .37),
+        mix(shadow, rimLight, .72), context);
+    }
     drawBirthRim({ ...opening, width: hubWidth, depth: hubDepth }, base, rimLight, centerY - 18, rimThickness, context, context === ctx);
+    if (logo) return;
     const folds = radial ? [1, .57, .84, 1, .66, .91, .60, .92, .73, .99, .70] : [1, 1, 1, 1, 1, 1];
     if (!delivering || radial) {
       for (const [index, reach] of folds.entries()) {
@@ -314,9 +363,9 @@ export function createVulvaRenderer(canvas, options = {}) {
     if (elapsed === null || elapsed < 0) return;
     const { color, highlight } = flowEffects.withdrawal;
     const { centerX, centerY, width, depth } = opening;
-    const radial = shape === 'claude';
-    const reach = Math.max(2, Math.min(5, Math.round(width * (radial ? .34 : .54))));
-    const row = Math.min(115, Math.round(centerY + depth * (radial ? .30 : .68) + 1));
+    const smallHub = usesSmallAnusHub(shape);
+    const reach = Math.max(2, Math.min(5, Math.round(width * (smallHub ? .34 : .54))));
+    const row = Math.min(115, Math.round(centerY + depth * (smallHub ? .30 : .68) + 1));
     const arrival = Math.min(1, elapsed / 240);
     const fade = Math.max(0, elapsed - (ANAL_FIT_END_MS - ANAL_HOLD_END_MS) - 450) / (ANAL_RESIDUE_MS - 450);
     frontContext.save();
@@ -341,7 +390,9 @@ export function createVulvaRenderer(canvas, options = {}) {
     const growth = expansion ?? (stool.bulge * .55 - stool.tighten * .29);
     const shape = selectedAnusShape(false);
     const size = shape === 'small' ? 4 : shape === 'large' ? 7.5 : 5.6;
-    const opening = { centerX: 48, centerY: shape === 'claude' ? 111 : 112, width: size * (1 + growth), depth: 3 * (1 + .25 * growth) };
+    const centerY = { claude: 111, gpt: 110, gemini: 110 }[shape] ?? 112;
+    const depth = 3 * (1 + .25 * growth);
+    const opening = { centerX: 48, centerY, width: size * (1 + growth), depth };
     const color = fields['anus-color'].value;
     drawAnusOpening(shape, opening, color, stool.bulge, 0, .57, false, frontContext);
     drawAnalResidue(opening, shape, residueElapsed);
@@ -360,8 +411,9 @@ export function createVulvaRenderer(canvas, options = {}) {
     frontContext.imageSmoothingEnabled = false;
     if (separateAnus) {
       const width = Math.round(canvas.width * compactFrontHeight / canvas.height);
-      frontContext.drawImage(frontBuffer, 0, 0, canvas.width, canvas.height,
-        Math.round((canvas.width - width) / 2), 0, width, compactFrontHeight);
+      const sourceHeight = compactFrontClip * canvas.height / compactFrontHeight;
+      frontContext.drawImage(frontBuffer, 0, 0, canvas.width, sourceHeight,
+        Math.round((canvas.width - width) / 2), 0, width, compactFrontClip);
       drawSeparateAnus(analExpansion, stool, analResidueElapsed);
     } else {
       frontContext.drawImage(frontBuffer, 0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
@@ -1083,7 +1135,7 @@ export function createVulvaRenderer(canvas, options = {}) {
     const anusShape = selectedAnusShape(true);
     const { stool } = needs;
     const pressure = stool.bulge * 3.1 - stool.tighten * 1.5;
-    const baseWidth = { small: 3, large: 4, claude: 4.8 }[anusShape];
+    const baseWidth = { small: 3, large: 4, claude: 4.8, gpt: 4.8, gemini: 4.8 }[anusShape];
     const opening = birthOpening || { ...outlet, width: Math.max(1, baseWidth + stretch * .84 + pressure),
       depth: Math.max(1, 2 + stretch * .48 + pressure * .46) };
     const thickness = birthOpening?.rimThickness ?? .86 + .55 * inletPressure;
@@ -2788,6 +2840,16 @@ export function createVulvaRenderer(canvas, options = {}) {
   const EXTRA = { 'sword-offset': swordOffset, 'ovary-shape': ovaryShape, 'ovary-color': ovaryColor, 'uterus-color': uterusColor, 'labor-condition': laborCondition };
   let loop = 0;
   let lastFrameTick = -1;
+  // 主题：基础色表可换（子宫图的主题色表对应过来）；画完可再处理一次整张（水墨的笔触）
+  const BASE_PALETTE = { ...basePalette };
+  let postProcess = null;
+  function setPalette(values = {}) { Object.assign(basePalette, BASE_PALETTE, values); }
+  function setPostProcess(fn) { postProcess = typeof fn === 'function' ? fn : null; }
+  function render(now) {
+    const active = draw(now);
+    if (postProcess) postProcess(frontContext);
+    return active;
+  }
   const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   function setState(values = {}) {
     const now = clock();
@@ -2826,22 +2888,22 @@ export function createVulvaRenderer(canvas, options = {}) {
     else if (kind === 'recovery') recoveryStart = now;
     if (loop) start();
   }
-  function paint(now = clock()) { return draw(now); }
+  function paint(now = clock()) { return render(now); }
   function tick(now) {
     loop = 0;
     if (Math.floor(now / 90) === lastFrameTick) { loop = requestAnimationFrame(tick); return; }
     lastFrameTick = Math.floor(now / 90);
-    if (draw(now)) loop = requestAnimationFrame(tick);
+    if (render(now)) loop = requestAnimationFrame(tick);
   }
   /** 畫一次；還在動就排下一格（90 ms 一格，同預覽頁） */
   function start() {
     if (loop) cancelAnimationFrame(loop);
     loop = 0;
     lastFrameTick = -1;
-    if (draw(clock())) loop = requestAnimationFrame(tick);
+    if (render(clock())) loop = requestAnimationFrame(tick);
   }
   function stop() { if (loop) cancelAnimationFrame(loop); loop = 0; }
   function setReducedMotion(value) { reducedMotion.matches = Boolean(value); }
-  return { setState, play, paint, start, stop, setReducedMotion, getState: () => Object.fromEntries(Object.entries(fields).map(([id, field]) => [id, field.value])) };
+  return { setState, setPalette, setPostProcess, play, paint, start, stop, setReducedMotion, getState: () => Object.fromEntries(Object.entries(fields).map(([id, field]) => [id, field.value])) };
 
 }
